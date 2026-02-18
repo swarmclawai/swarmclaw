@@ -1,0 +1,53 @@
+'use client'
+
+import { useEffect } from 'react'
+import { useAppStore } from '@/stores/use-app-store'
+
+export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
+  const skills = useAppStore((s) => s.skills)
+  const loadSkills = useAppStore((s) => s.loadSkills)
+  const setSkillSheetOpen = useAppStore((s) => s.setSkillSheetOpen)
+  const setEditingSkillId = useAppStore((s) => s.setEditingSkillId)
+
+  useEffect(() => {
+    loadSkills()
+  }, [])
+
+  const skillList = Object.values(skills)
+
+  const handleEdit = (id: string) => {
+    setEditingSkillId(id)
+    setSkillSheetOpen(true)
+  }
+
+  return (
+    <div className={`flex-1 overflow-y-auto ${inSidebar ? 'px-3 pb-4' : 'px-4'}`}>
+      {skillList.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-[13px] text-text-3/60">No skills yet</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {skillList.map((skill) => (
+            <button
+              key={skill.id}
+              onClick={() => handleEdit(skill.id)}
+              className="w-full text-left p-4 rounded-[14px] border border-white/[0.06] bg-surface hover:bg-surface-2 transition-all cursor-pointer"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-display text-[14px] font-600 text-text truncate">{skill.name}</span>
+                <span className="text-[10px] font-mono text-text-3/50 shrink-0 ml-2">{skill.filename}</span>
+              </div>
+              {skill.description && (
+                <p className="text-[12px] text-text-3/60 line-clamp-2">{skill.description}</p>
+              )}
+              <div className="text-[11px] text-text-3/40 mt-1.5">
+                {skill.content.length} chars
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
