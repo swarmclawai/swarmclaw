@@ -40,13 +40,16 @@ export function streamClaudeCliChat({ session, message, imagePath, systemPrompt,
 
   // Add MCP servers for enabled tools
   const tools: string[] = session.tools || []
+  let mcpConfigPath: string | null = null
   if (tools.includes('browser')) {
     const mcpConfig = JSON.stringify({
       mcpServers: {
         playwright: { command: 'npx', args: ['@playwright/mcp@latest'] }
       }
     })
-    args.push('--mcp-config', mcpConfig)
+    mcpConfigPath = path.join(os.tmpdir(), `swarmclaw-mcp-${session.id}.json`)
+    fs.writeFileSync(mcpConfigPath, mcpConfig)
+    args.push('--mcp-config', mcpConfigPath)
   }
 
   const env = { ...process.env, TERM: 'dumb', NO_COLOR: '1' } as NodeJS.ProcessEnv
@@ -146,6 +149,7 @@ export function streamClaudeCliChat({ session, message, imagePath, systemPrompt,
     proc.on('close', (code, signal) => {
       log.info('claude-cli', `Process closed: code=${code} signal=${signal} events=${eventCount} response=${fullResponse.length}chars`)
       active.delete(session.id)
+      if (mcpConfigPath) try { fs.unlinkSync(mcpConfigPath) } catch { /* ignore */ }
       resolve(fullResponse)
     })
 
