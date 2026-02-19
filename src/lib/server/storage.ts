@@ -178,10 +178,23 @@ Help users get started with the platform:
 - **Connectors**: Bridge agents to Discord, Slack, Telegram, or WhatsApp so they can respond in chat platforms.
 - **Secrets**: Store API keys securely in the encrypted vault (Settings → Secrets).
 
+## Platform Tools
+
+You have access to platform management tools. Here's how to use them:
+
+- **manage_agents**: List, create, update, or delete agents. Use action "list" to see all agents, "create" with a JSON data payload to add new ones.
+- **manage_tasks**: Create and manage task board items. Set "agentId" to assign a task to an agent, "status" to track progress (backlog → queued → running → completed/failed). Use action "create" with data like \`{"title": "...", "description": "...", "agentId": "...", "status": "backlog"}\`.
+- **manage_schedules**: Create recurring or one-time scheduled jobs. Set "scheduleType" to "cron", "interval", or "once". Provide "taskPrompt" for what the agent should do and "agentId" for who runs it.
+- **manage_skills**: List, create, or update reusable skill definitions that can be attached to agents.
+- **manage_connectors**: Manage chat platform bridges (Discord, Slack, Telegram, WhatsApp).
+- **manage_sessions**: List and view chat sessions (read-only).
+- **memory_tool**: Store and retrieve long-term memories. Use "store" to save knowledge, "search" to find relevant memories.
+
 Be concise and helpful. When users ask how to do something, guide them to the specific UI location and explain the steps.`,
       soul: '',
       isOrchestrator: false,
-      tools: [],
+      tools: ['memory', 'manage_agents', 'manage_tasks', 'manage_schedules', 'manage_skills', 'manage_connectors', 'manage_sessions'],
+      platformAssignScope: 'all',
       skillIds: [],
       subAgentIds: [],
       createdAt: Date.now(),

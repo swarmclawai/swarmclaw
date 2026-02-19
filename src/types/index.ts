@@ -159,6 +159,7 @@ export interface Agent {
   tools?: string[]              // e.g. ['browser'] — available tool integrations
   skills?: string[]             // e.g. ['frontend-design'] — Claude Code skills to use
   skillIds?: string[]           // IDs of uploaded skills from the Skills manager
+  platformAssignScope?: 'self' | 'all'  // defaults to 'self'
   createdAt: number
   updatedAt: number
 }

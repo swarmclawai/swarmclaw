@@ -2,8 +2,18 @@ import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
 import path from 'path'
+import crypto from 'crypto'
 import { execSync, execFile, spawn, type ChildProcess } from 'child_process'
 import * as cheerio from 'cheerio'
+import { getMemoryDb } from './memory-db'
+import {
+  loadAgents, saveAgents,
+  loadTasks, saveTasks,
+  loadSchedules, saveSchedules,
+  loadSkills, saveSkills,
+  loadConnectors, saveConnectors,
+  loadSessions,
+} from './storage'
 
 const MAX_OUTPUT = 50 * 1024 // 50KB
 const MAX_FILE = 100 * 1024 // 100KB
@@ -45,7 +55,13 @@ function listDirRecursive(dir: string, depth: number, maxDepth: number): string[
   return entries
 }
 
-export function buildSessionTools(cwd: string, enabledTools: string[]): StructuredToolInterface[] {
+interface ToolContext {
+  agentId?: string | null
+  sessionId?: string | null
+  platformAssignScope?: 'self' | 'all'
+}
+
+export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: ToolContext): StructuredToolInterface[] {
   const tools: StructuredToolInterface[] = []
 
   if (enabledTools.includes('shell')) {
@@ -498,6 +514,245 @@ export function buildSessionTools(cwd: string, enabledTools: string[]): Structur
           name: 'browser_get_text',
           description: 'Get an accessibility snapshot of the current page, including all visible text and interactive elements.',
           schema: z.object({}),
+        },
+      ),
+    )
+  }
+
+  if (enabledTools.includes('memory')) {
+    const memDb = getMemoryDb()
+
+    tools.push(
+      tool(
+        async ({ action, key, value, category, query }) => {
+          try {
+            if (action === 'store') {
+              const entry = memDb.add({
+                agentId: ctx?.agentId || null,
+                sessionId: ctx?.sessionId || null,
+                category: category || 'note',
+                title: key,
+                content: value || '',
+              })
+              return `Stored memory "${key}" (id: ${entry.id})`
+            }
+            if (action === 'search') {
+              const results = memDb.search(query || key, ctx?.agentId || undefined)
+              if (!results.length) return 'No memories found.'
+              return results.map((m) => `[${m.id}] ${m.title}: ${m.content}`).join('\n')
+            }
+            if (action === 'list') {
+              const results = memDb.list(ctx?.agentId || undefined)
+              if (!results.length) return 'No memories stored yet.'
+              return results.map((m) => `[${m.id}] ${m.category}/${m.title}: ${m.content}`).join('\n')
+            }
+            if (action === 'delete') {
+              memDb.delete(key)
+              return `Deleted memory "${key}"`
+            }
+            return `Unknown action "${action}". Use: store, search, list, or delete.`
+          } catch (err: any) {
+            return `Error: ${err.message}`
+          }
+        },
+        {
+          name: 'memory_tool',
+          description: 'Store and retrieve long-term memories that persist across sessions. Use "store" to save knowledge, "search" to find relevant memories, "list" to see all memories, or "delete" to remove one.',
+          schema: z.object({
+            action: z.enum(['store', 'search', 'list', 'delete']).describe('The action to perform'),
+            key: z.string().describe('For store: the memory title. For search: search query. For delete: the memory ID.'),
+            value: z.string().optional().describe('The memory content (for store action)'),
+            category: z.string().optional().describe('Category like "note", "fact", "preference" (for store action, defaults to "note")'),
+            query: z.string().optional().describe('Search query (alternative to key for search action)'),
+          }),
+        },
+      ),
+    )
+  }
+
+  // Platform management tools — each resource type is a separate toggleable tool
+  const RESOURCE_DEFAULTS: Record<string, (parsed: any) => any> = {
+    manage_agents: (p) => ({
+      name: p.name || 'Unnamed Agent',
+      description: p.description || '',
+      systemPrompt: p.systemPrompt || '',
+      soul: p.soul || '',
+      provider: p.provider || 'claude-cli',
+      model: p.model || '',
+      isOrchestrator: p.isOrchestrator || false,
+      tools: p.tools || [],
+      skills: p.skills || [],
+      skillIds: p.skillIds || [],
+      subAgentIds: p.subAgentIds || [],
+      ...p,
+    }),
+    manage_tasks: (p) => ({
+      title: p.title || 'Untitled Task',
+      description: p.description || '',
+      status: p.status || 'backlog',
+      agentId: p.agentId || null,
+      sessionId: p.sessionId || null,
+      result: null,
+      error: null,
+      queuedAt: null,
+      startedAt: null,
+      completedAt: null,
+      ...p,
+    }),
+    manage_schedules: (p) => {
+      const now = Date.now()
+      const base = {
+        name: p.name || 'Unnamed Schedule',
+        agentId: p.agentId || null,
+        taskPrompt: p.taskPrompt || '',
+        scheduleType: p.scheduleType || 'interval',
+        status: p.status || 'active',
+        ...p,
+      }
+      if (!base.nextRunAt) {
+        if (base.scheduleType === 'once' && base.runAt) base.nextRunAt = base.runAt
+        else if (base.scheduleType === 'interval' && base.intervalMs) base.nextRunAt = now + base.intervalMs
+      }
+      return base
+    },
+    manage_skills: (p) => ({
+      name: p.name || 'Unnamed Skill',
+      description: p.description || '',
+      content: p.content || '',
+      filename: p.filename || '',
+      ...p,
+    }),
+    manage_connectors: (p) => ({
+      name: p.name || 'Unnamed Connector',
+      platform: p.platform || 'discord',
+      agentId: p.agentId || null,
+      enabled: p.enabled ?? false,
+      ...p,
+    }),
+  }
+
+  const PLATFORM_RESOURCES: Record<string, {
+    toolId: string
+    label: string
+    load: () => Record<string, any>
+    save: (d: Record<string, any>) => void
+    readOnly?: boolean
+  }> = {
+    manage_agents: { toolId: 'manage_agents', label: 'agents', load: loadAgents, save: saveAgents },
+    manage_tasks: { toolId: 'manage_tasks', label: 'tasks', load: loadTasks, save: saveTasks },
+    manage_schedules: { toolId: 'manage_schedules', label: 'schedules', load: loadSchedules, save: saveSchedules },
+    manage_skills: { toolId: 'manage_skills', label: 'skills', load: loadSkills, save: saveSkills },
+    manage_connectors: { toolId: 'manage_connectors', label: 'connectors', load: loadConnectors, save: saveConnectors },
+    manage_sessions: { toolId: 'manage_sessions', label: 'sessions', load: loadSessions, save: () => {}, readOnly: true },
+  }
+
+  // Build dynamic agent summary for tools that need agent awareness
+  const assignScope = ctx?.platformAssignScope || 'self'
+  let agentSummary = ''
+  if (enabledTools.includes('manage_tasks') || enabledTools.includes('manage_schedules')) {
+    if (assignScope === 'all') {
+      try {
+        const agents = loadAgents()
+        const agentList = Object.values(agents)
+          .map((a: any) => `  - "${a.id}": ${a.name}${a.description ? ` — ${a.description}` : ''}`)
+          .join('\n')
+        if (agentList) agentSummary = `\n\nAvailable agents:\n${agentList}`
+      } catch { /* ignore */ }
+    }
+  }
+
+  for (const [toolKey, res] of Object.entries(PLATFORM_RESOURCES)) {
+    if (!enabledTools.includes(toolKey)) continue
+
+    let description = `Manage SwarmClaw ${res.label}. ${res.readOnly ? 'List and get only.' : 'List, get, create, update, or delete.'} Returns JSON.`
+    if (toolKey === 'manage_tasks') {
+      if (assignScope === 'self') {
+        description += `\n\nSet "agentId" to assign a task to yourself ("${ctx?.agentId || 'unknown'}") or leave it null. You can only assign tasks to yourself. Valid statuses: backlog, queued, running, completed, failed.`
+      } else {
+        description += `\n\nSet "agentId" to assign a task to an agent (including yourself: "${ctx?.agentId || 'unknown'}"). Valid statuses: backlog, queued, running, completed, failed.` + agentSummary
+      }
+    } else if (toolKey === 'manage_schedules') {
+      if (assignScope === 'self') {
+        description += `\n\nSet "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}") or leave it null. You can only assign schedules to yourself. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Set taskPrompt for what the agent should do.`
+      } else {
+        description += `\n\nSet "agentId" to assign a schedule to an agent (including yourself: "${ctx?.agentId || 'unknown'}"). Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Set taskPrompt for what the agent should do.` + agentSummary
+      }
+    }
+
+    tools.push(
+      tool(
+        async ({ action, id, data }) => {
+          try {
+            if (action === 'list') {
+              return JSON.stringify(Object.values(res.load()))
+            }
+            if (action === 'get') {
+              if (!id) return 'Error: "id" is required for get action.'
+              const all = res.load()
+              return all[id] ? JSON.stringify(all[id]) : `Not found: ${res.label} "${id}"`
+            }
+            if (res.readOnly) return `Cannot ${action} ${res.label} via this tool (read-only).`
+            if (action === 'create') {
+              const all = res.load()
+              const newId = crypto.randomBytes(4).toString('hex')
+              const raw = data ? JSON.parse(data) : {}
+              const defaults = RESOURCE_DEFAULTS[toolKey]
+              const parsed = defaults ? defaults(raw) : raw
+              // Enforce assignment scope for tasks and schedules
+              if (assignScope === 'self' && (toolKey === 'manage_tasks' || toolKey === 'manage_schedules')) {
+                if (parsed.agentId && parsed.agentId !== ctx?.agentId) {
+                  return `Error: You can only assign ${res.label} to yourself ("${ctx?.agentId}"). To assign to other agents, ask a user to enable "Assign to Other Agents" in your agent settings.`
+                }
+              }
+              const now = Date.now()
+              const entry = {
+                id: newId,
+                ...parsed,
+                createdByAgentId: ctx?.agentId || null,
+                createdInSessionId: ctx?.sessionId || null,
+                createdAt: now,
+                updatedAt: now,
+              }
+              all[newId] = entry
+              res.save(all)
+              return JSON.stringify(entry)
+            }
+            if (action === 'update') {
+              if (!id) return 'Error: "id" is required for update action.'
+              const all = res.load()
+              if (!all[id]) return `Not found: ${res.label} "${id}"`
+              const parsed = data ? JSON.parse(data) : {}
+              // Enforce assignment scope for tasks and schedules
+              if (assignScope === 'self' && (toolKey === 'manage_tasks' || toolKey === 'manage_schedules')) {
+                if (parsed.agentId && parsed.agentId !== ctx?.agentId) {
+                  return `Error: You can only assign ${res.label} to yourself ("${ctx?.agentId}"). To assign to other agents, ask a user to enable "Assign to Other Agents" in your agent settings.`
+                }
+              }
+              all[id] = { ...all[id], ...parsed, updatedAt: Date.now() }
+              res.save(all)
+              return JSON.stringify(all[id])
+            }
+            if (action === 'delete') {
+              if (!id) return 'Error: "id" is required for delete action.'
+              const all = res.load()
+              if (!all[id]) return `Not found: ${res.label} "${id}"`
+              delete all[id]
+              res.save(all)
+              return JSON.stringify({ deleted: id })
+            }
+            return `Unknown action "${action}". Valid: list, get, create, update, delete`
+          } catch (err: any) {
+            return `Error: ${err.message}`
+          }
+        },
+        {
+          name: toolKey,
+          description,
+          schema: z.object({
+            action: z.enum(['list', 'get', 'create', 'update', 'delete']).describe('The CRUD action to perform'),
+            id: z.string().optional().describe('Resource ID (required for get, update, delete)'),
+            data: z.string().optional().describe('JSON string of fields for create/update'),
+          }),
         },
       ),
     )

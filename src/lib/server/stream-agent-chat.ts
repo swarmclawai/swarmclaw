@@ -63,16 +63,17 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<string
     }
   }
   const llm = buildLLM(session, apiKey)
-  const tools = buildSessionTools(session.cwd, session.tools || [])
 
   // Build stateModifier: [userPrompt] \n\n [soul] \n\n [systemPrompt]
   const settings = loadSettings()
   const stateModifierParts: string[] = []
   if (settings.userPrompt) stateModifierParts.push(settings.userPrompt)
   // Load agent soul if session has an agent
+  let agentPlatformAssignScope: 'self' | 'all' = 'self'
   if (session.agentId) {
     const agents = loadAgents()
     const agent = agents[session.agentId]
+    agentPlatformAssignScope = agent?.platformAssignScope || 'self'
     if (agent?.soul) stateModifierParts.push(agent.soul)
     // Inject dynamic skills
     if (agent?.skillIds?.length) {
@@ -86,6 +87,11 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<string
   stateModifierParts.push(systemPrompt || 'You are a helpful AI assistant with access to tools. Use them when appropriate to help the user.')
   const stateModifier = stateModifierParts.join('\n\n')
 
+  const tools = buildSessionTools(session.cwd, session.tools || [], {
+    agentId: session.agentId,
+    sessionId: session.id,
+    platformAssignScope: agentPlatformAssignScope,
+  })
   const agent = createReactAgent({ llm, tools, stateModifier })
 
   // Build message history for context

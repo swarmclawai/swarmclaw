@@ -15,6 +15,16 @@ const AVAILABLE_TOOLS: { id: string; label: string; description: string }[] = [
   { id: 'web_fetch', label: 'Web Fetch', description: 'Fetch and extract text from URLs' },
   { id: 'claude_code', label: 'Claude Code', description: 'Delegate complex tasks to Claude Code CLI' },
   { id: 'browser', label: 'Browser', description: 'Playwright — browse, scrape, interact with web pages' },
+  { id: 'memory', label: 'Memory', description: 'Store and retrieve long-term memories across sessions' },
+]
+
+const PLATFORM_TOOLS: { id: string; label: string; description: string }[] = [
+  { id: 'manage_agents', label: 'Agents', description: 'Create, edit, and delete agents' },
+  { id: 'manage_tasks', label: 'Tasks', description: 'Create, edit, and delete tasks' },
+  { id: 'manage_schedules', label: 'Schedules', description: 'Create, edit, and delete schedules' },
+  { id: 'manage_skills', label: 'Skills', description: 'Create, edit, and delete skills' },
+  { id: 'manage_connectors', label: 'Connectors', description: 'Create, edit, and delete connectors' },
+  { id: 'manage_sessions', label: 'Sessions', description: 'List and view sessions (read-only)' },
 ]
 
 export function AgentSheet() {
@@ -58,6 +68,7 @@ export function AgentSheet() {
   const [skills, setSkills] = useState<string[]>([])
   const [skillIds, setSkillIds] = useState<string[]>([])
   const [fallbackCredentialIds, setFallbackCredentialIds] = useState<string[]>([])
+  const [platformAssignScope, setPlatformAssignScope] = useState<'self' | 'all'>('self')
   const [ollamaMode, setOllamaMode] = useState<'local' | 'cloud'>('local')
 
   const soulFileRef = useRef<HTMLInputElement>(null)
@@ -108,6 +119,7 @@ export function AgentSheet() {
         setSkills(editing.skills || [])
         setSkillIds(editing.skillIds || [])
         setFallbackCredentialIds(editing.fallbackCredentialIds || [])
+        setPlatformAssignScope(editing.platformAssignScope || 'self')
         setOllamaMode(editing.credentialId && editing.provider === 'ollama' ? 'cloud' : 'local')
       } else {
         setName('')
@@ -124,6 +136,7 @@ export function AgentSheet() {
         setSkills([])
         setSkillIds([])
         setFallbackCredentialIds([])
+        setPlatformAssignScope('self')
         setOllamaMode('local')
       }
     }
@@ -181,6 +194,7 @@ export function AgentSheet() {
       skills,
       skillIds,
       fallbackCredentialIds,
+      platformAssignScope,
     }
     if (editing) {
       await updateAgent(editing.id, data)
@@ -439,6 +453,44 @@ export function AgentSheet() {
             </label>
           ))}
         </div>
+      </div>
+
+      {/* Platform */}
+      <div className="mb-8">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Platform</label>
+        <p className="text-[12px] text-text-3/60 mb-3">Allow this agent to manage platform resources directly.</p>
+        <div className="space-y-3">
+          {PLATFORM_TOOLS.map((t) => (
+            <label key={t.id} className="flex items-center gap-3 cursor-pointer">
+              <div
+                onClick={() => setTools((prev) => prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id])}
+                className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
+                  ${tools.includes(t.id) ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
+              >
+                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+                  ${tools.includes(t.id) ? 'left-[22px]' : 'left-0.5'}`} />
+              </div>
+              <span className="font-display text-[14px] font-600 text-text-2">{t.label}</span>
+              <span className="text-[12px] text-text-3">{t.description}</span>
+            </label>
+          ))}
+        </div>
+        {(tools.includes('manage_tasks') || tools.includes('manage_schedules')) && (
+          <div className="mt-4 ml-1 pt-3 border-t border-white/[0.04]">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div
+                onClick={() => setPlatformAssignScope((prev) => prev === 'all' ? 'self' : 'all')}
+                className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
+                  ${platformAssignScope === 'all' ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
+              >
+                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+                  ${platformAssignScope === 'all' ? 'left-[22px]' : 'left-0.5'}`} />
+              </div>
+              <span className="font-display text-[14px] font-600 text-text-2">Assign to Other Agents</span>
+              <span className="text-[12px] text-text-3">Allow this agent to assign tasks and schedules to other agents</span>
+            </label>
+          </div>
+        )}
       </div>
 
       {/* Skills — discovered from ~/.claude/skills/ */}
