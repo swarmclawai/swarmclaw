@@ -4,8 +4,6 @@ Self-hosted AI agent orchestration dashboard. Manage multiple AI providers, orch
 
 Inspired by [OpenClaw](https://github.com/openclaw).
 
-> **v0.1 — Early Alpha.** This is a personal project being open-sourced. Expect rough edges, breaking changes, and incomplete features. Contributions welcome.
-
 **[Documentation](https://swarmclaw.ai/docs)** | **[Website](https://swarmclaw.ai)**
 
 ![Dashboard](public/screenshots/dashboard.png)
