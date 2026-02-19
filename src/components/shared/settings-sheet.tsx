@@ -214,9 +214,10 @@ export function SettingsSheet() {
         </p>
         <div className="p-6 rounded-[18px] bg-surface border border-white/[0.06]">
           <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Provider</label>
-          <div className="grid grid-cols-3 gap-2 mb-5">
+          <div className="grid grid-cols-4 gap-2 mb-5">
             {[
               { id: null, name: 'Off' },
+              { id: 'local' as const, name: 'Local (Free)' },
               { id: 'openai' as const, name: 'OpenAI' },
               { id: 'ollama' as const, name: 'Ollama' },
             ].map((p) => (
@@ -233,6 +234,12 @@ export function SettingsSheet() {
               </button>
             ))}
           </div>
+
+          {appSettings.embeddingProvider === 'local' && (
+            <p className="text-[12px] text-text-3/80 mb-5">
+              Runs <span className="text-text-2 font-600">all-MiniLM-L6-v2</span> locally in Node.js — no API key, no cost, works offline. Model downloads once (~23MB).
+            </p>
+          )}
 
           {appSettings.embeddingProvider === 'openai' && (
             <>

@@ -198,7 +198,7 @@ export interface AppSettings {
   langGraphModel?: string
   langGraphCredentialId?: string | null
   langGraphEndpoint?: string | null
-  embeddingProvider?: 'openai' | 'ollama' | null
+  embeddingProvider?: 'local' | 'openai' | 'ollama' | null
   embeddingModel?: string | null
   embeddingCredentialId?: string | null
 }

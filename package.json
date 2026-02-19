@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
     "@langchain/anthropic": "^1.3.18",
     "@langchain/core": "^1.1.26",
     "@langchain/langgraph": "^1.1.5",

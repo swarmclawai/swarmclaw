@@ -2,34 +2,165 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import os from 'os'
+import Database from 'better-sqlite3'
 
 const DATA_DIR = path.join(process.cwd(), 'data')
-const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json')
-const CREDENTIALS_FILE = path.join(DATA_DIR, 'credentials.json')
-const AGENTS_FILE = path.join(DATA_DIR, 'agents.json')
-const SCHEDULES_FILE = path.join(DATA_DIR, 'schedules.json')
-const TASKS_FILE = path.join(DATA_DIR, 'tasks.json')
-const QUEUE_FILE = path.join(DATA_DIR, 'queue.json')
-const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json')
-const SECRETS_FILE = path.join(DATA_DIR, 'secrets.json')
-const PROVIDER_CONFIGS_FILE = path.join(DATA_DIR, 'providers.json')
-const SKILLS_FILE = path.join(DATA_DIR, 'skills.json')
-const CONNECTORS_FILE = path.join(DATA_DIR, 'connectors.json')
-const USAGE_FILE = path.join(DATA_DIR, 'usage.json')
 export const UPLOAD_DIR = path.join(os.tmpdir(), 'swarmclaw-uploads')
 
 // Ensure directories exist
 for (const dir of [DATA_DIR, UPLOAD_DIR]) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
 }
-if (!fs.existsSync(SESSIONS_FILE)) fs.writeFileSync(SESSIONS_FILE, '{}')
-if (!fs.existsSync(CREDENTIALS_FILE)) fs.writeFileSync(CREDENTIALS_FILE, '{}')
-if (!fs.existsSync(AGENTS_FILE)) fs.writeFileSync(AGENTS_FILE, '{}')
-// Seed a default agent if the agents file is empty
+
+// --- SQLite Database ---
+const DB_PATH = path.join(DATA_DIR, 'swarmclaw.db')
+const db = new Database(DB_PATH)
+db.pragma('journal_mode = WAL')
+db.pragma('foreign_keys = ON')
+
+// Collection tables (id → JSON blob)
+const COLLECTIONS = [
+  'sessions',
+  'credentials',
+  'agents',
+  'schedules',
+  'tasks',
+  'secrets',
+  'provider_configs',
+  'skills',
+  'connectors',
+] as const
+
+for (const table of COLLECTIONS) {
+  db.exec(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, data TEXT NOT NULL)`)
+}
+
+// Singleton tables (single row)
+db.exec(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)`)
+db.exec(`CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)`)
+db.exec(`CREATE TABLE IF NOT EXISTS usage (session_id TEXT NOT NULL, data TEXT NOT NULL)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_session ON usage(session_id)`)
+
+function loadCollection(table: string): Record<string, any> {
+  const rows = db.prepare(`SELECT id, data FROM ${table}`).all() as { id: string; data: string }[]
+  const result: Record<string, any> = {}
+  for (const row of rows) {
+    result[row.id] = JSON.parse(row.data)
+  }
+  return result
+}
+
+function saveCollection(table: string, data: Record<string, any>) {
+  const transaction = db.transaction(() => {
+    db.prepare(`DELETE FROM ${table}`).run()
+    const ins = db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`)
+    for (const [id, val] of Object.entries(data)) {
+      ins.run(id, JSON.stringify(val))
+    }
+  })
+  transaction()
+}
+
+function loadSingleton(table: string, fallback: any): any {
+  const row = db.prepare(`SELECT data FROM ${table} WHERE id = 1`).get() as { data: string } | undefined
+  return row ? JSON.parse(row.data) : fallback
+}
+
+function saveSingleton(table: string, data: any) {
+  db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (1, ?)`).run(JSON.stringify(data))
+}
+
+// --- JSON Migration ---
+// Auto-import from JSON files on first run, then leave them as backup
+const JSON_FILES: Record<string, string> = {
+  sessions: path.join(DATA_DIR, 'sessions.json'),
+  credentials: path.join(DATA_DIR, 'credentials.json'),
+  agents: path.join(DATA_DIR, 'agents.json'),
+  schedules: path.join(DATA_DIR, 'schedules.json'),
+  tasks: path.join(DATA_DIR, 'tasks.json'),
+  secrets: path.join(DATA_DIR, 'secrets.json'),
+  provider_configs: path.join(DATA_DIR, 'providers.json'),
+  skills: path.join(DATA_DIR, 'skills.json'),
+  connectors: path.join(DATA_DIR, 'connectors.json'),
+}
+
+const MIGRATION_FLAG = path.join(DATA_DIR, '.sqlite_migrated')
+
+function migrateFromJson() {
+  if (fs.existsSync(MIGRATION_FLAG)) return
+
+  console.log('[storage] Migrating from JSON files to SQLite...')
+
+  const transaction = db.transaction(() => {
+    for (const [table, jsonPath] of Object.entries(JSON_FILES)) {
+      if (fs.existsSync(jsonPath)) {
+        try {
+          const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'))
+          if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+            const ins = db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`)
+            for (const [id, val] of Object.entries(data)) {
+              ins.run(id, JSON.stringify(val))
+            }
+            console.log(`[storage]   Migrated ${table}: ${Object.keys(data).length} records`)
+          }
+        } catch { /* skip malformed files */ }
+      }
+    }
+
+    // Settings (singleton)
+    const settingsPath = path.join(DATA_DIR, 'settings.json')
+    if (fs.existsSync(settingsPath)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+        if (data && Object.keys(data).length > 0) {
+          saveSingleton('settings', data)
+          console.log('[storage]   Migrated settings')
+        }
+      } catch { /* skip */ }
+    }
+
+    // Queue (singleton array)
+    const queuePath = path.join(DATA_DIR, 'queue.json')
+    if (fs.existsSync(queuePath)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(queuePath, 'utf8'))
+        if (Array.isArray(data) && data.length > 0) {
+          saveSingleton('queue', data)
+          console.log(`[storage]   Migrated queue: ${data.length} items`)
+        }
+      } catch { /* skip */ }
+    }
+
+    // Usage
+    const usagePath = path.join(DATA_DIR, 'usage.json')
+    if (fs.existsSync(usagePath)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(usagePath, 'utf8'))
+        const ins = db.prepare(`INSERT INTO usage (session_id, data) VALUES (?, ?)`)
+        for (const [sessionId, records] of Object.entries(data)) {
+          if (Array.isArray(records)) {
+            for (const record of records) {
+              ins.run(sessionId, JSON.stringify(record))
+            }
+          }
+        }
+        console.log('[storage]   Migrated usage records')
+      } catch { /* skip */ }
+    }
+  })
+
+  transaction()
+  fs.writeFileSync(MIGRATION_FLAG, new Date().toISOString())
+  console.log('[storage] Migration complete. JSON files preserved as backup.')
+}
+
+migrateFromJson()
+
+// Seed default agent if agents table is empty
 {
-  const agentsData = JSON.parse(fs.readFileSync(AGENTS_FILE, 'utf8'))
-  if (Object.keys(agentsData).length === 0) {
-    agentsData.default = {
+  const count = (db.prepare('SELECT COUNT(*) as c FROM agents').get() as { c: number }).c
+  if (count === 0) {
+    const defaultAgent = {
       id: 'default',
       name: 'Assistant',
       description: 'A general-purpose AI assistant',
@@ -44,18 +175,9 @@ if (!fs.existsSync(AGENTS_FILE)) fs.writeFileSync(AGENTS_FILE, '{}')
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
-    fs.writeFileSync(AGENTS_FILE, JSON.stringify(agentsData, null, 2))
+    db.prepare(`INSERT OR REPLACE INTO agents (id, data) VALUES (?, ?)`).run('default', JSON.stringify(defaultAgent))
   }
 }
-if (!fs.existsSync(SCHEDULES_FILE)) fs.writeFileSync(SCHEDULES_FILE, '{}')
-if (!fs.existsSync(TASKS_FILE)) fs.writeFileSync(TASKS_FILE, '{}')
-if (!fs.existsSync(QUEUE_FILE)) fs.writeFileSync(QUEUE_FILE, '[]')
-if (!fs.existsSync(SETTINGS_FILE)) fs.writeFileSync(SETTINGS_FILE, '{}')
-if (!fs.existsSync(SECRETS_FILE)) fs.writeFileSync(SECRETS_FILE, '{}')
-if (!fs.existsSync(PROVIDER_CONFIGS_FILE)) fs.writeFileSync(PROVIDER_CONFIGS_FILE, '{}')
-if (!fs.existsSync(SKILLS_FILE)) fs.writeFileSync(SKILLS_FILE, '{}')
-if (!fs.existsSync(CONNECTORS_FILE)) fs.writeFileSync(CONNECTORS_FILE, '{}')
-if (!fs.existsSync(USAGE_FILE)) fs.writeFileSync(USAGE_FILE, '{}')
 
 // --- .env loading ---
 function loadEnv() {
@@ -85,7 +207,6 @@ if (!process.env.ACCESS_KEY) {
   const envPath = path.join(process.cwd(), '.env.local')
   fs.appendFileSync(envPath, `\nACCESS_KEY=${key}\n`)
   process.env.ACCESS_KEY = key
-  // Write a persistent flag so the first-time UI shows even after restarts
   fs.writeFileSync(SETUP_FLAG, key)
   console.log(`\n${'='.repeat(50)}`)
   console.log(`  ACCESS KEY: ${key}`)
@@ -111,20 +232,20 @@ export function markSetupComplete(): void {
 
 // --- Sessions ---
 export function loadSessions(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'))
+  return loadCollection('sessions')
 }
 
 export function saveSessions(s: Record<string, any>) {
-  fs.writeFileSync(SESSIONS_FILE, JSON.stringify(s, null, 2))
+  saveCollection('sessions', s)
 }
 
 // --- Credentials ---
 export function loadCredentials(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(CREDENTIALS_FILE, 'utf8'))
+  return loadCollection('credentials')
 }
 
 export function saveCredentials(c: Record<string, any>) {
-  fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(c, null, 2))
+  saveCollection('credentials', c)
 }
 
 export function encryptKey(plaintext: string): string {
@@ -151,99 +272,114 @@ export function decryptKey(encrypted: string): string {
 
 // --- Agents ---
 export function loadAgents(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(AGENTS_FILE, 'utf8'))
+  return loadCollection('agents')
 }
 
 export function saveAgents(p: Record<string, any>) {
-  fs.writeFileSync(AGENTS_FILE, JSON.stringify(p, null, 2))
+  saveCollection('agents', p)
 }
 
 // --- Schedules ---
 export function loadSchedules(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(SCHEDULES_FILE, 'utf8'))
+  return loadCollection('schedules')
 }
 
 export function saveSchedules(s: Record<string, any>) {
-  fs.writeFileSync(SCHEDULES_FILE, JSON.stringify(s, null, 2))
+  saveCollection('schedules', s)
 }
 
 // --- Tasks ---
 export function loadTasks(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8'))
+  return loadCollection('tasks')
 }
 
 export function saveTasks(t: Record<string, any>) {
-  fs.writeFileSync(TASKS_FILE, JSON.stringify(t, null, 2))
+  saveCollection('tasks', t)
 }
 
 // --- Queue ---
 export function loadQueue(): string[] {
-  return JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf8'))
+  return loadSingleton('queue', [])
 }
 
 export function saveQueue(q: string[]) {
-  fs.writeFileSync(QUEUE_FILE, JSON.stringify(q, null, 2))
+  saveSingleton('queue', q)
 }
 
 // --- Settings ---
 export function loadSettings(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))
+  return loadSingleton('settings', {})
 }
 
 export function saveSettings(s: Record<string, any>) {
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2))
+  saveSingleton('settings', s)
 }
 
 // --- Secrets (service keys for orchestrators) ---
 export function loadSecrets(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(SECRETS_FILE, 'utf8'))
+  return loadCollection('secrets')
 }
 
 export function saveSecrets(s: Record<string, any>) {
-  fs.writeFileSync(SECRETS_FILE, JSON.stringify(s, null, 2))
+  saveCollection('secrets', s)
 }
 
 // --- Provider Configs (custom providers) ---
 export function loadProviderConfigs(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(PROVIDER_CONFIGS_FILE, 'utf8'))
+  return loadCollection('provider_configs')
 }
 
 export function saveProviderConfigs(p: Record<string, any>) {
-  fs.writeFileSync(PROVIDER_CONFIGS_FILE, JSON.stringify(p, null, 2))
+  saveCollection('provider_configs', p)
 }
 
 // --- Skills ---
 export function loadSkills(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(SKILLS_FILE, 'utf8'))
+  return loadCollection('skills')
 }
 
 export function saveSkills(s: Record<string, any>) {
-  fs.writeFileSync(SKILLS_FILE, JSON.stringify(s, null, 2))
+  saveCollection('skills', s)
 }
 
 // --- Usage ---
 export function loadUsage(): Record<string, any[]> {
-  return JSON.parse(fs.readFileSync(USAGE_FILE, 'utf8'))
+  const stmt = db.prepare('SELECT session_id, data FROM usage')
+  const rows = stmt.all() as { session_id: string; data: string }[]
+  const result: Record<string, any[]> = {}
+  for (const row of rows) {
+    if (!result[row.session_id]) result[row.session_id] = []
+    result[row.session_id].push(JSON.parse(row.data))
+  }
+  return result
 }
 
 export function saveUsage(u: Record<string, any[]>) {
-  fs.writeFileSync(USAGE_FILE, JSON.stringify(u, null, 2))
+  const del = db.prepare('DELETE FROM usage')
+  const ins = db.prepare('INSERT INTO usage (session_id, data) VALUES (?, ?)')
+  const transaction = db.transaction(() => {
+    del.run()
+    for (const [sessionId, records] of Object.entries(u)) {
+      for (const record of records) {
+        ins.run(sessionId, JSON.stringify(record))
+      }
+    }
+  })
+  transaction()
 }
 
 export function appendUsage(sessionId: string, record: any) {
-  const usage = loadUsage()
-  if (!usage[sessionId]) usage[sessionId] = []
-  usage[sessionId].push(record)
-  saveUsage(usage)
+  const ins = db.prepare('INSERT INTO usage (session_id, data) VALUES (?, ?)')
+  ins.run(sessionId, JSON.stringify(record))
 }
 
 // --- Connectors ---
 export function loadConnectors(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(CONNECTORS_FILE, 'utf8'))
+  return loadCollection('connectors')
 }
 
 export function saveConnectors(c: Record<string, any>) {
-  fs.writeFileSync(CONNECTORS_FILE, JSON.stringify(c, null, 2))
+  saveCollection('connectors', c)
 }
 
 // --- Active processes ---
@@ -262,6 +398,9 @@ export function localIP(): string {
 }
 
 export function getSessionMessages(sessionId: string): any[] {
-  const sessions = loadSessions()
-  return sessions[sessionId]?.messages || []
+  const stmt = db.prepare('SELECT data FROM sessions WHERE id = ?')
+  const row = stmt.get(sessionId) as { data: string } | undefined
+  if (!row) return []
+  const session = JSON.parse(row.data)
+  return session?.messages || []
 }

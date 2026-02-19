@@ -1,5 +1,23 @@
 import { loadSettings, loadCredentials, decryptKey } from './storage'
 
+let localPipeline: any = null
+let localPipelineLoading: Promise<any> | null = null
+
+async function getLocalPipeline() {
+  if (localPipeline) return localPipeline
+  if (localPipelineLoading) return localPipelineLoading
+
+  localPipelineLoading = (async () => {
+    const { pipeline } = await import('@huggingface/transformers')
+    localPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+      dtype: 'fp32',
+    })
+    return localPipeline
+  })()
+
+  return localPipelineLoading
+}
+
 export async function getEmbedding(text: string): Promise<number[] | null> {
   const settings = loadSettings()
   const provider = settings.embeddingProvider
@@ -17,7 +35,9 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
   }
 
   try {
-    if (provider === 'openai') {
+    if (provider === 'local') {
+      return await localEmbed(text)
+    } else if (provider === 'openai') {
       return await openaiEmbed(text, model, apiKey)
     } else if (provider === 'ollama') {
       return await ollamaEmbed(text, model, settings.langGraphEndpoint)
@@ -27,6 +47,12 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
   }
 
   return null
+}
+
+async function localEmbed(text: string): Promise<number[]> {
+  const pipe = await getLocalPipeline()
+  const output = await pipe(text.slice(0, 8000), { pooling: 'mean', normalize: true })
+  return Array.from(output.data as Float32Array)
 }
 
 async function openaiEmbed(text: string, model: string, apiKey: string | null): Promise<number[]> {
@@ -39,7 +65,7 @@ async function openaiEmbed(text: string, model: string, apiKey: string | null): 
     },
     body: JSON.stringify({
       model,
-      input: text.slice(0, 8000), // Limit input length
+      input: text.slice(0, 8000),
     }),
   })
   if (!res.ok) throw new Error(`OpenAI embeddings API error: ${res.status}`)
