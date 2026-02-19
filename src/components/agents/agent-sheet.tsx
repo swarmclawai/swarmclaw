@@ -10,6 +10,9 @@ import type { ProviderType, Skill, ClaudeSkill } from '@/types'
 const AVAILABLE_TOOLS: { id: string; label: string; description: string }[] = [
   { id: 'shell', label: 'Shell', description: 'Execute commands in the working directory' },
   { id: 'files', label: 'Files', description: 'Read, write, and list files' },
+  { id: 'edit_file', label: 'Edit File', description: 'Search-and-replace editing within files' },
+  { id: 'web_search', label: 'Web Search', description: 'Search the web via DuckDuckGo' },
+  { id: 'web_fetch', label: 'Web Fetch', description: 'Fetch and extract text from URLs' },
   { id: 'claude_code', label: 'Claude Code', description: 'Delegate complex tasks to Claude Code CLI' },
   { id: 'browser', label: 'Browser', description: 'Playwright — browse, scrape, interact with web pages' },
 ]
@@ -52,6 +55,7 @@ export function AgentSheet() {
   const [tools, setTools] = useState<string[]>([])
   const [skills, setSkills] = useState<string[]>([])
   const [skillIds, setSkillIds] = useState<string[]>([])
+  const [fallbackCredentialIds, setFallbackCredentialIds] = useState<string[]>([])
   const [ollamaMode, setOllamaMode] = useState<'local' | 'cloud'>('local')
 
   // AI generation state
@@ -88,6 +92,7 @@ export function AgentSheet() {
         setTools(editing.tools || [])
         setSkills(editing.skills || [])
         setSkillIds(editing.skillIds || [])
+        setFallbackCredentialIds(editing.fallbackCredentialIds || [])
         setOllamaMode(editing.credentialId && editing.provider === 'ollama' ? 'cloud' : 'local')
       } else {
         setName('')
@@ -103,6 +108,7 @@ export function AgentSheet() {
         setTools([])
         setSkills([])
         setSkillIds([])
+        setFallbackCredentialIds([])
         setOllamaMode('local')
       }
     }
@@ -157,6 +163,7 @@ export function AgentSheet() {
       tools,
       skills,
       skillIds,
+      fallbackCredentialIds,
     }
     if (editing) {
       await updateAgent(editing.id, data)
@@ -339,6 +346,34 @@ export function AgentSheet() {
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
+        </div>
+      )}
+
+      {/* Fallback Credentials */}
+      {(currentProvider?.requiresApiKey || (provider === 'ollama' && ollamaMode === 'cloud')) && providerCredentials.length > 1 && (
+        <div className="mb-8">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            Fallback Keys <span className="normal-case tracking-normal font-normal text-text-3">(for auto-failover)</span>
+          </label>
+          <p className="text-[12px] text-text-3/60 mb-3">If the primary key fails (rate limit, auth error), these keys will be tried in order.</p>
+          <div className="flex flex-wrap gap-2">
+            {providerCredentials.filter((c) => c.id !== credentialId).map((c) => {
+              const active = fallbackCredentialIds.includes(c.id)
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setFallbackCredentialIds((prev) => active ? prev.filter((x) => x !== c.id) : [...prev, c.id])}
+                  className={`px-3 py-2 rounded-[10px] text-[12px] font-600 cursor-pointer transition-all border
+                    ${active
+                      ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                      : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  {c.name}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 

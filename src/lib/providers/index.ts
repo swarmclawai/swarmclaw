@@ -4,6 +4,8 @@ import { streamOllamaChat } from './ollama'
 import { streamAnthropicChat } from './anthropic'
 import type { ProviderInfo, ProviderConfig as CustomProviderConfig } from '../../types'
 
+const RETRYABLE_STATUS_CODES = [401, 429, 500, 502, 503]
+
 export interface ProviderHandler {
   streamChat: (opts: StreamChatOptions) => Promise<string>
 }
@@ -134,4 +136,77 @@ export function getProvider(id: string): BuiltinProviderConfig | null {
     }
   }
   return null
+}
+
+/**
+ * Stream chat with automatic failover to fallback credentials on retryable errors.
+ * Falls back through fallbackCredentialIds on 401/429/500/502/503 errors.
+ */
+export async function streamChatWithFailover(
+  opts: StreamChatOptions & { fallbackCredentialIds?: string[] },
+): Promise<string> {
+  const provider = getProvider(opts.session.provider)
+  if (!provider) throw new Error(`Unknown provider: ${opts.session.provider}`)
+
+  const credentialIds = [
+    opts.session.credentialId,
+    ...(opts.fallbackCredentialIds || []),
+  ].filter(Boolean) as string[]
+
+  // If no fallbacks, just call directly
+  if (credentialIds.length <= 1) {
+    return provider.handler.streamChat(opts)
+  }
+
+  let lastError: any = null
+  let collectedOutput = ''
+
+  for (let i = 0; i < credentialIds.length; i++) {
+    const credId = credentialIds[i]
+    try {
+      // Resolve API key for this credential
+      let apiKey: string | null = opts.apiKey || null
+      if (credId && i > 0) {
+        // Need to decrypt fallback credential
+        const { loadCredentials, decryptKey } = require('../server/storage')
+        const creds = loadCredentials()
+        const cred = creds[credId]
+        if (cred?.encryptedKey) {
+          try { apiKey = decryptKey(cred.encryptedKey) } catch { /* skip */ }
+        }
+      }
+
+      collectedOutput = ''
+      const result = await provider.handler.streamChat({
+        ...opts,
+        apiKey,
+        write: (data: string) => {
+          collectedOutput += data
+          opts.write(data)
+        },
+      })
+      return result // success
+    } catch (err: any) {
+      lastError = err
+      const statusCode = err.status || err.statusCode || 0
+      const isRetryable = RETRYABLE_STATUS_CODES.includes(statusCode)
+        || err.message?.includes('rate limit')
+        || err.message?.includes('Rate limit')
+        || err.message?.includes('429')
+        || err.message?.includes('401')
+
+      if (isRetryable && i < credentialIds.length - 1) {
+        console.log(`[failover] Credential ${credId} failed (${statusCode || err.message}), trying fallback...`)
+        // Send a metadata event to inform the client
+        opts.write(`data: ${JSON.stringify({
+          t: 'md',
+          text: JSON.stringify({ failover: { from: credId, reason: err.message?.slice(0, 100) } }),
+        })}\n\n`)
+        continue
+      }
+      throw err
+    }
+  }
+
+  throw lastError || new Error('All credentials exhausted')
 }

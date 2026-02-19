@@ -2,8 +2,27 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import crypto from 'crypto'
 import type { MemoryEntry } from '@/types'
+import { getEmbedding, cosineSimilarity, serializeEmbedding, deserializeEmbedding } from './embeddings'
 
 const DB_PATH = path.join(process.cwd(), 'data', 'memory.db')
+
+// Simple cache for query embeddings to avoid blocking
+const embeddingCache = new Map<string, number[]>()
+
+function getEmbeddingSync(query: string): number[] | null {
+  const cached = embeddingCache.get(query)
+  if (cached) return cached
+  // Kick off async computation for next time
+  getEmbedding(query).then((emb) => {
+    if (emb) embeddingCache.set(query, emb)
+    // Evict old entries
+    if (embeddingCache.size > 100) {
+      const firstKey = embeddingCache.keys().next().value
+      if (firstKey) embeddingCache.delete(firstKey)
+    }
+  }).catch(() => { /* ok */ })
+  return null
+}
 
 let _db: ReturnType<typeof initDb> | null = null
 
@@ -24,6 +43,13 @@ function initDb() {
       updatedAt INTEGER NOT NULL
     )
   `)
+
+  // Add embedding column if not present (safe migration)
+  try {
+    db.exec(`ALTER TABLE memories ADD COLUMN embedding BLOB`)
+  } catch {
+    // Column already exists — ignore
+  }
 
   // FTS5 virtual table for full-text search
   db.exec(`
@@ -58,11 +84,11 @@ function initDb() {
 
   const stmts = {
     insert: db.prepare(`
-      INSERT INTO memories (id, agentId, sessionId, category, title, content, metadata, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO memories (id, agentId, sessionId, category, title, content, metadata, embedding, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     update: db.prepare(`
-      UPDATE memories SET agentId=?, sessionId=?, category=?, title=?, content=?, metadata=?, updatedAt=?
+      UPDATE memories SET agentId=?, sessionId=?, category=?, title=?, content=?, metadata=?, embedding=?, updatedAt=?
       WHERE id=?
     `),
     delete: db.prepare(`DELETE FROM memories WHERE id=?`),
@@ -92,6 +118,13 @@ function initDb() {
     }
   }
 
+  const getAllWithEmbeddings = db.prepare(
+    `SELECT * FROM memories WHERE embedding IS NOT NULL`
+  )
+  const getAllWithEmbeddingsByAgent = db.prepare(
+    `SELECT * FROM memories WHERE embedding IS NOT NULL AND agentId = ?`
+  )
+
   return {
     add(data: Omit<MemoryEntry, 'id' | 'createdAt' | 'updatedAt'>): MemoryEntry {
       const id = crypto.randomBytes(6).toString('hex')
@@ -100,8 +133,18 @@ function initDb() {
         id, data.agentId || null, data.sessionId || null,
         data.category, data.title, data.content,
         data.metadata ? JSON.stringify(data.metadata) : null,
+        null, // embedding computed async
         now, now,
       )
+      // Compute embedding in background (fire-and-forget)
+      const text = `${data.title} ${data.content}`.slice(0, 4000)
+      getEmbedding(text).then((emb) => {
+        if (emb) {
+          db.prepare(`UPDATE memories SET embedding = ? WHERE id = ?`).run(
+            serializeEmbedding(emb), id,
+          )
+        }
+      }).catch(() => { /* embedding not available, ok */ })
       return { ...data, id, createdAt: now, updatedAt: now }
     },
 
@@ -114,8 +157,20 @@ function initDb() {
         merged.agentId || null, merged.sessionId || null,
         merged.category, merged.title, merged.content,
         merged.metadata ? JSON.stringify(merged.metadata) : null,
+        existing.embedding, // preserve existing embedding
         now, id,
       )
+      // Re-compute embedding if content changed
+      if (updates.title || updates.content) {
+        const text = `${merged.title} ${merged.content}`.slice(0, 4000)
+        getEmbedding(text).then((emb) => {
+          if (emb) {
+            db.prepare(`UPDATE memories SET embedding = ? WHERE id = ?`).run(
+              serializeEmbedding(emb), id,
+            )
+          }
+        }).catch(() => { /* ok */ })
+      }
       return { ...merged, updatedAt: now }
     },
 
@@ -124,13 +179,50 @@ function initDb() {
     },
 
     search(query: string, agentId?: string): MemoryEntry[] {
-      // Sanitize FTS query — wrap each word in quotes
+      // FTS keyword search
       const ftsQuery = query.split(/\s+/).filter(Boolean).map((w) => `"${w}"`).join(' OR ')
-      if (!ftsQuery) return []
-      const rows = agentId
-        ? stmts.searchByAgent.all(ftsQuery, agentId) as any[]
-        : stmts.search.all(ftsQuery) as any[]
-      return rows.map(rowToEntry)
+      const ftsResults: MemoryEntry[] = ftsQuery
+        ? (agentId
+            ? stmts.searchByAgent.all(ftsQuery, agentId) as any[]
+            : stmts.search.all(ftsQuery) as any[]
+          ).map(rowToEntry)
+        : []
+
+      // Attempt vector search (synchronous — uses cached embedding if available)
+      let vectorResults: MemoryEntry[] = []
+      try {
+        const queryEmbedding = getEmbeddingSync(query)
+        if (queryEmbedding) {
+          const rows = agentId
+            ? getAllWithEmbeddingsByAgent.all(agentId) as any[]
+            : getAllWithEmbeddings.all() as any[]
+
+          const scored = rows
+            .map((row) => {
+              const emb = deserializeEmbedding(row.embedding)
+              const score = cosineSimilarity(queryEmbedding, emb)
+              return { row, score }
+            })
+            .filter((s) => s.score > 0.3) // relevance threshold
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 20)
+
+          vectorResults = scored.map((s) => rowToEntry(s.row))
+        }
+      } catch {
+        // Vector search unavailable, use FTS only
+      }
+
+      // Merge: deduplicate by id, FTS results first then vector-only
+      const seen = new Set<string>()
+      const merged: MemoryEntry[] = []
+      for (const entry of [...ftsResults, ...vectorResults]) {
+        if (!seen.has(entry.id)) {
+          seen.add(entry.id)
+          merged.push(entry)
+        }
+      }
+      return merged.slice(0, 100)
     },
 
     list(agentId?: string): MemoryEntry[] {

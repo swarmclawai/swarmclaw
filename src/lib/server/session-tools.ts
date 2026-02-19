@@ -3,6 +3,7 @@ import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
 import path from 'path'
 import { execSync, execFile, spawn, type ChildProcess } from 'child_process'
+import * as cheerio from 'cheerio'
 
 const MAX_OUTPUT = 50 * 1024 // 50KB
 const MAX_FILE = 100 * 1024 // 100KB
@@ -176,6 +177,124 @@ export function buildSessionTools(cwd: string, enabledTools: string[]): Structur
           description: 'Delegate a complex task to Claude Code CLI. Use for tasks that need deep code understanding, multi-file refactoring, or running tests. The task runs in the session working directory.',
           schema: z.object({
             task: z.string().describe('Detailed description of the task for Claude Code'),
+          }),
+        },
+      ),
+    )
+  }
+
+  if (enabledTools.includes('edit_file')) {
+    tools.push(
+      tool(
+        async ({ filePath, oldText, newText }) => {
+          try {
+            const resolved = safePath(cwd, filePath)
+            if (!fs.existsSync(resolved)) return `Error: File not found: ${filePath}`
+            const content = fs.readFileSync(resolved, 'utf-8')
+            const count = content.split(oldText).length - 1
+            if (count === 0) return `Error: oldText not found in ${filePath}`
+            if (count > 1) return `Error: oldText found ${count} times in ${filePath}. Make it more specific.`
+            const updated = content.replace(oldText, newText)
+            fs.writeFileSync(resolved, updated, 'utf-8')
+            return `Successfully edited ${filePath}`
+          } catch (err: any) {
+            return `Error editing file: ${err.message}`
+          }
+        },
+        {
+          name: 'edit_file',
+          description: 'Search and replace text in a file. The oldText must match exactly once in the file.',
+          schema: z.object({
+            filePath: z.string().describe('Relative path to the file'),
+            oldText: z.string().describe('Exact text to find (must be unique in the file)'),
+            newText: z.string().describe('Text to replace it with'),
+          }),
+        },
+      ),
+    )
+  }
+
+  if (enabledTools.includes('web_search')) {
+    tools.push(
+      tool(
+        async ({ query, maxResults }) => {
+          try {
+            const limit = Math.min(maxResults || 5, 10)
+            const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
+            const res = await fetch(url, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SwarmClaw/1.0)' },
+            })
+            const html = await res.text()
+            // Parse results from DuckDuckGo HTML
+            const results: { title: string; url: string; snippet: string }[] = []
+            const resultRegex = /<a[^>]+class="result__a"[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g
+            let match
+            while ((match = resultRegex.exec(html)) !== null && results.length < limit) {
+              const rawUrl = match[1]
+              const title = match[2].replace(/<[^>]+>/g, '').trim()
+              const snippet = match[3].replace(/<[^>]+>/g, '').trim()
+              // DuckDuckGo wraps URLs in a redirect
+              const decoded = decodeURIComponent(rawUrl.replace(/.*uddg=/, '').replace(/&.*/, ''))
+              results.push({ title, url: decoded || rawUrl, snippet })
+            }
+            if (results.length === 0) {
+              // Fallback: try simpler regex
+              const linkRegex = /<a[^>]+class="result__a"[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g
+              while ((match = linkRegex.exec(html)) !== null && results.length < limit) {
+                const rawUrl = match[1]
+                const title = match[2].replace(/<[^>]+>/g, '').trim()
+                const decoded = decodeURIComponent(rawUrl.replace(/.*uddg=/, '').replace(/&.*/, ''))
+                results.push({ title, url: decoded || rawUrl, snippet: '' })
+              }
+            }
+            return results.length > 0
+              ? JSON.stringify(results, null, 2)
+              : 'No results found.'
+          } catch (err: any) {
+            return `Error searching web: ${err.message}`
+          }
+        },
+        {
+          name: 'web_search',
+          description: 'Search the web using DuckDuckGo. Returns an array of results with title, url, and snippet.',
+          schema: z.object({
+            query: z.string().describe('Search query'),
+            maxResults: z.number().optional().describe('Maximum results to return (default 5, max 10)'),
+          }),
+        },
+      ),
+    )
+  }
+
+  if (enabledTools.includes('web_fetch')) {
+    tools.push(
+      tool(
+        async ({ url }) => {
+          try {
+            const res = await fetch(url, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SwarmClaw/1.0)' },
+              signal: AbortSignal.timeout(15000),
+            })
+            if (!res.ok) return `HTTP ${res.status}: ${res.statusText}`
+            const html = await res.text()
+            // Use cheerio for robust HTML text extraction
+            const $ = cheerio.load(html)
+            $('script, style, noscript, nav, footer, header').remove()
+            // Prefer article/main content if available
+            const main = $('article, main, [role="main"]').first()
+            let text = (main.length ? main.text() : $('body').text())
+              .replace(/\s+/g, ' ')
+              .trim()
+            return truncate(text, MAX_OUTPUT)
+          } catch (err: any) {
+            return `Error fetching URL: ${err.message}`
+          }
+        },
+        {
+          name: 'web_fetch',
+          description: 'Fetch a URL and return its text content (HTML stripped). Useful for reading web pages.',
+          schema: z.object({
+            url: z.string().describe('The URL to fetch'),
           }),
         },
       ),

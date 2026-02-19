@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { createCredential, deleteCredential } from '@/lib/sessions'
 import { BottomSheet } from './bottom-sheet'
 import { api } from '@/lib/api-client'
-import type { ProviderType, LangGraphProvider, OrchestratorSecret } from '@/types'
+import type { ProviderType, LangGraphProvider, OrchestratorSecret, PluginMeta } from '@/types'
 
 const LG_PROVIDERS: { id: LangGraphProvider; name: string }[] = [
   { id: 'anthropic', name: 'Anthropic' },
@@ -201,6 +201,88 @@ export function SettingsSheet() {
               </p>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Embedding Config */}
+      <div className="mb-10">
+        <h3 className="font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Embeddings
+        </h3>
+        <p className="text-[12px] text-text-3 mb-5">
+          Enable semantic search for agent memory. Requires an embedding model provider.
+        </p>
+        <div className="p-6 rounded-[18px] bg-surface border border-white/[0.06]">
+          <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Provider</label>
+          <div className="grid grid-cols-3 gap-2 mb-5">
+            {[
+              { id: null, name: 'Off' },
+              { id: 'openai' as const, name: 'OpenAI' },
+              { id: 'ollama' as const, name: 'Ollama' },
+            ].map((p) => (
+              <button
+                key={String(p.id)}
+                onClick={() => updateSettings({ embeddingProvider: p.id, embeddingModel: null, embeddingCredentialId: null })}
+                className={`py-3 px-3 rounded-[12px] text-center cursor-pointer transition-all text-[13px] font-600 border
+                  ${(appSettings.embeddingProvider || null) === p.id
+                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                    : 'bg-bg border-white/[0.06] text-text-2 hover:bg-surface-2'}`}
+                style={{ fontFamily: 'inherit' }}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+
+          {appSettings.embeddingProvider === 'openai' && (
+            <>
+              <div className="mb-5">
+                <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Model</label>
+                <select
+                  value={appSettings.embeddingModel || 'text-embedding-3-small'}
+                  onChange={(e) => updateSettings({ embeddingModel: e.target.value })}
+                  className={`${inputClass} appearance-none cursor-pointer`}
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <option value="text-embedding-3-small">text-embedding-3-small</option>
+                  <option value="text-embedding-3-large">text-embedding-3-large</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">API Key</label>
+                {credList.filter((c) => c.provider === 'openai').length > 0 ? (
+                  <select
+                    value={appSettings.embeddingCredentialId || ''}
+                    onChange={(e) => updateSettings({ embeddingCredentialId: e.target.value || null })}
+                    className={`${inputClass} appearance-none cursor-pointer`}
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <option value="">Select a key...</option>
+                    {credList.filter((c) => c.provider === 'openai').map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-[12px] text-text-3/60">No OpenAI API keys configured.</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {appSettings.embeddingProvider === 'ollama' && (
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Model</label>
+              <input
+                type="text"
+                value={appSettings.embeddingModel || 'nomic-embed-text'}
+                onChange={(e) => updateSettings({ embeddingModel: e.target.value })}
+                placeholder="nomic-embed-text"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+              <p className="text-[11px] text-text-3/60 mt-2">Uses your local Ollama instance for embeddings</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -408,6 +490,17 @@ export function SettingsSheet() {
         </div>
       )}
 
+      {/* Plugins */}
+      <div className="mb-10">
+        <h3 className="font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Plugins
+        </h3>
+        <p className="text-[12px] text-text-3 mb-5">
+          Drop .js files into <code className="text-[11px] font-mono text-text-2">data/plugins/</code> to extend agent behavior with hooks.
+        </p>
+        <PluginList />
+      </div>
+
       {/* Done */}
       <div className="pt-2 border-t border-white/[0.04]">
         <button
@@ -420,5 +513,51 @@ export function SettingsSheet() {
         </button>
       </div>
     </BottomSheet>
+  )
+}
+
+function PluginList() {
+  const [plugins, setPlugins] = useState<PluginMeta[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const loadPlugins = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await api<PluginMeta[]>('GET', '/plugins')
+      setPlugins(data)
+    } catch { /* ignore */ }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { loadPlugins() }, [])
+
+  const togglePlugin = async (filename: string, enabled: boolean) => {
+    await api('POST', '/plugins', { filename, enabled })
+    loadPlugins()
+  }
+
+  if (loading) return <p className="text-[12px] text-text-3/40">Loading plugins...</p>
+  if (plugins.length === 0) return <p className="text-[12px] text-text-3/40">No plugins installed</p>
+
+  return (
+    <div className="space-y-2.5">
+      {plugins.map((p) => (
+        <div key={p.filename} className="flex items-center gap-3 py-3 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
+          <div className="flex-1 min-w-0">
+            <div className="text-[14px] font-600 text-text truncate">{p.name}</div>
+            <div className="text-[11px] font-mono text-text-3 truncate">{p.filename}</div>
+            {p.description && <div className="text-[11px] text-text-3/60 mt-0.5">{p.description}</div>}
+          </div>
+          <div
+            onClick={() => togglePlugin(p.filename, !p.enabled)}
+            className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
+              ${p.enabled ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
+          >
+            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+              ${p.enabled ? 'left-[22px]' : 'left-0.5'}`} />
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }

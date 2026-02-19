@@ -20,6 +20,13 @@ export interface ToolEvent {
   status: 'running' | 'done'
 }
 
+export interface UsageInfo {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  estimatedCost: number
+}
+
 interface ChatState {
   streaming: boolean
   streamText: string
@@ -29,6 +36,8 @@ interface ChatState {
 
   toolEvents: ToolEvent[]
   clearToolEvents: () => void
+
+  lastUsage: UsageInfo | null
 
   ttsEnabled: boolean
   toggleTts: () => void
@@ -53,6 +62,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setMessages: (msgs) => set({ messages: msgs, toolEvents: [] }),
   toolEvents: [],
   clearToolEvents: () => set({ toolEvents: [] }),
+  lastUsage: null,
   ttsEnabled: false,
   toggleTts: () => set((s) => ({ ttsEnabled: !s.ttsEnabled })),
   pendingImage: null,
@@ -84,6 +94,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: [...s.messages, userMsg],
       pendingImage: null,
       toolEvents: [],
+      lastUsage: null,
     }))
 
     let fullText = ''
@@ -93,7 +104,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (event.t === 'd') {
         fullText += event.text || ''
         set({ streamText: fullText })
-      } else if (event.t === 'md' || event.t === 'r') {
+      } else if (event.t === 'md') {
+        // Check for usage metadata
+        try {
+          const meta = JSON.parse(event.text || '{}')
+          if (meta.usage) {
+            set({ lastUsage: meta.usage })
+          }
+        } catch {
+          // Not JSON usage metadata, treat as text
+          fullText = event.text || ''
+          set({ streamText: fullText })
+        }
+      } else if (event.t === 'r') {
         fullText = event.text || ''
         set({ streamText: fullText })
       } else if (event.t === 'tool_call') {

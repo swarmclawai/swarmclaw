@@ -373,11 +373,14 @@ export function NewSessionSheet() {
                 Tools <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
               </label>
               <p className="text-[12px] text-text-3/60 mb-3">Allow this model to execute commands and access files in the session directory.</p>
-              <div className="flex gap-2.5">
+              <div className="flex flex-wrap gap-2.5">
                 {([
-                  { id: 'shell' as SessionTool, label: 'Shell', icon: '>' },
-                  { id: 'files' as SessionTool, label: 'Files', icon: '~' },
-                  { id: 'claude_code' as SessionTool, label: 'Claude Code', icon: '*' },
+                  { id: 'shell' as SessionTool, label: 'Shell' },
+                  { id: 'files' as SessionTool, label: 'Files' },
+                  { id: 'edit_file' as SessionTool, label: 'Edit File' },
+                  { id: 'web_search' as SessionTool, label: 'Web Search' },
+                  { id: 'web_fetch' as SessionTool, label: 'Web Fetch' },
+                  { id: 'claude_code' as SessionTool, label: 'Claude Code' },
                 ]).map(({ id, label }) => {
                   const active = selectedTools.includes(id)
                   return (

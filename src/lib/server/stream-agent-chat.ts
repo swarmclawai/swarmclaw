@@ -2,8 +2,10 @@ import { createReactAgent } from '@langchain/langgraph/prebuilt'
 import { ChatAnthropic } from '@langchain/anthropic'
 import { ChatOpenAI } from '@langchain/openai'
 import { buildSessionTools } from './session-tools'
-import { loadCredentials, decryptKey, loadSettings, loadAgents, loadSkills } from './storage'
-import type { Session, Message } from '@/types'
+import { loadCredentials, decryptKey, loadSettings, loadAgents, loadSkills, appendUsage } from './storage'
+import { estimateCost } from './cost'
+import { getPluginManager } from './plugins'
+import type { Session, Message, UsageRecord } from '@/types'
 
 const OLLAMA_CLOUD_URL = 'https://ollama.com/v1'
 const OLLAMA_LOCAL_URL = 'http://localhost:11434/v1'
@@ -41,11 +43,25 @@ interface StreamAgentChatOpts {
   systemPrompt?: string
   write: (data: string) => void
   history: Message[]
+  fallbackCredentialIds?: string[]
 }
 
 export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<string> {
-  const { session, message, apiKey, systemPrompt, write, history } = opts
+  const { session, message, apiKey, systemPrompt, write, history, fallbackCredentialIds } = opts
 
+  // Build LLM with failover support
+  const credentialChain = [apiKey]
+  if (fallbackCredentialIds?.length) {
+    for (const credId of fallbackCredentialIds) {
+      try {
+        const creds = loadCredentials()
+        const cred = creds[credId]
+        if (cred?.encryptedKey) {
+          credentialChain.push(decryptKey(cred.encryptedKey))
+        }
+      } catch { /* skip invalid cred */ }
+    }
+  }
   const llm = buildLLM(session, apiKey)
   const tools = buildSessionTools(session.cwd, session.tools || [])
 
@@ -84,6 +100,12 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<string
   langchainMessages.push({ role: 'user' as const, content: message })
 
   let fullText = ''
+  let totalInputTokens = 0
+  let totalOutputTokens = 0
+
+  // Plugin hooks: beforeAgentStart
+  const pluginMgr = getPluginManager()
+  await pluginMgr.runHook('beforeAgentStart', { session, message })
 
   try {
     const eventStream = agent.streamEvents(
@@ -108,9 +130,20 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<string
             write(`data: ${JSON.stringify({ t: 'd', text })}\n\n`)
           }
         }
+      } else if (kind === 'on_llm_end') {
+        // Track token usage from LLM responses
+        const usage = event.data?.output?.llmOutput?.tokenUsage
+          || event.data?.output?.llmOutput?.usage
+          || event.data?.output?.usage_metadata
+        if (usage) {
+          totalInputTokens += usage.promptTokens || usage.input_tokens || 0
+          totalOutputTokens += usage.completionTokens || usage.output_tokens || 0
+        }
       } else if (kind === 'on_tool_start') {
         const toolName = event.name || 'unknown'
         const input = event.data?.input
+        // Plugin hooks: beforeToolExec
+        await pluginMgr.runHook('beforeToolExec', { toolName, input })
         write(`data: ${JSON.stringify({
           t: 'tool_call',
           toolName,
@@ -124,6 +157,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<string
           : output?.content
             ? String(output.content)
             : JSON.stringify(output)
+        // Plugin hooks: afterToolExec
+        await pluginMgr.runHook('afterToolExec', { toolName, input: null, output: outputStr })
         write(`data: ${JSON.stringify({
           t: 'tool_result',
           toolName,
@@ -135,6 +170,32 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<string
     const errMsg = err.message || String(err)
     write(`data: ${JSON.stringify({ t: 'err', text: errMsg })}\n\n`)
   }
+
+  // Track cost
+  const totalTokens = totalInputTokens + totalOutputTokens
+  if (totalTokens > 0) {
+    const cost = estimateCost(session.model, totalInputTokens, totalOutputTokens)
+    const usageRecord: UsageRecord = {
+      sessionId: session.id,
+      messageIndex: history.length,
+      model: session.model,
+      provider: session.provider,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      totalTokens,
+      estimatedCost: cost,
+      timestamp: Date.now(),
+    }
+    appendUsage(session.id, usageRecord)
+    // Send usage metadata to client
+    write(`data: ${JSON.stringify({
+      t: 'md',
+      text: JSON.stringify({ usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens, totalTokens, estimatedCost: cost } }),
+    })}\n\n`)
+  }
+
+  // Plugin hooks: afterAgentComplete
+  await pluginMgr.runHook('afterAgentComplete', { session, response: fullText })
 
   return fullText
 }

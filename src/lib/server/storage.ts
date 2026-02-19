@@ -15,6 +15,7 @@ const SECRETS_FILE = path.join(DATA_DIR, 'secrets.json')
 const PROVIDER_CONFIGS_FILE = path.join(DATA_DIR, 'providers.json')
 const SKILLS_FILE = path.join(DATA_DIR, 'skills.json')
 const CONNECTORS_FILE = path.join(DATA_DIR, 'connectors.json')
+const USAGE_FILE = path.join(DATA_DIR, 'usage.json')
 export const UPLOAD_DIR = path.join(os.tmpdir(), 'swarmclaw-uploads')
 
 // Ensure directories exist
@@ -54,6 +55,7 @@ if (!fs.existsSync(SECRETS_FILE)) fs.writeFileSync(SECRETS_FILE, '{}')
 if (!fs.existsSync(PROVIDER_CONFIGS_FILE)) fs.writeFileSync(PROVIDER_CONFIGS_FILE, '{}')
 if (!fs.existsSync(SKILLS_FILE)) fs.writeFileSync(SKILLS_FILE, '{}')
 if (!fs.existsSync(CONNECTORS_FILE)) fs.writeFileSync(CONNECTORS_FILE, '{}')
+if (!fs.existsSync(USAGE_FILE)) fs.writeFileSync(USAGE_FILE, '{}')
 
 // --- .env loading ---
 function loadEnv() {
@@ -217,6 +219,22 @@ export function loadSkills(): Record<string, any> {
 
 export function saveSkills(s: Record<string, any>) {
   fs.writeFileSync(SKILLS_FILE, JSON.stringify(s, null, 2))
+}
+
+// --- Usage ---
+export function loadUsage(): Record<string, any[]> {
+  return JSON.parse(fs.readFileSync(USAGE_FILE, 'utf8'))
+}
+
+export function saveUsage(u: Record<string, any[]>) {
+  fs.writeFileSync(USAGE_FILE, JSON.stringify(u, null, 2))
+}
+
+export function appendUsage(sessionId: string, record: any) {
+  const usage = loadUsage()
+  if (!usage[sessionId]) usage[sessionId] = []
+  usage[sessionId].push(record)
+  saveUsage(usage)
 }
 
 // --- Connectors ---

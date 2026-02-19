@@ -27,6 +27,7 @@ import { ConnectorSheet } from '@/components/connectors/connector-sheet'
 import { NetworkBanner } from './network-banner'
 import { UpdateBanner } from './update-banner'
 import { MobileHeader } from './mobile-header'
+import { DaemonIndicator } from './daemon-indicator'
 import { ChatArea } from '@/components/chat/chat-area'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import type { AppView } from '@/types'
@@ -206,8 +207,9 @@ export function AppLayout() {
 
           <div className="flex-1" />
 
-          {/* Bottom: Settings + User */}
+          {/* Bottom: Daemon + Settings + User */}
           <div className={`flex flex-col gap-1 ${railExpanded ? 'px-3' : 'items-center'}`}>
+            {railExpanded && <DaemonIndicator />}
             {railExpanded ? (
               <button
                 onClick={() => setSettingsOpen(true)}

@@ -35,6 +35,7 @@ export interface Session {
   provider: ProviderType
   model: string
   credentialId?: string | null
+  fallbackCredentialIds?: string[]
   apiEndpoint?: string | null
   claudeSessionId: string | null
   messages: Message[]
@@ -50,7 +51,44 @@ export interface Session {
 
 export type Sessions = Record<string, Session>
 
-export type SessionTool = 'shell' | 'files' | 'claude_code'
+export type SessionTool = 'shell' | 'files' | 'claude_code' | 'web_search' | 'web_fetch' | 'edit_file'
+
+// --- Cost Tracking ---
+
+export interface UsageRecord {
+  sessionId: string
+  messageIndex: number
+  model: string
+  provider: string
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  estimatedCost: number
+  timestamp: number
+}
+
+// --- Plugin System ---
+
+export interface PluginHooks {
+  beforeAgentStart?: (ctx: { session: Session; message: string }) => Promise<void> | void
+  afterAgentComplete?: (ctx: { session: Session; response: string }) => Promise<void> | void
+  beforeToolExec?: (ctx: { toolName: string; input: any }) => Promise<any> | any
+  afterToolExec?: (ctx: { toolName: string; input: any; output: string }) => Promise<void> | void
+  onMessage?: (ctx: { session: Session; message: Message }) => Promise<void> | void
+}
+
+export interface Plugin {
+  name: string
+  description?: string
+  hooks: PluginHooks
+}
+
+export interface PluginMeta {
+  name: string
+  description?: string
+  filename: string
+  enabled: boolean
+}
 
 export interface SSEEvent {
   t: 'd' | 'md' | 'r' | 'done' | 'err' | 'tool_call' | 'tool_result'
@@ -98,6 +136,7 @@ export interface Agent {
   provider: ProviderType
   model: string
   credentialId?: string | null
+  fallbackCredentialIds?: string[]
   apiEndpoint?: string | null
   isOrchestrator?: boolean
   subAgentIds?: string[]
@@ -159,6 +198,9 @@ export interface AppSettings {
   langGraphModel?: string
   langGraphCredentialId?: string | null
   langGraphEndpoint?: string | null
+  embeddingProvider?: 'openai' | 'ollama' | null
+  embeddingModel?: string | null
+  embeddingCredentialId?: string | null
 }
 
 // --- Orchestrator Secrets ---

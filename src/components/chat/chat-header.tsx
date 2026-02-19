@@ -5,6 +5,7 @@ import type { Session } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { IconButton } from '@/components/shared/icon-button'
+import { UsageBadge } from '@/components/shared/usage-badge'
 
 function shortPath(p: string): string {
   return (p || '').replace(/^\/Users\/\w+/, '~')
@@ -31,6 +32,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const toggleTts = useChatStore((s) => s.toggleTts)
   const debugOpen = useChatStore((s) => s.debugOpen)
   const setDebugOpen = useChatStore((s) => s.setDebugOpen)
+  const lastUsage = useChatStore((s) => s.lastUsage)
   const agents = useAppStore((s) => s.agents)
   const tasks = useAppStore((s) => s.tasks)
   const setActiveView = useAppStore((s) => s.setActiveView)
@@ -93,6 +95,12 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <>
                 <span className="text-[11px] text-text-3/30">·</span>
                 <span className="text-[11px] text-text-3/50 font-mono truncate shrink-0">{modelName}</span>
+              </>
+            )}
+            {lastUsage && !streaming && (
+              <>
+                <span className="text-[11px] text-text-3/30">·</span>
+                <UsageBadge {...lastUsage} />
               </>
             )}
           </div>
