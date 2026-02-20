@@ -71,6 +71,9 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     const fromSessionCodex = session.codexThreadId
       ? { label: 'Codex', id: session.codexThreadId, command: `codex exec resume ${session.codexThreadId}` }
       : null
+    const fromSessionOpenCode = session.opencodeSessionId
+      ? { label: 'OpenCode', id: session.opencodeSessionId, command: `opencode run \"<task>\" --session ${session.opencodeSessionId}` }
+      : null
     const fromDelegateClaude = session.delegateResumeIds?.claudeCode
       ? { label: 'Claude', id: session.delegateResumeIds.claudeCode, command: `claude --resume ${session.delegateResumeIds.claudeCode}` }
       : null
@@ -78,15 +81,16 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       ? { label: 'Codex', id: session.delegateResumeIds.codex, command: `codex exec resume ${session.delegateResumeIds.codex}` }
       : null
     const fromDelegateOpenCode = session.delegateResumeIds?.opencode
-      ? { label: 'OpenCode', id: session.delegateResumeIds.opencode, command: session.delegateResumeIds.opencode }
+      ? { label: 'OpenCode', id: session.delegateResumeIds.opencode, command: `opencode run \"<task>\" --session ${session.delegateResumeIds.opencode}` }
       : null
     return fromSessionClaude
       || fromSessionCodex
+      || fromSessionOpenCode
       || fromDelegateClaude
       || fromDelegateCodex
       || fromDelegateOpenCode
       || null
-  }, [session.claudeSessionId, session.codexThreadId, session.delegateResumeIds])
+  }, [session.claudeSessionId, session.codexThreadId, session.opencodeSessionId, session.delegateResumeIds])
 
   const handleCopySessionId = () => {
     if (!resumeHandle) return
