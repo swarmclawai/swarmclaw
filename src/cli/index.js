@@ -3,14 +3,8 @@
 const fs = require('fs')
 const path = require('path')
 
-function cmd(name, method, routePath, description, extra = {}) {
-  return {
-    name,
-    method,
-    path: routePath,
-    description,
-    ...extra,
-  }
+function cmd(action, method, route, description, extra = {}) {
+  return { action, method, route, description, ...extra }
 }
 
 const COMMAND_GROUPS = [
@@ -19,132 +13,157 @@ const COMMAND_GROUPS = [
     description: 'Manage agents',
     commands: [
       cmd('list', 'GET', '/agents', 'List agents'),
-      cmd('create', 'POST', '/agents', 'Create an agent'),
-      cmd('update', 'PUT', '/agents/:id', 'Update an agent by ID'),
-      cmd('delete', 'DELETE', '/agents/:id', 'Delete an agent by ID'),
-      cmd('generate', 'POST', '/agents/generate', 'Generate an agent definition from prompt', { requiresBody: true }),
+      cmd('get', 'GET', '/agents/:id', 'Get an agent by id', { virtual: true, clientGetRoute: '/agents' }),
+      cmd('create', 'POST', '/agents', 'Create an agent', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/agents/:id', 'Update an agent', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/agents/:id', 'Delete an agent'),
+      cmd('generate', 'POST', '/agents/generate', 'Generate agent definition from prompt', { expectsJsonBody: true }),
     ],
   },
   {
     name: 'auth',
-    description: 'Access key auth endpoints',
+    description: 'Access key auth helpers',
     commands: [
-      cmd('status', 'GET', '/auth', 'Show auth/setup status'),
-      cmd('login', 'POST', '/auth', 'Validate access key', {
-        requiresBody: true,
+      cmd('status', 'GET', '/auth', 'Check auth setup status'),
+      cmd('login', 'POST', '/auth', 'Validate an access key', {
+        expectsJsonBody: true,
         bodyFlagMap: { key: 'key' },
       }),
     ],
   },
   {
     name: 'claude-skills',
-    description: 'Inspect local Claude skills',
+    description: 'Read local Claude skills directory metadata',
     commands: [
-      cmd('list', 'GET', '/claude-skills', 'List discovered Claude skills'),
+      cmd('list', 'GET', '/claude-skills', 'List Claude skills discovered on host'),
     ],
   },
   {
     name: 'connectors',
-    description: 'Manage platform connectors',
+    description: 'Manage chat connectors',
     commands: [
       cmd('list', 'GET', '/connectors', 'List connectors'),
-      cmd('get', 'GET', '/connectors/:id', 'Get connector by ID'),
-      cmd('create', 'POST', '/connectors', 'Create connector'),
-      cmd('update', 'PUT', '/connectors/:id', 'Update connector by ID'),
-      cmd('delete', 'DELETE', '/connectors/:id', 'Delete connector by ID'),
-      cmd('start', 'PUT', '/connectors/:id', 'Start connector', { defaultBody: { action: 'start' } }),
-      cmd('stop', 'PUT', '/connectors/:id', 'Stop connector', { defaultBody: { action: 'stop' } }),
-      cmd('repair', 'PUT', '/connectors/:id', 'Repair connector', { defaultBody: { action: 'repair' } }),
+      cmd('get', 'GET', '/connectors/:id', 'Get connector'),
+      cmd('create', 'POST', '/connectors', 'Create connector', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/connectors/:id', 'Update connector', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/connectors/:id', 'Delete connector'),
+      cmd('start', 'PUT', '/connectors/:id', 'Start connector', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'start' },
+      }),
+      cmd('stop', 'PUT', '/connectors/:id', 'Stop connector', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'stop' },
+      }),
+      cmd('repair', 'PUT', '/connectors/:id', 'Repair connector', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'repair' },
+      }),
     ],
   },
   {
     name: 'credentials',
-    description: 'Manage API credentials',
+    description: 'Manage encrypted provider credentials',
     commands: [
       cmd('list', 'GET', '/credentials', 'List credentials'),
-      cmd('create', 'POST', '/credentials', 'Create credential', { requiresBody: true }),
-      cmd('delete', 'DELETE', '/credentials/:id', 'Delete credential by ID'),
+      cmd('get', 'GET', '/credentials/:id', 'Get credential metadata by id', { virtual: true, clientGetRoute: '/credentials' }),
+      cmd('create', 'POST', '/credentials', 'Create credential', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/credentials/:id', 'Delete credential'),
     ],
   },
   {
     name: 'daemon',
-    description: 'Control daemon runtime',
+    description: 'Control background daemon',
     commands: [
       cmd('status', 'GET', '/daemon', 'Get daemon status'),
-      cmd('action', 'POST', '/daemon', 'Set daemon action with --data {"action":"start|stop"}'),
-      cmd('start', 'POST', '/daemon', 'Start daemon', { defaultBody: { action: 'start' } }),
-      cmd('stop', 'POST', '/daemon', 'Stop daemon', { defaultBody: { action: 'stop' } }),
+      cmd('action', 'POST', '/daemon', 'Set daemon action via JSON body', { expectsJsonBody: true }),
+      cmd('start', 'POST', '/daemon', 'Start daemon', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'start' },
+      }),
+      cmd('stop', 'POST', '/daemon', 'Stop daemon', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'stop' },
+      }),
     ],
   },
   {
     name: 'dirs',
-    description: 'Directory listing and picker endpoints',
+    description: 'Directory listing and native picker',
     commands: [
-      cmd('list', 'GET', '/dirs', 'List directories (use --query path=/some/path)'),
-      cmd('pick', 'POST', '/dirs/pick', 'Invoke OS picker (use --data {"mode":"file|folder"})'),
+      cmd('list', 'GET', '/dirs', 'List directories (use --query path=/abs/path)'),
+      cmd('pick', 'POST', '/dirs/pick', 'Open native picker (mode=file|folder)', { expectsJsonBody: true }),
     ],
   },
   {
     name: 'documents',
-    description: 'Upload and fetch files',
+    description: 'Document upload/download helpers (uploads API)',
     commands: [
-      cmd('create', 'POST', '/upload', 'Upload a file', {
+      cmd('upload', 'POST', '/upload', 'Upload document/file', {
         requestType: 'upload',
         inputPositional: 'filePath',
       }),
-      cmd('get', 'GET', '/uploads/:filename', 'Fetch uploaded file content', {
-        responseType: 'binary',
-      }),
+      cmd('get', 'GET', '/uploads/:filename', 'Download document/file', { responseType: 'binary' }),
     ],
   },
   {
     name: 'generate',
     description: 'AI generation endpoints',
     commands: [
-      cmd('run', 'POST', '/generate', 'Generate schedule/task/skill/provider definitions', { requiresBody: true }),
-      cmd('info', 'GET', '/generate/info', 'Get generate endpoint provider/model info'),
+      cmd('run', 'POST', '/generate', 'Generate schedule/task/skill/provider payload', { expectsJsonBody: true }),
+      cmd('info', 'GET', '/generate/info', 'Get generation provider/model info'),
     ],
   },
   {
     name: 'ip',
-    description: 'Inspect local server IP info',
+    description: 'Get local IP/port metadata',
     commands: [
-      cmd('get', 'GET', '/ip', 'Get server IP and port'),
+      cmd('get', 'GET', '/ip', 'Get host IP and port'),
     ],
   },
   {
     name: 'logs',
     description: 'Read or clear app logs',
     commands: [
-      cmd('list', 'GET', '/logs', 'List logs (use --query lines=200 --query level=INFO)'),
-      cmd('clear', 'DELETE', '/logs', 'Clear logs'),
+      cmd('list', 'GET', '/logs', 'List logs (use --query lines=200, --query level=INFO,ERROR)'),
+      cmd('clear', 'DELETE', '/logs', 'Clear logs file'),
     ],
   },
   {
     name: 'memory',
     description: 'Manage memory entries',
     commands: [
-      cmd('list', 'GET', '/memory', 'List/search memory entries'),
-      cmd('create', 'POST', '/memory', 'Create memory entry'),
-      cmd('update', 'PUT', '/memory/:id', 'Update memory entry by ID'),
-      cmd('delete', 'DELETE', '/memory/:id', 'Delete memory entry by ID'),
+      cmd('list', 'GET', '/memory', 'List memory entries (use --query q=, --query agentId=)'),
+      cmd('get', 'GET', '/memory/:id', 'Get memory by id', { virtual: true, clientGetRoute: '/memory' }),
+      cmd('create', 'POST', '/memory', 'Create memory entry', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/memory/:id', 'Update memory entry', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/memory/:id', 'Delete memory entry'),
     ],
   },
   {
+    name: 'memories',
+    description: 'Alias of memory command group',
+    aliasFor: 'memory',
+    commands: [],
+  },
+  {
     name: 'orchestrator',
-    description: 'Run orchestrator tasks',
+    description: 'Trigger orchestrator runs',
     commands: [
-      cmd('run', 'POST', '/orchestrator/run', 'Queue orchestrator task', { requiresBody: true }),
+      cmd('run', 'POST', '/orchestrator/run', 'Queue orchestrator task', {
+        expectsJsonBody: true,
+        waitEntityFrom: 'taskId',
+      }),
     ],
   },
   {
     name: 'plugins',
-    description: 'Manage plugin registry and installation',
+    description: 'Manage plugins and marketplace',
     commands: [
       cmd('list', 'GET', '/plugins', 'List installed plugins'),
-      cmd('set', 'POST', '/plugins', 'Enable/disable plugin', { requiresBody: true }),
-      cmd('install', 'POST', '/plugins/install', 'Install plugin from HTTPS URL', { requiresBody: true }),
-      cmd('marketplace', 'GET', '/plugins/marketplace', 'Fetch plugin marketplace registry'),
+      cmd('set', 'POST', '/plugins', 'Enable/disable plugin', { expectsJsonBody: true }),
+      cmd('install', 'POST', '/plugins/install', 'Install plugin from URL', { expectsJsonBody: true }),
+      cmd('marketplace', 'GET', '/plugins/marketplace', 'Get marketplace catalog'),
     ],
   },
   {
@@ -152,23 +171,23 @@ const COMMAND_GROUPS = [
     description: 'Manage providers and model overrides',
     commands: [
       cmd('list', 'GET', '/providers', 'List providers'),
-      cmd('create', 'POST', '/providers', 'Create custom provider'),
-      cmd('get', 'GET', '/providers/:id', 'Get provider by ID'),
-      cmd('update', 'PUT', '/providers/:id', 'Update provider by ID'),
-      cmd('delete', 'DELETE', '/providers/:id', 'Delete provider by ID'),
-      cmd('configs', 'GET', '/providers/configs', 'List provider configs'),
-      cmd('ollama', 'GET', '/providers/ollama', 'List Ollama models (use --query endpoint=http://localhost:11434)'),
+      cmd('get', 'GET', '/providers/:id', 'Get provider config'),
+      cmd('create', 'POST', '/providers', 'Create custom provider', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/providers/:id', 'Update provider', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/providers/:id', 'Delete provider'),
+      cmd('configs', 'GET', '/providers/configs', 'List saved provider configs'),
+      cmd('ollama', 'GET', '/providers/ollama', 'List local Ollama models (use --query endpoint=http://localhost:11434)'),
       cmd('models', 'GET', '/providers/:id/models', 'Get provider model overrides'),
-      cmd('models-set', 'PUT', '/providers/:id/models', 'Set provider model overrides'),
+      cmd('models-set', 'PUT', '/providers/:id/models', 'Set provider model overrides', { expectsJsonBody: true }),
       cmd('models-clear', 'DELETE', '/providers/:id/models', 'Clear provider model overrides'),
     ],
   },
   {
     name: 'runs',
-    description: 'Inspect session runs',
+    description: 'Session run queue/history',
     commands: [
-      cmd('list', 'GET', '/runs', 'List runs (use --query sessionId=... --query status=... --query limit=...)'),
-      cmd('get', 'GET', '/runs/:id', 'Get run by ID'),
+      cmd('list', 'GET', '/runs', 'List runs (use --query sessionId=, --query status=, --query limit=)'),
+      cmd('get', 'GET', '/runs/:id', 'Get run by id'),
     ],
   },
   {
@@ -176,755 +195,696 @@ const COMMAND_GROUPS = [
     description: 'Manage schedules',
     commands: [
       cmd('list', 'GET', '/schedules', 'List schedules'),
-      cmd('create', 'POST', '/schedules', 'Create schedule'),
-      cmd('update', 'PUT', '/schedules/:id', 'Update schedule by ID'),
-      cmd('delete', 'DELETE', '/schedules/:id', 'Delete schedule by ID'),
-      cmd('run', 'POST', '/schedules/:id/run', 'Run schedule immediately'),
+      cmd('get', 'GET', '/schedules/:id', 'Get schedule by id', { virtual: true, clientGetRoute: '/schedules' }),
+      cmd('create', 'POST', '/schedules', 'Create schedule', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/schedules/:id', 'Update schedule', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/schedules/:id', 'Delete schedule'),
+      cmd('run', 'POST', '/schedules/:id/run', 'Trigger schedule now'),
     ],
   },
   {
     name: 'secrets',
-    description: 'Manage secrets',
+    description: 'Manage reusable encrypted secrets',
     commands: [
-      cmd('list', 'GET', '/secrets', 'List secret metadata'),
-      cmd('create', 'POST', '/secrets', 'Create secret', { requiresBody: true }),
-      cmd('update', 'PUT', '/secrets/:id', 'Update secret metadata by ID'),
-      cmd('delete', 'DELETE', '/secrets/:id', 'Delete secret by ID'),
+      cmd('list', 'GET', '/secrets', 'List secrets metadata'),
+      cmd('get', 'GET', '/secrets/:id', 'Get secret metadata by id', { virtual: true, clientGetRoute: '/secrets' }),
+      cmd('create', 'POST', '/secrets', 'Create secret', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/secrets/:id', 'Update secret metadata', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/secrets/:id', 'Delete secret'),
     ],
   },
   {
     name: 'sessions',
-    description: 'Manage sessions and session actions',
+    description: 'Manage chat sessions and runtime controls',
     commands: [
       cmd('list', 'GET', '/sessions', 'List sessions'),
-      cmd('create', 'POST', '/sessions', 'Create session'),
-      cmd('delete-many', 'DELETE', '/sessions', 'Delete many sessions via {"ids":[...]}', { requiresBody: true }),
-      cmd('update', 'PUT', '/sessions/:id', 'Update session by ID'),
-      cmd('delete', 'DELETE', '/sessions/:id', 'Delete session by ID'),
-      cmd('messages', 'GET', '/sessions/:id/messages', 'List session messages'),
-      cmd('chat', 'POST', '/sessions/:id/chat', 'Send chat message (SSE stream)', {
-        requiresBody: true,
-        streamResponse: true,
+      cmd('get', 'GET', '/sessions/:id', 'Get session by id', { virtual: true, clientGetRoute: '/sessions' }),
+      cmd('create', 'POST', '/sessions', 'Create session', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/sessions/:id', 'Update session', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/sessions/:id', 'Delete session'),
+      cmd('delete-many', 'DELETE', '/sessions', 'Delete multiple sessions (body: {"ids":[...]})', { expectsJsonBody: true }),
+      cmd('messages', 'GET', '/sessions/:id/messages', 'Get session messages'),
+      cmd('chat', 'POST', '/sessions/:id/chat', 'Send chat message (streaming)', {
+        expectsJsonBody: true,
+        responseType: 'sse',
       }),
-      cmd('stop', 'POST', '/sessions/:id/stop', 'Stop session run/processes'),
+      cmd('stop', 'POST', '/sessions/:id/stop', 'Stop session run(s)'),
       cmd('clear', 'POST', '/sessions/:id/clear', 'Clear session messages'),
-      cmd('deploy', 'POST', '/sessions/:id/deploy', 'Deploy session git repo', { requiresBody: true }),
-      cmd('devserver', 'POST', '/sessions/:id/devserver', 'Session dev server action (requires --data {"action":"start|stop|status"})', { requiresBody: true }),
-      cmd('devserver-start', 'POST', '/sessions/:id/devserver', 'Start session dev server', { defaultBody: { action: 'start' } }),
-      cmd('devserver-stop', 'POST', '/sessions/:id/devserver', 'Stop session dev server', { defaultBody: { action: 'stop' } }),
-      cmd('devserver-status', 'POST', '/sessions/:id/devserver', 'Get session dev server status', { defaultBody: { action: 'status' } }),
-      cmd('browser-status', 'GET', '/sessions/:id/browser', 'Get browser status for session'),
-      cmd('browser-close', 'DELETE', '/sessions/:id/browser', 'Close browser for session'),
+      cmd('browser-status', 'GET', '/sessions/:id/browser', 'Check browser status'),
+      cmd('browser-close', 'DELETE', '/sessions/:id/browser', 'Close browser session'),
+      cmd('deploy', 'POST', '/sessions/:id/deploy', 'Deploy current session branch', { expectsJsonBody: true }),
+      cmd('devserver', 'POST', '/sessions/:id/devserver', 'Dev server action via JSON body', { expectsJsonBody: true }),
+      cmd('devserver-start', 'POST', '/sessions/:id/devserver', 'Start session dev server', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'start' },
+      }),
+      cmd('devserver-stop', 'POST', '/sessions/:id/devserver', 'Stop session dev server', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'stop' },
+      }),
+      cmd('devserver-status', 'POST', '/sessions/:id/devserver', 'Check session dev server status', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'status' },
+      }),
     ],
   },
   {
     name: 'settings',
-    description: 'Read and update settings',
+    description: 'Read/update app settings',
     commands: [
       cmd('get', 'GET', '/settings', 'Get settings'),
-      cmd('update', 'PUT', '/settings', 'Update settings'),
+      cmd('update', 'PUT', '/settings', 'Update settings', { expectsJsonBody: true }),
     ],
   },
   {
     name: 'skills',
-    description: 'Manage skills',
+    description: 'Manage reusable skills',
     commands: [
       cmd('list', 'GET', '/skills', 'List skills'),
-      cmd('get', 'GET', '/skills/:id', 'Get skill by ID'),
-      cmd('create', 'POST', '/skills', 'Create skill'),
-      cmd('update', 'PUT', '/skills/:id', 'Update skill by ID'),
-      cmd('delete', 'DELETE', '/skills/:id', 'Delete skill by ID'),
-      cmd('import', 'POST', '/skills/import', 'Import skill from URL', { requiresBody: true }),
+      cmd('get', 'GET', '/skills/:id', 'Get skill'),
+      cmd('create', 'POST', '/skills', 'Create skill', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/skills/:id', 'Update skill', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/skills/:id', 'Delete skill'),
+      cmd('import', 'POST', '/skills/import', 'Import skill from URL', { expectsJsonBody: true }),
     ],
   },
   {
     name: 'tasks',
-    description: 'Manage tasks',
+    description: 'Manage task board items',
     commands: [
       cmd('list', 'GET', '/tasks', 'List tasks'),
-      cmd('get', 'GET', '/tasks/:id', 'Get task by ID'),
-      cmd('create', 'POST', '/tasks', 'Create task'),
-      cmd('update', 'PUT', '/tasks/:id', 'Update task by ID'),
-      cmd('delete', 'DELETE', '/tasks/:id', 'Delete task by ID'),
+      cmd('get', 'GET', '/tasks/:id', 'Get task'),
+      cmd('create', 'POST', '/tasks', 'Create task', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/tasks/:id', 'Update task', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/tasks/:id', 'Delete task'),
     ],
   },
   {
     name: 'tts',
     description: 'Text-to-speech endpoint',
     commands: [
-      cmd('speak', 'POST', '/tts', 'Generate speech audio', {
-        requiresBody: true,
-        bodyFlagMap: { text: 'text' },
+      cmd('speak', 'POST', '/tts', 'Generate TTS audio', {
+        expectsJsonBody: true,
         responseType: 'binary',
+        bodyFlagMap: { text: 'text' },
       }),
     ],
   },
   {
+    name: 'upload',
+    description: 'Upload raw file/blob',
+    commands: [
+      cmd('file', 'POST', '/upload', 'Upload file', {
+        requestType: 'upload',
+        inputPositional: 'filePath',
+      }),
+    ],
+  },
+  {
+    name: 'uploads',
+    description: 'Fetch uploaded artifacts',
+    commands: [
+      cmd('get', 'GET', '/uploads/:filename', 'Download uploaded artifact', { responseType: 'binary' }),
+    ],
+  },
+  {
     name: 'usage',
-    description: 'Usage reports',
+    description: 'Usage and cost summary',
     commands: [
       cmd('get', 'GET', '/usage', 'Get usage summary'),
     ],
   },
   {
     name: 'version',
-    description: 'Version and updater endpoints',
+    description: 'Version and update checks',
     commands: [
-      cmd('get', 'GET', '/version', 'Get local/remote git version state'),
-      cmd('update', 'POST', '/version/update', 'Pull latest changes'),
+      cmd('get', 'GET', '/version', 'Get local/remote version info'),
+      cmd('update', 'POST', '/version/update', 'Pull latest code and install deps when needed'),
     ],
   },
   {
     name: 'webhooks',
     description: 'Trigger inbound webhook endpoint',
     commands: [
-      cmd('trigger', 'POST', '/webhooks/:id', 'Trigger webhook by ID'),
+      cmd('trigger', 'POST', '/webhooks/:id', 'Trigger webhook by id', {
+        expectsJsonBody: true,
+        waitEntityFrom: 'runId',
+      }),
     ],
   },
 ]
 
-const GROUP_ALIASES = {
-  memories: 'memory',
-  uploads: 'documents',
-  upload: 'documents',
-  docs: 'documents',
+const GROUP_MAP = new Map(COMMAND_GROUPS.map((group) => [group.name, group]))
+
+function resolveGroup(name) {
+  const group = GROUP_MAP.get(name)
+  if (!group) return null
+  if (group.aliasFor) {
+    return GROUP_MAP.get(group.aliasFor) || null
+  }
+  return group
 }
 
-const COMMANDS = []
-const GROUP_INDEX = new Map()
-const COMMAND_INDEX = new Map()
+const COMMANDS = COMMAND_GROUPS.flatMap((group) => {
+  if (group.aliasFor) return []
+  return group.commands.map((command) => ({ ...command, group: group.name }))
+})
 
-for (const group of COMMAND_GROUPS) {
-  GROUP_INDEX.set(group.name, group)
-  for (const command of group.commands) {
-    const full = { ...command, group: group.name }
-    COMMANDS.push(full)
-    COMMAND_INDEX.set(`${group.name}:${command.name}`, full)
+function getCommand(groupName, action) {
+  const group = resolveGroup(groupName)
+  if (!group) return null
+  return group.commands.find((command) => command.action === action) || null
+}
+
+function extractPathParams(route) {
+  return [...route.matchAll(/:([A-Za-z0-9_]+)/g)].map((match) => match[1])
+}
+
+function isPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseKeyValue(raw, kind) {
+  const idx = raw.indexOf('=')
+  if (idx === -1) {
+    throw new Error(`${kind} value must be key=value: ${raw}`)
+  }
+  const key = raw.slice(0, idx).trim()
+  const value = raw.slice(idx + 1)
+  if (!key) throw new Error(`${kind} key cannot be empty`)
+  return [key, value]
+}
+
+function parseDataInput(raw, stdin) {
+  if (raw === '-') {
+    return parseJsonText(readStdin(stdin), 'stdin')
+  }
+  if (raw.startsWith('@')) {
+    const filePath = raw.slice(1)
+    if (!filePath) throw new Error('Expected file path after @ for --data')
+    const fileText = fs.readFileSync(filePath, 'utf8')
+    return parseJsonText(fileText, filePath)
+  }
+  return parseJsonText(raw, '--data')
+}
+
+function parseJsonText(text, sourceName) {
+  try {
+    return JSON.parse(text)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`Invalid JSON from ${sourceName}: ${msg}`)
   }
 }
 
-const TERMINAL_RUN_STATUS = new Set(['completed', 'failed', 'cancelled'])
-const TERMINAL_TASK_STATUS = new Set(['completed', 'failed'])
+function readStdin(stdin) {
+  const fd = stdin && typeof stdin.fd === 'number' ? stdin.fd : 0
+  return fs.readFileSync(fd, 'utf8')
+}
 
-function normalizeGroupName(input) {
-  return GROUP_ALIASES[input] || input
+function normalizeBaseUrl(raw) {
+  const trimmed = String(raw || '').trim()
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
+  return withProtocol.replace(/\/+$/, '')
+}
+
+function resolveAccessKey(opts, env, cwd) {
+  if (opts.accessKey) return String(opts.accessKey).trim()
+  const envKey = env.SWARMCLAW_API_KEY || env.SC_ACCESS_KEY || ''
+  if (envKey) return String(envKey).trim()
+
+  const keyFile = path.join(cwd, 'platform-api-key.txt')
+  if (fs.existsSync(keyFile)) {
+    const content = fs.readFileSync(keyFile, 'utf8').trim()
+    if (content) return content
+  }
+  return ''
 }
 
 function parseArgv(argv) {
-  const out = {
+  const result = {
+    group: '',
+    action: '',
     positionals: [],
-    flags: {
+    opts: {
+      baseUrl: '',
+      accessKey: '',
+      jsonOutput: false,
+      wait: false,
+      timeoutMs: 300000,
+      intervalMs: 2000,
+      out: '',
+      data: '',
+      headers: [],
+      query: [],
+      key: '',
+      text: '',
+      file: '',
+      filename: '',
+      secret: '',
+      event: '',
       help: false,
       version: false,
-      json: false,
-      raw: false,
-      wait: false,
-      stream: false,
-      baseUrl: null,
-      accessKey: null,
-      key: null,
-      data: null,
-      query: [],
-      header: [],
-      out: null,
-      file: null,
-      filename: null,
-      secret: null,
-      event: null,
-      text: null,
-      waitIntervalMs: 1000,
-      waitTimeoutMs: 300000,
     },
   }
 
-  for (let i = 0; i < argv.length; i += 1) {
-    const token = argv[i]
+  const valueOptions = new Set([
+    'base-url',
+    'access-key',
+    'timeout-ms',
+    'interval-ms',
+    'out',
+    'data',
+    'header',
+    'query',
+    'key',
+    'text',
+    'file',
+    'filename',
+    'secret',
+    'event',
+  ])
 
+  const tokens = [...argv]
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]
     if (token === '--') {
-      out.positionals.push(...argv.slice(i + 1))
+      result.positionals.push(...tokens.slice(i + 1))
       break
     }
 
     if (token === '-h' || token === '--help') {
-      out.flags.help = true
+      result.opts.help = true
       continue
     }
 
-    if (token === '-v' || token === '--version') {
-      out.flags.version = true
+    if (token === '--version') {
+      result.opts.version = true
       continue
     }
 
     if (token === '--json') {
-      out.flags.json = true
-      continue
-    }
-
-    if (token === '--raw') {
-      out.flags.raw = true
+      result.opts.jsonOutput = true
       continue
     }
 
     if (token === '--wait') {
-      out.flags.wait = true
-      continue
-    }
-
-    if (token === '--stream') {
-      out.flags.stream = true
+      result.opts.wait = true
       continue
     }
 
     if (token.startsWith('--')) {
-      const [name, inlineValue] = splitOption(token)
-      const value = inlineValue === null ? argv[i + 1] : inlineValue
+      const eqIndex = token.indexOf('=')
+      const hasInline = eqIndex > -1
+      const rawName = hasInline ? token.slice(2, eqIndex) : token.slice(2)
+      const rawValue = hasInline ? token.slice(eqIndex + 1) : ''
 
-      const consumeNext = inlineValue === null
-
-      switch (name) {
-        case 'base-url':
-          ensureValue(name, value)
-          out.flags.baseUrl = value
-          if (consumeNext) i += 1
-          continue
-        case 'access-key':
-        case 'api-key':
-          ensureValue(name, value)
-          out.flags.accessKey = value
-          if (consumeNext) i += 1
-          continue
-        case 'key':
-          ensureValue(name, value)
-          out.flags.key = value
-          if (consumeNext) i += 1
-          continue
-        case 'data':
-        case 'body':
-          ensureValue(name, value)
-          out.flags.data = value
-          if (consumeNext) i += 1
-          continue
-        case 'query':
-          ensureValue(name, value)
-          out.flags.query.push(value)
-          if (consumeNext) i += 1
-          continue
-        case 'header':
-          ensureValue(name, value)
-          out.flags.header.push(value)
-          if (consumeNext) i += 1
-          continue
-        case 'out':
-          ensureValue(name, value)
-          out.flags.out = value
-          if (consumeNext) i += 1
-          continue
-        case 'file':
-          ensureValue(name, value)
-          out.flags.file = value
-          if (consumeNext) i += 1
-          continue
-        case 'filename':
-          ensureValue(name, value)
-          out.flags.filename = value
-          if (consumeNext) i += 1
-          continue
-        case 'secret':
-          ensureValue(name, value)
-          out.flags.secret = value
-          if (consumeNext) i += 1
-          continue
-        case 'event':
-          ensureValue(name, value)
-          out.flags.event = value
-          if (consumeNext) i += 1
-          continue
-        case 'text':
-          ensureValue(name, value)
-          out.flags.text = value
-          if (consumeNext) i += 1
-          continue
-        case 'wait-interval': {
-          ensureValue(name, value)
-          const n = Number.parseInt(value, 10)
-          if (!Number.isFinite(n) || n < 1) {
-            throw new Error('--wait-interval must be a positive integer in milliseconds')
-          }
-          out.flags.waitIntervalMs = n
-          if (consumeNext) i += 1
-          continue
-        }
-        case 'wait-timeout': {
-          ensureValue(name, value)
-          const n = Number.parseInt(value, 10)
-          if (!Number.isFinite(n) || n < 1) {
-            throw new Error('--wait-timeout must be a positive integer in milliseconds')
-          }
-          out.flags.waitTimeoutMs = n
-          if (consumeNext) i += 1
-          continue
-        }
-        default:
-          throw new Error(`Unknown option: --${name}`)
+      if (!valueOptions.has(rawName)) {
+        throw new Error(`Unknown option: --${rawName}`)
       }
+
+      const value = hasInline ? rawValue : tokens[i + 1]
+      if (!hasInline) i += 1
+      if (value === undefined) {
+        throw new Error(`Missing value for --${rawName}`)
+      }
+
+      switch (rawName) {
+        case 'base-url':
+          result.opts.baseUrl = value
+          break
+        case 'access-key':
+          result.opts.accessKey = value
+          break
+        case 'timeout-ms':
+          result.opts.timeoutMs = Number.parseInt(value, 10)
+          if (!Number.isFinite(result.opts.timeoutMs) || result.opts.timeoutMs <= 0) {
+            throw new Error(`Invalid --timeout-ms value: ${value}`)
+          }
+          break
+        case 'interval-ms':
+          result.opts.intervalMs = Number.parseInt(value, 10)
+          if (!Number.isFinite(result.opts.intervalMs) || result.opts.intervalMs <= 0) {
+            throw new Error(`Invalid --interval-ms value: ${value}`)
+          }
+          break
+        case 'out':
+          result.opts.out = value
+          break
+        case 'data':
+          result.opts.data = value
+          break
+        case 'header':
+          result.opts.headers.push(value)
+          break
+        case 'query':
+          result.opts.query.push(value)
+          break
+        case 'key':
+          result.opts.key = value
+          break
+        case 'text':
+          result.opts.text = value
+          break
+        case 'file':
+          result.opts.file = value
+          break
+        case 'filename':
+          result.opts.filename = value
+          break
+        case 'secret':
+          result.opts.secret = value
+          break
+        case 'event':
+          result.opts.event = value
+          break
+        default:
+          throw new Error(`Unhandled option parser branch: --${rawName}`)
+      }
+      continue
     }
 
-    out.positionals.push(token)
+    result.positionals.push(token)
   }
 
-  return out
-}
-
-function splitOption(token) {
-  const idx = token.indexOf('=')
-  if (idx === -1) {
-    return [token.slice(2), null]
+  if (result.positionals.length > 0) {
+    result.group = result.positionals[0]
   }
-  return [token.slice(2, idx), token.slice(idx + 1)]
-}
-
-function ensureValue(name, value) {
-  if (value === undefined || value === null || value === '') {
-    throw new Error(`Missing value for --${name}`)
+  if (result.positionals.length > 1) {
+    result.action = result.positionals[1]
   }
+
+  return result
 }
 
-function extractPathParamNames(routePath) {
-  const names = []
-  for (const match of routePath.matchAll(/:([a-zA-Z0-9_]+)/g)) {
-    names.push(match[1])
+function buildRoute(routeTemplate, args) {
+  const pathParams = extractPathParams(routeTemplate)
+  if (args.length < pathParams.length) {
+    throw new Error(`Missing required path args: ${pathParams.slice(args.length).join(', ')}`)
   }
-  return names
-}
 
-function resolveCommand(groupName, actionName) {
-  const group = GROUP_INDEX.get(normalizeGroupName(groupName))
-  if (!group) return null
-  if (!actionName) return null
-  return COMMAND_INDEX.get(`${group.name}:${actionName}`) || null
-}
-
-function resolveGroup(groupName) {
-  return GROUP_INDEX.get(normalizeGroupName(groupName)) || null
-}
-
-function normalizeBaseUrl(rawBaseUrl) {
-  let base = (rawBaseUrl || 'http://localhost:3456').trim()
-  if (!base) base = 'http://localhost:3456'
-  if (!/^https?:\/\//i.test(base)) {
-    base = `http://${base}`
+  let route = routeTemplate
+  for (let i = 0; i < pathParams.length; i += 1) {
+    route = route.replace(`:${pathParams[i]}`, encodeURIComponent(String(args[i])))
   }
-  return base.replace(/\/+$/, '')
+
+  const remaining = args.slice(pathParams.length)
+  return { route, remaining, pathParams }
 }
 
-function buildApiUrl(baseUrl, routePath, queryEntries = {}) {
+function buildApiUrl(baseUrl, route, queryEntries) {
   const normalizedBase = normalizeBaseUrl(baseUrl)
-  const prefix = normalizedBase.endsWith('/api') ? '' : '/api'
-  const url = new URL(`${normalizedBase}${prefix}${routePath}`)
-  for (const [key, value] of Object.entries(queryEntries)) {
-    if (value === undefined || value === null) continue
-    url.searchParams.set(key, String(value))
+  const hasApiSuffix = normalizedBase.endsWith('/api')
+  const url = new URL(`${normalizedBase}${hasApiSuffix ? '' : '/api'}${route}`)
+  for (const [key, value] of queryEntries) {
+    url.searchParams.set(key, value)
   }
   return url
 }
 
-function parseKeyValueEntries(entries) {
-  const out = {}
-  for (const entry of entries || []) {
-    const idx = entry.indexOf('=')
-    if (idx === -1) {
-      throw new Error(`Expected key=value pair, got: ${entry}`)
-    }
-    const key = entry.slice(0, idx).trim()
-    const value = entry.slice(idx + 1)
-    if (!key) {
-      throw new Error(`Invalid key=value pair: ${entry}`)
-    }
-    out[key] = value
+async function parseResponse(res, forceType) {
+  const ct = (res.headers.get('content-type') || '').toLowerCase()
+
+  if (forceType === 'sse' || ct.includes('text/event-stream')) {
+    return { type: 'sse', value: res.body }
   }
-  return out
+
+  if (forceType === 'binary') {
+    const buf = Buffer.from(await res.arrayBuffer())
+    return { type: 'binary', value: buf, contentType: ct }
+  }
+
+  if (ct.includes('application/json')) {
+    const json = await res.json().catch(() => null)
+    return { type: 'json', value: json }
+  }
+
+  if (ct.startsWith('text/') || ct.includes('xml') || ct.includes('javascript')) {
+    const text = await res.text()
+    return { type: 'text', value: text }
+  }
+
+  const buf = Buffer.from(await res.arrayBuffer())
+  return { type: 'binary', value: buf, contentType: ct }
 }
 
-function getDefaultAccessKey(env, cwd) {
-  const direct = env.SWARMCLAW_API_KEY || env.SWARMCLAW_ACCESS_KEY || env.API_KEY || ''
-  if (direct.trim()) return direct.trim()
-
-  const keyFile = path.join(cwd, 'platform-api-key.txt')
-  try {
-    if (fs.existsSync(keyFile)) {
-      const key = fs.readFileSync(keyFile, 'utf8').trim()
-      if (key) return key
-    }
-  } catch {
-    // Ignore key file read failures and continue without auth header.
-  }
-
-  return ''
+function writeJson(stdout, value, compact) {
+  const text = compact ? JSON.stringify(value) : JSON.stringify(value, null, 2)
+  stdout.write(`${text}\n`)
 }
 
-async function readStdinAll(stdin) {
-  if (!stdin) return ''
-  let text = ''
-  for await (const chunk of stdin) {
-    text += chunk.toString()
-  }
-  return text
+function writeText(stdout, value) {
+  stdout.write(String(value))
+  if (!String(value).endsWith('\n')) stdout.write('\n')
 }
 
-async function readDataArg(dataArg, stdin, cwd) {
-  if (!dataArg) return undefined
-
-  if (dataArg === '-') {
-    const text = await readStdinAll(stdin)
-    if (!text.trim()) return undefined
-    return JSON.parse(text)
+function writeBinary(stdout, stderr, buffer, outPath, cwd) {
+  if (outPath) {
+    const resolved = path.isAbsolute(outPath) ? outPath : path.join(cwd, outPath)
+    fs.writeFileSync(resolved, buffer)
+    stderr.write(`Saved ${buffer.length} bytes to ${resolved}\n`)
+    return
   }
 
-  if (dataArg.startsWith('@')) {
-    const filePath = path.resolve(cwd, dataArg.slice(1))
-    const text = fs.readFileSync(filePath, 'utf8')
-    if (!text.trim()) return undefined
-    return JSON.parse(text)
+  if (stdout.isTTY) {
+    throw new Error('Binary response requires --out <file> when writing to a TTY')
   }
-
-  return JSON.parse(dataArg)
+  stdout.write(buffer)
 }
 
-async function buildRequestBody(command, parsed, stdin, cwd) {
-  let body
-
-  if (command.requestType !== 'upload' && parsed.flags.data) {
-    body = await readDataArg(parsed.flags.data, stdin, cwd)
+async function consumeSse(body, stdout, stderr, jsonOutput) {
+  if (!body || typeof body.getReader !== 'function') {
+    throw new Error('Streaming response does not expose a reader')
   }
 
-  if (command.defaultBody) {
-    if (!isPlainObject(body)) body = {}
-    body = { ...command.defaultBody, ...body }
-  }
-
-  if (command.bodyFlagMap) {
-    if (!isPlainObject(body)) body = {}
-    for (const [flagName, bodyKey] of Object.entries(command.bodyFlagMap)) {
-      const value = parsed.flags[flagName]
-      if (value !== undefined && value !== null) {
-        body[bodyKey] = value
-      }
-    }
-  }
-
-  if (command.requiresBody && body === undefined && command.requestType !== 'upload') {
-    throw new Error(`Command ${command.group} ${command.name} requires request body. Use --data '{...}'.`)
-  }
-
-  return body
-}
-
-function isPlainObject(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function applyPathParams(routePath, paramValues) {
-  const paramNames = extractPathParamNames(routePath)
-  if (paramValues.length < paramNames.length) {
-    const missing = paramNames.slice(paramValues.length).join(', ')
-    throw new Error(`Missing required path args: ${missing}`)
-  }
-
-  let builtPath = routePath
-  for (let i = 0; i < paramNames.length; i += 1) {
-    const raw = paramValues[i]
-    builtPath = builtPath.replace(`:${paramNames[i]}`, encodeURIComponent(raw))
-  }
-
-  return {
-    path: builtPath,
-    consumed: paramNames.length,
-  }
-}
-
-function serializeJson(value, compact) {
-  if (compact) return `${JSON.stringify(value)}\n`
-  return `${JSON.stringify(value, null, 2)}\n`
-}
-
-function isLikelyText(contentType) {
-  if (!contentType) return false
-  const ct = contentType.toLowerCase()
-  return ct.startsWith('text/')
-    || ct.includes('json')
-    || ct.includes('xml')
-    || ct.includes('yaml')
-    || ct.includes('javascript')
-}
-
-async function readResponsePayload(response) {
-  const contentType = (response.headers.get('content-type') || '').toLowerCase()
-
-  if (contentType.includes('application/json')) {
-    return { kind: 'json', contentType, value: await response.json() }
-  }
-
-  if (isLikelyText(contentType)) {
-    return { kind: 'text', contentType, value: await response.text() }
-  }
-
-  const buf = Buffer.from(await response.arrayBuffer())
-  return { kind: 'binary', contentType, value: buf }
-}
-
-async function consumeSse(response, io, compactJson) {
-  if (!response.body) return
-  const reader = response.body.getReader()
+  const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
 
+  function flushChunk(rawChunk) {
+    const lines = rawChunk
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+
+    const dataLines = lines
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+
+    if (!dataLines.length) return
+    const payload = dataLines.join('\n')
+
+    let parsed
+    try {
+      parsed = JSON.parse(payload)
+    } catch {
+      writeText(stdout, payload)
+      return
+    }
+
+    if (jsonOutput) {
+      writeJson(stdout, parsed, true)
+      return
+    }
+
+    if (isPlainObject(parsed) && parsed.t === 'md' && typeof parsed.text === 'string') {
+      writeText(stdout, parsed.text)
+      return
+    }
+
+    if (isPlainObject(parsed) && parsed.t === 'err' && typeof parsed.text === 'string') {
+      writeText(stderr, parsed.text)
+      return
+    }
+
+    writeJson(stdout, parsed, false)
+  }
+
   while (true) {
-    const { value, done } = await reader.read()
+    const { done, value } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })
 
-    while (true) {
-      const splitAt = buffer.indexOf('\n\n')
-      if (splitAt === -1) break
-      const block = buffer.slice(0, splitAt)
-      buffer = buffer.slice(splitAt + 2)
-      renderSseBlock(block, io, compactJson)
+    let splitIndex = buffer.indexOf('\n\n')
+    while (splitIndex >= 0) {
+      const chunk = buffer.slice(0, splitIndex)
+      buffer = buffer.slice(splitIndex + 2)
+      flushChunk(chunk)
+      splitIndex = buffer.indexOf('\n\n')
     }
   }
 
-  if (buffer.trim()) {
-    renderSseBlock(buffer, io, compactJson)
-  }
+  const finalText = decoder.decode()
+  if (finalText) buffer += finalText
+  if (buffer.trim()) flushChunk(buffer)
 }
 
-function renderSseBlock(block, io, compactJson) {
-  const lines = block.split('\n')
-  const data = []
-  for (const line of lines) {
-    if (line.startsWith('data:')) {
-      data.push(line.slice(5).trimStart())
-    }
-  }
+async function fetchJson(fetchImpl, url, headers, timeoutMs) {
+  const res = await fetchImpl(url, {
+    method: 'GET',
+    headers,
+    signal: AbortSignal.timeout(timeoutMs),
+  })
 
-  if (data.length === 0) return
-  const payload = data.join('\n')
-
-  try {
-    const parsed = JSON.parse(payload)
-    if (parsed && typeof parsed === 'object' && parsed.t === 'md' && typeof parsed.text === 'string') {
-      io.stdout.write(`${parsed.text}\n`)
-      return
-    }
-    if (parsed && typeof parsed === 'object' && parsed.t === 'err' && typeof parsed.text === 'string') {
-      io.stderr.write(`${parsed.text}\n`)
-      return
-    }
-    io.stdout.write(serializeJson(parsed, compactJson))
-  } catch {
-    io.stdout.write(`${payload}\n`)
-  }
-}
-
-async function fetchJson(fetchImpl, url, init) {
-  const res = await fetchImpl(url, init)
-  const payload = await readResponsePayload(res)
+  const parsed = await parseResponse(res)
   if (!res.ok) {
-    const message = payload.kind === 'json'
-      ? JSON.stringify(payload.value)
-      : payload.kind === 'text'
-        ? payload.value
-        : `HTTP ${res.status}`
-    throw new Error(`HTTP ${res.status} ${res.statusText}: ${message}`)
+    throw new Error(`Request failed (${res.status}): ${serializePayload(parsed.value)}`)
   }
-  if (payload.kind !== 'json') {
-    throw new Error(`Expected JSON response from ${url}, got ${payload.contentType || 'unknown content-type'}`)
+
+  if (parsed.type !== 'json') {
+    throw new Error(`Expected JSON response from ${url}`)
   }
-  return payload.value
+
+  return parsed.value
 }
 
-async function waitForOperation({
-  payload,
-  fetchImpl,
-  baseUrl,
-  accessKey,
-  waitIntervalMs,
-  waitTimeoutMs,
-  io,
-  sleep,
-}) {
+function serializePayload(value) {
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function getWaitId(payload, command) {
   if (!isPlainObject(payload)) return null
 
-  if (payload.runId) {
-    const runId = String(payload.runId)
-    io.stderr.write(`Waiting for run ${runId}...\n`)
-    return pollUntil({
-      label: `run ${runId}`,
-      waitIntervalMs,
-      waitTimeoutMs,
-      sleep,
-      io,
-      poll: async () => fetchJson(fetchImpl, buildApiUrl(baseUrl, `/runs/${encodeURIComponent(runId)}`), {
-        method: 'GET',
-        headers: buildDefaultHeaders(accessKey),
-      }),
-      isDone: (value) => isPlainObject(value) && TERMINAL_RUN_STATUS.has(value.status),
-    })
+  if (command.waitEntityFrom && typeof payload[command.waitEntityFrom] === 'string') {
+    return { type: command.waitEntityFrom === 'taskId' ? 'task' : 'run', id: payload[command.waitEntityFrom] }
   }
 
-  if (payload.taskId) {
-    const taskId = String(payload.taskId)
-    io.stderr.write(`Waiting for task ${taskId}...\n`)
-    return pollUntil({
-      label: `task ${taskId}`,
-      waitIntervalMs,
-      waitTimeoutMs,
-      sleep,
-      io,
-      poll: async () => fetchJson(fetchImpl, buildApiUrl(baseUrl, `/tasks/${encodeURIComponent(taskId)}`), {
-        method: 'GET',
-        headers: buildDefaultHeaders(accessKey),
-      }),
-      isDone: (value) => isPlainObject(value) && TERMINAL_TASK_STATUS.has(value.status),
-    })
-  }
+  if (typeof payload.runId === 'string') return { type: 'run', id: payload.runId }
+  if (isPlainObject(payload.run) && typeof payload.run.id === 'string') return { type: 'run', id: payload.run.id }
+  if (typeof payload.taskId === 'string') return { type: 'task', id: payload.taskId }
 
   return null
 }
 
-async function pollUntil({ label, waitIntervalMs, waitTimeoutMs, sleep, io, poll, isDone }) {
-  const startedAt = Date.now()
-  let lastStatus = null
-
-  while (true) {
-    const value = await poll()
-    const status = isPlainObject(value) && typeof value.status === 'string' ? value.status : null
-
-    if (status && status !== lastStatus) {
-      io.stderr.write(`${label}: ${status}\n`)
-      lastStatus = status
-    }
-
-    if (isDone(value)) {
-      return value
-    }
-
-    if (Date.now() - startedAt >= waitTimeoutMs) {
-      throw new Error(`Timed out waiting for ${label} after ${waitTimeoutMs}ms`)
-    }
-
-    await sleep(waitIntervalMs)
-  }
+function isTerminalStatus(status) {
+  const terminal = new Set([
+    'completed',
+    'complete',
+    'done',
+    'failed',
+    'error',
+    'stopped',
+    'cancelled',
+    'canceled',
+    'timeout',
+    'timed_out',
+  ])
+  return terminal.has(String(status || '').toLowerCase())
 }
 
-function buildDefaultHeaders(accessKey) {
-  const headers = {}
-  if (accessKey) {
-    headers['X-Access-Key'] = accessKey
+async function waitForEntity(opts) {
+  const {
+    entityType,
+    entityId,
+    fetchImpl,
+    baseUrl,
+    headers,
+    timeoutMs,
+    intervalMs,
+    stdout,
+    jsonOutput,
+  } = opts
+
+  const route = entityType === 'run' ? `/runs/${encodeURIComponent(entityId)}` : `/tasks/${encodeURIComponent(entityId)}`
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() <= deadline) {
+    const url = buildApiUrl(baseUrl, route, [])
+    const payload = await fetchJson(fetchImpl, url, headers, timeoutMs)
+
+    const status = isPlainObject(payload) ? payload.status : undefined
+    if (status !== undefined) {
+      stdout.write(`[wait] ${entityType} ${entityId}: ${status}\n`)
+    }
+
+    if (status !== undefined && isTerminalStatus(status)) {
+      if (jsonOutput) writeJson(stdout, payload, true)
+      else writeJson(stdout, payload, false)
+      return
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
   }
-  return headers
+
+  throw new Error(`Timed out waiting for ${entityType} ${entityId}`)
 }
 
-function getVersion(cwd) {
-  const packagePath = path.resolve(cwd, 'package.json')
-  try {
-    const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
-    return pkg.version || '0.0.0'
-  } catch {
-    return '0.0.0'
-  }
-}
-
-function printGeneralHelp(io, cwd) {
-  const lines = []
-  lines.push('SwarmClaw CLI')
-  lines.push('')
-  lines.push(`Version: ${getVersion(cwd)}`)
-  lines.push('')
-  lines.push('Usage:')
-  lines.push('  swarmclaw <group> <command> [args] [options]')
-  lines.push('  swarmclaw help [group]')
-  lines.push('')
-  lines.push('Global options:')
-  lines.push('  --json                 Output compact JSON')
-  lines.push('  --wait                 Wait for long-running run/task operations')
-  lines.push('  --wait-interval <ms>   Poll interval for --wait (default: 1000)')
-  lines.push('  --wait-timeout <ms>    Poll timeout for --wait (default: 300000)')
-  lines.push('  --base-url <url>       API base URL (default: http://localhost:3456)')
-  lines.push('  --access-key <key>     Override access key header')
-  lines.push('  --data <json|@file|->  Request JSON body')
-  lines.push('  --query key=value      Append query parameter (repeatable)')
-  lines.push('  --header key=value     Append custom header (repeatable)')
-  lines.push('  --out <path>           Write binary response to file')
-  lines.push('  --help                 Show help')
-  lines.push('  --version              Show version')
-  lines.push('')
-  lines.push('Auth key resolution order:')
-  lines.push('  1) --access-key / --api-key')
-  lines.push('  2) SWARMCLAW_API_KEY / SWARMCLAW_ACCESS_KEY / API_KEY')
-  lines.push('  3) ./platform-api-key.txt')
-  lines.push('')
-  lines.push('Command groups:')
+function renderGeneralHelp() {
+  const lines = [
+    'SwarmClaw CLI',
+    '',
+    'Usage:',
+    '  swarmclaw <group> <command> [args] [options]',
+    '',
+    'Global options:',
+    '  --base-url <url>       API base URL (default: http://localhost:3456)',
+    '  --access-key <key>     Access key override (else SWARMCLAW_API_KEY or platform-api-key.txt)',
+    '  --data <json|@file|->  Request JSON body',
+    '  --query key=value      Query parameter (repeatable)',
+    '  --header key=value     Extra HTTP header (repeatable)',
+    '  --json                 Compact JSON output',
+    '  --wait                 Wait for run/task completion when runId/taskId is returned',
+    '  --timeout-ms <ms>      Request/wait timeout (default: 300000)',
+    '  --interval-ms <ms>     Poll interval for --wait (default: 2000)',
+    '  --out <file>           Write binary response to file',
+    '  --help                 Show help',
+    '  --version              Show package version',
+    '',
+    'Groups:',
+  ]
 
   for (const group of COMMAND_GROUPS) {
-    lines.push(`  ${group.name.padEnd(14)} ${group.description}`)
+    if (group.aliasFor) {
+      lines.push(`  ${group.name} (alias for ${group.aliasFor})`)
+    } else {
+      lines.push(`  ${group.name}`)
+    }
   }
 
-  lines.push('')
-  lines.push('Aliases: memories -> memory, uploads/upload/docs -> documents')
-  lines.push('')
-  lines.push('Example:')
-  lines.push('  swarmclaw tasks create --data \"{\\\"title\\\":\\\"Investigate issue\\\"}\"')
-
-  io.stdout.write(`${lines.join('\n')}\n`)
+  lines.push('', 'Use "swarmclaw <group> --help" for group commands.')
+  return lines.join('\n')
 }
 
-function printGroupHelp(group, io) {
-  const lines = []
-  lines.push(`Group: ${group.name}`)
-  lines.push(group.description)
-  lines.push('')
-  lines.push('Commands:')
-
-  for (const command of group.commands) {
-    const params = extractPathParamNames(command.path)
-    const args = params.length ? ` ${params.map((name) => `<${name}>`).join(' ')}` : ''
-    lines.push(`  ${command.name}${args}`)
-    lines.push(`    ${command.method} /api${command.path} - ${command.description}`)
+function renderGroupHelp(groupName) {
+  const group = GROUP_MAP.get(groupName)
+  if (!group) {
+    throw new Error(`Unknown command group: ${groupName}`)
   }
 
-  io.stdout.write(`${lines.join('\n')}\n`)
-}
+  const resolved = resolveGroup(groupName)
+  if (!resolved) throw new Error(`Unable to resolve command group: ${groupName}`)
 
-function isCommandHelpRequest(parsed) {
-  if (parsed.positionals.length === 0) return true
+  const lines = [
+    `Group: ${groupName}${group.aliasFor ? ` (alias for ${group.aliasFor})` : ''}`,
+    group.description ? `Description: ${group.description}` : '',
+    '',
+    'Commands:',
+  ].filter(Boolean)
 
-  if (parsed.positionals[0] === 'help') return true
+  for (const command of resolved.commands) {
+    const params = extractPathParams(command.route).map((name) => `<${name}>`).join(' ')
+    const suffix = params ? ` ${params}` : ''
+    lines.push(`  ${command.action}${suffix}  ${command.description}`)
+  }
 
-  if (parsed.flags.help) return true
-
-  if (parsed.positionals.length === 1) return true
-
-  return false
-}
-
-function defaultSleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return lines.join('\n')
 }
 
 async function runCli(argv, deps = {}) {
-  const io = {
-    stdout: deps.stdout || process.stdout,
-    stderr: deps.stderr || process.stderr,
-    stdin: deps.stdin || process.stdin,
-  }
-
+  const stdout = deps.stdout || process.stdout
+  const stderr = deps.stderr || process.stderr
+  const stdin = deps.stdin || process.stdin
   const env = deps.env || process.env
   const cwd = deps.cwd || process.cwd()
-  const sleep = deps.sleep || defaultSleep
-  const fetchImpl = deps.fetch || globalThis.fetch
+  const fetchImpl = deps.fetchImpl || globalThis.fetch
 
   if (typeof fetchImpl !== 'function') {
-    io.stderr.write('Global fetch is not available in this Node runtime.\n')
+    stderr.write('Global fetch is unavailable in this Node runtime. Use Node 18+ or provide a fetch implementation.\n')
     return 1
   }
 
@@ -932,256 +892,253 @@ async function runCli(argv, deps = {}) {
   try {
     parsed = parseArgv(argv)
   } catch (err) {
-    io.stderr.write(`${err.message}\n`)
+    stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
     return 1
   }
 
-  if (parsed.flags.version) {
-    io.stdout.write(`${getVersion(cwd)}\n`)
+  if (parsed.opts.version) {
+    const pkgPath = path.join(__dirname, '..', '..', 'package.json')
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+    stdout.write(`${pkg.name || 'swarmclaw'} ${pkg.version || '0.0.0'}\n`)
     return 0
   }
 
-  if (parsed.positionals[0] === 'help') {
-    if (parsed.positionals[1]) {
-      const group = resolveGroup(parsed.positionals[1])
-      if (!group) {
-        io.stderr.write(`Unknown command group: ${parsed.positionals[1]}\n`)
+  if (!parsed.group || parsed.opts.help) {
+    if (parsed.group) {
+      try {
+        stdout.write(`${renderGroupHelp(parsed.group)}\n`)
+        return 0
+      } catch {
+        // Fall through to general help for unknown group
+      }
+    }
+    stdout.write(`${renderGeneralHelp()}\n`)
+    return 0
+  }
+
+  if (!parsed.action) {
+    try {
+      stdout.write(`${renderGroupHelp(parsed.group)}\n`)
+      return 0
+    } catch (err) {
+      stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
+      return 1
+    }
+  }
+
+  const command = getCommand(parsed.group, parsed.action)
+  if (!command) {
+    stderr.write(`Unknown command: ${parsed.group} ${parsed.action}\n`)
+    const group = resolveGroup(parsed.group)
+    if (group) {
+      stderr.write(`${renderGroupHelp(parsed.group)}\n`)
+    } else {
+      stderr.write(`${renderGeneralHelp()}\n`)
+    }
+    return 1
+  }
+
+  const pathArgs = parsed.positionals.slice(2)
+  let routeInfo
+  try {
+    routeInfo = buildRoute(command.route, pathArgs)
+  } catch (err) {
+    stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
+    return 1
+  }
+
+  const accessKey = resolveAccessKey(parsed.opts, env, cwd)
+  const baseUrl = parsed.opts.baseUrl || env.SWARMCLAW_BASE_URL || 'http://localhost:3456'
+
+  const headerEntries = []
+  for (const raw of parsed.opts.headers) {
+    try {
+      headerEntries.push(parseKeyValue(raw, 'header'))
+    } catch (err) {
+      stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
+      return 1
+    }
+  }
+
+  if (parsed.opts.secret) {
+    headerEntries.push(['x-webhook-secret', parsed.opts.secret])
+  }
+
+  const queryEntries = []
+  for (const raw of parsed.opts.query) {
+    try {
+      queryEntries.push(parseKeyValue(raw, 'query'))
+    } catch (err) {
+      stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
+      return 1
+    }
+  }
+
+  if (parsed.opts.event) {
+    queryEntries.push(['event', parsed.opts.event])
+  }
+
+  let url
+  try {
+    url = buildApiUrl(baseUrl, routeInfo.route, queryEntries)
+  } catch (err) {
+    stderr.write(`Invalid --base-url: ${err instanceof Error ? err.message : String(err)}\n`)
+    return 1
+  }
+
+  const headers = {
+    ...Object.fromEntries(headerEntries),
+  }
+  if (accessKey) headers['X-Access-Key'] = accessKey
+
+  try {
+    if (command.clientGetRoute) {
+      const collectionUrl = buildApiUrl(baseUrl, command.clientGetRoute, queryEntries)
+      const payload = await fetchJson(fetchImpl, collectionUrl, headers, parsed.opts.timeoutMs)
+      const id = pathArgs[0]
+      const entity = extractById(payload, id)
+      if (!entity) {
+        stderr.write(`Entity not found for id: ${id}\n`)
         return 1
       }
-      printGroupHelp(group, io)
+      if (parsed.opts.jsonOutput) writeJson(stdout, entity, true)
+      else writeJson(stdout, entity, false)
       return 0
     }
-    printGeneralHelp(io, cwd)
-    return 0
-  }
 
-  if (isCommandHelpRequest(parsed)) {
-    if (parsed.positionals[0]) {
-      const maybeGroup = resolveGroup(parsed.positionals[0])
-      if (maybeGroup) {
-        printGroupHelp(maybeGroup, io)
-        return 0
+    const init = {
+      method: command.method,
+      headers,
+      signal: AbortSignal.timeout(parsed.opts.timeoutMs),
+    }
+
+    if (command.requestType === 'upload') {
+      const uploadPath = parsed.opts.file || routeInfo.remaining[0]
+      if (!uploadPath) {
+        throw new Error(`Missing file path. Usage: ${parsed.group} ${parsed.action} <filePath>`) }
+
+      const resolvedUploadPath = path.isAbsolute(uploadPath) ? uploadPath : path.join(cwd, uploadPath)
+      const fileBuffer = fs.readFileSync(resolvedUploadPath)
+      const filename = parsed.opts.filename || path.basename(resolvedUploadPath)
+      init.body = fileBuffer
+      init.headers['x-filename'] = filename
+      if (!init.headers['Content-Type']) init.headers['Content-Type'] = 'application/octet-stream'
+    } else if (command.method !== 'GET' && command.method !== 'HEAD') {
+      let body = undefined
+      if (parsed.opts.data) {
+        body = parseDataInput(parsed.opts.data, stdin)
+      }
+
+      if (!isPlainObject(body) && command.expectsJsonBody) {
+        body = {}
+      }
+
+      if (command.defaultBody) {
+        body = { ...(command.defaultBody || {}), ...(isPlainObject(body) ? body : {}) }
+      }
+
+      if (command.bodyFlagMap) {
+        const mapped = {}
+        for (const [flagName, bodyKey] of Object.entries(command.bodyFlagMap)) {
+          const val = parsed.opts[flagName]
+          if (val !== undefined && val !== '') {
+            mapped[bodyKey] = val
+          }
+        }
+        body = { ...(isPlainObject(body) ? body : {}), ...mapped }
+      }
+
+      if (body !== undefined) {
+        init.body = JSON.stringify(body)
+        init.headers['Content-Type'] = 'application/json'
       }
     }
-    printGeneralHelp(io, cwd)
-    return 0
-  }
 
-  const groupName = parsed.positionals[0]
-  const actionName = parsed.positionals[1]
-  const command = resolveCommand(groupName, actionName)
-  if (!command) {
-    io.stderr.write(`Unknown command: ${groupName} ${actionName}\n`)
-    const group = resolveGroup(groupName)
-    if (group) printGroupHelp(group, io)
-    return 1
-  }
+    const res = await fetchImpl(url, init)
+    const parsedResponse = await parseResponse(res, command.responseType)
 
-  const commandArgs = parsed.positionals.slice(2)
-  let builtPath
-  let consumed = 0
-
-  try {
-    const result = applyPathParams(command.path, commandArgs)
-    builtPath = result.path
-    consumed = result.consumed
-  } catch (err) {
-    io.stderr.write(`${err.message}\n`)
-    return 1
-  }
-
-  const remainingArgs = commandArgs.slice(consumed)
-
-  let requestBody
-  try {
-    requestBody = await buildRequestBody(command, parsed, io.stdin, cwd)
-  } catch (err) {
-    io.stderr.write(`${err.message}\n`)
-    return 1
-  }
-
-  if (command.requestType === 'upload') {
-    const inputPath = parsed.flags.file || remainingArgs[0]
-    if (!inputPath) {
-      io.stderr.write('Upload command requires a file path argument or --file <path>.\n')
-      return 1
-    }
-    if (remainingArgs.length > 1 && !parsed.flags.file) {
-      io.stderr.write('Too many positional arguments for upload command.\n')
+    if (!res.ok) {
+      const serialized = serializePayload(parsedResponse.value)
+      stderr.write(`Request failed (${res.status} ${res.statusText}): ${serialized}\n`)
       return 1
     }
 
-    const resolved = path.resolve(cwd, inputPath)
-    if (!fs.existsSync(resolved)) {
-      io.stderr.write(`Upload file not found: ${resolved}\n`)
-      return 1
-    }
-
-    requestBody = fs.readFileSync(resolved)
-    if (!parsed.flags.filename) {
-      parsed.flags.filename = path.basename(resolved)
-    }
-  } else if (remainingArgs.length > 0) {
-    io.stderr.write(`Unexpected positional arguments: ${remainingArgs.join(' ')}\n`)
-    return 1
-  }
-
-  const queryEntries = parseKeyValueEntries(parsed.flags.query)
-  if (parsed.flags.event) {
-    queryEntries.event = parsed.flags.event
-  }
-
-  const accessKey = (parsed.flags.accessKey || getDefaultAccessKey(env, cwd) || '').trim()
-  const headers = {
-    ...buildDefaultHeaders(accessKey),
-    ...parseKeyValueEntries(parsed.flags.header),
-  }
-
-  if (parsed.flags.secret) {
-    headers['x-webhook-secret'] = parsed.flags.secret
-  }
-
-  if (command.requestType === 'upload') {
-    headers['x-filename'] = parsed.flags.filename || 'upload.bin'
-  } else if (requestBody !== undefined) {
-    headers['Content-Type'] = 'application/json'
-  }
-
-  const url = buildApiUrl(parsed.flags.baseUrl, builtPath, queryEntries)
-
-  const init = {
-    method: command.method,
-    headers,
-  }
-
-  if (command.requestType === 'upload') {
-    init.body = requestBody
-  } else if (requestBody !== undefined) {
-    init.body = JSON.stringify(requestBody)
-  }
-
-  let response
-  try {
-    response = await fetchImpl(url, init)
-  } catch (err) {
-    io.stderr.write(`Request failed: ${err.message || String(err)}\n`)
-    return 1
-  }
-
-  const contentType = (response.headers.get('content-type') || '').toLowerCase()
-
-  if (contentType.includes('text/event-stream') || command.streamResponse || parsed.flags.stream) {
-    if (!response.ok) {
-      const payload = await readResponsePayload(response)
-      const message = payload.kind === 'json'
-        ? JSON.stringify(payload.value)
-        : payload.kind === 'text'
-          ? payload.value
-          : `HTTP ${response.status}`
-      io.stderr.write(`HTTP ${response.status} ${response.statusText}: ${message}\n`)
-      return 1
-    }
-
-    try {
-      await consumeSse(response, io, parsed.flags.json)
-      return 0
-    } catch (err) {
-      io.stderr.write(`Failed reading stream: ${err.message || String(err)}\n`)
-      return 1
-    }
-  }
-
-  let payload
-  try {
-    payload = await readResponsePayload(response)
-  } catch (err) {
-    io.stderr.write(`Failed to read response: ${err.message || String(err)}\n`)
-    return 1
-  }
-
-  if (!response.ok) {
-    const message = payload.kind === 'json'
-      ? JSON.stringify(payload.value)
-      : payload.kind === 'text'
-        ? payload.value
-        : `binary payload (${payload.value.length} bytes)`
-    io.stderr.write(`HTTP ${response.status} ${response.statusText}: ${message}\n`)
-    return 1
-  }
-
-  if (payload.kind === 'binary' || command.responseType === 'binary') {
-    if (parsed.flags.out) {
-      const outPath = path.resolve(cwd, parsed.flags.out)
-      fs.writeFileSync(outPath, payload.value)
-      if (!parsed.flags.json) {
-        io.stdout.write(`Wrote ${payload.value.length} bytes to ${outPath}\n`)
-      }
+    if (parsedResponse.type === 'sse') {
+      await consumeSse(parsedResponse.value, stdout, stderr, parsed.opts.jsonOutput)
       return 0
     }
 
-    if (io.stdout.isTTY) {
-      io.stderr.write('Refusing to print binary response to terminal. Use --out <path>.\n')
-      return 1
+    if (parsedResponse.type === 'binary') {
+      writeBinary(stdout, stderr, parsedResponse.value, parsed.opts.out, cwd)
+      return 0
     }
 
-    io.stdout.write(payload.value)
-    return 0
-  }
+    if (parsedResponse.type === 'json') {
+      if (parsed.opts.jsonOutput) writeJson(stdout, parsedResponse.value, true)
+      else writeJson(stdout, parsedResponse.value, false)
 
-  let outputValue = payload.value
-
-  if (parsed.flags.wait && payload.kind === 'json') {
-    try {
-      const waitResult = await waitForOperation({
-        payload: payload.value,
-        fetchImpl,
-        baseUrl: parsed.flags.baseUrl,
-        accessKey,
-        waitIntervalMs: parsed.flags.waitIntervalMs,
-        waitTimeoutMs: parsed.flags.waitTimeoutMs,
-        io,
-        sleep,
-      })
-
-      if (waitResult !== null) {
-        if (isPlainObject(outputValue)) {
-          outputValue = { ...outputValue, waitResult }
+      if (parsed.opts.wait) {
+        const waitMeta = getWaitId(parsedResponse.value, command)
+        if (waitMeta) {
+          await waitForEntity({
+            entityType: waitMeta.type,
+            entityId: waitMeta.id,
+            fetchImpl,
+            baseUrl,
+            headers,
+            timeoutMs: parsed.opts.timeoutMs,
+            intervalMs: parsed.opts.intervalMs,
+            stdout,
+            jsonOutput: parsed.opts.jsonOutput,
+          })
         } else {
-          outputValue = { result: outputValue, waitResult }
+          stderr.write('--wait requested, but response did not include runId/taskId\n')
         }
       }
-    } catch (err) {
-      io.stderr.write(`${err.message || String(err)}\n`)
-      return 1
+      return 0
+    }
+
+    writeText(stdout, parsedResponse.value)
+    return 0
+  } catch (err) {
+    stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
+    return 1
+  }
+}
+
+function extractById(payload, id) {
+  if (!id) return null
+
+  if (Array.isArray(payload)) {
+    return payload.find((entry) => entry && String(entry.id) === String(id)) || null
+  }
+
+  if (isPlainObject(payload)) {
+    if (payload[id]) return payload[id]
+    if (Array.isArray(payload.items)) {
+      return payload.items.find((entry) => entry && String(entry.id) === String(id)) || null
     }
   }
 
-  if (payload.kind === 'json') {
-    io.stdout.write(serializeJson(outputValue, parsed.flags.json))
-    return 0
-  }
+  return null
+}
 
-  io.stdout.write(`${String(outputValue)}\n`)
-  return 0
+function getApiCoveragePairs() {
+  return COMMANDS
+    .filter((command) => !command.virtual)
+    .map((command) => `${command.method} ${command.route}`)
 }
 
 module.exports = {
   COMMAND_GROUPS,
   COMMANDS,
-  GROUP_ALIASES,
   parseArgv,
-  resolveCommand,
-  resolveGroup,
-  buildApiUrl,
-  getDefaultAccessKey,
   runCli,
-}
-
-if (require.main === module) {
-  runCli(process.argv.slice(2)).then((code) => {
-    process.exitCode = code
-  }).catch((err) => {
-    process.stderr.write(`${err.message || String(err)}\n`)
-    process.exitCode = 1
-  })
+  getCommand,
+  getApiCoveragePairs,
+  buildApiUrl,
+  extractPathParams,
+  resolveGroup,
+  renderGeneralHelp,
+  renderGroupHelp,
 }

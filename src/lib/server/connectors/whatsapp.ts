@@ -11,6 +11,7 @@ import fs from 'fs'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
 import { saveInboundMediaBuffer } from './media'
+import { isNoMessage } from './manager'
 
 const AUTH_DIR = path.join(process.cwd(), 'data', 'whatsapp-auth')
 
@@ -308,8 +309,7 @@ const whatsapp: PlatformConnector = {
             const response = await onMessage(inbound)
             await sock!.sendPresenceUpdate('paused', jid)
 
-            // NO_MESSAGE means the agent chose not to reply — skip outbound send
-            if (response !== 'NO_MESSAGE') {
+            if (!isNoMessage(response)) {
               await instance.sendMessage?.(jid, response)
             }
           } catch (err: any) {

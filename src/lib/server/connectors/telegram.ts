@@ -2,6 +2,7 @@ import { Bot } from 'grammy'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundMediaType } from './types'
 import { downloadInboundMediaToUpload, inferInboundMediaType } from './media'
+import { isNoMessage } from './manager'
 
 const telegram: PlatformConnector = {
   async start(connector, botToken, onMessage): Promise<ConnectorInstance> {
@@ -135,8 +136,7 @@ const telegram: PlatformConnector = {
         await ctx.api.sendChatAction(ctx.chat.id, 'typing')
         const response = await onMessage(inbound)
 
-        // NO_MESSAGE means the agent chose not to reply — skip outbound send
-        if (response === 'NO_MESSAGE') return
+        if (isNoMessage(response)) return
 
         // Telegram has a 4096 char limit
         if (response.length <= 4096) {

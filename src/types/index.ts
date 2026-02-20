@@ -342,6 +342,31 @@ export interface Connector {
   updatedAt: number
 }
 
+export interface Webhook {
+  id: string
+  name: string
+  source: string
+  events: string[]
+  agentId?: string | null
+  secret?: string
+  isEnabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface DocumentEntry {
+  id: string
+  title: string
+  fileName: string
+  sourcePath: string
+  content: string
+  method: string
+  textLength: number
+  metadata?: Record<string, unknown>
+  createdAt: number
+  updatedAt: number
+}
+
 export interface BoardTask {
   id: string
   title: string

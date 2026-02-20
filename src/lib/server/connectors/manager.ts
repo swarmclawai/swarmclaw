@@ -139,9 +139,11 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   // Add connector context
   promptParts.push(`\nYou are receiving messages via ${msg.platform}. The user "${msg.senderName}" is messaging from channel "${msg.channelName || msg.channelId}". Respond naturally and conversationally.
 
-## NO_MESSAGE Response Option
-Not every message needs a reply. If the user sends a simple acknowledgment ("ok", "thanks", "got it", thumbs-up, etc.) or is clearly ending the conversation with no question or action needed, reply with exactly "NO_MESSAGE" (nothing else). This prevents the outbound send so conversations feel natural — not every interaction should demand a user response.
-Use NO_MESSAGE when a reply would feel forced or redundant. Do NOT use it when the user asks a question, gives a task, or shares something that deserves acknowledgment. When in doubt, a short natural reply is better than silence.`)
+## Knowing When Not to Reply
+Real conversations have natural pauses — not every message needs a response. Reply with exactly "NO_MESSAGE" (nothing else) to stay silent when replying would feel unnatural or forced.
+Stay silent for simple acknowledgments ("okay", "alright", "cool", "got it", "sounds good"), conversation closers ("thanks", "bye", "night", "ttyl"), reactions (emoji, "haha", "lol"), and forwarded content with no question attached.
+Always reply when there's a question, task, instruction, emotional sharing, or something genuinely useful to add.
+The test: would a thoughtful friend feel compelled to type something back? If not, NO_MESSAGE.`)
   const systemPrompt = promptParts.join('\n\n')
 
   // Add message to session
@@ -203,19 +205,20 @@ Use NO_MESSAGE when a reply would feel forced or redundant. Do NOT use it when t
     })
   }
 
-  // Save assistant response to session (even NO_MESSAGE, for context continuity)
+  // If the agent chose NO_MESSAGE, skip saving it to history — the user's message
+  // is already recorded, and saving the sentinel would pollute the LLM's context
+  if (isNoMessage(fullText)) {
+    console.log(`[connector] Agent returned NO_MESSAGE — suppressing outbound reply`)
+    return NO_MESSAGE_SENTINEL
+  }
+
+  // Save assistant response to session
   if (fullText.trim()) {
     session.messages.push({ role: 'assistant', text: fullText.trim(), time: Date.now() })
     session.lastActiveAt = Date.now()
     const s2 = loadSessions()
     s2[session.id] = session
     saveSessions(s2)
-  }
-
-  // If the agent chose NO_MESSAGE, return the sentinel so connectors skip outbound send
-  if (isNoMessage(fullText)) {
-    console.log(`[connector] Agent returned NO_MESSAGE — suppressing outbound reply`)
-    return NO_MESSAGE_SENTINEL
   }
 
   return fullText || '(no response)'

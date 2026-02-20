@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits, Events, Partials } from 'discord.js'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
 import { inferInboundMediaType } from './media'
+import { isNoMessage } from './manager'
 
 const discord: PlatformConnector = {
   async start(connector, botToken, onMessage): Promise<ConnectorInstance> {
@@ -54,8 +55,7 @@ const discord: PlatformConnector = {
         await message.channel.sendTyping()
         const response = await onMessage(inbound)
 
-        // NO_MESSAGE means the agent chose not to reply — skip outbound send
-        if (response === 'NO_MESSAGE') return
+        if (isNoMessage(response)) return
 
         // Discord has a 2000 char limit per message
         if (response.length <= 2000) {

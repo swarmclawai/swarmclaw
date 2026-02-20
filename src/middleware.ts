@@ -7,13 +7,15 @@ import type { NextRequest } from 'next/server'
  */
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const isWebhookTrigger = request.method === 'POST'
+    && /^\/api\/webhooks\/[^/]+\/?$/.test(pathname)
 
   // Only protect API routes (not auth, uploads served as static assets, or inbound webhooks)
   if (
     !pathname.startsWith('/api/')
     || pathname === '/api/auth'
     || pathname.startsWith('/api/uploads/')
-    || pathname.startsWith('/api/webhooks/')
+    || isWebhookTrigger
   ) {
     return NextResponse.next()
   }

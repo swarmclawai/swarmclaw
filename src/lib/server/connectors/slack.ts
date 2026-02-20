@@ -2,6 +2,7 @@ import { App, LogLevel } from '@slack/bolt'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
 import { downloadInboundMediaToUpload, inferInboundMediaType } from './media'
+import { isNoMessage } from './manager'
 
 const slack: PlatformConnector = {
   async start(connector, botToken, onMessage): Promise<ConnectorInstance> {
@@ -140,8 +141,7 @@ const slack: PlatformConnector = {
       try {
         const response = await onMessage(inbound)
 
-        // NO_MESSAGE means the agent chose not to reply — skip outbound send
-        if (response === 'NO_MESSAGE') return
+        if (isNoMessage(response)) return
 
         // Slack has a 4000 char limit for messages
         if (response.length <= 4000) {
@@ -181,8 +181,7 @@ const slack: PlatformConnector = {
 
       try {
         const response = await onMessage(inbound)
-        // NO_MESSAGE means the agent chose not to reply — skip outbound send
-        if (response === 'NO_MESSAGE') return
+        if (isNoMessage(response)) return
         await say(response)
       } catch (err: any) {
         console.error(`[slack] Error handling mention:`, err.message)
