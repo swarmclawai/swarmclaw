@@ -347,6 +347,13 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
 
             if (!processId) return 'Error: processId is required for this action.'
 
+            // Verify the process belongs to this session/agent to prevent
+            // cross-session process access.
+            const ownerCheck = getManagedProcess(processId)
+            if (ownerCheck && ctx?.sessionId && ownerCheck.sessionId && ownerCheck.sessionId !== ctx.sessionId) {
+              return `Error: process ${processId} belongs to a different session.`
+            }
+
             if (action === 'poll') {
               const res = pollManagedProcess(processId)
               if (!res) return `Process not found: ${processId}`
@@ -2641,8 +2648,11 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  // --- Context management tools (always available when manage_sessions is enabled) ---
-  if (enabledTools.includes('manage_sessions')) {
+  // --- Context management tools (available to any session with tools) ---
+  // These operate only on the current session's own context and are safe to
+  // always expose.  Previously gated behind manage_sessions which meant most
+  // agents never got access to context_status / context_summarize.
+  if (enabledTools.length > 0) {
     tools.push(
       tool(
         async () => {

@@ -308,3 +308,20 @@ export function sweepManagedProcesses(ttlMs = DEFAULT_TTL_MS): number {
   }
   return removed
 }
+
+/** Kill running processes and clear completed records that belong to a session. */
+export function cleanupSessionProcesses(sessionId: string): number {
+  let cleaned = 0
+  for (const [id, rec] of state.records) {
+    if (rec.sessionId !== sessionId) continue
+    if (rec.status === 'running') {
+      const child = state.children.get(id)
+      try { child?.kill('SIGTERM') } catch { /* ignore */ }
+    }
+    state.records.delete(id)
+    state.children.delete(id)
+    state.exitWaiters.delete(id)
+    cleaned++
+  }
+  return cleaned
+}

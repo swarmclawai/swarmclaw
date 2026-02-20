@@ -44,7 +44,8 @@ function buildToolCapabilityLines(enabledTools: string[]): string[] {
   if (enabledTools.includes('manage_skills')) lines.push('- Skill management is available (`manage_skills`) to add reusable capabilities.')
   if (enabledTools.includes('manage_connectors')) lines.push('- Connector management is available (`manage_connectors`) for channels like WhatsApp/Telegram/Slack, plus proactive outbound notifications via `connector_message_tool`.')
   if (enabledTools.includes('manage_sessions')) lines.push('- Session management is available (`manage_sessions`, `sessions_tool`, `whoami_tool`, `search_history_tool`) for session identity, history lookup, delegation, and inter-session messaging.')
-  if (enabledTools.includes('manage_sessions')) lines.push('- Context management is available (`context_status`, `context_summarize`). Use `context_status` to check token usage and `context_summarize` to compact conversation history when approaching limits.')
+  // Context tools are available to any session with tools (not just manage_sessions)
+  if (enabledTools.length > 0) lines.push('- Context management is available (`context_status`, `context_summarize`). Use `context_status` to check token usage and `context_summarize` to compact conversation history when approaching limits.')
   if (enabledTools.includes('manage_secrets')) lines.push('- Secret management is available (`manage_secrets`) for durable encrypted credentials and API tokens.')
   return lines
 }

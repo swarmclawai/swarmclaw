@@ -518,11 +518,11 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       changed = true
     }
 
-    if (changed) {
-      current.lastActiveAt = Date.now()
-      fresh[sessionId] = current
-      saveSessions(fresh)
-    }
+    // Always update lastActiveAt after a successful run (including heartbeats),
+    // even if no messages were persisted — the session was still active.
+    current.lastActiveAt = Date.now()
+    fresh[sessionId] = current
+    saveSessions(fresh)
   }
 
   return {
