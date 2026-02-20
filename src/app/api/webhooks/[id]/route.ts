@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { NextResponse } from 'next/server'
-import { loadAgents, loadSessions, loadWebhooks, saveSessions } from '@/lib/server/storage'
+import { loadAgents, loadSessions, loadWebhooks, saveSessions, saveWebhooks } from '@/lib/server/storage'
 import { enqueueSessionRun } from '@/lib/server/session-run-manager'
 
 function normalizeEvents(value: unknown): string[] {
@@ -15,6 +15,43 @@ function eventMatches(registered: string[], incoming: string): boolean {
   if (registered.length === 0) return true
   if (registered.includes('*')) return true
   return registered.includes(incoming)
+}
+
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const webhooks = loadWebhooks()
+  const webhook = webhooks[id]
+  if (!webhook) return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
+  return NextResponse.json(webhook)
+}
+
+export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const body = await req.json().catch(() => ({}))
+  const webhooks = loadWebhooks()
+  const webhook = webhooks[id]
+  if (!webhook) return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
+
+  if (body.name !== undefined) webhook.name = body.name
+  if (body.source !== undefined) webhook.source = body.source
+  if (body.events !== undefined) webhook.events = normalizeEvents(body.events)
+  if (body.agentId !== undefined) webhook.agentId = body.agentId
+  if (body.secret !== undefined) webhook.secret = body.secret
+  if (body.isEnabled !== undefined) webhook.isEnabled = !!body.isEnabled
+  webhook.updatedAt = Date.now()
+
+  webhooks[id] = webhook
+  saveWebhooks(webhooks)
+  return NextResponse.json(webhook)
+}
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const webhooks = loadWebhooks()
+  if (!webhooks[id]) return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
+  delete webhooks[id]
+  saveWebhooks(webhooks)
+  return NextResponse.json({ ok: true })
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {

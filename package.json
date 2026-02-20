@@ -2,11 +2,15 @@
   "name": "swarmclaw",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "swarmclaw": "./bin/swarmclaw.mjs"
+  },
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 -p 3456",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cli": "node ./bin/swarmclaw.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

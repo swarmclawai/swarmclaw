@@ -363,6 +363,60 @@ npm run lint         # ESLint
 
 The dev server binds to `0.0.0.0` so you can access it from your phone on the same network.
 
+## CLI
+
+SwarmClaw includes a local CLI client for API operations.
+
+```bash
+# show groups and commands
+npm run cli -- help
+
+# point to a running instance and authenticate requests
+SWARMCLAW_URL=http://localhost:3456 \
+SWARMCLAW_ACCESS_KEY=<your-access-key> \
+npm run cli -- sessions list
+```
+
+### Command Groups
+
+- `auth`
+- `agents`
+- `sessions`
+- `tasks`
+- `schedules`
+- `memory`
+- `connectors`
+- `providers`
+- `credentials`
+- `secrets`
+- `skills`
+- `settings`
+- `daemon`
+- `runs`
+- `logs`
+- `plugins`
+- `usage`
+- `version`
+- `orchestrator`
+- `dirs`
+- `upload`
+
+### Examples
+
+```bash
+# Create an agent
+npm run cli -- agents create --name "Builder" --provider openai --model gpt-4o
+
+# Start a connector
+npm run cli -- connectors start <connectorId>
+
+# Send a streamed chat message to a session
+npm run cli -- sessions chat <sessionId> --message "Summarize current task status"
+
+# Queue a task
+npm run cli -- tasks queue <taskId>
+```
+
 ## Credits
 
 - Inspired by [OpenClaw](https://github.com/openclaw)
