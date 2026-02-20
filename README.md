@@ -365,63 +365,131 @@ The dev server binds to `0.0.0.0` so you can access it from your phone on the sa
 
 ## CLI
 
-SwarmClaw includes a local CLI client for API operations.
+SwarmClaw ships a CLI client (`bin/swarmclaw.js`) that covers every API endpoint. It works with Node 18+ (uses native `fetch`).
+
+### Installation
 
 ```bash
-# show groups and commands
-npm run cli -- help
+# From within the swarmclaw repo:
+npm link            # makes `swarmclaw` available globally
+swarmclaw --help
 
-# point to a running instance and authenticate requests
-SWARMCLAW_URL=http://localhost:3456 \
-SWARMCLAW_ACCESS_KEY=<your-access-key> \
-npm run cli -- sessions list
+# Or run directly:
+node bin/swarmclaw.js --help
+npm run cli -- --help
 ```
+
+### Authentication
+
+The CLI resolves an access key in this order:
+
+1. `--access-key <key>` flag
+2. `SWARMCLAW_API_KEY` or `SC_ACCESS_KEY` env var
+3. `platform-api-key.txt` file in the current directory
+
+Base URL defaults to `http://localhost:3456` and can be overridden with `--base-url` or `SWARMCLAW_BASE_URL`.
+
+### Usage
+
+```
+swarmclaw <group> <action> [args] [options]
+```
+
+### Global Options
+
+| Flag | Description |
+|-|-|
+| `--base-url <url>` | API base URL (default: `http://localhost:3456`) |
+| `--access-key <key>` | Access key override |
+| `--data <json\|@file\|->` | JSON request body (inline, from file, or stdin) |
+| `--query key=value` | Query parameter (repeatable) |
+| `--header key=value` | Extra HTTP header (repeatable) |
+| `--json` | Compact JSON output |
+| `--wait` | Poll until run/task reaches terminal state |
+| `--timeout-ms <ms>` | Request/wait timeout (default: 300000) |
+| `--interval-ms <ms>` | Poll interval for `--wait` (default: 2000) |
+| `--out <file>` | Write binary response to file |
 
 ### Command Groups
 
-- `auth` — Access key auth helpers
-- `agents` — Manage agents
-- `sessions` — Manage chat sessions and runtime controls
-- `tasks` — Manage task board items
-- `schedules` — Manage schedules
-- `memory` — Manage memory entries
-- `connectors` — Manage chat connectors (Discord, Slack, Telegram, WhatsApp)
-- `providers` — Manage providers and model overrides
-- `credentials` — Manage encrypted provider credentials
-- `secrets` — Manage reusable encrypted secrets
-- `skills` — Manage reusable skills
-- `settings` — Read/update app settings
-- `daemon` — Control background daemon
-- `runs` — Session run queue/history
-- `logs` — Read or clear app logs
-- `plugins` — Manage plugins and marketplace
-- `usage` — Usage and cost summary
-- `version` — Version and update checks
-- `orchestrator` — Trigger orchestrator runs
-- `dirs` — Directory listing and native picker
-- `upload` / `uploads` — Upload/download artifacts
-- `documents` — Document upload/download helpers
-- `tts` — Text-to-speech endpoint
-- `generate` — AI generation endpoints
-- `ip` — Get local IP/port metadata
-- `webhooks` — Trigger inbound webhook endpoint
-- `claude-skills` — Read local Claude skills directory metadata
+| Group | Description |
+|-|-|
+| `agents` | Manage agents (list, get, create, update, delete, generate) |
+| `auth` | Access key auth helpers (status, login) |
+| `claude-skills` | List local Claude skills directory metadata |
+| `connectors` | Manage chat connectors (list, get, create, update, delete, start, stop, repair) |
+| `credentials` | Manage encrypted provider credentials (list, get, create, delete) |
+| `daemon` | Control background daemon (status, start, stop) |
+| `dirs` | Directory listing and native picker |
+| `documents` | Manage documents (list, get, create, update, delete) |
+| `generate` | AI generation endpoints (run, info) |
+| `ip` | Get local IP/port metadata |
+| `logs` | Read or clear app logs |
+| `memory` | Manage memory entries (list, get, create, update, delete) |
+| `orchestrator` | Trigger orchestrator runs |
+| `plugins` | Manage plugins and marketplace (list, set, install, marketplace) |
+| `providers` | Manage providers and model overrides (list, get, create, update, delete, configs, ollama, models, models-set, models-clear) |
+| `runs` | Session run queue/history (list, get) |
+| `schedules` | Manage schedules (list, get, create, update, delete, run) |
+| `secrets` | Manage reusable encrypted secrets (list, get, create, update, delete) |
+| `sessions` | Chat sessions and runtime controls (list, get, create, update, delete, delete-many, messages, chat, stop, clear, deploy, devserver, browser-status, browser-close) |
+| `settings` | Read/update app settings (get, update) |
+| `skills` | Manage reusable skills (list, get, create, update, delete, import) |
+| `tasks` | Manage task board items (list, get, create, update, delete) |
+| `tts` | Text-to-speech (speak) |
+| `upload` | Upload raw files |
+| `uploads` | Fetch uploaded artifacts |
+| `usage` | Usage and cost summary |
+| `version` | Version and update checks (get, update) |
+| `webhooks` | Manage and trigger webhooks (list, get, create, update, delete, trigger) |
 
 ### Examples
 
 ```bash
-# Create an agent
-npm run cli -- agents create --name "Builder" --provider openai --model gpt-4o
+# List all agents
+swarmclaw agents list
+
+# Create an agent from JSON
+swarmclaw agents create --data '{"name":"Builder","provider":"openai","model":"gpt-4o"}'
+
+# Create from a file
+swarmclaw agents create --data @agent.json
+
+# Get a specific session
+swarmclaw sessions get <sessionId>
+
+# Send a streamed chat message
+swarmclaw sessions chat <sessionId> --data '{"content":"Summarize task status"}'
 
 # Start a connector
-npm run cli -- connectors start <connectorId>
+swarmclaw connectors start <connectorId>
 
-# Send a streamed chat message to a session
-npm run cli -- sessions chat <sessionId> --message "Summarize current task status"
+# Trigger a webhook and wait for completion
+swarmclaw webhooks trigger <webhookId> --data '{}' --wait
 
-# Queue a task
-npm run cli -- tasks queue <taskId>
+# List runs filtered by session
+swarmclaw runs list --query sessionId=abc123 --query limit=10
+
+# Download TTS audio to file
+swarmclaw tts speak --text "Hello world" --out hello.mp3
+
+# Upload a file
+swarmclaw upload file ./report.pdf
+
+# Compact JSON output for scripting
+swarmclaw tasks list --json | jq '.[] | .id'
+
+# Pipe JSON body from stdin
+echo '{"name":"New Task"}' | swarmclaw tasks create --data -
 ```
+
+### Testing
+
+```bash
+npm run test:cli
+```
+
+The CLI test suite validates full API route coverage — every `route.ts` handler in `src/app/api/` must have a corresponding CLI command.
 
 ## Credits
 
