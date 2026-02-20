@@ -324,8 +324,13 @@ const COMMAND_GROUPS = [
   },
   {
     name: 'webhooks',
-    description: 'Trigger inbound webhook endpoint',
+    description: 'Manage and trigger webhooks',
     commands: [
+      cmd('list', 'GET', '/webhooks', 'List webhooks'),
+      cmd('get', 'GET', '/webhooks/:id', 'Get webhook by id'),
+      cmd('create', 'POST', '/webhooks', 'Create webhook', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/webhooks/:id', 'Update webhook', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/webhooks/:id', 'Delete webhook'),
       cmd('trigger', 'POST', '/webhooks/:id', 'Trigger webhook by id', {
         expectsJsonBody: true,
         waitEntityFrom: 'runId',
