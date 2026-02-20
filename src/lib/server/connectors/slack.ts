@@ -140,6 +140,9 @@ const slack: PlatformConnector = {
       try {
         const response = await onMessage(inbound)
 
+        // NO_MESSAGE means the agent chose not to reply — skip outbound send
+        if (response === 'NO_MESSAGE') return
+
         // Slack has a 4000 char limit for messages
         if (response.length <= 4000) {
           await say(response)
@@ -178,6 +181,8 @@ const slack: PlatformConnector = {
 
       try {
         const response = await onMessage(inbound)
+        // NO_MESSAGE means the agent chose not to reply — skip outbound send
+        if (response === 'NO_MESSAGE') return
         await say(response)
       } catch (err: any) {
         console.error(`[slack] Error handling mention:`, err.message)

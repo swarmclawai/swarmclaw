@@ -7,6 +7,14 @@ import { streamAgentChat } from '../stream-agent-chat'
 import type { Connector } from '@/types'
 import type { ConnectorInstance, InboundMessage, InboundMedia } from './types'
 
+/** Sentinel value agents return when no outbound reply should be sent */
+export const NO_MESSAGE_SENTINEL = 'NO_MESSAGE'
+
+/** Check if an agent response is the NO_MESSAGE sentinel (case-insensitive, trimmed) */
+export function isNoMessage(text: string): boolean {
+  return text.trim().toUpperCase() === NO_MESSAGE_SENTINEL
+}
+
 /** Map of running connector instances by connector ID.
  *  Stored on globalThis to survive HMR reloads in dev mode —
  *  prevents duplicate sockets fighting for the same WhatsApp session. */
@@ -122,7 +130,11 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     }
   }
   // Add connector context
-  promptParts.push(`\nYou are receiving messages via ${msg.platform}. The user "${msg.senderName}" is messaging from channel "${msg.channelName || msg.channelId}". Respond naturally and conversationally.`)
+  promptParts.push(`\nYou are receiving messages via ${msg.platform}. The user "${msg.senderName}" is messaging from channel "${msg.channelName || msg.channelId}". Respond naturally and conversationally.
+
+## NO_MESSAGE Response Option
+Not every message needs a reply. If the user sends a simple acknowledgment ("ok", "thanks", "got it", thumbs-up, etc.) or is clearly ending the conversation with no question or action needed, reply with exactly "NO_MESSAGE" (nothing else). This prevents the outbound send so conversations feel natural — not every interaction should demand a user response.
+Use NO_MESSAGE when a reply would feel forced or redundant. Do NOT use it when the user asks a question, gives a task, or shares something that deserves acknowledgment. When in doubt, a short natural reply is better than silence.`)
   const systemPrompt = promptParts.join('\n\n')
 
   // Add message to session
@@ -184,13 +196,19 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     })
   }
 
-  // Save assistant response to session
+  // Save assistant response to session (even NO_MESSAGE, for context continuity)
   if (fullText.trim()) {
     session.messages.push({ role: 'assistant', text: fullText.trim(), time: Date.now() })
     session.lastActiveAt = Date.now()
     const s2 = loadSessions()
     s2[session.id] = session
     saveSessions(s2)
+  }
+
+  // If the agent chose NO_MESSAGE, return the sentinel so connectors skip outbound send
+  if (isNoMessage(fullText)) {
+    console.log(`[connector] Agent returned NO_MESSAGE — suppressing outbound reply`)
+    return NO_MESSAGE_SENTINEL
   }
 
   return fullText || '(no response)'
@@ -456,6 +474,12 @@ export async function sendConnectorMessage(params: {
   }
   if (typeof instance.sendMessage !== 'function') {
     throw new Error(`Connector "${connector.name}" (${connector.platform}) does not support outbound sends.`)
+  }
+
+  // Apply NO_MESSAGE filter at the delivery layer so all outbound paths respect it
+  if (isNoMessage(params.text) && !params.imageUrl && !params.fileUrl) {
+    console.log(`[connector] sendConnectorMessage: NO_MESSAGE — suppressing outbound send`)
+    return { connectorId, platform: connector.platform, channelId: params.channelId }
   }
 
   const result = await instance.sendMessage(params.channelId, params.text, {

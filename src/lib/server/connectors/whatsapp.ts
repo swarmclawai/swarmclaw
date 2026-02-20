@@ -308,7 +308,10 @@ const whatsapp: PlatformConnector = {
             const response = await onMessage(inbound)
             await sock!.sendPresenceUpdate('paused', jid)
 
-            await instance.sendMessage?.(jid, response)
+            // NO_MESSAGE means the agent chose not to reply — skip outbound send
+            if (response !== 'NO_MESSAGE') {
+              await instance.sendMessage?.(jid, response)
+            }
           } catch (err: any) {
             console.error(`[whatsapp] Error handling message:`, err.message)
             try {

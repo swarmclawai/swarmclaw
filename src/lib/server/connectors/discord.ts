@@ -54,6 +54,9 @@ const discord: PlatformConnector = {
         await message.channel.sendTyping()
         const response = await onMessage(inbound)
 
+        // NO_MESSAGE means the agent chose not to reply — skip outbound send
+        if (response === 'NO_MESSAGE') return
+
         // Discord has a 2000 char limit per message
         if (response.length <= 2000) {
           await message.channel.send(response)

@@ -135,6 +135,9 @@ const telegram: PlatformConnector = {
         await ctx.api.sendChatAction(ctx.chat.id, 'typing')
         const response = await onMessage(inbound)
 
+        // NO_MESSAGE means the agent chose not to reply — skip outbound send
+        if (response === 'NO_MESSAGE') return
+
         // Telegram has a 4096 char limit
         if (response.length <= 4096) {
           await ctx.reply(response)
