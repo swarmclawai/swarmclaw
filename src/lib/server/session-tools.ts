@@ -2341,6 +2341,13 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
                 credentialId: agent.credentialId || null,
                 apiEndpoint: agent.apiEndpoint || null,
                 claudeSessionId: null,
+                codexThreadId: null,
+                opencodeSessionId: null,
+                delegateResumeIds: {
+                  claudeCode: null,
+                  codex: null,
+                  opencode: null,
+                },
                 messages: [],
                 createdAt: now,
                 lastActiveAt: now,

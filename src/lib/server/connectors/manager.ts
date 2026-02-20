@@ -105,6 +105,13 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
       credentialId: agent.credentialId || null,
       apiEndpoint: agent.apiEndpoint || null,
       claudeSessionId: null,
+      codexThreadId: null,
+      opencodeSessionId: null,
+      delegateResumeIds: {
+        claudeCode: null,
+        codex: null,
+        opencode: null,
+      },
       messages: [],
       createdAt: Date.now(),
       lastActiveAt: Date.now(),

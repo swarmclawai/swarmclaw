@@ -41,6 +41,7 @@ yarn-error.log*
 /data/*.log
 /data/whatsapp-auth/
 /data/.setup_pending
+/data/.sqlite_migrated
 !/data/.gitkeep
 
 # user config backup

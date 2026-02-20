@@ -48,6 +48,7 @@ export interface Session {
   apiEndpoint?: string | null
   claudeSessionId: string | null
   codexThreadId?: string | null
+  opencodeSessionId?: string | null
   delegateResumeIds?: {
     claudeCode?: string | null
     codex?: string | null

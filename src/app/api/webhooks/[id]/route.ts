@@ -91,6 +91,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       credentialId: agent.credentialId || null,
       apiEndpoint: agent.apiEndpoint || null,
       claudeSessionId: null,
+      codexThreadId: null,
+      opencodeSessionId: null,
+      delegateResumeIds: {
+        claudeCode: null,
+        codex: null,
+        opencode: null,
+      },
       messages: [],
       createdAt: now,
       lastActiveAt: now,
