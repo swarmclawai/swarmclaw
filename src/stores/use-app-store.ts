@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector } from '../types'
+import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook } from '../types'
 import { fetchSessions, fetchDirs, fetchProviders, fetchCredentials } from '../lib/sessions'
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
@@ -114,6 +114,14 @@ interface AppState {
   setConnectorSheetOpen: (open: boolean) => void
   editingConnectorId: string | null
   setEditingConnectorId: (id: string | null) => void
+
+  // Webhooks
+  webhooks: Record<string, Webhook>
+  loadWebhooks: () => Promise<void>
+  webhookSheetOpen: boolean
+  setWebhookSheetOpen: (open: boolean) => void
+  editingWebhookId: string | null
+  setEditingWebhookId: (id: string | null) => void
 
 }
 
@@ -345,5 +353,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   setConnectorSheetOpen: (open) => set({ connectorSheetOpen: open }),
   editingConnectorId: null,
   setEditingConnectorId: (id) => set({ editingConnectorId: id }),
+
+  // Webhooks
+  webhooks: {},
+  loadWebhooks: async () => {
+    try {
+      const webhooks = await api<Record<string, Webhook>>('GET', '/webhooks')
+      set({ webhooks })
+    } catch {
+      // ignore
+    }
+  },
+  webhookSheetOpen: false,
+  setWebhookSheetOpen: (open) => set({ webhookSheetOpen: open }),
+  editingWebhookId: null,
+  setEditingWebhookId: (id) => set({ editingWebhookId: id }),
 
 }))

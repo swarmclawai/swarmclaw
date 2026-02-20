@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { Avatar } from '@/components/shared/avatar'
@@ -25,6 +25,8 @@ import { SkillList } from '@/components/skills/skill-list'
 import { SkillSheet } from '@/components/skills/skill-sheet'
 import { ConnectorList } from '@/components/connectors/connector-list'
 import { ConnectorSheet } from '@/components/connectors/connector-sheet'
+import { WebhookList } from '@/components/webhooks/webhook-list'
+import { WebhookSheet } from '@/components/webhooks/webhook-sheet'
 import { LogList } from '@/components/logs/log-list'
 import { NetworkBanner } from './network-banner'
 import { UpdateBanner } from './update-banner'
@@ -55,14 +57,14 @@ export function AppLayout() {
   const setProviderSheetOpen = useAppStore((s) => s.setProviderSheetOpen)
   const setSkillSheetOpen = useAppStore((s) => s.setSkillSheetOpen)
   const setConnectorSheetOpen = useAppStore((s) => s.setConnectorSheetOpen)
+  const setWebhookSheetOpen = useAppStore((s) => s.setWebhookSheetOpen)
   const isDesktop = useMediaQuery('(min-width: 768px)')
 
-  const [railExpanded, setRailExpanded] = useState(true)
-
-  useEffect(() => {
+  const [railExpanded, setRailExpanded] = useState(() => {
+    if (typeof window === 'undefined') return true
     const stored = localStorage.getItem(RAIL_EXPANDED_KEY)
-    if (stored !== null) setRailExpanded(stored === 'true')
-  }, [])
+    return stored === null ? true : stored === 'true'
+  })
 
   const toggleRail = () => {
     const next = !railExpanded
@@ -84,9 +86,10 @@ export function AppLayout() {
     else if (activeView === 'providers') setProviderSheetOpen(true)
     else if (activeView === 'skills') setSkillSheetOpen(true)
     else if (activeView === 'connectors') setConnectorSheetOpen(true)
+    else if (activeView === 'webhooks') setWebhookSheetOpen(true)
   }
 
-  const mainSession = Object.values(sessions).find((s: any) => s.name === '__main__' && s.user === currentUser)
+  const mainSession = Object.values(sessions).find((s) => s.name === '__main__' && s.user === currentUser)
 
   const goToMainChat = () => {
     if (mainSession) setCurrentSession(mainSession.id)
@@ -220,6 +223,11 @@ export function AppLayout() {
                 <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" />
               </svg>
             </NavItem>
+            <NavItem view="webhooks" label="Webhooks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('webhooks'); setSidebarOpen(true) }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M22 12h-4l-3 7L9 5l-3 7H2" />
+              </svg>
+            </NavItem>
             <NavItem view="logs" label="Logs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('logs'); setSidebarOpen(true) }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
@@ -337,7 +345,7 @@ export function AppLayout() {
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : 'New'}
+                {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'New'}
               </button>
             )}
           </div>
@@ -356,6 +364,7 @@ export function AppLayout() {
           {activeView === 'providers' && <ProviderList inSidebar />}
           {activeView === 'skills' && <SkillList inSidebar />}
           {activeView === 'connectors' && <ConnectorList inSidebar />}
+          {activeView === 'webhooks' && <WebhookList inSidebar />}
           {activeView === 'logs' && <LogList />}
         </div>
       )}
@@ -393,7 +402,7 @@ export function AppLayout() {
             </div>
             {/* View selector tabs */}
             <div className="flex px-4 py-2 gap-1 shrink-0 flex-wrap">
-              {(['sessions', 'agents', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'logs'] as AppView[]).map((v) => (
+              {(['sessions', 'agents', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'webhooks', 'logs'] as AppView[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setActiveView(v)}
@@ -418,7 +427,7 @@ export function AppLayout() {
                   shadow-[0_2px_12px_rgba(99,102,241,0.15)]"
                 style={{ fontFamily: 'inherit' }}
               >
-                + New {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : 'Entry'}
+                + New {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'Entry'}
               </button>
             </div>
             {activeView === 'sessions' && (
@@ -436,6 +445,7 @@ export function AppLayout() {
             {activeView === 'providers' && <ProviderList inSidebar />}
             {activeView === 'skills' && <SkillList inSidebar />}
             {activeView === 'connectors' && <ConnectorList inSidebar />}
+            {activeView === 'webhooks' && <WebhookList inSidebar />}
             {activeView === 'logs' && <LogList />}
           </div>
         </div>
@@ -469,6 +479,7 @@ export function AppLayout() {
       <ProviderSheet />
       <SkillSheet />
       <ConnectorSheet />
+      <WebhookSheet />
     </div>
   )
 }
@@ -483,6 +494,7 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   providers: 'LLM providers & custom endpoints',
   skills: 'Reusable instruction sets for agents',
   connectors: 'Chat platform bridges (Discord, Slack, etc.)',
+  webhooks: 'Inbound HTTP triggers for event-driven workflows',
   logs: 'Application logs & error tracking',
 }
 
@@ -534,6 +546,12 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'sessions'>, { icon: string; ti
     title: 'Connectors',
     description: 'Bridge chat platforms to your AI agents. Receive messages from Discord, Telegram, Slack, or WhatsApp and route them to agents.',
     features: ['Connect Discord, Telegram, Slack, or WhatsApp bots', 'Route incoming messages to any agent', 'Each platform channel gets its own session', 'Start and stop connectors from the UI'],
+  },
+  webhooks: {
+    icon: 'webhook',
+    title: 'Webhooks',
+    description: 'Receive external events over HTTP and trigger orchestrator runs automatically.',
+    features: ['Create secure inbound webhook endpoints', 'Filter events by type or source', 'Route each webhook to a specific orchestrator', 'Use x-webhook-secret for request authentication'],
   },
   logs: {
     icon: 'file-text',
@@ -608,6 +626,8 @@ function ViewEmptyIcon({ type }: { type: string }) {
       return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
     case 'link':
       return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
+    case 'webhook':
+      return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><path d="M22 12h-4l-3 7L9 5l-3 7H2" /></svg>
     default:
       return null
   }

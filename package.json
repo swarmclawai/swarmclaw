@@ -11,7 +11,8 @@
     "start": "next start",
     "lint": "eslint",
     "cli": "node ./bin/swarmclaw.js",
-    "test:cli": "node --test src/cli/index.test.js"
+    "test:cli": "node --test src/cli/index.test.js",
+    "test:openclaw": "node --test --experimental-strip-types src/lib/server/connectors/openclaw.test.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

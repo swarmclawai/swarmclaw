@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   saveConnectors(connectors)
 
   // Auto-start if connector has credentials (or is WhatsApp which uses QR)
-  const hasCredentials = connector.platform === 'whatsapp' || !!connector.credentialId
+  const hasCredentials = connector.platform === 'whatsapp' || connector.platform === 'openclaw' || !!connector.credentialId
   if (hasCredentials && body.autoStart !== false) {
     try {
       const { startConnector } = await import('@/lib/server/connectors/manager')

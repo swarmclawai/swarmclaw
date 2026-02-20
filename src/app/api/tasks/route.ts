@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { loadTasks, saveTasks } from '@/lib/server/storage'
+import { validateCompletedTasksQueue } from '@/lib/server/queue'
+import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
+import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
 
 export async function GET(req: Request) {
+  // Keep completed queue integrity even if daemon is not running.
+  validateCompletedTasksQueue()
+
   const { searchParams } = new URL(req.url)
   const includeArchived = searchParams.get('includeArchived') === 'true'
   const allTasks = loadTasks()
@@ -32,9 +38,9 @@ export async function POST(req: Request) {
     description: body.description || '',
     status: body.status || 'backlog',
     agentId: body.agentId || '',
-    sessionId: null,
-    result: null,
-    error: null,
+    sessionId: typeof body.sessionId === 'string' ? body.sessionId : null,
+    result: typeof body.result === 'string' ? body.result : null,
+    error: typeof body.error === 'string' ? body.error : null,
     createdAt: now,
     updatedAt: now,
     queuedAt: null,
@@ -42,6 +48,22 @@ export async function POST(req: Request) {
     completedAt: null,
     archivedAt: null,
   }
+
+  if (tasks[id].status === 'completed') {
+    const report = ensureTaskCompletionReport(tasks[id])
+    if (report?.relativePath) tasks[id].completionReportPath = report.relativePath
+    const validation = validateTaskCompletion(tasks[id], { report })
+    tasks[id].validation = validation
+    if (validation.ok) {
+      tasks[id].completedAt = Date.now()
+      tasks[id].error = null
+    } else {
+      tasks[id].status = 'failed'
+      tasks[id].completedAt = null
+      tasks[id].error = formatValidationFailure(validation.reasons).slice(0, 500)
+    }
+  }
+
   saveTasks(tasks)
   return NextResponse.json(tasks[id])
 }

@@ -99,6 +99,27 @@ const PLATFORMS: {
       { key: 'outboundJid', label: 'Default Outbound Recipient', placeholder: '15551234567 or 15551234567@s.whatsapp.net', help: 'Used by connector_message_tool when the agent sends proactive WhatsApp updates without an explicit "to" value' },
     ],
   },
+  {
+    id: 'openclaw',
+    label: 'OpenClaw',
+    color: '#F97316',
+    setupSteps: [
+      'Ensure your OpenClaw instance is running (default: localhost:18789)',
+      'If authentication is enabled, create a credential with your OpenClaw gateway token',
+      'The connector will connect via OpenClaw Gateway RPC and handle chat events',
+    ],
+    tokenLabel: 'Gateway Token',
+    tokenHelp: 'Required when your OpenClaw gateway is auth-protected',
+    configFields: [
+      { key: 'wsUrl', label: 'WebSocket URL', placeholder: 'ws://localhost:18789', help: 'OpenClaw gateway WebSocket endpoint (root URL, not /ws)' },
+      { key: 'sessionKey', label: 'Session Key Filter', placeholder: 'main', help: 'Optional. If set, only inbound events for this OpenClaw session are processed.' },
+      { key: 'nodeId', label: 'Client Label', placeholder: 'swarmclaw', help: 'Optional display label shown in OpenClaw presence metadata.' },
+      { key: 'role', label: 'Gateway Role', placeholder: 'operator', help: 'Optional role claim for connect handshake. Default is operator.' },
+      { key: 'scopes', label: 'Scopes (CSV)', placeholder: 'operator.read,operator.write', help: 'Optional comma-separated scopes for OpenClaw connect.' },
+      { key: 'tickWatchdog', label: 'Tick Watchdog', placeholder: 'true', help: 'Set false to disable stale-tick reconnect watchdog.' },
+      { key: 'tickIntervalMs', label: 'Tick Interval Override (ms)', placeholder: '30000', help: 'Optional watchdog interval override when policy tick is unavailable.' },
+    ],
+  },
 ]
 
 export function ConnectorSheet() {
@@ -280,7 +301,7 @@ export function ConnectorSheet() {
                 <div>
                   <div className={`text-[14px] font-600 ${platform === p.id ? 'text-text' : 'text-text-2'}`}>{p.label}</div>
                   <div className="text-[11px] text-text-3 mt-0.5">
-                    {p.id === 'whatsapp' ? 'QR code pairing' : 'Bot token'}
+                    {p.id === 'whatsapp' ? 'QR code pairing' : p.id === 'openclaw' ? 'WebSocket gateway' : 'Bot token'}
                   </div>
                 </div>
               </button>

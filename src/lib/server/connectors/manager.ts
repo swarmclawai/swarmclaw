@@ -40,6 +40,7 @@ async function getPlatform(platform: string) {
     case 'telegram': return (await import('./telegram')).default
     case 'slack':    return (await import('./slack')).default
     case 'whatsapp': return (await import('./whatsapp')).default
+    case 'openclaw': return (await import('./openclaw')).default
     default: throw new Error(`Unknown platform: ${platform}`)
   }
 }
@@ -319,7 +320,7 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
     botToken = connector.config.botToken
   }
 
-  if (!botToken && connector.platform !== 'whatsapp') {
+  if (!botToken && connector.platform !== 'whatsapp' && connector.platform !== 'openclaw') {
     throw new Error('No bot token configured')
   }
 

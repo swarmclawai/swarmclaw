@@ -24,7 +24,7 @@ export function MemoryList({ inSidebar }: Props) {
 
   const load = async () => {
     try {
-      const results = await searchMemory(search || undefined)
+      const results = await searchMemory({ q: search || undefined })
       setEntries(Array.isArray(results) ? results : [])
     } catch {
       setEntries([])

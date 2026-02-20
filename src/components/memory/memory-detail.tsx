@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
-import { searchMemory, updateMemory, deleteMemory } from '@/lib/memory'
+import { getMemory, updateMemory, deleteMemory } from '@/lib/memory'
 import type { MemoryEntry } from '@/types'
 
 const CATEGORIES = ['note', 'fact', 'preference', 'finding', 'learning', 'general']
@@ -27,15 +27,13 @@ export function MemoryDetail() {
   // Load memory entry when selection changes
   useEffect(() => {
     if (!selectedId) { setEntry(null); return }
-    searchMemory().then((all) => {
-      const found = all.find((m: MemoryEntry) => m.id === selectedId)
-      if (found) {
-        setEntry(found)
-        setTitle(found.title)
-        setContent(found.content)
-        setCategory(found.category || 'note')
-        setDirty(false)
-      }
+    getMemory(selectedId).then((found) => {
+      if (!found || Array.isArray(found)) return
+      setEntry(found)
+      setTitle(found.title)
+      setContent(found.content)
+      setCategory(found.category || 'note')
+      setDirty(false)
     }).catch(() => {})
   }, [selectedId])
 
@@ -84,6 +82,12 @@ export function MemoryDetail() {
 
   const agentName = entry.agentId ? (agents[entry.agentId]?.name || entry.agentId) : null
   const sessionName = entry.sessionId ? (sessions[entry.sessionId]?.name || entry.sessionId) : null
+  const imagePath = entry.image?.path || entry.imagePath || null
+  const imageUrl = imagePath
+    ? imagePath.startsWith('data/memory-images/')
+      ? `/api/memory-images/${imagePath.split('/').pop()}`
+      : imagePath
+    : null
 
   const inputClass = "w-full px-4 py-3 rounded-[12px] border border-white/[0.06] bg-white/[0.02] text-text outline-none transition-all duration-200 placeholder:text-text-3/40 focus:border-accent-bright/20 focus:bg-white/[0.03]"
 
@@ -195,6 +199,56 @@ export function MemoryDetail() {
               style={{ fontFamily: 'inherit' }}
             />
           </div>
+
+          {imageUrl && (
+            <div>
+              <label className="block text-[11px] font-600 text-text-3/60 uppercase tracking-[0.06em] mb-2">Image</label>
+              <a href={imageUrl} target="_blank" rel="noreferrer" className="inline-block rounded-[12px] overflow-hidden border border-white/[0.08]">
+                <img src={imageUrl} alt={entry.title} className="max-w-[320px] max-h-[220px] object-cover block" />
+              </a>
+            </div>
+          )}
+
+          {entry.references?.length ? (
+            <div>
+              <label className="block text-[11px] font-600 text-text-3/60 uppercase tracking-[0.06em] mb-2">References</label>
+              <div className="space-y-2">
+                {entry.references.map((ref, idx) => (
+                  <div key={`${ref.type}-${ref.path || ref.title || idx}`} className="text-[12px] rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+                    <div className="text-text-2/70">
+                      <span className="uppercase text-[10px] tracking-[0.06em] mr-1">{ref.type}</span>
+                      {ref.path || ref.title || '(no path)'}
+                    </div>
+                    {(ref.projectName || ref.projectRoot || ref.note || typeof ref.exists === 'boolean') && (
+                      <div className="text-text-3/55 mt-1">
+                        {ref.projectName ? `project: ${ref.projectName} ` : ''}
+                        {ref.projectRoot ? `root: ${ref.projectRoot} ` : ''}
+                        {typeof ref.exists === 'boolean' ? (ref.exists ? 'exists' : 'missing') : ''}
+                        {ref.note ? ` — ${ref.note}` : ''}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {entry.linkedMemoryIds?.length ? (
+            <div>
+              <label className="block text-[11px] font-600 text-text-3/60 uppercase tracking-[0.06em] mb-2">Linked Memories</label>
+              <div className="flex flex-wrap gap-1.5">
+                {entry.linkedMemoryIds.map((id) => (
+                  <button
+                    key={id}
+                    onClick={() => setSelectedId(id)}
+                    className="px-2.5 py-1 rounded-[8px] text-[11px] font-mono bg-white/[0.04] border border-white/[0.08] text-accent-bright/70 hover:text-accent-bright cursor-pointer transition-colors"
+                  >
+                    {id}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {/* Metadata */}
           <div className="pt-4 border-t border-white/[0.04]">

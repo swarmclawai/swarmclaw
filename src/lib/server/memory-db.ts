@@ -2,15 +2,22 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import crypto from 'crypto'
 import fs from 'fs'
-import type { MemoryEntry, FileReference } from '@/types'
+import type { MemoryEntry, FileReference, MemoryImage, MemoryReference } from '@/types'
 import { getEmbedding, cosineSimilarity, serializeEmbedding, deserializeEmbedding } from './embeddings'
+import { loadSettings } from './storage'
+import {
+  normalizeLinkedMemoryIds,
+  normalizeMemoryLookupLimits,
+  resolveLookupRequest,
+  traverseLinkedMemoryGraph,
+  type MemoryLookupLimits,
+} from './memory-graph'
 
 const DB_PATH = path.join(process.cwd(), 'data', 'memory.db')
 const IMAGES_DIR = path.join(process.cwd(), 'data', 'memory-images')
 
-// Default memory limits
-const DEFAULT_MAX_DEPTH = 3
-const DEFAULT_MAX_PER_LOOKUP = 20
+const MAX_IMAGE_INPUT_BYTES = 10 * 1024 * 1024 // 10MB
+const IMAGE_EXT_WHITELIST = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'])
 
 // Simple cache for query embeddings to avoid blocking
 const embeddingCache = new Map<string, number[]>()
@@ -30,31 +37,237 @@ function getEmbeddingSync(query: string): number[] | null {
   return null
 }
 
-/** Compress an image file and store it in the memory-images directory. Returns the relative path. */
-export async function storeMemoryImage(sourcePath: string, memoryId: string): Promise<string> {
+function parseImageDimensionsFromSharp(metadata: { width?: number; height?: number }): { width?: number; height?: number } {
+  const width = typeof metadata.width === 'number' ? metadata.width : undefined
+  const height = typeof metadata.height === 'number' ? metadata.height : undefined
+  return { width, height }
+}
+
+function normalizeImageExt(sourcePath: string): string {
+  const ext = path.extname(sourcePath).toLowerCase()
+  return IMAGE_EXT_WHITELIST.has(ext) ? ext : '.jpg'
+}
+
+/** Compress an image file and store it in the memory-images directory. Returns structured image metadata. */
+export async function storeMemoryImageAsset(sourcePath: string, memoryId: string): Promise<MemoryImage> {
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error(`Image file not found: ${sourcePath}`)
+  }
+  const sourceStat = fs.statSync(sourcePath)
+  if (sourceStat.size > MAX_IMAGE_INPUT_BYTES) {
+    throw new Error(`Image exceeds max size (${MAX_IMAGE_INPUT_BYTES} bytes): ${sourcePath}`)
+  }
+
   // Ensure images directory exists
   fs.mkdirSync(IMAGES_DIR, { recursive: true })
 
-  const ext = path.extname(sourcePath).toLowerCase()
-  const destFilename = `${memoryId}${ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.gif' ? ext : '.jpg'}`
+  const ext = normalizeImageExt(sourcePath)
+  const destFilename = `${memoryId}${ext}`
   const destPath = path.join(IMAGES_DIR, destFilename)
+  const jpgPath = destPath.replace(/\.[^.]+$/, '.jpg')
 
   try {
     // Try to use sharp for compression
     const sharp = (await import('sharp')).default
-    await sharp(sourcePath)
+    const transformed = sharp(sourcePath)
       .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 75 })
-      .toFile(destPath.replace(/\.[^.]+$/, '.jpg'))
-    return `data/memory-images/${destFilename.replace(/\.[^.]+$/, '.jpg')}`
+    const info = await transformed.toFile(jpgPath)
+    const relPath = `data/memory-images/${path.basename(jpgPath)}`
+    return {
+      path: relPath,
+      mimeType: 'image/jpeg',
+      ...parseImageDimensionsFromSharp(info),
+      sizeBytes: info.size,
+    }
   } catch {
     // Fallback: copy file as-is if sharp is not available
     fs.copyFileSync(sourcePath, destPath)
-    return `data/memory-images/${destFilename}`
+    const stat = fs.statSync(destPath)
+    const mimeType = ext === '.png'
+      ? 'image/png'
+      : ext === '.gif'
+        ? 'image/gif'
+        : ext === '.webp'
+          ? 'image/webp'
+          : 'image/jpeg'
+    return {
+      path: `data/memory-images/${destFilename}`,
+      mimeType,
+      sizeBytes: stat.size,
+    }
   }
 }
 
+export async function storeMemoryImageFromDataUrl(dataUrl: string, memoryId: string): Promise<MemoryImage> {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/)
+  if (!match) throw new Error('Invalid image data URL format')
+  const [, mimeType, base64] = match
+  const buf = Buffer.from(base64, 'base64')
+  if (buf.length > MAX_IMAGE_INPUT_BYTES) {
+    throw new Error(`Image exceeds max size (${MAX_IMAGE_INPUT_BYTES} bytes)`)
+  }
+
+  fs.mkdirSync(IMAGES_DIR, { recursive: true })
+  const ext = mimeType.includes('png')
+    ? '.png'
+    : mimeType.includes('gif')
+      ? '.gif'
+      : mimeType.includes('webp')
+        ? '.webp'
+        : '.jpg'
+  const tmpPath = path.join(IMAGES_DIR, `${memoryId}-upload${ext}`)
+  fs.writeFileSync(tmpPath, buf)
+  try {
+    return await storeMemoryImageAsset(tmpPath, memoryId)
+  } finally {
+    try { fs.unlinkSync(tmpPath) } catch { /* ignore */ }
+  }
+}
+
+/** Backward-compatible helper returning only the stored relative path. */
+export async function storeMemoryImage(sourcePath: string, memoryId: string): Promise<string> {
+  const image = await storeMemoryImageAsset(sourcePath, memoryId)
+  return image.path
+}
+
 let _db: ReturnType<typeof initDb> | null = null
+
+export function getMemoryLookupLimits(settingsOverride?: Record<string, unknown>): MemoryLookupLimits {
+  const settings = settingsOverride || loadSettings()
+  return normalizeMemoryLookupLimits(settings)
+}
+
+function parseJsonSafe<T>(value: unknown, fallback: T): T {
+  if (typeof value !== 'string' || !value.trim()) return fallback
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return fallback
+  }
+}
+
+function normalizeReferencePath(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const value = raw.trim()
+  return value ? value : undefined
+}
+
+function resolveExists(pathValue: string | undefined): boolean | undefined {
+  if (!pathValue) return undefined
+  const absolute = path.isAbsolute(pathValue) ? pathValue : path.resolve(process.cwd(), pathValue)
+  try {
+    return fs.existsSync(absolute)
+  } catch {
+    return undefined
+  }
+}
+
+function normalizeReferences(
+  rawRefs: unknown,
+  legacyFilePaths: unknown,
+): MemoryReference[] | undefined {
+  const output: MemoryReference[] = []
+  const seen = new Set<string>()
+
+  const pushRef = (ref: MemoryReference) => {
+    const key = `${ref.type}|${ref.path || ''}|${ref.projectRoot || ''}|${ref.title || ''}`
+    if (seen.has(key)) return
+    seen.add(key)
+    output.push(ref)
+  }
+
+  if (Array.isArray(rawRefs)) {
+    for (const raw of rawRefs) {
+      if (!raw || typeof raw !== 'object') continue
+      const obj = raw as Record<string, unknown>
+      const type = typeof obj.type === 'string' ? obj.type : 'file'
+      if (!['project', 'folder', 'file', 'task', 'session', 'url'].includes(type)) continue
+      const pathValue = normalizeReferencePath(obj.path)
+      const projectRoot = normalizeReferencePath(obj.projectRoot)
+      const title = typeof obj.title === 'string' ? obj.title.trim() : undefined
+      const note = typeof obj.note === 'string' ? obj.note.trim() : undefined
+      const projectName = typeof obj.projectName === 'string' ? obj.projectName.trim() : undefined
+      const ts = typeof obj.timestamp === 'number' && Number.isFinite(obj.timestamp)
+        ? Math.trunc(obj.timestamp)
+        : Date.now()
+      const exists = resolveExists(pathValue) ?? (typeof obj.exists === 'boolean' ? obj.exists : undefined)
+      pushRef({
+        type: type as MemoryReference['type'],
+        path: pathValue,
+        projectRoot,
+        projectName,
+        title,
+        note,
+        exists,
+        timestamp: ts,
+      })
+    }
+  }
+
+  const legacy = Array.isArray(legacyFilePaths) ? legacyFilePaths as FileReference[] : []
+  for (const raw of legacy) {
+    if (!raw || typeof raw !== 'object') continue
+    const pathValue = normalizeReferencePath((raw as FileReference).path)
+    if (!pathValue) continue
+    const kind = (raw as FileReference).kind || 'file'
+    const type: MemoryReference['type'] = kind === 'project' ? 'project' : (kind === 'folder' ? 'folder' : 'file')
+    const timestamp = typeof raw.timestamp === 'number' && Number.isFinite(raw.timestamp)
+      ? Math.trunc(raw.timestamp)
+      : Date.now()
+    pushRef({
+      type,
+      path: pathValue,
+      projectRoot: raw.projectRoot,
+      projectName: raw.projectName,
+      note: raw.contextSnippet,
+      exists: typeof raw.exists === 'boolean' ? raw.exists : resolveExists(pathValue),
+      timestamp,
+    })
+  }
+
+  return output.length ? output : undefined
+}
+
+function referencesToLegacyFilePaths(references?: MemoryReference[]): FileReference[] | undefined {
+  if (!references?.length) return undefined
+  const fileRefs: FileReference[] = references
+    .filter((ref) => ref.type === 'file' || ref.type === 'folder' || ref.type === 'project')
+    .map((ref) => ({
+      path: ref.path || '',
+      contextSnippet: ref.note,
+      kind: ref.type === 'project'
+        ? 'project' as const
+        : ref.type === 'folder'
+          ? 'folder' as const
+          : 'file' as const,
+      projectRoot: ref.projectRoot,
+      projectName: ref.projectName,
+      exists: ref.exists,
+      timestamp: ref.timestamp || Date.now(),
+    }))
+    .filter((ref) => !!ref.path)
+  return fileRefs.length ? fileRefs : undefined
+}
+
+function normalizeImage(rawImage: unknown, legacyImagePath?: string | null): MemoryImage | null | undefined {
+  if (rawImage && typeof rawImage === 'object') {
+    const obj = rawImage as Record<string, unknown>
+    const pathValue = normalizeReferencePath(obj.path)
+    if (pathValue) {
+      return {
+        path: pathValue,
+        mimeType: typeof obj.mimeType === 'string' ? obj.mimeType : undefined,
+        width: typeof obj.width === 'number' ? obj.width : undefined,
+        height: typeof obj.height === 'number' ? obj.height : undefined,
+        sizeBytes: typeof obj.sizeBytes === 'number' ? obj.sizeBytes : undefined,
+      }
+    }
+  }
+  const legacy = normalizeReferencePath(legacyImagePath || undefined)
+  if (legacy) return { path: legacy }
+  return undefined
+}
 
 function initDb() {
   const db = new Database(DB_PATH)
@@ -82,6 +295,8 @@ function initDb() {
     'filePaths TEXT',
     'imagePath TEXT',
     'linkedMemoryIds TEXT',
+    '"references" TEXT',
+    'image TEXT',
   ]) {
     try { db.exec(`ALTER TABLE memories ADD COLUMN ${col}`) } catch { /* already exists */ }
   }
@@ -116,6 +331,46 @@ function initDb() {
       VALUES (new.rowid, new.title, new.content, new.category);
     END
   `)
+
+  const rowsForMigration = db.prepare(`
+    SELECT id, filePaths, imagePath, linkedMemoryIds, "references" as refs, image
+    FROM memories
+  `).all() as Array<{
+    id: string
+    filePaths: string | null
+    imagePath: string | null
+    linkedMemoryIds: string | null
+    refs: string | null
+    image: string | null
+  }>
+
+  const migrationStmt = db.prepare(`
+    UPDATE memories
+    SET "references" = ?, image = ?, linkedMemoryIds = ?
+    WHERE id = ?
+  `)
+
+  const migrateLegacyRows = db.transaction(() => {
+    let migrated = 0
+    for (const row of rowsForMigration) {
+      const legacyFilePaths = parseJsonSafe<FileReference[]>(row.filePaths, [])
+      const refs = normalizeReferences(parseJsonSafe<MemoryReference[]>(row.refs, []), legacyFilePaths)
+      const image = normalizeImage(parseJsonSafe<MemoryImage | null>(row.image, null), row.imagePath)
+      const linkedIds = normalizeLinkedMemoryIds(parseJsonSafe<string[]>(row.linkedMemoryIds, []), row.id)
+
+      const nextRefs = refs?.length ? JSON.stringify(refs) : null
+      const nextImage = image ? JSON.stringify(image) : null
+      const nextLinks = linkedIds.length ? JSON.stringify(linkedIds) : null
+
+      if (nextRefs === row.refs && nextImage === row.image && nextLinks === row.linkedMemoryIds) continue
+      migrationStmt.run(nextRefs, nextImage, nextLinks, row.id)
+      migrated++
+    }
+    if (migrated > 0) {
+      console.log(`[memory-db] Migrated ${migrated} legacy memory row(s) to graph schema`)
+    }
+  })
+  migrateLegacyRows()
 
   // Seed platform knowledge for the default agent on fresh installs
   const memCount = (db.prepare('SELECT COUNT(*) as c FROM memories').get() as { c: number }).c
@@ -193,11 +448,16 @@ function initDb() {
 
   const stmts = {
     insert: db.prepare(`
-      INSERT INTO memories (id, agentId, sessionId, category, title, content, metadata, embedding, filePaths, imagePath, linkedMemoryIds, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO memories (
+        id, agentId, sessionId, category, title, content, metadata, embedding,
+        "references", filePaths, image, imagePath, linkedMemoryIds, createdAt, updatedAt
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     update: db.prepare(`
-      UPDATE memories SET agentId=?, sessionId=?, category=?, title=?, content=?, metadata=?, embedding=?, filePaths=?, imagePath=?, linkedMemoryIds=?, updatedAt=?
+      UPDATE memories
+      SET agentId=?, sessionId=?, category=?, title=?, content=?, metadata=?, embedding=?,
+          "references"=?, filePaths=?, image=?, imagePath=?, linkedMemoryIds=?, updatedAt=?
       WHERE id=?
     `),
     delete: db.prepare(`DELETE FROM memories WHERE id=?`),
@@ -207,8 +467,8 @@ function initDb() {
       const placeholders = ids.map(() => '?').join(',')
       return db.prepare(`SELECT * FROM memories WHERE id IN (${placeholders})`).all(...ids) as any[]
     },
-    listAll: db.prepare(`SELECT * FROM memories ORDER BY updatedAt DESC LIMIT 200`),
-    listByAgent: db.prepare(`SELECT * FROM memories WHERE agentId=? ORDER BY updatedAt DESC LIMIT 200`),
+    listAll: db.prepare(`SELECT * FROM memories ORDER BY updatedAt DESC LIMIT ?`),
+    listByAgent: db.prepare(`SELECT * FROM memories WHERE agentId=? ORDER BY updatedAt DESC LIMIT ?`),
     search: db.prepare(`
       SELECT m.* FROM memories m
       INNER JOIN memories_fts f ON m.rowid = f.rowid
@@ -225,53 +485,47 @@ function initDb() {
     `),
     // Remove a linked ID from all memories that reference it (cleanup on delete)
     findMemoriesLinkingTo: db.prepare(`SELECT * FROM memories WHERE linkedMemoryIds LIKE ?`),
+    updateLinks: db.prepare(`UPDATE memories SET linkedMemoryIds = ?, updatedAt = ? WHERE id = ?`),
   }
 
-  function rowToEntry(row: any): MemoryEntry {
+  function rowToEntry(row: Record<string, unknown>): MemoryEntry {
+    const legacyFilePaths = parseJsonSafe<FileReference[]>(row.filePaths, [])
+    const references = normalizeReferences(parseJsonSafe<MemoryReference[]>(row.references, []), legacyFilePaths)
+    const image = normalizeImage(parseJsonSafe<MemoryImage | null>(row.image, null), typeof row.imagePath === 'string' ? row.imagePath : null)
+    const filePaths = referencesToLegacyFilePaths(references)
+    const linkedMemoryIds = normalizeLinkedMemoryIds(parseJsonSafe<string[]>(row.linkedMemoryIds, []), typeof row.id === 'string' ? row.id : undefined)
+
     return {
-      ...row,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-      filePaths: row.filePaths ? JSON.parse(row.filePaths) : undefined,
-      imagePath: row.imagePath || undefined,
-      linkedMemoryIds: row.linkedMemoryIds ? JSON.parse(row.linkedMemoryIds) : undefined,
+      id: String(row.id || ''),
+      agentId: typeof row.agentId === 'string' ? row.agentId : null,
+      sessionId: typeof row.sessionId === 'string' ? row.sessionId : null,
+      category: typeof row.category === 'string' ? row.category : 'note',
+      title: typeof row.title === 'string' ? row.title : 'Untitled',
+      content: typeof row.content === 'string' ? row.content : '',
+      metadata: parseJsonSafe<Record<string, unknown> | undefined>(row.metadata, undefined),
+      references,
+      filePaths,
+      image,
+      imagePath: image?.path || undefined,
+      linkedMemoryIds: linkedMemoryIds.length ? linkedMemoryIds : undefined,
+      createdAt: typeof row.createdAt === 'number' ? row.createdAt : Date.now(),
+      updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : Date.now(),
     }
   }
 
-  /** BFS traversal of linked memories starting from seed entries */
   function traverseLinked(
     seedEntries: MemoryEntry[],
-    maxDepth: number = DEFAULT_MAX_DEPTH,
-    maxResults: number = DEFAULT_MAX_PER_LOOKUP,
-  ): { entries: MemoryEntry[]; truncated: boolean } {
-    if (maxDepth <= 0) return { entries: seedEntries.slice(0, maxResults), truncated: seedEntries.length > maxResults }
-
-    const seen = new Set<string>()
-    const result: MemoryEntry[] = []
-    let queue: MemoryEntry[] = [...seedEntries]
-    let depth = 0
-    let truncated = false
-
-    while (queue.length > 0 && depth <= maxDepth) {
-      const nextQueue: MemoryEntry[] = []
-      for (const entry of queue) {
-        if (seen.has(entry.id)) continue
-        seen.add(entry.id)
-        result.push(entry)
-        if (result.length >= maxResults) {
-          truncated = true
-          return { entries: result, truncated }
-        }
-        // Only follow links if we haven't reached max depth
-        if (depth < maxDepth && entry.linkedMemoryIds?.length) {
-          const linkedRows = stmts.getByIds(entry.linkedMemoryIds.filter((lid) => !seen.has(lid)))
-          nextQueue.push(...linkedRows.map(rowToEntry))
-        }
-      }
-      queue = nextQueue
-      depth++
-    }
-
-    return { entries: result, truncated }
+    limits: MemoryLookupLimits,
+  ): { entries: MemoryEntry[]; truncated: boolean; expandedLinkedCount: number } {
+    const traversal = traverseLinkedMemoryGraph(
+      seedEntries,
+      limits,
+      (ids) => {
+        const linkedRows = stmts.getByIds(ids)
+        return linkedRows.map((row) => rowToEntry(row as Record<string, unknown>))
+      },
+    )
+    return traversal
   }
 
   const getAllWithEmbeddings = db.prepare(
@@ -285,14 +539,20 @@ function initDb() {
     add(data: Omit<MemoryEntry, 'id' | 'createdAt' | 'updatedAt'>): MemoryEntry {
       const id = crypto.randomBytes(6).toString('hex')
       const now = Date.now()
+      const references = normalizeReferences(data.references, data.filePaths)
+      const legacyFilePaths = referencesToLegacyFilePaths(references)
+      const image = normalizeImage(data.image, data.imagePath)
+      const linkedMemoryIds = normalizeLinkedMemoryIds(data.linkedMemoryIds, id)
       stmts.insert.run(
         id, data.agentId || null, data.sessionId || null,
         data.category, data.title, data.content,
         data.metadata ? JSON.stringify(data.metadata) : null,
         null, // embedding computed async
-        data.filePaths?.length ? JSON.stringify(data.filePaths) : null,
-        data.imagePath || null,
-        data.linkedMemoryIds?.length ? JSON.stringify(data.linkedMemoryIds) : null,
+        references?.length ? JSON.stringify(references) : null,
+        legacyFilePaths?.length ? JSON.stringify(legacyFilePaths) : null,
+        image ? JSON.stringify(image) : null,
+        image?.path || null,
+        linkedMemoryIds.length ? JSON.stringify(linkedMemoryIds) : null,
         now, now,
       )
       // Compute embedding in background (fire-and-forget)
@@ -304,24 +564,57 @@ function initDb() {
           )
         }
       }).catch(() => { /* embedding not available, ok */ })
-      return { ...data, id, createdAt: now, updatedAt: now }
+
+      // Keep memory links bidirectional by default.
+      if (linkedMemoryIds.length) this.link(id, linkedMemoryIds, true)
+
+      const created = this.get(id)
+      if (created) return created
+      return {
+        ...data,
+        id,
+        references,
+        filePaths: legacyFilePaths,
+        image,
+        imagePath: image?.path || null,
+        linkedMemoryIds,
+        createdAt: now,
+        updatedAt: now,
+      }
     },
 
     update(id: string, updates: Partial<MemoryEntry>): MemoryEntry | null {
-      const existing = stmts.getById.get(id) as any
+      const existing = stmts.getById.get(id) as Record<string, unknown> | undefined
       if (!existing) return null
-      const merged = { ...rowToEntry(existing), ...updates }
+      const existingEntry = rowToEntry(existing)
+      const merged = { ...existingEntry, ...updates }
+      const references = normalizeReferences(merged.references, merged.filePaths)
+      const legacyFilePaths = referencesToLegacyFilePaths(references)
+      const image = normalizeImage(merged.image, merged.imagePath)
+      const nextLinked = normalizeLinkedMemoryIds(merged.linkedMemoryIds, id)
+      const prevLinked = normalizeLinkedMemoryIds(existingEntry.linkedMemoryIds, id)
       const now = Date.now()
       stmts.update.run(
         merged.agentId || null, merged.sessionId || null,
         merged.category, merged.title, merged.content,
         merged.metadata ? JSON.stringify(merged.metadata) : null,
-        existing.embedding, // preserve existing embedding
-        merged.filePaths?.length ? JSON.stringify(merged.filePaths) : null,
-        merged.imagePath || null,
-        merged.linkedMemoryIds?.length ? JSON.stringify(merged.linkedMemoryIds) : null,
+        existing.embedding || null, // preserve existing embedding
+        references?.length ? JSON.stringify(references) : null,
+        legacyFilePaths?.length ? JSON.stringify(legacyFilePaths) : null,
+        image ? JSON.stringify(image) : null,
+        image?.path || null,
+        nextLinked.length ? JSON.stringify(nextLinked) : null,
         now, id,
       )
+
+      // Keep links reciprocal when link set changes.
+      if (updates.linkedMemoryIds) {
+        const added = nextLinked.filter((lid) => !prevLinked.includes(lid))
+        const removed = prevLinked.filter((lid) => !nextLinked.includes(lid))
+        if (added.length) this.link(id, added, true)
+        if (removed.length) this.unlink(id, removed, true)
+      }
+
       // Re-compute embedding if content changed
       if (updates.title || updates.content) {
         const text = `${merged.title} ${merged.content}`.slice(0, 4000)
@@ -333,68 +626,107 @@ function initDb() {
           }
         }).catch(() => { /* ok */ })
       }
-      return { ...merged, updatedAt: now }
+      return this.get(id)
     },
 
     delete(id: string) {
       // Clean up image file if present
-      const row = stmts.getById.get(id) as any
-      if (row?.imagePath) {
-        const imgPath = path.join(process.cwd(), row.imagePath)
+      const row = stmts.getById.get(id) as Record<string, unknown> | undefined
+      const entry = row ? rowToEntry(row) : null
+      if (entry?.image?.path || entry?.imagePath) {
+        const imgPath = path.join(process.cwd(), entry.image?.path || entry.imagePath || '')
         try { fs.unlinkSync(imgPath) } catch { /* file may not exist */ }
       }
       stmts.delete.run(id)
       // Remove this ID from any other memory's linkedMemoryIds
       const linking = stmts.findMemoriesLinkingTo.all(`%"${id}"%`) as any[]
       for (const row of linking) {
-        const ids: string[] = JSON.parse(row.linkedMemoryIds || '[]')
+        const ids = normalizeLinkedMemoryIds(parseJsonSafe<string[]>(row.linkedMemoryIds, []), row.id)
         const filtered = ids.filter((lid: string) => lid !== id)
-        db.prepare(`UPDATE memories SET linkedMemoryIds = ? WHERE id = ?`).run(
-          filtered.length ? JSON.stringify(filtered) : null,
-          row.id,
-        )
+        stmts.updateLinks.run(filtered.length ? JSON.stringify(filtered) : null, Date.now(), row.id)
       }
     },
 
     get(id: string): MemoryEntry | null {
-      const row = stmts.getById.get(id) as any
+      const row = stmts.getById.get(id) as Record<string, unknown> | undefined
       if (!row) return null
       return rowToEntry(row)
     },
 
     /** Get a memory and its linked memories via BFS traversal */
-    getWithLinked(id: string, maxDepth?: number, maxResults?: number): { entries: MemoryEntry[]; truncated: boolean } | null {
-      const row = stmts.getById.get(id) as any
+    getWithLinked(
+      id: string,
+      maxDepth?: number,
+      maxResults?: number,
+      maxLinkedExpansion?: number,
+    ): { entries: MemoryEntry[]; truncated: boolean; expandedLinkedCount: number; limits: MemoryLookupLimits } | null {
+      const row = stmts.getById.get(id) as Record<string, unknown> | undefined
       if (!row) return null
       const entry = rowToEntry(row)
-      return traverseLinked([entry], maxDepth ?? DEFAULT_MAX_DEPTH, maxResults ?? DEFAULT_MAX_PER_LOOKUP)
+      const defaults = getMemoryLookupLimits()
+      const limits = resolveLookupRequest(defaults, {
+        depth: maxDepth ?? defaults.maxDepth,
+        limit: maxResults ?? defaults.maxPerLookup,
+        linkedLimit: maxLinkedExpansion ?? defaults.maxLinkedExpansion,
+      })
+      const traversal = traverseLinked([entry], limits)
+      return { ...traversal, limits }
     },
 
     /** Add links from one memory to others */
-    link(id: string, targetIds: string[]): MemoryEntry | null {
-      const existing = stmts.getById.get(id) as any
+    link(id: string, targetIds: string[], bidirectional = true): MemoryEntry | null {
+      const existing = stmts.getById.get(id) as Record<string, unknown> | undefined
       if (!existing) return null
       const entry = rowToEntry(existing)
-      const current = new Set(entry.linkedMemoryIds || [])
-      for (const tid of targetIds) current.add(tid)
-      const linkedMemoryIds = [...current]
-      db.prepare(`UPDATE memories SET linkedMemoryIds = ?, updatedAt = ? WHERE id = ?`).run(
-        JSON.stringify(linkedMemoryIds), Date.now(), id,
-      )
-      return { ...entry, linkedMemoryIds, updatedAt: Date.now() }
+      const validTargetIds = normalizeLinkedMemoryIds(targetIds, id)
+      const targetRows = stmts.getByIds(validTargetIds)
+      const existingTargetIds = new Set((targetRows as Array<Record<string, unknown>>).map((row) => String(row.id)))
+      const filteredTargets = validTargetIds.filter((tid) => existingTargetIds.has(tid))
+
+      const sourceLinks = new Set(normalizeLinkedMemoryIds(entry.linkedMemoryIds, id))
+      for (const tid of filteredTargets) sourceLinks.add(tid)
+
+      const now = Date.now()
+      const tx = db.transaction(() => {
+        const sourceValues = [...sourceLinks]
+        stmts.updateLinks.run(sourceValues.length ? JSON.stringify(sourceValues) : null, now, id)
+
+        if (!bidirectional) return
+        for (const targetRow of targetRows as Array<Record<string, unknown>>) {
+          const targetEntry = rowToEntry(targetRow)
+          const targetLinks = new Set(normalizeLinkedMemoryIds(targetEntry.linkedMemoryIds, targetEntry.id))
+          targetLinks.add(id)
+          const next = [...targetLinks]
+          stmts.updateLinks.run(next.length ? JSON.stringify(next) : null, now, targetEntry.id)
+        }
+      })
+      tx()
+
+      return this.get(id)
     },
 
     /** Remove links from one memory to others */
-    unlink(id: string, targetIds: string[]): MemoryEntry | null {
-      const existing = stmts.getById.get(id) as any
+    unlink(id: string, targetIds: string[], bidirectional = true): MemoryEntry | null {
+      const existing = stmts.getById.get(id) as Record<string, unknown> | undefined
       if (!existing) return null
       const entry = rowToEntry(existing)
-      const removeSet = new Set(targetIds)
-      const linkedMemoryIds = (entry.linkedMemoryIds || []).filter((lid) => !removeSet.has(lid))
-      db.prepare(`UPDATE memories SET linkedMemoryIds = ?, updatedAt = ? WHERE id = ?`).run(
-        linkedMemoryIds.length ? JSON.stringify(linkedMemoryIds) : null, Date.now(), id,
-      )
-      return { ...entry, linkedMemoryIds, updatedAt: Date.now() }
+      const removeSet = new Set(normalizeLinkedMemoryIds(targetIds, id))
+      const now = Date.now()
+      const tx = db.transaction(() => {
+        const sourceLinks = normalizeLinkedMemoryIds(entry.linkedMemoryIds, id).filter((lid) => !removeSet.has(lid))
+        stmts.updateLinks.run(sourceLinks.length ? JSON.stringify(sourceLinks) : null, now, id)
+
+        if (!bidirectional || !removeSet.size) return
+        const targetRows = stmts.getByIds([...removeSet]) as Array<Record<string, unknown>>
+        for (const targetRow of targetRows) {
+          const targetEntry = rowToEntry(targetRow)
+          const next = normalizeLinkedMemoryIds(targetEntry.linkedMemoryIds, targetEntry.id).filter((lid) => lid !== id)
+          stmts.updateLinks.run(next.length ? JSON.stringify(next) : null, now, targetEntry.id)
+        }
+      })
+      tx()
+
+      return this.get(id)
     },
 
     search(query: string, agentId?: string): MemoryEntry[] {
@@ -445,21 +777,43 @@ function initDb() {
     },
 
     /** Search with linked memory traversal */
-    searchWithLinked(query: string, agentId?: string, maxDepth?: number, maxResults?: number): { entries: MemoryEntry[]; truncated: boolean } {
+    searchWithLinked(
+      query: string,
+      agentId?: string,
+      maxDepth?: number,
+      maxResults?: number,
+      maxLinkedExpansion?: number,
+    ): { entries: MemoryEntry[]; truncated: boolean; expandedLinkedCount: number; limits: MemoryLookupLimits } {
       const baseResults = this.search(query, agentId)
-      if (!maxDepth || maxDepth <= 0) return { entries: baseResults.slice(0, maxResults ?? DEFAULT_MAX_PER_LOOKUP), truncated: baseResults.length > (maxResults ?? DEFAULT_MAX_PER_LOOKUP) }
-      return traverseLinked(baseResults, maxDepth, maxResults ?? DEFAULT_MAX_PER_LOOKUP)
+      const defaults = getMemoryLookupLimits()
+      const limits = resolveLookupRequest(defaults, {
+        depth: maxDepth ?? defaults.maxDepth,
+        limit: maxResults ?? defaults.maxPerLookup,
+        linkedLimit: maxLinkedExpansion ?? defaults.maxLinkedExpansion,
+      })
+      if (limits.maxDepth <= 0) {
+        return {
+          entries: baseResults.slice(0, limits.maxPerLookup),
+          truncated: baseResults.length > limits.maxPerLookup,
+          expandedLinkedCount: 0,
+          limits,
+        }
+      }
+      const traversal = traverseLinked(baseResults, limits)
+      return { ...traversal, limits }
     },
 
-    list(agentId?: string): MemoryEntry[] {
+    list(agentId?: string, limit = 200): MemoryEntry[] {
+      const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)))
       const rows = agentId
-        ? stmts.listByAgent.all(agentId) as any[]
-        : stmts.listAll.all() as any[]
+        ? stmts.listByAgent.all(agentId, safeLimit) as any[]
+        : stmts.listAll.all(safeLimit) as any[]
       return rows.map(rowToEntry)
     },
 
-    getByAgent(agentId: string): MemoryEntry[] {
-      return (stmts.listByAgent.all(agentId) as any[]).map(rowToEntry)
+    getByAgent(agentId: string, limit = 200): MemoryEntry[] {
+      const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)))
+      return (stmts.listByAgent.all(agentId, safeLimit) as any[]).map(rowToEntry)
     },
   }
 }

@@ -134,10 +134,17 @@ const COMMAND_GROUPS = [
     description: 'Manage memory entries',
     commands: [
       cmd('list', 'GET', '/memory', 'List memory entries (use --query q=, --query agentId=)'),
-      cmd('get', 'GET', '/memory/:id', 'Get memory by id', { virtual: true, clientGetRoute: '/memory' }),
+      cmd('get', 'GET', '/memory/:id', 'Get memory by id'),
       cmd('create', 'POST', '/memory', 'Create memory entry', { expectsJsonBody: true }),
       cmd('update', 'PUT', '/memory/:id', 'Update memory entry', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/memory/:id', 'Delete memory entry'),
+    ],
+  },
+  {
+    name: 'memory-images',
+    description: 'Fetch stored memory image assets',
+    commands: [
+      cmd('get', 'GET', '/memory-images/:filename', 'Download memory image by filename', { responseType: 'binary' }),
     ],
   },
   {

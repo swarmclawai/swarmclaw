@@ -216,7 +216,30 @@ export interface Schedule {
 export interface FileReference {
   path: string
   contextSnippet?: string
+  kind?: 'file' | 'folder' | 'project'
+  projectRoot?: string
+  projectName?: string
+  exists?: boolean
   timestamp: number
+}
+
+export interface MemoryReference {
+  type: 'project' | 'folder' | 'file' | 'task' | 'session' | 'url'
+  path?: string
+  projectRoot?: string
+  projectName?: string
+  title?: string
+  note?: string
+  exists?: boolean
+  timestamp: number
+}
+
+export interface MemoryImage {
+  path: string
+  mimeType?: string
+  width?: number
+  height?: number
+  sizeBytes?: number
 }
 
 export interface MemoryEntry {
@@ -226,8 +249,10 @@ export interface MemoryEntry {
   category: string
   title: string
   content: string
-  metadata?: Record<string, string>
+  metadata?: Record<string, unknown>
+  references?: MemoryReference[]
   filePaths?: FileReference[]
+  image?: MemoryImage | null
   imagePath?: string | null
   linkedMemoryIds?: string[]
   createdAt: number
@@ -235,7 +260,7 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human' | 'orchestrated'
-export type AppView = 'sessions' | 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'logs'
+export type AppView = 'sessions' | 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'logs'
 
 // --- App Settings ---
 
@@ -270,6 +295,9 @@ export interface AppSettings {
   heartbeatActiveStart?: string | null
   heartbeatActiveEnd?: string | null
   heartbeatTimezone?: string | null
+  memoryReferenceDepth?: number
+  maxMemoriesPerLookup?: number
+  maxLinkedMemoriesExpanded?: number
   memoryMaxDepth?: number
   memoryMaxPerLookup?: number
 }
@@ -330,7 +358,7 @@ export interface Skill {
 
 // --- Connectors (Chat Platform Bridges) ---
 
-export type ConnectorPlatform = 'discord' | 'telegram' | 'slack' | 'whatsapp'
+export type ConnectorPlatform = 'discord' | 'telegram' | 'slack' | 'whatsapp' | 'openclaw'
 export type ConnectorStatus = 'stopped' | 'running' | 'error'
 
 export interface Connector {
@@ -387,6 +415,7 @@ export interface BoardTask {
   cwd?: string | null
   file?: string | null
   sessionId?: string | null
+  completionReportPath?: string | null
   result?: string | null
   error?: string | null
   comments?: TaskComment[]
@@ -397,4 +426,9 @@ export interface BoardTask {
   startedAt?: number | null
   completedAt?: number | null
   archivedAt?: number | null
+  validation?: {
+    ok: boolean
+    reasons: string[]
+    checkedAt: number
+  } | null
 }

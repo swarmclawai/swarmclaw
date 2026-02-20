@@ -114,10 +114,16 @@ const COMMAND_GROUPS = {
     description: 'Agent memory entries',
     commands: {
       list: { description: 'List memory entries (supports --query q=term,agentId=id)', method: 'GET', path: '/memory' },
-      get: { description: 'Get memory entry by id (from list)', virtualGet: true, collectionPath: '/memory', params: ['id'] },
+      get: { description: 'Get memory entry by id', method: 'GET', path: '/memory/:id', params: ['id'] },
       create: { description: 'Create memory entry', method: 'POST', path: '/memory' },
       update: { description: 'Update memory entry', method: 'PUT', path: '/memory/:id', params: ['id'] },
       delete: { description: 'Delete memory entry', method: 'DELETE', path: '/memory/:id', params: ['id'] },
+    },
+  },
+  'memory-images': {
+    description: 'Stored memory image assets',
+    commands: {
+      get: { description: 'Download memory image by filename', method: 'GET', path: '/memory-images/:filename', params: ['filename'], binary: true },
     },
   },
   orchestrator: {

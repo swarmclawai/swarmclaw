@@ -1,5 +1,5 @@
 import { loadQueue, loadSchedules, loadSessions } from './storage'
-import { processNext, cleanupFinishedTaskSessions } from './queue'
+import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue } from './queue'
 import { startScheduler, stopScheduler } from './scheduler'
 import { sweepOrphanedBrowsers, getActiveBrowserCount } from './session-tools'
 import { autoStartConnectors, stopAllConnectors, listRunningConnectors, sendConnectorMessage } from './connectors/manager'
@@ -73,6 +73,7 @@ export function startDaemon() {
   ds.running = true
   console.log('[daemon] Starting daemon (scheduler + queue processor + heartbeat)')
 
+  validateCompletedTasksQueue()
   cleanupFinishedTaskSessions()
   startScheduler()
   startQueueProcessor()
@@ -160,6 +161,12 @@ async function sendHealthAlert(text: string) {
 }
 
 async function runHealthChecks() {
+  // Continuously keep the completed queue honest.
+  validateCompletedTasksQueue()
+
+  // Keep heartbeat state in sync with task terminal states even without daemon restarts.
+  cleanupFinishedTaskSessions()
+
   const sessions = loadSessions()
   const now = Date.now()
   const currentlyStale = new Set<string>()

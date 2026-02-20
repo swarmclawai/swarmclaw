@@ -43,6 +43,13 @@ export function MemoryCard({ entry, active, agentName, onClick }: Props) {
       <div className="text-[12px] text-text-2/40 mt-1 truncate leading-relaxed">
         {entry.content || '(empty)'}
       </div>
+      {(entry.references?.length || entry.linkedMemoryIds?.length || entry.image?.path || entry.imagePath) && (
+        <div className="flex items-center gap-2 mt-1.5 text-[10px] text-text-3/35">
+          {entry.references?.length ? <span>{entry.references.length} ref{entry.references.length === 1 ? '' : 's'}</span> : null}
+          {entry.linkedMemoryIds?.length ? <span>{entry.linkedMemoryIds.length} linked</span> : null}
+          {(entry.image?.path || entry.imagePath) ? <span>image</span> : null}
+        </div>
+      )}
       {agentName && (
         <div className="flex items-center gap-1 mt-1.5">
           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/25">
