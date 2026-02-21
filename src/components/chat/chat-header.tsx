@@ -110,6 +110,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const missionPaused = missionState.paused === true
   const missionMode = missionState.autonomyMode === 'assist' ? 'assist' : 'autonomous'
   const missionStatus = missionState.status || 'idle'
+  const missionMomentum = typeof missionState.momentumScore === 'number' ? missionState.momentumScore : null
   const missionEventsCount = missionState.pendingEvents?.length || 0
 
   const handleToggleHeartbeat = async () => {
@@ -365,7 +366,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 </button>
               )}
               <span className="text-[10px] text-text-3/50 uppercase tracking-wider">
-                {`State ${missionStatus}`}
+                {`State ${missionStatus}${missionMomentum !== null ? ` · ${missionMomentum}` : ''}`}
               </span>
             </>
           )}

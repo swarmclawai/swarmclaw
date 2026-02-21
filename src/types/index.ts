@@ -69,6 +69,8 @@ export interface Session {
     status?: 'idle' | 'progress' | 'blocked' | 'ok'
     summary?: string | null
     nextAction?: string | null
+    missionTaskId?: string | null
+    momentumScore?: number
     paused?: boolean
     autonomyMode?: 'assist' | 'autonomous'
     pendingEvents?: Array<{
@@ -77,8 +79,16 @@ export interface Session {
       text: string
       createdAt: number
     }>
+    timeline?: Array<{
+      id: string
+      at: number
+      source: string
+      note: string
+      status?: 'idle' | 'progress' | 'blocked' | 'ok'
+    }>
     followupChainCount?: number
     metaMissCount?: number
+    lastMemoryNoteAt?: number | null
     lastTickAt?: number | null
     updatedAt?: number
   }

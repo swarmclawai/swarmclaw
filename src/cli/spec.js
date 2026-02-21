@@ -63,6 +63,7 @@ const COMMAND_GROUPS = {
       status: { description: 'Get daemon status', method: 'GET', path: '/daemon' },
       start: { description: 'Start daemon', method: 'POST', path: '/daemon', staticBody: { action: 'start' } },
       stop: { description: 'Stop daemon', method: 'POST', path: '/daemon', staticBody: { action: 'stop' } },
+      'health-check': { description: 'Run daemon health checks immediately', method: 'POST', path: '/daemon/health-check' },
     },
   },
   dirs: {

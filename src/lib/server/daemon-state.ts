@@ -1,8 +1,15 @@
-import { loadQueue, loadSchedules, loadSessions } from './storage'
+import { loadQueue, loadSchedules, loadSessions, loadConnectors } from './storage'
 import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue } from './queue'
 import { startScheduler, stopScheduler } from './scheduler'
 import { sweepOrphanedBrowsers, getActiveBrowserCount } from './session-tools'
-import { autoStartConnectors, stopAllConnectors, listRunningConnectors, sendConnectorMessage } from './connectors/manager'
+import {
+  autoStartConnectors,
+  stopAllConnectors,
+  listRunningConnectors,
+  sendConnectorMessage,
+  startConnector,
+  getConnectorStatus,
+} from './connectors/manager'
 import { startHeartbeatService, stopHeartbeatService, getHeartbeatServiceStatus } from './heartbeat-service'
 
 const QUEUE_CHECK_INTERVAL = 30_000 // 30 seconds
@@ -11,6 +18,8 @@ const BROWSER_MAX_AGE = 10 * 60 * 1000 // 10 minutes idle = orphaned
 const HEALTH_CHECK_INTERVAL = 120_000 // 2 minutes
 const STALE_MULTIPLIER = 4 // session is stale after N × heartbeat interval
 const STALE_MIN_MS = 4 * 60 * 1000 // minimum 4 minutes regardless of interval
+const CONNECTOR_RESTART_BASE_MS = 30_000
+const CONNECTOR_RESTART_MAX_MS = 15 * 60 * 1000
 
 function parseHeartbeatIntervalSec(value: unknown, fallback = 120): number {
   const parsed = typeof value === 'number'
@@ -43,6 +52,7 @@ const ds: {
   healthIntervalId: ReturnType<typeof setInterval> | null
   /** Session IDs we've already alerted as stale (alert-once semantics). */
   staleSessionIds: Set<string>
+  connectorRestartState: Map<string, { lastAttemptAt: number; failCount: number }>
   running: boolean
   lastProcessedAt: number | null
 } = (globalThis as any)[gk] ?? ((globalThis as any)[gk] = {
@@ -50,12 +60,14 @@ const ds: {
   browserSweepId: null,
   healthIntervalId: null,
   staleSessionIds: new Set<string>(),
+  connectorRestartState: new Map<string, { lastAttemptAt: number; failCount: number }>(),
   running: false,
   lastProcessedAt: null,
 })
 
 // Backfill fields for hot-reloaded daemon state objects from older code versions.
 if (!ds.staleSessionIds) ds.staleSessionIds = new Set<string>()
+if (!ds.connectorRestartState) ds.connectorRestartState = new Map<string, { lastAttemptAt: number; failCount: number }>()
 // Migrate from old issueLastAlertAt map if present (HMR across code versions)
 if ((ds as any).issueLastAlertAt) delete (ds as any).issueLastAlertAt
 if (ds.healthIntervalId === undefined) ds.healthIntervalId = null
@@ -160,6 +172,42 @@ async function sendHealthAlert(text: string) {
   }
 }
 
+async function runConnectorHealthChecks(now: number) {
+  const connectors = loadConnectors()
+  for (const connector of Object.values(connectors) as any[]) {
+    if (!connector?.id) continue
+    if (connector.isEnabled !== true) {
+      ds.connectorRestartState.delete(connector.id)
+      continue
+    }
+
+    const runtimeStatus = getConnectorStatus(connector.id)
+    if (runtimeStatus === 'running') {
+      ds.connectorRestartState.delete(connector.id)
+      continue
+    }
+
+    const current = ds.connectorRestartState.get(connector.id) || { lastAttemptAt: 0, failCount: 0 }
+    const backoffMs = Math.min(
+      CONNECTOR_RESTART_MAX_MS,
+      CONNECTOR_RESTART_BASE_MS * (2 ** Math.min(6, current.failCount)),
+    )
+    if ((now - current.lastAttemptAt) < backoffMs) continue
+
+    current.lastAttemptAt = now
+    ds.connectorRestartState.set(connector.id, current)
+    try {
+      await startConnector(connector.id)
+      ds.connectorRestartState.delete(connector.id)
+      await sendHealthAlert(`Connector "${connector.name}" (${connector.platform}) was down and has been auto-restarted.`)
+    } catch (err: any) {
+      current.failCount += 1
+      ds.connectorRestartState.set(connector.id, current)
+      console.warn(`[health] Connector auto-restart failed for ${connector.name}: ${err?.message || String(err)}`)
+    }
+  }
+}
+
 async function runHealthChecks() {
   // Continuously keep the completed queue honest.
   validateCompletedTasksQueue()
@@ -199,6 +247,8 @@ async function runHealthChecks() {
       ds.staleSessionIds.delete(id)
     }
   }
+
+  await runConnectorHealthChecks(now)
 }
 
 function startHealthMonitor() {
@@ -215,6 +265,10 @@ function stopHealthMonitor() {
     clearInterval(ds.healthIntervalId)
     ds.healthIntervalId = null
   }
+}
+
+export async function runDaemonHealthCheckNow() {
+  await runHealthChecks()
 }
 
 export function getDaemonStatus() {
@@ -241,6 +295,7 @@ export function getDaemonStatus() {
     health: {
       monitorActive: !!ds.healthIntervalId,
       staleSessions: ds.staleSessionIds.size,
+      connectorsInBackoff: ds.connectorRestartState.size,
       checkIntervalSec: Math.trunc(HEALTH_CHECK_INTERVAL / 1000),
     },
   }

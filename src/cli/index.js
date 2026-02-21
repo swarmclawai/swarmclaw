@@ -85,6 +85,7 @@ const COMMAND_GROUPS = [
         expectsJsonBody: true,
         defaultBody: { action: 'stop' },
       }),
+      cmd('health-check', 'POST', '/daemon/health-check', 'Run daemon health checks immediately'),
     ],
   },
   {
