@@ -12,7 +12,7 @@
     "lint": "eslint",
     "cli": "node ./bin/swarmclaw.js",
     "test:cli": "node --test src/cli/index.test.js",
-    "test:openclaw": "node --test --experimental-strip-types src/lib/server/connectors/openclaw.test.ts"
+    "test:openclaw": "node --test --experimental-strip-types src/lib/server/connectors/openclaw.test.ts src/lib/openclaw-endpoint.test.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
@@ -22,6 +22,7 @@
     "@langchain/openai": "^1.2.8",
     "@playwright/mcp": "^0.0.68",
     "@slack/bolt": "^4.6.0",
+    "@stripe/stripe-js": "^8.8.0",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "better-sqlite3": "^12.6.2",
     "cheerio": "^1.2.0",
@@ -41,6 +42,7 @@
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
+    "stripe": "^20.3.1",
     "tailwind-merge": "^3.4.1",
     "zod": "^4.3.6",
     "zustand": "^5.0.11"
