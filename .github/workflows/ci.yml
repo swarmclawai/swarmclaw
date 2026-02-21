@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint baseline (no net-new lint issues)
+        id: lint_baseline
+        continue-on-error: true
+        run: npm run lint:baseline -- --report-json artifacts/lint-regressions.json --report-md artifacts/lint-regressions.md
+
+      - name: Test CLI
+        run: npm run test:cli
+
+      - name: Test OpenClaw
+        run: npm run test:openclaw
+
+      - name: Build
+        run: npm run build:ci
+
+      - name: Publish lint baseline report
+        if: always()
+        run: |
+          if [ -f artifacts/lint-regressions.md ]; then
+            cat artifacts/lint-regressions.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload lint baseline artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-baseline-report
+          path: artifacts/lint-regressions.*
+          if-no-files-found: ignore
+
+      - name: Enforce lint baseline gate
+        if: steps.lint_baseline.outcome == 'failure'
+        run: |
+          echo "Lint baseline failed. See lint-baseline-report artifact and workflow summary for details."
+          exit 1

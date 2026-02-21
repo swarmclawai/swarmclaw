@@ -1,6 +1,6 @@
 # OpenClaw vs SwarmClaw Feature Comparison
 
-Generated: 2025-01-11
+Generated: 2026-02-21
 
 ## Summary
 
@@ -87,7 +87,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 | Feature | OpenClaw | SwarmClaw | Gap |
 |---------|----------|-----------|-----|
 | Image receive | ✅ | ✅ | Similar |
-| Image send | ✅ | ❌ (text only via connector) | **GAP** |
+| Image send | ✅ | ✅ (via connector_message_tool and connector media paths) | Smaller gap |
 | Audio/voice notes | ✅ + transcription hook | ❌ | **MISSING** |
 | Video | ✅ | ❌ | **MISSING** |
 | Document handling | ✅ | ✅ upload endpoint | Similar |
@@ -101,7 +101,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 | Chat commands | ✅ `/status`, `/reset`, etc. | ❌ | **MISSING** |
 | Typing indicators | ✅ | ❌ | **MISSING** |
 | Presence | ✅ Online/typing | ❌ | **MISSING** |
-| NO_MESSAGE suppression | ✅ | ✅ (partial implementation) | In progress |
+| NO_MESSAGE suppression | ✅ | ✅ | Similar |
 
 ---
 
@@ -134,8 +134,8 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 
 **SwarmClaw**: Breadth
 - More providers but lighter channel integration
-- Text-focused connector layer
-- Media receiving works, sending limited
+- Connector layer supports text plus media attachments
+- Media receiving and sending supported across major chat connectors
 - Missing several major channels (iMessage, Signal, Teams, etc.)
 
 ### 3. Agent Runtime
@@ -188,29 +188,28 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 
 ### Critical (blocks use cases)
 
-1. **Media sending via connectors** - Can receive images/audio but can't send them
-2. **iMessage support** - BlueBubbles integration missing
-3. **Voice/audio support** - No transcription hook, no voice notes
-4. **Canvas** - No visual workspace for agents
-5. **Mobile companion apps** - No iOS/Android nodes
+1. **iMessage support** - BlueBubbles integration missing
+2. **Voice/audio support** - No transcription hook, no voice notes
+3. **Canvas** - No visual workspace for agents
+4. **Mobile companion apps** - No iOS/Android nodes
 
 ### High Impact (improves experience)
 
-6. **Chat commands** - No `/status`, `/reset`, `/think` etc.
-7. **Typing indicators** - No presence/typing feedback on channels
-8. **Tailscale integration** - No remote access via tailnet
-9. **Signal support** - Missing privacy-focused channel
-10. **Doctor/diagnostics** - No health check tool
+5. **Chat commands** - No `/status`, `/reset`, `/think` etc.
+6. **Typing indicators** - No presence/typing feedback on channels
+7. **Tailscale integration** - No remote access via tailnet
+8. **Signal support** - Missing privacy-focused channel
+9. **Doctor/diagnostics** - No health check tool
 
 ### Medium Impact (nice to have)
 
-11. **Google Chat** - Missing enterprise channel
-12. **Microsoft Teams** - Missing enterprise channel
-13. **Matrix** - Missing federated channel
-14. **Gmail hooks** - No email triggers
-15. **Docker sandbox** - No isolated execution for non-main sessions
-16. **Bonjour discovery** - No local network discovery
-17. **Session pairing** - No QR/pairing flow for mobile
+10. **Google Chat** - Missing enterprise channel
+11. **Microsoft Teams** - Missing enterprise channel
+12. **Matrix** - Missing federated channel
+13. **Gmail hooks** - No email triggers
+14. **Docker sandbox** - No isolated execution for non-main sessions
+15. **Bonjour discovery** - No local network discovery
+16. **Session pairing** - No QR/pairing flow for mobile
 
 ---
 
@@ -235,26 +234,22 @@ OpenClaw doesn't have everything. Here's where SwarmClaw leads:
 
 ### Phase 1: Close Critical Gaps
 
-1. **Media sending via connectors** (task exists)
-   - Extend `connector_message_tool` to support images/files
-   - Implement for all 4 platforms (WhatsApp, Telegram, Discord, Slack)
-
-2. **Voice/audio pipeline**
+1. **Voice/audio pipeline**
    - Add transcription hook like OpenClaw
    - Support voice note receive + transcribe
    - Optional: voice note send
 
-3. **iMessage via BlueBubbles**
+2. **iMessage via BlueBubbles**
    - Implement BlueBubbles webhook connector
    - Support send/receive via BlueBubbles server
 
 ### Phase 2: Improve Channel Depth
 
-4. **Chat commands**
+3. **Chat commands**
    - Add `/status`, `/reset`, `/compact`, `/think` parsing
    - Process in connector layer before agent
 
-5. **Typing indicators**
+4. **Typing indicators**
    - Send typing state to channels when agent is processing
    - Use channel APIs (Telegram, Discord support this)
 

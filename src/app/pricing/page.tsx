@@ -262,7 +262,7 @@ export default function PricingPage() {
 
         <form className="space-y-4" onSubmit={(e) => {
           e.preventDefault()
-          // TODO: Wire up to API once Stripe keys are configured
+          // TODO: Wire up to API endpoint
           alert('Thanks! We\'ll be in touch soon. For immediate response, email hello@swarmclaw.dev')
         }}>
           <div>

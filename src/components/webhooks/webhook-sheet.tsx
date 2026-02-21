@@ -210,7 +210,7 @@ export function WebhookSheet() {
             type="text"
             value={source}
             onChange={(e) => setSource(e.target.value)}
-            placeholder="custom, github, stripe..."
+            placeholder="custom, github, slack..."
             className={inputClass}
             style={{ fontFamily: 'inherit' }}
           />

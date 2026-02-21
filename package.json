@@ -10,9 +10,12 @@
     "dev:webpack": "next dev --webpack --hostname 0.0.0.0 -p 3456",
     "dev:clean": "rm -rf .next && next dev --hostname 0.0.0.0 -p 3456",
     "build": "next build",
+    "build:ci": "NEXT_DISABLE_ESLINT=1 next build",
     "start": "next start",
     "start:standalone": "node .next/standalone/server.js",
     "lint": "eslint",
+    "lint:baseline": "node ./scripts/lint-baseline.mjs check",
+    "lint:baseline:update": "node ./scripts/lint-baseline.mjs update",
     "cli": "node ./bin/swarmclaw.js",
     "test:cli": "node --test src/cli/index.test.js",
     "test:openclaw": "node --test --experimental-strip-types src/lib/server/connectors/openclaw.test.ts src/lib/openclaw-endpoint.test.ts"
@@ -25,7 +28,6 @@
     "@langchain/openai": "^1.2.8",
     "@playwright/mcp": "^0.0.68",
     "@slack/bolt": "^4.6.0",
-    "@stripe/stripe-js": "^8.8.0",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "better-sqlite3": "^12.6.2",
     "cheerio": "^1.2.0",
@@ -45,7 +47,6 @@
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
-    "stripe": "^20.3.1",
     "tailwind-merge": "^3.4.1",
     "zod": "^4.3.6",
     "zustand": "^5.0.11"

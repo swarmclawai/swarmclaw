@@ -168,10 +168,12 @@ SwarmClaw normalizes common endpoint forms automatically:
 - `http://host:18789` → `http://host:18789/v1`
 - `http://host:18789/v1/chat/completions` → `http://host:18789/v1`
 
-Validate connectivity/auth with:
+Validate connectivity/auth via the Providers UI, or call the health endpoint directly:
 
 ```bash
-swarmclaw providers openclaw-health --query endpoint=ws://127.0.0.1:18789 --query credentialId=cred_openclaw
+curl -sS \
+  -H "x-access-key: ${ACCESS_KEY}" \
+  "http://localhost:3456/api/providers/openclaw/health?endpoint=ws://127.0.0.1:18789&credentialId=cred_openclaw"
 ```
 
 ## Chat Connectors
@@ -388,9 +390,12 @@ npm run dev          # Dev server on 0.0.0.0:3456
 npm run dev:webpack  # Fallback to webpack dev server (if Turbopack crashes)
 npm run dev:clean    # Clear .next cache then restart dev server
 npm run build        # Production build
+npm run build:ci     # CI build (skips ESLint; lint baseline runs separately)
 npm run start        # Start production server
 npm run start:standalone # Start standalone server after build
 npm run lint         # ESLint
+npm run lint:baseline # Fail only on net-new lint issues vs .eslint-baseline.json
+npm run lint:baseline:update # Refresh lint baseline intentionally
 ```
 
 The dev server binds to `0.0.0.0` so you can access it from your phone on the same network.
@@ -412,7 +417,7 @@ npm run dev:webpack
 
 ## CLI
 
-SwarmClaw ships a full-featured CLI with complete API coverage:
+SwarmClaw ships a built-in CLI for core operational workflows:
 
 ```bash
 # show command help
@@ -432,49 +437,23 @@ swarmclaw [global-options] <group> <command> [command-options]
 
 | Flag | Description |
 |-|-|
-| `--base-url <url>` | SwarmClaw base URL (default: `http://localhost:3456`) |
-| `--access-key <key>` | Access key (or set `SWARMCLAW_API_KEY` env or `~/.swarmclaw/platform-api-key.txt`) |
-| `--data <json|@file|->` | Request JSON body (use `@file` to read from file, `-` for stdin) |
-| `--query key=value` | Query parameter (repeatable) |
-| `--header key=value` | Extra HTTP header (repeatable) |
-| `--json` | Output compact JSON |
-| `--wait` | Wait for run/task completion when runId/taskId is returned |
-| `--timeout-ms <ms>` | Request/wait timeout (default: 300000) |
-| `--interval-ms <ms>` | Poll interval for `--wait` (default: 2000) |
-| `--out <file>` | Write binary response to file |
+| `-u, --url <url>` | SwarmClaw base URL (default: `http://localhost:3456`) |
+| `-k, --key <key>` | Access key (or set `SWARMCLAW_ACCESS_KEY`) |
+| `--raw` | Print compact JSON output |
 
-### Command Groups (27 groups, full API coverage)
+### Command Groups (9 groups)
 
 | Group | Commands |
 |-|-|
-| `agents` | `list`, `get`, `create`, `update`, `delete` |
-| `auth` | `login`, `logout`, `status` |
-| `claude-skills` | `list`, `get` |
-| `connectors` | `list`, `get`, `create`, `update`, `delete`, `start`, `stop` |
-| `credentials` | `list`, `get`, `create`, `update`, `delete` |
-| `daemon` | `status`, `start`, `stop`, `health-check` |
-| `dirs` | `list` |
-| `documents` | `list`, `upload`, `search`, `get`, `delete` |
-| `generate` | `agent`, `skill` |
-| `ip` | `get` |
-| `logs` | `get` |
-| `memory` | `list`, `store`, `get`, `search`, `delete` |
-| `orchestrator` | `status` |
-| `plugins` | `list`, `get`, `create`, `update`, `delete`, `install` |
-| `providers` | `list`, `get`, `create`, `update`, `delete`, `openclaw-health`, `models`, `models-set`, `models-clear` |
+| `agents` | `list`, `get` |
+| `connectors` | `list`, `get`, `create`, `update`, `delete`, `start`, `stop`, `repair` |
+| `memory` | `store`, `search`, `get` |
+| `memory-images` | `get` |
 | `runs` | `list`, `get` |
-| `schedules` | `list`, `get`, `create`, `update`, `delete` |
-| `secrets` | `list`, `get`, `create`, `update`, `delete` |
-| `sessions` | `list`, `get`, `history`, `send`, `spawn`, `stop` |
-| `settings` | `get`, `update` |
-| `skills` | `list`, `get`, `create`, `update`, `delete`, `import` |
+| `schedules` | `list`, `get`, `create` |
+| `sessions` | `list`, `get`, `create`, `update`, `delete`, `history`, `stop` |
 | `tasks` | `list`, `get`, `create`, `update`, `delete`, `archive` |
-| `tts` | `voices` |
-| `upload` | `file` |
-| `uploads` | `list`, `get`, `delete` |
-| `usage` | `get` |
-| `version` | (shows version) |
-| `webhooks` | `list`, `get`, `create`, `update`, `delete` |
+| `webhooks` | `list`, `get`, `create`, `update`, `delete`, `trigger` |
 
 ### Examples
 
@@ -494,46 +473,23 @@ swarmclaw schedules create --name "Health Check" --agent-id <agentId> --task-pro
 # session history
 swarmclaw sessions history <sessionId>
 
-# send a message to a session
-swarmclaw sessions send <sessionId> --data '{"message":"Hello agent"}'
+# create a session
+swarmclaw sessions create --name "Ops Assistant" --agent-id <agentId> --provider anthropic
 
 # store and search memory
 swarmclaw memory store --title "Deploy note" --content "Use canary first" --category note --agent-id <agentId>
-swarmclaw memory search --query "canary"
-
-# upload a document
-swarmclaw upload file ./docs/spec.pdf
-
-# search documents
-swarmclaw documents search --query "implementation details"
-
-# manage secrets
-swarmclaw secrets create --key "API_KEY" --value "secret123"
-
-# daemon control
-swarmclaw daemon status
-swarmclaw daemon start
-swarmclaw daemon stop
-swarmclaw daemon health-check
-
-# openclaw endpoint probe
-swarmclaw providers openclaw-health --query endpoint=ws://127.0.0.1:18789 --query credentialId=cred_openclaw
+swarmclaw memory search -q "canary"
 
 # create and list webhooks
-swarmclaw webhooks create --name "GitHub Push" --source "github" --agent-id <agentId> --events push --secret "webhook-secret"
+swarmclaw webhooks create --name "GitHub Push" --source "github" --agent-id <agentId> --event push --secret "webhook-secret"
 swarmclaw webhooks list
 
-# generate an agent from description
-swarmclaw generate agent --description "A code review specialist that focuses on security and performance"
+# trigger a webhook manually
+swarmclaw webhooks trigger <webhookId> --event push --payload '{"repository":"swarmclaw"}'
 
-# import a skill from URL
-swarmclaw skills import --url https://swarmclaw.ai/skills/swarmclaw-bootstrap/SKILL.md
-
-# get usage statistics
-swarmclaw usage get
-
-# check IP (for webhook configuration)
-swarmclaw ip get
+# create/start connector runtime
+swarmclaw connectors create --platform discord --agent-id <agentId> --name "Discord Bridge"
+swarmclaw connectors start <connectorId>
 ```
 
 ## Credits

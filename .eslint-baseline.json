@@ -1,0 +1,1275 @@
+{
+  "version": 1,
+  "generatedAt": "2026-02-21T14:58:35.160Z",
+  "totalIssues": 506,
+  "uniqueIssues": 181,
+  "issues": [
+    {
+      "filePath": "bin/swarmclaw.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/api/agents/generate/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/api/connectors/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/api/credentials/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/api/documents/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "filePath": "src/app/api/generate/info/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/api/generate/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/api/logs/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/api/plugins/install/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/api/plugins/marketplace/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/api/providers/ollama/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/api/secrets/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'encryptedValue' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/api/secrets/route.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'encryptedValue' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/api/secrets/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/api/sessions/[id]/deploy/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/api/webhooks/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/page.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'hydrate'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/page.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'currentSessionId', 'loadSessions', and 'setCurrentSession'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/page.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'loadNetworkInfo', 'loadSessions', 'loadSettings', and 'syncUserFromServer'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/app/page.tsx:70:19 68 | 69 | useEffect(() => { > 70 | if (hydrated) checkAuth() | ^^^^^^^^^ Avoid calling setState() directly within an effect 71 | }, [hydrated, checkAuth]) 72 | 73 | useEffect(() => {",
+      "count": 1
+    },
+    {
+      "filePath": "src/app/pricing/page.tsx",
+      "ruleId": "@next/next/no-html-link-for-pages",
+      "severity": 2,
+      "message": "Do not use an `<a>` element to navigate to `/`. Use `<Link />` from `next/link` instead. See: https://nextjs.org/docs/messages/no-html-link-for-pages",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/pricing/page.tsx",
+      "ruleId": "react/no-unescaped-entities",
+      "severity": 2,
+      "message": "`'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/services/page.tsx",
+      "ruleId": "@next/next/no-html-link-for-pages",
+      "severity": 2,
+      "message": "Do not use an `<a>` element to navigate to `/`. Use `<Link />` from `next/link` instead. See: https://nextjs.org/docs/messages/no-html-link-for-pages",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/services/page.tsx",
+      "ruleId": "react/no-unescaped-entities",
+      "severity": 2,
+      "message": "`'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.",
+      "count": 1
+    },
+    {
+      "filePath": "src/cli/index.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 2
+    },
+    {
+      "filePath": "src/cli/index.test.js",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'init' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/cli/index.test.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 6
+    },
+    {
+      "filePath": "src/components/agents/agent-list.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadAgents'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/agents/agent-list.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/agents/agent-sheet.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/components/auth/setup-wizard.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useCallback has a missing dependency: 'setCurrentSession'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useCallback has a missing dependency: 'setDevServer'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useCallback has missing dependencies: 'loadSessions' and 'setMessages'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useCallback has missing dependencies: 'removeSessionFromStore' and 'setCurrentSession'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'setMessages'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'loadSessions', 'session?.active', 'session?.messages', 'session?.tools', 'setDevServer', and 'setMessages'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'loadSessions', 'setMessages', and 'ttsEnabled'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `loadSessions`, but the source dependencies were [sessionId]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/chat/chat-area.tsx:147:35 145 | }, [sessionId]) 146 | > 147 | const handleClear = useCallback(async () => { | ^^^^^^^^^^^^^ > 148 | setConfirmClear(false) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 149 | if (!sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 150 | await clearMessages(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 151 | setMessages([]) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 152 | loadSessions() | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 153 | }, [sessionId]) | ^^^^ Could not preserve existing manual memoization 154 | 155 | const handleDelete = useCallback(async () => { 156 | setConfirmDelete(false)",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `removeSessionFromStore`, but the source dependencies were [sessionId]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/chat/chat-area.tsx:155:36 153 | }, [sessionId]) 154 | > 155 | const handleDelete = useCallback(async () => { | ^^^^^^^^^^^^^ > 156 | setConfirmDelete(false) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 157 | if (!sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 158 | await deleteSession(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 159 | removeSessionFromStore(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 160 | setCurrentSession(null) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 161 | }, [sessionId]) | ^^^^ Could not preserve existing manual memoization 162 | 163 | const handleBack = useCallback(() => { 164 | setCurrentSession(null)",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setCurrentSession`, but the source dependencies were []. Inferred dependency not present in source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/chat/chat-area.tsx:163:34 161 | }, [sessionId]) 162 | > 163 | const handleBack = useCallback(() => { | ^^^^^^^ > 164 | setCurrentSession(null) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 165 | }, []) | ^^^^ Could not preserve existing manual memoization 166 | 167 | const handlePrompt = useCallback((text: string) => { 168 | sendMessage(text)",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setCurrentSession`, but the source dependencies were [sessionId]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/chat/chat-area.tsx:155:36 153 | }, [sessionId]) 154 | > 155 | const handleDelete = useCallback(async () => { | ^^^^^^^^^^^^^ > 156 | setConfirmDelete(false) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 157 | if (!sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 158 | await deleteSession(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 159 | removeSessionFromStore(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 160 | setCurrentSession(null) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 161 | }, [sessionId]) | ^^^^ Could not preserve existing manual memoization 162 | 163 | const handleBack = useCallback(() => { 164 | setCurrentSession(null)",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setDevServer`, but the source dependencies were [sessionId]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/chat/chat-area.tsx:141:43 139 | }, [sessionId]) 140 | > 141 | const handleStopDevServer = useCallback(async () => { | ^^^^^^^^^^^^^ > 142 | if (!sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 143 | await devServer(sessionId, 'stop') | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 144 | setDevServer(null) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 145 | }, [sessionId]) | ^^^^ Could not preserve existing manual memoization 146 | 147 | const handleClear = useCallback(async () => { 148 | setConfirmClear(false)",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setMessages`, but the source dependencies were [sessionId]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/chat/chat-area.tsx:147:35 145 | }, [sessionId]) 146 | > 147 | const handleClear = useCallback(async () => { | ^^^^^^^^^^^^^ > 148 | setConfirmClear(false) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 149 | if (!sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 150 | await clearMessages(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 151 | setMessages([]) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 152 | loadSessions() | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 153 | }, [sessionId]) | ^^^^ Could not preserve existing manual memoization 154 | 155 | const handleDelete = useCallback(async () => { 156 | setConfirmDelete(false)",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-area.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/chat/chat-area.tsx:73:7 71 | checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch(() => setBrowserActive(false)) 72 | } else { > 73 | setBrowserActive(false) | ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 74 | } 75 | }, [sessionId]) 76 |",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/code-block.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/message-bubble.tsx",
+      "ruleId": "@next/next/no-img-element",
+      "severity": 1,
+      "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+      "count": 2
+    },
+    {
+      "filePath": "src/components/chat/message-list.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/chat/message-list.tsx:66:7 64 | if (el) { 65 | el.scrollTop = el.scrollHeight > 66 | setShowScrollToBottom(false) | ^^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 67 | } 68 | }, [session?.id]) 69 |",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/session-debug-panel.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'TYPE_ICONS' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/session-debug-panel.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/chat/session-debug-panel.tsx:86:5 84 | // Auto-scroll to bottom 85 | useEffect(() => { > 86 | setExpandedIdx(null) | ^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 87 | }, [messages.length]) 88 | 89 | if (!open) return null",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/tool-call-bubble.tsx",
+      "ruleId": "@next/next/no-img-element",
+      "severity": 1,
+      "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/connectors/connector-list.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'inSidebar' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/connectors/connector-list.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'loadAgents' and 'loadConnectors'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/connectors/connector-list.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/connectors/connector-sheet.tsx",
+      "ruleId": "@next/next/no-img-element",
+      "severity": 1,
+      "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/connectors/connector-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'editing'. Either include it or remove the dependency array.",
+      "count": 2
+    },
+    {
+      "filePath": "src/components/connectors/connector-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'loadAgents' and 'loadCredentials'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/connectors/connector-sheet.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 9
+    },
+    {
+      "filePath": "src/components/input/chat-input.tsx",
+      "ruleId": "@next/next/no-img-element",
+      "severity": 1,
+      "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/input/chat-input.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useCallback has a missing dependency: 'setPendingImage'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/input/chat-input.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useCallback has a missing dependency: 'textareaRef'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/input/chat-input.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setPendingImage`, but the source dependencies were []. Inferred dependency not present in source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/input/chat-input.tsx:50:40 48 | ) 49 | > 50 | const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => { | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 51 | const file = e.target.files?.[0] | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 52 | if (!file) return … | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 63 | e.target.value = '' | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 64 | }, []) | ^^^^ Could not preserve existing manual memoization 65 | 66 | const hasContent = value.trim().length > 0 || !!pendingImage 67 |",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/input/chat-input.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `textareaRef`, but the source dependencies were [value, streaming, onSend]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/input/chat-input.tsx:24:34 22 | const speechRecognitionLang = useAppStore((s) => s.appSettings.speechRecognitionLang) 23 | > 24 | const handleSend = useCallback(() => { | ^^^^^^^ > 25 | const text = value.trim() | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 26 | if (!text || streaming) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 27 | onSend(text) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 28 | setValue('') | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 29 | if (textareaRef.current) { | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 30 | textareaRef.current.style.height = 'auto' | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 31 | } | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 32 | }, [value, streaming, onSend]) | ^^^^ Could not preserve existing manual memoization 33 | 34 | const handleKeyDown = useCallback((e: React.KeyboardEvent) => { 35 | if (e.key === 'Enter' && !e.shiftKey) {",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/layout/app-layout.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'DesktopEmptyState' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/layout/daemon-indicator.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/layout/daemon-indicator.tsx:25:5 23 | 24 | useEffect(() => { > 25 | fetchStatus() | ^^^^^^^^^^^ Avoid calling setState() directly within an effect 26 | const interval = setInterval(fetchStatus, 30_000) 27 | return () => clearInterval(interval) 28 | }, [])",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/layout/update-banner.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/layout/update-banner.tsx:34:5 32 | 33 | useEffect(() => { > 34 | checkVersion() | ^^^^^^^^^^^^ Avoid calling setState() directly within an effect 35 | const id = setInterval(checkVersion, CHECK_INTERVAL) 36 | return () => clearInterval(id) 37 | }, [checkVersion])",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/logs/log-list.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadAgents'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-detail.tsx",
+      "ruleId": "@next/next/no-img-element",
+      "severity": 1,
+      "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-detail.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useCallback has a missing dependency: 'triggerRefresh'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-detail.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useCallback has missing dependencies: 'setActiveView' and 'setCurrentSession'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-detail.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useCallback has missing dependencies: 'setSelectedId' and 'triggerRefresh'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-detail.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setActiveView`, but the source dependencies were [entry]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/memory/memory-detail.tsx:59:47 57 | }, [entry]) 58 | > 59 | const handleNavigateToSession = useCallback(() => { | ^^^^^^^ > 60 | if (!entry?.sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 61 | setActiveView('sessions') | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 62 | setCurrentSession(entry.sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 63 | }, [entry]) | ^^^^ Could not preserve existing manual memoization 64 | 65 | if (!entry) { 66 | return (",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-detail.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setCurrentSession`, but the source dependencies were [entry]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/memory/memory-detail.tsx:59:47 57 | }, [entry]) 58 | > 59 | const handleNavigateToSession = useCallback(() => { | ^^^^^^^ > 60 | if (!entry?.sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 61 | setActiveView('sessions') | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 62 | setCurrentSession(entry.sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 63 | }, [entry]) | ^^^^ Could not preserve existing manual memoization 64 | 65 | if (!entry) { 66 | return (",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-detail.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setSelectedId`, but the source dependencies were [entry]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/memory/memory-detail.tsx:52:36 50 | }, [entry, title, content, category, dirty]) 51 | > 52 | const handleDelete = useCallback(async () => { | ^^^^^^^^^^^^^ > 53 | if (!entry) return | ^^^^^^^^^^^^^^^^^^^^^^ > 54 | await deleteMemory(entry.id) | ^^^^^^^^^^^^^^^^^^^^^^ > 55 | setSelectedId(null) | ^^^^^^^^^^^^^^^^^^^^^^ > 56 | triggerRefresh() | ^^^^^^^^^^^^^^^^^^^^^^ > 57 | }, [entry]) | ^^^^ Could not preserve existing manual memoization 58 | 59 | const handleNavigateToSession = useCallback(() => { 60 | if (!entry?.sessionId) return",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-detail.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `triggerRefresh`, but the source dependencies were [entry, title, content, category, dirty]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/memory/memory-detail.tsx:40:34 38 | }, [selectedId]) 39 | > 40 | const handleSave = useCallback(async () => { | ^^^^^^^^^^^^^ > 41 | if (!entry || !dirty) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 42 | setSaving(true) … | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 49 | setSaving(false) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 50 | }, [entry, title, content, category, dirty]) | ^^^^ Could not preserve existing manual memoization 51 | 52 | const handleDelete = useCallback(async () => { 53 | if (!entry) return",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-detail.tsx",
+      "ruleId": "react-hooks/preserve-manual-memoization",
+      "severity": 2,
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `triggerRefresh`, but the source dependencies were [entry]. Inferred different dependency than source. /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/memory/memory-detail.tsx:52:36 50 | }, [entry, title, content, category, dirty]) 51 | > 52 | const handleDelete = useCallback(async () => { | ^^^^^^^^^^^^^ > 53 | if (!entry) return | ^^^^^^^^^^^^^^^^^^^^^^ > 54 | await deleteMemory(entry.id) | ^^^^^^^^^^^^^^^^^^^^^^ > 55 | setSelectedId(null) | ^^^^^^^^^^^^^^^^^^^^^^ > 56 | triggerRefresh() | ^^^^^^^^^^^^^^^^^^^^^^ > 57 | }, [entry]) | ^^^^ Could not preserve existing manual memoization 58 | 59 | const handleNavigateToSession = useCallback(() => { 60 | if (!entry?.sessionId) return",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-detail.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/memory/memory-detail.tsx:29:24 27 | // Load memory entry when selection changes 28 | useEffect(() => { > 29 | if (!selectedId) { setEntry(null); return } | ^^^^^^^^ Avoid calling setState() directly within an effect 30 | getMemory(selectedId).then((found) => { 31 | if (!found || Array.isArray(found)) return 32 | setEntry(found)",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-list.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'inSidebar' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-list.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'load'. Either include it or remove the dependency array.",
+      "count": 2
+    },
+    {
+      "filePath": "src/components/memory/memory-list.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/memory/memory-list.tsx:35:21 33 | } 34 | > 35 | useEffect(() => { load() }, [refreshKey]) | ^^^^ Avoid calling setState() directly within an effect 36 | 37 | useEffect(() => { 38 | const timer = setTimeout(load, 300)",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/providers/provider-list.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'loadCredentials', 'loadProviderConfigs', and 'loadProviders'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/providers/provider-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'credentials', 'editingBuiltin', 'editingCustom', 'loadCredentials', and 'loadSettings'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/providers/provider-sheet.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/components/schedules/schedule-list.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadSchedules'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/schedules/schedule-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'editing', 'loadAgents', and 'loadSettings'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/schedules/schedule-sheet.tsx",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/schedules/schedule-sheet.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/schedules/schedule-sheet.tsx:105:7 103 | loadAgents() 104 | loadSettings() > 105 | setAiPrompt('') | ^^^^^^^^^^^ Avoid calling setState() directly within an effect 106 | setGenerating(false) 107 | setGenerated(false) 108 | setGenError('')",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/secrets/secret-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadAgents'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/secrets/secret-sheet.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/components/secrets/secrets-list.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadSecrets'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/sessions/new-session-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'providerCredentials'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/sessions/new-session-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'agents', 'loadAgents', 'loadCredentials', and 'loadProviders'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/sessions/new-session-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'credentialId', 'currentProvider?.requiresApiKey', and 'providerCredentials'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/sessions/new-session-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'currentProvider.defaultEndpoint' and 'currentProvider.models'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/sessions/new-session-sheet.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 8
+    },
+    {
+      "filePath": "src/components/sessions/new-session-sheet.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/sessions/new-session-sheet.tsx:100:7 98 | useEffect(() => { 99 | if (ollamaMode === 'local') { > 100 | setEndpoint('http://localhost:11434') | ^^^^^^^^^^^ Avoid calling setState() directly within an effect 101 | setCredentialId(null) 102 | } else { 103 | setEndpoint('')",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/sessions/new-session-sheet.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/sessions/new-session-sheet.tsx:49:7 47 | loadCredentials() 48 | loadAgents() > 49 | setName('') | ^^^^^^^ Avoid calling setState() directly within an effect 50 | setSelectedDir(null) 51 | setSelectedFile(null) 52 | setProvider('claude-cli')",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/sessions/new-session-sheet.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/sessions/new-session-sheet.tsx:80:7 78 | useEffect(() => { 79 | if (currentProvider?.models.length) { > 80 | setModel(currentProvider.models[0]) | ^^^^^^^^ Avoid calling setState() directly within an effect 81 | } 82 | setCredentialId(null) 83 | if (provider !== 'ollama') {",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/sessions/new-session-sheet.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/sessions/new-session-sheet.tsx:94:7 92 | const needsKey = currentProvider?.requiresApiKey || (provider === 'ollama' && ollamaMode === 'cloud') 93 | if (needsKey && providerCredentials.length > 0 && !credentialId) { > 94 | setCredentialId(providerCredentials[0].id) | ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 95 | } 96 | }, [providerCredentials.length, provider, ollamaMode]) 97 |",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/shared/ai-gen-block.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'genInfo'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/shared/ai-gen-block.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/shared/dir-browser.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/shared/dir-browser.tsx:55:7 53 | useEffect(() => { 54 | if (mode === 'browse') { > 55 | fetchDirs(browsePath) | ^^^^^^^^^ Avoid calling setState() directly within an effect 56 | setSearch('') 57 | } 58 | }, [browsePath, mode, fetchDirs])",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/shared/settings-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadMarketplace'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/shared/settings-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadPlugins'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/shared/settings-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'loadAgents', 'loadCredentials', 'loadProviders', 'loadSecrets', and 'loadSettings'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/shared/settings-sheet.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/components/shared/settings-sheet.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/shared/settings-sheet.tsx:58:7 56 | loadSecrets() 57 | loadAgents() > 58 | setAddProvider(null) | ^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 59 | setNewName('') 60 | setNewKey('') 61 | setDeleting(null)",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/shared/settings-sheet.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/shared/settings-sheet.tsx:911:21 909 | }, []) 910 | > 911 | useEffect(() => { loadPlugins() }, []) | ^^^^^^^^^^^ Avoid calling setState() directly within an effect 912 | useEffect(() => { if (tab === 'marketplace') loadMarketplace() }, [tab]) 913 | 914 | const togglePlugin = async (filename: string, enabled: boolean) => {",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/shared/settings-sheet.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/shared/settings-sheet.tsx:912:48 910 | 911 | useEffect(() => { loadPlugins() }, []) > 912 | useEffect(() => { if (tab === 'marketplace') loadMarketplace() }, [tab]) | ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 913 | 914 | const togglePlugin = async (filename: string, enabled: boolean) => { 915 | await api('POST', '/plugins', { filename, enabled })",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/skills/skill-list.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadSkills'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/skills/skill-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'editing' and 'loadSettings'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-board.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'loadAgents' and 'loadTasks'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-card.tsx",
+      "ruleId": "@next/next/no-img-element",
+      "severity": 1,
+      "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-card.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'BoardTaskStatus' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-list.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'inSidebar' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-list.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadTasks'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-sheet.tsx",
+      "ruleId": "@next/next/no-img-element",
+      "severity": 1,
+      "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-sheet.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'BoardTask' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'agentId', 'editing', 'open', and 'orchestrators'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-sheet.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'editing', 'loadAgents', 'loadSettings', and 'orchestrators'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-sheet.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/components/tasks/task-sheet.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/tasks/task-sheet.tsx:100:7 98 | useEffect(() => { 99 | if (open && !editing && !agentId && orchestrators.length) { > 100 | setAgentId(orchestrators[0].id) | ^^^^^^^^^^ Avoid calling setState() directly within an effect 101 | } 102 | }, [agents]) 103 |",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/tasks/task-sheet.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /Users/waydelyle/Dev/swarmclawai/swarmclaw-app/src/components/tasks/task-sheet.tsx:75:7 73 | loadAgents() 74 | loadSettings() > 75 | setAiPrompt('') | ^^^^^^^^^^^ Avoid calling setState() directly within an effect 76 | setGenerating(false) 77 | setGenerated(false) 78 | setGenError('')",
+      "count": 1
+    },
+    {
+      "filePath": "src/hooks/use-speech-recognition.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "filePath": "src/lib/providers/anthropic.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "filePath": "src/lib/providers/codex-cli.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/lib/providers/index.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'collectedOutput' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/providers/index.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'handler' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/providers/index.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 7
+    },
+    {
+      "filePath": "src/lib/providers/index.ts",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "filePath": "src/lib/providers/ollama.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/lib/providers/openai.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "filePath": "src/lib/server/build-llm.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'apiEndpoint' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/build-llm.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/chat-execution.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'changed' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/chat-execution.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 21
+    },
+    {
+      "filePath": "src/lib/server/connectors/discord.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'Connector' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/connectors/discord.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'isImageMime' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/connectors/discord.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'mimeFromPath' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/connectors/discord.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 5
+    },
+    {
+      "filePath": "src/lib/server/connectors/manager.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 11
+    },
+    {
+      "filePath": "src/lib/server/connectors/openclaw.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 9
+    },
+    {
+      "filePath": "src/lib/server/connectors/slack.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'Connector' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/connectors/slack.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'isImageMime' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/connectors/slack.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'mimeFromPath' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/connectors/slack.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 8
+    },
+    {
+      "filePath": "src/lib/server/connectors/telegram.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'Connector' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/connectors/telegram.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "filePath": "src/lib/server/connectors/whatsapp.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'Connector' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/connectors/whatsapp.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 7
+    },
+    {
+      "filePath": "src/lib/server/connectors/whatsapp.ts",
+      "ruleId": "react-hooks/rules-of-hooks",
+      "severity": 2,
+      "message": "React Hook \"useMultiFileAuthState\" is called in function \"start\" that is neither a React function component nor a custom React Hook function. React component names must start with an uppercase letter. React Hook names must start with the word \"use\".",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/context-manager.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'ProviderType' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/daemon-state.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 8
+    },
+    {
+      "filePath": "src/lib/server/embeddings.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "filePath": "src/lib/server/heartbeat-service.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 10
+    },
+    {
+      "filePath": "src/lib/server/main-agent-loop.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 14
+    },
+    {
+      "filePath": "src/lib/server/memory-db.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 9
+    },
+    {
+      "filePath": "src/lib/server/openclaw-health.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 6
+    },
+    {
+      "filePath": "src/lib/server/orchestrator-lg.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 5
+    },
+    {
+      "filePath": "src/lib/server/orchestrator.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "filePath": "src/lib/server/plugins.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 10
+    },
+    {
+      "filePath": "src/lib/server/process-manager.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "filePath": "src/lib/server/scheduler.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/lib/server/session-run-manager.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 5
+    },
+    {
+      "filePath": "src/lib/server/session-tools.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'clearLogs' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'countLogs' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'encryptedValue' is assigned a value but never used.",
+      "count": 2
+    },
+    {
+      "filePath": "src/lib/server/session-tools.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'LogCategory' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'prompt' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'queryLogs' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 90
+    },
+    {
+      "filePath": "src/lib/server/session-tools.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'text' is never reassigned. Use 'const' instead.",
+      "count": 2
+    },
+    {
+      "filePath": "src/lib/server/storage.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 41
+    },
+    {
+      "filePath": "src/lib/server/stream-agent-chat.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "filePath": "src/types/index.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "filePath": "tests/memory.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'getMemoryDb' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "tests/memory.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'MemoryEntry' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "tests/memory.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'MemoryReference' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "tests/memory.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'storeMemoryImageAsset' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "tests/memory.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'TEST_DB_PATH' is assigned a value but never used.",
+      "count": 1
+    }
+  ]
+}

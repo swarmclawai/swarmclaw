@@ -282,14 +282,6 @@ const COMMAND_GROUPS = [
     ],
   },
   {
-    name: 'stripe',
-    description: 'Stripe billing endpoints',
-    commands: [
-      cmd('checkout', 'POST', '/stripe/checkout', 'Create Stripe checkout session', { expectsJsonBody: true }),
-      cmd('webhook', 'POST', '/stripe/webhook', 'Send Stripe webhook payload', { expectsJsonBody: true }),
-    ],
-  },
-  {
     name: 'tasks',
     description: 'Manage task board items',
     commands: [

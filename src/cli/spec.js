@@ -221,13 +221,6 @@ const COMMAND_GROUPS = {
       claude: { description: 'List local ~/.claude/skills', method: 'GET', path: '/claude-skills' },
     },
   },
-  stripe: {
-    description: 'Stripe billing endpoints',
-    commands: {
-      checkout: { description: 'Create Stripe checkout session', method: 'POST', path: '/stripe/checkout' },
-      webhook: { description: 'Send Stripe webhook payload', method: 'POST', path: '/stripe/webhook' },
-    },
-  },
   system: {
     description: 'System and version endpoints',
     commands: {
