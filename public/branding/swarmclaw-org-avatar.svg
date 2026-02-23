@@ -1,30 +1,58 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
-  <title id="title">SwarmClaw Org Avatar</title>
-  <desc id="desc">Dark rounded-square badge with cyan claw marks and an S monogram.</desc>
+  <title id="title">SwarmClaw Lobster Avatar</title>
+  <desc id="desc">SwarmClaw org avatar using an OpenClaw-inspired lobster mark with swarm accents.</desc>
+
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="0%" stop-color="#050B18"/>
       <stop offset="100%" stop-color="#111827"/>
     </linearGradient>
-    <radialGradient id="glow" cx="55%" cy="35%" r="65%">
-      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.35"/>
+    <radialGradient id="glow" cx="50%" cy="38%" r="62%">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.22"/>
       <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="slash" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#67e8f9"/>
-      <stop offset="100%" stop-color="#06b6d4"/>
+    <linearGradient id="lobster-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6a5f"/>
+      <stop offset="100%" stop-color="#a41318"/>
     </linearGradient>
+    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#020617" flood-opacity="0.55"/>
+    </filter>
   </defs>
 
-  <rect x="40" y="40" width="944" height="944" rx="224" fill="url(#bg)"/>
-  <rect x="40" y="40" width="944" height="944" rx="224" fill="url(#glow)"/>
-  <rect x="56" y="56" width="912" height="912" rx="208" fill="none" stroke="#334155" stroke-width="6"/>
+  <rect x="40" y="40" width="944" height="944" rx="216" fill="url(#bg)"/>
+  <rect x="40" y="40" width="944" height="944" rx="216" fill="url(#glow)"/>
+  <rect x="56" y="56" width="912" height="912" rx="200" fill="none" stroke="#334155" stroke-width="6"/>
 
-  <g transform="translate(0 8)">
-    <path d="M690 244c22 10 33 37 26 62L622 575c-7 22-30 34-53 27-22-8-34-32-27-54l95-278c8-22 31-34 53-26z" fill="url(#slash)"/>
-    <path d="M525 220c22 9 34 34 28 57L475 587c-7 23-31 36-54 29s-36-31-29-54l79-309c7-23 31-35 54-28z" fill="url(#slash)"/>
-    <path d="M356 246c22 8 35 32 30 55L322 581c-6 23-29 37-53 32-23-6-37-30-32-53l64-282c6-23 29-37 55-32z" fill="url(#slash)"/>
+  <!-- swarm accents -->
+  <g stroke="#22d3ee" stroke-opacity="0.8" stroke-width="10" fill="none" stroke-linecap="round">
+    <path d="M182 286 C232 236, 314 224, 378 252"/>
+    <path d="M842 286 C792 236, 710 224, 646 252"/>
+    <path d="M202 760 C270 814, 350 826, 420 806"/>
+    <path d="M822 760 C754 814, 674 826, 604 806"/>
+  </g>
+  <g fill="#67e8f9">
+    <circle cx="172" cy="282" r="14"/>
+    <circle cx="852" cy="282" r="14"/>
+    <circle cx="198" cy="760" r="12"/>
+    <circle cx="826" cy="760" r="12"/>
   </g>
 
-  <path d="M642 662c0 96-78 174-174 174h-86c-43 0-78-35-78-78 0-44 35-79 78-79h123c23 0 42-19 42-42s-19-42-42-42h-84c-96 0-174-78-174-174s78-174 174-174h84c43 0 78 35 78 78 0 44-35 79-78 79h-121c-23 0-42 19-42 42s19 42 42 42h86c96 0 174 78 174 174z" fill="#e2e8f0"/>
+  <!-- OpenClaw-inspired lobster mark -->
+  <g transform="translate(152 156) scale(6)" filter="url(#soft-shadow)">
+    <!-- Body -->
+    <path d="M60 10 C30 10 15 35 15 55 C15 75 30 95 45 100 L45 110 L55 110 L55 100 C55 100 60 102 65 100 L65 110 L75 110 L75 100 C90 95 105 75 105 55 C105 35 90 10 60 10Z" fill="url(#lobster-gradient)"/>
+    <!-- Left Claw -->
+    <path d="M20 45 C5 40 0 50 5 60 C10 70 20 65 25 55 C28 48 25 45 20 45Z" fill="url(#lobster-gradient)"/>
+    <!-- Right Claw -->
+    <path d="M100 45 C115 40 120 50 115 60 C110 70 100 65 95 55 C92 48 95 45 100 45Z" fill="url(#lobster-gradient)"/>
+    <!-- Antenna -->
+    <path d="M45 15 Q35 5 30 8" stroke="#ff8b84" stroke-width="3" stroke-linecap="round"/>
+    <path d="M75 15 Q85 5 90 8" stroke="#ff8b84" stroke-width="3" stroke-linecap="round"/>
+    <!-- Eyes -->
+    <circle cx="45" cy="35" r="6" fill="#030712"/>
+    <circle cx="75" cy="35" r="6" fill="#030712"/>
+    <circle cx="46" cy="34" r="2.5" fill="#22d3ee"/>
+    <circle cx="76" cy="34" r="2.5" fill="#22d3ee"/>
+  </g>
 </svg>
