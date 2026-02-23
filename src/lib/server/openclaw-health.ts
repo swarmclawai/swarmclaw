@@ -87,6 +87,65 @@ function describeHttpError(status: number): { error: string; hint?: string } {
   }
 }
 
+function createTimeoutError(message: string): Error {
+  const timeoutErr = new Error(message)
+  ;(timeoutErr as any).name = 'TimeoutError'
+  return timeoutErr
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout?: () => void, message?: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      timer = setTimeout(() => {
+        try { onTimeout?.() } catch { /* noop */ }
+        reject(createTimeoutError(message || `Request timed out after ${timeoutMs}ms`))
+      }, timeoutMs)
+      promise
+        .then((value) => {
+          if (timer) clearTimeout(timer)
+          resolve(value)
+        })
+        .catch((err) => {
+          if (timer) clearTimeout(timer)
+          reject(err)
+        })
+    })
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<{ response: Response; body: any }> {
+  const controller = new AbortController()
+  try {
+    const response = await withTimeout(
+      fetch(url, { ...init, signal: controller.signal }),
+      timeoutMs,
+      () => controller.abort(),
+      `Request timed out after ${timeoutMs}ms`,
+    )
+    const text = await withTimeout(
+      response.text(),
+      timeoutMs,
+      () => controller.abort(),
+      `Response read timed out after ${timeoutMs}ms`,
+    )
+    let body: any = {}
+    if (text) {
+      try {
+        body = JSON.parse(text)
+      } catch {
+        body = {}
+      }
+    }
+    return { response, body }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw createTimeoutError(`Request timed out after ${timeoutMs}ms`)
+    throw err
+  }
+}
+
 export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<OpenClawHealthResult> {
   const endpoint = normalizeOpenClawEndpoint(input.endpoint || undefined)
   const wsUrl = deriveOpenClawWsUrl(endpoint)
@@ -106,14 +165,12 @@ export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<O
   let lastHint: string | undefined
 
   try {
-    const modelsRes = await fetch(`${endpoint}/models`, {
+    const { response: modelsRes, body } = await fetchJsonWithTimeout(`${endpoint}/models`, {
       headers,
-      signal: AbortSignal.timeout(timeoutMs),
       cache: 'no-store',
-    })
+    }, timeoutMs)
     modelsStatus = modelsRes.status
     if (modelsRes.ok) {
-      const body = await modelsRes.json().catch(() => ({}))
       models = extractModels(body)
     } else {
       const err = describeHttpError(modelsRes.status)
@@ -121,7 +178,11 @@ export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<O
       lastHint = err.hint
     }
   } catch (err: any) {
-    lastError = err?.message || 'Failed to connect to OpenClaw endpoint.'
+    if (err?.name === 'TimeoutError') {
+      lastError = `OpenClaw models probe timed out after ${timeoutMs}ms.`
+    } else {
+      lastError = err?.message || 'Failed to connect to OpenClaw endpoint.'
+    }
     return {
       ok: false,
       endpoint,
@@ -139,10 +200,9 @@ export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<O
   const model = normalizeToken(input.model) || models[0] || 'default'
 
   try {
-    const chatRes = await fetch(`${endpoint}/chat/completions`, {
+    const { response: chatRes, body } = await fetchJsonWithTimeout(`${endpoint}/chat/completions`, {
       method: 'POST',
       headers,
-      signal: AbortSignal.timeout(timeoutMs),
       cache: 'no-store',
       body: JSON.stringify({
         model,
@@ -150,18 +210,21 @@ export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<O
         stream: false,
         max_tokens: 12,
       }),
-    })
+    }, timeoutMs)
     chatStatus = chatRes.status
     if (!chatRes.ok) {
       const err = describeHttpError(chatRes.status)
       lastError = err.error
       lastHint = err.hint || lastHint
     } else {
-      const body = await chatRes.json().catch(() => ({}))
       completionSample = extractChatText(body).slice(0, 240)
     }
   } catch (err: any) {
-    lastError = err?.message || 'OpenClaw chat probe failed.'
+    if (err?.name === 'TimeoutError') {
+      lastError = `OpenClaw chat probe timed out after ${timeoutMs}ms.`
+    } else {
+      lastError = err?.message || 'OpenClaw chat probe failed.'
+    }
   }
 
   return {
@@ -178,4 +241,3 @@ export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<O
     hint: lastHint,
   }
 }
-

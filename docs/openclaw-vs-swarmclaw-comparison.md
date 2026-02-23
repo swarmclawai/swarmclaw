@@ -79,7 +79,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 | Cost tracking | ❌ | ✅ Per-message tokens | SwarmClaw advantage |
 | Execution logs | ❌ | ✅ logs.db audit trail | SwarmClaw advantage |
 | Tailscale integration | ✅ Serve/Funnel | ❌ | **MISSING** |
-| Doctor/diagnostics | ✅ `openclaw doctor` | ❌ | **MISSING** |
+| Doctor/diagnostics | ✅ `openclaw doctor` | ✅ `swarmclaw setup doctor` + `/api/setup/doctor` | Narrowed gap |
 | Gateway pairing | ✅ Bonjour + QR | ❌ | **MISSING** |
 
 ### Media/Rich Content
@@ -199,7 +199,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 6. **Typing indicators** - No presence/typing feedback on channels
 7. **Tailscale integration** - No remote access via tailnet
 8. **Signal support** - Missing privacy-focused channel
-9. **Doctor/diagnostics** - No health check tool
+9. **Doctor/diagnostics** - Added setup diagnostics (`swarmclaw setup doctor`, `/api/setup/doctor`), but still lacks OpenClaw's device-level diagnostics depth
 
 ### Medium Impact (nice to have)
 

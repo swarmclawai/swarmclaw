@@ -2356,7 +2356,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
 
     tools.push(
       tool(
-        async ({ action, sessionId, message, limit, agentId, name, waitForReply, timeoutSec, queueMode, heartbeatEnabled, heartbeatIntervalSec, heartbeatIntervalMs, finalStatus }) => {
+        async ({ action, sessionId, message, limit, agentId, name, waitForReply, timeoutSec, queueMode, heartbeatEnabled, heartbeatIntervalSec, heartbeatIntervalMs, finalStatus, envelopeId, type, correlationId, ttlSec }) => {
           try {
             const sessions = loadSessions()
             if (action === 'list') {
@@ -2579,16 +2579,63 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
               })
             }
 
-            return 'Unknown action. Use list, history, status, send, spawn, stop, or set_heartbeat.'
+            if (action === 'mailbox_send') {
+              if (!sessionId) return 'Error: sessionId (target session) is required for mailbox_send.'
+              if (!message?.trim()) return 'Error: message is required for mailbox_send.'
+              const { sendMailboxEnvelope } = await import('./session-mailbox')
+              const envelope = sendMailboxEnvelope({
+                toSessionId: sessionId,
+                type: type?.trim() || 'message',
+                payload: message.trim(),
+                fromSessionId: ctx?.sessionId || null,
+                fromAgentId: ctx?.agentId || null,
+                correlationId: correlationId?.trim() || null,
+                ttlSec: typeof ttlSec === 'number' ? ttlSec : null,
+              })
+              return JSON.stringify({ ok: true, envelope })
+            }
+
+            if (action === 'mailbox_inbox') {
+              const targetSessionId = sessionId || ctx?.sessionId || null
+              if (!targetSessionId) return 'Error: sessionId is required for mailbox_inbox when no current session context exists.'
+              const { listMailbox } = await import('./session-mailbox')
+              const envelopes = listMailbox(targetSessionId, { limit, includeAcked: false })
+              return JSON.stringify({
+                sessionId: targetSessionId,
+                count: envelopes.length,
+                envelopes,
+                currentSessionDefaulted: !sessionId,
+              })
+            }
+
+            if (action === 'mailbox_ack') {
+              const targetSessionId = sessionId || ctx?.sessionId || null
+              if (!targetSessionId) return 'Error: sessionId is required for mailbox_ack when no current session context exists.'
+              if (!envelopeId?.trim()) return 'Error: envelopeId is required for mailbox_ack.'
+              const { ackMailboxEnvelope } = await import('./session-mailbox')
+              const envelope = ackMailboxEnvelope(targetSessionId, envelopeId.trim())
+              if (!envelope) return `Not found: envelope "${envelopeId.trim()}"`
+              return JSON.stringify({ ok: true, envelope })
+            }
+
+            if (action === 'mailbox_clear') {
+              const targetSessionId = sessionId || ctx?.sessionId || null
+              if (!targetSessionId) return 'Error: sessionId is required for mailbox_clear when no current session context exists.'
+              const { clearMailbox } = await import('./session-mailbox')
+              const cleared = clearMailbox(targetSessionId, true)
+              return JSON.stringify({ ok: true, ...cleared })
+            }
+
+            return 'Unknown action. Use list, history, status, send, spawn, stop, set_heartbeat, mailbox_send, mailbox_inbox, mailbox_ack, or mailbox_clear.'
           } catch (err: any) {
             return `Error: ${err.message || String(err)}`
           }
         },
         {
           name: 'sessions_tool',
-          description: 'Session-to-session operations: list/status/history sessions, send messages to other sessions, spawn new agent sessions, stop active runs, and control per-session heartbeat.',
+          description: 'Session-to-session operations: list/status/history sessions, send messages to other sessions, spawn new agent sessions, stop active runs, control per-session heartbeat, and exchange protocol envelopes via mailbox_* actions.',
           schema: z.object({
-            action: z.enum(['list', 'history', 'status', 'send', 'spawn', 'stop', 'set_heartbeat']).describe('Session action'),
+            action: z.enum(['list', 'history', 'status', 'send', 'spawn', 'stop', 'set_heartbeat', 'mailbox_send', 'mailbox_inbox', 'mailbox_ack', 'mailbox_clear']).describe('Session action'),
             sessionId: z.string().optional().describe('Target session id (history defaults to current session when omitted; status/send/stop still require explicit sessionId)'),
             message: z.string().optional().describe('Message body (required for send, optional initial task for spawn)'),
             limit: z.number().optional().describe('Max items/messages for list/history'),
@@ -2601,6 +2648,10 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
             heartbeatIntervalSec: z.number().optional().describe('For set_heartbeat: optional heartbeat interval in seconds (0-3600).'),
             heartbeatIntervalMs: z.number().optional().describe('For set_heartbeat: optional heartbeat interval in milliseconds (alias of heartbeatIntervalSec).'),
             finalStatus: z.string().optional().describe('For set_heartbeat when disabling: optional final status update to append in the session'),
+            envelopeId: z.string().optional().describe('For mailbox_ack: envelope id to acknowledge.'),
+            type: z.string().optional().describe('For mailbox_send: protocol message type (default "message").'),
+            correlationId: z.string().optional().describe('For mailbox_send: optional request/response correlation id.'),
+            ttlSec: z.number().optional().describe('For mailbox_send: optional envelope TTL in seconds.'),
           }),
         },
       ),
@@ -2686,7 +2737,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
   if (enabledTools.includes('manage_connectors')) {
     tools.push(
       tool(
-        async ({ action, connectorId, platform, to, message, imageUrl, fileUrl, mediaPath, mimeType, fileName, caption }) => {
+        async ({ action, connectorId, platform, to, message, imageUrl, fileUrl, mediaPath, mimeType, fileName, caption, approved }) => {
           try {
             const normalizeWhatsAppTarget = (input: string): string => {
               const raw = input.trim()
@@ -2710,6 +2761,10 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
             }
 
             if (action === 'send') {
+              const settings = loadSettings()
+              if (settings.safetyRequireApprovalForOutbound === true && approved !== true) {
+                return 'Error: outbound connector sends require explicit approval. Re-run with approved=true after user confirmation.'
+              }
               const hasText = !!message?.trim()
               const hasMedia = !!imageUrl?.trim() || !!fileUrl?.trim()
               if (!hasText && !hasMedia) return 'Error: message or media URL is required for send action.'
@@ -2786,6 +2841,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
             mimeType: z.string().optional().describe('Optional MIME type for mediaPath or fileUrl.'),
             fileName: z.string().optional().describe('Optional display file name for mediaPath or fileUrl.'),
             caption: z.string().optional().describe('Optional caption used with image/file sends.'),
+            approved: z.boolean().optional().describe('Set true to explicitly confirm outbound send when safetyRequireApprovalForOutbound is enabled.'),
           }),
         },
       ),

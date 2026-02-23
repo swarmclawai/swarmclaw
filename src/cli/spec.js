@@ -119,6 +119,8 @@ const COMMAND_GROUPS = {
       create: { description: 'Create memory entry', method: 'POST', path: '/memory' },
       update: { description: 'Update memory entry', method: 'PUT', path: '/memory/:id', params: ['id'] },
       delete: { description: 'Delete memory entry', method: 'DELETE', path: '/memory/:id', params: ['id'] },
+      maintenance: { description: 'Analyze memory dedupe/prune candidates', method: 'GET', path: '/memory/maintenance' },
+      'maintenance-run': { description: 'Run memory dedupe/prune maintenance', method: 'POST', path: '/memory/maintenance' },
     },
   },
   'memory-images': {
@@ -190,12 +192,15 @@ const COMMAND_GROUPS = {
       update: { description: 'Update session fields', method: 'PUT', path: '/sessions/:id', params: ['id'] },
       delete: { description: 'Delete one session', method: 'DELETE', path: '/sessions/:id', params: ['id'] },
       'delete-many': { description: 'Delete multiple sessions (body: {"ids":[...]})', method: 'DELETE', path: '/sessions' },
+      'heartbeat-disable-all': { description: 'Disable all session heartbeats and cancel queued heartbeat runs', method: 'POST', path: '/sessions/heartbeat' },
       messages: { description: 'Get session message history', method: 'GET', path: '/sessions/:id/messages', params: ['id'] },
       'main-loop': { description: 'Get main mission loop state for a session', method: 'GET', path: '/sessions/:id/main-loop', params: ['id'] },
       'main-loop-action': { description: 'Control main mission loop (pause/resume/set_goal/set_mode/clear_events/nudge)', method: 'POST', path: '/sessions/:id/main-loop', params: ['id'] },
       chat: { description: 'Send chat message (SSE stream)', method: 'POST', path: '/sessions/:id/chat', params: ['id'], stream: true, waitable: true },
       stop: { description: 'Cancel active/running session work', method: 'POST', path: '/sessions/:id/stop', params: ['id'] },
       clear: { description: 'Clear session history', method: 'POST', path: '/sessions/:id/clear', params: ['id'] },
+      mailbox: { description: 'List mailbox envelopes for a session', method: 'GET', path: '/sessions/:id/mailbox', params: ['id'] },
+      'mailbox-action': { description: 'Send/ack/clear mailbox envelopes', method: 'POST', path: '/sessions/:id/mailbox', params: ['id'] },
       deploy: { description: 'Deploy session workspace git changes', method: 'POST', path: '/sessions/:id/deploy', params: ['id'] },
       devserver: { description: 'Start/stop/status dev server (body: {"action":"start|stop|status"})', method: 'POST', path: '/sessions/:id/devserver', params: ['id'] },
       browser: { description: 'Check browser runtime for session', method: 'GET', path: '/sessions/:id/browser', params: ['id'] },
@@ -207,6 +212,13 @@ const COMMAND_GROUPS = {
     commands: {
       get: { description: 'Get settings', method: 'GET', path: '/settings' },
       update: { description: 'Update settings', method: 'PUT', path: '/settings' },
+    },
+  },
+  setup: {
+    description: 'Setup and provider validation helpers',
+    commands: {
+      'check-provider': { description: 'Validate provider credentials/endpoint', method: 'POST', path: '/setup/check-provider' },
+      doctor: { description: 'Run local setup diagnostics', method: 'GET', path: '/setup/doctor' },
     },
   },
   skills: {

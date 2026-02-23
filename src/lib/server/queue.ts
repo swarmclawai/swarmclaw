@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSessions, saveSessions } from './storage'
+import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSessions, saveSessions, loadSettings } from './storage'
 import { createOrchestratorSession, executeOrchestrator } from './orchestrator'
 import { formatValidationFailure, validateTaskCompletion } from './task-validation'
 import { ensureTaskCompletionReport } from './task-reports'
@@ -16,6 +16,42 @@ function sameReasons(a?: string[] | null, b?: string[] | null): boolean {
     if (av[i] !== bv[i]) return false
   }
   return true
+}
+
+function normalizeInt(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number.parseInt(value, 10)
+      : Number.NaN
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, Math.trunc(parsed)))
+}
+
+function resolveTaskPolicy(task: BoardTask): { maxAttempts: number; backoffSec: number } {
+  const settings = loadSettings()
+  const defaultMaxAttempts = normalizeInt(settings.defaultTaskMaxAttempts, 3, 1, 20)
+  const defaultBackoffSec = normalizeInt(settings.taskRetryBackoffSec, 30, 1, 3600)
+  const maxAttempts = normalizeInt(task.maxAttempts, defaultMaxAttempts, 1, 20)
+  const backoffSec = normalizeInt(task.retryBackoffSec, defaultBackoffSec, 1, 3600)
+  return { maxAttempts, backoffSec }
+}
+
+function applyTaskPolicyDefaults(task: BoardTask): void {
+  const policy = resolveTaskPolicy(task)
+  if (typeof task.attempts !== 'number' || task.attempts < 0) task.attempts = 0
+  task.maxAttempts = policy.maxAttempts
+  task.retryBackoffSec = policy.backoffSec
+  if (task.retryScheduledAt === undefined) task.retryScheduledAt = null
+  if (task.deadLetteredAt === undefined) task.deadLetteredAt = null
+}
+
+function queueContains(queue: string[], id: string): boolean {
+  return queue.includes(id)
+}
+
+function pushQueueUnique(queue: string[], id: string): void {
+  if (!queueContains(queue, id)) queue.push(id)
 }
 
 /** Disable heartbeat on a task's session when the task finishes. */
@@ -35,16 +71,16 @@ export function enqueueTask(taskId: string) {
   const task = tasks[taskId] as BoardTask | undefined
   if (!task) return
 
+  applyTaskPolicyDefaults(task)
   task.status = 'queued'
   task.queuedAt = Date.now()
+  task.retryScheduledAt = null
   task.updatedAt = Date.now()
   saveTasks(tasks)
 
   const queue = loadQueue()
-  if (!queue.includes(taskId)) {
-    queue.push(taskId)
-    saveQueue(queue)
-  }
+  pushQueueUnique(queue, taskId)
+  saveQueue(queue)
 
   pushMainLoopEventToMainSessions({
     type: 'task_queued',
@@ -130,23 +166,79 @@ export function validateCompletedTasksQueue() {
   return { checked, demoted }
 }
 
+function scheduleRetryOrDeadLetter(task: BoardTask, reason: string): 'retry' | 'dead_lettered' {
+  applyTaskPolicyDefaults(task)
+  const now = Date.now()
+  task.attempts = (task.attempts || 0) + 1
+
+  if ((task.attempts || 0) < (task.maxAttempts || 1)) {
+    const delaySec = Math.min(6 * 3600, (task.retryBackoffSec || 30) * (2 ** Math.max(0, (task.attempts || 1) - 1)))
+    task.status = 'queued'
+    task.retryScheduledAt = now + delaySec * 1000
+    task.updatedAt = now
+    task.error = `Retry scheduled after failure: ${reason}`.slice(0, 500)
+    if (!task.comments) task.comments = []
+    task.comments.push({
+      id: crypto.randomBytes(4).toString('hex'),
+      author: 'System',
+      text: `Attempt ${task.attempts}/${task.maxAttempts} failed. Retrying in ${delaySec}s.\n\nReason: ${reason}`,
+      createdAt: now,
+    })
+    return 'retry'
+  }
+
+  task.status = 'failed'
+  task.deadLetteredAt = now
+  task.retryScheduledAt = null
+  task.updatedAt = now
+  task.error = `Dead-lettered after ${task.attempts}/${task.maxAttempts} attempts: ${reason}`.slice(0, 500)
+  if (!task.comments) task.comments = []
+  task.comments.push({
+    id: crypto.randomBytes(4).toString('hex'),
+    author: 'System',
+    text: `Task moved to dead-letter after ${task.attempts}/${task.maxAttempts} attempts.\n\nReason: ${reason}`,
+    createdAt: now,
+  })
+  return 'dead_lettered'
+}
+
+function dequeueNextRunnableTask(queue: string[], tasks: Record<string, BoardTask>): string | null {
+  const now = Date.now()
+
+  // Remove stale entries first.
+  for (let i = queue.length - 1; i >= 0; i--) {
+    const id = queue[i]
+    const task = tasks[id]
+    if (!task || task.status !== 'queued') queue.splice(i, 1)
+  }
+
+  const idx = queue.findIndex((id) => {
+    const task = tasks[id]
+    if (!task) return false
+    const retryAt = typeof task.retryScheduledAt === 'number' ? task.retryScheduledAt : null
+    return !retryAt || retryAt <= now
+  })
+  if (idx === -1) return null
+  const [taskId] = queue.splice(idx, 1)
+  return taskId || null
+}
+
 export async function processNext() {
   if (processing) return
   processing = true
 
   try {
     while (true) {
+      const tasks = loadTasks()
       const queue = loadQueue()
       if (queue.length === 0) break
 
-      const taskId = queue[0]
-      const tasks = loadTasks()
+      const taskId = dequeueNextRunnableTask(queue, tasks as Record<string, BoardTask>)
+      saveQueue(queue)
+      if (!taskId) break
       const task = tasks[taskId] as BoardTask | undefined
 
       if (!task || task.status !== 'queued') {
-        // Remove stale entry
-        queue.shift()
-        saveQueue(queue)
         continue
       }
 
@@ -154,6 +246,7 @@ export async function processNext() {
       const agent = agents[task.agentId]
       if (!agent) {
         task.status = 'failed'
+        task.deadLetteredAt = Date.now()
         task.error = `Agent ${task.agentId} not found`
         task.updatedAt = Date.now()
         saveTasks(tasks)
@@ -161,19 +254,25 @@ export async function processNext() {
           type: 'task_failed',
           text: `Task failed: "${task.title}" (${task.id}) — agent not found.`,
         })
-        queue.shift()
-        saveQueue(queue)
         continue
       }
 
       // Mark as running
+      applyTaskPolicyDefaults(task)
       task.status = 'running'
       task.startedAt = Date.now()
+      task.retryScheduledAt = null
+      task.deadLetteredAt = null
       task.updatedAt = Date.now()
 
       const taskCwd = task.cwd || process.cwd()
       const sessionId = createOrchestratorSession(agent, task.title, undefined, taskCwd)
       task.sessionId = sessionId
+      task.checkpoint = {
+        lastSessionId: sessionId,
+        note: `Attempt ${(task.attempts || 0) + 1}/${task.maxAttempts || '?'} started`,
+        updatedAt: Date.now(),
+      }
       saveTasks(tasks)
       pushMainLoopEventToMainSessions({
         type: 'task_running',
@@ -197,6 +296,7 @@ export async function processNext() {
         const result = await executeOrchestrator(agent, task.description || task.title, sessionId)
         const t2 = loadTasks()
         if (t2[taskId]) {
+          applyTaskPolicyDefaults(t2[taskId])
           t2[taskId].result = result?.slice(0, 2000) || null
           t2[taskId].updatedAt = Date.now()
           const report = ensureTaskCompletionReport(t2[taskId])
@@ -211,7 +311,15 @@ export async function processNext() {
           if (validation.ok) {
             t2[taskId].status = 'completed'
             t2[taskId].completedAt = now
+            t2[taskId].retryScheduledAt = null
             t2[taskId].error = null
+            t2[taskId].checkpoint = {
+              ...(t2[taskId].checkpoint || {}),
+              lastRunId: sessionId,
+              lastSessionId: sessionId,
+              note: `Completed on attempt ${t2[taskId].attempts || 0}/${t2[taskId].maxAttempts || '?'}`,
+              updatedAt: now,
+            }
             t2[taskId].comments!.push({
               id: crypto.randomBytes(4).toString('hex'),
               author: agent.name,
@@ -220,9 +328,9 @@ export async function processNext() {
               createdAt: now,
             })
           } else {
-            t2[taskId].status = 'failed'
-            t2[taskId].completedAt = null
-            t2[taskId].error = formatValidationFailure(validation.reasons).slice(0, 500)
+            const failureReason = formatValidationFailure(validation.reasons).slice(0, 500)
+            const retryState = scheduleRetryOrDeadLetter(t2[taskId], failureReason)
+            t2[taskId].completedAt = retryState === 'dead_lettered' ? null : t2[taskId].completedAt
             t2[taskId].comments!.push({
               id: crypto.randomBytes(4).toString('hex'),
               author: agent.name,
@@ -230,6 +338,15 @@ export async function processNext() {
               text: `Task failed validation and was not marked completed.\n\n${validation.reasons.map((r) => `- ${r}`).join('\n')}`,
               createdAt: now,
             })
+            if (retryState === 'retry') {
+              const qRetry = loadQueue()
+              pushQueueUnique(qRetry, taskId)
+              saveQueue(qRetry)
+              pushMainLoopEventToMainSessions({
+                type: 'task_retry_scheduled',
+                text: `Task retry scheduled: "${task.title}" (${taskId}) attempt ${t2[taskId].attempts}/${t2[taskId].maxAttempts} in ${t2[taskId].retryBackoffSec}s.`,
+              })
+            }
           }
 
           saveTasks(t2)
@@ -243,20 +360,23 @@ export async function processNext() {
           })
           console.log(`[queue] Task "${task.title}" completed`)
         } else {
-          pushMainLoopEventToMainSessions({
-            type: 'task_failed',
-            text: `Task failed validation: "${task.title}" (${taskId})`,
-          })
-          console.warn(`[queue] Task "${task.title}" failed completion validation`)
+          if (doneTask?.status === 'queued') {
+            console.warn(`[queue] Task "${task.title}" scheduled for retry`)
+          } else {
+            pushMainLoopEventToMainSessions({
+              type: 'task_failed',
+              text: `Task failed validation: "${task.title}" (${taskId})`,
+            })
+            console.warn(`[queue] Task "${task.title}" failed completion validation`)
+          }
         }
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err || 'Unknown error')
         console.error(`[queue] Task "${task.title}" failed:`, errMsg)
         const t2 = loadTasks()
         if (t2[taskId]) {
-          t2[taskId].status = 'failed'
-          t2[taskId].error = errMsg.slice(0, 500) || 'Unknown error'
-          t2[taskId].updatedAt = Date.now()
+          applyTaskPolicyDefaults(t2[taskId])
+          const retryState = scheduleRetryOrDeadLetter(t2[taskId], errMsg.slice(0, 500) || 'Unknown error')
           if (!t2[taskId].comments) t2[taskId].comments = []
           // Only add a failure comment if the last comment isn't already an error comment
           const lastComment = t2[taskId].comments!.at(-1)
@@ -272,19 +392,25 @@ export async function processNext() {
           }
           saveTasks(t2)
           disableSessionHeartbeat(t2[taskId].sessionId)
+          if (retryState === 'retry') {
+            const qRetry = loadQueue()
+            pushQueueUnique(qRetry, taskId)
+            saveQueue(qRetry)
+            pushMainLoopEventToMainSessions({
+              type: 'task_retry_scheduled',
+              text: `Task retry scheduled: "${task.title}" (${taskId}) attempt ${t2[taskId].attempts}/${t2[taskId].maxAttempts}.`,
+            })
+          }
         }
-        pushMainLoopEventToMainSessions({
-          type: 'task_failed',
-          text: `Task failed: "${task.title}" (${taskId}) — ${errMsg.slice(0, 200)}`,
-        })
-      }
-
-      // Remove from queue
-      const q2 = loadQueue()
-      const idx = q2.indexOf(taskId)
-      if (idx !== -1) {
-        q2.splice(idx, 1)
-        saveQueue(q2)
+        const latest = loadTasks()[taskId] as BoardTask | undefined
+        if (latest?.status === 'queued') {
+          console.warn(`[queue] Task "${task.title}" queued for retry after error`)
+        } else {
+          pushMainLoopEventToMainSessions({
+            type: 'task_failed',
+            text: `Task failed: "${task.title}" (${taskId}) — ${errMsg.slice(0, 200)}`,
+          })
+        }
       }
     }
   } finally {
@@ -313,6 +439,51 @@ export function cleanupFinishedTaskSessions() {
   }
 }
 
+/** Recover running tasks that appear stalled and requeue/dead-letter them per retry policy. */
+export function recoverStalledRunningTasks(): { recovered: number; deadLettered: number } {
+  const settings = loadSettings()
+  const stallTimeoutMin = normalizeInt(settings.taskStallTimeoutMin, 45, 5, 24 * 60)
+  const staleMs = stallTimeoutMin * 60_000
+  const now = Date.now()
+  const tasks = loadTasks()
+  const queue = loadQueue()
+  let recovered = 0
+  let deadLettered = 0
+  let changed = false
+
+  for (const task of Object.values(tasks) as BoardTask[]) {
+    if (task.status !== 'running') continue
+    const since = Math.max(task.updatedAt || 0, task.startedAt || 0)
+    if (!since || (now - since) < staleMs) continue
+
+    const reason = `Detected stalled run after ${stallTimeoutMin}m without progress`
+    const state = scheduleRetryOrDeadLetter(task, reason)
+    disableSessionHeartbeat(task.sessionId)
+    changed = true
+    if (state === 'retry') {
+      pushQueueUnique(queue, task.id)
+      recovered++
+      pushMainLoopEventToMainSessions({
+        type: 'task_stall_recovered',
+        text: `Recovered stalled task "${task.title}" (${task.id}) and requeued attempt ${task.attempts}/${task.maxAttempts}.`,
+      })
+    } else {
+      deadLettered++
+      pushMainLoopEventToMainSessions({
+        type: 'task_dead_lettered',
+        text: `Task dead-lettered after stalling: "${task.title}" (${task.id}).`,
+      })
+    }
+  }
+
+  if (changed) {
+    saveTasks(tasks)
+    saveQueue(queue)
+  }
+
+  return { recovered, deadLettered }
+}
+
 /** Resume any queued tasks on server boot */
 export function resumeQueue() {
   // Check for tasks stuck in 'queued' status but not in the queue array
@@ -321,6 +492,7 @@ export function resumeQueue() {
   let modified = false
   for (const task of Object.values(tasks) as BoardTask[]) {
     if (task.status === 'queued' && !queue.includes(task.id)) {
+      applyTaskPolicyDefaults(task)
       console.log(`[queue] Recovering stuck queued task: "${task.title}" (${task.id})`)
       queue.push(task.id)
       task.queuedAt = task.queuedAt || Date.now()

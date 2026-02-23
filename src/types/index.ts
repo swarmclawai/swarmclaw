@@ -67,9 +67,14 @@ export interface Session {
   lastAutoMemoryAt?: number | null
   mainLoopState?: {
     goal?: string | null
+    goalContract?: GoalContract | null
     status?: 'idle' | 'progress' | 'blocked' | 'ok'
     summary?: string | null
     nextAction?: string | null
+    planSteps?: string[]
+    currentPlanStep?: string | null
+    reviewNote?: string | null
+    reviewConfidence?: number | null
     missionTaskId?: string | null
     momentumScore?: number
     paused?: boolean
@@ -89,7 +94,10 @@ export interface Session {
     }>
     followupChainCount?: number
     metaMissCount?: number
+    workingMemoryNotes?: string[]
     lastMemoryNoteAt?: number | null
+    lastPlannedAt?: number | null
+    lastReviewedAt?: number | null
     lastTickAt?: number | null
     updatedAt?: number
   }
@@ -296,6 +304,14 @@ export type AppView = 'sessions' | 'agents' | 'schedules' | 'memory' | 'tasks' |
 export type LangGraphProvider = string
 export type LoopMode = 'bounded' | 'ongoing'
 
+export interface GoalContract {
+  objective: string
+  constraints?: string[]
+  budgetUsd?: number | null
+  deadlineAt?: number | null
+  successMetric?: string | null
+}
+
 export interface AppSettings {
   userPrompt?: string
   userName?: string
@@ -324,6 +340,25 @@ export interface AppSettings {
   heartbeatActiveStart?: string | null
   heartbeatActiveEnd?: string | null
   heartbeatTimezone?: string | null
+  // Task resiliency and supervision
+  defaultTaskMaxAttempts?: number
+  taskRetryBackoffSec?: number
+  taskStallTimeoutMin?: number
+  // Safety rails
+  safetyRequireApprovalForOutbound?: boolean
+  safetyMaxDailySpendUsd?: number | null
+  safetyBlockedTools?: string[]
+  // Memory governance
+  memoryWorkingTtlHours?: number
+  memoryDefaultConfidence?: number
+  memoryPruneEnabled?: boolean
+  memorySummaryEnabled?: boolean
+  // Capability router preferences
+  autonomyPreferredDelegates?: Array<'claude' | 'codex' | 'opencode'>
+  autonomyPreferToolRouting?: boolean
+  // Continuous eval
+  autonomyEvalEnabled?: boolean
+  autonomyEvalCron?: string | null
   memoryReferenceDepth?: number
   maxMemoriesPerLookup?: number
   maxLinkedMemoriesExpanded?: number
@@ -441,6 +476,7 @@ export interface BoardTask {
   description: string
   status: BoardTaskStatus
   agentId: string
+  goalContract?: GoalContract | null
   cwd?: string | null
   file?: string | null
   sessionId?: string | null
@@ -455,6 +491,17 @@ export interface BoardTask {
   startedAt?: number | null
   completedAt?: number | null
   archivedAt?: number | null
+  attempts?: number
+  maxAttempts?: number
+  retryBackoffSec?: number
+  retryScheduledAt?: number | null
+  deadLetteredAt?: number | null
+  checkpoint?: {
+    lastRunId?: string | null
+    lastSessionId?: string | null
+    note?: string | null
+    updatedAt: number
+  } | null
   validation?: {
     ok: boolean
     reasons: string[]

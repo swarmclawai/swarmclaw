@@ -14,6 +14,21 @@ interface ProviderCheckResponse {
   recommendedModel?: string
 }
 
+interface SetupDoctorCheck {
+  id: string
+  label: string
+  status: 'pass' | 'warn' | 'fail'
+  detail: string
+  required?: boolean
+}
+
+interface SetupDoctorResponse {
+  ok: boolean
+  summary: string
+  checks: SetupDoctorCheck[]
+  actions?: string[]
+}
+
 interface SetupWizardProps {
   onComplete: () => void
 }
@@ -167,6 +182,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [credentialId, setCredentialId] = useState<string | null>(null)
   const [checkState, setCheckState] = useState<CheckState>('idle')
   const [checkMessage, setCheckMessage] = useState('')
+  const [doctorState, setDoctorState] = useState<'idle' | 'checking' | 'done' | 'error'>('idle')
+  const [doctorError, setDoctorError] = useState('')
+  const [doctorReport, setDoctorReport] = useState<SetupDoctorResponse | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -183,6 +201,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const requiresKey = selectedProvider?.requiresKey || false
   const supportsEndpoint = selectedProvider?.supportsEndpoint || false
   const keyIsOptional = provider === 'openclaw'
+  const requiresVerifiedConnection = provider === 'openclaw'
 
   const skip = async () => {
     try {
@@ -252,6 +271,20 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     }
   }
 
+  const runSetupDoctor = async () => {
+    setDoctorState('checking')
+    setDoctorError('')
+    try {
+      const report = await api<SetupDoctorResponse>('GET', '/setup/doctor')
+      setDoctorReport(report)
+      setDoctorState('done')
+    } catch (err: any) {
+      setDoctorState('error')
+      setDoctorReport(null)
+      setDoctorError(err?.message || 'Failed to run setup diagnostics.')
+    }
+  }
+
   const saveProviderAndContinue = async () => {
     if (!provider || !selectedProvider) return
     if (requiresKey && !apiKey.trim()) {
@@ -262,6 +295,14 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     setSaving(true)
     setError('')
     try {
+      if (requiresVerifiedConnection && checkState !== 'ok') {
+        const ok = await runConnectionCheck()
+        if (!ok) {
+          setError('OpenClaw must pass connection verification before continuing.')
+          return
+        }
+      }
+
       let nextCredentialId = credentialId
       const shouldSaveCredential = (
         (provider === 'openai' || provider === 'anthropic' || provider === 'openclaw')
@@ -288,6 +329,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
   const createStarterAgent = async () => {
     if (!provider || !agentName.trim()) return
+    if (requiresVerifiedConnection && checkState !== 'ok') {
+      setError('OpenClaw connection is not verified. Go back and run the connection check.')
+      setStep(1)
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -376,6 +422,39 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
               ))}
             </div>
 
+            <div className="mt-4 text-left">
+              <button
+                onClick={runSetupDoctor}
+                disabled={doctorState === 'checking'}
+                className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-white/[0.02] text-[13px] text-text-2
+                  cursor-pointer hover:bg-white/[0.05] transition-all duration-200 disabled:opacity-40"
+              >
+                {doctorState === 'checking' ? 'Running System Check...' : 'Run System Check'}
+              </button>
+
+              {doctorState === 'error' && doctorError && (
+                <p className="mt-2 text-[12px] text-red-300">{doctorError}</p>
+              )}
+
+              {doctorReport && doctorState === 'done' && (
+                <div className="mt-3 p-3 rounded-[12px] border border-white/[0.08] bg-surface">
+                  <div className={`text-[12px] font-600 ${doctorReport.ok ? 'text-emerald-300' : 'text-amber-300'}`}>
+                    {doctorReport.summary}
+                  </div>
+                  {doctorReport.checks.filter((c) => c.status !== 'pass').slice(0, 3).map((check) => (
+                    <div key={check.id} className="mt-1 text-[11px] text-text-3">
+                      - {check.label}: {check.detail}
+                    </div>
+                  ))}
+                  {!!doctorReport.actions?.length && (
+                    <div className="mt-2 text-[11px] text-text-3/80">
+                      Next: {doctorReport.actions.slice(0, 2).join(' ')}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <SkipLink onClick={skip} />
           </>
         )}
@@ -389,7 +468,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
               Add only what is needed for this provider, then check connection.
             </p>
             <p className="text-[13px] text-text-3 mb-7">
-              You can keep going even if the check fails and fix details later.
+              {requiresVerifiedConnection
+                ? 'OpenClaw must pass connection check before you can continue.'
+                : 'You can keep going even if the check fails and fix details later.'}
             </p>
 
             <div className="flex flex-col gap-3 text-left mb-4">
@@ -480,7 +561,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                   cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
                   shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
               >
-                {saving ? 'Saving...' : 'Save & Continue'}
+                {saving
+                  ? 'Saving...'
+                  : requiresVerifiedConnection
+                    ? 'Verify & Continue'
+                    : 'Save & Continue'}
               </button>
             </div>
 

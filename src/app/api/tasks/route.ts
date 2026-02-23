@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { loadTasks, saveTasks } from '@/lib/server/storage'
+import { loadTasks, saveTasks, loadSettings } from '@/lib/server/storage'
 import { enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
@@ -33,12 +33,22 @@ export async function POST(req: Request) {
   const id = crypto.randomBytes(4).toString('hex')
   const now = Date.now()
   const tasks = loadTasks()
+  const settings = loadSettings()
+  const maxAttempts = Number.isFinite(Number(body.maxAttempts))
+    ? Math.max(1, Math.min(20, Math.trunc(Number(body.maxAttempts))))
+    : Math.max(1, Math.min(20, Math.trunc(Number(settings.defaultTaskMaxAttempts ?? 3))))
+  const retryBackoffSec = Number.isFinite(Number(body.retryBackoffSec))
+    ? Math.max(1, Math.min(3600, Math.trunc(Number(body.retryBackoffSec))))
+    : Math.max(1, Math.min(3600, Math.trunc(Number(settings.taskRetryBackoffSec ?? 30))))
   tasks[id] = {
     id,
     title: body.title || 'Untitled Task',
     description: body.description || '',
     status: body.status || 'backlog',
     agentId: body.agentId || '',
+    goalContract: body.goalContract || null,
+    cwd: typeof body.cwd === 'string' ? body.cwd : null,
+    file: typeof body.file === 'string' ? body.file : null,
     sessionId: typeof body.sessionId === 'string' ? body.sessionId : null,
     result: typeof body.result === 'string' ? body.result : null,
     error: typeof body.error === 'string' ? body.error : null,
@@ -48,6 +58,12 @@ export async function POST(req: Request) {
     startedAt: null,
     completedAt: null,
     archivedAt: null,
+    attempts: 0,
+    maxAttempts,
+    retryBackoffSec,
+    retryScheduledAt: null,
+    deadLetteredAt: null,
+    checkpoint: null,
   }
 
   if (tasks[id].status === 'completed') {

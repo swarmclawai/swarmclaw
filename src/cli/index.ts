@@ -9,6 +9,49 @@ interface CliContext {
   rawOutput: boolean
 }
 
+type SetupProvider = 'openai' | 'anthropic' | 'ollama' | 'openclaw'
+
+interface SetupAuthStatus {
+  firstTime?: boolean
+  key?: string
+}
+
+interface SetupProviderCheckResponse {
+  ok?: boolean
+  message?: string
+  normalizedEndpoint?: string
+  recommendedModel?: string
+}
+
+const SUPPORTED_SETUP_PROVIDERS = new Set<SetupProvider>(['openai', 'anthropic', 'ollama', 'openclaw'])
+
+const DEFAULT_SETUP_AGENTS: Record<SetupProvider, { name: string; description: string; systemPrompt: string; model: string }> = {
+  openai: {
+    name: 'Assistant',
+    description: 'A helpful GPT-powered assistant.',
+    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
+    model: 'gpt-4o',
+  },
+  anthropic: {
+    name: 'Assistant',
+    description: 'A helpful Claude-powered assistant.',
+    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
+    model: 'claude-sonnet-4-6',
+  },
+  ollama: {
+    name: 'Assistant',
+    description: 'A local assistant running through Ollama.',
+    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
+    model: 'llama3',
+  },
+  openclaw: {
+    name: 'OpenClaw Operator',
+    description: 'A manager agent for talking to and coordinating OpenClaw instances.',
+    systemPrompt: 'You are an operator focused on reliable execution, clear status updates, and task completion.',
+    model: 'default',
+  },
+}
+
 const DEFAULT_BASE_URL =
   process.env.SWARMCLAW_URL
   || process.env.SWARMCLAW_BASE_URL
@@ -111,17 +154,34 @@ async function apiRequest<T = unknown>(
   body?: unknown,
   query?: URLSearchParams,
 ): Promise<T> {
+  return apiRequestWithAccessKey<T>(ctx, method, routePath, ctx.accessKey, body, query)
+}
+
+async function apiRequestWithAccessKey<T = unknown>(
+  ctx: CliContext,
+  method: string,
+  routePath: string,
+  accessKey: string | undefined,
+  body?: unknown,
+  query?: URLSearchParams,
+): Promise<T> {
   const url = buildApiUrl(ctx, routePath, query)
   const headers: Record<string, string> = {}
 
-  if (ctx.accessKey) headers['X-Access-Key'] = ctx.accessKey
+  if (accessKey) headers['X-Access-Key'] = accessKey
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`Failed to reach ${ctx.baseUrl}. Is SwarmClaw running? (${msg})`)
+  }
 
   const contentType = (response.headers.get('content-type') || '').toLowerCase()
   let responseBody: unknown = null
@@ -141,6 +201,48 @@ async function apiRequest<T = unknown>(
   }
 
   return responseBody as T
+}
+
+function normalizeSetupProvider(value: string | undefined): SetupProvider {
+  const lower = (value || '').trim().toLowerCase()
+  if (SUPPORTED_SETUP_PROVIDERS.has(lower as SetupProvider)) return lower as SetupProvider
+  throw new Error(`Unsupported provider "${value}". Supported: openai, anthropic, ollama, openclaw`)
+}
+
+function maskToken(value: string): string {
+  const clean = value.trim()
+  if (clean.length <= 8) return '********'
+  return `${clean.slice(0, 4)}...${clean.slice(-4)}`
+}
+
+async function resolveSetupAccessKey(ctx: CliContext): Promise<{
+  accessKey: string
+  firstTime: boolean
+  autoDiscovered: boolean
+}> {
+  if (ctx.accessKey) {
+    await apiRequestWithAccessKey(ctx, 'POST', '/auth', ctx.accessKey, { key: ctx.accessKey })
+    return {
+      accessKey: ctx.accessKey,
+      firstTime: false,
+      autoDiscovered: false,
+    }
+  }
+
+  const status = await apiRequestWithAccessKey<SetupAuthStatus>(ctx, 'GET', '/auth', undefined)
+  const discoveredKey = typeof status?.key === 'string' ? status.key.trim() : ''
+  const firstTime = status?.firstTime === true
+
+  if (!firstTime || !discoveredKey) {
+    throw new Error('No access key provided. Pass --key (or SWARMCLAW_ACCESS_KEY), or run setup on a fresh first-time instance.')
+  }
+
+  await apiRequestWithAccessKey(ctx, 'POST', '/auth', discoveredKey, { key: discoveredKey })
+  return {
+    accessKey: discoveredKey,
+    firstTime: true,
+    autoDiscovered: true,
+  }
 }
 
 function printResult(value: unknown, rawOutput: boolean): void {
@@ -504,6 +606,31 @@ export function buildProgram(): Command {
     })
 
   sessions
+    .command('mailbox')
+    .description('List session mailbox envelopes')
+    .argument('<id>', 'Session id')
+    .option('--limit <limit>', 'Max envelopes to return (default: 50)')
+    .option('--include-acked', 'Include acknowledged envelopes')
+    .action(async function (
+      id: string,
+      opts: {
+        limit?: string
+        includeAcked?: boolean
+      },
+    ) {
+      const limit = opts.limit ? Number.parseInt(opts.limit, 10) : undefined
+      if (opts.limit && (!Number.isFinite(limit) || limit! <= 0)) {
+        throw new Error(`Invalid --limit value: ${opts.limit}`)
+      }
+      await runWithHandler(this as Command, (ctx) => {
+        const params = new URLSearchParams()
+        if (typeof limit === 'number') params.set('limit', String(limit))
+        if (opts.includeAcked) params.set('includeAcked', '1')
+        return apiRequest(ctx, 'GET', `/sessions/${encodeURIComponent(id)}/mailbox`, undefined, params)
+      })
+    })
+
+  sessions
     .command('stop')
     .description('Stop running work for a session')
     .argument('<id>', 'Session id')
@@ -563,6 +690,44 @@ export function buildProgram(): Command {
       })))
     })
 
+  memory
+    .command('maintenance')
+    .description('Analyze or run memory maintenance')
+    .option('--run', 'Execute maintenance instead of analysis')
+    .option('--ttl-hours <ttlHours>', 'TTL hours used to prune stale working memories')
+    .option('--max-deletes <maxDeletes>', 'Maximum entries to delete when --run is set')
+    .option('--data <json>', 'Optional JSON payload for POST /memory/maintenance')
+    .action(async function (opts: { run?: boolean; ttlHours?: string; maxDeletes?: string; data?: string }) {
+      const payload = parseJsonValue(opts.data, '--data')
+      if (payload !== undefined && (!payload || typeof payload !== 'object' || Array.isArray(payload))) {
+        throw new Error('--data must be a JSON object')
+      }
+
+      const ttlHours = opts.ttlHours ? Number.parseInt(opts.ttlHours, 10) : undefined
+      if (opts.ttlHours && (!Number.isFinite(ttlHours) || ttlHours! <= 0)) {
+        throw new Error(`Invalid --ttl-hours value: ${opts.ttlHours}`)
+      }
+
+      const maxDeletes = opts.maxDeletes ? Number.parseInt(opts.maxDeletes, 10) : undefined
+      if (opts.maxDeletes && (!Number.isFinite(maxDeletes) || maxDeletes! <= 0)) {
+        throw new Error(`Invalid --max-deletes value: ${opts.maxDeletes}`)
+      }
+
+      await runWithHandler(this as Command, (ctx) => {
+        if (!opts.run) {
+          const params = new URLSearchParams()
+          if (typeof ttlHours === 'number') params.set('ttlHours', String(ttlHours))
+          return apiRequest(ctx, 'GET', '/memory/maintenance', undefined, params)
+        }
+
+        return apiRequest(ctx, 'POST', '/memory/maintenance', compactObject({
+          ...(payload as Record<string, unknown> | undefined),
+          ttlHours,
+          maxDeletes,
+        }))
+      })
+    })
+
   const memoryImages = program.command('memory-images').description('Fetch memory image assets')
 
   memoryImages
@@ -571,6 +736,169 @@ export function buildProgram(): Command {
     .argument('<filename>', 'Memory image filename')
     .action(async function (filename: string) {
       await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'GET', `/memory-images/${encodeURIComponent(filename)}`))
+    })
+
+  const setup = program.command('setup').description('Setup and provider validation helpers')
+
+  setup
+    .command('init')
+    .description('Run command-line first-time setup (provider check, credential, starter agent)')
+    .option('--provider <provider>', 'Provider id (openai|anthropic|ollama|openclaw)', 'openai')
+    .option('--api-key <apiKey>', 'API key or token (required for openai/anthropic)')
+    .option('--endpoint <endpoint>', 'Provider endpoint override')
+    .option('--model <model>', 'Model override')
+    .option('--agent-name <name>', 'Starter agent name')
+    .option('--agent-description <description>', 'Starter agent description')
+    .option('--system-prompt <systemPrompt>', 'Starter agent system prompt')
+    .option('--skip-check', 'Skip provider connection check')
+    .option('--no-create-agent', 'Do not create a starter agent')
+    .action(async function (opts: {
+      provider?: string
+      apiKey?: string
+      endpoint?: string
+      model?: string
+      agentName?: string
+      agentDescription?: string
+      systemPrompt?: string
+      skipCheck?: boolean
+      createAgent?: boolean
+    }) {
+      await runWithHandler(this as Command, async (ctx) => {
+        const provider = normalizeSetupProvider(opts.provider)
+        const defaults = DEFAULT_SETUP_AGENTS[provider]
+        const requiresApiKey = provider === 'openai' || provider === 'anthropic'
+        const supportsEndpoint = provider === 'openai' || provider === 'ollama' || provider === 'openclaw'
+
+        const inputApiKey = (opts.apiKey || '').trim()
+        const inputEndpoint = (opts.endpoint || '').trim()
+        const inputModel = (opts.model || '').trim()
+
+        if (requiresApiKey && !inputApiKey) {
+          throw new Error(`${provider} requires --api-key`)
+        }
+
+        const auth = await resolveSetupAccessKey(ctx)
+
+        let normalizedEndpoint = inputEndpoint || undefined
+        let selectedModel = inputModel || undefined
+        let checkMessage: string | undefined
+
+        if (!opts.skipCheck) {
+          const check = await apiRequestWithAccessKey<SetupProviderCheckResponse>(
+            ctx,
+            'POST',
+            '/setup/check-provider',
+            auth.accessKey,
+            compactObject({
+              provider,
+              apiKey: inputApiKey || undefined,
+              endpoint: supportsEndpoint ? normalizedEndpoint : undefined,
+              model: selectedModel,
+            }),
+          )
+
+          if (!check?.ok) {
+            throw new Error(check?.message || `Provider check failed for ${provider}`)
+          }
+
+          checkMessage = check.message
+          if (!normalizedEndpoint && check.normalizedEndpoint) normalizedEndpoint = check.normalizedEndpoint
+          if (!selectedModel && check.recommendedModel) selectedModel = check.recommendedModel
+        }
+
+        let credentialId: string | null = null
+        if (inputApiKey && (provider === 'openai' || provider === 'anthropic' || provider === 'openclaw')) {
+          const credential = await apiRequestWithAccessKey<{ id?: string; name?: string }>(
+            ctx,
+            'POST',
+            '/credentials',
+            auth.accessKey,
+            {
+              provider,
+              name: `${provider} key`,
+              apiKey: inputApiKey,
+            },
+          )
+          credentialId = typeof credential?.id === 'string' ? credential.id : null
+        }
+
+        let createdAgent: Record<string, unknown> | null = null
+        if (opts.createAgent !== false) {
+          createdAgent = await apiRequestWithAccessKey<Record<string, unknown>>(
+            ctx,
+            'POST',
+            '/agents',
+            auth.accessKey,
+            compactObject({
+              name: (opts.agentName || '').trim() || defaults.name,
+              description: (opts.agentDescription || '').trim() || defaults.description,
+              systemPrompt: (opts.systemPrompt || '').trim() || defaults.systemPrompt,
+              provider,
+              model: selectedModel || defaults.model,
+              credentialId: credentialId || null,
+              apiEndpoint: supportsEndpoint ? (normalizedEndpoint || undefined) : undefined,
+            }),
+          )
+        }
+
+        await apiRequestWithAccessKey(
+          ctx,
+          'PUT',
+          '/settings',
+          auth.accessKey,
+          { setupCompleted: true },
+        )
+
+        return {
+          ok: true,
+          provider,
+          checkRan: !opts.skipCheck,
+          checkMessage: checkMessage || null,
+          accessKey: auth.autoDiscovered ? auth.accessKey : undefined,
+          accessKeyMasked: maskToken(auth.accessKey),
+          autoDiscoveredAccessKey: auth.autoDiscovered,
+          firstTimeSetup: auth.firstTime,
+          credentialId,
+          endpoint: normalizedEndpoint || null,
+          model: selectedModel || defaults.model,
+          createdAgent: createdAgent
+            ? {
+                id: createdAgent.id,
+                name: createdAgent.name,
+                provider: createdAgent.provider,
+                model: createdAgent.model,
+              }
+            : null,
+        }
+      })
+    })
+
+  setup
+    .command('check-provider')
+    .description('Validate provider credentials/endpoint')
+    .requiredOption('--provider <provider>', 'Provider id (openai|anthropic|ollama|openclaw)')
+    .option('--api-key <apiKey>', 'API key or token')
+    .option('--endpoint <endpoint>', 'Provider endpoint (for ollama/openclaw/custom openai)')
+    .option('--model <model>', 'Model override for the check request')
+    .action(async function (opts: { provider: string; apiKey?: string; endpoint?: string; model?: string }) {
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'POST', '/setup/check-provider', compactObject({
+        provider: opts.provider,
+        apiKey: opts.apiKey,
+        endpoint: opts.endpoint,
+        model: opts.model,
+      })))
+    })
+
+  setup
+    .command('doctor')
+    .description('Run setup diagnostics')
+    .option('--remote', 'Include remote update check via git fetch')
+    .action(async function (opts: { remote?: boolean }) {
+      await runWithHandler(this as Command, (ctx) => {
+        const params = new URLSearchParams()
+        if (opts.remote) params.set('remote', '1')
+        return apiRequest(ctx, 'GET', '/setup/doctor', undefined, params)
+      })
     })
 
   const connectors = program.command('connectors').description('Manage connectors')

@@ -8,6 +8,7 @@ import {
   loadAgents,
   loadSkills,
   loadSettings,
+  loadUsage,
   active,
 } from './storage'
 import { getProvider } from '@/lib/providers'
@@ -18,9 +19,12 @@ import { buildSessionTools } from './session-tools'
 import { stripMainLoopMetaForPersistence } from './main-agent-loop'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { getMemoryDb } from './memory-db'
+import { routeTaskIntent } from './capability-router'
 import type { MessageToolEvent, SSEEvent } from '@/types'
+import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from './provider-health'
 
 const CLI_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
+type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'
 
 export interface ExecuteChatTurnInput {
   sessionId: string
@@ -212,19 +216,66 @@ function hasToolEnabled(session: any, toolName: string): boolean {
   return Array.isArray(session?.tools) && session.tools.includes(toolName)
 }
 
-function looksLikeCodingExecutionIntent(message: string): boolean {
-  const lower = message.toLowerCase()
-  const actionHints = [
-    'build', 'create', 'implement', 'write', 'scaffold', 'generate', 'fix', 'debug', 'refactor', 'ship',
-  ]
-  const targetHints = [
-    'app', 'web app', 'website', 'frontend', 'backend', 'api', 'component', 'project',
-    'repo', 'codebase', 'script', 'test', 'unit test', 'typescript', 'javascript', 'react', 'vite', 'next.js', 'node',
-  ]
-  const hasActionHint = actionHints.some((hint) => lower.includes(hint))
-  const hasTargetHint = targetHints.some((hint) => lower.includes(hint))
-  const hasBuildCommandIntent = /\bnpm\s+(install|test|run|build)\b|\byarn\b|\bpnpm\b/.test(lower)
-  return (hasActionHint && hasTargetHint) || hasBuildCommandIntent
+function buildSafetyBlockedSet(settings: Record<string, unknown>): Set<string> {
+  const raw = Array.isArray(settings?.safetyBlockedTools) ? settings.safetyBlockedTools : []
+  const set = new Set<string>()
+  for (const entry of raw) {
+    const name = typeof entry === 'string' ? entry.trim().toLowerCase() : ''
+    if (!name) continue
+    set.add(name)
+  }
+  return set
+}
+
+function filterSessionToolsBySafety(sessionTools: string[] | undefined, blocked: Set<string>): string[] {
+  const source = Array.isArray(sessionTools) ? sessionTools : []
+  if (!blocked.size) return [...source]
+  return source.filter((toolName) => {
+    const key = String(toolName || '').trim().toLowerCase()
+    if (!key) return false
+    if (blocked.has(key)) return false
+    if (key === 'memory' && blocked.has('memory_tool')) return false
+    if (key === 'manage_connectors' && blocked.has('connector_message_tool')) return false
+    if (key === 'manage_sessions' && (blocked.has('sessions_tool') || blocked.has('search_history_tool'))) return false
+    if (key === 'claude_code' && (
+      blocked.has('delegate_to_claude_code')
+      || blocked.has('delegate_to_codex_cli')
+      || blocked.has('delegate_to_opencode_cli')
+    )) return false
+    return true
+  })
+}
+
+function parseUsdLimit(value: unknown): number | null {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number.parseFloat(value)
+      : Number.NaN
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return Math.max(0.01, Math.min(1_000_000, parsed))
+}
+
+function getTodaySpendUsd(): number {
+  const usage = loadUsage()
+  const dayStart = new Date()
+  dayStart.setHours(0, 0, 0, 0)
+  const minTs = dayStart.getTime()
+  let total = 0
+  for (const records of Object.values(usage)) {
+    for (const record of records || []) {
+      const ts = typeof (record as any)?.timestamp === 'number' ? (record as any).timestamp : 0
+      if (ts < minTs) continue
+      const cost = typeof (record as any)?.estimatedCost === 'number' ? (record as any).estimatedCost : 0
+      if (Number.isFinite(cost) && cost > 0) total += cost
+    }
+  }
+  return total
+}
+
+function findFirstUrl(text: string): string | null {
+  const m = text.match(/https?:\/\/[^\s<>"')]+/i)
+  return m?.[0] || null
 }
 
 function syncSessionFromAgent(sessionId: string): void {
@@ -382,6 +433,50 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const session = sessions[sessionId]
   if (!session) throw new Error(`Session not found: ${sessionId}`)
 
+  const appSettings = loadSettings()
+  const safetyBlocked = buildSafetyBlockedSet(appSettings)
+  const toolsForRun = filterSessionToolsBySafety(session.tools, safetyBlocked)
+  const sessionForRun = toolsForRun === session.tools
+    ? session
+    : { ...session, tools: toolsForRun }
+
+  if (toolsForRun.length !== (session.tools || []).length) {
+    const removed = (session.tools || []).filter((tool: string) => !toolsForRun.includes(tool))
+    if (removed.length) {
+      onEvent?.({ t: 'err', text: `Safety policy blocked tool categories for this run: ${removed.join(', ')}` })
+    }
+  }
+
+  const dailySpendLimitUsd = parseUsdLimit(appSettings.safetyMaxDailySpendUsd)
+  if (dailySpendLimitUsd !== null) {
+    const todaySpendUsd = getTodaySpendUsd()
+    if (todaySpendUsd >= dailySpendLimitUsd) {
+      const spendError = `Safety budget reached: today's spend is $${todaySpendUsd.toFixed(4)} (limit $${dailySpendLimitUsd.toFixed(4)}). Increase safetyMaxDailySpendUsd to continue autonomous runs.`
+      onEvent?.({ t: 'err', text: spendError })
+
+      let persisted = false
+      if (!internal) {
+        session.messages.push({
+          role: 'assistant',
+          text: spendError,
+          time: Date.now(),
+        })
+        session.lastActiveAt = Date.now()
+        saveSessions(sessions)
+        persisted = true
+      }
+
+      return {
+        runId,
+        sessionId,
+        text: spendError,
+        persisted,
+        toolEvents: [],
+        error: spendError,
+      }
+    }
+  }
+
   // Log the trigger
   logExecution(sessionId, 'trigger', `${source} message received`, {
     runId,
@@ -459,10 +554,10 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   })
 
   try {
-    const hasTools = !!session.tools?.length && !CLI_PROVIDER_IDS.has(providerType)
+    const hasTools = !!sessionForRun.tools?.length && !CLI_PROVIDER_IDS.has(providerType)
     fullResponse = hasTools
       ? (await streamAgentChat({
-          session,
+          session: sessionForRun,
           message,
           imagePath,
           apiKey,
@@ -472,7 +567,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           signal: abortController.signal,
         })).fullText
       : await provider.handler.streamChat({
-          session,
+          session: sessionForRun,
           message,
           imagePath,
           apiKey,
@@ -483,120 +578,163 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         })
   } catch (err: any) {
     errorMessage = err?.message || String(err)
-    emit({ t: 'err', text: errorMessage })
+    const failureText = errorMessage || 'Run failed.'
+    markProviderFailure(providerType, failureText)
+    emit({ t: 'err', text: failureText })
     log.error('chat-run', `Run failed for session ${sessionId}`, {
       runId,
       source,
       internal,
-      error: errorMessage,
+      error: failureText,
     })
   } finally {
     active.delete(sessionId)
     if (signal) signal.removeEventListener('abort', abortFromOutside)
   }
 
+  if (!errorMessage) {
+    markProviderSuccess(providerType)
+  }
+
   const requestedToolNames = (!internal && source === 'chat')
     ? requestedToolNamesFromMessage(message)
     : []
+  const routingDecision = (!internal && source === 'chat')
+    ? routeTaskIntent(message, session.tools || [], appSettings)
+    : null
   const calledNames = new Set((toolEvents || []).map((t) => t.name))
-  if (requestedToolNames.includes('connector_message_tool')) {
-    if (!calledNames.has('connector_message_tool')) {
-      const forcedArgs = extractConnectorMessageArgs(message)
-      if (forcedArgs) {
-        const agent = session.agentId ? loadAgents()[session.agentId] : null
-        const { tools, cleanup } = buildSessionTools(session.cwd, session.tools || [], {
-          agentId: session.agentId || null,
-          sessionId,
-          platformAssignScope: agent?.platformAssignScope || 'self',
-        })
-        try {
-          const connectorTool = tools.find((t: any) => t?.name === 'connector_message_tool') as any
-          if (connectorTool?.invoke) {
-            const toolInput = JSON.stringify(forcedArgs)
-            emit({ t: 'tool_call', toolName: 'connector_message_tool', toolInput })
-            const toolOutput = await connectorTool.invoke(forcedArgs)
-            const outputText = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
-            emit({ t: 'tool_result', toolName: 'connector_message_tool', toolOutput: outputText })
-            if (outputText?.trim()) {
-              fullResponse = outputText.trim()
-            }
-            calledNames.add('connector_message_tool')
-          }
-        } catch (forceErr: any) {
-          emit({ t: 'err', text: `Forced connector_message_tool invocation failed: ${forceErr?.message || String(forceErr)}` })
-        } finally {
-          await cleanup()
-        }
-      }
+
+  const invokeSessionTool = async (toolName: string, args: Record<string, unknown>, failurePrefix: string): Promise<boolean> => {
+    if (safetyBlocked.has(toolName.toLowerCase())) {
+      emit({ t: 'err', text: `Safety policy blocked tool invocation: ${toolName}` })
+      return false
+    }
+    if (
+      appSettings.safetyRequireApprovalForOutbound === true
+      && toolName === 'connector_message_tool'
+      && source !== 'chat'
+    ) {
+      emit({ t: 'err', text: 'Outbound connector messaging requires explicit user approval.' })
+      return false
+    }
+    const agent = session.agentId ? loadAgents()[session.agentId] : null
+    const { tools, cleanup } = buildSessionTools(session.cwd, sessionForRun.tools || [], {
+      agentId: session.agentId || null,
+      sessionId,
+      platformAssignScope: agent?.platformAssignScope || 'self',
+    })
+    try {
+      const selectedTool = tools.find((t: any) => t?.name === toolName) as any
+      if (!selectedTool?.invoke) return false
+      const toolInput = JSON.stringify(args)
+      emit({ t: 'tool_call', toolName, toolInput })
+      const toolOutput = await selectedTool.invoke(args)
+      const outputText = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
+      emit({ t: 'tool_result', toolName, toolOutput: outputText })
+      if (outputText?.trim()) fullResponse = outputText.trim()
+      calledNames.add(toolName)
+      return true
+    } catch (forceErr: any) {
+      emit({ t: 'err', text: `${failurePrefix}: ${forceErr?.message || String(forceErr)}` })
+      return false
+    } finally {
+      await cleanup()
     }
   }
 
-  const forcedDelegationTools = ['delegate_to_claude_code', 'delegate_to_codex_cli', 'delegate_to_opencode_cli']
+  if (requestedToolNames.includes('connector_message_tool') && !calledNames.has('connector_message_tool')) {
+    const forcedArgs = extractConnectorMessageArgs(message)
+    if (forcedArgs) {
+      await invokeSessionTool(
+        'connector_message_tool',
+        forcedArgs as unknown as Record<string, unknown>,
+        'Forced connector_message_tool invocation failed',
+      )
+    }
+  }
+
+  const forcedDelegationTools: Array<'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'> = [
+    'delegate_to_claude_code',
+    'delegate_to_codex_cli',
+    'delegate_to_opencode_cli',
+  ]
   for (const toolName of forcedDelegationTools) {
     if (!requestedToolNames.includes(toolName)) continue
     if (calledNames.has(toolName)) continue
     const task = extractDelegationTask(message, toolName)
     if (!task) continue
-
-    const agent = session.agentId ? loadAgents()[session.agentId] : null
-    const { tools, cleanup } = buildSessionTools(session.cwd, session.tools || [], {
-      agentId: session.agentId || null,
-      sessionId,
-      platformAssignScope: agent?.platformAssignScope || 'self',
-    })
-    try {
-      const delegatedTool = tools.find((t: any) => t?.name === toolName) as any
-      if (!delegatedTool?.invoke) continue
-      const forcedArgs = { task }
-      emit({ t: 'tool_call', toolName, toolInput: JSON.stringify(forcedArgs) })
-      const toolOutput = await delegatedTool.invoke(forcedArgs)
-      const outputText = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
-      emit({ t: 'tool_result', toolName, toolOutput: outputText })
-      if (outputText?.trim()) {
-        fullResponse = outputText.trim()
-      }
-      calledNames.add(toolName)
-    } catch (forceErr: any) {
-      emit({ t: 'err', text: `Forced ${toolName} invocation failed: ${forceErr?.message || String(forceErr)}` })
-    } finally {
-      await cleanup()
-    }
+    await invokeSessionTool(toolName, { task }, `Forced ${toolName} invocation failed`)
   }
 
   const hasDelegationCall = forcedDelegationTools.some((toolName) => calledNames.has(toolName))
   const shouldAutoDelegateCoding = (!internal && source === 'chat')
-    && hasToolEnabled(session, 'claude_code')
+    && hasToolEnabled(sessionForRun, 'claude_code')
     && !hasDelegationCall
-    && looksLikeCodingExecutionIntent(message)
+    && routingDecision?.intent === 'coding'
 
   if (shouldAutoDelegateCoding) {
-    const agent = session.agentId ? loadAgents()[session.agentId] : null
-    const { tools, cleanup } = buildSessionTools(session.cwd, session.tools || [], {
-      agentId: session.agentId || null,
-      sessionId,
-      platformAssignScope: agent?.platformAssignScope || 'self',
-    })
-    try {
-      const delegationOrder = ['delegate_to_claude_code', 'delegate_to_codex_cli', 'delegate_to_opencode_cli']
-      const delegatedTool = delegationOrder
-        .map((name) => tools.find((t: any) => t?.name === name) as any)
-        .find((t) => !!t?.invoke)
-      if (delegatedTool?.invoke) {
-        const forcedArgs = { task: message.trim() }
-        emit({ t: 'tool_call', toolName: delegatedTool.name, toolInput: JSON.stringify(forcedArgs) })
-        const toolOutput = await delegatedTool.invoke(forcedArgs)
-        const outputText = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
-        emit({ t: 'tool_result', toolName: delegatedTool.name, toolOutput: outputText })
-        if (outputText?.trim()) {
-          fullResponse = outputText.trim()
-        }
-        calledNames.add(delegatedTool.name)
-      }
-    } catch (forceErr: any) {
-      emit({ t: 'err', text: `Auto-delegation failed: ${forceErr?.message || String(forceErr)}` })
-    } finally {
-      await cleanup()
+    const baseDelegationOrder = routingDecision?.preferredDelegates?.length
+      ? routingDecision.preferredDelegates
+      : forcedDelegationTools
+    const delegationOrder = rankDelegatesByHealth(baseDelegationOrder as DelegateTool[])
+    for (const delegateTool of delegationOrder) {
+      const invoked = await invokeSessionTool(delegateTool, { task: message.trim() }, 'Auto-delegation failed')
+      if (invoked) break
     }
+  }
+
+  const shouldFailoverDelegate = (!internal && source === 'chat')
+    && !!errorMessage
+    && !(fullResponse || '').trim()
+    && hasToolEnabled(sessionForRun, 'claude_code')
+    && !hasDelegationCall
+    && (routingDecision?.intent === 'coding' || routingDecision?.intent === 'general')
+  if (shouldFailoverDelegate) {
+    const preferred = routingDecision?.preferredDelegates?.length
+      ? routingDecision.preferredDelegates
+      : forcedDelegationTools
+    const fallbackOrder = rankDelegatesByHealth(preferred as DelegateTool[])
+    for (const delegateTool of fallbackOrder) {
+      const invoked = await invokeSessionTool(
+        delegateTool,
+        { task: message.trim() },
+        `Provider failover via ${delegateTool} failed`,
+      )
+      if (invoked) {
+        errorMessage = undefined
+        break
+      }
+    }
+  }
+
+  const canAutoRouteWithTools = (!internal && source === 'chat')
+    && !!routingDecision
+    && calledNames.size === 0
+    && requestedToolNames.length === 0
+
+  if (canAutoRouteWithTools && routingDecision?.intent === 'browsing' && routingDecision.primaryUrl && hasToolEnabled(sessionForRun, 'browser')) {
+    await invokeSessionTool(
+      'browser',
+      { action: 'navigate', url: routingDecision.primaryUrl },
+      'Auto browser routing failed',
+    )
+  }
+
+  if (canAutoRouteWithTools && routingDecision?.intent === 'research') {
+    const routeUrl = routingDecision.primaryUrl || findFirstUrl(message)
+    if (routeUrl && hasToolEnabled(sessionForRun, 'web_fetch')) {
+      await invokeSessionTool('web_fetch', { url: routeUrl }, 'Auto web_fetch routing failed')
+    } else if (hasToolEnabled(sessionForRun, 'web_search')) {
+      await invokeSessionTool('web_search', { query: message.trim(), maxResults: 5 }, 'Auto web_search routing failed')
+    }
+  }
+
+  if (canAutoRouteWithTools && routingDecision?.intent === 'memory' && hasToolEnabled(sessionForRun, 'memory')) {
+    await invokeSessionTool(
+      'memory_tool',
+      { action: 'search', key: message.trim(), query: message.trim(), scope: 'auto' },
+      'Auto memory routing failed',
+    )
   }
 
   if (requestedToolNames.length > 0) {

@@ -1,8 +1,14 @@
 import crypto from 'crypto'
-import type { MessageToolEvent } from '@/types'
+import type { GoalContract, MessageToolEvent } from '@/types'
 import { loadSessions, saveSessions, loadTasks, saveTasks } from './storage'
 import { log } from './logger'
 import { getMemoryDb } from './memory-db'
+import {
+  mergeGoalContracts,
+  parseGoalContractFromText,
+  parseMainLoopPlan,
+  parseMainLoopReview,
+} from './autonomy-contract'
 
 const MAIN_SESSION_NAME = '__main__'
 const MAX_PENDING_EVENTS = 40
@@ -30,9 +36,14 @@ export interface MainLoopTimelineEntry {
 
 export interface MainLoopState {
   goal: string | null
+  goalContract: GoalContract | null
   status: 'idle' | 'progress' | 'blocked' | 'ok'
   summary: string | null
   nextAction: string | null
+  planSteps: string[]
+  currentPlanStep: string | null
+  reviewNote: string | null
+  reviewConfidence: number | null
   missionTaskId: string | null
   momentumScore: number
   paused: boolean
@@ -41,7 +52,10 @@ export interface MainLoopState {
   timeline: MainLoopTimelineEntry[]
   followupChainCount: number
   metaMissCount: number
+  workingMemoryNotes: string[]
   lastMemoryNoteAt: number | null
+  lastPlannedAt: number | null
+  lastReviewedAt: number | null
   lastTickAt: number | null
   updatedAt: number
 }
@@ -145,6 +159,46 @@ function computeMomentumScore(state: MainLoopState): number {
   return clampInt(score, 0, 0, 100)
 }
 
+function normalizeStringList(input: unknown, maxItems: number, maxChars: number): string[] {
+  if (!Array.isArray(input)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of input) {
+    if (typeof raw !== 'string') continue
+    const value = raw.replace(/\s+/g, ' ').trim().slice(0, maxChars)
+    if (!value) continue
+    const key = value.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+    if (out.length >= maxItems) break
+  }
+  return out
+}
+
+function normalizeGoalContract(raw: any): GoalContract | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const objective = typeof raw.objective === 'string' ? raw.objective.trim().slice(0, 300) : ''
+  if (!objective) return null
+  const constraints = normalizeStringList(raw.constraints, 10, 220)
+  const budgetUsd = typeof raw.budgetUsd === 'number'
+    ? Math.max(0, Math.min(1_000_000, raw.budgetUsd))
+    : null
+  const deadlineAt = typeof raw.deadlineAt === 'number' && Number.isFinite(raw.deadlineAt)
+    ? Math.trunc(raw.deadlineAt)
+    : null
+  const successMetric = typeof raw.successMetric === 'string'
+    ? raw.successMetric.trim().slice(0, 220) || null
+    : null
+  return {
+    objective,
+    constraints: constraints.length ? constraints : undefined,
+    budgetUsd,
+    deadlineAt,
+    successMetric,
+  }
+}
+
 function normalizeState(raw: any, now = Date.now()): MainLoopState {
   const status = raw?.status === 'blocked' || raw?.status === 'ok' || raw?.status === 'progress' || raw?.status === 'idle'
     ? raw.status
@@ -190,9 +244,20 @@ function normalizeState(raw: any, now = Date.now()): MainLoopState {
 
   const normalized: MainLoopState = {
     goal: typeof raw?.goal === 'string' && raw.goal.trim() ? raw.goal.trim().slice(0, 600) : null,
+    goalContract: normalizeGoalContract(raw?.goalContract),
     status,
     summary: typeof raw?.summary === 'string' && raw.summary.trim() ? raw.summary.trim().slice(0, 800) : null,
     nextAction: typeof raw?.nextAction === 'string' && raw.nextAction.trim() ? raw.nextAction.trim().slice(0, 600) : null,
+    planSteps: normalizeStringList(raw?.planSteps, 10, 220),
+    currentPlanStep: typeof raw?.currentPlanStep === 'string' && raw.currentPlanStep.trim()
+      ? raw.currentPlanStep.trim().slice(0, 220)
+      : null,
+    reviewNote: typeof raw?.reviewNote === 'string' && raw.reviewNote.trim()
+      ? raw.reviewNote.trim().slice(0, 320)
+      : null,
+    reviewConfidence: typeof raw?.reviewConfidence === 'number' && Number.isFinite(raw.reviewConfidence)
+      ? Math.max(0, Math.min(1, raw.reviewConfidence))
+      : null,
     missionTaskId: typeof raw?.missionTaskId === 'string' && raw.missionTaskId.trim() ? raw.missionTaskId.trim() : null,
     momentumScore: clampInt(raw?.momentumScore, 40, 0, 100),
     paused: raw?.paused === true,
@@ -201,9 +266,15 @@ function normalizeState(raw: any, now = Date.now()): MainLoopState {
     timeline,
     followupChainCount: clampInt(raw?.followupChainCount, 0, 0, 100),
     metaMissCount: clampInt(raw?.metaMissCount, 0, 0, 100),
+    workingMemoryNotes: normalizeStringList(raw?.workingMemoryNotes, 24, 260),
     lastMemoryNoteAt: typeof raw?.lastMemoryNoteAt === 'number' ? raw.lastMemoryNoteAt : null,
+    lastPlannedAt: typeof raw?.lastPlannedAt === 'number' ? raw.lastPlannedAt : null,
+    lastReviewedAt: typeof raw?.lastReviewedAt === 'number' ? raw.lastReviewedAt : null,
     lastTickAt: typeof raw?.lastTickAt === 'number' ? raw.lastTickAt : null,
     updatedAt: typeof raw?.updatedAt === 'number' ? raw.updatedAt : now,
+  }
+  if (!normalized.goal && normalized.goalContract?.objective) {
+    normalized.goal = normalized.goalContract.objective
   }
   normalized.momentumScore = computeMomentumScore(normalized)
   return normalized
@@ -224,6 +295,14 @@ function appendEvent(state: MainLoopState, type: string, text: string, now = Dat
   })
   state.pendingEvents = pruneEvents(state.pendingEvents, now)
   return true
+}
+
+function appendWorkingMemoryNote(state: MainLoopState, note: string) {
+  const value = toOneLine(note, 260)
+  if (!value) return
+  const existing = state.workingMemoryNotes || []
+  if (existing.length && existing[existing.length - 1] === value) return
+  state.workingMemoryNotes = [...existing.slice(-23), value]
 }
 
 function inferGoalFromUserMessage(message: string): string | null {
@@ -333,6 +412,19 @@ function buildTimelineLines(state: MainLoopState): string {
   return `Recent mission timeline:\n${lines}`
 }
 
+function buildGoalContractLines(state: MainLoopState): string[] {
+  const contract = state.goalContract
+  if (!contract?.objective) return []
+  const lines = [
+    `contract_objective: ${contract.objective}`,
+  ]
+  if (contract.constraints?.length) lines.push(`contract_constraints: ${contract.constraints.join(' | ')}`)
+  if (typeof contract.budgetUsd === 'number') lines.push(`contract_budget_usd: ${contract.budgetUsd}`)
+  if (typeof contract.deadlineAt === 'number') lines.push(`contract_deadline_iso: ${new Date(contract.deadlineAt).toISOString()}`)
+  if (contract.successMetric) lines.push(`contract_success_metric: ${contract.successMetric}`)
+  return lines
+}
+
 function upsertMissionTask(session: any, state: MainLoopState, now: number): string | null {
   if (!state.goal) return state.missionTaskId || null
 
@@ -356,12 +448,27 @@ function upsertMissionTask(session: any, state: MainLoopState, now: number): str
   const mappedStatus = statusMap[state.status]
 
   let changed = false
+  const contractLines = buildGoalContractLines(state)
+  const planLines = state.planSteps.length
+    ? [`plan_steps: ${state.planSteps.join(' -> ')}`]
+    : []
+  if (state.currentPlanStep) planLines.push(`current_plan_step: ${state.currentPlanStep}`)
+  if (state.reviewNote) planLines.push(`latest_review: ${state.reviewNote}`)
+
+  const baseDescription = [
+    'Autonomous mission goal tracked from main loop.',
+    `Goal: ${state.goal}`,
+    state.nextAction ? `Next action: ${state.nextAction}` : '',
+    ...contractLines,
+    ...planLines,
+  ].filter(Boolean).join('\n')
+
   if (!task) {
     const id = crypto.randomBytes(4).toString('hex')
     task = {
       id,
       title,
-      description: `Autonomous mission goal tracked from main loop.\nGoal: ${state.goal}`,
+      description: baseDescription,
       status: mappedStatus,
       agentId: session.agentId || 'default',
       sessionId: session.id,
@@ -384,7 +491,7 @@ function upsertMissionTask(session: any, state: MainLoopState, now: number): str
       task.title = title
       changed = true
     }
-    const nextDescription = `Autonomous mission goal tracked from main loop.\nGoal: ${state.goal}${state.nextAction ? `\nNext action: ${state.nextAction}` : ''}`
+    const nextDescription = baseDescription
     if (task.description !== nextDescription) {
       task.description = nextDescription
       changed = true
@@ -436,8 +543,13 @@ function maybeStoreMissionMemoryNote(
     `status: ${state.status}`,
     `momentum: ${state.momentumScore}/100`,
     `goal: ${state.goal}`,
+    ...buildGoalContractLines(state),
+    state.planSteps.length ? `plan_steps: ${state.planSteps.join(' -> ')}` : '',
+    state.currentPlanStep ? `current_plan_step: ${state.currentPlanStep}` : '',
     `summary: ${summary}`,
     `next_action: ${next}`,
+    state.reviewNote ? `review: ${state.reviewNote}` : '',
+    typeof state.reviewConfidence === 'number' ? `review_confidence: ${state.reviewConfidence}` : '',
     state.missionTaskId ? `mission_task_id: ${state.missionTaskId}` : '',
   ].filter(Boolean).join('\n')
 
@@ -469,6 +581,7 @@ function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: bool
   const hasMemoryTool = opts?.hasMemoryTool === true
   const goal = state.goal || 'No explicit goal yet. Continue with the strongest actionable objective from recent context.'
   const nextAction = state.nextAction || 'Determine the next highest-impact action and execute it.'
+  const contractLines = buildGoalContractLines(state)
   return [
     'SWARM_MAIN_AUTO_FOLLOWUP',
     `Mission goal: ${goal}`,
@@ -476,6 +589,10 @@ function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: bool
     `Current status: ${state.status}`,
     `Mission task id: ${state.missionTaskId || 'none'}`,
     `Momentum score: ${state.momentumScore}/100`,
+    ...contractLines,
+    state.planSteps.length ? `Current plan steps: ${state.planSteps.join(' -> ')}` : '',
+    state.currentPlanStep ? `Current plan step: ${state.currentPlanStep}` : '',
+    state.reviewNote ? `Last review: ${state.reviewNote}` : '',
     buildPendingEventLines(state),
     buildTimelineLines(state),
     'Act autonomously. Use available tools to execute work, verify results, and keep momentum.',
@@ -488,8 +605,12 @@ function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: bool
       : 'memory_tool is unavailable in this session. Keep concise progress summaries in your status/meta output.',
     'If you are blocked by missing credentials, permissions, or policy limits, say exactly what is blocked and the smallest unblock needed.',
     'If no meaningful action remains right now, reply exactly HEARTBEAT_OK.',
-    'Otherwise include a concise human update, then append exactly one line:',
+    'Otherwise include a concise human update, then append exactly one [MAIN_LOOP_META] JSON line.',
+    'Optionally append one [MAIN_LOOP_PLAN] JSON line when you create/revise a plan.',
+    'Optionally append one [MAIN_LOOP_REVIEW] JSON line when you review recent execution results.',
     '[MAIN_LOOP_META] {"status":"progress|ok|blocked|idle","summary":"...","next_action":"...","follow_up":true|false,"delay_sec":45,"goal":"optional","consume_event_ids":["evt_..."]}',
+    '[MAIN_LOOP_PLAN] {"steps":["..."],"current_step":"..."}',
+    '[MAIN_LOOP_REVIEW] {"note":"...","confidence":0.0,"needs_replan":false}',
   ].join('\n')
 }
 
@@ -506,6 +627,7 @@ export function buildMainLoopHeartbeatPrompt(session: any, fallbackPrompt: strin
   const promptGoal = goal || 'No explicit mission captured yet. Infer the mission from recent user instructions and continue proactively.'
   const promptSummary = state.summary || 'No prior mission summary yet.'
   const promptNextAction = state.nextAction || 'No queued action. Determine one.'
+  const contractLines = buildGoalContractLines(state)
 
   return [
     'SWARM_MAIN_MISSION_TICK',
@@ -516,6 +638,10 @@ export function buildMainLoopHeartbeatPrompt(session: any, fallbackPrompt: strin
     `Autonomy mode: ${state.autonomyMode}`,
     `Mission task id: ${state.missionTaskId || 'none'}`,
     `Momentum score: ${state.momentumScore}/100`,
+    ...contractLines,
+    state.planSteps.length ? `Current plan steps: ${state.planSteps.join(' -> ')}` : '',
+    state.currentPlanStep ? `Current plan step: ${state.currentPlanStep}` : '',
+    state.reviewNote ? `Last review: ${state.reviewNote}` : '',
     `Last summary: ${toOneLine(promptSummary, 500)}`,
     `Last next action: ${toOneLine(promptNextAction, 500)}`,
     buildPendingEventLines(state),
@@ -530,9 +656,14 @@ export function buildMainLoopHeartbeatPrompt(session: any, fallbackPrompt: strin
     hasMemoryTool
       ? 'Use memory_tool actively: recall relevant prior notes before acting, and store concise notes about progress, constraints, and next step after each meaningful action.'
       : 'If memory_tool is unavailable, keep concise state in summary/next_action and continue execution.',
+    'Use a planner-executor-review loop: keep a concrete step plan, execute one meaningful step, then self-review and either continue or re-plan.',
     'If nothing important changed and no action is needed now, reply exactly HEARTBEAT_OK.',
-    'Otherwise: provide a concise human-readable update, then append exactly one line:',
+    'Otherwise: provide a concise human-readable update, then append exactly one [MAIN_LOOP_META] JSON line.',
+    'Optionally append one [MAIN_LOOP_PLAN] JSON line when creating/updating plan steps.',
+    'Optionally append one [MAIN_LOOP_REVIEW] JSON line after execution review.',
     '[MAIN_LOOP_META] {"status":"progress|ok|blocked|idle","summary":"...","next_action":"...","follow_up":true|false,"delay_sec":45,"goal":"optional","consume_event_ids":["evt_..."]}',
+    '[MAIN_LOOP_PLAN] {"steps":["..."],"current_step":"..."}',
+    '[MAIN_LOOP_REVIEW] {"note":"...","confidence":0.0,"needs_replan":false}',
     'The [MAIN_LOOP_META] JSON must be valid, on one line, and only appear once.',
     `Fallback prompt context: ${fallbackPrompt || 'SWARM_HEARTBEAT_CHECK'}`,
   ].join('\n')
@@ -543,7 +674,7 @@ export function stripMainLoopMetaForPersistence(text: string, internal: boolean)
   if (!text) return ''
   return text
     .split('\n')
-    .filter((line) => !line.includes('[MAIN_LOOP_META]'))
+    .filter((line) => !line.includes('[MAIN_LOOP_META]') && !line.includes('[MAIN_LOOP_PLAN]') && !line.includes('[MAIN_LOOP_REVIEW]'))
     .join('\n')
     .trim()
 }
@@ -564,11 +695,21 @@ export function setMainLoopStateForSession(sessionId: string, patch: Partial<Mai
 
   if (typeof patch.goal === 'string') state.goal = patch.goal.trim().slice(0, 600) || null
   if (patch.goal === null) state.goal = null
+  if (patch.goalContract !== undefined) state.goalContract = normalizeGoalContract(patch.goalContract)
   if (patch.status === 'idle' || patch.status === 'progress' || patch.status === 'blocked' || patch.status === 'ok') state.status = patch.status
   if (typeof patch.summary === 'string') state.summary = patch.summary.trim().slice(0, 800) || null
   if (patch.summary === null) state.summary = null
   if (typeof patch.nextAction === 'string') state.nextAction = patch.nextAction.trim().slice(0, 600) || null
   if (patch.nextAction === null) state.nextAction = null
+  if (Array.isArray(patch.planSteps)) state.planSteps = normalizeStringList(patch.planSteps, 10, 220)
+  if (typeof patch.currentPlanStep === 'string') state.currentPlanStep = patch.currentPlanStep.trim().slice(0, 220) || null
+  if (patch.currentPlanStep === null) state.currentPlanStep = null
+  if (typeof patch.reviewNote === 'string') state.reviewNote = patch.reviewNote.trim().slice(0, 320) || null
+  if (patch.reviewNote === null) state.reviewNote = null
+  if (typeof patch.reviewConfidence === 'number' && Number.isFinite(patch.reviewConfidence)) {
+    state.reviewConfidence = Math.max(0, Math.min(1, patch.reviewConfidence))
+  }
+  if (patch.reviewConfidence === null) state.reviewConfidence = null
   if (typeof patch.missionTaskId === 'string') state.missionTaskId = patch.missionTaskId.trim() || null
   if (patch.missionTaskId === null) state.missionTaskId = null
   if (typeof patch.momentumScore === 'number') state.momentumScore = clampInt(patch.momentumScore, state.momentumScore, 0, 100)
@@ -578,8 +719,13 @@ export function setMainLoopStateForSession(sessionId: string, patch: Partial<Mai
   if (Array.isArray(patch.timeline)) state.timeline = pruneTimeline(patch.timeline, now)
   if (typeof patch.followupChainCount === 'number') state.followupChainCount = clampInt(patch.followupChainCount, state.followupChainCount, 0, 100)
   if (typeof patch.metaMissCount === 'number') state.metaMissCount = clampInt(patch.metaMissCount, state.metaMissCount, 0, 100)
+  if (Array.isArray(patch.workingMemoryNotes)) state.workingMemoryNotes = normalizeStringList(patch.workingMemoryNotes, 24, 260)
   if (typeof patch.lastMemoryNoteAt === 'number') state.lastMemoryNoteAt = patch.lastMemoryNoteAt
   if (patch.lastMemoryNoteAt === null) state.lastMemoryNoteAt = null
+  if (typeof patch.lastPlannedAt === 'number') state.lastPlannedAt = patch.lastPlannedAt
+  if (patch.lastPlannedAt === null) state.lastPlannedAt = null
+  if (typeof patch.lastReviewedAt === 'number') state.lastReviewedAt = patch.lastReviewedAt
+  if (patch.lastReviewedAt === null) state.lastReviewedAt = null
 
   state.momentumScore = computeMomentumScore(state)
   state.updatedAt = now
@@ -635,12 +781,22 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   let forceMemoryNote = false
 
   const userGoal = inferGoalFromUserMessage(input.message)
+  const userGoalContract = parseGoalContractFromText(input.message)
   if (!input.internal) {
     if (userGoal) {
       state.goal = userGoal
+      if (userGoalContract) state.goalContract = mergeGoalContracts(state.goalContract, userGoalContract)
       state.status = 'progress'
       appendEvent(state, 'user_instruction', `User goal updated: ${userGoal}`, now)
       appendTimeline(state, 'user_goal', `Goal updated: ${userGoal}`, now, state.status)
+      appendWorkingMemoryNote(state, `goal:${userGoal}`)
+      forceMemoryNote = true
+    } else if (userGoalContract?.objective) {
+      state.goal = userGoalContract.objective
+      state.goalContract = mergeGoalContracts(state.goalContract, userGoalContract)
+      state.status = 'progress'
+      appendTimeline(state, 'user_goal_contract', `Goal contract updated: ${userGoalContract.objective}`, now, state.status)
+      appendWorkingMemoryNote(state, `contract:${userGoalContract.objective}`)
       forceMemoryNote = true
     }
     state.followupChainCount = 0
@@ -660,6 +816,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     appendEvent(state, 'run_error', `Run error (${input.source}): ${toOneLine(input.error, 400)}`, now)
     appendTimeline(state, 'run_error', `Run error (${input.source}): ${toOneLine(input.error, 220)}`, now, 'blocked')
     state.status = 'blocked'
+    appendWorkingMemoryNote(state, `blocked:${toOneLine(input.error, 120)}`)
     forceMemoryNote = true
   }
 
@@ -684,7 +841,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   let followup: MainLoopFollowupRequest | null = null
   const shouldAutoKickFromUserGoal = !input.internal
     && !input.error
-    && !!userGoal
+    && (!!userGoal || !!userGoalContract?.objective)
     && !state.paused
     && state.autonomyMode === 'autonomous'
 
@@ -702,13 +859,47 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     const trimmedText = (input.resultText || '').trim()
     const isHeartbeatOk = /^HEARTBEAT_OK$/i.test(trimmedText)
     const meta = parseMainLoopMeta(trimmedText)
+    const planMeta = parseMainLoopPlan(trimmedText)
+    const reviewMeta = parseMainLoopReview(trimmedText)
+
+    if (planMeta) {
+      if (planMeta.steps?.length) {
+        state.planSteps = planMeta.steps
+        state.lastPlannedAt = now
+        appendWorkingMemoryNote(state, `plan:${planMeta.steps.join(' -> ')}`)
+      }
+      if (planMeta.current_step) {
+        state.currentPlanStep = planMeta.current_step
+        state.lastPlannedAt = now
+      }
+      appendTimeline(state, 'plan', `Plan updated${planMeta.current_step ? ` at step: ${planMeta.current_step}` : ''}.`, now, state.status)
+    }
+
+    if (reviewMeta) {
+      if (reviewMeta.note) {
+        state.reviewNote = reviewMeta.note
+        appendWorkingMemoryNote(state, `review:${reviewMeta.note}`)
+      }
+      if (typeof reviewMeta.confidence === 'number') state.reviewConfidence = reviewMeta.confidence
+      state.lastReviewedAt = now
+      if (reviewMeta.needs_replan === true && state.planSteps.length > 0) {
+        appendEvent(state, 'review_replan', 'Execution review requested replanning.', now)
+      }
+      appendTimeline(state, 'review', reviewMeta.note || 'Execution review updated.', now, state.status)
+    }
 
     if (meta) {
       state.metaMissCount = 0
-      if (meta.goal) state.goal = meta.goal
+      if (meta.goal) {
+        state.goal = meta.goal
+        const metaGoalContract = parseGoalContractFromText(meta.goal)
+        if (metaGoalContract) state.goalContract = mergeGoalContracts(state.goalContract, metaGoalContract)
+      }
       if (meta.status) state.status = meta.status
       if (meta.summary) state.summary = meta.summary
       if (meta.next_action) state.nextAction = meta.next_action
+      if (meta.summary) appendWorkingMemoryNote(state, `summary:${toOneLine(meta.summary, 180)}`)
+      if (meta.next_action) appendWorkingMemoryNote(state, `next:${toOneLine(meta.next_action, 180)}`)
       appendTimeline(
         state,
         'meta',
@@ -736,6 +927,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     } else if (!isHeartbeatOk && trimmedText) {
       state.metaMissCount = Math.min(100, state.metaMissCount + 1)
       state.summary = toOneLine(trimmedText, 700)
+      appendWorkingMemoryNote(state, `inferred:${toOneLine(trimmedText, 160)}`)
       if (state.status === 'idle') state.status = 'progress'
       appendEvent(state, 'meta_missing', 'Main-loop reply missing [MAIN_LOOP_META] contract; state inferred from text.', now)
       appendTimeline(state, 'meta_missing', 'Missing [MAIN_LOOP_META]; inferred state from plain text.', now, state.status)

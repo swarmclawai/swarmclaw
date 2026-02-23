@@ -1,5 +1,5 @@
 import { loadQueue, loadSchedules, loadSessions, saveSessions, loadConnectors } from './storage'
-import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue } from './queue'
+import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue, recoverStalledRunningTasks } from './queue'
 import { startScheduler, stopScheduler } from './scheduler'
 import { sweepOrphanedBrowsers, getActiveBrowserCount } from './session-tools'
 import {
@@ -213,6 +213,7 @@ async function runConnectorHealthChecks(now: number) {
 async function runHealthChecks() {
   // Continuously keep the completed queue honest.
   validateCompletedTasksQueue()
+  recoverStalledRunningTasks()
 
   // Keep heartbeat state in sync with task terminal states even without daemon restarts.
   cleanupFinishedTaskSessions()

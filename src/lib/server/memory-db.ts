@@ -153,6 +153,14 @@ function normalizeReferencePath(raw: unknown): string | undefined {
   return value ? value : undefined
 }
 
+function canonicalText(value: unknown): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\s:/.-]/g, '')
+    .trim()
+}
+
 function resolveExists(pathValue: string | undefined): boolean | undefined {
   if (!pathValue) return undefined
   const absolute = path.isAbsolute(pathValue) ? pathValue : path.resolve(process.cwd(), pathValue)
@@ -504,6 +512,7 @@ function initDb() {
       ORDER BY updatedAt DESC
       LIMIT 1
     `),
+    allRowsByUpdated: db.prepare(`SELECT * FROM memories ORDER BY updatedAt DESC`),
     exactDuplicateBySessionCategory: db.prepare(`
       SELECT * FROM memories
       WHERE sessionId = ? AND category = ? AND title = ? AND content = ?
@@ -852,6 +861,153 @@ function initDb() {
     getByAgent(agentId: string, limit = 200): MemoryEntry[] {
       const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)))
       return (stmts.listByAgent.all(agentId, safeLimit) as any[]).map(rowToEntry)
+    },
+
+    analyzeMaintenance(ttlHours = 24): {
+      total: number
+      exactDuplicateCandidates: number
+      canonicalDuplicateCandidates: number
+      staleWorkingCandidates: number
+    } {
+      const rows = (stmts.allRowsByUpdated.all() as any[]).map(rowToEntry)
+      const seenExact = new Set<string>()
+      const seenCanonical = new Set<string>()
+      let exactDuplicateCandidates = 0
+      let canonicalDuplicateCandidates = 0
+      let staleWorkingCandidates = 0
+      const cutoff = Date.now() - Math.max(1, Math.min(24 * 365, Math.trunc(ttlHours))) * 3600_000
+
+      for (const row of rows) {
+        const keyExact = [
+          row.agentId || '',
+          row.sessionId || '',
+          row.category || '',
+          row.title || '',
+          row.content || '',
+        ].join('|')
+        if (seenExact.has(keyExact)) exactDuplicateCandidates++
+        else seenExact.add(keyExact)
+
+        const keyCanonical = [
+          row.agentId || '',
+          row.sessionId || '',
+          row.category || '',
+          canonicalText(row.title),
+          canonicalText(row.content),
+        ].join('|')
+        if (seenCanonical.has(keyCanonical)) canonicalDuplicateCandidates++
+        else seenCanonical.add(keyCanonical)
+
+        const category = String(row.category || '').toLowerCase()
+        const isWorkingLike = category === 'execution' || category === 'working' || category === 'scratch'
+        if (isWorkingLike && (row.updatedAt || row.createdAt || 0) < cutoff) staleWorkingCandidates++
+      }
+
+      return {
+        total: rows.length,
+        exactDuplicateCandidates,
+        canonicalDuplicateCandidates,
+        staleWorkingCandidates,
+      }
+    },
+
+    maintain(opts?: {
+      dedupe?: boolean
+      canonicalDedupe?: boolean
+      pruneWorking?: boolean
+      ttlHours?: number
+      maxDeletes?: number
+    }): {
+      deduped: number
+      pruned: number
+      deletedIds: string[]
+      analyzed: {
+        total: number
+        exactDuplicateCandidates: number
+        canonicalDuplicateCandidates: number
+        staleWorkingCandidates: number
+      }
+    } {
+      const options = opts || {}
+      const rows = (stmts.allRowsByUpdated.all() as any[]).map(rowToEntry)
+      const analyzed = this.analyzeMaintenance(options.ttlHours)
+      const deleteBudget = Math.max(1, Math.min(20_000, Math.trunc(options.maxDeletes || 500)))
+      const deleteIds: string[] = []
+      const toDelete = new Set<string>()
+      const dedupe = options.dedupe !== false
+      const canonicalDedupe = options.canonicalDedupe === true
+      const pruneWorking = options.pruneWorking !== false
+      const cutoff = Date.now() - Math.max(1, Math.min(24 * 365, Math.trunc(options.ttlHours || 24))) * 3600_000
+
+      if (dedupe) {
+        const seen = new Set<string>()
+        for (const row of rows) {
+          const key = [
+            row.agentId || '',
+            row.sessionId || '',
+            row.category || '',
+            row.title || '',
+            row.content || '',
+          ].join('|')
+          if (seen.has(key)) toDelete.add(row.id)
+          else seen.add(key)
+          if (toDelete.size >= deleteBudget) break
+        }
+      }
+
+      if (canonicalDedupe && toDelete.size < deleteBudget) {
+        const seen = new Set<string>()
+        for (const row of rows) {
+          if (toDelete.has(row.id)) continue
+          const key = [
+            row.agentId || '',
+            row.sessionId || '',
+            row.category || '',
+            canonicalText(row.title),
+            canonicalText(row.content),
+          ].join('|')
+          if (seen.has(key)) toDelete.add(row.id)
+          else seen.add(key)
+          if (toDelete.size >= deleteBudget) break
+        }
+      }
+
+      if (pruneWorking && toDelete.size < deleteBudget) {
+        for (const row of rows) {
+          if (toDelete.has(row.id)) continue
+          const category = String(row.category || '').toLowerCase()
+          const isWorkingLike = category === 'execution' || category === 'working' || category === 'scratch'
+          const updatedAt = row.updatedAt || row.createdAt || 0
+          if (isWorkingLike && updatedAt < cutoff) toDelete.add(row.id)
+          if (toDelete.size >= deleteBudget) break
+        }
+      }
+
+      for (const id of toDelete) {
+        this.delete(id)
+        deleteIds.push(id)
+        if (deleteIds.length >= deleteBudget) break
+      }
+
+      let pruned = 0
+      let deduped = 0
+      if (deleteIds.length) {
+        const deletedSet = new Set(deleteIds)
+        for (const row of rows) {
+          if (!deletedSet.has(row.id)) continue
+          const category = String(row.category || '').toLowerCase()
+          const isWorkingLike = category === 'execution' || category === 'working' || category === 'scratch'
+          if (isWorkingLike) pruned++
+          else deduped++
+        }
+      }
+
+      return {
+        deduped,
+        pruned,
+        deletedIds: deleteIds,
+        analyzed,
+      }
     },
 
     getLatestBySessionCategory(sessionId: string, category: string): MemoryEntry | null {

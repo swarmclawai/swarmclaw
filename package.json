@@ -6,6 +6,10 @@
     "swarmclaw": "./bin/swarmclaw.js"
   },
   "scripts": {
+    "setup:easy": "node ./scripts/easy-setup.mjs",
+    "quickstart": "node ./scripts/easy-setup.mjs --start",
+    "quickstart:prod": "node ./scripts/easy-setup.mjs --prod",
+    "update:easy": "node ./scripts/easy-update.mjs",
     "dev": "next dev --hostname 0.0.0.0 -p 3456",
     "dev:webpack": "next dev --webpack --hostname 0.0.0.0 -p 3456",
     "dev:clean": "rm -rf .next && next dev --hostname 0.0.0.0 -p 3456",

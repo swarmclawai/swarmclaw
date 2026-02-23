@@ -59,14 +59,19 @@ SwarmClaw can spawn **Claude Code CLI** processes with full shell access on your
 curl -fsSL https://swarmclaw.ai/install.sh | bash
 ```
 
-Or manually:
+Or run locally from the repo (friendly for non-technical users):
 
 ```bash
 git clone https://github.com/swarmclawai/swarmclaw.git
 cd swarmclaw
-npm install
-npm run dev
+npm run quickstart
 ```
+
+`npm run quickstart` will:
+- Check Node/npm versions
+- Install dependencies
+- Prepare `.env.local` and `data/`
+- Start the app at `http://localhost:3456`
 
 On first launch, SwarmClaw will:
 1. Generate an **access key** and display it in the terminal
@@ -75,6 +80,24 @@ On first launch, SwarmClaw will:
 
 Open `http://localhost:3456` (or your machine's IP for mobile access). Enter the access key, set your name, and you're in.
 
+### Command-Line Setup (No UI Required)
+
+You can complete first-time setup from terminal:
+
+```bash
+# Start the app (if not already running)
+npm run dev
+
+# In another terminal, run setup with your provider
+node ./bin/swarmclaw.js setup init --provider openai --api-key "$OPENAI_API_KEY"
+```
+
+Notes:
+- On a fresh instance, `setup init` can auto-discover and claim the first-run access key from `/api/auth`.
+- For existing installs, pass `--key <ACCESS_KEY>` (or set `SWARMCLAW_ACCESS_KEY`).
+- `setup init` performs provider validation, stores credentials, creates a starter agent, and marks setup complete.
+- Use `--skip-check` to bypass connection validation.
+
 ### 2-Minute Setup Wizard
 
 After login, SwarmClaw opens a guided wizard designed for non-technical users:
@@ -82,7 +105,8 @@ After login, SwarmClaw opens a guided wizard designed for non-technical users:
 1. Choose a provider: **OpenAI**, **Anthropic**, **OpenClaw**, or **Ollama**
 2. Add only required fields (API key and/or endpoint)
 3. Click **Check Connection** for live validation before continuing
-4. Create a starter assistant (advanced settings are optional)
+4. (Optional) click **Run System Check** for setup diagnostics
+5. Create a starter assistant (advanced settings are optional)
 
 Notes:
 - OpenClaw supports endpoint + optional bearer token.
@@ -399,6 +423,14 @@ Data is persisted in `data/` and `.env.local` via volume mounts. Updates: `git p
 
 SwarmClaw has a built-in update checker — a banner appears in the sidebar when new commits are available, with a one-click update button. Your data in `data/` and `.env.local` is never touched by updates.
 
+For terminal users, run:
+
+```bash
+npm run update:easy
+```
+
+This command fetches/pulls `origin/main`, installs dependencies when needed, and runs a production build check before restart.
+
 ## Development
 
 ```bash
@@ -431,6 +463,15 @@ If it still reproduces, use webpack mode:
 npm run dev:webpack
 ```
 
+### First-Run Helpers
+
+```bash
+npm run setup:easy      # setup only (does not start server)
+npm run quickstart      # setup + start dev server
+npm run quickstart:prod # setup + build + start production server
+npm run update:easy     # safe update helper for local installs
+```
+
 ## CLI
 
 SwarmClaw ships a built-in CLI for core operational workflows:
@@ -457,19 +498,17 @@ swarmclaw [global-options] <group> <command> [command-options]
 | `-k, --key <key>` | Access key (or set `SWARMCLAW_ACCESS_KEY`) |
 | `--raw` | Print compact JSON output |
 
-### Command Groups (9 groups)
+### Command Groups
 
-| Group | Commands |
+Run `swarmclaw --help` to list all groups and commands (the list evolves as APIs are added).
+Notable setup/operations groups include:
+
+| Group | Purpose |
 |-|-|
-| `agents` | `list`, `get` |
-| `connectors` | `list`, `get`, `create`, `update`, `delete`, `start`, `stop`, `repair` |
-| `memory` | `store`, `search`, `get` |
-| `memory-images` | `get` |
-| `runs` | `list`, `get` |
-| `schedules` | `list`, `get`, `create` |
-| `sessions` | `list`, `get`, `create`, `update`, `delete`, `history`, `stop` |
-| `tasks` | `list`, `get`, `create`, `update`, `delete`, `archive` |
-| `webhooks` | `list`, `get`, `create`, `update`, `delete`, `trigger` |
+| `setup` | Setup helpers like provider checks and `doctor` diagnostics |
+| `version` | Version status and update helpers |
+| `sessions` | Session lifecycle, chat, browser/devserver controls, mailbox |
+| `memory` | Memory CRUD and maintenance utilities |
 
 ### Examples
 
@@ -483,29 +522,14 @@ swarmclaw agents get <agentId>
 # create a task
 swarmclaw tasks create --title "Fix flaky CI test" --description "Stabilize retry logic" --agent-id <agentId>
 
-# create an interval schedule
-swarmclaw schedules create --name "Health Check" --agent-id <agentId> --task-prompt "Run diagnostics" --schedule-type interval --interval-ms 60000
+# run setup diagnostics
+swarmclaw setup doctor
 
-# session history
-swarmclaw sessions history <sessionId>
+# complete setup from CLI (example: OpenAI)
+swarmclaw setup init --provider openai --api-key "$OPENAI_API_KEY"
 
-# create a session
-swarmclaw sessions create --name "Ops Assistant" --agent-id <agentId> --provider anthropic
-
-# store and search memory
-swarmclaw memory store --title "Deploy note" --content "Use canary first" --category note --agent-id <agentId>
-swarmclaw memory search -q "canary"
-
-# create and list webhooks
-swarmclaw webhooks create --name "GitHub Push" --source "github" --agent-id <agentId> --event push --secret "webhook-secret"
-swarmclaw webhooks list
-
-# trigger a webhook manually
-swarmclaw webhooks trigger <webhookId> --event push --payload '{"repository":"swarmclaw"}'
-
-# create/start connector runtime
-swarmclaw connectors create --platform discord --agent-id <agentId> --name "Discord Bridge"
-swarmclaw connectors start <connectorId>
+# run memory maintenance analysis
+swarmclaw memory maintenance
 ```
 
 ## Credits

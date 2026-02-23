@@ -139,6 +139,8 @@ const COMMAND_GROUPS = [
       cmd('create', 'POST', '/memory', 'Create memory entry', { expectsJsonBody: true }),
       cmd('update', 'PUT', '/memory/:id', 'Update memory entry', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/memory/:id', 'Delete memory entry'),
+      cmd('maintenance', 'GET', '/memory/maintenance', 'Analyze memory dedupe/prune candidates'),
+      cmd('maintenance-run', 'POST', '/memory/maintenance', 'Run memory dedupe/prune maintenance', { expectsJsonBody: true }),
     ],
   },
   {
@@ -232,6 +234,10 @@ const COMMAND_GROUPS = [
       cmd('update', 'PUT', '/sessions/:id', 'Update session', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/sessions/:id', 'Delete session'),
       cmd('delete-many', 'DELETE', '/sessions', 'Delete multiple sessions (body: {"ids":[...]})', { expectsJsonBody: true }),
+      cmd('heartbeat-disable-all', 'POST', '/sessions/heartbeat', 'Disable all session heartbeats and cancel queued heartbeat runs', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'disable_all' },
+      }),
       cmd('messages', 'GET', '/sessions/:id/messages', 'Get session messages'),
       cmd('main-loop', 'GET', '/sessions/:id/main-loop', 'Get main mission loop state'),
       cmd('main-loop-action', 'POST', '/sessions/:id/main-loop', 'Control main mission loop (pause/resume/set_goal/set_mode/clear_events/nudge)', {
@@ -245,6 +251,8 @@ const COMMAND_GROUPS = [
       cmd('clear', 'POST', '/sessions/:id/clear', 'Clear session messages'),
       cmd('browser-status', 'GET', '/sessions/:id/browser', 'Check browser status'),
       cmd('browser-close', 'DELETE', '/sessions/:id/browser', 'Close browser session'),
+      cmd('mailbox', 'GET', '/sessions/:id/mailbox', 'List session mailbox envelopes'),
+      cmd('mailbox-action', 'POST', '/sessions/:id/mailbox', 'Send/ack/clear mailbox envelopes', { expectsJsonBody: true }),
       cmd('deploy', 'POST', '/sessions/:id/deploy', 'Deploy current session branch', { expectsJsonBody: true }),
       cmd('devserver', 'POST', '/sessions/:id/devserver', 'Dev server action via JSON body', { expectsJsonBody: true }),
       cmd('devserver-start', 'POST', '/sessions/:id/devserver', 'Start session dev server', {
@@ -267,6 +275,14 @@ const COMMAND_GROUPS = [
     commands: [
       cmd('get', 'GET', '/settings', 'Get settings'),
       cmd('update', 'PUT', '/settings', 'Update settings', { expectsJsonBody: true }),
+    ],
+  },
+  {
+    name: 'setup',
+    description: 'Setup and provider validation helpers',
+    commands: [
+      cmd('check-provider', 'POST', '/setup/check-provider', 'Validate provider credentials/endpoint', { expectsJsonBody: true }),
+      cmd('doctor', 'GET', '/setup/doctor', 'Run local setup diagnostics'),
     ],
   },
   {
