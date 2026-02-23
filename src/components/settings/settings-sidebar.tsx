@@ -135,18 +135,16 @@ export function SettingsSidebar() {
                         accept=".json"
                         className="hidden"
                     />
-                </div>
-            </div>
 
-            <div className="pt-6 border-t border-border mt-auto">
-                <button
-                    onClick={handleSave}
-                    className="flex items-center justify-center gap-2 w-full py-3.5 rounded-[12px] bg-primary text-primary-foreground text-[14px] font-600 cursor-pointer hover:opacity-90 active:scale-[0.98] transition-all duration-200 shadow-sm"
-                    style={{ fontFamily: 'inherit' }}
-                >
-                    <SaveIcon className="w-4 h-4" />
-                    Save Settings
-                </button>
+                    <button
+                        onClick={handleSave}
+                        className="flex items-center justify-center gap-2 w-full py-3.5 rounded-[12px] bg-primary text-primary-foreground text-[14px] font-600 cursor-pointer hover:opacity-90 active:scale-[0.98] transition-all duration-200 shadow-sm"
+                        style={{ fontFamily: 'inherit' }}
+                    >
+                        <SaveIcon className="w-4 h-4" />
+                        Save Settings
+                    </button>
+                </div>
             </div>
         </div>
     )
