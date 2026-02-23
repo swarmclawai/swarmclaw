@@ -45,9 +45,12 @@ yarn-error.log*
 /data/*.db-wal
 /data/*.log
 /data/whatsapp-auth/
+/data/openclaw/
+/data/task-reports/*
 /data/.setup_pending
 /data/.sqlite_migrated
 !/data/.gitkeep
+!/data/task-reports/.gitkeep
 
 # user config backup
 /data-backup/
@@ -58,3 +61,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local scratch dir accidentally created by tooling
+/~/
