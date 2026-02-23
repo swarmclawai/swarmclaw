@@ -136,7 +136,7 @@ src/
 |-|-|-|
 | Claude Code CLI | `claude` | Spawns with `--print --output-format stream-json`. Includes auth preflight and clearer timeout/exit diagnostics. |
 | OpenAI Codex CLI | `codex` | Spawns with `--full-auto --skip-git-repo-check`. Includes login preflight and streamed CLI error events. |
-| OpenCode CLI | `opencode` | Spawns with `-p` flag. Multi-model support. |
+| OpenCode CLI | `opencode` | Spawns with `run --format json` and tracks session resume IDs. Multi-model support. |
 
 ### API Providers
 
@@ -309,8 +309,10 @@ Configure these in **Settings**:
 
 - **Voice** — set `ElevenLabs API Key`, `ElevenLabs Voice ID`, and `Speech Recognition Language`
 - **Heartbeat** — set `Heartbeat Interval (Seconds)` and `Heartbeat Prompt` for ongoing session pings
+- **Global heartbeat safety** — use `Stop All Session Heartbeats` to disable heartbeat across all sessions and cancel in-flight heartbeat runs.
 
 Heartbeat pings are internal checks for ongoing sessions. If there's no new status, the assistant returns `HEARTBEAT_OK`; otherwise it returns a concise progress update and next step. In chat UI, heartbeat entries render as compact expandable cards and consecutive heartbeat streaks are collapsed to the latest item.
+The daemon health monitor also auto-disables heartbeat on sessions that remain stale for an extended period.
 
 ## Embeddings & Hybrid Memory Search
 

@@ -32,51 +32,55 @@ function findOpencode(): string {
 
 const OPENCODE = findOpencode()
 
+function extractSessionId(raw: unknown): string | null {
+  if (!raw) return null
+  const text = String(raw).trim()
+  return text ? text : null
+}
+
 /**
- * OpenCode CLI provider — spawns `opencode -p "prompt"` for non-interactive usage.
- * System prompt is injected via a temporary .opencode/instructions.md file.
- * Output is plain text (no JSON streaming mode).
+ * OpenCode CLI provider — spawns `opencode run <message> --format json` for non-interactive usage.
+ * Tracks `session.opencodeSessionId` from streamed JSON events to support multi-turn continuity.
  */
 export function streamOpenCodeCliChat({ session, message, imagePath, systemPrompt, write, active }: StreamChatOptions): Promise<string> {
   const processTimeoutMs = loadRuntimeSettings().cliProcessTimeoutMs
-  let prompt = message
-  if (imagePath) {
-    prompt = `[The user has shared a file at: ${imagePath}]\n\n${message}`
-  }
-
-  // OpenCode uses .opencode/instructions.md for system prompts.
-  // Create a temp project dir with the instructions file if we have a system prompt.
-  let tmpDir: string | null = null
   const cwd = session.cwd || process.cwd()
-
-  if (systemPrompt) {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-opencode-'))
-    const instructionsDir = path.join(tmpDir, '.opencode')
-    fs.mkdirSync(instructionsDir, { recursive: true })
-    fs.writeFileSync(path.join(instructionsDir, 'instructions.md'), systemPrompt)
+  const promptParts: string[] = []
+  if (systemPrompt && !session.opencodeSessionId) {
+    promptParts.push(`[System instructions]\n${systemPrompt}`)
   }
+  promptParts.push(message)
+  const prompt = promptParts.join('\n\n')
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     TERM: 'dumb',
     NO_COLOR: '1',
   }
-
   // Set model via env if specified
   if (session.model) {
     env.OPENCODE_MODEL = session.model
   }
 
-  const args = ['-p', prompt]
+  const args = ['run', prompt, '--format', 'json']
+  if (session.opencodeSessionId) args.push('--session', session.opencodeSessionId)
+  if (session.model) args.push('--model', session.model)
+  if (imagePath) args.push('--file', imagePath)
 
   log.info('opencode-cli', `Spawning: ${OPENCODE}`, {
-    args: ['-p', `(${prompt.length} chars)`],
-    cwd: tmpDir || cwd,
+    args: args.map((a, i) => {
+      if (i === 1) return `(${prompt.length} chars)`
+      if (a.length > 120) return `${a.slice(0, 120)}...`
+      return a
+    }),
+    cwd,
     hasSystemPrompt: !!systemPrompt,
+    hasImage: !!imagePath,
+    resumeSessionId: session.opencodeSessionId || null,
   })
 
   const proc = spawn(OPENCODE, args, {
-    cwd: tmpDir || cwd,
+    cwd,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
     timeout: processTimeoutMs,
@@ -87,12 +91,47 @@ export function streamOpenCodeCliChat({ session, message, imagePath, systemPromp
 
   let fullResponse = ''
   let stderrText = ''
+  let stdoutBuf = ''
+  let eventCount = 0
+  const eventErrors: string[] = []
 
   proc.stdout!.on('data', (chunk: Buffer) => {
     const text = chunk.toString()
-    fullResponse += text
-    // Stream chunks as deltas
-    write(`data: ${JSON.stringify({ t: 'd', text })}\n\n`)
+    stdoutBuf += text
+    const lines = stdoutBuf.split('\n')
+    stdoutBuf = lines.pop() || ''
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      try {
+        const ev = JSON.parse(trimmed) as any
+        eventCount += 1
+        const discoveredSessionId = extractSessionId(ev?.sessionID ?? ev?.sessionId)
+        if (discoveredSessionId) session.opencodeSessionId = discoveredSessionId
+
+        if (ev?.type === 'text' && typeof ev?.part?.text === 'string') {
+          fullResponse += ev.part.text
+          write(`data: ${JSON.stringify({ t: 'd', text: ev.part.text })}\n\n`)
+          continue
+        }
+
+        if (ev?.type === 'error') {
+          const msg = typeof ev?.error === 'string'
+            ? ev.error
+            : typeof ev?.message === 'string'
+              ? ev.message
+              : 'Unknown OpenCode event error'
+          eventErrors.push(msg)
+          write(`data: ${JSON.stringify({ t: 'err', text: msg })}\n\n`)
+          continue
+        }
+      } catch {
+        // Raw fallback line from the CLI.
+        fullResponse += `${line}\n`
+        write(`data: ${JSON.stringify({ t: 'd', text: `${line}\n` })}\n\n`)
+      }
+    }
   })
 
   proc.stderr!.on('data', (chunk: Buffer) => {
@@ -104,24 +143,21 @@ export function streamOpenCodeCliChat({ session, message, imagePath, systemPromp
 
   return new Promise((resolve) => {
     proc.on('close', (code, signal) => {
-      log.info('opencode-cli', `Process closed: code=${code} signal=${signal} response=${fullResponse.length}chars`)
+      log.info('opencode-cli', `Process closed: code=${code} signal=${signal} events=${eventCount} response=${fullResponse.length}chars`)
       active.delete(session.id)
-      // Clean up temp dir
-      if (tmpDir) try { fs.rmSync(tmpDir, { recursive: true }) } catch { /* ignore */ }
-      if ((code ?? 0) !== 0 && !fullResponse.trim()) {
+      if ((code ?? 0) !== 0 && !fullResponse.trim() && eventErrors.length === 0) {
         const msg = stderrText.trim()
           ? `OpenCode CLI exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}: ${stderrText.trim().slice(0, 1200)}`
           : `OpenCode CLI exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''} and returned no output.`
         write(`data: ${JSON.stringify({ t: 'err', text: msg })}\n\n`)
       }
-      resolve(fullResponse)
+      resolve(fullResponse.trim())
     })
 
     proc.on('error', (e) => {
       log.error('opencode-cli', `Process error: ${e.message}`)
       active.delete(session.id)
       write(`data: ${JSON.stringify({ t: 'err', text: e.message })}\n\n`)
-      if (tmpDir) try { fs.rmSync(tmpDir, { recursive: true }) } catch { /* ignore */ }
       resolve(fullResponse)
     })
   })

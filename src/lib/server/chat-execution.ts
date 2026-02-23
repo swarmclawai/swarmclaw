@@ -208,6 +208,25 @@ function extractDelegationTask(message: string, toolName: string): string | null
   return null
 }
 
+function hasToolEnabled(session: any, toolName: string): boolean {
+  return Array.isArray(session?.tools) && session.tools.includes(toolName)
+}
+
+function looksLikeCodingExecutionIntent(message: string): boolean {
+  const lower = message.toLowerCase()
+  const actionHints = [
+    'build', 'create', 'implement', 'write', 'scaffold', 'generate', 'fix', 'debug', 'refactor', 'ship',
+  ]
+  const targetHints = [
+    'app', 'web app', 'website', 'frontend', 'backend', 'api', 'component', 'project',
+    'repo', 'codebase', 'script', 'test', 'unit test', 'typescript', 'javascript', 'react', 'vite', 'next.js', 'node',
+  ]
+  const hasActionHint = actionHints.some((hint) => lower.includes(hint))
+  const hasTargetHint = targetHints.some((hint) => lower.includes(hint))
+  const hasBuildCommandIntent = /\bnpm\s+(install|test|run|build)\b|\byarn\b|\bpnpm\b/.test(lower)
+  return (hasActionHint && hasTargetHint) || hasBuildCommandIntent
+}
+
 function syncSessionFromAgent(sessionId: string): void {
   const sessions = loadSessions()
   const session = sessions[sessionId]
@@ -274,7 +293,11 @@ function resolveApiKeyForSession(session: any, provider: any): string | null {
   return null
 }
 
-const AUTO_MEMORY_MIN_INTERVAL_MS = 10 * 60 * 1000
+const AUTO_MEMORY_MIN_INTERVAL_MS = 45 * 60 * 1000
+
+function normalizeMemoryText(value: string): string {
+  return (value || '').replace(/\s+/g, ' ').trim()
+}
 
 function shouldStoreAutoMemoryNote(opts: {
   session: any
@@ -317,6 +340,15 @@ function storeAutoMemoryNote(opts: {
       `user_request: ${compactMessage}`,
       `assistant_outcome: ${compactResponse}`,
     ].join('\n')
+    const latest = db.getLatestBySessionCategory?.(session.id, 'execution')
+    if (latest) {
+      const sameTitle = normalizeMemoryText(latest.title) === normalizeMemoryText(title)
+      const sameContent = normalizeMemoryText(latest.content) === normalizeMemoryText(content)
+      if (sameTitle && sameContent) {
+        session.lastAutoMemoryAt = now
+        return latest.id
+      }
+    }
     const created = db.add({
       agentId: session.agentId,
       sessionId: session.id,
@@ -530,6 +562,43 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       await cleanup()
     }
   }
+
+  const hasDelegationCall = forcedDelegationTools.some((toolName) => calledNames.has(toolName))
+  const shouldAutoDelegateCoding = (!internal && source === 'chat')
+    && hasToolEnabled(session, 'claude_code')
+    && !hasDelegationCall
+    && looksLikeCodingExecutionIntent(message)
+
+  if (shouldAutoDelegateCoding) {
+    const agent = session.agentId ? loadAgents()[session.agentId] : null
+    const { tools, cleanup } = buildSessionTools(session.cwd, session.tools || [], {
+      agentId: session.agentId || null,
+      sessionId,
+      platformAssignScope: agent?.platformAssignScope || 'self',
+    })
+    try {
+      const delegationOrder = ['delegate_to_claude_code', 'delegate_to_codex_cli', 'delegate_to_opencode_cli']
+      const delegatedTool = delegationOrder
+        .map((name) => tools.find((t: any) => t?.name === name) as any)
+        .find((t) => !!t?.invoke)
+      if (delegatedTool?.invoke) {
+        const forcedArgs = { task: message.trim() }
+        emit({ t: 'tool_call', toolName: delegatedTool.name, toolInput: JSON.stringify(forcedArgs) })
+        const toolOutput = await delegatedTool.invoke(forcedArgs)
+        const outputText = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
+        emit({ t: 'tool_result', toolName: delegatedTool.name, toolOutput: outputText })
+        if (outputText?.trim()) {
+          fullResponse = outputText.trim()
+        }
+        calledNames.add(delegatedTool.name)
+      }
+    } catch (forceErr: any) {
+      emit({ t: 'err', text: `Auto-delegation failed: ${forceErr?.message || String(forceErr)}` })
+    } finally {
+      await cleanup()
+    }
+  }
+
   if (requestedToolNames.length > 0) {
     const missed = requestedToolNames.filter((name) => !calledNames.has(name))
     if (missed.length > 0) {

@@ -317,6 +317,18 @@ function initDb() {
       VALUES (new.rowid, new.title, new.content, new.category);
     END
   `)
+
+  // Critical list-path indexes for large memory datasets.
+  // Without these, ORDER BY updatedAt DESC LIMIT N performs a full table scan + temp sort.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updatedAt DESC)
+  `)
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_memories_agent_updated_at ON memories(agentId, updatedAt DESC)
+  `)
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_memories_session_category_updated_at ON memories(sessionId, category, updatedAt DESC)
+  `)
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
       INSERT INTO memories_fts(memories_fts, rowid, title, content, category)
@@ -486,6 +498,18 @@ function initDb() {
     // Remove a linked ID from all memories that reference it (cleanup on delete)
     findMemoriesLinkingTo: db.prepare(`SELECT * FROM memories WHERE linkedMemoryIds LIKE ?`),
     updateLinks: db.prepare(`UPDATE memories SET linkedMemoryIds = ?, updatedAt = ? WHERE id = ?`),
+    latestBySessionCategory: db.prepare(`
+      SELECT * FROM memories
+      WHERE sessionId = ? AND category = ?
+      ORDER BY updatedAt DESC
+      LIMIT 1
+    `),
+    exactDuplicateBySessionCategory: db.prepare(`
+      SELECT * FROM memories
+      WHERE sessionId = ? AND category = ? AND title = ? AND content = ?
+      ORDER BY updatedAt DESC
+      LIMIT 1
+    `),
   }
 
   function rowToEntry(row: Record<string, unknown>): MemoryEntry {
@@ -543,9 +567,19 @@ function initDb() {
       const legacyFilePaths = referencesToLegacyFilePaths(references)
       const image = normalizeImage(data.image, data.imagePath)
       const linkedMemoryIds = normalizeLinkedMemoryIds(data.linkedMemoryIds, id)
+      const sessionId = data.sessionId || null
+      const category = data.category || 'note'
+      const title = data.title || 'Untitled'
+      const content = data.content || ''
+
+      // Guard against exact duplicate memory spam for the same session/category.
+      if (sessionId) {
+        const duplicate = stmts.exactDuplicateBySessionCategory.get(sessionId, category, title, content) as Record<string, unknown> | undefined
+        if (duplicate) return rowToEntry(duplicate)
+      }
       stmts.insert.run(
-        id, data.agentId || null, data.sessionId || null,
-        data.category, data.title, data.content,
+        id, data.agentId || null, sessionId,
+        category, title, content,
         data.metadata ? JSON.stringify(data.metadata) : null,
         null, // embedding computed async
         references?.length ? JSON.stringify(references) : null,
@@ -556,7 +590,7 @@ function initDb() {
         now, now,
       )
       // Compute embedding in background (fire-and-forget)
-      const text = `${data.title} ${data.content}`.slice(0, 4000)
+      const text = `${title} ${content}`.slice(0, 4000)
       getEmbedding(text).then((emb) => {
         if (emb) {
           db.prepare(`UPDATE memories SET embedding = ? WHERE id = ?`).run(
@@ -573,6 +607,10 @@ function initDb() {
       return {
         ...data,
         id,
+        sessionId,
+        category,
+        title,
+        content,
         references,
         filePaths: legacyFilePaths,
         image,
@@ -814,6 +852,15 @@ function initDb() {
     getByAgent(agentId: string, limit = 200): MemoryEntry[] {
       const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)))
       return (stmts.listByAgent.all(agentId, safeLimit) as any[]).map(rowToEntry)
+    },
+
+    getLatestBySessionCategory(sessionId: string, category: string): MemoryEntry | null {
+      const sid = (sessionId || '').trim()
+      const cat = (category || '').trim()
+      if (!sid || !cat) return null
+      const row = stmts.latestBySessionCategory.get(sid, cat) as Record<string, unknown> | undefined
+      if (!row) return null
+      return rowToEntry(row)
     },
   }
 }

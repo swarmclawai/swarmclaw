@@ -1,4 +1,4 @@
-import { loadQueue, loadSchedules, loadSessions, loadConnectors } from './storage'
+import { loadQueue, loadSchedules, loadSessions, saveSessions, loadConnectors } from './storage'
 import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue } from './queue'
 import { startScheduler, stopScheduler } from './scheduler'
 import { sweepOrphanedBrowsers, getActiveBrowserCount } from './session-tools'
@@ -18,6 +18,8 @@ const BROWSER_MAX_AGE = 10 * 60 * 1000 // 10 minutes idle = orphaned
 const HEALTH_CHECK_INTERVAL = 120_000 // 2 minutes
 const STALE_MULTIPLIER = 4 // session is stale after N × heartbeat interval
 const STALE_MIN_MS = 4 * 60 * 1000 // minimum 4 minutes regardless of interval
+const STALE_AUTO_DISABLE_MULTIPLIER = 16 // auto-disable after much longer sustained staleness
+const STALE_AUTO_DISABLE_MIN_MS = 45 * 60 * 1000 // never auto-disable before 45 minutes
 const CONNECTOR_RESTART_BASE_MS = 30_000
 const CONNECTOR_RESTART_MAX_MS = 15 * 60 * 1000
 
@@ -218,6 +220,7 @@ async function runHealthChecks() {
   const sessions = loadSessions()
   const now = Date.now()
   const currentlyStale = new Set<string>()
+  let sessionsDirty = false
 
   for (const session of Object.values(sessions) as any[]) {
     if (!session?.id) continue
@@ -229,13 +232,26 @@ async function runHealthChecks() {
     const lastActive = typeof session.lastActiveAt === 'number' ? session.lastActiveAt : 0
     if (lastActive <= 0) continue
 
-    if (now - lastActive > staleAfter) {
+    const staleForMs = now - lastActive
+    if (staleForMs > staleAfter) {
+      const autoDisableAfter = Math.max(intervalSec * STALE_AUTO_DISABLE_MULTIPLIER * 1000, STALE_AUTO_DISABLE_MIN_MS)
+      if (staleForMs > autoDisableAfter) {
+        session.heartbeatEnabled = false
+        session.lastActiveAt = now
+        sessionsDirty = true
+        ds.staleSessionIds.delete(session.id)
+        await sendHealthAlert(
+          `Auto-disabled heartbeat for stale session "${session.name || session.id}" after ${Math.round(staleForMs / 60_000)}m of inactivity.`,
+        )
+        continue
+      }
+
       currentlyStale.add(session.id)
       // Only alert on transition from healthy → stale (once per stale episode)
       if (!ds.staleSessionIds.has(session.id)) {
         ds.staleSessionIds.add(session.id)
         await sendHealthAlert(
-          `Session "${session.name || session.id}" heartbeat appears stale (last active ${(Math.round((now - lastActive) / 1000))}s ago, interval ${intervalSec}s).`,
+          `Session "${session.name || session.id}" heartbeat appears stale (last active ${(Math.round(staleForMs / 1000))}s ago, interval ${intervalSec}s).`,
         )
       }
     }
@@ -247,6 +263,8 @@ async function runHealthChecks() {
       ds.staleSessionIds.delete(id)
     }
   }
+
+  if (sessionsDirty) saveSessions(sessions)
 
   await runConnectorHealthChecks(now)
 }

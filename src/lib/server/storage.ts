@@ -384,6 +384,35 @@ export function saveSessions(s: Record<string, any>) {
   saveCollection('sessions', s)
 }
 
+export function disableAllSessionHeartbeats(): number {
+  const rows = db.prepare('SELECT id, data FROM sessions').all() as Array<{ id: string; data: string }>
+  if (!rows.length) return 0
+
+  const update = db.prepare('UPDATE sessions SET data = ? WHERE id = ?')
+  let changed = 0
+
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      let parsed: any
+      try {
+        parsed = JSON.parse(row.data)
+      } catch {
+        continue
+      }
+      if (!parsed || typeof parsed !== 'object') continue
+      if (parsed.heartbeatEnabled === false) continue
+
+      parsed.heartbeatEnabled = false
+      parsed.lastActiveAt = Date.now()
+      update.run(JSON.stringify(parsed), row.id)
+      changed += 1
+    }
+  })
+  tx()
+
+  return changed
+}
+
 // --- Credentials ---
 export function loadCredentials(): Record<string, any> {
   return loadCollection('credentials')

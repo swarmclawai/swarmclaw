@@ -1087,36 +1087,6 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
         async ({ task, resume, resumeId }) => {
           try {
             const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'dumb', NO_COLOR: '1' }
-            const removedOpenCodeEnvKeys: string[] = []
-            for (const key of Object.keys(env)) {
-              if (key.toUpperCase().startsWith('OPENCODE')) {
-                removedOpenCodeEnvKeys.push(key)
-                delete env[key]
-              }
-            }
-            const hasApiCredentialEnv = [
-              'OPENAI_API_KEY',
-              'ANTHROPIC_API_KEY',
-              'GROQ_API_KEY',
-              'GOOGLE_API_KEY',
-              'XAI_API_KEY',
-              'MISTRAL_API_KEY',
-              'DEEPSEEK_API_KEY',
-              'TOGETHER_API_KEY',
-            ].some((key) => typeof env[key] === 'string' && (env[key] || '').trim().length > 0)
-            if (!hasApiCredentialEnv) {
-              const authProbe = spawnSync(opencodeBinary, ['auth', 'list'], {
-                cwd,
-                env,
-                encoding: 'utf-8',
-                timeout: 8000,
-              })
-              const probeText = `${authProbe.stdout || ''}\n${authProbe.stderr || ''}`.toLowerCase()
-              const noCreds = probeText.includes('0 credentials')
-              if ((authProbe.status ?? 1) !== 0 || noCreds) {
-                return 'Error: OpenCode CLI is not authenticated. Run `opencode auth login` (or set provider API key env vars), then retry.'
-              }
-            }
             const storedResumeId = readStoredDelegateResumeId('opencode')
             const resumeIdToUse = typeof resumeId === 'string' && resumeId.trim()
               ? resumeId.trim()
@@ -1127,7 +1097,6 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
               agentId: ctx?.agentId || null,
               cwd,
               timeoutMs: cliProcessTimeoutMs,
-              removedOpenCodeEnvKeys,
               resumeRequested: !!resume || !!resumeId,
               resumeId: resumeIdToUse || null,
               taskPreview: (task || '').slice(0, 200),

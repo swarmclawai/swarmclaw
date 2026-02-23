@@ -94,6 +94,12 @@ function buildAgenticExecutionPolicy(opts: {
     opts.enabledTools.includes('manage_sessions')
       ? 'When coordinating platform work, inspect existing sessions and avoid duplicating active efforts.'
       : '',
+    opts.enabledTools.includes('claude_code')
+      ? 'For substantial coding/build/refactor/test requests, prefer CLI delegation first: try `delegate_to_claude_code` by default, then `delegate_to_codex_cli`, then `delegate_to_opencode_cli` if needed.'
+      : '',
+    opts.enabledTools.includes('claude_code')
+      ? 'Use direct shell/file tool loops yourself mainly for small edits, quick verification, or when delegation tools are unavailable/failing.'
+      : '',
     opts.enabledTools.includes('memory')
       ? 'Memory is active and required for long-horizon work: before major tasks, run memory_tool search/list for relevant prior work; after each meaningful step, store concise reusable notes (what changed, where it lives, constraints, next step). Treat memory as shared context plus your own agent notes, not as user-owned personal profile data.'
       : '',

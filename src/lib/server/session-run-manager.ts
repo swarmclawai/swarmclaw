@@ -147,6 +147,41 @@ function cancelPendingForSession(sessionId: string, reason: string): number {
   return cancelled
 }
 
+export function cancelAllHeartbeatRuns(reason = 'Heartbeat disabled globally'): { cancelledQueued: number; abortedRunning: number } {
+  let cancelledQueued = 0
+  let abortedRunning = 0
+
+  for (const [key, queue] of state.queueByExecution.entries()) {
+    if (!queue.length) continue
+    const keep: QueueEntry[] = []
+    for (const entry of queue) {
+      const isHeartbeat = entry.run.internal === true && entry.run.source === 'heartbeat'
+      if (!isHeartbeat) {
+        keep.push(entry)
+        continue
+      }
+      entry.run.status = 'cancelled'
+      entry.run.endedAt = now()
+      entry.run.error = reason
+      emitRunMeta(entry, 'cancelled', { reason })
+      entry.reject(new Error(reason))
+      cancelledQueued += 1
+    }
+    if (keep.length > 0) state.queueByExecution.set(key, keep)
+    else state.queueByExecution.delete(key)
+  }
+
+  for (const entry of state.runningByExecution.values()) {
+    const isHeartbeat = entry.run.internal === true && entry.run.source === 'heartbeat'
+    if (!isHeartbeat) continue
+    abortedRunning += 1
+    entry.signalController.abort()
+    try { active.get(entry.run.sessionId)?.kill?.() } catch { /* noop */ }
+  }
+
+  return { cancelledQueued, abortedRunning }
+}
+
 function scheduleMainLoopFollowup(sessionId: string, followup: MainLoopFollowupRequest) {
   const delayMs = Math.max(0, Math.trunc(followup.delayMs || 0))
   setTimeout(() => {

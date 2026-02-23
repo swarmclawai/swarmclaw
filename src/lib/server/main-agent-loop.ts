@@ -8,7 +8,7 @@ const MAIN_SESSION_NAME = '__main__'
 const MAX_PENDING_EVENTS = 40
 const MAX_TIMELINE_EVENTS = 80
 const EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const MEMORY_NOTE_MIN_INTERVAL_MS = 15 * 60 * 1000
+const MEMORY_NOTE_MIN_INTERVAL_MS = 90 * 60 * 1000
 const DEFAULT_FOLLOWUP_DELAY_SEC = 45
 const MAX_FOLLOWUP_CHAIN = 6
 const META_LINE_RE = /\[MAIN_LOOP_META\]\s*(\{[^\n]*\})/i
@@ -80,6 +80,10 @@ export interface HandleMainLoopRunResultInput {
 
 function toOneLine(value: string, max = 240): string {
   return (value || '').replace(/\s+/g, ' ').trim().slice(0, max)
+}
+
+function normalizeMemoryText(value: string): string {
+  return (value || '').replace(/\s+/g, ' ').trim()
 }
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
@@ -439,6 +443,15 @@ function maybeStoreMissionMemoryNote(
 
   try {
     const memDb = getMemoryDb()
+    const latest = memDb.getLatestBySessionCategory?.(session.id, 'mission')
+    if (latest) {
+      const sameTitle = normalizeMemoryText(latest.title) === normalizeMemoryText(title)
+      const sameContent = normalizeMemoryText(latest.content) === normalizeMemoryText(content)
+      if (sameTitle && sameContent) {
+        state.lastMemoryNoteAt = now
+        return
+      }
+    }
     memDb.add({
       agentId: session.agentId || null,
       sessionId: session.id,
