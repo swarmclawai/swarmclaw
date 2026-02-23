@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { loadTasks, saveTasks } from '@/lib/server/storage'
-import { validateCompletedTasksQueue } from '@/lib/server/queue'
+import { enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
@@ -70,5 +70,8 @@ export async function POST(req: Request) {
     type: 'task_created',
     text: `Task created: "${tasks[id].title}" (${id}) with status ${tasks[id].status}.`,
   })
+  if (tasks[id].status === 'queued') {
+    enqueueTask(id)
+  }
   return NextResponse.json(tasks[id])
 }

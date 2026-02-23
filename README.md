@@ -75,6 +75,20 @@ On first launch, SwarmClaw will:
 
 Open `http://localhost:3456` (or your machine's IP for mobile access). Enter the access key, set your name, and you're in.
 
+### 2-Minute Setup Wizard
+
+After login, SwarmClaw opens a guided wizard designed for non-technical users:
+
+1. Choose a provider: **OpenAI**, **Anthropic**, **OpenClaw**, or **Ollama**
+2. Add only required fields (API key and/or endpoint)
+3. Click **Check Connection** for live validation before continuing
+4. Create a starter assistant (advanced settings are optional)
+
+Notes:
+- OpenClaw supports endpoint + optional bearer token.
+- Ollama and OpenClaw checks can auto-suggest a model from the connected endpoint.
+- You can skip setup and configure everything later in the sidebar.
+
 ## Configuration
 
 All config lives in `.env.local` (auto-generated):

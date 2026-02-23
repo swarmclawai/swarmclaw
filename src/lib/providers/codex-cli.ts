@@ -33,6 +33,13 @@ function findCodex(): string {
 
 const CODEX = findCodex()
 
+function codexModelRequiresReasoningDowngrade(model: string | null | undefined): boolean {
+  const value = String(model || '').trim().toLowerCase()
+  // Some Codex models currently reject `model_reasoning_effort = "xhigh"`
+  // from global ~/.codex/config.toml. Force a compatible value per request.
+  return value === 'gpt-5-codex' || value === 'gpt-5-codex-mini'
+}
+
 export function streamCodexCliChat({ session, message, imagePath, systemPrompt, write, active }: StreamChatOptions): Promise<string> {
   const processTimeoutMs = loadRuntimeSettings().cliProcessTimeoutMs
   const prompt = message
@@ -47,6 +54,9 @@ export function streamCodexCliChat({ session, message, imagePath, systemPrompt, 
   args.push('--json', '--full-auto', '--skip-git-repo-check')
 
   if (session.model) args.push('-m', session.model)
+  if (codexModelRequiresReasoningDowngrade(session.model)) {
+    args.push('-c', 'model_reasoning_effort="high"')
+  }
 
   // Attach images via native -i flag
   if (imagePath) {

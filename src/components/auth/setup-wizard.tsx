@@ -1,58 +1,98 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from '@/lib/api-client'
 import type { ProviderType, Credential } from '@/types'
 
-type WizardProvider = 'anthropic' | 'openai' | 'ollama'
+type WizardProvider = 'anthropic' | 'openai' | 'ollama' | 'openclaw'
+type CheckState = 'idle' | 'checking' | 'ok' | 'error'
+
+interface ProviderCheckResponse {
+  ok: boolean
+  message: string
+  normalizedEndpoint?: string
+  recommendedModel?: string
+}
 
 interface SetupWizardProps {
   onComplete: () => void
 }
 
-const PROVIDERS: { id: WizardProvider; name: string; description: string; requiresKey: boolean; keyUrl?: string; keyLabel?: string }[] = [
+const PROVIDERS: Array<{
+  id: WizardProvider
+  name: string
+  description: string
+  requiresKey: boolean
+  supportsEndpoint: boolean
+  defaultEndpoint?: string
+  keyUrl?: string
+  keyLabel?: string
+  badge?: string
+}> = [
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    description: 'Great default for most users. Fast, reliable GPT models.',
+    requiresKey: true,
+    supportsEndpoint: true,
+    defaultEndpoint: 'https://api.openai.com/v1',
+    keyUrl: 'https://platform.openai.com/api-keys',
+    keyLabel: 'platform.openai.com',
+    badge: 'Recommended',
+  },
   {
     id: 'anthropic',
     name: 'Anthropic',
-    description: 'Claude models — great for coding, analysis, and creative tasks.',
+    description: 'Claude models — strong for coding, analysis, and long-form reasoning.',
     requiresKey: true,
+    supportsEndpoint: false,
     keyUrl: 'https://console.anthropic.com/settings/keys',
     keyLabel: 'console.anthropic.com',
   },
   {
-    id: 'openai',
-    name: 'OpenAI',
-    description: 'GPT models — versatile and widely supported.',
-    requiresKey: true,
-    keyUrl: 'https://platform.openai.com/api-keys',
-    keyLabel: 'platform.openai.com',
+    id: 'openclaw',
+    name: 'OpenClaw',
+    description: 'Connect to your local or remote OpenClaw gateway (multi-OpenClaw ready).',
+    requiresKey: false,
+    supportsEndpoint: true,
+    defaultEndpoint: 'http://localhost:18789/v1',
+    badge: 'OpenClaw',
   },
   {
     id: 'ollama',
     name: 'Ollama',
-    description: 'Run open-source models locally. No API key needed.',
+    description: 'Run local open-source models. No API key required.',
     requiresKey: false,
+    supportsEndpoint: true,
+    defaultEndpoint: 'http://localhost:11434',
+    badge: 'Local',
   },
 ]
 
 const DEFAULT_AGENTS: Record<WizardProvider, { name: string; description: string; systemPrompt: string; model: string }> = {
   anthropic: {
     name: 'Assistant',
-    description: 'A helpful general-purpose assistant powered by Claude.',
-    systemPrompt: 'You are a helpful, knowledgeable assistant. Be concise and accurate.',
+    description: 'A helpful Claude-powered assistant.',
+    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
     model: 'claude-sonnet-4-6',
   },
   openai: {
     name: 'Assistant',
-    description: 'A helpful general-purpose assistant powered by GPT.',
-    systemPrompt: 'You are a helpful, knowledgeable assistant. Be concise and accurate.',
+    description: 'A helpful GPT-powered assistant.',
+    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
     model: 'gpt-4o',
   },
   ollama: {
     name: 'Assistant',
-    description: 'A helpful general-purpose assistant running locally.',
-    systemPrompt: 'You are a helpful, knowledgeable assistant. Be concise and accurate.',
-    model: 'llama3.1',
+    description: 'A local assistant running through Ollama.',
+    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
+    model: 'llama3',
+  },
+  openclaw: {
+    name: 'OpenClaw Operator',
+    description: 'A manager agent for talking to and coordinating OpenClaw instances.',
+    systemPrompt: 'You are an operator focused on reliable execution, clear status updates, and task completion.',
+    model: 'default',
   },
 }
 
@@ -60,10 +100,19 @@ function SparkleIcon() {
   return (
     <div className="flex justify-center mb-6">
       <div className="relative w-12 h-12">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className="text-accent-bright"
-          style={{ animation: 'sparkle-spin 8s linear infinite' }}>
-          <path d="M24 4L27.5 18.5L42 24L27.5 29.5L24 44L20.5 29.5L6 24L20.5 18.5L24 4Z"
-            fill="currentColor" opacity="0.9" />
+        <svg
+          width="48"
+          height="48"
+          viewBox="0 0 48 48"
+          fill="none"
+          className="text-accent-bright"
+          style={{ animation: 'sparkle-spin 8s linear infinite' }}
+        >
+          <path
+            d="M24 4L27.5 18.5L42 24L27.5 29.5L24 44L20.5 29.5L6 24L20.5 18.5L24 4Z"
+            fill="currentColor"
+            opacity="0.9"
+          />
         </svg>
         <div className="absolute inset-0 blur-xl bg-accent-bright/20" />
       </div>
@@ -96,87 +145,170 @@ function SkipLink({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       className="mt-8 text-[13px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none"
     >
-      Skip setup
+      Skip setup for now
     </button>
+  )
+}
+
+function ProviderBadge({ label }: { label?: string }) {
+  if (!label) return null
+  return (
+    <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent-bright/15 text-accent-bright text-[10px] uppercase tracking-[0.08em] font-600">
+      {label}
+    </span>
   )
 }
 
 export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [step, setStep] = useState(0)
   const [provider, setProvider] = useState<WizardProvider | null>(null)
+  const [endpoint, setEndpoint] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [credentialId, setCredentialId] = useState<string | null>(null)
+  const [checkState, setCheckState] = useState<CheckState>('idle')
+  const [checkMessage, setCheckMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Step 3 agent fields
   const [agentName, setAgentName] = useState('')
   const [agentDescription, setAgentDescription] = useState('')
   const [agentPrompt, setAgentPrompt] = useState('')
   const [agentModel, setAgentModel] = useState('')
 
-  const totalSteps = provider === 'ollama' ? 2 : 3
-  const displayStep = provider === 'ollama' && step === 2 ? 1 : step
+  const selectedProvider = useMemo(
+    () => PROVIDERS.find((p) => p.id === provider) || null,
+    [provider],
+  )
+  const totalSteps = 3
+  const requiresKey = selectedProvider?.requiresKey || false
+  const supportsEndpoint = selectedProvider?.supportsEndpoint || false
+  const keyIsOptional = provider === 'openclaw'
 
   const skip = async () => {
     try {
       await api('PUT', '/settings', { setupCompleted: true })
-    } catch { /* proceed anyway */ }
+    } catch {
+      // Continue anyway.
+    }
     onComplete()
   }
 
-  const selectProvider = (p: WizardProvider) => {
-    setProvider(p)
-    const defaults = DEFAULT_AGENTS[p]
+  const selectProvider = (next: WizardProvider) => {
+    const defaults = DEFAULT_AGENTS[next]
+    const meta = PROVIDERS.find((p) => p.id === next)
+
+    setProvider(next)
+    setEndpoint(meta?.defaultEndpoint || '')
+    setApiKey('')
+    setCredentialId(null)
+    setCheckState('idle')
+    setCheckMessage('')
+    setError('')
+
     setAgentName(defaults.name)
     setAgentDescription(defaults.description)
     setAgentPrompt(defaults.systemPrompt)
     setAgentModel(defaults.model)
 
-    if (p === 'ollama') {
-      // Skip the API key step
-      setStep(2)
-    } else {
-      setStep(1)
+    setStep(1)
+  }
+
+  const runConnectionCheck = async (): Promise<boolean> => {
+    if (!provider || !selectedProvider) return false
+    if (requiresKey && !apiKey.trim()) {
+      setCheckState('error')
+      setCheckMessage('Please paste your API key first.')
+      return false
+    }
+
+    setCheckState('checking')
+    setCheckMessage('')
+    setError('')
+    try {
+      const result = await api<ProviderCheckResponse>('POST', '/setup/check-provider', {
+        provider,
+        apiKey: apiKey.trim() || undefined,
+        endpoint: supportsEndpoint ? endpoint.trim() || undefined : undefined,
+        model: agentModel.trim() || undefined,
+      })
+
+      if (result.normalizedEndpoint && supportsEndpoint) {
+        setEndpoint(result.normalizedEndpoint)
+      }
+      if (result.recommendedModel && provider) {
+        const currentModel = agentModel.trim()
+        const defaultModel = DEFAULT_AGENTS[provider].model
+        if (!currentModel || currentModel === defaultModel) {
+          setAgentModel(result.recommendedModel)
+        }
+      }
+      setCheckState(result.ok ? 'ok' : 'error')
+      setCheckMessage(result.message || (result.ok ? 'Connected successfully.' : 'Connection failed.'))
+      return !!result.ok
+    } catch (err: any) {
+      setCheckState('error')
+      setCheckMessage(err?.message || 'Connection check failed.')
+      return false
     }
   }
 
-  const saveApiKey = async () => {
-    if (!apiKey.trim() || !provider) return
+  const saveProviderAndContinue = async () => {
+    if (!provider || !selectedProvider) return
+    if (requiresKey && !apiKey.trim()) {
+      setError('This provider requires an API key.')
+      return
+    }
+
     setSaving(true)
     setError('')
     try {
-      const cred = await api<Credential>('POST', '/credentials', {
-        provider,
-        name: `${provider} key`,
-        apiKey: apiKey.trim(),
-      })
-      setCredentialId(cred.id)
+      let nextCredentialId = credentialId
+      const shouldSaveCredential = (
+        (provider === 'openai' || provider === 'anthropic' || provider === 'openclaw')
+        && !!apiKey.trim()
+      )
+
+      if (shouldSaveCredential && !nextCredentialId) {
+        const cred = await api<Credential>('POST', '/credentials', {
+          provider,
+          name: `${selectedProvider.name} key`,
+          apiKey: apiKey.trim(),
+        })
+        nextCredentialId = cred.id
+      }
+
+      setCredentialId(nextCredentialId || null)
       setStep(2)
-    } catch (e: any) {
-      setError(e?.message || 'Failed to save API key')
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save provider setup.')
     } finally {
       setSaving(false)
     }
   }
 
-  const createAgent = async () => {
+  const createStarterAgent = async () => {
     if (!provider || !agentName.trim()) return
     setSaving(true)
     setError('')
     try {
-      await api('POST', '/agents', {
+      const payload: Record<string, unknown> = {
         name: agentName.trim(),
         description: agentDescription.trim(),
         systemPrompt: agentPrompt.trim(),
         provider: provider as ProviderType,
-        model: agentModel,
-        credentialId: credentialId,
-      })
+        model: agentModel.trim() || DEFAULT_AGENTS[provider].model,
+        credentialId: credentialId || null,
+      }
+
+      if (supportsEndpoint && endpoint.trim()) {
+        payload.apiEndpoint = endpoint.trim()
+      }
+
+      await api('POST', '/agents', payload)
       await api('PUT', '/settings', { setupCompleted: true })
       onComplete()
-    } catch (e: any) {
-      setError(e?.message || 'Failed to create agent')
+    } catch (err: any) {
+      setError(err?.message || 'Failed to create starter assistant.')
     } finally {
       setSaving(false)
     }
@@ -184,7 +316,6 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
   return (
     <div className="h-full flex flex-col items-center justify-center px-8 bg-bg relative overflow-hidden">
-      {/* Atmospheric gradient mesh */}
       <div className="absolute inset-0 pointer-events-none">
         <div
           className="absolute top-[30%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px]"
@@ -193,30 +324,25 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             animation: 'glow-pulse 6s ease-in-out infinite',
           }}
         />
-        <div
-          className="absolute bottom-[20%] left-[30%] w-[300px] h-[300px]"
-          style={{
-            background: 'radial-gradient(circle, rgba(236,72,153,0.03) 0%, transparent 70%)',
-            animation: 'glow-pulse 8s ease-in-out infinite 2s',
-          }}
-        />
       </div>
 
       <div
-        className="relative max-w-[480px] w-full text-center"
+        className="relative max-w-[520px] w-full text-center"
         style={{ animation: 'fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1)' }}
       >
         <SparkleIcon />
-        <StepDots current={displayStep} total={totalSteps} />
+        <StepDots current={step} total={totalSteps} />
 
-        {/* Step 1: Choose Provider */}
         {step === 0 && (
           <>
             <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
-              Choose a Provider
+              2-Minute Setup
             </h1>
-            <p className="text-[15px] text-text-2 mb-8">
-              Pick the LLM provider you want to start with. You can add more later.
+            <p className="text-[15px] text-text-2 mb-2">
+              No coding required. Pick a provider, paste a key if needed, and start chatting.
+            </p>
+            <p className="text-[13px] text-text-3 mb-8">
+              You can change providers, models, and agent settings anytime later.
             </p>
 
             <div className="flex flex-col gap-3">
@@ -230,11 +356,14 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 >
                   <div className="w-10 h-10 rounded-[10px] bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0 mt-0.5">
                     <span className="text-[16px] font-display font-700 text-accent-bright">
-                      {p.id === 'anthropic' ? 'A' : p.id === 'openai' ? 'O' : 'L'}
+                      {p.id === 'anthropic' ? 'A' : p.id === 'openai' ? 'O' : p.id === 'openclaw' ? 'C' : 'L'}
                     </span>
                   </div>
                   <div>
-                    <div className="text-[15px] font-display font-600 text-text mb-1">{p.name}</div>
+                    <div className="text-[15px] font-display font-600 text-text mb-1">
+                      {p.name}
+                      <ProviderBadge label={p.badge} />
+                    </div>
                     <div className="text-[13px] text-text-3 leading-relaxed">{p.description}</div>
                     {!p.requiresKey && (
                       <div className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 text-[11px] font-500">
@@ -251,147 +380,207 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           </>
         )}
 
-        {/* Step 2: Enter API Key */}
-        {step === 1 && provider && provider !== 'ollama' && (
+        {step === 1 && provider && selectedProvider && (
           <>
             <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
-              Add Your API Key
+              Connect {selectedProvider.name}
             </h1>
             <p className="text-[15px] text-text-2 mb-2">
-              Enter your {PROVIDERS.find((p) => p.id === provider)?.name} API key. It will be stored encrypted on this server.
+              Add only what is needed for this provider, then check connection.
             </p>
-            {(() => {
-              const p = PROVIDERS.find((p) => p.id === provider)
-              return p?.keyUrl ? (
-                <p className="text-[13px] text-text-3 mb-8">
-                  Get one at{' '}
-                  <a
-                    href={p.keyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent-bright hover:underline"
-                  >
-                    {p.keyLabel}
-                  </a>
-                </p>
-              ) : null
-            })()}
-
-            <div className="flex flex-col items-center gap-4">
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => { setApiKey(e.target.value); setError('') }}
-                placeholder="sk-..."
-                autoFocus
-                autoComplete="off"
-                className="w-full max-w-[360px] px-6 py-4 rounded-[16px] border border-white/[0.08] bg-surface
-                  text-text text-[15px] font-mono outline-none
-                  transition-all duration-200 placeholder:text-text-3/40
-                  focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
-              />
-
-              {error && <p className="text-[13px] text-red-400">{error}</p>}
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => { setStep(0); setApiKey(''); setError('') }}
-                  className="px-6 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px]
-                    font-display font-500 cursor-pointer hover:bg-white/[0.03] transition-all duration-200"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={saveApiKey}
-                  disabled={!apiKey.trim() || saving}
-                  className="px-10 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-display font-600
-                    cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
-                    shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
-                >
-                  {saving ? 'Saving...' : 'Save & Continue'}
-                </button>
-              </div>
-            </div>
-
-            <SkipLink onClick={skip} />
-          </>
-        )}
-
-        {/* Step 3: Create Agent */}
-        {step === 2 && provider && (
-          <>
-            <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
-              Create Your First Agent
-            </h1>
-            <p className="text-[15px] text-text-2 mb-8">
-              Set up an agent to start chatting. You can customize it or accept the defaults.
+            <p className="text-[13px] text-text-3 mb-7">
+              You can keep going even if the check fails and fix details later.
             </p>
 
-            <div className="flex flex-col gap-3 text-left">
-              <div>
-                <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Name</label>
-                <input
-                  type="text"
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface
-                    text-text text-[14px] outline-none transition-all duration-200
-                    focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
-                />
-              </div>
-              <div>
-                <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Description</label>
-                <input
-                  type="text"
-                  value={agentDescription}
-                  onChange={(e) => setAgentDescription(e.target.value)}
-                  className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface
-                    text-text text-[14px] outline-none transition-all duration-200
-                    focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
-                />
-              </div>
-              <div>
-                <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">System Prompt</label>
-                <textarea
-                  value={agentPrompt}
-                  onChange={(e) => setAgentPrompt(e.target.value)}
-                  rows={3}
-                  className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface
-                    text-text text-[14px] outline-none transition-all duration-200 resize-none
-                    focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
-                />
-              </div>
-              <div>
-                <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Model</label>
-                <input
-                  type="text"
-                  value={agentModel}
-                  onChange={(e) => setAgentModel(e.target.value)}
-                  className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface
-                    text-text text-[14px] font-mono outline-none transition-all duration-200
-                    focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
-                />
-              </div>
+            <div className="flex flex-col gap-3 text-left mb-4">
+              {supportsEndpoint && (
+                <div>
+                  <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">
+                    Endpoint
+                  </label>
+                  <input
+                    type="text"
+                    value={endpoint}
+                    onChange={(e) => { setEndpoint(e.target.value); setCheckState('idle'); setCheckMessage('') }}
+                    placeholder={selectedProvider.defaultEndpoint || ''}
+                    className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface
+                      text-text text-[14px] font-mono outline-none transition-all duration-200
+                      focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                  />
+                </div>
+              )}
+
+              {(requiresKey || keyIsOptional) && (
+                <div>
+                  <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">
+                    {keyIsOptional ? 'Token (optional)' : 'API key'}
+                  </label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => { setApiKey(e.target.value); setCheckState('idle'); setCheckMessage(''); setError('') }}
+                    placeholder={provider === 'openclaw' ? 'Paste OpenClaw bearer token' : 'sk-...'}
+                    className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface
+                      text-text text-[14px] font-mono outline-none transition-all duration-200
+                      focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                  />
+                  {selectedProvider.keyUrl && (
+                    <p className="text-[11px] text-text-3 mt-1.5">
+                      Get one at{' '}
+                      <a
+                        href={selectedProvider.keyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-accent-bright hover:underline"
+                      >
+                        {selectedProvider.keyLabel}
+                      </a>
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
-            {error && <p className="mt-3 text-[13px] text-red-400">{error}</p>}
+            {checkState !== 'idle' && (
+              <div
+                className={`mb-4 px-3 py-2 rounded-[10px] text-[12px] border ${
+                  checkState === 'ok'
+                    ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                    : checkState === 'checking'
+                      ? 'bg-white/[0.03] border-white/[0.08] text-text-2'
+                      : 'bg-red-500/10 border-red-500/25 text-red-300'
+                }`}
+              >
+                {checkState === 'checking' ? 'Checking connection...' : checkMessage}
+              </div>
+            )}
 
-            <div className="flex items-center justify-center gap-3 mt-6">
+            {error && <p className="mb-4 text-[13px] text-red-400">{error}</p>}
+
+            <div className="flex items-center justify-center gap-3">
               <button
-                onClick={() => { setStep(provider === 'ollama' ? 0 : 1); setError('') }}
+                onClick={() => { setStep(0); setError('') }}
                 className="px-6 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px]
                   font-display font-500 cursor-pointer hover:bg-white/[0.03] transition-all duration-200"
               >
                 Back
               </button>
               <button
-                onClick={createAgent}
+                onClick={runConnectionCheck}
+                disabled={checkState === 'checking' || saving}
+                className="px-6 py-3.5 rounded-[14px] border border-white/[0.08] bg-white/[0.03] text-text text-[14px]
+                  font-display font-600 cursor-pointer hover:bg-white/[0.06] transition-all duration-200 disabled:opacity-40"
+              >
+                {checkState === 'checking' ? 'Checking...' : 'Check Connection'}
+              </button>
+              <button
+                onClick={saveProviderAndContinue}
+                disabled={(requiresKey && !apiKey.trim()) || saving}
+                className="px-8 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-display font-600
+                  cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
+                  shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
+              >
+                {saving ? 'Saving...' : 'Save & Continue'}
+              </button>
+            </div>
+
+            <SkipLink onClick={skip} />
+          </>
+        )}
+
+        {step === 2 && provider && selectedProvider && (
+          <>
+            <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
+              You&apos;re Ready
+            </h1>
+            <p className="text-[15px] text-text-2 mb-7">
+              We&apos;ll create a starter assistant so you can begin immediately.
+            </p>
+
+            <div className="mb-5 p-4 rounded-[14px] border border-white/[0.08] bg-surface text-left">
+              <div className="text-[12px] uppercase tracking-[0.08em] text-text-3 mb-2">Setup Summary</div>
+              <div className="text-[14px] text-text mb-1">Provider: {selectedProvider.name}</div>
+              {supportsEndpoint && endpoint.trim() && (
+                <div className="text-[12px] font-mono text-text-3 break-all">Endpoint: {endpoint.trim()}</div>
+              )}
+              {checkState === 'ok' && (
+                <div className="mt-2 text-[12px] text-emerald-300">{checkMessage}</div>
+              )}
+              {checkState === 'error' && (
+                <div className="mt-2 text-[12px] text-amber-300">Connection was not verified. You can still continue.</div>
+              )}
+            </div>
+
+            <details className="mb-6 text-left rounded-[14px] border border-white/[0.08] bg-surface px-4 py-3">
+              <summary className="cursor-pointer text-[13px] text-text-2 font-600">
+                Advanced agent settings (optional)
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Name</label>
+                  <input
+                    type="text"
+                    value={agentName}
+                    onChange={(e) => setAgentName(e.target.value)}
+                    className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-bg
+                      text-text text-[14px] outline-none transition-all duration-200
+                      focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Description</label>
+                  <input
+                    type="text"
+                    value={agentDescription}
+                    onChange={(e) => setAgentDescription(e.target.value)}
+                    className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-bg
+                      text-text text-[14px] outline-none transition-all duration-200
+                      focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">System Prompt</label>
+                  <textarea
+                    value={agentPrompt}
+                    onChange={(e) => setAgentPrompt(e.target.value)}
+                    rows={3}
+                    className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-bg
+                      text-text text-[14px] outline-none transition-all duration-200 resize-none
+                      focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Model</label>
+                  <input
+                    type="text"
+                    value={agentModel}
+                    onChange={(e) => setAgentModel(e.target.value)}
+                    className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-bg
+                      text-text text-[14px] font-mono outline-none transition-all duration-200
+                      focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                  />
+                </div>
+              </div>
+            </details>
+
+            {error && <p className="mb-4 text-[13px] text-red-400">{error}</p>}
+
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => { setStep(1); setError('') }}
+                className="px-6 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px]
+                  font-display font-500 cursor-pointer hover:bg-white/[0.03] transition-all duration-200"
+              >
+                Back
+              </button>
+              <button
+                onClick={createStarterAgent}
                 disabled={!agentName.trim() || saving}
                 className="px-10 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-display font-600
                   cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
                   shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
               >
-                {saving ? 'Creating...' : 'Create Agent'}
+                {saving ? 'Creating...' : 'Create Starter Assistant'}
               </button>
             </div>
 

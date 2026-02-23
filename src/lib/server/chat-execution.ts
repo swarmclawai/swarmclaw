@@ -133,6 +133,7 @@ function extractConnectorMessageArgs(message: string): {
   message?: string
   imageUrl?: string
   fileUrl?: string
+  mediaPath?: string
   mimeType?: string
   fileName?: string
   caption?: string
@@ -167,6 +168,7 @@ function extractConnectorMessageArgs(message: string): {
     message?: string
     imageUrl?: string
     fileUrl?: string
+    mediaPath?: string
     mimeType?: string
     fileName?: string
     caption?: string
@@ -181,6 +183,7 @@ function extractConnectorMessageArgs(message: string): {
   if (payload) args.message = payload
   args.imageUrl = parsed.imageUrl || quoted('imageUrl')
   args.fileUrl = parsed.fileUrl || quoted('fileUrl')
+  args.mediaPath = parsed.mediaPath || quoted('mediaPath')
   args.mimeType = parsed.mimeType || quoted('mimeType')
   args.fileName = parsed.fileName || quoted('fileName')
   args.caption = parsed.caption || quoted('caption')
@@ -385,8 +388,16 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   const systemPrompt = buildAgentSystemPrompt(session)
   const toolEvents: MessageToolEvent[] = []
+  const streamErrors: string[] = []
 
   const emit = (ev: SSEEvent) => {
+    if (ev.t === 'err' && typeof ev.text === 'string') {
+      const trimmed = ev.text.trim()
+      if (trimmed) {
+        streamErrors.push(trimmed)
+        if (streamErrors.length > 8) streamErrors.shift()
+      }
+    }
     collectToolEvent(ev, toolEvents)
     onEvent?.(ev)
   }
@@ -533,7 +544,11 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
   }
 
-  const finalText = (fullResponse || '').trim()
+  if (!errorMessage && streamErrors.length > 0 && !(fullResponse || '').trim()) {
+    errorMessage = streamErrors[streamErrors.length - 1]
+  }
+
+  const finalText = (fullResponse || '').trim() || (!internal && errorMessage ? `Error: ${errorMessage}` : '')
   const textForPersistence = stripMainLoopMetaForPersistence(finalText, internal)
   const shouldPersistAssistant = textForPersistence.length > 0
     && (!internal || textForPersistence !== 'HEARTBEAT_OK')
