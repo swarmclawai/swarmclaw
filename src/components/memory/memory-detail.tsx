@@ -26,15 +26,33 @@ export function MemoryDetail() {
 
   // Load memory entry when selection changes
   useEffect(() => {
-    if (!selectedId) { setEntry(null); return }
-    getMemory(selectedId).then((found) => {
-      if (!found || Array.isArray(found)) return
-      setEntry(found)
-      setTitle(found.title)
-      setContent(found.content)
-      setCategory(found.category || 'note')
-      setDirty(false)
-    }).catch(() => {})
+    if (!selectedId) {
+      setEntry(null)
+      return
+    }
+
+    let cancelled = false
+    getMemory(selectedId, { depth: 0 })
+      .then((found) => {
+        if (cancelled || !found) return
+
+        const resolved = Array.isArray(found)
+          ? found.find((item) => item.id === selectedId) || found[0] || null
+          : found
+
+        if (!resolved) return
+
+        setEntry(resolved)
+        setTitle(resolved.title)
+        setContent(resolved.content)
+        setCategory(resolved.category || 'note')
+        setDirty(false)
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
   }, [selectedId])
 
   const handleSave = useCallback(async () => {

@@ -8,9 +8,10 @@ import type { MemoryEntry } from '@/types'
 
 interface Props {
   inSidebar?: boolean
+  onSelect?: () => void
 }
 
-export function MemoryList({ inSidebar }: Props) {
+export function MemoryList({ inSidebar, onSelect }: Props) {
   const selectedMemoryId = useAppStore((s) => s.selectedMemoryId)
   const setSelectedMemoryId = useAppStore((s) => s.setSelectedMemoryId)
   const refreshKey = useAppStore((s) => s.memoryRefreshKey)
@@ -147,7 +148,10 @@ export function MemoryList({ inSidebar }: Props) {
               entry={e}
               active={e.id === selectedMemoryId}
               agentName={e.agentId ? (agents[e.agentId]?.name || null) : null}
-              onClick={() => setSelectedMemoryId(e.id)}
+              onClick={() => {
+                setSelectedMemoryId(e.id)
+                onSelect?.()
+              }}
             />
           ))}
         </div>

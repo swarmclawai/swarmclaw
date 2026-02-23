@@ -439,7 +439,7 @@ export function AppLayout() {
             )}
             {activeView === 'agents' && <AgentList inSidebar />}
             {activeView === 'schedules' && <ScheduleList inSidebar />}
-            {activeView === 'memory' && <MemoryList inSidebar />}
+            {activeView === 'memory' && <MemoryList inSidebar onSelect={() => setSidebarOpen(false)} />}
             {activeView === 'tasks' && <TaskList inSidebar />}
             {activeView === 'secrets' && <SecretsList inSidebar />}
             {activeView === 'providers' && <ProviderList inSidebar />}
