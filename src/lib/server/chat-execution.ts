@@ -20,6 +20,7 @@ import { stripMainLoopMetaForPersistence } from './main-agent-loop'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { getMemoryDb } from './memory-db'
 import { routeTaskIntent } from './capability-router'
+import { resolveConcreteToolPolicyBlock, resolveSessionToolPolicy } from './tool-capability-policy'
 import type { MessageToolEvent, SSEEvent } from '@/types'
 import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from './provider-health'
 
@@ -216,36 +217,6 @@ function hasToolEnabled(session: any, toolName: string): boolean {
   return Array.isArray(session?.tools) && session.tools.includes(toolName)
 }
 
-function buildSafetyBlockedSet(settings: Record<string, unknown>): Set<string> {
-  const raw = Array.isArray(settings?.safetyBlockedTools) ? settings.safetyBlockedTools : []
-  const set = new Set<string>()
-  for (const entry of raw) {
-    const name = typeof entry === 'string' ? entry.trim().toLowerCase() : ''
-    if (!name) continue
-    set.add(name)
-  }
-  return set
-}
-
-function filterSessionToolsBySafety(sessionTools: string[] | undefined, blocked: Set<string>): string[] {
-  const source = Array.isArray(sessionTools) ? sessionTools : []
-  if (!blocked.size) return [...source]
-  return source.filter((toolName) => {
-    const key = String(toolName || '').trim().toLowerCase()
-    if (!key) return false
-    if (blocked.has(key)) return false
-    if (key === 'memory' && blocked.has('memory_tool')) return false
-    if (key === 'manage_connectors' && blocked.has('connector_message_tool')) return false
-    if (key === 'manage_sessions' && (blocked.has('sessions_tool') || blocked.has('search_history_tool'))) return false
-    if (key === 'claude_code' && (
-      blocked.has('delegate_to_claude_code')
-      || blocked.has('delegate_to_codex_cli')
-      || blocked.has('delegate_to_opencode_cli')
-    )) return false
-    return true
-  })
-}
-
 function parseUsdLimit(value: unknown): number | null {
   const parsed = typeof value === 'number'
     ? value
@@ -434,17 +405,17 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   if (!session) throw new Error(`Session not found: ${sessionId}`)
 
   const appSettings = loadSettings()
-  const safetyBlocked = buildSafetyBlockedSet(appSettings)
-  const toolsForRun = filterSessionToolsBySafety(session.tools, safetyBlocked)
+  const toolPolicy = resolveSessionToolPolicy(session.tools, appSettings)
+  const toolsForRun = toolPolicy.enabledTools
   const sessionForRun = toolsForRun === session.tools
     ? session
     : { ...session, tools: toolsForRun }
 
-  if (toolsForRun.length !== (session.tools || []).length) {
-    const removed = (session.tools || []).filter((tool: string) => !toolsForRun.includes(tool))
-    if (removed.length) {
-      onEvent?.({ t: 'err', text: `Safety policy blocked tool categories for this run: ${removed.join(', ')}` })
-    }
+  if (toolPolicy.blockedTools.length > 0) {
+    const blockedSummary = toolPolicy.blockedTools
+      .map((entry) => `${entry.tool} (${entry.reason})`)
+      .join(', ')
+    onEvent?.({ t: 'err', text: `Capability policy blocked tools for this run: ${blockedSummary}` })
   }
 
   const dailySpendLimitUsd = parseUsdLimit(appSettings.safetyMaxDailySpendUsd)
@@ -600,13 +571,14 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     ? requestedToolNamesFromMessage(message)
     : []
   const routingDecision = (!internal && source === 'chat')
-    ? routeTaskIntent(message, session.tools || [], appSettings)
+    ? routeTaskIntent(message, toolsForRun, appSettings)
     : null
   const calledNames = new Set((toolEvents || []).map((t) => t.name))
 
   const invokeSessionTool = async (toolName: string, args: Record<string, unknown>, failurePrefix: string): Promise<boolean> => {
-    if (safetyBlocked.has(toolName.toLowerCase())) {
-      emit({ t: 'err', text: `Safety policy blocked tool invocation: ${toolName}` })
+    const blockedReason = resolveConcreteToolPolicyBlock(toolName, toolPolicy, appSettings)
+    if (blockedReason) {
+      emit({ t: 'err', text: `Capability policy blocked tool invocation "${toolName}": ${blockedReason}` })
       return false
     }
     if (

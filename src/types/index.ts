@@ -348,6 +348,10 @@ export interface AppSettings {
   safetyRequireApprovalForOutbound?: boolean
   safetyMaxDailySpendUsd?: number | null
   safetyBlockedTools?: string[]
+  capabilityPolicyMode?: 'permissive' | 'balanced' | 'strict'
+  capabilityBlockedTools?: string[]
+  capabilityBlockedCategories?: string[]
+  capabilityAllowedTools?: string[]
   // Memory governance
   memoryWorkingTtlHours?: number
   memoryDefaultConfidence?: number

@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-/** Simple access key auth middleware.
+/** Simple access key auth proxy.
  *  Checks X-Access-Key header or ?key= param on all /api/ routes except /api/auth.
  *  The key is validated against the ACCESS_KEY env var.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isWebhookTrigger = request.method === 'POST'
     && /^\/api\/webhooks\/[^/]+\/?$/.test(pathname)
@@ -27,9 +27,9 @@ export function middleware(request: NextRequest) {
   }
 
   const providedKey =
-    request.headers.get('x-access-key') ||
-    request.nextUrl.searchParams.get('key') ||
-    ''
+    request.headers.get('x-access-key')
+    || request.nextUrl.searchParams.get('key')
+    || ''
 
   if (providedKey !== accessKey) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

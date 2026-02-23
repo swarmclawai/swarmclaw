@@ -23,6 +23,20 @@ const STALE_AUTO_DISABLE_MIN_MS = 45 * 60 * 1000 // never auto-disable before 45
 const CONNECTOR_RESTART_BASE_MS = 30_000
 const CONNECTOR_RESTART_MAX_MS = 15 * 60 * 1000
 
+function parseBoolish(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value !== 'string') return fallback
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return fallback
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+  return fallback
+}
+
+function daemonAutostartEnvEnabled(): boolean {
+  return parseBoolish(process.env.SWARMCLAW_DAEMON_AUTOSTART, true)
+}
+
 function parseHeartbeatIntervalSec(value: unknown, fallback = 120): number {
   const parsed = typeof value === 'number'
     ? value
@@ -55,6 +69,7 @@ const ds: {
   /** Session IDs we've already alerted as stale (alert-once semantics). */
   staleSessionIds: Set<string>
   connectorRestartState: Map<string, { lastAttemptAt: number; failCount: number }>
+  manualStopRequested: boolean
   running: boolean
   lastProcessedAt: number | null
 } = (globalThis as any)[gk] ?? ((globalThis as any)[gk] = {
@@ -63,6 +78,7 @@ const ds: {
   healthIntervalId: null,
   staleSessionIds: new Set<string>(),
   connectorRestartState: new Map<string, { lastAttemptAt: number; failCount: number }>(),
+  manualStopRequested: false,
   running: false,
   lastProcessedAt: null,
 })
@@ -73,8 +89,21 @@ if (!ds.connectorRestartState) ds.connectorRestartState = new Map<string, { last
 // Migrate from old issueLastAlertAt map if present (HMR across code versions)
 if ((ds as any).issueLastAlertAt) delete (ds as any).issueLastAlertAt
 if (ds.healthIntervalId === undefined) ds.healthIntervalId = null
+if (ds.manualStopRequested === undefined) ds.manualStopRequested = false
 
-export function startDaemon() {
+export function ensureDaemonStarted(source = 'unknown'): boolean {
+  if (ds.running) return false
+  if (!daemonAutostartEnvEnabled()) return false
+  if (ds.manualStopRequested) return false
+  startDaemon({ source, manualStart: false })
+  return true
+}
+
+export function startDaemon(options?: { source?: string; manualStart?: boolean }) {
+  const source = options?.source || 'unknown'
+  const manualStart = options?.manualStart === true
+  if (manualStart) ds.manualStopRequested = false
+
   if (ds.running) {
     // In dev/HMR, daemon can already be flagged running while new interval types
     // (for example health monitor) were introduced in newer code.
@@ -85,7 +114,7 @@ export function startDaemon() {
     return
   }
   ds.running = true
-  console.log('[daemon] Starting daemon (scheduler + queue processor + heartbeat)')
+  console.log(`[daemon] Starting daemon (source=${source}, scheduler + queue processor + heartbeat)`)
 
   validateCompletedTasksQueue()
   cleanupFinishedTaskSessions()
@@ -101,10 +130,12 @@ export function startDaemon() {
   })
 }
 
-export function stopDaemon() {
+export function stopDaemon(options?: { source?: string; manualStop?: boolean }) {
+  const source = options?.source || 'unknown'
+  if (options?.manualStop === true) ds.manualStopRequested = true
   if (!ds.running) return
   ds.running = false
-  console.log('[daemon] Stopping daemon')
+  console.log(`[daemon] Stopping daemon (source=${source})`)
 
   stopScheduler()
   stopQueueProcessor()
@@ -307,6 +338,8 @@ export function getDaemonStatus() {
   return {
     running: ds.running,
     schedulerActive: ds.running,
+    autostartEnabled: daemonAutostartEnvEnabled(),
+    manualStopRequested: ds.manualStopRequested,
     queueLength: queue.length,
     lastProcessed: ds.lastProcessedAt,
     nextScheduled,
@@ -319,6 +352,3 @@ export function getDaemonStatus() {
     },
   }
 }
-
-// Auto-start daemon on import (starts scheduler, queue processor, and enabled connectors)
-startDaemon()

@@ -2,6 +2,13 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
+import {
+  createGatewayRequestFrame,
+  parseGatewayFrame,
+  serializeGatewayFrame,
+  type GatewayFrame,
+  type GatewayResponseFrame,
+} from '../gateway/protocol'
 
 /**
  * OpenClaw gateway connector using the current WS protocol:
@@ -560,10 +567,10 @@ const openclaw: PlatformConnector = {
       reconnectTimer = setTimeout(() => connect(), delay)
     }
 
-    function sendRaw(frame: Record<string, unknown>): boolean {
+    function sendRaw(frame: GatewayFrame): boolean {
       if (!ws || ws.readyState !== WebSocket.OPEN) return false
       try {
-        ws.send(JSON.stringify(frame))
+        ws.send(serializeGatewayFrame(frame))
         return true
       } catch {
         return false
@@ -575,7 +582,7 @@ const openclaw: PlatformConnector = {
         return Promise.reject(new Error('openclaw not connected'))
       }
       const id = crypto.randomUUID()
-      const frame = { type: 'req', id, method, params }
+      const frame = createGatewayRequestFrame(id, method, params)
       if (!sendRaw(frame)) {
         return Promise.reject(new Error(`failed to send request: ${method}`))
       }
@@ -761,57 +768,43 @@ const openclaw: PlatformConnector = {
       }
 
       ws.onmessage = (event) => {
-        let frame: unknown
-        try {
-          frame = JSON.parse(typeof event.data === 'string' ? event.data : event.data.toString())
-        } catch {
-          console.warn('[openclaw] Ignoring non-JSON frame')
+        const frame = parseGatewayFrame(event.data)
+        if (!frame) {
+          console.warn('[openclaw] Ignoring malformed gateway frame')
           return
         }
-        if (!frame || typeof frame !== 'object') return
-        const frameObj = frame as {
-          type?: unknown
-          event?: unknown
-          payload?: unknown
-          id?: unknown
-          ok?: unknown
-          error?: { message?: unknown } | null
-        }
-        const frameType = typeof frameObj.type === 'string' ? frameObj.type : ''
 
-        if (frameType === 'event') {
-          const frameEvent = typeof frameObj.event === 'string' ? frameObj.event : ''
-          if (frameEvent === 'connect.challenge') {
-            const payload = frameObj.payload && typeof frameObj.payload === 'object'
-              ? (frameObj.payload as { nonce?: unknown })
+        if (frame.type === 'event') {
+          if (frame.event === 'connect.challenge') {
+            const payload = frame.payload && typeof frame.payload === 'object'
+              ? (frame.payload as { nonce?: unknown })
               : null
             const nonce = payload?.nonce
             if (typeof nonce === 'string' && nonce.trim()) connectNonce = nonce
             sendConnect()
             return
           }
-          if (frameEvent === 'chat') {
-            void handleChatEvent((frameObj.payload || {}) as ChatEventPayload)
+          if (frame.event === 'chat') {
+            void handleChatEvent((frame.payload || {}) as ChatEventPayload)
             return
           }
-          if (frameEvent === 'tick') {
+          if (frame.event === 'tick') {
             lastTickAtMs = Date.now()
             return
           }
           return
         }
 
-        if (frameType === 'res') {
-          const id = typeof frameObj.id === 'string' ? frameObj.id : ''
-          if (!id) return
-          const req = pending.get(id)
+        if (frame.type === 'res') {
+          const responseFrame = frame as GatewayResponseFrame
+          const req = pending.get(responseFrame.id)
           if (!req) return
-          pending.delete(id)
+          pending.delete(responseFrame.id)
           clearTimeout(req.timer)
-          if (frameObj.ok === true) req.resolve(frameObj.payload)
+          if (responseFrame.ok === true) req.resolve(responseFrame.payload)
           else {
-            const errorMessage = typeof frameObj.error?.message === 'string'
-              ? frameObj.error.message
+            const errorMessage = typeof responseFrame.error?.message === 'string'
+              ? responseFrame.error.message
               : `${req.method} failed`
             req.reject(new Error(errorMessage))
           }

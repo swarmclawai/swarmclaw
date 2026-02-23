@@ -56,8 +56,11 @@ SwarmClaw can spawn **Claude Code CLI** processes with full shell access on your
 ## Quick Start
 
 ```bash
-curl -fsSL https://swarmclaw.ai/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.sh | bash
 ```
+
+The installer resolves the latest stable release tag and installs that version by default.
+To pin a version: `SWARMCLAW_VERSION=v0.1.0 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -290,7 +293,7 @@ Token usage and estimated costs are tracked per message for API-based providers 
 The daemon auto-processes queued tasks from the scheduler on a 30-second interval. It also runs recurring health checks that detect stale heartbeat sessions and can send proactive WhatsApp alerts when issues are detected. Toggle the daemon from the sidebar indicator or via API.
 
 - **API:** `GET /api/daemon` (status), `POST /api/daemon` with `{"action": "start"}` or `{"action": "stop"}`
-- Auto-starts on boot if queued tasks are found
+- Auto-starts on first authenticated runtime traffic (`/api/auth` or `/api/daemon`) unless `SWARMCLAW_DAEMON_AUTOSTART=0`
 
 ## Main Agent Loop
 
@@ -315,6 +318,17 @@ Configure loop behavior in **Settings → Runtime & Loop Controls**:
 - **Ongoing**: loops keep iterating until they hit your safety cap and optional runtime limit
 
 You can also tune shell timeout, Claude Code delegation timeout, and CLI provider process timeout from the same settings panel.
+
+## Capability Policy
+
+Configure this in **Settings → Capability Policy** to centrally govern tool access:
+
+- **Mode:** `permissive`, `balanced`, or `strict`
+- **Blocked categories:** e.g. `execution`, `filesystem`, `platform`, `outbound`
+- **Blocked tools:** specific tool families or concrete tool names
+- **Allowed tools:** explicit overrides when running stricter modes
+
+Policy is enforced in both session tool construction and direct forced tool invocations, so auto-routing and explicit tool requests use the same guardrails.
 
 ## CLI Troubleshooting
 
@@ -419,6 +433,18 @@ docker compose up -d
 
 Data is persisted in `data/` and `.env.local` via volume mounts. Updates: `git pull && docker compose up -d --build`.
 
+For prebuilt images (recommended for non-technical users after releases):
+
+```bash
+docker pull ghcr.io/swarmclawai/swarmclaw:latest
+docker run -d \
+  --name swarmclaw \
+  -p 3456:3456 \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/.env.local:/app/.env.local" \
+  ghcr.io/swarmclawai/swarmclaw:latest
+```
+
 ### Updating
 
 SwarmClaw has a built-in update checker — a banner appears in the sidebar when new commits are available, with a one-click update button. Your data in `data/` and `.env.local` is never touched by updates.
@@ -429,7 +455,7 @@ For terminal users, run:
 npm run update:easy
 ```
 
-This command fetches/pulls `origin/main`, installs dependencies when needed, and runs a production build check before restart.
+This command updates to the latest stable release tag when available (fallback: `origin/main`), installs dependencies when needed, and runs a production build check before restart.
 
 ## Development
 
@@ -471,6 +497,21 @@ npm run quickstart      # setup + start dev server
 npm run quickstart:prod # setup + build + start production server
 npm run update:easy     # safe update helper for local installs
 ```
+
+### Release Process (Maintainers)
+
+SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
+
+```bash
+# example patch release
+npm version patch
+git push origin main --follow-tags
+```
+
+On `v*` tags, GitHub Actions will:
+1. Run CI checks
+2. Create a GitHub Release
+3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
 ## CLI
 

@@ -22,7 +22,7 @@
     "lint:baseline:update": "node ./scripts/lint-baseline.mjs update",
     "cli": "node ./bin/swarmclaw.js",
     "test:cli": "node --test src/cli/index.test.js",
-    "test:openclaw": "tsx --test src/lib/server/connectors/openclaw.test.ts src/lib/openclaw-endpoint.test.ts"
+    "test:openclaw": "tsx --test src/lib/server/connectors/openclaw.test.ts src/lib/openclaw-endpoint.test.ts src/lib/server/gateway/protocol.test.ts src/lib/server/tool-capability-policy.test.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

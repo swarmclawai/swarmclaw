@@ -35,6 +35,7 @@ import {
 } from './storage'
 import { log } from './logger'
 import { queryLogs, countLogs, clearLogs, type LogCategory } from './execution-log'
+import { resolveSessionToolPolicy } from './tool-capability-policy'
 
 const MAX_OUTPUT = 50 * 1024 // 50KB
 const MAX_FILE = 100 * 1024 // 100KB
@@ -251,6 +252,18 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
   const commandTimeoutMs = runtime.shellCommandTimeoutMs
   const claudeTimeoutMs = runtime.claudeCodeTimeoutMs
   const cliProcessTimeoutMs = runtime.cliProcessTimeoutMs
+  const appSettings = loadSettings()
+  const toolPolicy = resolveSessionToolPolicy(enabledTools, appSettings)
+  const activeTools = toolPolicy.enabledTools
+  const hasTool = (toolName: string) => activeTools.includes(toolName)
+
+  if (toolPolicy.blockedTools.length > 0) {
+    log.info('session-tools', 'Capability policy blocked tool families', {
+      sessionId: ctx?.sessionId || null,
+      agentId: ctx?.agentId || null,
+      blockedTools: toolPolicy.blockedTools.map((entry) => `${entry.tool}:${entry.reason}`),
+    })
+  }
 
   const resolveCurrentSession = (): any | null => {
     if (!ctx?.sessionId) return null
@@ -283,7 +296,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     saveSessions(sessions)
   }
 
-  if (enabledTools.includes('shell')) {
+  if (hasTool('shell')) {
     tools.push(
       tool(
         async ({ command, background, yieldMs, timeoutSec, env, workdir }) => {
@@ -328,7 +341,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  if (enabledTools.includes('process')) {
+  if (hasTool('process')) {
     tools.push(
       tool(
         async ({ action, processId, offset, limit, data, eof, signal }) => {
@@ -434,15 +447,15 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  const filesEnabled = enabledTools.includes('files')
-  const canReadFiles = filesEnabled || enabledTools.includes('read_file')
-  const canWriteFiles = filesEnabled || enabledTools.includes('write_file')
-  const canListFiles = filesEnabled || enabledTools.includes('list_files')
-  const canSendFiles = filesEnabled || enabledTools.includes('send_file')
-  const canCopyFiles = filesEnabled || enabledTools.includes('copy_file')
-  const canMoveFiles = filesEnabled || enabledTools.includes('move_file')
+  const filesEnabled = hasTool('files')
+  const canReadFiles = filesEnabled || hasTool('read_file')
+  const canWriteFiles = filesEnabled || hasTool('write_file')
+  const canListFiles = filesEnabled || hasTool('list_files')
+  const canSendFiles = filesEnabled || hasTool('send_file')
+  const canCopyFiles = filesEnabled || hasTool('copy_file')
+  const canMoveFiles = filesEnabled || hasTool('move_file')
   // Destructive by default: only enabled when explicitly toggled.
-  const canDeleteFiles = enabledTools.includes('delete_file')
+  const canDeleteFiles = hasTool('delete_file')
 
   if (canReadFiles) {
     tools.push(
@@ -655,7 +668,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  if (enabledTools.includes('claude_code')) {
+  if (hasTool('claude_code')) {
     const claudeBinary = findBinaryOnPath('claude')
     const codexBinary = findBinaryOnPath('codex')
     const opencodeBinary = findBinaryOnPath('opencode')
@@ -1247,7 +1260,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     }
   }
 
-  if (enabledTools.includes('edit_file')) {
+  if (hasTool('edit_file')) {
     tools.push(
       tool(
         async ({ filePath, oldText, newText }) => {
@@ -1278,7 +1291,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  if (enabledTools.includes('web_search')) {
+  if (hasTool('web_search')) {
     tools.push(
       tool(
         async ({ query, maxResults }) => {
@@ -1345,7 +1358,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  if (enabledTools.includes('web_fetch')) {
+  if (hasTool('web_fetch')) {
     tools.push(
       tool(
         async ({ url }) => {
@@ -1380,7 +1393,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  if (enabledTools.includes('browser')) {
+  if (hasTool('browser')) {
     // In-process Playwright MCP client via @playwright/mcp programmatic API
     const sessionKey = ctx?.sessionId || `anon-${Date.now()}`
     let mcpClient: any = null
@@ -1598,7 +1611,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  if (enabledTools.includes('memory')) {
+  if (hasTool('memory')) {
     const memDb = getMemoryDb()
 
     tools.push(
@@ -1895,7 +1908,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
   // Build dynamic agent summary for tools that need agent awareness
   const assignScope = ctx?.platformAssignScope || 'self'
   let agentSummary = ''
-  if (enabledTools.includes('manage_tasks') || enabledTools.includes('manage_schedules')) {
+  if (hasTool('manage_tasks') || hasTool('manage_schedules')) {
     if (assignScope === 'all') {
       try {
         const agents = loadAgents()
@@ -1908,7 +1921,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
   }
 
   for (const [toolKey, res] of Object.entries(PLATFORM_RESOURCES)) {
-    if (!enabledTools.includes(toolKey)) continue
+    if (!hasTool(toolKey)) continue
 
     let description = `Manage SwarmClaw ${res.label}. ${res.readOnly ? 'List and get only.' : 'List, get, create, update, or delete.'} Returns JSON.`
     if (toolKey === 'manage_tasks') {
@@ -2163,7 +2176,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  if (enabledTools.includes('manage_documents')) {
+  if (hasTool('manage_documents')) {
     tools.push(
       tool(
         async ({ action, id, filePath, query, limit, metadata, title }) => {
@@ -2324,7 +2337,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  if (enabledTools.includes('manage_sessions')) {
+  if (hasTool('manage_sessions')) {
     tools.push(
       tool(
         async () => {
@@ -2734,7 +2747,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  if (enabledTools.includes('manage_connectors')) {
+  if (hasTool('manage_connectors')) {
     tools.push(
       tool(
         async ({ action, connectorId, platform, to, message, imageUrl, fileUrl, mediaPath, mimeType, fileName, caption, approved }) => {
@@ -2852,7 +2865,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
   // These operate only on the current session's own context and are safe to
   // always expose.  Previously gated behind manage_sessions which meant most
   // agents never got access to context_status / context_summarize.
-  if (enabledTools.length > 0) {
+  if (activeTools.length > 0) {
     tools.push(
       tool(
         async () => {

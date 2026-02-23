@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
-import { getDaemonStatus, startDaemon, stopDaemon } from '@/lib/server/daemon-state'
+import { ensureDaemonStarted, getDaemonStatus, startDaemon, stopDaemon } from '@/lib/server/daemon-state'
 
 export async function GET() {
+  ensureDaemonStarted('api/daemon:get')
   return NextResponse.json(getDaemonStatus())
 }
 
@@ -10,10 +11,10 @@ export async function POST(req: Request) {
   const action = body.action
 
   if (action === 'start') {
-    startDaemon()
+    startDaemon({ source: 'api/daemon:post:start', manualStart: true })
     return NextResponse.json({ ok: true, status: 'running' })
   } else if (action === 'stop') {
-    stopDaemon()
+    stopDaemon({ source: 'api/daemon:post:stop', manualStop: true })
     return NextResponse.json({ ok: true, status: 'stopped' })
   }
 

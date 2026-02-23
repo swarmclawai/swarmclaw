@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { validateAccessKey, getAccessKey, isFirstTimeSetup, markSetupComplete } from '@/lib/server/storage'
+import { ensureDaemonStarted } from '@/lib/server/daemon-state'
 
 /** GET /api/auth — check if this is a first-time setup (returns key for initial display) */
 export async function GET() {
@@ -19,5 +20,6 @@ export async function POST(req: Request) {
   if (isFirstTimeSetup()) {
     markSetupComplete()
   }
+  ensureDaemonStarted('api/auth:post')
   return NextResponse.json({ ok: true })
 }
