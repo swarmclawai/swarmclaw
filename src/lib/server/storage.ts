@@ -18,6 +18,15 @@ const db = new Database(DB_PATH)
 db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 
+const collectionCacheKey = '__swarmclaw_storage_collection_cache__' as const
+type StorageGlobals = typeof globalThis & {
+  [collectionCacheKey]?: Map<string, Map<string, string>>
+}
+const storageGlobals = globalThis as StorageGlobals
+const collectionCache: Map<string, Map<string, string>> =
+  storageGlobals[collectionCacheKey]
+  ?? (storageGlobals[collectionCacheKey] = new Map<string, Map<string, string>>())
+
 // Collection tables (id → JSON blob)
 const COLLECTIONS = [
   'sessions',
@@ -44,24 +53,68 @@ db.exec(`CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY CHECK (id = 1)
 db.exec(`CREATE TABLE IF NOT EXISTS usage (session_id TEXT NOT NULL, data TEXT NOT NULL)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_session ON usage(session_id)`)
 
-function loadCollection(table: string): Record<string, any> {
+function readCollectionRaw(table: string): Map<string, string> {
   const rows = db.prepare(`SELECT id, data FROM ${table}`).all() as { id: string; data: string }[]
-  const result: Record<string, any> = {}
+  const raw = new Map<string, string>()
   for (const row of rows) {
-    result[row.id] = JSON.parse(row.data)
+    raw.set(row.id, row.data)
+  }
+  return raw
+}
+
+function getCollectionRawCache(table: string): Map<string, string> {
+  const cached = collectionCache.get(table)
+  if (cached) return cached
+  const loaded = readCollectionRaw(table)
+  collectionCache.set(table, loaded)
+  return loaded
+}
+
+function loadCollection(table: string): Record<string, any> {
+  const raw = getCollectionRawCache(table)
+  const result: Record<string, any> = {}
+  for (const [id, data] of raw.entries()) {
+    try {
+      result[id] = JSON.parse(data)
+    } catch {
+      // Ignore malformed records instead of crashing list endpoints.
+    }
   }
   return result
 }
 
 function saveCollection(table: string, data: Record<string, any>) {
+  const current = getCollectionRawCache(table)
+  const next = new Map<string, string>()
+  const toUpsert: Array<[string, string]> = []
+  const toDelete: string[] = []
+
+  for (const [id, val] of Object.entries(data)) {
+    const serialized = JSON.stringify(val)
+    if (typeof serialized !== 'string') continue
+    next.set(id, serialized)
+    if (current.get(id) !== serialized) {
+      toUpsert.push([id, serialized])
+    }
+  }
+  for (const id of current.keys()) {
+    if (!next.has(id)) toDelete.push(id)
+  }
+
+  if (!toUpsert.length && !toDelete.length) return
+
   const transaction = db.transaction(() => {
-    db.prepare(`DELETE FROM ${table}`).run()
-    const ins = db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`)
-    for (const [id, val] of Object.entries(data)) {
-      ins.run(id, JSON.stringify(val))
+    const upsert = db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`)
+    const del = db.prepare(`DELETE FROM ${table} WHERE id = ?`)
+    for (const [id, serialized] of toUpsert) {
+      upsert.run(id, serialized)
+    }
+    for (const id of toDelete) {
+      del.run(id)
     }
   })
   transaction()
+  collectionCache.set(table, next)
 }
 
 function loadSingleton(table: string, fallback: any): any {

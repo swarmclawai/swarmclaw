@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { searchMemory } from '@/lib/memory'
 import { useAppStore } from '@/stores/use-app-store'
 import { MemoryCard } from './memory-card'
@@ -11,7 +11,8 @@ interface Props {
   onSelect?: () => void
 }
 
-export function MemoryList({ inSidebar, onSelect }: Props) {
+export function MemoryList({ inSidebar: _inSidebar, onSelect }: Props) {
+  void _inSidebar
   const selectedMemoryId = useAppStore((s) => s.selectedMemoryId)
   const setSelectedMemoryId = useAppStore((s) => s.setSelectedMemoryId)
   const refreshKey = useAppStore((s) => s.memoryRefreshKey)
@@ -21,24 +22,34 @@ export function MemoryList({ inSidebar, onSelect }: Props) {
   const [search, setSearch] = useState('')
   const [entries, setEntries] = useState<MemoryEntry[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [categoryFilter, setCategoryFilter] = useState<string>('')
+  const searchRef = useRef(search)
 
-  const load = async () => {
+  const load = useCallback(async (query: string) => {
     try {
-      const results = await searchMemory({ q: search || undefined })
+      const results = await searchMemory({ q: query || undefined })
       setEntries(Array.isArray(results) ? results : [])
+      setError(null)
     } catch {
-      setEntries([])
+      setError('Unable to load memories right now.')
     }
     setLoaded(true)
-  }
-
-  useEffect(() => { load() }, [refreshKey])
+  }, [])
 
   useEffect(() => {
-    const timer = setTimeout(load, 300)
-    return () => clearTimeout(timer)
+    searchRef.current = search
   }, [search])
+
+  useEffect(() => {
+    const timer = setTimeout(() => { void load(searchRef.current) }, 0)
+    return () => clearTimeout(timer)
+  }, [refreshKey, load])
+
+  useEffect(() => {
+    const timer = setTimeout(() => { void load(search) }, 300)
+    return () => clearTimeout(timer)
+  }, [search, load])
 
   // Derive unique agents and categories
   const uniqueAgents = useMemo(() => {
@@ -154,6 +165,18 @@ export function MemoryList({ inSidebar, onSelect }: Props) {
               }}
             />
           ))}
+        </div>
+      ) : error ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-3 p-8 text-center">
+          <p className="font-display text-[14px] font-600 text-text-2">Couldn&apos;t load memories</p>
+          <p className="text-[12px] text-text-3/60">{error}</p>
+          <button
+            onClick={() => { void load(search) }}
+            className="px-3 py-1.5 rounded-[8px] bg-accent-soft text-accent-bright text-[12px] font-600 cursor-pointer border-none"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Retry
+          </button>
         </div>
       ) : loaded ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-3 p-8 text-center">

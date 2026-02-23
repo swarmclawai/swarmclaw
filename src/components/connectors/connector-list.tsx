@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import type { Connector } from '@/types'
 import { ConnectorPlatformBadge, getConnectorPlatformLabel } from '@/components/shared/connector-platform-icon'
 
-export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
+export function ConnectorList({ inSidebar: _inSidebar }: { inSidebar?: boolean }) {
+  void _inSidebar
   const connectors = useAppStore((s) => s.connectors)
   const loadConnectors = useAppStore((s) => s.loadConnectors)
   const setConnectorSheetOpen = useAppStore((s) => s.setConnectorSheetOpen)
@@ -14,12 +15,22 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
   const agents = useAppStore((s) => s.agents)
   const loadAgents = useAppStore((s) => s.loadAgents)
   const [toggling, setToggling] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const refresh = useCallback(async () => {
+    await Promise.all([loadConnectors(), loadAgents()])
+    setLoaded(true)
+  }, [loadConnectors, loadAgents])
+
   useEffect(() => {
-    loadConnectors()
-    loadAgents()
-  }, [])
+    const bootstrap = setTimeout(() => { void refresh() }, 0)
+    const poll = setInterval(() => { void loadConnectors() }, 15_000)
+    return () => {
+      clearTimeout(bootstrap)
+      clearInterval(poll)
+    }
+  }, [refresh, loadConnectors])
 
   // Auto-clear error after 5s
   useEffect(() => {
@@ -33,16 +44,25 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
     setError(null)
     try {
       await api('PUT', `/connectors/${c.id}`, { action })
-      await loadConnectors()
-    } catch (err: any) {
-      setError(err.message || `Failed to ${action}`)
-      await loadConnectors()
+      await refresh()
+    } catch (err: unknown) {
+      const msg = err instanceof Error && err.message ? err.message : `Failed to ${action}`
+      setError(msg)
+      await refresh()
     } finally {
       setToggling(null)
     }
   }
 
   const list = Object.values(connectors) as Connector[]
+
+  if (!loaded) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 text-center">
+        <p className="text-[13px] text-text-3">Loading connectors...</p>
+      </div>
+    )
+  }
 
   if (!list.length) {
     return (

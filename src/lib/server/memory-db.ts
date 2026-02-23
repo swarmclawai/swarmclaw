@@ -18,6 +18,27 @@ const IMAGES_DIR = path.join(process.cwd(), 'data', 'memory-images')
 
 const MAX_IMAGE_INPUT_BYTES = 10 * 1024 * 1024 // 10MB
 const IMAGE_EXT_WHITELIST = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'])
+const MAX_FTS_QUERY_TERMS = 6
+const MAX_FTS_TERM_LENGTH = 48
+const MAX_FTS_RESULT_ROWS = 30
+const MAX_MERGED_RESULTS = 50
+
+const MEMORY_FTS_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'how',
+  'i', 'if', 'in', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'this',
+  'to', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'who', 'with',
+  'you', 'your',
+])
+
+function shouldSkipSearchQuery(input: string): boolean {
+  const text = String(input || '').toLowerCase().trim()
+  if (!text) return true
+  if (text.length > 1200) return true
+  if (text.includes('swarm_heartbeat_check')) return true
+  if (text.includes('opencode_test_ok')) return true
+  if (text.includes('reply exactly') && text.includes('heartbeat')) return true
+  return false
+}
 
 // Simple cache for query embeddings to avoid blocking
 const embeddingCache = new Map<string, number[]>()
@@ -159,6 +180,32 @@ function canonicalText(value: unknown): string {
     .replace(/\s+/g, ' ')
     .replace(/[^\w\s:/.-]/g, '')
     .trim()
+}
+
+function buildFtsQuery(input: string): string {
+  const tokens = String(input || '')
+    .toLowerCase()
+    .match(/[a-z0-9][a-z0-9._:/-]*/g) || []
+  if (!tokens.length) return ''
+
+  const unique: string[] = []
+  const seen = new Set<string>()
+  for (const token of tokens) {
+    const term = token.slice(0, MAX_FTS_TERM_LENGTH)
+    if (term.length < 3) continue
+    if (MEMORY_FTS_STOP_WORDS.has(term)) continue
+    if (seen.has(term)) continue
+    seen.add(term)
+    unique.push(term)
+    if (unique.length >= MAX_FTS_QUERY_TERMS) break
+  }
+
+  if (unique.length === 1) {
+    return unique[0].length >= 5 ? `"${unique[0].replace(/"/g, '')}"` : ''
+  }
+
+  const selected = unique.slice(0, Math.min(4, MAX_FTS_QUERY_TERMS))
+  return selected.map((term) => `"${term.replace(/"/g, '')}"`).join(' AND ')
 }
 
 function resolveExists(pathValue: string | undefined): boolean | undefined {
@@ -493,15 +540,13 @@ function initDb() {
       SELECT m.* FROM memories m
       INNER JOIN memories_fts f ON m.rowid = f.rowid
       WHERE memories_fts MATCH ?
-      ORDER BY rank
-      LIMIT 100
+      LIMIT ${MAX_FTS_RESULT_ROWS}
     `),
     searchByAgent: db.prepare(`
       SELECT m.* FROM memories m
       INNER JOIN memories_fts f ON m.rowid = f.rowid
       WHERE memories_fts MATCH ? AND m.agentId = ?
-      ORDER BY rank
-      LIMIT 100
+      LIMIT ${MAX_FTS_RESULT_ROWS}
     `),
     // Remove a linked ID from all memories that reference it (cleanup on delete)
     findMemoriesLinkingTo: db.prepare(`SELECT * FROM memories WHERE linkedMemoryIds LIKE ?`),
@@ -777,8 +822,10 @@ function initDb() {
     },
 
     search(query: string, agentId?: string): MemoryEntry[] {
+      if (shouldSkipSearchQuery(query)) return []
+      const startedAt = Date.now()
       // FTS keyword search
-      const ftsQuery = query.split(/\s+/).filter(Boolean).map((w) => `"${w}"`).join(' OR ')
+      const ftsQuery = buildFtsQuery(query)
       const ftsResults: MemoryEntry[] = ftsQuery
         ? (agentId
             ? stmts.searchByAgent.all(ftsQuery, agentId) as any[]
@@ -820,7 +867,14 @@ function initDb() {
           merged.push(entry)
         }
       }
-      return merged.slice(0, 100)
+      const out = merged.slice(0, MAX_MERGED_RESULTS)
+      const elapsed = Date.now() - startedAt
+      if (elapsed > 1200) {
+        console.warn(
+          `[memory-db] Slow search ${elapsed}ms (agent=${agentId || 'all'}, rawLen=${String(query || '').length}, fts="${ftsQuery.slice(0, 180)}")`,
+        )
+      }
+      return out
     },
 
     /** Search with linked memory traversal */

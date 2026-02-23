@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 
 export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
@@ -12,12 +12,21 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
   const loadCredentials = useAppStore((s) => s.loadCredentials)
   const setProviderSheetOpen = useAppStore((s) => s.setProviderSheetOpen)
   const setEditingProviderId = useAppStore((s) => s.setEditingProviderId)
+  const [loaded, setLoaded] = useState(false)
+
+  const refresh = useCallback(async () => {
+    await Promise.all([loadProviders(), loadProviderConfigs(), loadCredentials()])
+    setLoaded(true)
+  }, [loadProviders, loadProviderConfigs, loadCredentials])
 
   useEffect(() => {
-    loadProviders()
-    loadProviderConfigs()
-    loadCredentials()
-  }, [])
+    const bootstrap = setTimeout(() => { void refresh() }, 0)
+    const poll = setInterval(() => { void loadProviders() }, 20_000)
+    return () => {
+      clearTimeout(bootstrap)
+      clearInterval(poll)
+    }
+  }, [refresh, loadProviders])
 
   const handleEdit = (id: string) => {
     setEditingProviderId(id)
@@ -46,6 +55,14 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
   }))
 
   const allItems = [...builtinItems, ...customItems]
+
+  if (!loaded) {
+    return (
+      <div className={`flex-1 flex items-center justify-center ${inSidebar ? 'px-3 pb-4' : 'px-4'}`}>
+        <p className="text-[13px] text-text-3">Loading providers...</p>
+      </div>
+    )
+  }
 
   return (
     <div className={`flex-1 overflow-y-auto ${inSidebar ? 'px-3 pb-4' : 'px-4'}`}>
