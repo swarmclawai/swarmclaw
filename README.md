@@ -1,10 +1,15 @@
 # SwarmClaw
 
+[![CI](https://github.com/swarmclawai/swarmclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/swarmclawai/swarmclaw/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/swarmclawai/swarmclaw?sort=semver)](https://github.com/swarmclawai/swarmclaw/releases)
+
 Self-hosted AI agent orchestration dashboard. Manage multiple AI providers, orchestrate agent swarms, schedule tasks, and bridge agents to chat platforms — all from a single mobile-friendly interface.
 
 Inspired by [OpenClaw](https://github.com/openclaw).
 
 **[Documentation](https://swarmclaw.ai/docs)** | **[Website](https://swarmclaw.ai)**
+
+Org avatar files: `public/branding/swarmclaw-org-avatar.png` (upload-ready), `public/branding/swarmclaw-org-avatar.svg` (source)
 
 ![Dashboard](public/screenshots/dashboard.png)
 ![Agent Builder](public/screenshots/agents.png)

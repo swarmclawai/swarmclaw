@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">SwarmClaw Org Avatar</title>
+  <desc id="desc">Dark rounded-square badge with cyan claw marks and an S monogram.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="55%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="slash" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#67e8f9"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="40" y="40" width="944" height="944" rx="224" fill="url(#bg)"/>
+  <rect x="40" y="40" width="944" height="944" rx="224" fill="url(#glow)"/>
+  <rect x="56" y="56" width="912" height="912" rx="208" fill="none" stroke="#334155" stroke-width="6"/>
+
+  <g transform="translate(0 8)">
+    <path d="M690 244c22 10 33 37 26 62L622 575c-7 22-30 34-53 27-22-8-34-32-27-54l95-278c8-22 31-34 53-26z" fill="url(#slash)"/>
+    <path d="M525 220c22 9 34 34 28 57L475 587c-7 23-31 36-54 29s-36-31-29-54l79-309c7-23 31-35 54-28z" fill="url(#slash)"/>
+    <path d="M356 246c22 8 35 32 30 55L322 581c-6 23-29 37-53 32-23-6-37-30-32-53l64-282c6-23 29-37 55-32z" fill="url(#slash)"/>
+  </g>
+
+  <path d="M642 662c0 96-78 174-174 174h-86c-43 0-78-35-78-78 0-44 35-79 78-79h123c23 0 42-19 42-42s-19-42-42-42h-84c-96 0-174-78-174-174s78-174 174-174h84c43 0 78 35 78 78 0 44-35 79-78 79h-121c-23 0-42 19-42 42s19 42 42 42h86c96 0 174 78 174 174z" fill="#e2e8f0"/>
+</svg>
