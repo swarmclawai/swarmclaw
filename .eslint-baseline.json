@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-02-23T19:13:04.739Z",
+  "generatedAt": "2026-02-23T19:16:58.815Z",
   "totalIssues": 519,
-  "uniqueIssues": 169,
+  "uniqueIssues": 164,
   "issues": [
     {
       "filePath": "bin/swarmclaw.js",
@@ -169,7 +169,7 @@
       "filePath": "src/app/page.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/app/page.tsx:70:19 68 | 69 | useEffect(() => { > 70 | if (hydrated) checkAuth() | ^^^^^^^^^ Avoid calling setState() directly within an effect 71 | }, [hydrated, checkAuth]) 72 | 73 | useEffect(() => {",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -274,49 +274,49 @@
       "filePath": "src/components/chat/chat-area.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `loadSessions`, but the source dependencies were [sessionId]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/chat/chat-area.tsx:147:35 145 | }, [sessionId]) 146 | > 147 | const handleClear = useCallback(async () => { | ^^^^^^^^^^^^^ > 148 | setConfirmClear(false) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 149 | if (!sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 150 | await clearMessages(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 151 | setMessages([]) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 152 | loadSessions() | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 153 | }, [sessionId]) | ^^^^ Could not preserve existing manual memoization 154 | 155 | const handleDelete = useCallback(async () => { 156 | setConfirmDelete(false)",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `loadSessions`, but the source dependencies were [sessionId]. Inferred different dependency than source.",
       "count": 1
     },
     {
       "filePath": "src/components/chat/chat-area.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `removeSessionFromStore`, but the source dependencies were [sessionId]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/chat/chat-area.tsx:155:36 153 | }, [sessionId]) 154 | > 155 | const handleDelete = useCallback(async () => { | ^^^^^^^^^^^^^ > 156 | setConfirmDelete(false) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 157 | if (!sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 158 | await deleteSession(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 159 | removeSessionFromStore(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 160 | setCurrentSession(null) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 161 | }, [sessionId]) | ^^^^ Could not preserve existing manual memoization 162 | 163 | const handleBack = useCallback(() => { 164 | setCurrentSession(null)",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `removeSessionFromStore`, but the source dependencies were [sessionId]. Inferred different dependency than source.",
       "count": 1
     },
     {
       "filePath": "src/components/chat/chat-area.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setCurrentSession`, but the source dependencies were []. Inferred dependency not present in source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/chat/chat-area.tsx:163:34 161 | }, [sessionId]) 162 | > 163 | const handleBack = useCallback(() => { | ^^^^^^^ > 164 | setCurrentSession(null) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 165 | }, []) | ^^^^ Could not preserve existing manual memoization 166 | 167 | const handlePrompt = useCallback((text: string) => { 168 | sendMessage(text)",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setCurrentSession`, but the source dependencies were []. Inferred dependency not present in source.",
       "count": 1
     },
     {
       "filePath": "src/components/chat/chat-area.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setCurrentSession`, but the source dependencies were [sessionId]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/chat/chat-area.tsx:155:36 153 | }, [sessionId]) 154 | > 155 | const handleDelete = useCallback(async () => { | ^^^^^^^^^^^^^ > 156 | setConfirmDelete(false) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 157 | if (!sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 158 | await deleteSession(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 159 | removeSessionFromStore(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 160 | setCurrentSession(null) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 161 | }, [sessionId]) | ^^^^ Could not preserve existing manual memoization 162 | 163 | const handleBack = useCallback(() => { 164 | setCurrentSession(null)",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setCurrentSession`, but the source dependencies were [sessionId]. Inferred different dependency than source.",
       "count": 1
     },
     {
       "filePath": "src/components/chat/chat-area.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setDevServer`, but the source dependencies were [sessionId]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/chat/chat-area.tsx:141:43 139 | }, [sessionId]) 140 | > 141 | const handleStopDevServer = useCallback(async () => { | ^^^^^^^^^^^^^ > 142 | if (!sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 143 | await devServer(sessionId, 'stop') | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 144 | setDevServer(null) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 145 | }, [sessionId]) | ^^^^ Could not preserve existing manual memoization 146 | 147 | const handleClear = useCallback(async () => { 148 | setConfirmClear(false)",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setDevServer`, but the source dependencies were [sessionId]. Inferred different dependency than source.",
       "count": 1
     },
     {
       "filePath": "src/components/chat/chat-area.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setMessages`, but the source dependencies were [sessionId]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/chat/chat-area.tsx:147:35 145 | }, [sessionId]) 146 | > 147 | const handleClear = useCallback(async () => { | ^^^^^^^^^^^^^ > 148 | setConfirmClear(false) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 149 | if (!sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 150 | await clearMessages(sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 151 | setMessages([]) | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 152 | loadSessions() | ^^^^^^^^^^^^^^^^^^^^^^^^^^ > 153 | }, [sessionId]) | ^^^^ Could not preserve existing manual memoization 154 | 155 | const handleDelete = useCallback(async () => { 156 | setConfirmDelete(false)",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setMessages`, but the source dependencies were [sessionId]. Inferred different dependency than source.",
       "count": 1
     },
     {
       "filePath": "src/components/chat/chat-area.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/chat/chat-area.tsx:73:7 71 | checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch(() => setBrowserActive(false)) 72 | } else { > 73 | setBrowserActive(false) | ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 74 | } 75 | }, [sessionId]) 76 |",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -337,7 +337,7 @@
       "filePath": "src/components/chat/message-list.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/chat/message-list.tsx:66:7 64 | if (el) { 65 | el.scrollTop = el.scrollHeight > 66 | setShowScrollToBottom(false) | ^^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 67 | } 68 | }, [session?.id]) 69 |",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -351,7 +351,7 @@
       "filePath": "src/components/chat/session-debug-panel.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/chat/session-debug-panel.tsx:86:5 84 | // Auto-scroll to bottom 85 | useEffect(() => { > 86 | setExpandedIdx(null) | ^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 87 | }, [messages.length]) 88 | 89 | if (!open) return null",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -414,14 +414,14 @@
       "filePath": "src/components/input/chat-input.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setPendingImage`, but the source dependencies were []. Inferred dependency not present in source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/input/chat-input.tsx:50:40 48 | ) 49 | > 50 | const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => { | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 51 | const file = e.target.files?.[0] | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 52 | if (!file) return … | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 63 | e.target.value = '' | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 64 | }, []) | ^^^^ Could not preserve existing manual memoization 65 | 66 | const hasContent = value.trim().length > 0 || !!pendingImage 67 |",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setPendingImage`, but the source dependencies were []. Inferred dependency not present in source.",
       "count": 1
     },
     {
       "filePath": "src/components/input/chat-input.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `textareaRef`, but the source dependencies were [value, streaming, onSend]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/input/chat-input.tsx:24:34 22 | const speechRecognitionLang = useAppStore((s) => s.appSettings.speechRecognitionLang) 23 | > 24 | const handleSend = useCallback(() => { | ^^^^^^^ > 25 | const text = value.trim() | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 26 | if (!text || streaming) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 27 | onSend(text) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 28 | setValue('') | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 29 | if (textareaRef.current) { | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 30 | textareaRef.current.style.height = 'auto' | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 31 | } | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 32 | }, [value, streaming, onSend]) | ^^^^ Could not preserve existing manual memoization 33 | 34 | const handleKeyDown = useCallback((e: React.KeyboardEvent) => { 35 | if (e.key === 'Enter' && !e.shiftKey) {",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `textareaRef`, but the source dependencies were [value, streaming, onSend]. Inferred different dependency than source.",
       "count": 1
     },
     {
@@ -435,14 +435,14 @@
       "filePath": "src/components/layout/daemon-indicator.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/layout/daemon-indicator.tsx:25:5 23 | 24 | useEffect(() => { > 25 | fetchStatus() | ^^^^^^^^^^^ Avoid calling setState() directly within an effect 26 | const interval = setInterval(fetchStatus, 30_000) 27 | return () => clearInterval(interval) 28 | }, [])",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
       "filePath": "src/components/layout/update-banner.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/layout/update-banner.tsx:34:5 32 | 33 | useEffect(() => { > 34 | checkVersion() | ^^^^^^^^^^^^ Avoid calling setState() directly within an effect 35 | const id = setInterval(checkVersion, CHECK_INTERVAL) 36 | return () => clearInterval(id) 37 | }, [checkVersion])",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -484,42 +484,42 @@
       "filePath": "src/components/memory/memory-detail.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setActiveView`, but the source dependencies were [entry]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/memory/memory-detail.tsx:77:47 75 | }, [entry]) 76 | > 77 | const handleNavigateToSession = useCallback(() => { | ^^^^^^^ > 78 | if (!entry?.sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 79 | setActiveView('sessions') | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 80 | setCurrentSession(entry.sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 81 | }, [entry]) | ^^^^ Could not preserve existing manual memoization 82 | 83 | if (!entry) { 84 | return (",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setActiveView`, but the source dependencies were [entry]. Inferred different dependency than source.",
       "count": 1
     },
     {
       "filePath": "src/components/memory/memory-detail.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setCurrentSession`, but the source dependencies were [entry]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/memory/memory-detail.tsx:77:47 75 | }, [entry]) 76 | > 77 | const handleNavigateToSession = useCallback(() => { | ^^^^^^^ > 78 | if (!entry?.sessionId) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 79 | setActiveView('sessions') | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 80 | setCurrentSession(entry.sessionId) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 81 | }, [entry]) | ^^^^ Could not preserve existing manual memoization 82 | 83 | if (!entry) { 84 | return (",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setCurrentSession`, but the source dependencies were [entry]. Inferred different dependency than source.",
       "count": 1
     },
     {
       "filePath": "src/components/memory/memory-detail.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setSelectedId`, but the source dependencies were [entry]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/memory/memory-detail.tsx:70:36 68 | }, [entry, title, content, category, dirty]) 69 | > 70 | const handleDelete = useCallback(async () => { | ^^^^^^^^^^^^^ > 71 | if (!entry) return | ^^^^^^^^^^^^^^^^^^^^^^ > 72 | await deleteMemory(entry.id) | ^^^^^^^^^^^^^^^^^^^^^^ > 73 | setSelectedId(null) | ^^^^^^^^^^^^^^^^^^^^^^ > 74 | triggerRefresh() | ^^^^^^^^^^^^^^^^^^^^^^ > 75 | }, [entry]) | ^^^^ Could not preserve existing manual memoization 76 | 77 | const handleNavigateToSession = useCallback(() => { 78 | if (!entry?.sessionId) return",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `setSelectedId`, but the source dependencies were [entry]. Inferred different dependency than source.",
       "count": 1
     },
     {
       "filePath": "src/components/memory/memory-detail.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `triggerRefresh`, but the source dependencies were [entry, title, content, category, dirty]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/memory/memory-detail.tsx:58:34 56 | }, [selectedId]) 57 | > 58 | const handleSave = useCallback(async () => { | ^^^^^^^^^^^^^ > 59 | if (!entry || !dirty) return | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 60 | setSaving(true) … | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 67 | setSaving(false) | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ > 68 | }, [entry, title, content, category, dirty]) | ^^^^ Could not preserve existing manual memoization 69 | 70 | const handleDelete = useCallback(async () => { 71 | if (!entry) return",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `triggerRefresh`, but the source dependencies were [entry, title, content, category, dirty]. Inferred different dependency than source.",
       "count": 1
     },
     {
       "filePath": "src/components/memory/memory-detail.tsx",
       "ruleId": "react-hooks/preserve-manual-memoization",
       "severity": 2,
-      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `triggerRefresh`, but the source dependencies were [entry]. Inferred different dependency than source. /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/memory/memory-detail.tsx:70:36 68 | }, [entry, title, content, category, dirty]) 69 | > 70 | const handleDelete = useCallback(async () => { | ^^^^^^^^^^^^^ > 71 | if (!entry) return | ^^^^^^^^^^^^^^^^^^^^^^ > 72 | await deleteMemory(entry.id) | ^^^^^^^^^^^^^^^^^^^^^^ > 73 | setSelectedId(null) | ^^^^^^^^^^^^^^^^^^^^^^ > 74 | triggerRefresh() | ^^^^^^^^^^^^^^^^^^^^^^ > 75 | }, [entry]) | ^^^^ Could not preserve existing manual memoization 76 | 77 | const handleNavigateToSession = useCallback(() => { 78 | if (!entry?.sessionId) return",
+      "message": "Compilation Skipped: Existing memoization could not be preserved React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `triggerRefresh`, but the source dependencies were [entry]. Inferred different dependency than source.",
       "count": 1
     },
     {
       "filePath": "src/components/memory/memory-detail.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/memory/memory-detail.tsx:30:7 28 | useEffect(() => { 29 | if (!selectedId) { > 30 | setEntry(null) | ^^^^^^^^ Avoid calling setState() directly within an effect 31 | return 32 | } 33 |",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -561,7 +561,7 @@
       "filePath": "src/components/schedules/schedule-sheet.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/schedules/schedule-sheet.tsx:105:7 103 | loadAgents() 104 | loadSettings() > 105 | setAiPrompt('') | ^^^^^^^^^^^ Avoid calling setState() directly within an effect 106 | setGenerating(false) 107 | setGenerated(false) 108 | setGenError('')",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -624,29 +624,8 @@
       "filePath": "src/components/sessions/new-session-sheet.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/sessions/new-session-sheet.tsx:100:7 98 | useEffect(() => { 99 | if (ollamaMode === 'local') { > 100 | setEndpoint('http://localhost:11434') | ^^^^^^^^^^^ Avoid calling setState() directly within an effect 101 | setCredentialId(null) 102 | } else { 103 | setEndpoint('')",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/sessions/new-session-sheet.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/sessions/new-session-sheet.tsx:49:7 47 | loadCredentials() 48 | loadAgents() > 49 | setName('') | ^^^^^^^ Avoid calling setState() directly within an effect 50 | setSelectedDir(null) 51 | setSelectedFile(null) 52 | setProvider('claude-cli')",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/sessions/new-session-sheet.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/sessions/new-session-sheet.tsx:80:7 78 | useEffect(() => { 79 | if (currentProvider?.models.length) { > 80 | setModel(currentProvider.models[0]) | ^^^^^^^^ Avoid calling setState() directly within an effect 81 | } 82 | setCredentialId(null) 83 | if (provider !== 'ollama') {",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/sessions/new-session-sheet.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/sessions/new-session-sheet.tsx:94:7 92 | const needsKey = currentProvider?.requiresApiKey || (provider === 'ollama' && ollamaMode === 'cloud') 93 | if (needsKey && providerCredentials.length > 0 && !credentialId) { > 94 | setCredentialId(providerCredentials[0].id) | ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 95 | } 96 | }, [providerCredentials.length, provider, ollamaMode]) 97 |",
-      "count": 1
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 4
     },
     {
       "filePath": "src/components/shared/ai-gen-block.tsx",
@@ -666,7 +645,7 @@
       "filePath": "src/components/shared/dir-browser.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/shared/dir-browser.tsx:55:7 53 | useEffect(() => { 54 | if (mode === 'browse') { > 55 | fetchDirs(browsePath) | ^^^^^^^^^ Avoid calling setState() directly within an effect 56 | setSearch('') 57 | } 58 | }, [browsePath, mode, fetchDirs])",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -701,15 +680,8 @@
       "filePath": "src/components/shared/settings-sheet.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/shared/settings-sheet.tsx:1039:21 1037 | }, []) 1038 | > 1039 | useEffect(() => { loadPlugins() }, []) | ^^^^^^^^^^^ Avoid calling setState() directly within an effect 1040 | useEffect(() => { if (tab === 'marketplace') loadMarketplace() }, [tab]) 1041 | 1042 | const togglePlugin = async (filename: string, enabled: boolean) => {",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/shared/settings-sheet.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/shared/settings-sheet.tsx:1040:48 1038 | 1039 | useEffect(() => { loadPlugins() }, []) > 1040 | useEffect(() => { if (tab === 'marketplace') loadMarketplace() }, [tab]) | ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect 1041 | 1042 | const togglePlugin = async (filename: string, enabled: boolean) => { 1043 | await api('POST', '/plugins', { filename, enabled })",
-      "count": 1
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 2
     },
     {
       "filePath": "src/components/skills/skill-list.tsx",
@@ -799,15 +771,8 @@
       "filePath": "src/components/tasks/task-sheet.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/tasks/task-sheet.tsx:100:7 98 | useEffect(() => { 99 | if (open && !editing && !agentId && orchestrators.length) { > 100 | setAgentId(orchestrators[0].id) | ^^^^^^^^^^ Avoid calling setState() directly within an effect 101 | } 102 | }, [agents]) 103 |",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/tasks/task-sheet.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect). /private/tmp/swarmclaw-baseline-fix-1771873956/src/components/tasks/task-sheet.tsx:75:7 73 | loadAgents() 74 | loadSettings() > 75 | setAiPrompt('') | ^^^^^^^^^^^ Avoid calling setState() directly within an effect 76 | setGenerating(false) 77 | setGenerated(false) 78 | setGenError('')",
-      "count": 1
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 2
     },
     {
       "filePath": "src/hooks/use-speech-recognition.ts",

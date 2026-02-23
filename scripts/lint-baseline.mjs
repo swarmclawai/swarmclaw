@@ -14,6 +14,9 @@ const ISSUE_SEVERITY = {
   1: 'warning',
   2: 'error',
 }
+const SOURCE_LOCATION_TAIL_REGEX = /\s(?:[A-Za-z]:)?[\\/][^ ]+:\d+:\d+.*$/u
+const CWD_PATH = process.cwd().replaceAll('\\', '/')
+const CWD_REGEX = new RegExp(CWD_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
 
 function parseOptions(argv) {
   const options = {
@@ -46,7 +49,11 @@ function parseOptions(argv) {
 }
 
 function normalizeMessage(message) {
-  return String(message || '').replace(/\s+/g, ' ').trim()
+  return String(message || '')
+    .replace(/\s+/g, ' ')
+    .replace(SOURCE_LOCATION_TAIL_REGEX, '')
+    .replace(CWD_REGEX, '<cwd>')
+    .trim()
 }
 
 function toIssueKey(filePath, ruleId, severity, message) {
