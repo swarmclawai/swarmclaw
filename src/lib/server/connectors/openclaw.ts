@@ -30,8 +30,17 @@ const DEFAULT_TICK_INTERVAL_MS = 30_000
 const MIN_TICK_WATCHDOG_POLL_MS = 750
 const MAX_TICK_WATCHDOG_POLL_MS = 5_000
 const TICK_MISS_TOLERANCE_MULTIPLIER = 2
+const DEFAULT_CHAT_HISTORY_POLL_MS = 2_500
+const MIN_CHAT_HISTORY_POLL_MS = 500
+const MAX_CHAT_HISTORY_POLL_MS = 60_000
+const DEFAULT_CHAT_HISTORY_LIMIT = 40
+const MIN_CHAT_HISTORY_LIMIT = 5
+const MAX_CHAT_HISTORY_LIMIT = 200
 const MAX_INLINE_ATTACHMENT_BYTES = 5_000_000
 const NO_MESSAGE_SENTINEL = 'NO_MESSAGE'
+const MAX_SEEN_HISTORY_MESSAGES = 4_096
+const RECENT_HISTORY_DUPLICATE_WINDOW_MS = 20_000
+const HISTORY_ERROR_LOG_INTERVAL_MS = 30_000
 
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
 const MAX_SEEN_CHAT_EVENTS = 2048
@@ -85,6 +94,20 @@ type ChatEventPayload = {
   senderId?: string
   senderName?: string
   text?: string
+}
+
+type ChatHistoryMessage = {
+  role?: unknown
+  sender?: unknown
+  senderId?: unknown
+  senderName?: unknown
+  content?: unknown
+  timestamp?: unknown
+}
+
+type ChatHistoryPayload = {
+  sessionKey?: unknown
+  messages?: unknown
 }
 
 function isSecureWsUrl(url: string): boolean {
@@ -237,6 +260,68 @@ function normalizeMimeType(value?: string | null): string | undefined {
   if (!value) return undefined
   const cleaned = value.split(';')[0]?.trim().toLowerCase()
   return cleaned || undefined
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function parseBooleanLike(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (!normalized) return fallback
+    if (['false', '0', 'off', 'no'].includes(normalized)) return false
+    if (['true', '1', 'on', 'yes'].includes(normalized)) return true
+  }
+  return fallback
+}
+
+function matchesSessionKey(filter: string, actual: string): boolean {
+  const configured = filter.trim()
+  const incoming = actual.trim()
+  if (!configured) return true
+  if (!incoming) return false
+  if (configured === incoming) return true
+
+  // Support legacy short filters like "main" when OpenClaw uses keys like "agent:main:main".
+  if (!configured.includes(':') && incoming.endsWith(`:${configured}`)) return true
+  if (!incoming.includes(':') && configured.endsWith(`:${incoming}`)) return true
+  return false
+}
+
+function resolveHistorySessionCandidates(rawKeys: string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+
+  const push = (value: string) => {
+    const key = value.trim()
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    out.push(key)
+  }
+
+  for (const raw of rawKeys) {
+    const key = raw.trim()
+    if (!key) continue
+    if (!key.includes(':')) {
+      // Prefer canonical agent-session keys first when users configure short aliases like "main".
+      push(`agent:main:${key}`)
+      push(key)
+      continue
+    }
+    push(key)
+  }
+  return out
+}
+
+function canonicalSessionForDuplicateKey(sessionKey: string): string {
+  const normalized = sessionKey.trim()
+  if (!normalized) return ''
+  if (!normalized.startsWith('agent:')) return normalized
+  const parts = normalized.split(':')
+  const tail = parts[parts.length - 1]
+  return tail || normalized
 }
 
 function inferMimeFromFileName(fileName?: string): string | undefined {
@@ -413,6 +498,57 @@ function extractInbound(payload: ChatEventPayload): InboundMessage | null {
   }
 }
 
+function extractInboundFromHistory(
+  sessionKey: string,
+  message: ChatHistoryMessage,
+): { inbound: InboundMessage; dedupeKey: string } | null {
+  const roleRaw = typeof message.role === 'string' ? message.role.trim().toLowerCase() : ''
+  if (roleRaw !== 'user') return null
+
+  const text = contentToText(message.content).trim()
+  if (!text) return null
+
+  const senderId = (
+    (typeof message.senderId === 'string' && message.senderId.trim())
+    || (typeof message.sender === 'string' && message.sender.trim())
+    || 'unknown'
+  ).toString()
+
+  const senderName = (
+    (typeof message.senderName === 'string' && message.senderName.trim())
+    || (typeof message.sender === 'string' && message.sender.trim())
+    || 'User'
+  ).toString()
+
+  const rawTs = Number(message.timestamp)
+  const timestamp = Number.isFinite(rawTs) && rawTs > 0 ? Math.round(rawTs) : 0
+  const textHash = crypto.createHash('sha1').update(text).digest('hex').slice(0, 16)
+  const dedupeKey = `${sessionKey}:${timestamp}:${textHash}`
+
+  return {
+    inbound: {
+      platform: 'openclaw',
+      channelId: sessionKey,
+      channelName: sessionKey,
+      senderId,
+      senderName,
+      text,
+    },
+    dedupeKey,
+  }
+}
+
+function rememberSeenEntry(set: Set<string>, key: string, maxEntries: number): boolean {
+  if (!key.trim()) return false
+  if (set.has(key)) return false
+  set.add(key)
+  if (set.size > maxEntries) {
+    const first = set.values().next().value
+    if (first) set.delete(first)
+  }
+  return true
+}
+
 const openclaw: PlatformConnector = {
   async start(connector, botToken, onMessage): Promise<ConnectorInstance> {
     const rawUrl = (connector.config.wsUrl || DEFAULT_WS_URL || '').trim()
@@ -428,6 +564,29 @@ const openclaw: PlatformConnector = {
         ? connector.config.sessionKey.trim()
         : DEFAULT_SESSION_KEY
     )
+    const configuredSessionFilter = typeof connector.config.sessionKey === 'string'
+      ? connector.config.sessionKey.trim()
+      : ''
+    const historyPollEnabled = parseBooleanLike(
+      (connector.config as Record<string, unknown>).historyPoll,
+      true,
+    )
+    const rawHistoryPollMs = Number((connector.config as Record<string, unknown>).historyPollMs)
+    const historyPollMs = Number.isFinite(rawHistoryPollMs) && rawHistoryPollMs > 0
+      ? clampNumber(Math.round(rawHistoryPollMs), MIN_CHAT_HISTORY_POLL_MS, MAX_CHAT_HISTORY_POLL_MS)
+      : DEFAULT_CHAT_HISTORY_POLL_MS
+    const rawHistoryLimit = Number((connector.config as Record<string, unknown>).historyLimit)
+    const historyLimit = Number.isFinite(rawHistoryLimit) && rawHistoryLimit > 0
+      ? clampNumber(Math.round(rawHistoryLimit), MIN_CHAT_HISTORY_LIMIT, MAX_CHAT_HISTORY_LIMIT)
+      : DEFAULT_CHAT_HISTORY_LIMIT
+    const configuredHistorySessionKey = typeof (connector.config as Record<string, unknown>).historySessionKey === 'string'
+      ? ((connector.config as Record<string, unknown>).historySessionKey as string).trim()
+      : ''
+    const historySessionCandidates = resolveHistorySessionCandidates([
+      configuredHistorySessionKey,
+      configuredSessionFilter,
+      defaultSessionKey,
+    ])
 
     const clientId = 'gateway-client'
     const clientMode = 'backend'
@@ -469,6 +628,9 @@ const openclaw: PlatformConnector = {
     let connectTimer: ReturnType<typeof setTimeout> | null = null
     let connectHelloTimer: ReturnType<typeof setTimeout> | null = null
     let tickWatchdogTimer: ReturnType<typeof setInterval> | null = null
+    let historyPollTimer: ReturnType<typeof setInterval> | null = null
+    let historyPollInFlight = false
+    let historyPollingUnsupported = false
     let connectNonce: string | null = null
     let connectSent = false
     let connected = false
@@ -477,6 +639,10 @@ const openclaw: PlatformConnector = {
 
     const pending = new Map<string, PendingRequest>()
     const seenInbound = new Set<string>()
+    const seenHistoryMessages = new Set<string>()
+    const historyWarmSessions = new Set<string>()
+    const recentInboundByText = new Map<string, number>()
+    const historyErrorLogBySession = new Map<string, number>()
 
     function clearPending(reason: string) {
       for (const [id, p] of pending) {
@@ -514,6 +680,14 @@ const openclaw: PlatformConnector = {
       }
     }
 
+    function clearHistoryPollTimer() {
+      if (historyPollTimer) {
+        clearInterval(historyPollTimer)
+        historyPollTimer = null
+      }
+      historyPollInFlight = false
+    }
+
     function startTickWatchdog() {
       clearTickWatchdogTimer()
       if (!tickWatchdogEnabled || tickIntervalMs <= 0) return
@@ -542,11 +716,41 @@ const openclaw: PlatformConnector = {
       tickWatchdogTimer.unref?.()
     }
 
+    function pruneRecentInbound(now: number) {
+      for (const [key, ts] of recentInboundByText) {
+        if (now - ts > RECENT_HISTORY_DUPLICATE_WINDOW_MS) {
+          recentInboundByText.delete(key)
+        }
+      }
+    }
+
+    function markRecentInbound(inbound: InboundMessage, now: number) {
+      pruneRecentInbound(now)
+      const canonicalSession = canonicalSessionForDuplicateKey(inbound.channelId)
+      recentInboundByText.set(`${canonicalSession}:${inbound.text}`, now)
+    }
+
+    function hasRecentInboundDuplicate(inbound: InboundMessage, now: number): boolean {
+      pruneRecentInbound(now)
+      const canonicalSession = canonicalSessionForDuplicateKey(inbound.channelId)
+      const ts = recentInboundByText.get(`${canonicalSession}:${inbound.text}`)
+      return typeof ts === 'number' && now - ts <= RECENT_HISTORY_DUPLICATE_WINDOW_MS
+    }
+
+    function maybeLogHistoryError(sessionKey: string, message: string) {
+      const now = Date.now()
+      const previous = historyErrorLogBySession.get(sessionKey) || 0
+      if (now - previous < HISTORY_ERROR_LOG_INTERVAL_MS) return
+      historyErrorLogBySession.set(sessionKey, now)
+      console.warn(`[openclaw] chat.history poll failed for "${sessionKey}": ${message}`)
+    }
+
     function cleanupSocket() {
       clearConnectTimer()
       clearConnectHelloTimer()
       clearReconnectTimer()
       clearTickWatchdogTimer()
+      clearHistoryPollTimer()
       clearPending('openclaw socket closed')
       if (ws) {
         try { ws.close() } catch { /* ignore */ }
@@ -707,6 +911,7 @@ const openclaw: PlatformConnector = {
             tickIntervalMs = DEFAULT_TICK_INTERVAL_MS
           }
           if (tickWatchdogEnabled) startTickWatchdog()
+          startHistoryPoller()
           console.log(`[openclaw] Connected + authenticated (${wsUrl})`)
         })
         .catch((err: unknown) => {
@@ -716,25 +921,17 @@ const openclaw: PlatformConnector = {
         })
     }
 
-    async function handleChatEvent(payload: ChatEventPayload) {
-      const inbound = extractInbound(payload)
-      if (!inbound) return
+    async function routeInbound(
+      inbound: InboundMessage,
+      dedupeKey: string,
+      source: 'event' | 'history',
+    ) {
+      if (!matchesSessionKey(configuredSessionFilter, inbound.channelId)) return
+      if (!rememberSeenEntry(seenInbound, dedupeKey, MAX_SEEN_CHAT_EVENTS)) return
 
-      // Optional session filter.
-      const configuredSessionFilter = typeof connector.config.sessionKey === 'string'
-        ? connector.config.sessionKey.trim()
-        : ''
-      if (configuredSessionFilter && inbound.channelId !== configuredSessionFilter) return
-
-      const dedupeKey = `${payload.runId || ''}:${payload.seq || ''}:${inbound.channelId}:${inbound.text}`
-      if (dedupeKey.trim()) {
-        if (seenInbound.has(dedupeKey)) return
-        seenInbound.add(dedupeKey)
-        if (seenInbound.size > MAX_SEEN_CHAT_EVENTS) {
-          const first = seenInbound.values().next().value
-          if (first) seenInbound.delete(first)
-        }
-      }
+      const now = Date.now()
+      if (source === 'history' && hasRecentInboundDuplicate(inbound, now)) return
+      markRecentInbound(inbound, now)
 
       try {
         const response = await onMessage(inbound)
@@ -744,6 +941,95 @@ const openclaw: PlatformConnector = {
         console.error('[openclaw] Error routing inbound chat event:', message)
         await sendChat(inbound.channelId, `[Error] ${message}`)
       }
+    }
+
+    async function pollHistorySession(sessionKey: string) {
+      const raw = await rpcRequest('chat.history', {
+        sessionKey,
+        limit: historyLimit,
+      })
+      const payload = raw && typeof raw === 'object'
+        ? (raw as ChatHistoryPayload)
+        : null
+      const rawMessages = Array.isArray(payload?.messages)
+        ? payload.messages as unknown[]
+        : []
+
+      const extracted: Array<{ inbound: InboundMessage; dedupeKey: string }> = []
+      for (const rawMessage of rawMessages) {
+        if (!rawMessage || typeof rawMessage !== 'object') continue
+        const parsed = extractInboundFromHistory(sessionKey, rawMessage as ChatHistoryMessage)
+        if (!parsed) continue
+        extracted.push(parsed)
+      }
+
+      if (!historyWarmSessions.has(sessionKey)) {
+        historyWarmSessions.add(sessionKey)
+        for (const item of extracted) {
+          rememberSeenEntry(seenHistoryMessages, item.dedupeKey, MAX_SEEN_HISTORY_MESSAGES)
+        }
+        return
+      }
+
+      for (const item of extracted) {
+        if (!rememberSeenEntry(seenHistoryMessages, item.dedupeKey, MAX_SEEN_HISTORY_MESSAGES)) {
+          continue
+        }
+        await routeInbound(item.inbound, `history:${item.dedupeKey}`, 'history')
+      }
+    }
+
+    async function pollChatHistory() {
+      if (stopped || !connected) return
+      if (historyPollingUnsupported) return
+      if (!historyPollEnabled) return
+      if (historySessionCandidates.length === 0) return
+      if (historyPollInFlight) return
+
+      historyPollInFlight = true
+      try {
+        for (const sessionKey of historySessionCandidates) {
+          try {
+            await pollHistorySession(sessionKey)
+          } catch (err: unknown) {
+            const message = getErrorMessage(err)
+            const lowered = message.toLowerCase()
+            if (
+              lowered.includes('unknown method')
+              || lowered.includes('method not found')
+              || lowered.includes('not implemented')
+            ) {
+              historyPollingUnsupported = true
+              clearHistoryPollTimer()
+              console.warn('[openclaw] chat.history is unavailable; disabling history polling fallback')
+              return
+            }
+            maybeLogHistoryError(sessionKey, message)
+          }
+        }
+      } finally {
+        historyPollInFlight = false
+      }
+    }
+
+    function startHistoryPoller() {
+      clearHistoryPollTimer()
+      if (!historyPollEnabled) return
+      if (historySessionCandidates.length === 0) return
+      if (historyPollingUnsupported) return
+      void pollChatHistory()
+      historyPollTimer = setInterval(() => {
+        void pollChatHistory()
+      }, historyPollMs)
+      historyPollTimer.unref?.()
+    }
+
+    async function handleChatEvent(payload: ChatEventPayload) {
+      const inbound = extractInbound(payload)
+      if (!inbound) return
+
+      const dedupeKey = `event:${payload.runId || ''}:${payload.seq || ''}:${inbound.channelId}:${inbound.text}`
+      await routeInbound(inbound, dedupeKey, 'event')
     }
 
     function connect() {

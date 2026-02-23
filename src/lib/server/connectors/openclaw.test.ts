@@ -61,6 +61,11 @@ function findReq(ws: MockWebSocket, method: string): WsFrame | undefined {
   return ws.sent.find((frame) => frame?.type === 'req' && frame?.method === method)
 }
 
+function findReqAt(ws: MockWebSocket, method: string, index: number): WsFrame | undefined {
+  const matches = ws.sent.filter((frame) => frame?.type === 'req' && frame?.method === method)
+  return matches[index]
+}
+
 async function waitFor<T>(
   getValue: () => T | null | undefined,
   timeoutMs = 2_000,
@@ -79,6 +84,7 @@ async function bootstrapConnector(params?: {
   onMessage?: (msg: any) => Promise<string>
   connectorId?: string
   wsUrl?: string
+  config?: Record<string, unknown>
 }) {
   const connectorId = params?.connectorId || `test-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
   const connector = {
@@ -89,6 +95,8 @@ async function bootstrapConnector(params?: {
     credentialId: null,
     config: {
       wsUrl: params?.wsUrl || 'ws://localhost:18789',
+      historyPoll: false,
+      ...(params?.config || {}),
     },
     isEnabled: true,
     status: 'running',
@@ -190,6 +198,48 @@ test('openclaw connector suppresses outbound send when NO_MESSAGE is returned', 
   }
 })
 
+test('openclaw connector accepts short session filter for full agent session keys', async () => {
+  const received: any[] = []
+  const { instance, ws, identityPath } = await bootstrapConnector({
+    onMessage: async (msg) => {
+      received.push(msg)
+      return 'alias-ok'
+    },
+    config: {
+      sessionKey: 'main',
+    },
+  })
+
+  try {
+    await performHandshake(ws)
+    ws.emit({
+      type: 'event',
+      event: 'chat',
+      payload: {
+        state: 'final',
+        sessionKey: 'agent:main:main',
+        message: { role: 'user', text: 'Hello alias', sender: 'Wayde' },
+      },
+    })
+
+    const chatReq = await waitFor(() => findReq(ws, 'chat.send'), 2_000)
+    assert.equal((chatReq.params as any)?.sessionKey, 'agent:main:main')
+    assert.equal((chatReq.params as any)?.message, 'alias-ok')
+    assert.equal(received.length, 1)
+    assert.equal(received[0]?.text, 'Hello alias')
+
+    ws.emit({
+      type: 'res',
+      id: chatReq.id as string,
+      ok: true,
+      payload: { runId: 'alias-run' },
+    })
+  } finally {
+    await instance.stop()
+    fs.rmSync(identityPath, { force: true })
+  }
+})
+
 test('openclaw connector sendMessage attaches local media payloads', async () => {
   const { instance, ws, identityPath } = await bootstrapConnector()
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openclaw-connector-test-'))
@@ -218,6 +268,90 @@ test('openclaw connector sendMessage attaches local media payloads', async () =>
   } finally {
     await instance.stop()
     fs.rmSync(tmpDir, { recursive: true, force: true })
+    fs.rmSync(identityPath, { force: true })
+  }
+})
+
+test('openclaw connector polls chat.history fallback for inbound user messages', async () => {
+  const received: any[] = []
+  const { instance, ws, identityPath } = await bootstrapConnector({
+    onMessage: async (msg) => {
+      received.push(msg)
+      return 'history-pong'
+    },
+    config: {
+      sessionKey: 'agent:main:main',
+      historyPoll: true,
+      historyPollMs: 500,
+    },
+  })
+
+  try {
+    await performHandshake(ws)
+
+    const firstHistoryReq = await waitFor(
+      () => findReqAt(ws, 'chat.history', 0),
+      2_500,
+    )
+    assert.equal((firstHistoryReq.params as any)?.sessionKey, 'agent:main:main')
+    ws.emit({
+      type: 'res',
+      id: firstHistoryReq.id as string,
+      ok: true,
+      payload: {
+        sessionKey: 'agent:main:main',
+        messages: [
+          {
+            role: 'user',
+            timestamp: 1,
+            content: [{ type: 'text', text: 'old message' }],
+          },
+        ],
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    assert.equal(received.length, 0)
+
+    const secondHistoryReq = await waitFor(
+      () => findReqAt(ws, 'chat.history', 1),
+      3_000,
+    )
+    ws.emit({
+      type: 'res',
+      id: secondHistoryReq.id as string,
+      ok: true,
+      payload: {
+        sessionKey: 'agent:main:main',
+        messages: [
+          {
+            role: 'user',
+            timestamp: 1,
+            content: [{ type: 'text', text: 'old message' }],
+          },
+          {
+            role: 'user',
+            timestamp: 2,
+            content: [{ type: 'text', text: 'new message' }],
+          },
+        ],
+      },
+    })
+
+    const chatReq = await waitFor(() => findReq(ws, 'chat.send'), 2_000)
+    assert.equal((chatReq.params as any)?.sessionKey, 'agent:main:main')
+    assert.equal((chatReq.params as any)?.message, 'history-pong')
+    assert.equal(received.length, 1)
+    assert.equal(received[0]?.text, 'new message')
+
+    ws.emit({
+      type: 'res',
+      id: chatReq.id as string,
+      ok: true,
+      payload: { runId: 'history-run' },
+    })
+  } finally {
+    await instance.stop()
     fs.rmSync(identityPath, { force: true })
   }
 })
