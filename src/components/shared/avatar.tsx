@@ -39,9 +39,9 @@ export function AiAvatar({ size = 'md' }: { size?: 'sm' | 'md' }) {
   const iconSize = size === 'sm' ? 12 : 16
   return (
     <div className={`${s} rounded-[8px] bg-accent-soft flex items-center justify-center shrink-0`}>
-      <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" className="text-accent-bright">
-        <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"
-          fill="currentColor" />
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3 1.07.56 2 1.56 2 3a2.5 2.5 0 0 1-2.5 2.5z" />
+        <path d="M12 2c0 2.22-1 3.5-2 5.5 2.5 1 5.5 5 5.5 9.5a5.5 5.5 0 1 1-11 0c0-1.55.64-2.31 1.54-3.5a14.95 14.95 0 0 1 1.05-3c-.15.14-.35.15-.45.15-1.5 0-2.39-1.39-2.39-2.65 0-2.12 1.56-4.49 1.86-4.99L12 2z" />
       </svg>
     </div>
   )

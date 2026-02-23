@@ -84,7 +84,7 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
         )}
 
         <div className="glass rounded-[20px] overflow-hidden
-          shadow-[0_4px_32px_rgba(0,0,0,0.3)] focus-within:border-border-focus focus-within:shadow-[0_4px_32px_rgba(99,102,241,0.08)] transition-all duration-300">
+          shadow-[0_4px_32px_rgba(0,0,0,0.3)] focus-within:border-primary/50 focus-within:shadow-[0_4px_32px_rgba(var(--primary-rgb),0.08)] transition-all duration-300">
 
           {pendingImage && (
             <div className="flex items-center gap-2 px-5 pt-4">
@@ -183,7 +183,7 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
               className={`w-9 h-9 rounded-[11px] border-none flex items-center justify-center
                 shrink-0 cursor-pointer transition-all duration-250
                 ${hasContent && !streaming
-                  ? 'bg-[#6366F1] text-white active:scale-90 shadow-[0_4px_16px_rgba(99,102,241,0.3)]'
+                  ? 'bg-primary text-primary-foreground active:scale-90 shadow-[0_4px_16px_rgba(var(--primary-rgb),0.3)]'
                   : 'bg-white/[0.04] text-text-3 pointer-events-none'}`}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

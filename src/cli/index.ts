@@ -10,11 +10,10 @@ interface CliContext {
 }
 
 const DEFAULT_BASE_URL =
-  process.env.SWARMCLAW_URL
-  || process.env.SWARMCLAW_BASE_URL
+  process.env.AGENT_EMBER_URL
+  || process.env.AGENT_EMBER_BASE_URL
   || 'http://localhost:3456'
-
-const DEFAULT_ACCESS_KEY = process.env.SWARMCLAW_ACCESS_KEY || ''
+const DEFAULT_ACCESS_KEY = process.env.AGENT_EMBER_ACCESS_KEY || ''
 
 function normalizeBaseUrl(value: string): string {
   const trimmed = value.trim()
@@ -190,10 +189,10 @@ export function buildProgram(): Command {
   const program = new Command()
 
   program
-    .name('swarmclaw')
-    .description('SwarmClaw CLI')
-    .option('-u, --url <url>', 'SwarmClaw base URL', DEFAULT_BASE_URL)
-    .option('-k, --key <key>', 'SwarmClaw access key', DEFAULT_ACCESS_KEY)
+    .name('agent-ember')
+    .description('Agent Ember CLI')
+    .option('-u, --url <url>', 'Agent Ember base URL', DEFAULT_BASE_URL)
+    .option('-k, --key <key>', 'Agent Ember access key', DEFAULT_ACCESS_KEY)
     .option('--raw', 'Print compact JSON output')
     .showHelpAfterError()
 
@@ -803,7 +802,7 @@ export function buildProgram(): Command {
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   const program = buildProgram()
   try {
-    await program.parseAsync(['node', 'swarmclaw', ...argv])
+    await program.parseAsync(['node', 'agent-ember', ...argv])
     return (process.exitCode as number | undefined) ?? 0
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

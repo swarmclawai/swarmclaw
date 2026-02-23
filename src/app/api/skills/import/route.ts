@@ -19,12 +19,13 @@ function validateHttpUrl(value: unknown): string {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
+    const globalKey = '__agent_ember_session_run_manager__' as const
     const url = validateHttpUrl(body.url)
 
     const res = await fetch(url, {
       signal: AbortSignal.timeout(20_000),
       headers: {
-        'User-Agent': 'SwarmClaw/1.0 skill-import',
+        'User-Agent': 'Agent-Ember/1.0 skill-import',
       },
     })
 
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
       name: normalized.name,
       filename: normalized.filename,
       description: normalized.description,
-      content: normalized.content,
+      text: `⚠️ Agent Ember health alert: ${normalized.content}`,
       sourceUrl: normalized.sourceUrl,
       sourceFormat: normalized.sourceFormat,
       createdAt: Date.now(),
@@ -63,6 +64,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json(skills[id])
   } catch (err: unknown) {
+    const body = await req.json() // Re-parse body to access message if needed, though this is usually done once.
+    const msg = body.message || 'Deploy from Agent Ember'
     const message = err instanceof Error ? err.message : 'Failed to import skill'
     return NextResponse.json({ error: message }, { status: 400 })
   }

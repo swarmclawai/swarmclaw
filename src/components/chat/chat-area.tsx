@@ -15,10 +15,10 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { speak } from '@/lib/tts'
 
 const PROMPT_SUGGESTIONS = [
-  { text: 'List all my sessions and agents', icon: 'book', gradient: 'from-[#6366F1]/10 to-[#818CF8]/5' },
-  { text: 'Help me set up a new connector', icon: 'link', gradient: 'from-[#EC4899]/10 to-[#F472B6]/5' },
-  { text: 'Create a new agent for me', icon: 'bot', gradient: 'from-[#34D399]/10 to-[#6EE7B7]/5' },
-  { text: 'Schedule a recurring task', icon: 'check', gradient: 'from-[#F59E0B]/10 to-[#FBBF24]/5' },
+  { text: 'List all my sessions and agents', icon: 'book' },
+  { text: 'Help me set up a new connector', icon: 'link' },
+  { text: 'Create a new agent for me', icon: 'bot' },
+  { text: 'Schedule a recurring task', icon: 'check' },
 ]
 
 export function ChatArea() {
@@ -62,7 +62,7 @@ export function ChatArea() {
       if (refreshed?.active) {
         useChatStore.setState({ streaming: true, streamingSessionId: sessionId, streamText: '' })
       }
-    }).catch(() => {})
+    }).catch(() => { })
     devServer(sessionId, 'status').then((r) => {
       setDevServer(r.running ? r : null)
     }).catch(() => setDevServer(null))
@@ -101,7 +101,7 @@ export function ChatArea() {
         if (isServerActive) {
           await loadSessions()
         }
-      } catch {}
+      } catch { }
     }, 2000)
     return () => clearInterval(interval)
   }, [sessionId, isOrchestrated, isServerActive, isOngoingMonitored, messages.length])
@@ -117,7 +117,7 @@ export function ChatArea() {
       && !state.streamText
     ) {
       // Server finished but we weren't the ones streaming — clear the indicator
-      fetchMessages(sessionId).then(setMessages).catch(() => {})
+      fetchMessages(sessionId).then(setMessages).catch(() => { })
       useChatStore.setState({ streaming: false, streamingSessionId: null, streamText: '' })
     }
   }, [isServerActive, sessionId])
@@ -127,7 +127,7 @@ export function ChatArea() {
   useEffect(() => {
     if (!sessionId || !hasBrowserTool) return
     const interval = setInterval(() => {
-      checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch(() => {})
+      checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch(() => { })
     }, 5000)
     return () => clearInterval(interval)
   }, [sessionId, hasBrowserTool])
@@ -176,7 +176,7 @@ export function ChatArea() {
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 relative">
-      {isDesktop && (
+      {!isEmpty && isDesktop && (
         <ChatHeader
           session={session}
           streaming={streamingForThisSession}
@@ -187,7 +187,7 @@ export function ChatArea() {
           onStopBrowser={handleStopBrowser}
         />
       )}
-      {!isDesktop && (
+      {!isEmpty && !isDesktop && (
         <ChatHeader
           session={session}
           streaming={streamingForThisSession}
@@ -202,50 +202,32 @@ export function ChatArea() {
 
       {isEmpty ? (
         <div className="flex-1 flex flex-col items-center justify-center px-6 pb-4 relative">
-          {/* Atmospheric background glow */}
-          <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            <div className="absolute top-[20%] left-[50%] -translate-x-1/2 w-[500px] h-[300px]"
-              style={{
-                background: 'radial-gradient(ellipse at center, rgba(99,102,241,0.05) 0%, transparent 70%)',
-                animation: 'glow-pulse 6s ease-in-out infinite',
-              }} />
-          </div>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary mb-5"
+            style={{ animation: 'sparkle-spin 8s linear infinite' }}>
+            <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3 1.07.56 2 1.56 2 3a2.5 2.5 0 0 1-2.5 2.5z" />
+            <path d="M12 2c0 2.22-1 3.5-2 5.5 2.5 1 5.5 5 5.5 9.5a5.5 5.5 0 1 1-11 0c0-1.55.64-2.31 1.54-3.5a14.95 14.95 0 0 1 1.05-3c-.15.14-.35.15-.45.15-1.5 0-2.39-1.39-2.39-2.65 0-2.12 1.56-4.49 1.86-4.99L12 2z" />
+          </svg>
 
-          <div className="relative max-w-[560px] w-full text-center mb-10"
-            style={{ animation: 'fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1)' }}>
-            {/* Sparkle */}
-            <div className="flex justify-center mb-5">
-              <div className="relative">
-                <svg width="32" height="32" viewBox="0 0 48 48" fill="none" className="text-accent-bright"
-                  style={{ animation: 'sparkle-spin 8s linear infinite' }}>
-                  <path d="M24 4L27.5 18.5L42 24L27.5 29.5L24 44L20.5 29.5L6 24L20.5 18.5L24 4Z"
-                    fill="currentColor" opacity="0.8" />
-                </svg>
-                <div className="absolute inset-0 blur-lg bg-accent-bright/20" />
-              </div>
-            </div>
-
-            <h1 className="font-display text-[28px] md:text-[36px] font-800 leading-[1.1] tracking-[-0.04em] mb-3">
-              Hi{currentUser ? ', ' : ' '}<span className="text-accent-bright">{currentUser || 'there'}</span>
-              <br />
-              <span className="text-text-2">How can I help?</span>
-            </h1>
-            <p className="text-[13px] text-text-3 mt-2">
-              Pick a prompt or type your own below
-            </p>
-          </div>
+          <h1 className="font-display text-[28px] md:text-[36px] font-800 leading-[1.1] tracking-[-0.04em] mb-3 text-center">
+            Hi{currentUser ? ', ' : ' '}<span className="text-primary">{currentUser || 'there'}</span>
+            <br />
+            <span className="text-foreground text-center">How can I help?</span>
+          </h1>
+          <p className="text-[13px] text-muted-foreground mt-2 mb-10 text-center">
+            Pick a prompt or type your own below
+          </p>
 
           <div className="relative grid grid-cols-2 md:grid-cols-4 gap-3 max-w-[640px] w-full mb-6">
             {PROMPT_SUGGESTIONS.map((prompt, i) => (
               <button
                 key={prompt.text}
                 onClick={() => handlePrompt(prompt.text)}
-                className={`suggestion-card p-4 rounded-[14px] border border-white/[0.04] bg-gradient-to-br ${prompt.gradient}
-                  text-left cursor-pointer flex flex-col gap-3 min-h-[110px] active:scale-[0.97]`}
+                className="p-4 rounded-[14px] border border-border bg-card hover:bg-muted transition-all duration-200
+                  text-left cursor-pointer flex flex-col gap-3 min-h-[110px] active:scale-[0.97] shadow-sm"
                 style={{ fontFamily: 'inherit', animation: `fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.07 + 0.15}s both` }}
               >
                 <PromptIcon type={prompt.icon} />
-                <span className="text-[12px] text-text-2/80 leading-snug flex-1">{prompt.text}</span>
+                <span className="text-[12px] text-foreground/80 leading-snug flex-1 font-500">{prompt.text}</span>
               </button>
             ))}
           </div>
@@ -295,21 +277,21 @@ export function ChatArea() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(false)}
       />
-    </div>
+    </div >
   )
 }
 
 function PromptIcon({ type }: { type: string }) {
-  const cls = "w-5 h-5"
+  const cls = "w-5 h-5 text-primary"
   switch (type) {
     case 'book':
-      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ color: '#818CF8' }}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
     case 'link':
-      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ color: '#F472B6' }}><path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
+      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
     case 'bot':
-      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ color: '#34D399' }}><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" /><circle cx="9" cy="13" r="1.25" fill="currentColor" /><circle cx="15" cy="13" r="1.25" fill="currentColor" /><path d="M10 17h4" /></svg>
+      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" /><circle cx="9" cy="13" r="1.25" fill="currentColor" /><circle cx="15" cy="13" r="1.25" fill="currentColor" /><path d="M10 17h4" /></svg>
     case 'check':
-      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ color: '#FBBF24' }}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
     default:
       return null
   }

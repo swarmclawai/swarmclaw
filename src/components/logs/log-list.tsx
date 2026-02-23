@@ -4,6 +4,13 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { api } from '@/lib/api-client'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface LogEntry {
   time: string
@@ -161,11 +168,10 @@ export function LogList() {
             <button
               key={level}
               onClick={() => toggleLevel(level)}
-              className={`px-2 py-1 rounded-[6px] text-[10px] font-700 uppercase tracking-wider cursor-pointer transition-all border-none ${
-                levelFilter.length === 0 || levelFilter.includes(level)
+              className={`px-2 py-1 rounded-[6px] text-[10px] font-700 uppercase tracking-wider cursor-pointer transition-all border-none ${levelFilter.length === 0 || levelFilter.includes(level)
                   ? `${LEVEL_BG[level]} ${LEVEL_COLORS[level]}`
                   : 'bg-white/[0.02] text-text-3/40'
-              }`}
+                }`}
             >
               {level}
             </button>
@@ -173,9 +179,8 @@ export function LogList() {
           <div className="flex-1" />
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-2 py-1 rounded-[6px] text-[10px] font-600 cursor-pointer transition-all border-none ${
-              autoRefresh ? 'bg-green-500/10 text-green-400' : 'bg-white/[0.04] text-text-3'
-            }`}
+            className={`px-2 py-1 rounded-[6px] text-[10px] font-600 cursor-pointer transition-all border-none ${autoRefresh ? 'bg-green-500/10 text-green-400' : 'bg-white/[0.04] text-text-3'
+              }`}
             title={autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
           >
             {autoRefresh ? 'LIVE' : 'PAUSED'}
@@ -268,23 +273,26 @@ export function LogList() {
                 Turn this log entry into a task and optionally assign it to an agent to investigate.
               </p>
               <div className="flex gap-2">
-                <select
-                  value={taskAgentId}
-                  onChange={(e) => setTaskAgentId(e.target.value)}
-                  className="flex-1 px-4 py-3 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[14px] outline-none appearance-none cursor-pointer"
-                  style={{ fontFamily: 'inherit' }}
+                <Select
+                  value={taskAgentId || "__none__"}
+                  onValueChange={(val) => setTaskAgentId(val === "__none__" ? "" : val)}
                 >
-                  <option value="">Unassigned</option>
-                  {agentList.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="flex-1 px-4 py-3 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[14px] outline-none">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-surface border-white/[0.08]">
+                    <SelectItem value="__none__">Unassigned</SelectItem>
+                    {agentList.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <button
                   onClick={handleCreateTask}
                   disabled={creatingTask}
-                  className="px-5 py-3 rounded-[14px] border-none bg-[#6366F1] text-white text-[14px] font-600
+                  className="px-5 py-3 rounded-[14px] border-none bg-primary text-primary-foreground text-[14px] font-600
                     cursor-pointer active:scale-[0.97] disabled:opacity-40 transition-all
-                    shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110 shrink-0"
+                    shadow-[0_4px_20px_rgba(var(--primary-rgb),0.25)] hover:brightness-110 shrink-0"
                   style={{ fontFamily: 'inherit' }}
                 >
                   {creatingTask ? 'Creating...' : 'Create Task'}

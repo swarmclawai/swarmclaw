@@ -187,7 +187,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   }, [session.name, loadConnectors])
 
   return (
-    <header className="relative z-20 flex flex-col border-b border-white/[0.04] bg-bg/80 backdrop-blur-md shrink-0"
+    <header className="relative z-20 flex flex-col border-b border-border bg-background shrink-0"
       style={mobile ? { paddingTop: 'max(12px, env(safe-area-inset-top))' } : undefined}>
       <div className="flex items-center gap-3 px-5 py-3 min-h-[56px]">
         {onBack && (
@@ -215,7 +215,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               </span>
             )}
             {session.provider && session.provider !== 'claude-cli' && (
-              <span className="shrink-0 px-2.5 py-0.5 rounded-[7px] bg-accent-soft text-accent-bright text-[10px] font-700 uppercase tracking-wider">
+              <span className="shrink-0 px-2.5 py-0.5 rounded-[7px] bg-primary/10 text-primary text-[10px] font-700 uppercase tracking-wider">
                 {providerLabel}
               </span>
             )}
@@ -230,20 +230,20 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               </span>
             ) : null}
             {streaming && (
-              <span className="shrink-0 w-2 h-2 rounded-full bg-accent-bright" style={{ animation: 'pulse 1.5s ease infinite' }} />
+              <span className="shrink-0 w-2 h-2 rounded-full bg-primary" style={{ animation: 'pulse 1.5s ease infinite' }} />
             )}
           </div>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[11px] text-text-3/60 font-mono block truncate">{shortPath(session.cwd)}</span>
+            <span className="text-[11px] text-muted-foreground/60 font-mono block truncate">{shortPath(session.cwd)}</span>
             {modelName && (
               <>
-                <span className="text-[11px] text-text-3/30">·</span>
-                <span className="text-[11px] text-text-3/50 font-mono truncate shrink-0">{modelName}</span>
+                <span className="text-[11px] text-muted-foreground/30">·</span>
+                <span className="text-[11px] text-muted-foreground/50 font-mono truncate shrink-0">{modelName}</span>
               </>
             )}
             {lastUsage && !streaming && (
               <>
-                <span className="text-[11px] text-text-3/30">·</span>
+                <span className="text-[11px] text-muted-foreground/30">·</span>
                 <UsageBadge {...lastUsage} />
               </>
             )}
@@ -292,22 +292,22 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 onClick={handleToggleHeartbeat}
                 disabled={heartbeatSaving}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] transition-colors cursor-pointer border-none
-                  ${heartbeatEnabled ? 'bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-400' : 'bg-white/[0.04] hover:bg-white/[0.07] text-text-3'}`}
+                  ${heartbeatEnabled ? 'bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
                 title={loopIsOngoing ? 'Toggle heartbeat for this session' : 'Global loop mode is bounded; heartbeats are paused'}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${heartbeatEnabled ? 'bg-emerald-400' : 'bg-text-3/40'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${heartbeatEnabled ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-muted-foreground/40'}`} />
                 <span className="text-[11px] font-600">
                   HB {heartbeatEnabled ? 'On' : 'Off'}
                 </span>
                 {!loopIsOngoing && (
-                  <span className="text-[10px] text-text-3/50">(bounded)</span>
+                  <span className="text-[10px] text-muted-foreground/50">(bounded)</span>
                 )}
               </button>
               {session.name === '__main__' && (
                 <button
                   onClick={handleCycleHeartbeatInterval}
                   disabled={heartbeatSaving}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-text-3 transition-colors cursor-pointer border-none"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-muted hover:bg-muted/80 text-muted-foreground transition-colors cursor-pointer border-none"
                   title="Cycle heartbeat interval for this chat"
                 >
                   <span className="text-[11px] font-600">HB {heartbeatIntervalSec}s</span>
@@ -321,10 +321,10 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 onClick={handleToggleMissionPause}
                 disabled={mainLoopSaving}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] transition-colors cursor-pointer border-none
-                  ${missionPaused ? 'bg-amber-500/12 hover:bg-amber-500/20 text-amber-300' : 'bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-400'}`}
+                  ${missionPaused ? 'bg-amber-500/12 hover:bg-amber-500/20 text-amber-600 dark:text-amber-300' : 'bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'}`}
                 title={missionPaused ? 'Resume autonomous mission loop' : 'Pause autonomous mission loop'}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${missionPaused ? 'bg-amber-300' : 'bg-emerald-400'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${missionPaused ? 'bg-amber-500 dark:bg-amber-300' : 'bg-emerald-500 dark:bg-emerald-400'}`} />
                 <span className="text-[11px] font-600">
                   Mission {missionPaused ? 'Paused' : 'Live'}
                 </span>
@@ -332,7 +332,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <button
                 onClick={handleToggleMissionMode}
                 disabled={mainLoopSaving}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-text-3 transition-colors cursor-pointer border-none"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-muted hover:bg-muted/80 text-muted-foreground transition-colors cursor-pointer border-none"
                 title="Toggle mission autonomy mode"
               >
                 <span className="text-[11px] font-600">
@@ -342,7 +342,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <button
                 onClick={handleNudgeMission}
                 disabled={mainLoopSaving || missionPaused}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#3B82F6]/10 hover:bg-[#3B82F6]/18 text-[#60A5FA] transition-colors cursor-pointer border-none disabled:opacity-60"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-primary/10 hover:bg-primary/20 text-primary transition-colors cursor-pointer border-none disabled:opacity-60"
                 title="Run one immediate main-loop mission tick"
               >
                 <span className="text-[11px] font-600">Nudge</span>
@@ -359,13 +359,13 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 <button
                   onClick={handleClearMissionEvents}
                   disabled={mainLoopSaving}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-text-3 transition-colors cursor-pointer border-none"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-muted hover:bg-muted/80 text-muted-foreground transition-colors cursor-pointer border-none"
                   title="Clear pending mission events"
                 >
                   <span className="text-[11px] font-600">Events {missionEventsCount}</span>
                 </button>
               )}
-              <span className="text-[10px] text-text-3/50 uppercase tracking-wider">
+              <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">
                 {`State ${missionStatus}${missionMomentum !== null ? ` · ${missionMomentum}` : ''}`}
               </span>
             </>
@@ -390,7 +390,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
           {linkedTask && (
             <button
               onClick={() => setActiveView('tasks')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#F59E0B]/10 hover:bg-[#F59E0B]/15 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-primary/10 hover:bg-primary/20 transition-colors cursor-pointer"
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round">
                 <path d="M9 11l3 3L22 4" />
@@ -404,19 +404,19 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
           {resumeHandle && (
             <button
               onClick={handleCopySessionId}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] transition-colors cursor-pointer group"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-muted hover:bg-muted/80 transition-colors cursor-pointer group border-none"
               title="Copy resume handle/command to clipboard"
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/50">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-muted-foreground/50">
                 <path d="M4 17l6 0l0 -6" />
                 <path d="M20 7l-6 0l0 6" />
                 <path d="M4 17l10 -10" />
               </svg>
-              <span className="text-[11px] font-mono text-text-3/50 group-hover:text-text-3/70 truncate max-w-[220px]">
+              <span className="text-[11px] font-mono text-muted-foreground/50 group-hover:text-muted-foreground/70 truncate max-w-[220px]">
                 {copied ? 'Copied!' : `${resumeHandle.label}: ${resumeHandle.id}`}
               </span>
               {!copied && (
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/30 shrink-0">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-muted-foreground/30 shrink-0">
                   <rect x="9" y="9" width="13" height="13" rx="2" />
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                 </svg>
@@ -426,19 +426,19 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
           {browserActive && (
             <button
               onClick={onStopBrowser}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#3B82F6]/10 hover:bg-[#F43F5E]/15 transition-colors cursor-pointer group"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-sky-500/12 hover:bg-rose-500/15 transition-colors cursor-pointer group border-none"
               title="Stop browser session"
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-[#3B82F6] group-hover:text-[#F43F5E]">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-sky-600 dark:text-sky-400 group-hover:text-rose-600 dark:group-hover:text-rose-400">
                 <rect x="3" y="3" width="18" height="14" rx="2" />
                 <path d="M3 9h18" />
                 <circle cx="7" cy="6" r="0.5" fill="currentColor" />
                 <circle cx="10" cy="6" r="0.5" fill="currentColor" />
               </svg>
-              <span className="text-[11px] font-600 text-[#3B82F6] group-hover:text-[#F43F5E]">
+              <span className="text-[11px] font-600 text-sky-600 dark:text-sky-400 group-hover:text-rose-600 dark:group-hover:text-rose-400">
                 Browser Active
               </span>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-3/30 group-hover:text-[#F43F5E] shrink-0">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-muted-foreground/30 group-hover:text-rose-600 dark:group-hover:text-rose-400 shrink-0">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>

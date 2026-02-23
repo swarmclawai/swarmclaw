@@ -7,6 +7,13 @@ import { createSession, createCredential } from '@/lib/sessions'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { DirBrowser } from '@/components/shared/dir-browser'
 import { TOOL_LABELS, TOOL_DESCRIPTIONS } from '@/components/chat/tool-call-bubble'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { ProviderType, SessionTool } from '@/types'
 
 export function NewSessionSheet() {
@@ -59,7 +66,7 @@ export function NewSessionSheet() {
       setOllamaMode('local')
       // Auto-select last used agent, or default agent if no history
       const agentsList = Object.values(agents)
-      const lastAgentId = typeof window !== 'undefined' ? localStorage.getItem('swarmclaw-last-agent') : null
+      const lastAgentId = typeof window !== 'undefined' ? localStorage.getItem('agent-ember-last-agent') : null
       const lastAgent = lastAgentId ? agentsList.find((a: any) => a.id === lastAgentId) : null
       const defaultAgent = lastAgent || agentsList.find((a: any) => a.id === 'default') || agentsList[0]
       if (defaultAgent) {
@@ -155,9 +162,9 @@ export function NewSessionSheet() {
     )
     // Remember agent selection for next time
     if (selectedAgentId) {
-      localStorage.setItem('swarmclaw-last-agent', selectedAgentId)
+      localStorage.setItem('agent-ember-last-agent', selectedAgentId)
     } else {
-      localStorage.removeItem('swarmclaw-last-agent')
+      localStorage.removeItem('agent-ember-last-agent')
     }
     updateSessionInStore(s)
     setCurrentSession(s.id)
@@ -205,17 +212,22 @@ export function NewSessionSheet() {
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
             Agent <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
           </label>
-          <select
-            value={selectedAgentId || ''}
-            onChange={(e) => handleSelectAgent(e.target.value || null)}
-            className={`${inputClass} appearance-none cursor-pointer`}
-            style={{ fontFamily: 'inherit' }}
+          <Select
+            value={selectedAgentId || "__none__"}
+            onValueChange={(val) => handleSelectAgent(val === "__none__" ? null : val)}
           >
-            <option value="">None — manual configuration</option>
-            {Object.values(agents).map((p) => (
-              <option key={p.id} value={p.id}>{p.name}{p.isOrchestrator ? ' (Orchestrator)' : ''}</option>
-            ))}
-          </select>
+            <SelectTrigger className={inputClass}>
+              <SelectValue placeholder="None — manual configuration" />
+            </SelectTrigger>
+            <SelectContent className="bg-surface border-white/[0.08]">
+              <SelectItem value="__none__">None — manual configuration</SelectItem>
+              {Object.values(agents).map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}{p.isOrchestrator ? ' (Orchestrator)' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
@@ -276,16 +288,19 @@ export function NewSessionSheet() {
               <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
                 Model
               </label>
-              <select
+              <Select
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className={`${inputClass} appearance-none cursor-pointer`}
-                style={{ fontFamily: 'inherit' }}
+                onValueChange={(val) => setModel(val)}
               >
-                {currentProvider.models.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+                <SelectTrigger className={inputClass}>
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent className="bg-surface border-white/[0.08]">
+                  {currentProvider.models.map((m) => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
@@ -296,23 +311,26 @@ export function NewSessionSheet() {
                 API Key
               </label>
               {providerCredentials.length > 0 && !addingKey ? (
-                <select
+                <Select
                   value={credentialId || ''}
-                  onChange={(e) => {
-                    if (e.target.value === '__add__') {
+                  onValueChange={(val) => {
+                    if (val === '__add__') {
                       setAddingKey(true)
                     } else {
-                      setCredentialId(e.target.value)
+                      setCredentialId(val)
                     }
                   }}
-                  className={`${inputClass} appearance-none cursor-pointer`}
-                  style={{ fontFamily: 'inherit' }}
                 >
-                  {providerCredentials.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                  <option value="__add__">+ Add new key...</option>
-                </select>
+                  <SelectTrigger className={inputClass}>
+                    <SelectValue placeholder="Select API key" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-surface border-white/[0.08]">
+                    {providerCredentials.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                    <SelectItem value="__add__">+ Add new key...</SelectItem>
+                  </SelectContent>
+                </Select>
               ) : (
                 <div className="space-y-3 p-5 rounded-[16px] bg-surface-2 border border-white/[0.06]">
                   <input
@@ -344,7 +362,7 @@ export function NewSessionSheet() {
                     <button
                       onClick={handleAddKey}
                       disabled={!newKeyValue.trim()}
-                      className="flex-1 py-3 rounded-[14px] border-none bg-[#6366F1] text-white text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110"
+                      className="flex-1 py-3 rounded-[14px] border-none bg-primary text-primary-foreground text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110"
                       style={{ fontFamily: 'inherit' }}
                     >
                       Save Key
@@ -402,7 +420,7 @@ export function NewSessionSheet() {
                       }}
                       className={`px-4 py-2.5 rounded-[12px] text-[13px] font-600 border cursor-pointer transition-all duration-200 active:scale-[0.97]
                         ${active
-                          ? 'bg-accent-soft border-accent-bright/25 text-accent-bright shadow-[0_0_20px_rgba(99,102,241,0.1)]'
+                          ? 'bg-accent-soft border-accent-bright/25 text-accent-bright shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]'
                           : 'bg-surface border-white/[0.06] text-text-3 hover:bg-surface-2 hover:border-white/[0.08]'}`}
                       style={{ fontFamily: 'inherit' }}
                     >
@@ -462,7 +480,7 @@ export function NewSessionSheet() {
         <button
           onClick={onClose}
           className="flex-1 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer
-            hover:bg-surface-2 transition-all duration-200"
+          hover:bg-surface-2 transition-all duration-200"
           style={{ fontFamily: 'inherit' }}
         >
           Cancel
@@ -470,9 +488,9 @@ export function NewSessionSheet() {
         <button
           onClick={handleCreate}
           disabled={!canCreate()}
-          className="flex-1 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-600 cursor-pointer
-            active:scale-[0.97] disabled:opacity-30 transition-all duration-200
-            shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110"
+          className="flex-1 py-3.5 rounded-[14px] border-none bg-primary text-primary-foreground text-[15px] font-600 cursor-pointer
+          active:scale-[0.97] disabled:opacity-30 transition-all duration-200
+          shadow-[0_4px_20px_rgba(var(--primary-rgb),0.25)] hover:brightness-110"
           style={{ fontFamily: 'inherit' }}
         >
           Create Session

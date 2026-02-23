@@ -27,7 +27,7 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
           setGeneratedKey(data.key)
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setChecking(false))
   }, [])
 
@@ -97,7 +97,7 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
         <div
           className="absolute top-[30%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px]"
           style={{
-            background: 'radial-gradient(ellipse at center, rgba(99,102,241,0.06) 0%, transparent 70%)',
+            background: 'radial-gradient(ellipse at center, rgba(var(--primary-rgb),0.1) 0%, transparent 70%)',
             animation: 'glow-pulse 6s ease-in-out infinite',
           }}
         />
@@ -113,7 +113,7 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
             <svg
               width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-              className="text-accent-bright"
+              className="text-primary"
             >
               {firstTime ? (
                 <>
@@ -126,7 +126,6 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
                 </>
               )}
             </svg>
-            <div className="absolute inset-0 blur-xl bg-accent-bright/20" />
           </div>
         </div>
 
@@ -144,10 +143,10 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
             <div className="mb-3">
               <div
                 className="inline-flex items-center gap-3 px-5 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface
-                  cursor-pointer hover:border-accent-bright/20 transition-all duration-200"
+                  cursor-pointer hover:border-primary/20 transition-all duration-200"
                 onClick={handleCopyKey}
               >
-                <code className="text-[15px] font-mono text-accent-bright tracking-wide select-all">
+                <code className="text-[15px] font-mono text-primary tracking-wide select-all">
                   {generatedKey}
                 </code>
                 <svg
@@ -192,9 +191,9 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
             <button
               onClick={handleClaimKey}
               disabled={loading}
-              className="px-12 py-4 rounded-[16px] border-none bg-[#6366F1] text-white text-[16px] font-display font-600
+              className="px-12 py-4 rounded-[16px] border-none bg-primary text-primary-foreground text-[16px] font-display font-600
                 cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
-                shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
+                shadow-[0_6px_28px_rgba(var(--primary-rgb),0.3)] disabled:opacity-30"
             >
               {loading ? 'Connecting...' : 'Continue'}
             </button>
@@ -223,7 +222,7 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
                 className="w-full max-w-[320px] px-6 py-4 rounded-[16px] border border-white/[0.08] bg-surface
                   text-text text-[16px] text-center font-mono outline-none
                   transition-all duration-200 placeholder:text-text-3/40
-                  focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                  focus:border-primary/30 focus:shadow-[0_0_30px_rgba(var(--primary-rgb),0.1)]"
               />
 
               {error && (
@@ -233,9 +232,9 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
               <button
                 type="submit"
                 disabled={!key.trim() || loading}
-                className="px-12 py-4 rounded-[16px] border-none bg-[#6366F1] text-white text-[16px] font-display font-600
+                className="px-12 py-4 rounded-[16px] border-none bg-primary text-primary-foreground text-[16px] font-display font-600
                   cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
-                  shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
+                  shadow-[0_6px_28px_rgba(var(--primary-rgb),0.3)] disabled:opacity-30"
               >
                 {loading ? 'Connecting...' : 'Connect'}
               </button>

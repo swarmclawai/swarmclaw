@@ -146,7 +146,7 @@ const whatsapp: PlatformConnector = {
       sock = makeWASocket({
         version,
         auth: state,
-        browser: ['SwarmClaw', 'Chrome', '120.0'],
+        browser: ['Agent Ember', 'Chrome', '120.0'],
       })
 
       sock.ev.on('creds.update', () => {

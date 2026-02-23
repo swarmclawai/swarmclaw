@@ -1,9 +1,9 @@
 {
-  "name": "swarmclaw",
+  "name": "agent-ember",
   "version": "0.1.0",
   "private": true,
   "bin": {
-    "swarmclaw": "./bin/swarmclaw.js"
+    "agent-ember": "./bin/agent-ember.js"
   },
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 -p 3456",

@@ -60,12 +60,11 @@ function SparkleIcon() {
   return (
     <div className="flex justify-center mb-6">
       <div className="relative w-12 h-12">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className="text-accent-bright"
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary mb-6"
           style={{ animation: 'sparkle-spin 8s linear infinite' }}>
-          <path d="M24 4L27.5 18.5L42 24L27.5 29.5L24 44L20.5 29.5L6 24L20.5 18.5L24 4Z"
-            fill="currentColor" opacity="0.9" />
+          <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3 1.07.56 2 1.56 2 3a2.5 2.5 0 0 1-2.5 2.5z" />
+          <path d="M12 2c0 2.22-1 3.5-2 5.5 2.5 1 5.5 5 5.5 9.5a5.5 5.5 0 1 1-11 0c0-1.55.64-2.31 1.54-3.5a14.95 14.95 0 0 1 1.05-3c-.15.14-.35.15-.45.15-1.5 0-2.39-1.39-2.39-2.65 0-2.12 1.56-4.49 1.86-4.99L12 2z" />
         </svg>
-        <div className="absolute inset-0 blur-xl bg-accent-bright/20" />
       </div>
     </div>
   )
@@ -77,13 +76,12 @@ function StepDots({ current, total }: { current: number; total: number }) {
       {Array.from({ length: total }, (_, i) => (
         <div
           key={i}
-          className={`h-1.5 rounded-full transition-all duration-300 ${
-            i === current
-              ? 'w-6 bg-accent-bright'
-              : i < current
-                ? 'w-1.5 bg-accent-bright/50'
-                : 'w-1.5 bg-white/10'
-          }`}
+          className={`h-1.5 rounded-full transition-all duration-300 ${i === current
+            ? 'w-6 bg-primary'
+            : i < current
+              ? 'w-1.5 bg-primary/50'
+              : 'w-1.5 bg-white/10'
+            }`}
         />
       ))}
     </div>
@@ -189,7 +187,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         <div
           className="absolute top-[30%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px]"
           style={{
-            background: 'radial-gradient(ellipse at center, rgba(99,102,241,0.06) 0%, transparent 70%)',
+            background: 'radial-gradient(ellipse at center, rgba(var(--primary-rgb),0.1) 0%, transparent 70%)',
             animation: 'glow-pulse 6s ease-in-out infinite',
           }}
         />
@@ -225,11 +223,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                   key={p.id}
                   onClick={() => selectProvider(p.id)}
                   className="w-full px-5 py-4 rounded-[14px] border border-white/[0.08] bg-surface text-left
-                    cursor-pointer hover:border-accent-bright/30 hover:bg-surface-hover transition-all duration-200
+                    cursor-pointer hover:border-primary/30 hover:bg-surface-hover transition-all duration-200
                     flex items-start gap-4"
                 >
                   <div className="w-10 h-10 rounded-[10px] bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0 mt-0.5">
-                    <span className="text-[16px] font-display font-700 text-accent-bright">
+                    <span className="text-[16px] font-display font-700 text-primary">
                       {p.id === 'anthropic' ? 'A' : p.id === 'openai' ? 'O' : 'L'}
                     </span>
                   </div>
@@ -269,7 +267,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                     href={p.keyUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-accent-bright hover:underline"
+                    className="text-primary hover:underline"
                   >
                     {p.keyLabel}
                   </a>
@@ -288,7 +286,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 className="w-full max-w-[360px] px-6 py-4 rounded-[16px] border border-white/[0.08] bg-surface
                   text-text text-[15px] font-mono outline-none
                   transition-all duration-200 placeholder:text-text-3/40
-                  focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                  focus:border-primary/30 focus:shadow-[0_0_30px_rgba(var(--primary-rgb),0.1)]"
               />
 
               {error && <p className="text-[13px] text-red-400">{error}</p>}
@@ -304,9 +302,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 <button
                   onClick={saveApiKey}
                   disabled={!apiKey.trim() || saving}
-                  className="px-10 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-display font-600
+                  className="px-10 py-3.5 rounded-[14px] border-none bg-primary text-primary-foreground text-[15px] font-display font-600
                     cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
-                    shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
+                    shadow-[0_6px_28px_rgba(var(--primary-rgb),0.3)] disabled:opacity-30"
                 >
                   {saving ? 'Saving...' : 'Save & Continue'}
                 </button>
@@ -357,8 +355,8 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                   onChange={(e) => setAgentPrompt(e.target.value)}
                   rows={3}
                   className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface
-                    text-text text-[14px] outline-none transition-all duration-200 resize-none
-                    focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                     text-[14px] outline-none transition-all duration-200 resize-none
+                    focus:border-primary/30 focus:shadow-[0_0_30px_rgba(var(--primary-rgb),0.1)]"
                 />
               </div>
               <div>
@@ -368,8 +366,8 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                   value={agentModel}
                   onChange={(e) => setAgentModel(e.target.value)}
                   className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface
-                    text-text text-[14px] font-mono outline-none transition-all duration-200
-                    focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                     text-[14px] font-mono outline-none transition-all duration-200
+                    focus:border-primary/30 focus:shadow-[0_0_30px_rgba(var(--primary-rgb),0.1)]"
                 />
               </div>
             </div>
@@ -387,9 +385,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
               <button
                 onClick={createAgent}
                 disabled={!agentName.trim() || saving}
-                className="px-10 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-display font-600
-                  cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
-                  shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
+                className="px-10 py-3.5 rounded-[14px] border-none bg-primary text-primary-foreground text-[15px] font-display font-600
+                    cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
+                    shadow-[0_6px_28px_rgba(var(--primary-rgb),0.3)] disabled:opacity-30"
               >
                 {saving ? 'Creating...' : 'Create Agent'}
               </button>

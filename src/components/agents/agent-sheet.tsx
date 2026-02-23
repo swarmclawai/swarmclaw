@@ -6,6 +6,13 @@ import { createAgent, updateAgent, deleteAgent } from '@/lib/agents'
 import { api } from '@/lib/api-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AiGenBlock } from '@/components/shared/ai-gen-block'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { ProviderType, ClaudeSkill } from '@/types'
 
 const AVAILABLE_TOOLS: { id: string; label: string; description: string }[] = [
@@ -155,14 +162,14 @@ export function AgentSheet() {
         setOllamaMode('local')
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingId])
 
   useEffect(() => {
     if (currentProvider?.models.length && !editing) {
       setModel(currentProvider.models[0])
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, providers])
 
   const handleGenerate = async () => {
@@ -236,7 +243,7 @@ export function AgentSheet() {
     )
   }
 
-  const inputClass = "w-full px-4 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[15px] outline-none transition-all duration-200 placeholder:text-text-3/50 focus-glow"
+  const inputClass = "w-full px-4 py-3.5 rounded-[14px] border border-border bg-background text-foreground text-[15px] outline-none transition-all duration-200 placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
 
   return (
     <BottomSheet open={open} onClose={onClose} wide>
@@ -244,7 +251,7 @@ export function AgentSheet() {
         <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
           {editing ? 'Edit Agent' : 'New Agent'}
         </h2>
-        <p className="text-[14px] text-text-3">Define an AI agent or orchestrator</p>
+        <p className="text-[14px] text-muted-foreground">Define an AI agent or orchestrator</p>
       </div>
 
       {/* AI Generation */}
@@ -256,22 +263,22 @@ export function AgentSheet() {
       />}
 
       <div className="mb-8">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Name</label>
+        <label className="block font-display text-[12px] font-600 text-muted-foreground uppercase tracking-[0.08em] mb-3">Name</label>
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. SEO Researcher" className={inputClass} style={{ fontFamily: 'inherit' }} />
       </div>
 
       <div className="mb-8">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Description</label>
+        <label className="block font-display text-[12px] font-600 text-muted-foreground uppercase tracking-[0.08em] mb-3">Description</label>
         <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What does this agent do?" className={inputClass} style={{ fontFamily: 'inherit' }} />
       </div>
 
       <div className="mb-8">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-          Soul / Personality <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+        <label className="block font-display text-[12px] font-600 text-muted-foreground uppercase tracking-[0.08em] mb-2">
+          Soul / Personality <span className="normal-case tracking-normal font-normal text-muted-foreground/60">(optional)</span>
         </label>
         <div className="flex items-center gap-2 mb-3">
-          <p className="text-[12px] text-text-3/60">Define the agent&apos;s voice, tone, and personality. Injected before the system prompt.</p>
-          <button onClick={() => soulFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
+          <p className="text-[12px] text-muted-foreground">Define the agent&apos;s voice, tone, and personality. Injected before the system prompt.</p>
+          <button onClick={() => soulFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-border bg-secondary text-[11px] text-muted-foreground hover:text-foreground cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
           <input ref={soulFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSoul)} className="hidden" />
         </div>
         <textarea
@@ -286,8 +293,8 @@ export function AgentSheet() {
 
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">System Prompt</label>
-          <button onClick={() => promptFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
+          <label className="block font-display text-[12px] font-600 text-foreground uppercase tracking-[0.08em]">System Prompt</label>
+          <button onClick={() => promptFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-border bg-secondary text-[11px] text-muted-foreground hover:text-foreground cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
           <input ref={promptFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSystemPrompt)} className="hidden" />
         </div>
         <textarea
@@ -301,7 +308,7 @@ export function AgentSheet() {
       </div>
 
       <div className="mb-8">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Provider</label>
+        <label className="block font-display text-[12px] font-600 text-muted-foreground uppercase tracking-[0.08em] mb-3">Provider</label>
         <div className="grid grid-cols-3 gap-3">
           {providers.filter((p) => !isOrchestrator || p.id !== 'claude-cli').map((p) => {
             const isConnected = !p.requiresApiKey || Object.values(credentials).some((c) => c.provider === p.id)
@@ -312,8 +319,8 @@ export function AgentSheet() {
                 className={`relative py-3.5 px-4 rounded-[14px] text-center cursor-pointer transition-all duration-200
                   active:scale-[0.97] text-[14px] font-600 border
                   ${provider === p.id
-                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
-                    : 'bg-surface border-white/[0.06] text-text-2 hover:bg-surface-2'}`}
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background border-border text-foreground hover:bg-muted'}`}
                 style={{ fontFamily: 'inherit' }}
               >
                 {isConnected && (
@@ -328,12 +335,17 @@ export function AgentSheet() {
 
       {currentProvider && currentProvider.models.length > 0 && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Model</label>
-          <select value={model} onChange={(e) => setModel(e.target.value)} className={`${inputClass} appearance-none cursor-pointer`} style={{ fontFamily: 'inherit' }}>
-            {currentProvider.models.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
+          <label className="block font-display text-[12px] font-600 text-muted-foreground uppercase tracking-[0.08em] mb-3">Model</label>
+          <Select value={model} onValueChange={setModel}>
+            <SelectTrigger className={inputClass}>
+              <SelectValue placeholder="Select model" />
+            </SelectTrigger>
+            <SelectContent className="bg-popover border-white/[0.08]">
+              {currentProvider.models.map((m) => (
+                <SelectItem key={m} value={m}>{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
@@ -341,7 +353,7 @@ export function AgentSheet() {
       {provider === 'ollama' && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Mode</label>
-          <div className="flex p-1 rounded-[14px] bg-surface border border-white/[0.06]">
+          <div className="flex p-1 rounded-[14px] bg-muted border border-border">
             {(['local', 'cloud'] as const).map((mode) => (
               <button
                 key={mode}
@@ -358,8 +370,8 @@ export function AgentSheet() {
                 className={`flex-1 py-3 rounded-[12px] text-center cursor-pointer transition-all duration-200
                   text-[14px] font-600 capitalize
                   ${ollamaMode === mode
-                    ? 'bg-accent-soft text-accent-bright shadow-[0_0_20px_rgba(99,102,241,0.1)]'
-                    : 'bg-transparent text-text-3 hover:text-text-2'}`}
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'bg-transparent text-muted-foreground hover:text-foreground'}`}
                 style={{ fontFamily: 'inherit' }}
               >
                 {mode}
@@ -374,31 +386,39 @@ export function AgentSheet() {
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">API Key</label>
           {providerCredentials.length > 0 && !addingKey ? (
             <div className="flex gap-2">
-              <select value={credentialId || ''} onChange={(e) => {
-                if (e.target.value === '__add__') {
-                  setAddingKey(true)
-                  setNewKeyName('')
-                  setNewKeyValue('')
-                } else {
-                  setCredentialId(e.target.value || null)
-                }
-              }} className={`${inputClass} appearance-none cursor-pointer flex-1`} style={{ fontFamily: 'inherit' }}>
-                <option value="">Select a key...</option>
-                {providerCredentials.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-                <option value="__add__">+ Add new key...</option>
-              </select>
+              <Select
+                value={credentialId || "__none__"}
+                onValueChange={(val) => {
+                  if (val === '__add__') {
+                    setAddingKey(true)
+                    setNewKeyName('')
+                    setNewKeyValue('')
+                  } else {
+                    setCredentialId(val === "__none__" ? null : val)
+                  }
+                }}
+              >
+                <SelectTrigger className={`${inputClass} flex-1`}>
+                  <SelectValue placeholder="Select a key..." />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-white/[0.08]">
+                  <SelectItem value="__none__">Select a key...</SelectItem>
+                  {providerCredentials.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                  <SelectItem value="__add__">+ Add new key...</SelectItem>
+                </SelectContent>
+              </Select>
               <button
                 type="button"
                 onClick={() => { setAddingKey(true); setNewKeyName(''); setNewKeyValue('') }}
-                className="shrink-0 px-3 py-2.5 rounded-[10px] bg-accent-soft/50 text-accent-bright text-[12px] font-600 hover:bg-accent-soft transition-colors cursor-pointer border border-accent-bright/20"
+                className="shrink-0 px-3 py-2.5 rounded-[10px] bg-primary text-primary-foreground text-[12px] font-600 hover:opacity-90 transition-opacity cursor-pointer border-none"
               >
                 + New
               </button>
             </div>
           ) : (
-            <div className="space-y-3 p-4 rounded-[12px] border border-accent-bright/15 bg-accent-soft/20">
+            <div className="space-y-3 p-4 rounded-[12px] border border-border bg-muted/50">
               <input
                 type="text"
                 value={newKeyName}
@@ -448,10 +468,10 @@ export function AgentSheet() {
       {/* Fallback Credentials */}
       {(currentProvider?.requiresApiKey || (provider === 'ollama' && ollamaMode === 'cloud')) && providerCredentials.length > 1 && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-            Fallback Keys <span className="normal-case tracking-normal font-normal text-text-3">(for auto-failover)</span>
+          <label className="block font-display text-[12px] font-600 text-muted-foreground uppercase tracking-[0.08em] mb-2">
+            Fallback Keys <span className="normal-case tracking-normal font-normal text-muted-foreground/60">(for auto-failover)</span>
           </label>
-          <p className="text-[12px] text-text-3/60 mb-3">If the primary key fails (rate limit, auth error), these keys will be tried in order.</p>
+          <p className="text-[12px] text-muted-foreground/60 mb-3">If the primary key fails (rate limit, auth error), these keys will be tried in order.</p>
           <div className="flex flex-wrap gap-2">
             {providerCredentials.filter((c) => c.id !== credentialId).map((c) => {
               const active = fallbackCredentialIds.includes(c.id)
@@ -461,8 +481,8 @@ export function AgentSheet() {
                   onClick={() => setFallbackCredentialIds((prev) => active ? prev.filter((x) => x !== c.id) : [...prev, c.id])}
                   className={`px-3 py-2 rounded-[10px] text-[12px] font-600 cursor-pointer transition-all border
                     ${active
-                      ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
-                      : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
+                      ? 'bg-primary border-primary text-primary-foreground shadow-sm'
+                      : 'bg-background border-border text-muted-foreground hover:text-foreground'}`}
                   style={{ fontFamily: 'inherit' }}
                 >
                   {c.name}
@@ -475,7 +495,7 @@ export function AgentSheet() {
 
       {currentProvider?.requiresEndpoint && (provider === 'openclaw' || (provider === 'ollama' && ollamaMode === 'local')) && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
+          <label className="block font-display text-[12px] font-600 text-muted-foreground uppercase tracking-[0.08em] mb-3">
             {provider === 'openclaw' ? 'OpenClaw Endpoint' : 'Endpoint'}
           </label>
           <input type="text" value={apiEndpoint || ''} onChange={(e) => setApiEndpoint(e.target.value || null)} placeholder={currentProvider.defaultEndpoint || 'http://localhost:11434'} className={`${inputClass} font-mono text-[14px]`} />
@@ -488,17 +508,17 @@ export function AgentSheet() {
       {/* Tools — hidden for providers that manage capabilities outside LangGraph */}
       {!hasNativeCapabilities && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Tools</label>
-          <p className="text-[12px] text-text-3/60 mb-3">Enable tools for LangGraph agent sessions.</p>
+          <label className="block font-display text-[12px] font-600 text-muted-foreground uppercase tracking-[0.08em] mb-2">Tools</label>
+          <p className="text-[12px] text-muted-foreground/60 mb-3">Enable tools for LangGraph agent sessions.</p>
           <div className="space-y-3">
             {AVAILABLE_TOOLS.map((t) => (
               <label key={t.id} className="flex items-center gap-3 cursor-pointer">
                 <div
                   onClick={() => setTools((prev) => prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id])}
                   className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
-                    ${tools.includes(t.id) ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
+                    ${tools.includes(t.id) ? 'bg-primary' : 'bg-muted border border-border'}`}
                 >
-                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-background ring-1 ring-border shadow-sm transition-all duration-200
                     ${tools.includes(t.id) ? 'left-[22px]' : 'left-0.5'}`} />
                 </div>
                 <span className="font-display text-[14px] font-600 text-text-2">{t.label}</span>
@@ -520,9 +540,9 @@ export function AgentSheet() {
                 <div
                   onClick={() => setTools((prev) => prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id])}
                   className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
-                    ${tools.includes(t.id) ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
+                    ${tools.includes(t.id) ? 'bg-primary' : 'bg-muted border border-border'}`}
                 >
-                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-background ring-1 ring-border shadow-sm transition-all duration-200
                     ${tools.includes(t.id) ? 'left-[22px]' : 'left-0.5'}`} />
                 </div>
                 <span className="font-display text-[14px] font-600 text-text-2">{t.label}</span>
@@ -531,14 +551,14 @@ export function AgentSheet() {
             ))}
           </div>
           {(tools.includes('manage_tasks') || tools.includes('manage_schedules')) && (
-            <div className="mt-4 ml-1 pt-3 border-t border-white/[0.04]">
+            <div className="mt-4 ml-1 pt-3 border-t border-border">
               <label className="flex items-center gap-3 cursor-pointer">
                 <div
                   onClick={() => setPlatformAssignScope((prev) => prev === 'all' ? 'self' : 'all')}
                   className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
-                    ${platformAssignScope === 'all' ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
+                    ${platformAssignScope === 'all' ? 'bg-primary' : 'bg-muted border border-border'}`}
                 >
-                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-background ring-1 ring-border shadow-sm transition-all duration-200
                     ${platformAssignScope === 'all' ? 'left-[22px]' : 'left-0.5'}`} />
                 </div>
                 <span className="font-display text-[14px] font-600 text-text-2">Assign to Other Agents</span>
@@ -551,7 +571,7 @@ export function AgentSheet() {
 
       {/* Native capability provider note */}
       {hasNativeCapabilities && (
-        <div className="mb-8 p-4 rounded-[14px] bg-white/[0.02] border border-white/[0.06]">
+        <div className="mb-8 p-4 rounded-[14px] bg-muted border border-border">
           <p className="text-[13px] text-text-3">
             {provider === 'openclaw'
               ? 'OpenClaw manages tools/platform capabilities in the remote OpenClaw instance — no local tool toggles are applied here.'
@@ -568,8 +588,8 @@ export function AgentSheet() {
       {provider === 'claude-cli' && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
-            <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">
-              Skills <span className="normal-case tracking-normal font-normal text-text-3">(from ~/.claude/skills/)</span>
+            <label className="block font-display text-[12px] font-600 text-muted-foreground uppercase tracking-[0.08em]">
+              Skills <span className="normal-case tracking-normal font-normal text-muted-foreground/60">(from ~/.claude/skills/)</span>
             </label>
             <button
               onClick={loadClaudeSkills}
@@ -596,8 +616,8 @@ export function AgentSheet() {
                     onClick={() => setSkills((prev) => active ? prev.filter((x) => x !== s.id) : [...prev, s.id])}
                     className={`px-3 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border
                       ${active
-                        ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
-                        : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
+                        ? 'bg-primary border-primary text-primary-foreground shadow-sm'
+                        : 'bg-background border-border text-muted-foreground hover:text-foreground'}`}
                     style={{ fontFamily: 'inherit' }}
                     title={s.description}
                   >
@@ -615,10 +635,10 @@ export function AgentSheet() {
       {/* Dynamic Skills from Skills Manager */}
       {Object.keys(dynamicSkills).length > 0 && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-            Custom Skills <span className="normal-case tracking-normal font-normal text-text-3">(from Skills manager)</span>
+          <label className="block font-display text-[12px] font-600 text-foreground uppercase tracking-[0.08em] mb-2">
+            Custom Skills <span className="normal-case tracking-normal font-normal text-muted-foreground">(from Skills manager)</span>
           </label>
-          <p className="text-[12px] text-text-3/60 mb-3">Skill content is injected into the system prompt when this agent runs.</p>
+          <p className="text-[12px] text-muted-foreground mb-3">Skill content is injected into the system prompt when this agent runs.</p>
           <div className="flex flex-wrap gap-2">
             {Object.values(dynamicSkills).map((s) => {
               const active = skillIds.includes(s.id)
@@ -628,8 +648,8 @@ export function AgentSheet() {
                   onClick={() => setSkillIds((prev) => active ? prev.filter((x) => x !== s.id) : [...prev, s.id])}
                   className={`px-3 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border
                     ${active
-                      ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
-                      : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
+                      ? 'bg-primary border-primary text-primary-foreground shadow-sm'
+                      : 'bg-background border-border text-muted-foreground hover:text-foreground'}`}
                   style={{ fontFamily: 'inherit' }}
                   title={s.description || s.filename}
                 >
@@ -650,19 +670,19 @@ export function AgentSheet() {
               if (next && provider === 'claude-cli') setProvider('anthropic')
             }}
             className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer
-              ${isOrchestrator ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
+              ${isOrchestrator ? 'bg-primary' : 'bg-muted border border-border'}`}
           >
-            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-background ring-1 ring-border shadow-sm transition-all duration-200
               ${isOrchestrator ? 'left-[22px]' : 'left-0.5'}`} />
           </div>
-          <span className="font-display text-[14px] font-600 text-text-2">Orchestrator</span>
-          <span className="text-[12px] text-text-3">Can delegate tasks to other agents</span>
+          <span className="font-display text-[14px] font-600 text-foreground">Orchestrator</span>
+          <span className="text-[12px] text-muted-foreground">Can delegate tasks to other agents</span>
         </label>
       </div>
 
       {isOrchestrator && agentOptions.length > 0 && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Available Agents</label>
+          <label className="block font-display text-[12px] font-600 text-foreground uppercase tracking-[0.08em] mb-3">Available Agents</label>
           <div className="flex flex-wrap gap-2">
             {agentOptions.map((a) => (
               <button
@@ -670,8 +690,8 @@ export function AgentSheet() {
                 onClick={() => toggleAgent(a.id)}
                 className={`px-3 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border
                   ${subAgentIds.includes(a.id)
-                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
-                    : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
+                    ? 'bg-primary border-primary text-primary-foreground shadow-sm'
+                    : 'bg-background border-border text-muted-foreground hover:text-foreground'}`}
                 style={{ fontFamily: 'inherit' }}
               >
                 {a.name}
@@ -681,16 +701,16 @@ export function AgentSheet() {
         </div>
       )}
 
-      <div className="flex gap-3 pt-2 border-t border-white/[0.04]">
+      <div className="flex gap-3 pt-4 border-t border-border">
         {editing && (
-          <button onClick={handleDelete} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
+          <button onClick={handleDelete} className="py-3.5 px-6 rounded-[14px] border border-destructive/20 bg-transparent text-destructive text-[15px] font-600 cursor-pointer hover:bg-destructive/10 transition-all" style={{ fontFamily: 'inherit' }}>
             Delete
           </button>
         )}
-        <button onClick={onClose} className="flex-1 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all" style={{ fontFamily: 'inherit' }}>
+        <button onClick={onClose} className="flex-1 py-3.5 rounded-[14px] border border-border bg-transparent text-foreground text-[15px] font-600 cursor-pointer hover:bg-muted transition-all" style={{ fontFamily: 'inherit' }}>
           Cancel
         </button>
-        <button onClick={handleSave} disabled={!name.trim()} className="flex-1 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110" style={{ fontFamily: 'inherit' }}>
+        <button onClick={handleSave} disabled={!name.trim()} className="flex-1 py-3.5 rounded-[14px] border-none bg-primary text-primary-foreground text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-sm hover:opacity-90" style={{ fontFamily: 'inherit' }}>
           {editing ? 'Save' : 'Create'}
         </button>
       </div>

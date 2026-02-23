@@ -25,8 +25,8 @@ export function StreamingBubble({ text, assistantName }: Props) {
     >
       <div className="flex items-center gap-2.5 mb-2 px-1">
         <AiAvatar size="sm" />
-        <span className="text-[12px] font-600 text-text-3">{assistantName || 'Claude'}</span>
-        <span className="w-2 h-2 rounded-full bg-accent-bright" style={{ animation: 'pulse 1.5s ease infinite' }} />
+        <span className="text-[12px] font-600 text-muted-foreground">{assistantName || 'Claude'}</span>
+        <span className="w-2 h-2 rounded-full bg-primary" style={{ animation: 'pulse 1.5s ease infinite' }} />
       </div>
 
       {/* Tool call events */}
@@ -40,7 +40,7 @@ export function StreamingBubble({ text, assistantName }: Props) {
 
       {rendered && (
         <div className="max-w-[85%] md:max-w-[72%] bubble-ai px-5 py-3.5">
-          <div className="msg-content streaming-cursor text-[15px] leading-[1.7] break-words text-text">
+          <div className="msg-content streaming-cursor text-[15px] leading-[1.7] break-words text-foreground">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeHighlight]}
@@ -63,7 +63,7 @@ export function StreamingBubble({ text, assistantName }: Props) {
                       <div className="my-2">
                         <iframe
                           src={`https://www.youtube-nocookie.com/embed/${ytMatch[1]}`}
-                          className="w-full aspect-video rounded-[10px] border border-white/10"
+                          className="w-full aspect-video rounded-[10px] border border-border"
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           allowFullScreen
                           title="YouTube video"

@@ -28,8 +28,8 @@ export function ScheduleList({ inSidebar }: Props) {
   if (!filtered.length && !search) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-3 p-8 text-center">
-        <div className="w-12 h-12 rounded-[14px] bg-accent-soft flex items-center justify-center mb-1">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-accent-bright">
+        <div className="w-12 h-12 rounded-[14px] bg-primary/10 flex items-center justify-center mb-1">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-primary">
             <circle cx="12" cy="12" r="10" />
             <polyline points="12 6 12 12 16 14" />
           </svg>
@@ -39,9 +39,9 @@ export function ScheduleList({ inSidebar }: Props) {
         {!inSidebar && (
           <button
             onClick={() => setScheduleSheetOpen(true)}
-            className="mt-3 px-8 py-3 rounded-[14px] border-none bg-[#6366F1] text-white
+            className="mt-3 px-8 py-3 rounded-[14px] border-none bg-primary text-primary-foreground
               text-[14px] font-600 cursor-pointer active:scale-95 transition-all duration-200
-              shadow-[0_4px_16px_rgba(99,102,241,0.2)]"
+              shadow-[0_4px_16px_rgba(var(--primary-rgb),0.2)]"
             style={{ fontFamily: 'inherit' }}
           >
             + New Schedule

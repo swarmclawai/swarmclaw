@@ -25,26 +25,26 @@ export function MemoryCard({ entry, active, agentName, onClick }: Props) {
       className={`relative py-3 px-4 cursor-pointer rounded-[14px]
         transition-all duration-200 active:scale-[0.98]
         ${active
-          ? 'bg-accent-soft border border-accent-bright/10'
-          : 'bg-transparent border border-transparent hover:bg-white/[0.02] hover:border-white/[0.03]'}`}
+          ? 'bg-primary/10 border border-primary/20 shadow-sm'
+          : 'bg-background border border-border hover:bg-muted'}`}
     >
       {active && (
-        <div className="absolute left-0 top-3 bottom-3 w-[2.5px] rounded-full bg-accent-bright" />
+        <div className="absolute left-0 top-3 bottom-3 w-[2.5px] rounded-full bg-primary" />
       )}
       <div className="flex items-center gap-2">
-        <span className="shrink-0 text-[9px] font-700 uppercase tracking-wider text-accent-bright/70 bg-accent-soft px-1.5 py-0.5 rounded-[5px]">
+        <span className="shrink-0 text-[9px] font-700 uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded-[5px]">
           {entry.category || 'note'}
         </span>
-        <span className="font-display text-[13px] font-600 truncate flex-1 tracking-[-0.01em]">{entry.title}</span>
-        <span className="text-[10px] text-text-3/30 shrink-0 tabular-nums font-mono">
+        <span className="font-display text-[13px] font-600 truncate flex-1 tracking-[-0.01em] text-foreground">{entry.title}</span>
+        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums font-mono">
           {timeAgo(entry.updatedAt || entry.createdAt)}
         </span>
       </div>
-      <div className="text-[12px] text-text-2/40 mt-1 truncate leading-relaxed">
+      <div className="text-[12px] text-foreground/80 mt-1 truncate leading-relaxed">
         {entry.content || '(empty)'}
       </div>
       {(entry.references?.length || entry.linkedMemoryIds?.length || entry.image?.path || entry.imagePath) && (
-        <div className="flex items-center gap-2 mt-1.5 text-[10px] text-text-3/35">
+        <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground">
           {entry.references?.length ? <span>{entry.references.length} ref{entry.references.length === 1 ? '' : 's'}</span> : null}
           {entry.linkedMemoryIds?.length ? <span>{entry.linkedMemoryIds.length} linked</span> : null}
           {(entry.image?.path || entry.imagePath) ? <span>image</span> : null}
@@ -52,10 +52,10 @@ export function MemoryCard({ entry, active, agentName, onClick }: Props) {
       )}
       {agentName && (
         <div className="flex items-center gap-1 mt-1.5">
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/25">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-muted-foreground">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
           </svg>
-          <span className="text-[10px] text-text-3/30 truncate">{agentName}</span>
+          <span className="text-[10px] text-muted-foreground truncate">{agentName}</span>
         </div>
       )}
     </div>

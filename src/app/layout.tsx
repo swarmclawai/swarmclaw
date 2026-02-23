@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next"
 import { Sora, DM_Sans, JetBrains_Mono } from "next/font/google"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { ThemeProvider } from "@/components/providers/theme-provider"
 import "./globals.css"
 
 const sora = Sora({
@@ -22,8 +23,8 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "SwarmClaw",
-  description: "AI agent orchestration dashboard with multi-provider support",
+  title: "Agent Ember",
+  description: "Next-generation AI agent orchestration dashboard",
 }
 
 export const viewport: Viewport = {
@@ -39,11 +40,13 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body className={`${sora.variable} ${dmSans.variable} ${jetbrainsMono.variable} antialiased`} cz-shortcut-listen="true">
-        <TooltipProvider>
-          {children}
-        </TooltipProvider>
+        <ThemeProvider>
+          <TooltipProvider>
+            {children}
+          </TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

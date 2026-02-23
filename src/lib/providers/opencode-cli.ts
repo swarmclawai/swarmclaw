@@ -50,7 +50,7 @@ export function streamOpenCodeCliChat({ session, message, imagePath, systemPromp
   const cwd = session.cwd || process.cwd()
 
   if (systemPrompt) {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-opencode-'))
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-ember-opencode-'))
     const instructionsDir = path.join(tmpDir, '.opencode')
     fs.mkdirSync(instructionsDir, { recursive: true })
     fs.writeFileSync(path.join(instructionsDir, 'instructions.md'), systemPrompt)

@@ -1,14 +1,14 @@
-# OpenClaw vs SwarmClaw Feature Comparison
+# OpenClaw vs Agent Ember Feature Comparison
 
 Generated: 2026-02-21
 
 ## Summary
 
-OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-channel support) but differ significantly in architecture, scope, and focus.
+OpenClaw and Agent Ember share similar goals (personal AI assistant with multi-channel support) but differ significantly in architecture, scope, and focus.
 
 **OpenClaw** = Personal AI assistant focused on WhatsApp/Telegram/Discord/iMessage with companion apps (macOS, iOS, Android). Gateway-centric architecture with Pi AI agent runtime.
 
-**SwarmClaw** = Multi-agent orchestration dashboard with task queue, scheduling, and agent swarms. Web-centric architecture with multiple CLI/API providers.
+**Agent Ember** = Multi-agent orchestration dashboard with task queue, scheduling, and agent swarms. Web-centric architecture with multiple CLI/API providers.
 
 ---
 
@@ -16,7 +16,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 
 ### Channels
 
-| Feature | OpenClaw | SwarmClaw | Gap |
+| Feature | OpenClaw | Agent Ember | Gap |
 |---------|----------|-----------|-----|
 | WhatsApp | ✅ Baileys, full featured | ✅ Baileys, basic | Media sending gaps |
 | Telegram | ✅ grammY, full featured | ✅ grammy, basic | Photo/document sending |
@@ -33,7 +33,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 
 ### Agent Features
 
-| Feature | OpenClaw | SwarmClaw | Gap |
+| Feature | OpenClaw | Agent Ember | Gap |
 |---------|----------|-----------|-----|
 | Agent runtime | Pi AI (bundled) | Multiple: Claude, Codex, OpenCode, APIs | Different approach |
 | Multi-agent routing | ✅ Per-sender/workspace isolation | ✅ Agent assignment + swarms | Similar |
@@ -44,7 +44,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 
 ### Tools
 
-| Feature | OpenClaw | SwarmClaw | Gap |
+| Feature | OpenClaw | Agent Ember | Gap |
 |---------|----------|-----------|-----|
 | Shell/bash | ✅ host.exec | ✅ execute_command | Similar |
 | Browser control | ✅ Dedicated Chrome via CDP | ✅ Playwright via browser tool | Similar |
@@ -59,7 +59,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 
 ### Companion Apps
 
-| Feature | OpenClaw | SwarmClaw | Gap |
+| Feature | OpenClaw | Agent Ember | Gap |
 |---------|----------|-----------|-----|
 | macOS app | ✅ Menu bar + voice wake | ❌ | **MISSING** |
 | iOS app | ✅ Node + Canvas | ❌ | **MISSING** |
@@ -69,22 +69,22 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 
 ### Platform/Architecture
 
-| Feature | OpenClaw | SwarmClaw | Gap |
+| Feature | OpenClaw | Agent Ember | Gap |
 |---------|----------|-----------|-----|
-| Web dashboard | ✅ Control UI | ✅ Full dashboard | SwarmClaw richer |
-| Task board | ❌ | ✅ Kanban-style tasks | SwarmClaw advantage |
-| Provider management | ❌ (single Pi agent) | ✅ 15+ providers | SwarmClaw advantage |
-| Agent builder | ❌ | ✅ Full UI + AI generation | SwarmClaw advantage |
-| Secrets vault | ❌ | ✅ Encrypted storage | SwarmClaw advantage |
-| Cost tracking | ❌ | ✅ Per-message tokens | SwarmClaw advantage |
-| Execution logs | ❌ | ✅ logs.db audit trail | SwarmClaw advantage |
+| Web dashboard | ✅ Control UI | ✅ Full dashboard | Agent Ember richer |
+| Task board | ❌ | ✅ Kanban-style tasks | Agent Ember advantage |
+| Provider management | ❌ (single Pi agent) | ✅ 15+ providers | Agent Ember advantage |
+| Agent builder | ❌ | ✅ Full UI + AI generation | Agent Ember advantage |
+| Secrets vault | ❌ | ✅ Encrypted storage | Agent Ember advantage |
+| Cost tracking | ❌ | ✅ Per-message tokens | Agent Ember advantage |
+| Execution logs | ❌ | ✅ logs.db audit trail | Agent Ember advantage |
 | Tailscale integration | ✅ Serve/Funnel | ❌ | **MISSING** |
 | Doctor/diagnostics | ✅ `openclaw doctor` | ❌ | **MISSING** |
 | Gateway pairing | ✅ Bonjour + QR | ❌ | **MISSING** |
 
 ### Media/Rich Content
 
-| Feature | OpenClaw | SwarmClaw | Gap |
+| Feature | OpenClaw | Agent Ember | Gap |
 |---------|----------|-----------|-----|
 | Image receive | ✅ | ✅ | Similar |
 | Image send | ✅ | ✅ (via connector_message_tool and connector media paths) | Smaller gap |
@@ -94,7 +94,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 
 ### Session/Conversation
 
-| Feature | OpenClaw | SwarmClaw | Gap |
+| Feature | OpenClaw | Agent Ember | Gap |
 |---------|----------|-----------|-----|
 | Session isolation | ✅ Main + groups | ✅ Per-session isolation | Similar |
 | Context compaction | ✅ Session pruning | ✅ context_summarize tool | Similar |
@@ -116,7 +116,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 - Companion apps connect to the gateway
 - Designed for personal, single-user use
 
-**SwarmClaw**: Dashboard-centric
+**Agent Ember**: Dashboard-centric
 - Web UI as the primary interface
 - Multiple agent providers (Claude, Codex, OpenAI, etc.)
 - Task queue + daemon for background execution
@@ -132,7 +132,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 - Channel-specific features (BlueBubbles for iMessage, etc.)
 - Voice note transcription hooks
 
-**SwarmClaw**: Breadth
+**Agent Ember**: Breadth
 - More providers but lighter channel integration
 - Connector layer supports text plus media attachments
 - Media receiving and sending supported across major chat connectors
@@ -146,7 +146,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 - Optimized for personal assistant workflows
 - Simpler mental model
 
-**SwarmClaw**: Multi-provider
+**Agent Ember**: Multi-provider
 - Choose from 15+ LLM providers
 - CLI delegation (Claude Code, Codex, OpenCode)
 - Agent builder with custom souls
@@ -162,7 +162,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 - Push-to-talk overlay
 - Always-on voice listening
 
-**SwarmClaw**: Web-only
+**Agent Ember**: Web-only
 - Mobile-friendly responsive web UI
 - No native apps
 - No voice integration (except TTS settings)
@@ -176,7 +176,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 - Per-session elevated bash toggle
 - DM pairing for unknown senders
 
-**SwarmClaw**: Per-session permissions
+**Agent Ember**: Per-session permissions
 - Tool toggle per session/agent
 - Secrets vault for sensitive data
 - Access key authentication
@@ -184,7 +184,7 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 
 ---
 
-## Missing Features in SwarmClaw
+## Missing Features in Agent Ember
 
 ### Critical (blocks use cases)
 
@@ -213,9 +213,9 @@ OpenClaw and SwarmClaw share similar goals (personal AI assistant with multi-cha
 
 ---
 
-## SwarmClaw Advantages
+## Agent Ember Advantages
 
-OpenClaw doesn't have everything. Here's where SwarmClaw leads:
+OpenClaw doesn't have everything. Here's where Agent Ember leads:
 
 1. **Multi-provider support** - 15+ LLM providers vs single Pi agent
 2. **Task board** - Kanban-style task management and queuing
@@ -305,7 +305,7 @@ This section should be filled in after a deep code review:
 - Channel depth (media, typing, notifications)
 - Native companion apps
 
-**SwarmClaw** excels at:
+**Agent Ember** excels at:
 - Multi-provider orchestration
 - Task management and queuing
 - Agent customization

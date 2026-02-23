@@ -74,8 +74,8 @@ export function MemoryList({ inSidebar }: Props) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search memories..."
-          className="w-full px-3 py-2 rounded-[10px] border border-white/[0.04] bg-surface text-text
-            text-[12px] outline-none transition-all duration-200 placeholder:text-text-3/40 focus-glow"
+          className="w-full px-3 py-2 rounded-[10px] border border-border bg-background text-foreground
+            text-[12px] outline-none transition-all duration-200 placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
           style={{ fontFamily: 'inherit' }}
         />
       </div>
@@ -87,7 +87,7 @@ export function MemoryList({ inSidebar }: Props) {
             <button
               onClick={() => setMemoryAgentFilter(null)}
               className={`px-2.5 py-1 rounded-[7px] text-[10px] font-600 cursor-pointer transition-all
-                ${!memoryAgentFilter ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
+                ${!memoryAgentFilter ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
               style={{ fontFamily: 'inherit' }}
             >
               All ({entries.length})
@@ -100,7 +100,7 @@ export function MemoryList({ inSidebar }: Props) {
                   key={agentId}
                   onClick={() => setMemoryAgentFilter(id)}
                   className={`px-2.5 py-1 rounded-[7px] text-[10px] font-600 cursor-pointer transition-all truncate max-w-[120px]
-                    ${memoryAgentFilter === id ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
+                    ${memoryAgentFilter === id ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
                   style={{ fontFamily: 'inherit' }}
                 >
                   {name} ({count})
@@ -118,7 +118,7 @@ export function MemoryList({ inSidebar }: Props) {
             <button
               onClick={() => setCategoryFilter('')}
               className={`px-2 py-0.5 rounded-[6px] text-[9px] font-600 cursor-pointer transition-all uppercase tracking-wider
-                ${!categoryFilter ? 'bg-white/[0.06] text-text-2' : 'bg-transparent text-text-3/40 hover:text-text-3'}`}
+                ${!categoryFilter ? 'bg-secondary text-secondary-foreground shadow-sm' : 'bg-muted text-muted-foreground/60 hover:text-muted-foreground'}`}
               style={{ fontFamily: 'inherit' }}
             >
               all
@@ -128,7 +128,7 @@ export function MemoryList({ inSidebar }: Props) {
                 key={c}
                 onClick={() => setCategoryFilter(categoryFilter === c ? '' : c)}
                 className={`px-2 py-0.5 rounded-[6px] text-[9px] font-600 cursor-pointer transition-all uppercase tracking-wider
-                  ${categoryFilter === c ? 'bg-white/[0.06] text-text-2' : 'bg-transparent text-text-3/40 hover:text-text-3'}`}
+                  ${categoryFilter === c ? 'bg-secondary text-secondary-foreground shadow-sm' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
                 style={{ fontFamily: 'inherit' }}
               >
                 {c}
@@ -152,18 +152,18 @@ export function MemoryList({ inSidebar }: Props) {
           ))}
         </div>
       ) : loaded ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-3 p-8 text-center">
-          <div className="w-12 h-12 rounded-[14px] bg-accent-soft flex items-center justify-center mb-1">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-accent-bright">
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-foreground p-8 text-center">
+          <div className="w-12 h-12 rounded-[14px] bg-muted flex items-center justify-center mb-1 border border-border">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-primary">
               <ellipse cx="12" cy="5" rx="9" ry="3" />
               <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
               <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
             </svg>
           </div>
-          <p className="font-display text-[15px] font-600 text-text-2">
+          <p className="font-display text-[15px] font-600 text-foreground">
             {memoryAgentFilter ? 'No memories for this agent' : 'No memories yet'}
           </p>
-          <p className="text-[13px] text-text-3/50">AI agents store knowledge here</p>
+          <p className="text-[13px] text-muted-foreground/60">AI agents store knowledge here</p>
         </div>
       ) : null}
     </div>

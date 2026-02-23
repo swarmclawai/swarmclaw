@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-const REGISTRY_URL = 'https://swarmclaw.ai/registry/plugins.json'
+const REGISTRY_URL = 'https://agent-ember.ai/registry/plugins.json'
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
 let cache: { data: any; fetchedAt: number } | null = null

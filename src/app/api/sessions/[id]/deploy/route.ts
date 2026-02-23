@@ -9,7 +9,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!session) return new NextResponse(null, { status: 404 })
 
   const body = await req.json()
-  const msg = body.message || 'Deploy from SwarmClaw'
+  const msg = body.message || 'Deploy from Agent Ember'
 
   try {
     const opts = { cwd: session.cwd, encoding: 'utf8' as const, timeout: 30000 }

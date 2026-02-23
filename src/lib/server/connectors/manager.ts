@@ -19,26 +19,26 @@ export function isNoMessage(text: string): boolean {
 /** Map of running connector instances by connector ID.
  *  Stored on globalThis to survive HMR reloads in dev mode —
  *  prevents duplicate sockets fighting for the same WhatsApp session. */
-const globalKey = '__swarmclaw_running_connectors__' as const
+const globalKey = '__agent_ember_running_connectors__' as const
 const running: Map<string, ConnectorInstance> =
   (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = new Map<string, ConnectorInstance>())
 
 /** Most recent inbound channel per connector (used for proactive replies/default outbound target) */
-const lastInboundKey = '__swarmclaw_connector_last_inbound__' as const
+const lastInboundKey = '__agent_ember_connector_last_inbound__' as const
 const lastInboundChannelByConnector: Map<string, string> =
   (globalThis as any)[lastInboundKey] ?? ((globalThis as any)[lastInboundKey] = new Map<string, string>())
 
 /** Per-connector lock to prevent concurrent start/stop operations */
-const lockKey = '__swarmclaw_connector_locks__' as const
+const lockKey = '__agent_ember_connector_locks__' as const
 const locks: Map<string, Promise<void>> =
   (globalThis as any)[lockKey] ?? ((globalThis as any)[lockKey] = new Map<string, Promise<void>>())
 
 /** Get platform implementation lazily */
 async function getPlatform(platform: string) {
   switch (platform) {
-    case 'discord':  return (await import('./discord')).default
+    case 'discord': return (await import('./discord')).default
     case 'telegram': return (await import('./telegram')).default
-    case 'slack':    return (await import('./slack')).default
+    case 'slack': return (await import('./slack')).default
     case 'whatsapp': return (await import('./whatsapp')).default
     case 'openclaw': return (await import('./openclaw')).default
     default: throw new Error(`Unknown platform: ${platform}`)
@@ -198,7 +198,7 @@ The test: would a thoughtful friend feel compelled to type something back? If no
         imagePath: firstImagePath,
         apiKey,
         systemPrompt,
-        write: () => {},  // no SSE needed for connectors
+        write: () => { },  // no SSE needed for connectors
         history: session.messages,
       })
       // Use finalResponse for connectors — strips intermediate planning/tool-use text
@@ -274,7 +274,7 @@ export async function startConnector(connectorId: string): Promise<void> {
   // Wait for any pending operation on this connector to finish (with timeout)
   const pending = locks.get(connectorId)
   if (pending) {
-    await Promise.race([pending, new Promise(r => setTimeout(r, 15_000))]).catch(() => {})
+    await Promise.race([pending, new Promise(r => setTimeout(r, 15_000))]).catch(() => { })
     locks.delete(connectorId)
   }
 

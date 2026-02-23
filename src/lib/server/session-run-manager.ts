@@ -49,7 +49,7 @@ interface RuntimeState {
 
 const MAX_RECENT_RUNS = 500
 const COLLECT_COALESCE_WINDOW_MS = 1500
-const globalKey = '__swarmclaw_session_run_manager__' as const
+const globalKey = '__agent_ember_session_run_manager__' as const
 const state: RuntimeState = (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = {
   runningByExecution: new Map<string, QueueEntry>(),
   queueByExecution: new Map<string, QueueEntry[]>(),

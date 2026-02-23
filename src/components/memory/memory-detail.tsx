@@ -28,13 +28,15 @@ export function MemoryDetail() {
   useEffect(() => {
     if (!selectedId) { setEntry(null); return }
     getMemory(selectedId).then((found) => {
-      if (!found || Array.isArray(found)) return
-      setEntry(found)
-      setTitle(found.title)
-      setContent(found.content)
-      setCategory(found.category || 'note')
+      if (!found) return
+      const item = Array.isArray(found) ? found[0] : found
+      if (!item) return
+      setEntry(item)
+      setTitle(item.title)
+      setContent(item.content)
+      setCategory(item.category || 'note')
       setDirty(false)
-    }).catch(() => {})
+    }).catch(() => { })
   }, [selectedId])
 
   const handleSave = useCallback(async () => {
@@ -64,16 +66,16 @@ export function MemoryDetail() {
 
   if (!entry) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-3 p-8 text-center">
-        <div className="w-14 h-14 rounded-[16px] bg-white/[0.03] flex items-center justify-center mb-2">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3/30">
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-foreground p-8 text-center">
+        <div className="w-14 h-14 rounded-[16px] bg-muted flex items-center justify-center mb-2 border border-border">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-muted-foreground">
             <ellipse cx="12" cy="5" rx="9" ry="3" />
             <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
             <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
           </svg>
         </div>
-        <p className="font-display text-[17px] font-600 text-text-2">Memory</p>
-        <p className="text-[13px] text-text-3/40 max-w-[300px]">
+        <p className="font-display text-[17px] font-600 text-foreground">Memory</p>
+        <p className="text-[13px] text-muted-foreground max-w-[300px]">
           Select a memory from the sidebar to view and edit it
         </p>
       </div>
@@ -89,22 +91,22 @@ export function MemoryDetail() {
       : imagePath
     : null
 
-  const inputClass = "w-full px-4 py-3 rounded-[12px] border border-white/[0.06] bg-white/[0.02] text-text outline-none transition-all duration-200 placeholder:text-text-3/40 focus:border-accent-bright/20 focus:bg-white/[0.03]"
+  const inputClass = "w-full px-4 py-3 rounded-[12px] border border-border bg-background text-foreground outline-none transition-all duration-200 placeholder:text-muted-foreground focus:border-primary/40 focus:bg-muted/50"
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="shrink-0 px-6 py-4 border-b border-white/[0.04] flex items-center gap-3">
+      <div className="shrink-0 px-6 py-4 border-b border-border flex items-center gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5">
-            <span className="shrink-0 text-[10px] font-700 uppercase tracking-wider text-accent-bright/70 bg-accent-soft px-2 py-0.5 rounded-[6px]">
+            <span className="shrink-0 text-[10px] font-700 uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-[6px]">
               {category}
             </span>
-            <h2 className="font-display text-[16px] font-700 truncate tracking-[-0.02em]">{title || 'Untitled'}</h2>
+            <h2 className="font-display text-[16px] font-700 truncate tracking-[-0.02em] text-foreground">{title || 'Untitled'}</h2>
           </div>
           <div className="flex items-center gap-3 mt-1">
             {agentName && (
-              <span className="text-[11px] text-text-3/50 flex items-center gap-1">
+              <span className="text-[11px] text-foreground/80 flex items-center gap-1">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                 {agentName}
               </span>
@@ -112,13 +114,13 @@ export function MemoryDetail() {
             {sessionName && (
               <button
                 onClick={handleNavigateToSession}
-                className="text-[11px] text-accent-bright/50 hover:text-accent-bright flex items-center gap-1 bg-transparent border-none cursor-pointer p-0 transition-colors"
+                className="text-[11px] text-primary hover:opacity-80 flex items-center gap-1 bg-transparent border-none cursor-pointer p-0 transition-opacity"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
                 {sessionName}
               </button>
             )}
-            <span className="text-[10px] text-text-3/25 font-mono tabular-nums">
+            <span className="text-[10px] text-muted-foreground font-mono tabular-nums">
               {new Date(entry.createdAt).toLocaleString()}
             </span>
           </div>
@@ -129,9 +131,9 @@ export function MemoryDetail() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 rounded-[10px] bg-[#6366F1] text-white text-[12px] font-600
-                cursor-pointer border-none transition-all hover:brightness-110 active:scale-[0.97]
-                disabled:opacity-50 shadow-[0_2px_10px_rgba(99,102,241,0.2)]"
+              className="px-4 py-2 rounded-[10px] bg-primary text-primary-foreground text-[12px] font-600
+                cursor-pointer border-none transition-all active:scale-[0.97]
+                disabled:opacity-50 shadow-sm"
               style={{ fontFamily: 'inherit' }}
             >
               {saving ? 'Saving...' : 'Save'}
@@ -139,7 +141,7 @@ export function MemoryDetail() {
           )}
           <button
             onClick={() => setConfirmDelete(true)}
-            className="p-2 rounded-[8px] text-text-3/40 hover:text-red-400 hover:bg-red-400/[0.06]
+            className="p-2 rounded-[8px] text-muted-foreground hover:text-destructive hover:bg-destructive/10
               cursor-pointer transition-all bg-transparent border-none"
             title="Delete memory"
           >
@@ -177,8 +179,8 @@ export function MemoryDetail() {
                   onClick={() => { setCategory(c); setDirty(true) }}
                   className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 capitalize cursor-pointer transition-all border-none
                     ${category === c
-                      ? 'bg-accent-soft text-accent-bright'
-                      : 'bg-white/[0.03] text-text-3 hover:text-text-2 hover:bg-white/[0.05]'}`}
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80'}`}
                   style={{ fontFamily: 'inherit' }}
                 >
                   {c}
@@ -235,13 +237,13 @@ export function MemoryDetail() {
 
           {entry.linkedMemoryIds?.length ? (
             <div>
-              <label className="block text-[11px] font-600 text-text-3/60 uppercase tracking-[0.06em] mb-2">Linked Memories</label>
+              <label className="block text-[11px] font-600 text-muted-foreground uppercase tracking-[0.06em] mb-2">Linked Memories</label>
               <div className="flex flex-wrap gap-1.5">
                 {entry.linkedMemoryIds.map((id) => (
                   <button
                     key={id}
                     onClick={() => setSelectedId(id)}
-                    className="px-2.5 py-1 rounded-[8px] text-[11px] font-mono bg-white/[0.04] border border-white/[0.08] text-accent-bright/70 hover:text-accent-bright cursor-pointer transition-colors"
+                    className="px-2.5 py-1 rounded-[8px] text-[11px] font-mono bg-muted border border-border text-primary hover:opacity-80 cursor-pointer transition-colors"
                   >
                     {id}
                   </button>
@@ -251,32 +253,32 @@ export function MemoryDetail() {
           ) : null}
 
           {/* Metadata */}
-          <div className="pt-4 border-t border-white/[0.04]">
+          <div className="pt-4 border-t border-border">
             <div className="grid grid-cols-2 gap-4 text-[11px]">
               <div>
-                <span className="text-text-3/40 block mb-1">ID</span>
-                <span className="text-text-3/60 font-mono">{entry.id}</span>
+                <span className="text-muted-foreground block mb-1">ID</span>
+                <span className="text-foreground font-mono">{entry.id}</span>
               </div>
               <div>
-                <span className="text-text-3/40 block mb-1">Created</span>
-                <span className="text-text-3/60 font-mono">{new Date(entry.createdAt).toLocaleString()}</span>
+                <span className="text-muted-foreground block mb-1">Created</span>
+                <span className="text-foreground font-mono">{new Date(entry.createdAt).toLocaleString()}</span>
               </div>
               <div>
-                <span className="text-text-3/40 block mb-1">Updated</span>
-                <span className="text-text-3/60 font-mono">{new Date(entry.updatedAt).toLocaleString()}</span>
+                <span className="text-muted-foreground block mb-1">Updated</span>
+                <span className="text-foreground font-mono">{new Date(entry.updatedAt).toLocaleString()}</span>
               </div>
               {entry.agentId && (
                 <div>
-                  <span className="text-text-3/40 block mb-1">Agent</span>
-                  <span className="text-text-3/60 font-mono">{agentName}</span>
+                  <span className="text-muted-foreground block mb-1">Agent</span>
+                  <span className="text-foreground font-mono">{agentName}</span>
                 </div>
               )}
               {entry.sessionId && (
                 <div>
-                  <span className="text-text-3/40 block mb-1">Session</span>
+                  <span className="text-muted-foreground block mb-1">Session</span>
                   <button
                     onClick={handleNavigateToSession}
-                    className="text-accent-bright/60 hover:text-accent-bright font-mono bg-transparent border-none cursor-pointer p-0 text-[11px] transition-colors"
+                    className="text-primary hover:opacity-80 font-mono bg-transparent border-none cursor-pointer p-0 text-[11px] transition-opacity"
                   >
                     {sessionName}
                   </button>
@@ -290,24 +292,24 @@ export function MemoryDetail() {
       {/* Delete confirmation */}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setConfirmDelete(false)} />
-          <div className="relative bg-raised rounded-[16px] p-6 max-w-[360px] w-full shadow-xl border border-white/[0.06]"
+          <div className="absolute inset-0 bg-black/60" onClick={() => setConfirmDelete(false)} />
+          <div className="relative bg-card rounded-[16px] p-6 max-w-[360px] w-full shadow-2xl border border-border"
             style={{ animation: 'fade-in 0.15s cubic-bezier(0.16, 1, 0.3, 1)' }}>
             <h3 className="font-display text-[16px] font-700 mb-2">Delete Memory</h3>
-            <p className="text-[13px] text-text-3 mb-5">
+            <p className="text-[13px] text-muted-foreground mb-5">
               Delete &ldquo;{entry.title}&rdquo;? This cannot be undone.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="flex-1 py-2.5 rounded-[10px] border border-white/[0.08] bg-transparent text-text-2 text-[13px] font-600 cursor-pointer hover:bg-surface-2 transition-all"
+                className="flex-1 py-2.5 rounded-[10px] border border-border bg-transparent text-foreground text-[13px] font-600 cursor-pointer hover:bg-muted transition-all"
                 style={{ fontFamily: 'inherit' }}
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
-                className="flex-1 py-2.5 rounded-[10px] border-none bg-red-500/90 text-white text-[13px] font-600 cursor-pointer active:scale-[0.97] transition-all hover:bg-red-500"
+                className="flex-1 py-2.5 rounded-[10px] border-none bg-destructive/90 text-destructive-foreground text-[13px] font-600 cursor-pointer active:scale-[0.97] transition-all hover:bg-destructive"
                 style={{ fontFamily: 'inherit' }}
               >
                 Delete

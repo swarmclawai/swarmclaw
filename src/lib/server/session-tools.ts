@@ -668,613 +668,613 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     }
 
     if (claudeBinary) {
-    tools.push(
-      tool(
-        async ({ task, resume, resumeId }) => {
-          try {
-            const env: NodeJS.ProcessEnv = { ...process.env }
-            // Running inside Claude environments can block nested `claude` launches.
-            // Strip all CLAUDE* vars so delegation can run as an independent subprocess.
-            const removedClaudeEnvKeys: string[] = []
-            for (const key of Object.keys(env)) {
-              if (key.toUpperCase().startsWith('CLAUDE')) {
-                removedClaudeEnvKeys.push(key)
-                delete env[key]
+      tools.push(
+        tool(
+          async ({ task, resume, resumeId }) => {
+            try {
+              const env: NodeJS.ProcessEnv = { ...process.env }
+              // Running inside Claude environments can block nested `claude` launches.
+              // Strip all CLAUDE* vars so delegation can run as an independent subprocess.
+              const removedClaudeEnvKeys: string[] = []
+              for (const key of Object.keys(env)) {
+                if (key.toUpperCase().startsWith('CLAUDE')) {
+                  removedClaudeEnvKeys.push(key)
+                  delete env[key]
+                }
               }
-            }
 
-            // Fast preflight: when Claude isn't authenticated, surface a clear error immediately.
-            const authProbe = spawnSync(claudeBinary, ['auth', 'status'], {
-              cwd,
-              env,
-              encoding: 'utf-8',
-              timeout: 8000,
-            })
-            if ((authProbe.status ?? 1) !== 0) {
-              let loggedIn = false
-              try {
-                const parsed = JSON.parse(authProbe.stdout || '{}') as { loggedIn?: boolean }
-                loggedIn = parsed.loggedIn === true
-              } catch {
-                // ignore parse issues and fall back to a generic auth guidance
-              }
-              if (!loggedIn) {
-                return 'Error: Claude Code CLI is not authenticated. Run `claude auth login` (or `claude setup-token`) on this machine, then retry.'
-              }
-            }
-
-            const storedResumeId = readStoredDelegateResumeId('claudeCode')
-            const resumeIdToUse = typeof resumeId === 'string' && resumeId.trim()
-              ? resumeId.trim()
-              : (resume ? storedResumeId : null)
-
-            log.info('session-tools', 'delegate_to_claude_code start', {
-              sessionId: ctx?.sessionId || null,
-              agentId: ctx?.agentId || null,
-              cwd,
-              timeoutMs: claudeTimeoutMs,
-              removedClaudeEnvKeys,
-              resumeRequested: !!resume || !!resumeId,
-              resumeId: resumeIdToUse || null,
-              taskPreview: (task || '').slice(0, 200),
-            })
-
-            return new Promise<string>((resolve) => {
-              const args = ['--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions']
-              if (resumeIdToUse) args.push('--resume', resumeIdToUse)
-              const child = spawn(claudeBinary, args, {
+              // Fast preflight: when Claude isn't authenticated, surface a clear error immediately.
+              const authProbe = spawnSync(claudeBinary, ['auth', 'status'], {
                 cwd,
                 env,
-                stdio: ['pipe', 'pipe', 'pipe'],
+                encoding: 'utf-8',
+                timeout: 8000,
               })
-              let stdout = ''
-              let stderr = ''
-              let stdoutBuf = ''
-              let assistantText = ''
-              let discoveredSessionId: string | null = null
-              let settled = false
-              let timedOut = false
-              const startedAt = Date.now()
-
-              const finish = (result: string) => {
-                if (settled) return
-                settled = true
-                resolve(truncate(result, MAX_OUTPUT))
+              if ((authProbe.status ?? 1) !== 0) {
+                let loggedIn = false
+                try {
+                  const parsed = JSON.parse(authProbe.stdout || '{}') as { loggedIn?: boolean }
+                  loggedIn = parsed.loggedIn === true
+                } catch {
+                  // ignore parse issues and fall back to a generic auth guidance
+                }
+                if (!loggedIn) {
+                  return 'Error: Claude Code CLI is not authenticated. Run `claude auth login` (or `claude setup-token`) on this machine, then retry.'
+                }
               }
 
-              const timeoutHandle = setTimeout(() => {
-                timedOut = true
-                try { child.kill('SIGTERM') } catch { /* ignore */ }
-                setTimeout(() => {
-                  try { child.kill('SIGKILL') } catch { /* ignore */ }
-                }, 5000)
-              }, claudeTimeoutMs)
+              const storedResumeId = readStoredDelegateResumeId('claudeCode')
+              const resumeIdToUse = typeof resumeId === 'string' && resumeId.trim()
+                ? resumeId.trim()
+                : (resume ? storedResumeId : null)
 
-              log.info('session-tools', 'delegate_to_claude_code spawned', {
+              log.info('session-tools', 'delegate_to_claude_code start', {
                 sessionId: ctx?.sessionId || null,
-                pid: child.pid || null,
-                args,
+                agentId: ctx?.agentId || null,
+                cwd,
+                timeoutMs: claudeTimeoutMs,
+                removedClaudeEnvKeys,
+                resumeRequested: !!resume || !!resumeId,
+                resumeId: resumeIdToUse || null,
+                taskPreview: (task || '').slice(0, 200),
               })
-              child.stdout?.on('data', (chunk: Buffer) => {
-                const text = chunk.toString()
-                stdout += text
-                if (stdout.length > MAX_OUTPUT * 8) stdout = tail(stdout, MAX_OUTPUT * 8)
-                stdoutBuf += text
-                const lines = stdoutBuf.split('\n')
-                stdoutBuf = lines.pop() || ''
-                for (const line of lines) {
-                  if (!line.trim()) continue
-                  try {
-                    const ev = JSON.parse(line)
-                    if (typeof ev?.session_id === 'string' && ev.session_id.trim()) {
-                      discoveredSessionId = ev.session_id.trim()
+
+              return new Promise<string>((resolve) => {
+                const args = ['--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions']
+                if (resumeIdToUse) args.push('--resume', resumeIdToUse)
+                const child = spawn(claudeBinary, args, {
+                  cwd,
+                  env,
+                  stdio: ['pipe', 'pipe', 'pipe'],
+                })
+                let stdout = ''
+                let stderr = ''
+                let stdoutBuf = ''
+                let assistantText = ''
+                let discoveredSessionId: string | null = null
+                let settled = false
+                let timedOut = false
+                const startedAt = Date.now()
+
+                const finish = (result: string) => {
+                  if (settled) return
+                  settled = true
+                  resolve(truncate(result, MAX_OUTPUT))
+                }
+
+                const timeoutHandle = setTimeout(() => {
+                  timedOut = true
+                  try { child.kill('SIGTERM') } catch { /* ignore */ }
+                  setTimeout(() => {
+                    try { child.kill('SIGKILL') } catch { /* ignore */ }
+                  }, 5000)
+                }, claudeTimeoutMs)
+
+                log.info('session-tools', 'delegate_to_claude_code spawned', {
+                  sessionId: ctx?.sessionId || null,
+                  pid: child.pid || null,
+                  args,
+                })
+                child.stdout?.on('data', (chunk: Buffer) => {
+                  const text = chunk.toString()
+                  stdout += text
+                  if (stdout.length > MAX_OUTPUT * 8) stdout = tail(stdout, MAX_OUTPUT * 8)
+                  stdoutBuf += text
+                  const lines = stdoutBuf.split('\n')
+                  stdoutBuf = lines.pop() || ''
+                  for (const line of lines) {
+                    if (!line.trim()) continue
+                    try {
+                      const ev = JSON.parse(line)
+                      if (typeof ev?.session_id === 'string' && ev.session_id.trim()) {
+                        discoveredSessionId = ev.session_id.trim()
+                      }
+                      if (ev?.type === 'result' && typeof ev?.result === 'string') {
+                        assistantText = ev.result
+                      } else if (ev?.type === 'assistant' && Array.isArray(ev?.message?.content)) {
+                        const textBlocks = ev.message.content
+                          .filter((block: any) => block?.type === 'text' && typeof block?.text === 'string')
+                          .map((block: any) => block.text)
+                          .join('')
+                        if (textBlocks) assistantText = textBlocks
+                      } else if (ev?.type === 'content_block_delta' && typeof ev?.delta?.text === 'string') {
+                        assistantText += ev.delta.text
+                      }
+                    } catch {
+                      // keep raw stdout fallback when parsing fails
                     }
-                    if (ev?.type === 'result' && typeof ev?.result === 'string') {
-                      assistantText = ev.result
-                    } else if (ev?.type === 'assistant' && Array.isArray(ev?.message?.content)) {
-                      const textBlocks = ev.message.content
-                        .filter((block: any) => block?.type === 'text' && typeof block?.text === 'string')
-                        .map((block: any) => block.text)
-                        .join('')
-                      if (textBlocks) assistantText = textBlocks
-                    } else if (ev?.type === 'content_block_delta' && typeof ev?.delta?.text === 'string') {
-                      assistantText += ev.delta.text
-                    }
-                  } catch {
-                    // keep raw stdout fallback when parsing fails
                   }
-                }
-              })
-              child.stderr?.on('data', (chunk: Buffer) => {
-                stderr += chunk.toString()
-                if (stderr.length > MAX_OUTPUT * 8) stderr = tail(stderr, MAX_OUTPUT * 8)
-              })
-              child.on('error', (err) => {
-                clearTimeout(timeoutHandle)
-                log.error('session-tools', 'delegate_to_claude_code child error', {
-                  sessionId: ctx?.sessionId || null,
-                  error: err?.message || String(err),
                 })
-                finish(`Error: failed to start Claude Code CLI: ${err?.message || String(err)}`)
-              })
-              child.on('close', (code, signal) => {
-                clearTimeout(timeoutHandle)
-                const durationMs = Date.now() - startedAt
-                if (!discoveredSessionId) {
-                  const guessed = extractResumeIdentifier(`${stdout}\n${stderr}`)
-                  if (guessed) discoveredSessionId = guessed
-                }
-                if (discoveredSessionId) persistDelegateResumeId('claudeCode', discoveredSessionId)
-                log.info('session-tools', 'delegate_to_claude_code child close', {
-                  sessionId: ctx?.sessionId || null,
-                  code,
-                  signal: signal || null,
-                  timedOut,
-                  durationMs,
-                  stdoutLen: stdout.length,
-                  stderrLen: stderr.length,
-                  discoveredSessionId,
-                  stderrPreview: tail(stderr, 240),
+                child.stderr?.on('data', (chunk: Buffer) => {
+                  stderr += chunk.toString()
+                  if (stderr.length > MAX_OUTPUT * 8) stderr = tail(stderr, MAX_OUTPUT * 8)
                 })
-                if (timedOut) {
+                child.on('error', (err) => {
+                  clearTimeout(timeoutHandle)
+                  log.error('session-tools', 'delegate_to_claude_code child error', {
+                    sessionId: ctx?.sessionId || null,
+                    error: err?.message || String(err),
+                  })
+                  finish(`Error: failed to start Claude Code CLI: ${err?.message || String(err)}`)
+                })
+                child.on('close', (code, signal) => {
+                  clearTimeout(timeoutHandle)
+                  const durationMs = Date.now() - startedAt
+                  if (!discoveredSessionId) {
+                    const guessed = extractResumeIdentifier(`${stdout}\n${stderr}`)
+                    if (guessed) discoveredSessionId = guessed
+                  }
+                  if (discoveredSessionId) persistDelegateResumeId('claudeCode', discoveredSessionId)
+                  log.info('session-tools', 'delegate_to_claude_code child close', {
+                    sessionId: ctx?.sessionId || null,
+                    code,
+                    signal: signal || null,
+                    timedOut,
+                    durationMs,
+                    stdoutLen: stdout.length,
+                    stderrLen: stderr.length,
+                    discoveredSessionId,
+                    stderrPreview: tail(stderr, 240),
+                  })
+                  if (timedOut) {
+                    const msg = [
+                      `Error: Claude Code CLI timed out after ${Math.round(claudeTimeoutMs / 1000)}s.`,
+                      stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
+                      stdout.trim() ? `stdout:\n${tail(stdout, 1500)}` : '',
+                      'Try increasing "Claude Code Timeout (sec)" in Settings.',
+                    ].filter(Boolean).join('\n\n')
+                    finish(msg)
+                    return
+                  }
+
+                  const successText = assistantText.trim() || stdout.trim() || stderr.trim()
+                  if (code === 0 && successText) {
+                    const out = discoveredSessionId
+                      ? `${successText}\n\n[delegate_meta]\nresume_id=${discoveredSessionId}`
+                      : successText
+                    finish(out)
+                    return
+                  }
+
                   const msg = [
-                    `Error: Claude Code CLI timed out after ${Math.round(claudeTimeoutMs / 1000)}s.`,
+                    `Error: Claude Code CLI exited with code ${code ?? 'unknown'}${signal ? ` (signal ${signal})` : ''}.`,
                     stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
                     stdout.trim() ? `stdout:\n${tail(stdout, 1500)}` : '',
-                    'Try increasing "Claude Code Timeout (sec)" in Settings.',
                   ].filter(Boolean).join('\n\n')
-                  finish(msg)
-                  return
-                }
+                  finish(msg || 'Error: Claude Code CLI returned no output.')
+                })
 
-                const successText = assistantText.trim() || stdout.trim() || stderr.trim()
-                if (code === 0 && successText) {
-                  const out = discoveredSessionId
-                    ? `${successText}\n\n[delegate_meta]\nresume_id=${discoveredSessionId}`
-                    : successText
-                  finish(out)
-                  return
+                try {
+                  child.stdin?.write(task)
+                  child.stdin?.end()
+                } catch (err: any) {
+                  clearTimeout(timeoutHandle)
+                  finish(`Error: failed to send task to Claude Code CLI: ${err?.message || String(err)}`)
                 }
-
-                const msg = [
-                  `Error: Claude Code CLI exited with code ${code ?? 'unknown'}${signal ? ` (signal ${signal})` : ''}.`,
-                  stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
-                  stdout.trim() ? `stdout:\n${tail(stdout, 1500)}` : '',
-                ].filter(Boolean).join('\n\n')
-                finish(msg || 'Error: Claude Code CLI returned no output.')
               })
-
-              try {
-                child.stdin?.write(task)
-                child.stdin?.end()
-              } catch (err: any) {
-                clearTimeout(timeoutHandle)
-                finish(`Error: failed to send task to Claude Code CLI: ${err?.message || String(err)}`)
-              }
-            })
-          } catch (err: any) {
-            return `Error delegating to Claude Code: ${err.message}`
-          }
-        },
-        {
-          name: 'delegate_to_claude_code',
-          description: 'Delegate a complex task to Claude Code CLI. Use for tasks that need deep code understanding, multi-file refactoring, or running tests. The task runs in the session working directory.',
-          schema: z.object({
-            task: z.string().describe('Detailed description of the task for Claude Code'),
-            resume: z.boolean().optional().describe('If true, try to resume the last saved Claude delegation session for this SwarmClaw session'),
-            resumeId: z.string().optional().describe('Explicit Claude session id to resume (overrides resume=true memory)'),
-          }),
-        },
-      ),
-    )
+            } catch (err: any) {
+              return `Error delegating to Claude Code: ${err.message}`
+            }
+          },
+          {
+            name: 'delegate_to_claude_code',
+            description: 'Delegate a complex task to Claude Code CLI. Use for tasks that need deep code understanding, multi-file refactoring, or running tests. The task runs in the session working directory.',
+            schema: z.object({
+              task: z.string().describe('Detailed description of the task for Claude Code'),
+              resume: z.boolean().optional().describe('If true, try to resume the last saved Claude delegation session for this SwarmClaw session'),
+              resumeId: z.string().optional().describe('Explicit Claude session id to resume (overrides resume=true memory)'),
+            }),
+          },
+        ),
+      )
     }
 
     if (codexBinary) {
-    tools.push(
-      tool(
-        async ({ task, resume, resumeId }) => {
-          try {
-            const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'dumb', NO_COLOR: '1' }
-            const removedCodexEnvKeys: string[] = []
-            for (const key of Object.keys(env)) {
-              if (key.toUpperCase().startsWith('CODEX')) {
-                removedCodexEnvKeys.push(key)
-                delete env[key]
-              }
-            }
-
-            const hasApiKey = typeof env.OPENAI_API_KEY === 'string' && env.OPENAI_API_KEY.trim().length > 0
-            if (!hasApiKey) {
-              const loginProbe = spawnSync(codexBinary, ['login', 'status'], {
-                cwd,
-                env,
-                encoding: 'utf-8',
-                timeout: 8000,
-              })
-              const probeText = `${loginProbe.stdout || ''}\n${loginProbe.stderr || ''}`.toLowerCase()
-              const loggedIn = probeText.includes('logged in')
-              if ((loginProbe.status ?? 1) !== 0 || !loggedIn) {
-                return 'Error: Codex CLI is not authenticated. Run `codex login` (or set OPENAI_API_KEY), then retry.'
-              }
-            }
-
-            const storedResumeId = readStoredDelegateResumeId('codex')
-            const resumeIdToUse = typeof resumeId === 'string' && resumeId.trim()
-              ? resumeId.trim()
-              : (resume ? storedResumeId : null)
-
-            log.info('session-tools', 'delegate_to_codex_cli start', {
-              sessionId: ctx?.sessionId || null,
-              agentId: ctx?.agentId || null,
-              cwd,
-              timeoutMs: cliProcessTimeoutMs,
-              removedCodexEnvKeys,
-              resumeRequested: !!resume || !!resumeId,
-              resumeId: resumeIdToUse || null,
-              taskPreview: (task || '').slice(0, 200),
-            })
-
-            return new Promise<string>((resolve) => {
-              const args = ['exec']
-              if (resumeIdToUse) args.push('resume', resumeIdToUse)
-              args.push('--json', '--full-auto', '--skip-git-repo-check', '-')
-              const child = spawn(codexBinary, args, {
-                cwd,
-                env,
-                stdio: ['pipe', 'pipe', 'pipe'],
-              })
-              let stdout = ''
-              let stderr = ''
-              let settled = false
-              let timedOut = false
-              const startedAt = Date.now()
-              let agentText = ''
-              let discoveredThreadId: string | null = null
-              const eventErrors: string[] = []
-              let stdoutBuf = ''
-
-              const finish = (result: string) => {
-                if (settled) return
-                settled = true
-                resolve(truncate(result, MAX_OUTPUT))
+      tools.push(
+        tool(
+          async ({ task, resume, resumeId }) => {
+            try {
+              const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'dumb', NO_COLOR: '1' }
+              const removedCodexEnvKeys: string[] = []
+              for (const key of Object.keys(env)) {
+                if (key.toUpperCase().startsWith('CODEX')) {
+                  removedCodexEnvKeys.push(key)
+                  delete env[key]
+                }
               }
 
-              const timeoutHandle = setTimeout(() => {
-                timedOut = true
-                try { child.kill('SIGTERM') } catch { /* ignore */ }
-                setTimeout(() => {
-                  try { child.kill('SIGKILL') } catch { /* ignore */ }
-                }, 5000)
-              }, cliProcessTimeoutMs)
+              const hasApiKey = typeof env.OPENAI_API_KEY === 'string' && env.OPENAI_API_KEY.trim().length > 0
+              if (!hasApiKey) {
+                const loginProbe = spawnSync(codexBinary, ['login', 'status'], {
+                  cwd,
+                  env,
+                  encoding: 'utf-8',
+                  timeout: 8000,
+                })
+                const probeText = `${loginProbe.stdout || ''}\n${loginProbe.stderr || ''}`.toLowerCase()
+                const loggedIn = probeText.includes('logged in')
+                if ((loginProbe.status ?? 1) !== 0 || !loggedIn) {
+                  return 'Error: Codex CLI is not authenticated. Run `codex login` (or set OPENAI_API_KEY), then retry.'
+                }
+              }
 
-              log.info('session-tools', 'delegate_to_codex_cli spawned', {
+              const storedResumeId = readStoredDelegateResumeId('codex')
+              const resumeIdToUse = typeof resumeId === 'string' && resumeId.trim()
+                ? resumeId.trim()
+                : (resume ? storedResumeId : null)
+
+              log.info('session-tools', 'delegate_to_codex_cli start', {
                 sessionId: ctx?.sessionId || null,
-                pid: child.pid || null,
-                args,
+                agentId: ctx?.agentId || null,
+                cwd,
+                timeoutMs: cliProcessTimeoutMs,
+                removedCodexEnvKeys,
+                resumeRequested: !!resume || !!resumeId,
+                resumeId: resumeIdToUse || null,
+                taskPreview: (task || '').slice(0, 200),
               })
 
-              child.stdout?.on('data', (chunk: Buffer) => {
-                const text = chunk.toString()
-                stdout += text
-                if (stdout.length > MAX_OUTPUT * 8) stdout = tail(stdout, MAX_OUTPUT * 8)
+              return new Promise<string>((resolve) => {
+                const args = ['exec']
+                if (resumeIdToUse) args.push('resume', resumeIdToUse)
+                args.push('--json', '--full-auto', '--skip-git-repo-check', '-')
+                const child = spawn(codexBinary, args, {
+                  cwd,
+                  env,
+                  stdio: ['pipe', 'pipe', 'pipe'],
+                })
+                let stdout = ''
+                let stderr = ''
+                let settled = false
+                let timedOut = false
+                const startedAt = Date.now()
+                let agentText = ''
+                let discoveredThreadId: string | null = null
+                const eventErrors: string[] = []
+                let stdoutBuf = ''
 
-                stdoutBuf += text
-                const lines = stdoutBuf.split('\n')
-                stdoutBuf = lines.pop() || ''
-                for (const line of lines) {
-                  if (!line.trim()) continue
-                  try {
-                    const ev = JSON.parse(line)
-                    if (typeof ev?.thread_id === 'string' && ev.thread_id.trim()) {
-                      discoveredThreadId = ev.thread_id.trim()
-                    }
-                    if (ev.type === 'item.completed' && ev.item?.type === 'agent_message' && typeof ev.item?.text === 'string') {
-                      agentText = ev.item.text
-                    } else if (ev.type === 'item.completed' && ev.item?.type === 'message' && ev.item?.role === 'assistant') {
-                      const content = ev.item.content
-                      if (Array.isArray(content)) {
-                        const txt = content
-                          .filter((c: any) => c?.type === 'output_text' && typeof c?.text === 'string')
-                          .map((c: any) => c.text)
-                          .join('')
-                        if (txt) agentText = txt
-                      } else if (typeof content === 'string') {
-                        agentText = content
+                const finish = (result: string) => {
+                  if (settled) return
+                  settled = true
+                  resolve(truncate(result, MAX_OUTPUT))
+                }
+
+                const timeoutHandle = setTimeout(() => {
+                  timedOut = true
+                  try { child.kill('SIGTERM') } catch { /* ignore */ }
+                  setTimeout(() => {
+                    try { child.kill('SIGKILL') } catch { /* ignore */ }
+                  }, 5000)
+                }, cliProcessTimeoutMs)
+
+                log.info('session-tools', 'delegate_to_codex_cli spawned', {
+                  sessionId: ctx?.sessionId || null,
+                  pid: child.pid || null,
+                  args,
+                })
+
+                child.stdout?.on('data', (chunk: Buffer) => {
+                  const text = chunk.toString()
+                  stdout += text
+                  if (stdout.length > MAX_OUTPUT * 8) stdout = tail(stdout, MAX_OUTPUT * 8)
+
+                  stdoutBuf += text
+                  const lines = stdoutBuf.split('\n')
+                  stdoutBuf = lines.pop() || ''
+                  for (const line of lines) {
+                    if (!line.trim()) continue
+                    try {
+                      const ev = JSON.parse(line)
+                      if (typeof ev?.thread_id === 'string' && ev.thread_id.trim()) {
+                        discoveredThreadId = ev.thread_id.trim()
                       }
-                    } else if (ev.type === 'error' && ev.message) {
-                      eventErrors.push(String(ev.message))
-                    } else if (ev.type === 'turn.failed' && ev.error?.message) {
-                      eventErrors.push(String(ev.error.message))
+                      if (ev.type === 'item.completed' && ev.item?.type === 'agent_message' && typeof ev.item?.text === 'string') {
+                        agentText = ev.item.text
+                      } else if (ev.type === 'item.completed' && ev.item?.type === 'message' && ev.item?.role === 'assistant') {
+                        const content = ev.item.content
+                        if (Array.isArray(content)) {
+                          const txt = content
+                            .filter((c: any) => c?.type === 'output_text' && typeof c?.text === 'string')
+                            .map((c: any) => c.text)
+                            .join('')
+                          if (txt) agentText = txt
+                        } else if (typeof content === 'string') {
+                          agentText = content
+                        }
+                      } else if (ev.type === 'error' && ev.message) {
+                        eventErrors.push(String(ev.message))
+                      } else if (ev.type === 'turn.failed' && ev.error?.message) {
+                        eventErrors.push(String(ev.error.message))
+                      }
+                    } catch {
+                      // Ignore non-JSON lines in parser path; raw stdout still captured above.
                     }
-                  } catch {
-                    // Ignore non-JSON lines in parser path; raw stdout still captured above.
                   }
-                }
-              })
-              child.stderr?.on('data', (chunk: Buffer) => {
-                stderr += chunk.toString()
-                if (stderr.length > MAX_OUTPUT * 8) stderr = tail(stderr, MAX_OUTPUT * 8)
-              })
-              child.on('error', (err) => {
-                clearTimeout(timeoutHandle)
-                log.error('session-tools', 'delegate_to_codex_cli child error', {
-                  sessionId: ctx?.sessionId || null,
-                  error: err?.message || String(err),
                 })
-                finish(`Error: failed to start Codex CLI: ${err?.message || String(err)}`)
-              })
-              child.on('close', (code, signal) => {
-                clearTimeout(timeoutHandle)
-                const durationMs = Date.now() - startedAt
-                if (!discoveredThreadId) {
-                  const guessed = extractResumeIdentifier(`${stdout}\n${stderr}`)
-                  if (guessed) discoveredThreadId = guessed
-                }
-                if (discoveredThreadId) persistDelegateResumeId('codex', discoveredThreadId)
-                log.info('session-tools', 'delegate_to_codex_cli child close', {
-                  sessionId: ctx?.sessionId || null,
-                  code,
-                  signal: signal || null,
-                  timedOut,
-                  durationMs,
-                  stdoutLen: stdout.length,
-                  stderrLen: stderr.length,
-                  eventErrorCount: eventErrors.length,
-                  discoveredThreadId,
-                  stderrPreview: tail(stderr, 240),
+                child.stderr?.on('data', (chunk: Buffer) => {
+                  stderr += chunk.toString()
+                  if (stderr.length > MAX_OUTPUT * 8) stderr = tail(stderr, MAX_OUTPUT * 8)
                 })
-                if (timedOut) {
+                child.on('error', (err) => {
+                  clearTimeout(timeoutHandle)
+                  log.error('session-tools', 'delegate_to_codex_cli child error', {
+                    sessionId: ctx?.sessionId || null,
+                    error: err?.message || String(err),
+                  })
+                  finish(`Error: failed to start Codex CLI: ${err?.message || String(err)}`)
+                })
+                child.on('close', (code, signal) => {
+                  clearTimeout(timeoutHandle)
+                  const durationMs = Date.now() - startedAt
+                  if (!discoveredThreadId) {
+                    const guessed = extractResumeIdentifier(`${stdout}\n${stderr}`)
+                    if (guessed) discoveredThreadId = guessed
+                  }
+                  if (discoveredThreadId) persistDelegateResumeId('codex', discoveredThreadId)
+                  log.info('session-tools', 'delegate_to_codex_cli child close', {
+                    sessionId: ctx?.sessionId || null,
+                    code,
+                    signal: signal || null,
+                    timedOut,
+                    durationMs,
+                    stdoutLen: stdout.length,
+                    stderrLen: stderr.length,
+                    eventErrorCount: eventErrors.length,
+                    discoveredThreadId,
+                    stderrPreview: tail(stderr, 240),
+                  })
+                  if (timedOut) {
+                    const msg = [
+                      `Error: Codex CLI timed out after ${Math.round(cliProcessTimeoutMs / 1000)}s.`,
+                      stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
+                      eventErrors.length ? `event errors:\n${tail(eventErrors.join('\n'), 1200)}` : '',
+                      'Try increasing "CLI Process Timeout (sec)" in Settings.',
+                    ].filter(Boolean).join('\n\n')
+                    finish(msg)
+                    return
+                  }
+                  if (code === 0 && agentText.trim()) {
+                    const out = discoveredThreadId
+                      ? `${agentText.trim()}\n\n[delegate_meta]\nresume_id=${discoveredThreadId}`
+                      : agentText.trim()
+                    finish(out)
+                    return
+                  }
+                  if (code === 0 && stdout.trim() && !eventErrors.length) {
+                    const out = discoveredThreadId
+                      ? `${stdout.trim()}\n\n[delegate_meta]\nresume_id=${discoveredThreadId}`
+                      : stdout.trim()
+                    finish(out)
+                    return
+                  }
                   const msg = [
-                    `Error: Codex CLI timed out after ${Math.round(cliProcessTimeoutMs / 1000)}s.`,
-                    stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
+                    `Error: Codex CLI exited with code ${code ?? 'unknown'}${signal ? ` (signal ${signal})` : ''}.`,
                     eventErrors.length ? `event errors:\n${tail(eventErrors.join('\n'), 1200)}` : '',
-                    'Try increasing "CLI Process Timeout (sec)" in Settings.',
+                    stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
+                    stdout.trim() ? `stdout:\n${tail(stdout, 1500)}` : '',
                   ].filter(Boolean).join('\n\n')
-                  finish(msg)
-                  return
-                }
-                if (code === 0 && agentText.trim()) {
-                  const out = discoveredThreadId
-                    ? `${agentText.trim()}\n\n[delegate_meta]\nresume_id=${discoveredThreadId}`
-                    : agentText.trim()
-                  finish(out)
-                  return
-                }
-                if (code === 0 && stdout.trim() && !eventErrors.length) {
-                  const out = discoveredThreadId
-                    ? `${stdout.trim()}\n\n[delegate_meta]\nresume_id=${discoveredThreadId}`
-                    : stdout.trim()
-                  finish(out)
-                  return
-                }
-                const msg = [
-                  `Error: Codex CLI exited with code ${code ?? 'unknown'}${signal ? ` (signal ${signal})` : ''}.`,
-                  eventErrors.length ? `event errors:\n${tail(eventErrors.join('\n'), 1200)}` : '',
-                  stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
-                  stdout.trim() ? `stdout:\n${tail(stdout, 1500)}` : '',
-                ].filter(Boolean).join('\n\n')
-                finish(msg || 'Error: Codex CLI returned no output.')
-              })
+                  finish(msg || 'Error: Codex CLI returned no output.')
+                })
 
-              try {
-                child.stdin?.write(task)
-                child.stdin?.end()
-              } catch (err: any) {
-                clearTimeout(timeoutHandle)
-                finish(`Error: failed to send task to Codex CLI: ${err?.message || String(err)}`)
-              }
-            })
-          } catch (err: any) {
-            return `Error delegating to Codex CLI: ${err.message}`
-          }
-        },
-        {
-          name: 'delegate_to_codex_cli',
-          description: 'Delegate a complex task to Codex CLI. Use for deep coding/refactor tasks and shell-driven implementation work.',
-          schema: z.object({
-            task: z.string().describe('Detailed description of the task for Codex CLI'),
-            resume: z.boolean().optional().describe('If true, try to resume the last saved Codex delegation thread for this SwarmClaw session'),
-            resumeId: z.string().optional().describe('Explicit Codex thread id to resume (overrides resume=true memory)'),
-          }),
-        },
-      ),
-    )
+                try {
+                  child.stdin?.write(task)
+                  child.stdin?.end()
+                } catch (err: any) {
+                  clearTimeout(timeoutHandle)
+                  finish(`Error: failed to send task to Codex CLI: ${err?.message || String(err)}`)
+                }
+              })
+            } catch (err: any) {
+              return `Error delegating to Codex CLI: ${err.message}`
+            }
+          },
+          {
+            name: 'delegate_to_codex_cli',
+            description: 'Delegate a complex task to Codex CLI. Use for deep coding/refactor tasks and shell-driven implementation work.',
+            schema: z.object({
+              task: z.string().describe('Detailed description of the task for Codex CLI'),
+              resume: z.boolean().optional().describe('If true, try to resume the last saved Codex delegation thread for this SwarmClaw session'),
+              resumeId: z.string().optional().describe('Explicit Codex thread id to resume (overrides resume=true memory)'),
+            }),
+          },
+        ),
+      )
     }
 
     if (opencodeBinary) {
-    tools.push(
-      tool(
-        async ({ task, resume, resumeId }) => {
-          try {
-            const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'dumb', NO_COLOR: '1' }
-            const removedOpenCodeEnvKeys: string[] = []
-            for (const key of Object.keys(env)) {
-              if (key.toUpperCase().startsWith('OPENCODE')) {
-                removedOpenCodeEnvKeys.push(key)
-                delete env[key]
+      tools.push(
+        tool(
+          async ({ task, resume, resumeId }) => {
+            try {
+              const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'dumb', NO_COLOR: '1' }
+              const removedOpenCodeEnvKeys: string[] = []
+              for (const key of Object.keys(env)) {
+                if (key.toUpperCase().startsWith('OPENCODE')) {
+                  removedOpenCodeEnvKeys.push(key)
+                  delete env[key]
+                }
               }
-            }
-            const hasApiCredentialEnv = [
-              'OPENAI_API_KEY',
-              'ANTHROPIC_API_KEY',
-              'GROQ_API_KEY',
-              'GOOGLE_API_KEY',
-              'XAI_API_KEY',
-              'MISTRAL_API_KEY',
-              'DEEPSEEK_API_KEY',
-              'TOGETHER_API_KEY',
-            ].some((key) => typeof env[key] === 'string' && (env[key] || '').trim().length > 0)
-            if (!hasApiCredentialEnv) {
-              const authProbe = spawnSync(opencodeBinary, ['auth', 'list'], {
-                cwd,
-                env,
-                encoding: 'utf-8',
-                timeout: 8000,
-              })
-              const probeText = `${authProbe.stdout || ''}\n${authProbe.stderr || ''}`.toLowerCase()
-              const noCreds = probeText.includes('0 credentials')
-              if ((authProbe.status ?? 1) !== 0 || noCreds) {
-                return 'Error: OpenCode CLI is not authenticated. Run `opencode auth login` (or set provider API key env vars), then retry.'
+              const hasApiCredentialEnv = [
+                'OPENAI_API_KEY',
+                'ANTHROPIC_API_KEY',
+                'GROQ_API_KEY',
+                'GOOGLE_API_KEY',
+                'XAI_API_KEY',
+                'MISTRAL_API_KEY',
+                'DEEPSEEK_API_KEY',
+                'TOGETHER_API_KEY',
+              ].some((key) => typeof env[key] === 'string' && (env[key] || '').trim().length > 0)
+              if (!hasApiCredentialEnv) {
+                const authProbe = spawnSync(opencodeBinary, ['auth', 'list'], {
+                  cwd,
+                  env,
+                  encoding: 'utf-8',
+                  timeout: 8000,
+                })
+                const probeText = `${authProbe.stdout || ''}\n${authProbe.stderr || ''}`.toLowerCase()
+                const noCreds = probeText.includes('0 credentials')
+                if ((authProbe.status ?? 1) !== 0 || noCreds) {
+                  return 'Error: OpenCode CLI is not authenticated. Run `opencode auth login` (or set provider API key env vars), then retry.'
+                }
               }
-            }
-            const storedResumeId = readStoredDelegateResumeId('opencode')
-            const resumeIdToUse = typeof resumeId === 'string' && resumeId.trim()
-              ? resumeId.trim()
-              : (resume ? storedResumeId : null)
+              const storedResumeId = readStoredDelegateResumeId('opencode')
+              const resumeIdToUse = typeof resumeId === 'string' && resumeId.trim()
+                ? resumeId.trim()
+                : (resume ? storedResumeId : null)
 
-            log.info('session-tools', 'delegate_to_opencode_cli start', {
-              sessionId: ctx?.sessionId || null,
-              agentId: ctx?.agentId || null,
-              cwd,
-              timeoutMs: cliProcessTimeoutMs,
-              removedOpenCodeEnvKeys,
-              resumeRequested: !!resume || !!resumeId,
-              resumeId: resumeIdToUse || null,
-              taskPreview: (task || '').slice(0, 200),
-            })
-
-            return new Promise<string>((resolve) => {
-              const args = ['run', task, '--format', 'json']
-              if (resumeIdToUse) args.push('--session', resumeIdToUse)
-              const child = spawn(opencodeBinary, args, {
-                cwd,
-                env,
-                stdio: ['pipe', 'pipe', 'pipe'],
-              })
-              let stdout = ''
-              let stderr = ''
-              let discoveredSessionId: string | null = null
-              let parsedText = ''
-              const eventErrors: string[] = []
-              let stdoutBuf = ''
-              let settled = false
-              let timedOut = false
-              const startedAt = Date.now()
-
-              const finish = (result: string) => {
-                if (settled) return
-                settled = true
-                resolve(truncate(result, MAX_OUTPUT))
-              }
-
-              const timeoutHandle = setTimeout(() => {
-                timedOut = true
-                try { child.kill('SIGTERM') } catch { /* ignore */ }
-                setTimeout(() => {
-                  try { child.kill('SIGKILL') } catch { /* ignore */ }
-                }, 5000)
-              }, cliProcessTimeoutMs)
-
-              log.info('session-tools', 'delegate_to_opencode_cli spawned', {
+              log.info('session-tools', 'delegate_to_opencode_cli start', {
                 sessionId: ctx?.sessionId || null,
-                pid: child.pid || null,
-                args: resumeIdToUse
-                  ? ['run', '(task hidden)', '--format', 'json', '--session', resumeIdToUse]
-                  : ['run', '(task hidden)', '--format', 'json'],
+                agentId: ctx?.agentId || null,
+                cwd,
+                timeoutMs: cliProcessTimeoutMs,
+                removedOpenCodeEnvKeys,
+                resumeRequested: !!resume || !!resumeId,
+                resumeId: resumeIdToUse || null,
+                taskPreview: (task || '').slice(0, 200),
               })
-              child.stdout?.on('data', (chunk: Buffer) => {
-                const text = chunk.toString()
-                stdout += text
-                if (stdout.length > MAX_OUTPUT * 8) stdout = tail(stdout, MAX_OUTPUT * 8)
-                stdoutBuf += text
-                const lines = stdoutBuf.split('\n')
-                stdoutBuf = lines.pop() || ''
-                for (const line of lines) {
-                  if (!line.trim()) continue
-                  try {
-                    const ev = JSON.parse(line)
-                    if (typeof ev?.sessionID === 'string' && ev.sessionID.trim()) {
-                      discoveredSessionId = ev.sessionID.trim()
+
+              return new Promise<string>((resolve) => {
+                const args = ['run', task, '--format', 'json']
+                if (resumeIdToUse) args.push('--session', resumeIdToUse)
+                const child = spawn(opencodeBinary, args, {
+                  cwd,
+                  env,
+                  stdio: ['pipe', 'pipe', 'pipe'],
+                })
+                let stdout = ''
+                let stderr = ''
+                let discoveredSessionId: string | null = null
+                let parsedText = ''
+                const eventErrors: string[] = []
+                let stdoutBuf = ''
+                let settled = false
+                let timedOut = false
+                const startedAt = Date.now()
+
+                const finish = (result: string) => {
+                  if (settled) return
+                  settled = true
+                  resolve(truncate(result, MAX_OUTPUT))
+                }
+
+                const timeoutHandle = setTimeout(() => {
+                  timedOut = true
+                  try { child.kill('SIGTERM') } catch { /* ignore */ }
+                  setTimeout(() => {
+                    try { child.kill('SIGKILL') } catch { /* ignore */ }
+                  }, 5000)
+                }, cliProcessTimeoutMs)
+
+                log.info('session-tools', 'delegate_to_opencode_cli spawned', {
+                  sessionId: ctx?.sessionId || null,
+                  pid: child.pid || null,
+                  args: resumeIdToUse
+                    ? ['run', '(task hidden)', '--format', 'json', '--session', resumeIdToUse]
+                    : ['run', '(task hidden)', '--format', 'json'],
+                })
+                child.stdout?.on('data', (chunk: Buffer) => {
+                  const text = chunk.toString()
+                  stdout += text
+                  if (stdout.length > MAX_OUTPUT * 8) stdout = tail(stdout, MAX_OUTPUT * 8)
+                  stdoutBuf += text
+                  const lines = stdoutBuf.split('\n')
+                  stdoutBuf = lines.pop() || ''
+                  for (const line of lines) {
+                    if (!line.trim()) continue
+                    try {
+                      const ev = JSON.parse(line)
+                      if (typeof ev?.sessionID === 'string' && ev.sessionID.trim()) {
+                        discoveredSessionId = ev.sessionID.trim()
+                      }
+                      if (ev?.type === 'text' && typeof ev?.part?.text === 'string') {
+                        parsedText += ev.part.text
+                      } else if (ev?.type === 'error') {
+                        const msg = typeof ev?.error === 'string'
+                          ? ev.error
+                          : typeof ev?.message === 'string'
+                            ? ev.message
+                            : 'Unknown OpenCode event error'
+                        eventErrors.push(msg)
+                      }
+                    } catch {
+                      // keep raw stdout fallback
                     }
-                    if (ev?.type === 'text' && typeof ev?.part?.text === 'string') {
-                      parsedText += ev.part.text
-                    } else if (ev?.type === 'error') {
-                      const msg = typeof ev?.error === 'string'
-                        ? ev.error
-                        : typeof ev?.message === 'string'
-                          ? ev.message
-                          : 'Unknown OpenCode event error'
-                      eventErrors.push(msg)
-                    }
-                  } catch {
-                    // keep raw stdout fallback
                   }
-                }
-              })
-              child.stderr?.on('data', (chunk: Buffer) => {
-                stderr += chunk.toString()
-                if (stderr.length > MAX_OUTPUT * 8) stderr = tail(stderr, MAX_OUTPUT * 8)
-              })
-              child.on('error', (err) => {
-                clearTimeout(timeoutHandle)
-                log.error('session-tools', 'delegate_to_opencode_cli child error', {
-                  sessionId: ctx?.sessionId || null,
-                  error: err?.message || String(err),
                 })
-                finish(`Error: failed to start OpenCode CLI: ${err?.message || String(err)}`)
-              })
-              child.on('close', (code, signal) => {
-                clearTimeout(timeoutHandle)
-                const durationMs = Date.now() - startedAt
-                const guessed = extractResumeIdentifier(`${stdout}\n${stderr}`)
-                if (guessed) discoveredSessionId = guessed
-                if (discoveredSessionId) persistDelegateResumeId('opencode', discoveredSessionId)
-                log.info('session-tools', 'delegate_to_opencode_cli child close', {
-                  sessionId: ctx?.sessionId || null,
-                  code,
-                  signal: signal || null,
-                  timedOut,
-                  durationMs,
-                  stdoutLen: stdout.length,
-                  stderrLen: stderr.length,
-                  parsedTextLen: parsedText.length,
-                  eventErrorCount: eventErrors.length,
-                  discoveredSessionId,
-                  stderrPreview: tail(stderr, 240),
+                child.stderr?.on('data', (chunk: Buffer) => {
+                  stderr += chunk.toString()
+                  if (stderr.length > MAX_OUTPUT * 8) stderr = tail(stderr, MAX_OUTPUT * 8)
                 })
-                if (timedOut) {
+                child.on('error', (err) => {
+                  clearTimeout(timeoutHandle)
+                  log.error('session-tools', 'delegate_to_opencode_cli child error', {
+                    sessionId: ctx?.sessionId || null,
+                    error: err?.message || String(err),
+                  })
+                  finish(`Error: failed to start OpenCode CLI: ${err?.message || String(err)}`)
+                })
+                child.on('close', (code, signal) => {
+                  clearTimeout(timeoutHandle)
+                  const durationMs = Date.now() - startedAt
+                  const guessed = extractResumeIdentifier(`${stdout}\n${stderr}`)
+                  if (guessed) discoveredSessionId = guessed
+                  if (discoveredSessionId) persistDelegateResumeId('opencode', discoveredSessionId)
+                  log.info('session-tools', 'delegate_to_opencode_cli child close', {
+                    sessionId: ctx?.sessionId || null,
+                    code,
+                    signal: signal || null,
+                    timedOut,
+                    durationMs,
+                    stdoutLen: stdout.length,
+                    stderrLen: stderr.length,
+                    parsedTextLen: parsedText.length,
+                    eventErrorCount: eventErrors.length,
+                    discoveredSessionId,
+                    stderrPreview: tail(stderr, 240),
+                  })
+                  if (timedOut) {
+                    const msg = [
+                      `Error: OpenCode CLI timed out after ${Math.round(cliProcessTimeoutMs / 1000)}s.`,
+                      stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
+                      eventErrors.length ? `event errors:\n${tail(eventErrors.join('\n'), 1200)}` : '',
+                      stdout.trim() ? `stdout:\n${tail(stdout, 1500)}` : '',
+                      'Try increasing "CLI Process Timeout (sec)" in Settings.',
+                    ].filter(Boolean).join('\n\n')
+                    finish(msg)
+                    return
+                  }
+                  const successText = parsedText.trim() || stdout.trim() || stderr.trim()
+                  if (code === 0 && successText) {
+                    const out = discoveredSessionId
+                      ? `${successText}\n\n[delegate_meta]\nresume_id=${discoveredSessionId}`
+                      : successText
+                    finish(out)
+                    return
+                  }
                   const msg = [
-                    `Error: OpenCode CLI timed out after ${Math.round(cliProcessTimeoutMs / 1000)}s.`,
-                    stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
+                    `Error: OpenCode CLI exited with code ${code ?? 'unknown'}${signal ? ` (signal ${signal})` : ''}.`,
                     eventErrors.length ? `event errors:\n${tail(eventErrors.join('\n'), 1200)}` : '',
+                    stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
                     stdout.trim() ? `stdout:\n${tail(stdout, 1500)}` : '',
-                    'Try increasing "CLI Process Timeout (sec)" in Settings.',
                   ].filter(Boolean).join('\n\n')
-                  finish(msg)
-                  return
-                }
-                const successText = parsedText.trim() || stdout.trim() || stderr.trim()
-                if (code === 0 && successText) {
-                  const out = discoveredSessionId
-                    ? `${successText}\n\n[delegate_meta]\nresume_id=${discoveredSessionId}`
-                    : successText
-                  finish(out)
-                  return
-                }
-                const msg = [
-                  `Error: OpenCode CLI exited with code ${code ?? 'unknown'}${signal ? ` (signal ${signal})` : ''}.`,
-                  eventErrors.length ? `event errors:\n${tail(eventErrors.join('\n'), 1200)}` : '',
-                  stderr.trim() ? `stderr:\n${tail(stderr, 1500)}` : '',
-                  stdout.trim() ? `stdout:\n${tail(stdout, 1500)}` : '',
-                ].filter(Boolean).join('\n\n')
-                finish(msg || 'Error: OpenCode CLI returned no output.')
+                  finish(msg || 'Error: OpenCode CLI returned no output.')
+                })
               })
-            })
-          } catch (err: any) {
-            return `Error delegating to OpenCode CLI: ${err.message}`
-          }
-        },
-        {
-          name: 'delegate_to_opencode_cli',
-          description: 'Delegate a complex task to OpenCode CLI. Use for deep coding/refactor tasks and shell-driven implementation work.',
-          schema: z.object({
-            task: z.string().describe('Detailed description of the task for OpenCode CLI'),
-            resume: z.boolean().optional().describe('If true, try to resume the last saved OpenCode delegation session for this SwarmClaw session'),
-            resumeId: z.string().optional().describe('Explicit OpenCode session id to resume (overrides resume=true memory)'),
-          }),
-        },
-      ),
-    )
+            } catch (err: any) {
+              return `Error delegating to OpenCode CLI: ${err.message}`
+            }
+          },
+          {
+            name: 'delegate_to_opencode_cli',
+            description: 'Delegate a complex task to OpenCode CLI. Use for deep coding/refactor tasks and shell-driven implementation work.',
+            schema: z.object({
+              task: z.string().describe('Detailed description of the task for OpenCode CLI'),
+              resume: z.boolean().optional().describe('If true, try to resume the last saved OpenCode delegation session for this SwarmClaw session'),
+              resumeId: z.string().optional().describe('Explicit OpenCode session id to resume (overrides resume=true memory)'),
+            }),
+          },
+        ),
+      )
     }
   }
 
@@ -1435,7 +1435,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
           capabilities: ['core', 'pdf', 'vision', 'network'],
         })
         const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
-        const client = new Client({ name: 'swarmclaw', version: '1.0' })
+        const client = new Client({ name: 'agent-ember', version: '1.0' })
         await Promise.all([
           client.connect(clientTransport),
           server.connect(serverTransport),
@@ -1656,13 +1656,13 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
 
             const normalizedLegacyRefs = Array.isArray(filePaths)
               ? filePaths.map((f: any) => ({
-                  type: f.kind === 'project' ? 'project' : (f.kind === 'folder' ? 'folder' : 'file'),
-                  path: f.path,
-                  projectRoot: f.projectRoot,
-                  projectName: f.projectName,
-                  note: f.contextSnippet,
-                  timestamp: typeof f.timestamp === 'number' ? f.timestamp : Date.now(),
-                }))
+                type: f.kind === 'project' ? 'project' : (f.kind === 'folder' ? 'folder' : 'file'),
+                path: f.path,
+                projectRoot: f.projectRoot,
+                projectName: f.projectName,
+                note: f.contextSnippet,
+                timestamp: typeof f.timestamp === 'number' ? f.timestamp : Date.now(),
+              }))
               : []
             const normalizedRefs = Array.isArray(references) ? references : []
             if (project?.rootPath) {
@@ -2044,9 +2044,9 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
                 const normalizedScope = parsed.scope === 'agent' ? 'agent' : 'global'
                 const normalizedAgentIds = normalizedScope === 'agent'
                   ? Array.from(new Set([
-                      ...(Array.isArray(parsed.agentIds) ? parsed.agentIds.filter((x: any) => typeof x === 'string') : []),
-                      ...(ctx?.agentId ? [ctx.agentId] : []),
-                    ]))
+                    ...(Array.isArray(parsed.agentIds) ? parsed.agentIds.filter((x: any) => typeof x === 'string') : []),
+                    ...(ctx?.agentId ? [ctx.agentId] : []),
+                  ]))
                   : []
                 const stored = {
                   ...entry,
@@ -2068,11 +2068,11 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
                 const report = ensureTaskCompletionReport(entry as any)
                 if (report?.relativePath) (entry as any).completionReportPath = report.relativePath
                 const validation = validateTaskCompletion(entry as any, { report })
-                ;(entry as any).validation = validation
+                  ; (entry as any).validation = validation
                 if (!validation.ok) {
                   entry.status = 'failed'
-                  ;(entry as any).completedAt = null
-                  ;(entry as any).error = formatValidationFailure(validation.reasons).slice(0, 500)
+                    ; (entry as any).completedAt = null
+                    ; (entry as any).error = formatValidationFailure(validation.reasons).slice(0, 500)
                 }
               }
 
@@ -2136,13 +2136,13 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
                 const report = ensureTaskCompletionReport(all[id] as any)
                 if (report?.relativePath) (all[id] as any).completionReportPath = report.relativePath
                 const validation = validateTaskCompletion(all[id] as any, { report })
-                ;(all[id] as any).validation = validation
+                  ; (all[id] as any).validation = validation
                 if (!validation.ok) {
                   all[id].status = 'failed'
-                  ;(all[id] as any).completedAt = null
-                  ;(all[id] as any).error = formatValidationFailure(validation.reasons).slice(0, 500)
+                    ; (all[id] as any).completedAt = null
+                    ; (all[id] as any).error = formatValidationFailure(validation.reasons).slice(0, 500)
                 } else if ((all[id] as any).completedAt == null) {
-                  ;(all[id] as any).completedAt = Date.now()
+                  ; (all[id] as any).completedAt = Date.now()
                 }
               }
 
@@ -2255,13 +2255,13 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
               const now = Date.now()
               const parsedMetadata = metadata && typeof metadata === 'string'
                 ? (() => {
-                    try {
-                      const m = JSON.parse(metadata)
-                      return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {}
-                    } catch {
-                      return {}
-                    }
-                  })()
+                  try {
+                    const m = JSON.parse(metadata)
+                    return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {}
+                  } catch {
+                    return {}
+                  }
+                })()
                 : {}
 
               const entry = {

@@ -1,4 +1,4 @@
-# SwarmClaw Memory System
+# Agent Ember Memory System
 
 The memory system provides persistent, searchable storage for agents with support for file references, image attachments, and linked memory graphs.
 

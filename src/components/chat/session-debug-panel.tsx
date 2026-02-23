@@ -51,13 +51,13 @@ function classifyMessage(msg: Message): DebugEvent {
 }
 
 const TYPE_COLORS: Record<EventType, string> = {
-  user: '#6366F1',
-  assistant: '#a0a0b0',
-  delegation: '#F59E0B',
-  agent_result: '#10B981',
-  system: '#6B7280',
-  error: '#EF4444',
-  tool_call: '#8B5CF6',
+  user: 'var(--primary)',
+  assistant: 'var(--muted-foreground)',
+  delegation: 'var(--primary)',
+  agent_result: 'var(--primary)',
+  system: 'var(--muted-foreground)',
+  error: 'var(--destructive)',
+  tool_call: 'var(--primary)',
 }
 
 const TYPE_ICONS: Record<EventType, string> = {
@@ -97,10 +97,10 @@ export function SessionDebugPanel({ messages, open, onClose }: Props) {
   ]
 
   return (
-    <div className="absolute inset-0 z-30 bg-bg/95 backdrop-blur-xl flex flex-col">
+    <div className="absolute inset-0 z-30 bg-background flex flex-col">
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-white/[0.06] shrink-0">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366F1" strokeWidth="2" strokeLinecap="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round">
           <path d="M12 20V10" />
           <path d="M18 20V4" />
           <path d="M6 20v-4" />
@@ -116,15 +116,15 @@ export function SessionDebugPanel({ messages, open, onClose }: Props) {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 px-5 py-3 border-b border-white/[0.04] overflow-x-auto shrink-0">
+      <div className="flex gap-2 px-5 py-3 border-b border-border overflow-x-auto shrink-0">
         {filters.map((f) => (
           <button
             key={f.id}
             onClick={() => setFilter(f.id)}
             className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 cursor-pointer transition-all border whitespace-nowrap
               ${filter === f.id
-                ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
-                : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-muted border-border text-muted-foreground hover:text-foreground'}`}
             style={{ fontFamily: 'inherit' }}
           >
             {f.label}

@@ -8,6 +8,13 @@ import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AiGenBlock } from '@/components/shared/ai-gen-block'
 import type { ScheduleType, ScheduleStatus } from '@/types'
 import cronstrue from 'cronstrue'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const CRON_PRESETS = [
   { label: 'Every hour', cron: '0 * * * *' },
@@ -190,12 +197,20 @@ export function ScheduleSheet() {
 
       <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Agent</label>
-        <select value={agentId || ''} onChange={(e) => setAgentId(e.target.value)} className={`${inputClass} appearance-none cursor-pointer`} style={{ fontFamily: 'inherit' }}>
-          <option value="">Select agent...</option>
-          {agentList.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}{p.isOrchestrator ? ' (Orchestrator)' : ''}</option>
-          ))}
-        </select>
+        <Select
+          value={agentId || "__none__"}
+          onValueChange={(val) => setAgentId(val === "__none__" ? "" : val)}
+        >
+          <SelectTrigger className={inputClass}>
+            <SelectValue placeholder="Select agent..." />
+          </SelectTrigger>
+          <SelectContent className="bg-surface border-white/[0.08]">
+            <SelectItem value="__none__">Select agent...</SelectItem>
+            {agentList.map((p) => (
+              <SelectItem key={p.id} value={p.id}>{p.name}{p.isOrchestrator ? ' (Orchestrator)' : ''}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="mb-8">
@@ -220,7 +235,7 @@ export function ScheduleSheet() {
               className={`py-3.5 px-4 rounded-[14px] text-center cursor-pointer transition-all duration-200
                 active:scale-[0.97] text-[14px] font-600 capitalize border
                 ${scheduleType === t
-                  ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                  ? 'bg-primary border-primary text-primary-foreground'
                   : 'bg-surface border-white/[0.06] text-text-2 hover:bg-surface-2'}`}
               style={{ fontFamily: 'inherit' }}
             >
@@ -242,7 +257,7 @@ export function ScheduleSheet() {
                 onClick={() => { setCron(p.cron); setCustomCron(false) }}
                 className={`px-3.5 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border
                   ${cron === p.cron && !customCron
-                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                    ? 'bg-primary border-primary text-primary-foreground'
                     : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
                 style={{ fontFamily: 'inherit' }}
               >
@@ -253,7 +268,7 @@ export function ScheduleSheet() {
               onClick={() => setCustomCron(true)}
               className={`px-3.5 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border
                 ${customCron
-                  ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                  ? 'bg-primary border-primary text-primary-foreground'
                   : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
               style={{ fontFamily: 'inherit' }}
             >
@@ -307,7 +322,7 @@ export function ScheduleSheet() {
                 onClick={() => setStatus(s)}
                 className={`px-4 py-2 rounded-[10px] text-[13px] font-600 capitalize cursor-pointer transition-all border
                   ${status === s
-                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                    ? 'bg-primary border-primary text-primary-foreground'
                     : 'bg-surface border-white/[0.06] text-text-3'}`}
                 style={{ fontFamily: 'inherit' }}
               >
@@ -327,7 +342,7 @@ export function ScheduleSheet() {
         <button onClick={onClose} className="flex-1 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all" style={{ fontFamily: 'inherit' }}>
           Cancel
         </button>
-        <button onClick={handleSave} disabled={!name.trim() || !agentId} className="flex-1 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110" style={{ fontFamily: 'inherit' }}>
+        <button onClick={handleSave} disabled={!name.trim() || !agentId} className="flex-1 py-3.5 rounded-[14px] border-none bg-primary text-primary-foreground text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(var(--primary-rgb),0.25)] hover:brightness-110" style={{ fontFamily: 'inherit' }}>
           {editing ? 'Save' : 'Create'}
         </button>
       </div>

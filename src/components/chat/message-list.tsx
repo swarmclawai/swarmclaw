@@ -77,8 +77,8 @@ export function MessageList({ messages, streaming }: Props) {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const handler = () => handleScrollToBottom()
-    window.addEventListener('swarmclaw:scroll-bottom', handler)
-    return () => window.removeEventListener('swarmclaw:scroll-bottom', handler)
+    window.addEventListener('agent-ember:scroll-bottom', handler)
+    return () => window.removeEventListener('agent-ember:scroll-bottom', handler)
   }, [handleScrollToBottom])
 
   return (
@@ -100,7 +100,7 @@ export function MessageList({ messages, streaming }: Props) {
       {showScrollToBottom && (
         <button
           onClick={handleScrollToBottom}
-          className="absolute right-6 md:right-12 lg:right-16 bottom-5 inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/[0.08] bg-[#171a2b]/95 text-text-2 text-[12px] font-600 hover:bg-[#1e2238] transition-colors shadow-lg cursor-pointer"
+          className="absolute right-6 md:right-12 lg:right-16 bottom-5 inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-background text-foreground text-[12px] font-600 hover:bg-muted transition-colors shadow-lg cursor-pointer"
           title="Scroll to latest messages"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">

@@ -63,8 +63,8 @@ export function TaskBoard() {
               setEditingTaskId(null)
               setTaskSheetOpen(true)
             }}
-            className="px-5 py-2.5 rounded-[12px] border-none bg-[#6366F1] text-white text-[14px] font-600 cursor-pointer
-              hover:brightness-110 active:scale-[0.97] transition-all shadow-[0_2px_12px_rgba(99,102,241,0.2)]"
+            className="px-5 py-2.5 rounded-[12px] border-none bg-primary text-primary-foreground text-[14px] font-600 cursor-pointer
+              hover:brightness-110 active:scale-[0.97] transition-all shadow-[0_2px_12px_rgba(var(--primary-rgb),0.2)]"
             style={{ fontFamily: 'inherit' }}
           >
             + New Task

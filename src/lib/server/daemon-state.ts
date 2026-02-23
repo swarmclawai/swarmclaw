@@ -45,7 +45,7 @@ function normalizeWhatsappTarget(raw?: string | null): string | null {
 }
 
 // Store daemon state on globalThis to survive HMR reloads
-const gk = '__swarmclaw_daemon__' as const
+const gk = '__agent_ember_daemon__' as const
 const ds: {
   queueIntervalId: ReturnType<typeof setInterval> | null
   browserSweepId: ReturnType<typeof setInterval> | null
@@ -109,7 +109,7 @@ export function stopDaemon() {
   stopBrowserSweep()
   stopHealthMonitor()
   stopHeartbeatService()
-  stopAllConnectors().catch(() => {})
+  stopAllConnectors().catch(() => { })
 }
 
 function startBrowserSweep() {
@@ -165,7 +165,7 @@ async function sendHealthAlert(text: string) {
     await sendConnectorMessage({
       connectorId: candidate.id,
       channelId: target,
-      text: `⚠️ SwarmClaw health alert: ${text}`,
+      text: `⚠️ Agent Ember health alert: ${text}`,
     })
   } catch {
     // alerts are best effort; log-only fallback is acceptable

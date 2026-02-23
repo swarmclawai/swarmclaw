@@ -57,7 +57,7 @@ export function SessionList({ inSidebar, onSelect }: Props) {
   const handleSelect = async (id: string) => {
     setCurrentSession(id)
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('swarmclaw:scroll-bottom'))
+      window.dispatchEvent(new CustomEvent('agent-ember:scroll-bottom'))
     }
     try {
       const msgs = await fetchMessages(id)
@@ -73,24 +73,27 @@ export function SessionList({ inSidebar, onSelect }: Props) {
   if (!allUserSessions.length) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-3 p-8 text-center">
-        <div className="w-12 h-12 rounded-[14px] bg-accent-soft flex items-center justify-center mb-1">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-accent-bright">
-            <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" fill="currentColor" />
+        <div className="w-12 h-12 rounded-[14px] bg-primary/10 flex items-center justify-center mb-1">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
+            <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3 1.07.56 2 1.56 2 3a2.5 2.5 0 0 1-2.5 2.5z" />
+            <path d="M12 2c0 2.22-1 3.5-2 5.5 2.5 1 5.5 5 5.5 9.5a5.5 5.5 0 1 1-11 0c0-1.55.64-2.31 1.54-3.5a14.95 14.95 0 0 1 1.05-3c-.15.14-.35.15-.45.15-1.5 0-2.39-1.39-2.39-2.65 0-2.12 1.56-4.49 1.86-4.99L12 2z" />
           </svg>
         </div>
         <p className="font-display text-[15px] font-600 text-text-2">No sessions yet</p>
         <p className="text-[13px] text-text-3/50">Create one to start chatting</p>
-        {!inSidebar && (
-          <button
-            onClick={() => setNewSessionOpen(true)}
-            className="mt-3 px-8 py-3 rounded-[14px] border-none bg-[#6366F1] text-white
-              text-[14px] font-600 cursor-pointer active:scale-95 transition-all duration-200
-              shadow-[0_4px_16px_rgba(99,102,241,0.2)]"
-            style={{ fontFamily: 'inherit' }}
-          >
-            + New Session
-          </button>
-        )}
+        <button
+          onClick={() => setNewSessionOpen(true)}
+          className="mt-4 px-8 py-3 rounded-[14px] border-none bg-primary text-primary-foreground
+            text-[14px] font-600 cursor-pointer active:scale-95 transition-all duration-200
+            shadow-[0_4px_16px_rgba(var(--primary-rgb),0.25)] flex items-center gap-2"
+          style={{ fontFamily: 'inherit' }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          New Session
+        </button>
       </div>
     )
   }
@@ -104,7 +107,7 @@ export function SessionList({ inSidebar, onSelect }: Props) {
             key={f}
             onClick={() => setTypeFilter(f)}
             className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 cursor-pointer transition-all
-              ${typeFilter === f ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
+              ${typeFilter === f ? 'bg-primary/10 text-primary' : 'bg-transparent text-text-3 hover:text-text-2'}`}
             style={{ fontFamily: 'inherit' }}
           >
             {f === 'all' ? 'All' : f === 'active' ? 'Active' : f === 'human' ? 'Human' : 'AI'}

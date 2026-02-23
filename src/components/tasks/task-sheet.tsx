@@ -259,7 +259,7 @@ export function TaskSheet() {
                 onClick={() => setAgentId(p.id)}
                 className={`px-4 py-3 rounded-[12px] text-[14px] font-600 cursor-pointer transition-all border
                   ${agentId === p.id
-                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                    ? 'bg-primary border-primary text-primary-foreground'
                     : 'bg-surface border-white/[0.06] text-text-2 hover:bg-surface-2'}`}
                 style={{ fontFamily: 'inherit' }}
               >
@@ -346,7 +346,7 @@ export function TaskSheet() {
             <button
               onClick={handleAddComment}
               disabled={!commentText.trim()}
-              className="px-4 py-3 rounded-[14px] border-none bg-accent-soft text-accent-bright text-[13px] font-600 cursor-pointer disabled:opacity-30 hover:brightness-110 transition-all shrink-0"
+              className="px-4 py-3 rounded-[14px] border-none bg-primary/10 text-primary text-[13px] font-600 cursor-pointer disabled:opacity-30 hover:bg-primary/20 transition-all shrink-0"
               style={{ fontFamily: 'inherit' }}
             >
               Post
@@ -374,7 +374,7 @@ export function TaskSheet() {
         <button onClick={onClose} className="flex-1 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all" style={{ fontFamily: 'inherit' }}>
           Cancel
         </button>
-        <button onClick={handleSave} disabled={!title.trim() || !agentId} className="flex-1 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110" style={{ fontFamily: 'inherit' }}>
+        <button onClick={handleSave} disabled={!title.trim() || !agentId} className="flex-1 py-3.5 rounded-[14px] border-none bg-primary text-primary-foreground text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(var(--primary-rgb),0.25)] hover:brightness-110" style={{ fontFamily: 'inherit' }}>
           {editing ? 'Save' : 'Create'}
         </button>
       </div>

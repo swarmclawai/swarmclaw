@@ -55,14 +55,14 @@ export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
       <div className="flex items-center gap-2.5">
         <span className="font-display text-[14px] font-600 truncate flex-1 tracking-[-0.01em]">{agent.name}</span>
         {isDefault ? (
-          <span className="shrink-0 text-[10px] font-600 uppercase tracking-wider text-accent-bright bg-accent-soft px-2 py-0.5 rounded-[6px]">
+          <span className="shrink-0 text-[10px] font-600 uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-[6px]">
             default
           </span>
         ) : onSetDefault && (
           <button
             onClick={(e) => { e.stopPropagation(); onSetDefault(agent.id) }}
             className="shrink-0 text-[10px] font-600 uppercase tracking-wider px-2 py-0.5 rounded-[6px] cursor-pointer
-              transition-all border-none bg-transparent text-text-3/30 hover:text-accent-bright hover:bg-accent-soft"
+              transition-all border-none bg-transparent text-text-3/30 hover:text-primary hover:bg-primary/10"
             style={{ fontFamily: 'inherit' }}
             title="Set as default agent for Main Chat"
           >
@@ -74,7 +74,7 @@ export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
             onClick={handleRun}
             disabled={running}
             className="shrink-0 text-[10px] font-600 uppercase tracking-wider px-2.5 py-1 rounded-[6px] cursor-pointer
-              transition-all border-none bg-[#6366F1]/20 text-[#818CF8] hover:bg-[#6366F1]/30 disabled:opacity-40"
+              transition-all border-none bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40"
             style={{ fontFamily: 'inherit' }}
           >
             {running ? '...' : 'Run'}

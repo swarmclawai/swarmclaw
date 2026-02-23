@@ -654,7 +654,7 @@ const openclaw: PlatformConnector = {
         client: {
           id: clientId,
           displayName: clientDisplayName,
-          version: 'swarmclaw',
+          version: 'agent-ember',
           platform: process.platform,
           mode: clientMode,
           instanceId: connector.id,
@@ -666,7 +666,7 @@ const openclaw: PlatformConnector = {
         permissions: {},
         auth,
         locale: 'en-US',
-        userAgent: 'swarmclaw-openclaw-connector/1.0',
+        userAgent: 'agent-ember-openclaw-connector/1.0',
         device: {
           id: identity.deviceId,
           publicKey: base64UrlEncode(derivePublicKeyRaw(identity.publicKeyPem)),

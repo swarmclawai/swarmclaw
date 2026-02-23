@@ -4,13 +4,15 @@ import { useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { Avatar } from '@/components/shared/avatar'
+import { WelcomeScreen } from '@/components/layout/welcome-screen'
 import { SessionList } from '@/components/sessions/session-list'
-import { NewSessionSheet } from '@/components/sessions/new-session-sheet'
-import { SettingsSheet } from '@/components/shared/settings-sheet'
+import { NewSessionView } from '@/components/sessions/new-session-view'
 import { AgentList } from '@/components/agents/agent-list'
 import { AgentSheet } from '@/components/agents/agent-sheet'
 import { ScheduleList } from '@/components/schedules/schedule-list'
 import { ScheduleSheet } from '@/components/schedules/schedule-sheet'
+import { SettingsView } from '@/components/settings/settings-view'
+import { SettingsSidebar } from '@/components/settings/settings-sidebar'
 import { MemoryList } from '@/components/memory/memory-list'
 import { MemorySheet } from '@/components/memory/memory-sheet'
 import { MemoryDetail } from '@/components/memory/memory-detail'
@@ -34,6 +36,7 @@ import { MobileHeader } from './mobile-header'
 import { DaemonIndicator } from './daemon-indicator'
 import { ChatArea } from '@/components/chat/chat-area'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { ThemeToggle } from '@/components/shared/theme-toggle'
 import type { AppView } from '@/types'
 
 const RAIL_EXPANDED_KEY = 'sc_rail_expanded'
@@ -45,6 +48,7 @@ export function AppLayout() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
+  const newSessionOpen = useAppStore((s) => s.newSessionOpen)
   const setNewSessionOpen = useAppStore((s) => s.setNewSessionOpen)
   const setUser = useAppStore((s) => s.setUser)
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
@@ -96,7 +100,7 @@ export function AppLayout() {
     setActiveView('sessions')
     setSidebarOpen(false)
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('swarmclaw:scroll-bottom'))
+      window.dispatchEvent(new CustomEvent('agent-ember:scroll-bottom'))
     }
   }
 
@@ -105,46 +109,59 @@ export function AppLayout() {
       {/* Desktop: Navigation rail (expandable) */}
       {isDesktop && (
         <div
-          className="shrink-0 bg-raised border-r border-white/[0.04] flex flex-col py-4 transition-all duration-200 overflow-hidden"
+          className="shrink-0 bg-card border-r border-border flex flex-col py-4 transition-all duration-200 overflow-hidden"
           style={{ width: railExpanded ? 180 : 60 }}
         >
-          {/* Logo + collapse toggle */}
-          <div className={`flex items-center mb-4 shrink-0 ${railExpanded ? 'px-4 gap-3' : 'justify-center'}`}>
-            <div className="w-10 h-10 rounded-[11px] bg-gradient-to-br from-[#4338CA] to-[#6366F1] flex items-center justify-center shrink-0
-              shadow-[0_2px_12px_rgba(99,102,241,0.2)]">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-white">
-                <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" fill="currentColor" />
-              </svg>
-            </div>
-            {railExpanded && (
-              <button
-                onClick={toggleRail}
-                className="ml-auto w-7 h-7 rounded-[8px] flex items-center justify-center text-text-3 hover:text-text hover:bg-white/[0.04] transition-all cursor-pointer bg-transparent border-none"
-                title="Collapse sidebar"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <polyline points="11 17 6 12 11 7" />
-                  <polyline points="18 17 13 12 18 7" />
+          {/* Navigation Rail Header: Branding + Collapse inline */}
+          <div className={`flex flex-col mb-8 shrink-0 ${railExpanded ? 'px-3' : 'items-center border-b border-border/10 pb-4'}`}>
+            <div className={`flex items-center gap-3 ${railExpanded ? '' : 'justify-center'}`}>
+              <div className={`${railExpanded ? 'w-10 h-10' : 'w-8 h-8'} rounded-[10px] bg-primary flex items-center justify-center shrink-0
+                shadow-[0_4px_12px_rgba(var(--primary-rgb),0.2)]`}>
+                <svg width={railExpanded ? "20" : "16"} height={railExpanded ? "20" : "16"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                  <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3 1.07.56 2 1.56 2 3a2.5 2.5 0 0 1-2.5 2.5z" />
+                  <path d="M12 2c0 2.22-1 3.5-2 5.5 2.5 1 5.5 5 5.5 9.5a5.5 5.5 0 1 1-11 0c0-1.55.64-2.31 1.54-3.5a14.95 14.95 0 0 1 1.05-3c-.15.14-.35.15-.45.15-1.5 0-2.39-1.39-2.39-2.65 0-2.12 1.56-4.49 1.86-4.99L12 2z" />
                 </svg>
-              </button>
-            )}
+              </div>
+
+              {railExpanded && (
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="font-display text-[10px] font-900 tracking-[0.2em] text-muted-foreground/50 uppercase leading-none mb-1">
+                    Agent
+                  </span>
+                  <span className="font-display text-[17px] font-900 tracking-[-0.04em] text-foreground leading-none">
+                    EMBER
+                  </span>
+                </div>
+              )}
+
+              {railExpanded && (
+                <button
+                  onClick={toggleRail}
+                  className="w-7 h-7 rounded-md flex items-center justify-center text-muted-foreground/30 hover:text-foreground hover:bg-muted transition-all cursor-pointer bg-transparent border-none shrink-0"
+                  title="Collapse sidebar"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <polyline points="11 17 6 12 11 7" />
+                    <polyline points="18 17 13 12 18 7" />
+                  </svg>
+                </button>
+              )}
+
+              {!railExpanded && (
+                <button
+                  onClick={toggleRail}
+                  className="rail-btn"
+                  title="Expand sidebar"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <polyline points="13 17 18 12 13 7" />
+                    <polyline points="6 17 11 12 6 7" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Expand button when collapsed */}
-          {!railExpanded && (
-            <div className="flex justify-center mb-2">
-              <button
-                onClick={toggleRail}
-                className="rail-btn"
-                title="Expand sidebar"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <polyline points="13 17 18 12 13 7" />
-                  <polyline points="6 17 11 12 6 7" />
-                </svg>
-              </button>
-            </div>
-          )}
 
           {/* Main Chat shortcut */}
           {railExpanded ? (
@@ -153,8 +170,8 @@ export function AppLayout() {
                 onClick={goToMainChat}
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all
                   ${mainSession && currentSessionId === mainSession.id && activeView === 'sessions'
-                    ? 'bg-[#6366F1]/15 border border-[#6366F1]/25 text-accent-bright'
-                    : 'bg-[#6366F1]/10 border border-[#6366F1]/20 text-accent-bright hover:bg-[#6366F1]/15'}`}
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20'}`}
                 style={{ fontFamily: 'inherit' }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -239,13 +256,21 @@ export function AppLayout() {
 
           {/* Bottom: Docs + Daemon + Settings + User */}
           <div className={`flex flex-col gap-1 ${railExpanded ? 'px-3' : 'items-center'}`}>
+            {railExpanded && (
+              <div className="flex flex-col gap-2 mb-2">
+                <div className="px-1">
+                  <ThemeToggle variant="sidebar" />
+                </div>
+                <DaemonIndicator />
+              </div>
+            )}
             {railExpanded ? (
               <a
-                href="https://swarmclaw.ai/docs"
+                href="https://agent-ember.ai/docs"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-[13px] font-500 cursor-pointer transition-all
-                  bg-transparent text-text-3 hover:text-text hover:bg-white/[0.04] no-underline"
+                  bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted no-underline"
                 style={{ fontFamily: 'inherit' }}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
@@ -259,7 +284,7 @@ export function AppLayout() {
             ) : (
               <RailTooltip label="Docs" description="Open documentation site">
                 <a
-                  href="https://swarmclaw.ai/docs"
+                  href="https://agent-ember.ai/docs"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="rail-btn"
@@ -270,12 +295,11 @@ export function AppLayout() {
                 </a>
               </RailTooltip>
             )}
-            {railExpanded && <DaemonIndicator />}
             {railExpanded ? (
               <button
-                onClick={() => setSettingsOpen(true)}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-[13px] font-500 cursor-pointer transition-all
-                  bg-transparent text-text-3 hover:text-text hover:bg-white/[0.04] border-none"
+                onClick={() => { setActiveView('settings'); setSidebarOpen(true) }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-[13px] font-500 cursor-pointer transition-all
+                  ${activeView === 'settings' ? 'bg-primary text-primary-foreground border-primary' : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted border-none'}`}
                 style={{ fontFamily: 'inherit' }}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
@@ -286,7 +310,7 @@ export function AppLayout() {
               </button>
             ) : (
               <RailTooltip label="Settings" description="API keys, providers & app config">
-                <button onClick={() => setSettingsOpen(true)} className="rail-btn">
+                <button onClick={() => { setActiveView('settings'); setSidebarOpen(true) }} className={`rail-btn ${activeView === 'settings' ? 'active' : ''}`}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <circle cx="12" cy="12" r="3" />
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -295,15 +319,16 @@ export function AppLayout() {
               </RailTooltip>
             )}
 
+
             {railExpanded ? (
               <button
                 onClick={handleSwitchUser}
                 className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] cursor-pointer transition-all
-                  bg-transparent hover:bg-white/[0.04] border-none"
+                  bg-transparent hover:bg-muted border-none"
                 style={{ fontFamily: 'inherit' }}
               >
                 <Avatar user={currentUser!} size="sm" />
-                <span className="text-[13px] font-500 text-text-2 capitalize truncate">{currentUser}</span>
+                <span className="text-[13px] font-500 text-foreground capitalize truncate">{currentUser}</span>
               </button>
             ) : (
               <RailTooltip label="Switch User" description="Sign in as a different user">
@@ -314,127 +339,42 @@ export function AppLayout() {
             )}
           </div>
         </div>
-      )}
+      )
+      }
 
       {/* Desktop: Side panel */}
-      {isDesktop && sidebarOpen && (
-        <div
-          className="w-[280px] shrink-0 bg-raised border-r border-white/[0.04] flex flex-col h-full"
-          style={{ animation: 'panel-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)' }}
-        >
-          <div className="flex items-center px-5 pt-5 pb-3 shrink-0">
-            <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">{activeView}</h2>
-            {activeView === 'logs' ? null : activeView === 'memory' ? (
-              <button
-                onClick={() => useAppStore.getState().setMemorySheetOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 text-accent-bright bg-accent-soft hover:bg-[#6366F1]/15 transition-all cursor-pointer"
-                style={{ fontFamily: 'inherit' }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                Memory
-              </button>
-            ) : (
-              <button
-                onClick={openNewSheet}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 text-accent-bright bg-accent-soft hover:bg-[#6366F1]/15 transition-all cursor-pointer"
-                style={{ fontFamily: 'inherit' }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'New'}
-              </button>
-            )}
-          </div>
-          {activeView === 'sessions' && (
-            <>
-              <UpdateBanner />
-              <NetworkBanner />
-              <SessionList inSidebar onSelect={() => {}} />
-            </>
-          )}
-          {activeView === 'agents' && <AgentList inSidebar />}
-          {activeView === 'schedules' && <ScheduleList inSidebar />}
-          {activeView === 'memory' && <MemoryList inSidebar />}
-          {activeView === 'tasks' && <TaskList inSidebar />}
-          {activeView === 'secrets' && <SecretsList inSidebar />}
-          {activeView === 'providers' && <ProviderList inSidebar />}
-          {activeView === 'skills' && <SkillList inSidebar />}
-          {activeView === 'connectors' && <ConnectorList inSidebar />}
-          {activeView === 'webhooks' && <WebhookList inSidebar />}
-          {activeView === 'logs' && <LogList />}
-        </div>
-      )}
-
-      {/* Mobile: Drawer */}
-      {!isDesktop && sidebarOpen && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+      {
+        isDesktop && sidebarOpen && (
           <div
-            className="absolute inset-y-0 left-0 w-[300px] bg-raised shadow-[4px_0_60px_rgba(0,0,0,0.7)] flex flex-col"
-            style={{ animation: 'slide-in-left 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
+            className="w-[280px] shrink-0 bg-card border-r border-border flex flex-col h-full"
+            style={{ animation: 'panel-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)' }}
           >
-            <div className="flex items-center gap-3 px-5 py-4 shrink-0">
-              <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-[#4338CA] to-[#6366F1] flex items-center justify-center
-                shadow-[0_2px_8px_rgba(99,102,241,0.15)]">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-white">
-                  <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" fill="currentColor" />
-                </svg>
-              </div>
-              <span className="font-display text-[15px] font-600 flex-1 tracking-[-0.02em]">SwarmClaw</span>
-              <a href="https://swarmclaw.ai/docs" target="_blank" rel="noopener noreferrer" className="rail-btn" title="Documentation">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-                </svg>
-              </a>
-              <button onClick={() => setSettingsOpen(true)} className="rail-btn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-              </button>
-              <button onClick={handleSwitchUser} className="bg-transparent border-none cursor-pointer shrink-0">
-                <Avatar user={currentUser!} size="sm" />
-              </button>
-            </div>
-            {/* View selector tabs */}
-            <div className="flex px-4 py-2 gap-1 shrink-0 flex-wrap">
-              {(['sessions', 'agents', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'webhooks', 'logs'] as AppView[]).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setActiveView(v)}
-                  className={`py-2 px-2.5 rounded-[10px] text-[11px] font-600 capitalize cursor-pointer transition-all
-                    ${activeView === v
-                      ? 'bg-accent-soft text-accent-bright'
-                      : 'bg-transparent text-text-3 hover:text-text-2'}`}
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-            <div className="px-4 py-2.5 shrink-0">
-              <button
-                onClick={() => {
-                  setSidebarOpen(false)
-                  openNewSheet()
-                }}
-                className="w-full py-3 rounded-[12px] border-none bg-[#6366F1] text-white text-[14px] font-600 cursor-pointer
-                  hover:brightness-110 active:scale-[0.98] transition-all
-                  shadow-[0_2px_12px_rgba(99,102,241,0.15)]"
-                style={{ fontFamily: 'inherit' }}
-              >
-                + New {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'Entry'}
-              </button>
+            <div className="flex items-center px-6 pt-5 pb-3 shrink-0">
+              <h2 className="font-display text-[14px] font-600 text-foreground tracking-[-0.01em] uppercase opacity-40 flex-1">
+                {activeView === 'settings' ? 'App Settings' : activeView === 'logs' ? 'System Logs' : activeView}
+              </h2>
             </div>
             {activeView === 'sessions' && (
               <>
                 <UpdateBanner />
                 <NetworkBanner />
-                <SessionList inSidebar onSelect={() => setSidebarOpen(false)} />
+                <SessionList inSidebar onSelect={() => { }} />
+                {Object.keys(sessions).filter(id => sessions[id].name !== '__main__').length > 0 && (
+                  <div className="px-3 pb-3 shrink-0">
+                    <button
+                      onClick={openNewSheet}
+                      className="w-full py-2.5 rounded-[12px] bg-primary/10 text-primary border border-primary/20
+                        text-[13px] font-600 cursor-pointer hover:bg-primary/20 transition-all flex items-center justify-center gap-2"
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      New Session
+                    </button>
+                  </div>
+                )}
               </>
             )}
             {activeView === 'agents' && <AgentList inSidebar />}
@@ -447,30 +387,149 @@ export function AppLayout() {
             {activeView === 'connectors' && <ConnectorList inSidebar />}
             {activeView === 'webhooks' && <WebhookList inSidebar />}
             {activeView === 'logs' && <LogList />}
+            {activeView === 'settings' && <SettingsSidebar />}
           </div>
-        </div>
-      )}
+        )
+      }
+
+      {/* Mobile: Drawer */}
+      {
+        !isDesktop && sidebarOpen && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
+            <div
+              className="absolute inset-y-0 left-0 w-[300px] bg-card shadow-2xl flex flex-col"
+              style={{ animation: 'slide-in-left 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
+            >
+              <div className="flex flex-col px-6 pt-8 pb-4 shrink-0 gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-[12px] bg-primary flex items-center justify-center shrink-0
+                  shadow-[0_6px_16px_rgba(var(--primary-rgb),0.25)]">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                      <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3 1.07.56 2 1.56 2 3a2.5 2.5 0 0 1-2.5 2.5z" />
+                      <path d="M12 2c0 2.22-1 3.5-2 5.5 2.5 1 5.5 5 5.5 9.5a5.5 5.5 0 1 1-11 0c0-1.55.64-2.31 1.54-3.5a14.95 14.95 0 0 1 1.05-3c-.15.14-.35.15-.45.15-1.5 0-2.39-1.39-2.39-2.65 0-2.12 1.56-4.49 1.86-4.99L12 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex flex-col flex-1">
+                    <span className="font-display text-[11px] font-900 tracking-[0.2em] text-muted-foreground/40 uppercase leading-none mb-1">
+                      Agent
+                    </span>
+                    <span className="font-display text-[22px] font-900 tracking-[-0.04em] text-foreground leading-none">
+                      EMBER
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <a href="https://agent-ember.ai/docs" target="_blank" rel="noopener noreferrer" className="rail-btn" title="Documentation">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                      </svg>
+                    </a>
+                    <button onClick={handleSwitchUser} className="bg-transparent border-none cursor-pointer shrink-0 ml-1">
+                      <Avatar user={currentUser!} size="sm" />
+                    </button>
+                  </div>
+                </div>
+
+                {activeView !== 'logs' && activeView !== 'settings' && (
+                  <button
+                    onClick={() => {
+                      setSidebarOpen(false)
+                      openNewSheet()
+                    }}
+                    className="w-full h-11 rounded-[12px] bg-primary text-primary-foreground text-[14px] font-700 cursor-pointer
+                    active:scale-[0.98] transition-all
+                    shadow-md flex items-center justify-center gap-2"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    New {activeView === 'sessions' ? 'Chat' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'Entry'}
+                  </button>
+                )}
+              </div>
+              {/* View selector tabs */}
+              <div className="flex px-4 py-2 gap-1 shrink-0 flex-wrap">
+                {(['sessions', 'agents', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'webhooks', 'logs', 'settings'] as AppView[]).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setActiveView(v)}
+                    className={`py-2 px-2.5 rounded-[10px] text-[11px] font-600 capitalize cursor-pointer transition-all
+                    ${activeView === v
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+              <div className="px-4 py-2.5 shrink-0">
+                <button
+                  onClick={() => {
+                    setSidebarOpen(false)
+                    openNewSheet()
+                  }}
+                  className="w-full py-3 rounded-[12px] border-none bg-primary text-primary-foreground text-[14px] font-600 cursor-pointer
+                  hover:opacity-90 active:scale-[0.98] transition-all
+                  shadow-sm"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  + New {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'Entry'}
+                </button>
+              </div>
+              {activeView === 'settings' && (
+                <div className="flex-1 overflow-y-auto">
+                  <SettingsSidebar />
+                </div>
+              )}
+              {activeView === 'sessions' && (
+                <>
+                  <UpdateBanner />
+                  <NetworkBanner />
+                  <SessionList inSidebar onSelect={() => setSidebarOpen(false)} />
+                </>
+              )}
+              {activeView === 'agents' && <AgentList inSidebar />}
+              {activeView === 'schedules' && <ScheduleList inSidebar />}
+              {activeView === 'memory' && <MemoryList inSidebar />}
+              {activeView === 'tasks' && <TaskList inSidebar />}
+              {activeView === 'secrets' && <SecretsList inSidebar />}
+              {activeView === 'providers' && <ProviderList inSidebar />}
+              {activeView === 'skills' && <SkillList inSidebar />}
+              {activeView === 'connectors' && <ConnectorList inSidebar />}
+              {activeView === 'webhooks' && <WebhookList inSidebar />}
+              {activeView === 'logs' && <LogList />}
+            </div>
+          </div>
+        )
+      }
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col h-full min-w-0 bg-bg">
+      <div className="flex-1 flex flex-col h-full min-w-0 bg-background">
         {!isDesktop && <MobileHeader />}
-        {activeView === 'sessions' && currentSessionId ? (
+        {newSessionOpen ? (
+          <NewSessionView />
+        ) : activeView === 'sessions' && currentSessionId ? (
           <ChatArea />
         ) : activeView === 'sessions' ? (
-          <div className="flex-1 flex flex-col">
-            {!isDesktop && <SessionList />}
-          </div>
+          isDesktop ? <WelcomeScreen /> : (
+            <div className="flex-1 flex flex-col">
+              <SessionList />
+            </div>
+          )
         ) : activeView === 'tasks' && isDesktop ? (
           <TaskBoard />
         ) : activeView === 'memory' ? (
           <MemoryDetail />
+        ) : activeView === 'settings' ? (
+          <SettingsView />
         ) : (
           <ViewEmptyState view={activeView} />
         )}
       </div>
 
-      <NewSessionSheet />
-      <SettingsSheet />
       <AgentSheet />
       <ScheduleSheet />
       <MemorySheet />
@@ -480,7 +539,7 @@ export function AppLayout() {
       <SkillSheet />
       <ConnectorSheet />
       <WebhookSheet />
-    </div>
+    </div >
   )
 }
 
@@ -496,6 +555,7 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   connectors: 'Chat platform bridges (Discord, Slack, etc.)',
   webhooks: 'Inbound HTTP triggers for event-driven workflows',
   logs: 'Application logs & error tracking',
+  settings: 'Manage providers, API keys & app config',
 }
 
 const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'sessions'>, { icon: string; title: string; description: string; features: string[] }> = {
@@ -559,6 +619,12 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'sessions'>, { icon: string; ti
     description: 'View application logs, errors, and debug information. Logs auto-refresh in real-time.',
     features: ['Filter by level: ERROR, WARN, INFO, DEBUG', 'Search through log entries', 'Auto-refresh with live mode', 'Click entries to expand details'],
   },
+  settings: {
+    icon: 'settings',
+    title: 'Settings',
+    description: 'Configure your orchestration engine, manage API providers, and set up your workspace preferences.',
+    features: ['Switch between different orchestration LLMs', 'Manage API keys for various AI providers', 'Set safety guards for autonomous loops', 'Install and manage plugins and hooks'],
+  },
 }
 
 function ViewEmptyState({ view }: { view: AppView }) {
@@ -571,7 +637,7 @@ function ViewEmptyState({ view }: { view: AppView }) {
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-[30%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px]"
           style={{
-            background: 'radial-gradient(ellipse at center, rgba(99,102,241,0.03) 0%, transparent 70%)',
+            background: 'radial-gradient(ellipse at center, oklch(0.705 0.201 47.333 / 0.05) 0%, transparent 70%)',
             animation: 'glow-pulse 8s ease-in-out infinite',
           }} />
       </div>
@@ -579,26 +645,26 @@ function ViewEmptyState({ view }: { view: AppView }) {
       <div className="relative max-w-[520px] w-full text-center"
         style={{ animation: 'fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1)' }}>
         <div className="flex justify-center mb-6">
-          <div className="w-14 h-14 rounded-[16px] bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+          <div className="w-14 h-14 rounded-[16px] bg-muted border border-border flex items-center justify-center">
             <ViewEmptyIcon type={config.icon} />
           </div>
         </div>
 
-        <h2 className="font-display text-[28px] font-800 leading-[1.15] tracking-[-0.03em] mb-3 text-text">
+        <h2 className="font-display text-[28px] font-800 leading-[1.15] tracking-[-0.03em] mb-3 text-foreground">
           {config.title}
         </h2>
-        <p className="text-[14px] text-text-3 leading-[1.6] mb-8 max-w-[400px] mx-auto">
+        <p className="text-[14px] text-muted-foreground leading-[1.6] mb-8 max-w-[400px] mx-auto">
           {config.description}
         </p>
 
         <div className="text-left max-w-[380px] mx-auto space-y-3">
           {config.features.map((feature) => (
             <div key={feature} className="flex items-start gap-3">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-accent-bright shrink-0 mt-0.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-primary shrink-0 mt-0.5">
                 <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" opacity="0.3" />
               </svg>
-              <span className="text-[13px] text-text-2/70 leading-[1.5]">{feature}</span>
+              <span className="text-[13px] text-foreground/70 leading-[1.5]">{feature}</span>
             </div>
           ))}
         </div>
@@ -608,7 +674,7 @@ function ViewEmptyState({ view }: { view: AppView }) {
 }
 
 function ViewEmptyIcon({ type }: { type: string }) {
-  const cls = "text-text-3"
+  const cls = "text-muted-foreground"
   switch (type) {
     case 'user':
       return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
@@ -650,8 +716,8 @@ function NavItem({ view, label, expanded, active, sidebarOpen, onClick, children
         onClick={onClick}
         className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-[13px] font-500 cursor-pointer transition-all border-none
           ${isActive
-            ? 'bg-accent-soft text-accent-bright'
-            : 'bg-transparent text-text-3 hover:text-text hover:bg-white/[0.04]'}`}
+            ? 'bg-primary text-primary-foreground shadow-sm'
+            : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}`}
         style={{ fontFamily: 'inherit' }}
       >
         <span className="shrink-0">{children}</span>
@@ -668,9 +734,9 @@ function NavItem({ view, label, expanded, active, sidebarOpen, onClick, children
         </button>
       </TooltipTrigger>
       <TooltipContent side="right" sideOffset={8}
-        className="bg-raised border border-white/[0.08] text-text shadow-[0_8px_32px_rgba(0,0,0,0.5)] rounded-[10px] px-3.5 py-2.5 max-w-[200px]">
+        className="bg-card border border-border text-foreground shadow-2xl rounded-[10px] px-3.5 py-2.5 max-w-[200px]">
         <div className="font-display text-[13px] font-600 mb-0.5">{label}</div>
-        <div className="text-[11px] text-text-3 leading-[1.4]">{VIEW_DESCRIPTIONS[view]}</div>
+        <div className="text-[11px] text-muted-foreground leading-[1.4]">{VIEW_DESCRIPTIONS[view]}</div>
       </TooltipContent>
     </Tooltip>
   )
@@ -681,9 +747,9 @@ function RailTooltip({ label, description, children }: { label: string; descript
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side="right" sideOffset={8}
-        className="bg-raised border border-white/[0.08] text-text shadow-[0_8px_32px_rgba(0,0,0,0.5)] rounded-[10px] px-3.5 py-2.5 max-w-[200px]">
+        className="bg-card border border-border text-foreground shadow-2xl rounded-[10px] px-3.5 py-2.5 max-w-[200px]">
         <div className="font-display text-[13px] font-600 mb-0.5">{label}</div>
-        <div className="text-[11px] text-text-3 leading-[1.4]">{description}</div>
+        <div className="text-[11px] text-muted-foreground leading-[1.4]">{description}</div>
       </TooltipContent>
     </Tooltip>
   )
@@ -697,7 +763,7 @@ function DesktopEmptyState({ userName }: { userName: string | null }) {
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-[30%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[700px] h-[400px]"
           style={{
-            background: 'radial-gradient(ellipse at center, rgba(99,102,241,0.04) 0%, transparent 70%)',
+            background: 'radial-gradient(ellipse at center, oklch(0.705 0.201 47.333 / 0.05) 0%, transparent 70%)',
             animation: 'glow-pulse 8s ease-in-out infinite',
           }} />
       </div>
@@ -706,28 +772,27 @@ function DesktopEmptyState({ userName }: { userName: string | null }) {
         style={{ animation: 'fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1)' }}>
         <div className="flex justify-center mb-8">
           <div className="relative">
-            <svg width="40" height="40" viewBox="0 0 48 48" fill="none" className="text-accent-bright"
-              style={{ animation: 'sparkle-spin 10s linear infinite' }}>
-              <path d="M24 4L27.5 18.5L42 24L27.5 29.5L24 44L20.5 29.5L6 24L20.5 18.5L24 4Z"
-                fill="currentColor" opacity="0.8" />
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary mb-5"
+              style={{ animation: 'sparkle-spin 8s linear infinite' }}>
+              <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3 1.07.56 2 1.56 2 3a2.5 2.5 0 0 1-2.5 2.5z" />
+              <path d="M12 2c0 2.22-1 3.5-2 5.5 2.5 1 5.5 5 5.5 9.5a5.5 5.5 0 1 1-11 0c0-1.55.64-2.31 1.54-3.5a14.95 14.95 0 0 1 1.05-3c-.15.14-.35.15-.45.15-1.5 0-2.39-1.39-2.39-2.65 0-2.12 1.56-4.49 1.86-4.99L12 2z" />
             </svg>
-            <div className="absolute inset-0 blur-xl bg-accent-bright/15" />
           </div>
         </div>
 
         <h1 className="font-display text-[44px] font-800 leading-[1.1] tracking-[-0.04em] mb-5">
-          Hi, <span className="text-accent-bright">{userName ? userName.charAt(0).toUpperCase() + userName.slice(1) : 'there'}</span>
+          Hi, <span className="text-primary">{userName ? userName.charAt(0).toUpperCase() + userName.slice(1) : 'there'}</span>
           <br />
-          <span className="text-text-2">What would you like to do?</span>
+          <span className="text-foreground">What would you like to do?</span>
         </h1>
-        <p className="text-[15px] text-text-3 mb-12">
+        <p className="text-[15px] text-muted-foreground mb-12">
           Create a new session to start chatting
         </p>
         <button
           onClick={() => setNewSessionOpen(true)}
-          className="inline-flex items-center gap-2.5 px-12 py-4 rounded-[16px] border-none bg-[#6366F1] text-white text-[16px] font-display font-600
-            cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
-            shadow-[0_6px_28px_rgba(99,102,241,0.3)]"
+          className="inline-flex items-center gap-2.5 px-12 py-4 rounded-[16px] border-none bg-primary text-primary-foreground text-[16px] font-display font-600
+            cursor-pointer hover:opacity-90 active:scale-[0.97] transition-all duration-200
+            shadow-sm"
           style={{ fontFamily: 'inherit' }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

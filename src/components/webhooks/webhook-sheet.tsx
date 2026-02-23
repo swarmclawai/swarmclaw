@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { api } from '@/lib/api-client'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { Webhook } from '@/types'
 
 type WebhookApiResponse = Webhook | { error: string }
@@ -218,17 +225,20 @@ export function WebhookSheet() {
 
         <div>
           <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Route to Orchestrator</label>
-          <select
-            value={agentId}
-            onChange={(e) => setAgentId(e.target.value)}
-            className={`${inputClass} appearance-none cursor-pointer`}
-            style={{ fontFamily: 'inherit' }}
+          <Select
+            value={agentId || "__none__"}
+            onValueChange={(val) => setAgentId(val === "__none__" ? "" : val)}
           >
-            <option value="">Select orchestrator...</option>
-            {orchestrators.map((agent) => (
-              <option key={agent.id} value={agent.id}>{agent.name}</option>
-            ))}
-          </select>
+            <SelectTrigger className={inputClass}>
+              <SelectValue placeholder="Select orchestrator..." />
+            </SelectTrigger>
+            <SelectContent className="bg-surface border-white/[0.08]">
+              <SelectItem value="__none__">Select orchestrator...</SelectItem>
+              {orchestrators.map((agent) => (
+                <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div>
@@ -282,18 +292,16 @@ export function WebhookSheet() {
           <div className="flex p-1 rounded-[12px] bg-bg border border-white/[0.06]">
             <button
               onClick={() => setIsEnabled(true)}
-              className={`flex-1 py-2.5 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 border-none ${
-                isEnabled ? 'bg-emerald-500/15 text-emerald-300' : 'bg-transparent text-text-3 hover:text-text-2'
-              }`}
+              className={`flex-1 py-2.5 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 border-none ${isEnabled ? 'bg-emerald-500/15 text-emerald-300' : 'bg-transparent text-text-3 hover:text-text-2'
+                }`}
               style={{ fontFamily: 'inherit' }}
             >
               Enabled
             </button>
             <button
               onClick={() => setIsEnabled(false)}
-              className={`flex-1 py-2.5 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 border-none ${
-                !isEnabled ? 'bg-white/[0.08] text-text-2' : 'bg-transparent text-text-3 hover:text-text-2'
-              }`}
+              className={`flex-1 py-2.5 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 border-none ${!isEnabled ? 'bg-white/[0.08] text-text-2' : 'bg-transparent text-text-3 hover:text-text-2'
+                }`}
               style={{ fontFamily: 'inherit' }}
             >
               Disabled
@@ -322,7 +330,7 @@ export function WebhookSheet() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-8 py-3 rounded-[14px] border-none bg-[#6366F1] text-white text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110"
+            className="px-8 py-3 rounded-[14px] border-none bg-primary text-primary-foreground text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110 shadow-[0_4px_12px_rgba(var(--primary-rgb),0.2)]"
             style={{ fontFamily: 'inherit' }}
           >
             {saving ? 'Saving...' : editing ? 'Update' : 'Create'}

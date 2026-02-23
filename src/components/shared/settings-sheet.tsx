@@ -15,6 +15,13 @@ import {
   DEFAULT_ORCHESTRATOR_LOOP_RECURSION_LIMIT,
   DEFAULT_SHELL_COMMAND_TIMEOUT_SEC,
 } from '@/lib/runtime-loop'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { ProviderType, LoopMode, PluginMeta, MarketplacePlugin } from '@/types'
 
 const NON_LANGGRAPH_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
@@ -163,7 +170,7 @@ export function SettingsSheet() {
                 onClick={() => updateSettings({ langGraphProvider: p.id, langGraphModel: '', langGraphCredentialId: null, langGraphEndpoint: null })}
                 className={`py-3 px-3 rounded-[12px] text-center cursor-pointer transition-all text-[13px] font-600 border
                   ${lgProvider === p.id
-                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                    ? 'bg-primary border-primary text-primary-foreground'
                     : 'bg-bg border-white/[0.06] text-text-2 hover:bg-surface-2'}`}
                 style={{ fontFamily: 'inherit' }}
               >
@@ -181,16 +188,19 @@ export function SettingsSheet() {
           {lgProviderInfo && lgProviderInfo.models.length > 0 && (
             <div className="mb-5">
               <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Model</label>
-              <select
+              <Select
                 value={appSettings.langGraphModel || lgProviderInfo.models[0]}
-                onChange={(e) => updateSettings({ langGraphModel: e.target.value })}
-                className={`${inputClass} appearance-none cursor-pointer`}
-                style={{ fontFamily: 'inherit' }}
+                onValueChange={(val) => updateSettings({ langGraphModel: val })}
               >
-                {lgProviderInfo.models.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+                <SelectTrigger className={inputClass}>
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent className="bg-surface border-white/[0.08]">
+                  {lgProviderInfo.models.map((m) => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
@@ -213,17 +223,20 @@ export function SettingsSheet() {
           <div>
             <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">API Key</label>
             {lgCredentials.length > 0 ? (
-              <select
-                value={appSettings.langGraphCredentialId || ''}
-                onChange={(e) => updateSettings({ langGraphCredentialId: e.target.value || null })}
-                className={`${inputClass} appearance-none cursor-pointer`}
-                style={{ fontFamily: 'inherit' }}
+              <Select
+                value={appSettings.langGraphCredentialId || "__none__"}
+                onValueChange={(val) => updateSettings({ langGraphCredentialId: val === "__none__" ? null : val })}
               >
-                <option value="">Select a key...</option>
-                {lgCredentials.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                <SelectTrigger className={inputClass}>
+                  <SelectValue placeholder="Select a key..." />
+                </SelectTrigger>
+                <SelectContent className="bg-surface border-white/[0.08]">
+                  <SelectItem value="__none__">Select a key...</SelectItem>
+                  {lgCredentials.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             ) : (
               <p className="text-[12px] text-text-3/60">
                 No {lgProvider} API keys configured. Add one below in the Providers section.
@@ -253,7 +266,7 @@ export function SettingsSheet() {
                 onClick={() => updateSettings({ loopMode: mode.id })}
                 className={`py-3 px-3 rounded-[12px] text-center cursor-pointer transition-all text-[13px] font-600 border
                   ${loopMode === mode.id
-                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                    ? 'bg-primary border-primary text-primary-foreground'
                     : 'bg-bg border-white/[0.06] text-text-2 hover:bg-surface-2'}`}
                 style={{ fontFamily: 'inherit' }}
               >
@@ -513,7 +526,7 @@ export function SettingsSheet() {
                 onClick={() => updateSettings({ embeddingProvider: p.id, embeddingModel: null, embeddingCredentialId: null })}
                 className={`py-3 px-3 rounded-[12px] text-center cursor-pointer transition-all text-[13px] font-600 border
                   ${(appSettings.embeddingProvider || null) === p.id
-                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                    ? 'bg-primary border-primary text-primary-foreground'
                     : 'bg-bg border-white/[0.06] text-text-2 hover:bg-surface-2'}`}
                 style={{ fontFamily: 'inherit' }}
               >
@@ -532,30 +545,36 @@ export function SettingsSheet() {
             <>
               <div className="mb-5">
                 <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Model</label>
-                <select
+                <Select
                   value={appSettings.embeddingModel || 'text-embedding-3-small'}
-                  onChange={(e) => updateSettings({ embeddingModel: e.target.value })}
-                  className={`${inputClass} appearance-none cursor-pointer`}
-                  style={{ fontFamily: 'inherit' }}
+                  onValueChange={(val) => updateSettings({ embeddingModel: val })}
                 >
-                  <option value="text-embedding-3-small">text-embedding-3-small</option>
-                  <option value="text-embedding-3-large">text-embedding-3-large</option>
-                </select>
+                  <SelectTrigger className={inputClass}>
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-surface border-white/[0.08]">
+                    <SelectItem value="text-embedding-3-small">text-embedding-3-small</SelectItem>
+                    <SelectItem value="text-embedding-3-large">text-embedding-3-large</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">API Key</label>
                 {credList.filter((c) => c.provider === 'openai').length > 0 ? (
-                  <select
-                    value={appSettings.embeddingCredentialId || ''}
-                    onChange={(e) => updateSettings({ embeddingCredentialId: e.target.value || null })}
-                    className={`${inputClass} appearance-none cursor-pointer`}
-                    style={{ fontFamily: 'inherit' }}
+                  <Select
+                    value={appSettings.embeddingCredentialId || "__none__"}
+                    onValueChange={(val) => updateSettings({ embeddingCredentialId: val === "__none__" ? null : val })}
                   >
-                    <option value="">Select a key...</option>
-                    {credList.filter((c) => c.provider === 'openai').map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className={inputClass}>
+                      <SelectValue placeholder="Select a key..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-surface border-white/[0.08]">
+                      <SelectItem value="__none__">Select a key...</SelectItem>
+                      {credList.filter((c) => c.provider === 'openai').map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : (
                   <p className="text-[12px] text-text-3/60">No OpenAI API keys configured.</p>
                 )}
@@ -668,11 +687,10 @@ export function SettingsSheet() {
                   <div className="text-[14px] font-600 text-text truncate">{secret.name}</div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[11px] font-mono text-text-3">{secret.service}</span>
-                    <span className={`text-[10px] font-600 px-1.5 py-0.5 rounded-[4px] ${
-                      secret.scope === 'global'
-                        ? 'bg-emerald-500/10 text-emerald-400'
-                        : 'bg-amber-500/10 text-amber-400'
-                    }`}>
+                    <span className={`text-[10px] font-600 px-1.5 py-0.5 rounded-[4px] ${secret.scope === 'global'
+                      ? 'bg-emerald-500/10 text-emerald-400'
+                      : 'bg-amber-500/10 text-amber-400'
+                      }`}>
                       {secret.scope === 'global' ? 'All orchestrators' : `${secret.agentIds.length} orchestrator(s)`}
                     </span>
                   </div>
@@ -701,7 +719,7 @@ export function SettingsSheet() {
               <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Scope</label>
               <div className="flex p-1 rounded-[12px] bg-bg border border-white/[0.06]">
                 {(['global', 'agent'] as const).map((s) => (
-                  <button key={s} onClick={() => setSecretScope(s)} className={`flex-1 py-2.5 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 capitalize ${secretScope === s ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`} style={{ fontFamily: 'inherit' }}>{s === 'global' ? 'All Orchestrators' : 'Specific'}</button>
+                  <button key={s} onClick={() => setSecretScope(s)} className={`flex-1 py-2.5 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 capitalize ${secretScope === s ? 'bg-primary text-primary-foreground' : 'bg-transparent text-text-3 hover:text-text-2'}`} style={{ fontFamily: 'inherit' }}>{s === 'global' ? 'All Orchestrators' : 'Specific'}</button>
                 ))}
               </div>
             </div>
@@ -709,18 +727,18 @@ export function SettingsSheet() {
             {secretScope === 'agent' && orchestrators.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {orchestrators.map((p) => (
-                  <button key={p.id} onClick={() => setSecretAgentIds((prev) => prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id])} className={`px-3 py-2 rounded-[10px] text-[12px] font-600 cursor-pointer transition-all border ${secretAgentIds.includes(p.id) ? 'bg-accent-soft border-accent-bright/25 text-accent-bright' : 'bg-bg border-white/[0.06] text-text-3 hover:text-text-2'}`} style={{ fontFamily: 'inherit' }}>{p.name}</button>
+                  <button key={p.id} onClick={() => setSecretAgentIds((prev) => prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id])} className={`px-3 py-2 rounded-[10px] text-[12px] font-600 cursor-pointer transition-all border ${secretAgentIds.includes(p.id) ? 'bg-primary border-primary text-primary-foreground' : 'bg-bg border-white/[0.06] text-text-3 hover:text-text-2'}`} style={{ fontFamily: 'inherit' }}>{p.name}</button>
                 ))}
               </div>
             )}
 
             <div className="flex gap-3 pt-2">
               <button onClick={() => setAddingSecret(false)} className="flex-1 py-3 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px] font-600 cursor-pointer hover:bg-surface-2 transition-colors" style={{ fontFamily: 'inherit' }}>Cancel</button>
-              <button onClick={handleAddSecret} disabled={!secretName.trim() || !secretValue.trim()} className="flex-1 py-3 rounded-[14px] border-none bg-[#6366F1] text-white text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110" style={{ fontFamily: 'inherit' }}>Save Secret</button>
+              <button onClick={handleAddSecret} disabled={!secretName.trim() || !secretValue.trim()} className="flex-1 py-3 rounded-[14px] border-none bg-primary text-primary-foreground text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110 shadow-[0_4px_20px_rgba(var(--primary-rgb),0.25)]" style={{ fontFamily: 'inherit' }}>Save Secret</button>
             </div>
           </div>
         ) : (
-          <button onClick={() => setAddingSecret(true)} className="w-full py-3 rounded-[12px] border border-dashed border-white/[0.1] bg-transparent text-text-3 text-[13px] font-600 cursor-pointer hover:border-accent-bright/30 hover:text-accent-bright hover:bg-accent-soft transition-all duration-200" style={{ fontFamily: 'inherit' }}>+ Add Service Credential</button>
+          <button onClick={() => setAddingSecret(true)} className="w-full py-3 rounded-[12px] border border-dashed border-white/[0.1] bg-transparent text-text-3 text-[13px] font-600 cursor-pointer hover:border-primary/30 hover:text-primary hover:bg-primary/5 transition-all duration-200" style={{ fontFamily: 'inherit' }}>+ Add Service Credential</button>
         )}
       </div>
 
@@ -793,7 +811,7 @@ export function SettingsSheet() {
                     onClick={() => setAddProvider(p.id)}
                     className="mt-5 w-full py-3 rounded-[12px] border border-dashed border-white/[0.1]
                       bg-transparent text-text-3 text-[13px] font-600 cursor-pointer
-                      hover:border-accent-bright/30 hover:text-accent-bright hover:bg-accent-soft transition-all duration-200"
+                      hover:border-primary/30 hover:text-primary hover:bg-primary/5 transition-all duration-200"
                     style={{ fontFamily: 'inherit' }}
                   >
                     + Add API Key{p.optionalApiKey && !p.requiresApiKey ? ' (for cloud)' : ''}
@@ -845,7 +863,7 @@ export function SettingsSheet() {
               <button
                 onClick={handleAdd}
                 disabled={!newKey.trim()}
-                className="flex-1 py-3 rounded-[14px] border-none bg-[#6366F1] text-white text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110"
+                className="flex-1 py-3 rounded-[14px] border-none bg-primary text-primary-foreground text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110 shadow-[0_4px_12px_rgba(var(--primary-rgb),0.2)]"
                 style={{ fontFamily: 'inherit' }}
               >
                 Save Key
@@ -968,27 +986,27 @@ function PluginManager() {
         plugins.length === 0
           ? <p className="text-[12px] text-text-3/40">No plugins installed</p>
           : <div className="space-y-2.5">
-              {plugins.map((p) => (
-                <div key={p.filename} className="flex items-center gap-3 py-3 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[14px] font-600 text-text truncate">{p.name}</span>
-                      {p.openclaw && <span className="text-[9px] font-600 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">OpenClaw</span>}
-                    </div>
-                    <div className="text-[11px] font-mono text-text-3 truncate">{p.filename}</div>
-                    {p.description && <div className="text-[11px] text-text-3/60 mt-0.5">{p.description}</div>}
+            {plugins.map((p) => (
+              <div key={p.filename} className="flex items-center gap-3 py-3 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-600 text-text truncate">{p.name}</span>
+                    {p.openclaw && <span className="text-[9px] font-600 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">OpenClaw</span>}
                   </div>
-                  <div
-                    onClick={() => togglePlugin(p.filename, !p.enabled)}
-                    className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
-                      ${p.enabled ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
-                  >
-                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
-                      ${p.enabled ? 'left-[22px]' : 'left-0.5'}`} />
-                  </div>
+                  <div className="text-[11px] font-mono text-text-3 truncate">{p.filename}</div>
+                  {p.description && <div className="text-[11px] text-text-3/60 mt-0.5">{p.description}</div>}
                 </div>
-              ))}
-            </div>
+                <div
+                  onClick={() => togglePlugin(p.filename, !p.enabled)}
+                  className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
+                      ${p.enabled ? 'bg-primary' : 'bg-white/[0.08]'}`}
+                >
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+                      ${p.enabled ? 'left-[22px]' : 'left-0.5'}`} />
+                </div>
+              </div>
+            ))}
+          </div>
       )}
 
       {tab === 'marketplace' && (
@@ -997,44 +1015,44 @@ function PluginManager() {
           : marketplace.length === 0
             ? <p className="text-[12px] text-text-3/40">No plugins available</p>
             : <div className="space-y-2.5">
-                {marketplace.map((p) => {
-                  const isInstalled = installedFilenames.has(`${p.id}.js`)
-                  return (
-                    <div key={p.id} className="py-3.5 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
-                      <div className="flex items-start gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[14px] font-600 text-text">{p.name}</span>
-                            <span className="text-[10px] font-mono text-text-3/40">v{p.version}</span>
-                            {p.openclaw && <span className="text-[9px] font-600 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">OpenClaw</span>}
-                          </div>
-                          <div className="text-[11px] text-text-3/60 mt-1">{p.description}</div>
-                          <div className="flex items-center gap-2 mt-2">
-                            <span className="text-[10px] text-text-3/40">by {p.author}</span>
-                            <span className="text-[10px] text-text-3/20">·</span>
-                            {p.tags.slice(0, 3).map((t) => (
-                              <span key={t} className="text-[9px] font-600 text-text-3/50 bg-white/[0.04] px-1.5 py-0.5 rounded-full">{t}</span>
-                            ))}
-                          </div>
+              {marketplace.map((p) => {
+                const isInstalled = installedFilenames.has(`${p.id}.js`)
+                return (
+                  <div key={p.id} className="py-3.5 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[14px] font-600 text-text">{p.name}</span>
+                          <span className="text-[10px] font-mono text-text-3/40">v{p.version}</span>
+                          {p.openclaw && <span className="text-[9px] font-600 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">OpenClaw</span>}
                         </div>
-                        <button
-                          onClick={() => !isInstalled && installFromMarketplace(p)}
-                          disabled={isInstalled || installing === p.id}
-                          className={`shrink-0 py-2 px-4 rounded-[10px] text-[12px] font-600 transition-all cursor-pointer
-                            ${isInstalled
-                              ? 'bg-white/[0.04] text-text-3/40 cursor-default'
-                              : installing === p.id
-                                ? 'bg-accent-soft text-accent-bright animate-pulse'
-                                : 'bg-accent-soft text-accent-bright hover:bg-accent-soft/80 border border-accent-bright/20'}`}
-                          style={{ fontFamily: 'inherit' }}
-                        >
-                          {isInstalled ? 'Installed' : installing === p.id ? 'Installing...' : 'Install'}
-                        </button>
+                        <div className="text-[11px] text-text-3/60 mt-1">{p.description}</div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="text-[10px] text-text-3/40">by {p.author}</span>
+                          <span className="text-[10px] text-text-3/20">·</span>
+                          {p.tags.slice(0, 3).map((t) => (
+                            <span key={t} className="text-[9px] font-600 text-text-3/50 bg-white/[0.04] px-1.5 py-0.5 rounded-full">{t}</span>
+                          ))}
+                        </div>
                       </div>
+                      <button
+                        onClick={() => !isInstalled && installFromMarketplace(p)}
+                        disabled={isInstalled || installing === p.id}
+                        className={`shrink-0 py-2 px-4 rounded-[10px] text-[12px] font-600 transition-all cursor-pointer
+                            ${isInstalled
+                            ? 'bg-white/[0.04] text-text-3/40 cursor-default'
+                            : installing === p.id
+                              ? 'bg-accent-soft text-accent-bright animate-pulse'
+                              : 'bg-accent-soft text-accent-bright hover:bg-accent-soft/80 border border-accent-bright/20'}`}
+                        style={{ fontFamily: 'inherit' }}
+                      >
+                        {isInstalled ? 'Installed' : installing === p.id ? 'Installing...' : 'Install'}
+                      </button>
                     </div>
-                  )
-                })}
-              </div>
+                  </div>
+                )
+              })}
+            </div>
       )}
 
       {tab === 'url' && (
@@ -1076,7 +1094,7 @@ function PluginManager() {
             </p>
           )}
           <p className="text-[10px] text-text-3/30 mt-3">
-            Works with SwarmClaw and OpenClaw plugin formats. URL must be HTTPS.
+            Works with Agent Ember and OpenClaw plugin formats. URL must be HTTPS.
           </p>
         </div>
       )}

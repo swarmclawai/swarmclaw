@@ -61,7 +61,7 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
               <span className="font-display text-[14px] font-600 text-text truncate">{item.name}</span>
               <div className="flex items-center gap-2 shrink-0">
                 <span className={`text-[10px] font-600 px-2 py-0.5 rounded-[5px] uppercase tracking-wider
-                  ${item.type === 'builtin' ? 'bg-white/[0.04] text-text-3' : 'bg-[#6366F1]/10 text-[#6366F1]'}`}>
+                  ${item.type === 'builtin' ? 'bg-white/[0.04] text-text-3' : 'bg-primary/10 text-primary'}`}>
                   {item.type === 'builtin' ? 'Built-in' : 'Custom'}
                 </span>
                 <span className={`w-2 h-2 rounded-full ${item.isConnected ? 'bg-emerald-400' : 'bg-white/10'}`} />

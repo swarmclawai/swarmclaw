@@ -5,7 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { api } from '@/lib/api-client'
 
-const inputClass = 'w-full px-4 py-3 rounded-[14px] bg-bg border border-white/[0.06] text-text text-[14px] outline-none focus:border-accent-bright/40 transition-colors placeholder:text-text-3/40'
+const inputClass = 'w-full px-4 py-3 rounded-[14px] bg-bg border border-white/[0.06] text-text text-[14px] outline-none focus:border-primary/40 transition-colors placeholder:text-text-3/40'
 
 export function SecretSheet() {
   const open = useAppStore((s) => s.secretSheetOpen)
@@ -120,9 +120,8 @@ export function SecretSheet() {
               <button
                 key={s}
                 onClick={() => setScope(s)}
-                className={`flex-1 py-2.5 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 border-none ${
-                  scope === s ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'
-                }`}
+                className={`flex-1 py-2.5 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 border-none ${scope === s ? 'bg-primary/10 text-primary' : 'bg-transparent text-text-3 hover:text-text-2'
+                  }`}
                 style={{ fontFamily: 'inherit' }}
               >
                 {s === 'global' ? 'All Orchestrators' : 'Specific'}
@@ -139,11 +138,10 @@ export function SecretSheet() {
                 <button
                   key={p.id}
                   onClick={() => setAgentIds((prev) => prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id])}
-                  className={`px-3 py-2 rounded-[10px] text-[12px] font-600 cursor-pointer transition-all border ${
-                    agentIds.includes(p.id)
-                      ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                  className={`px-3 py-2 rounded-[10px] text-[12px] font-600 cursor-pointer transition-all border ${agentIds.includes(p.id)
+                      ? 'bg-primary/10 border-primary/25 text-primary'
                       : 'bg-bg border-white/[0.06] text-text-3 hover:text-text-2'
-                  }`}
+                    }`}
                   style={{ fontFamily: 'inherit' }}
                 >
                   {p.name}
@@ -168,7 +166,7 @@ export function SecretSheet() {
           <button
             onClick={handleSave}
             disabled={saving || !name.trim() || (!editing && !value.trim())}
-            className="px-8 py-3 rounded-[14px] border-none bg-[#6366F1] text-white text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110"
+            className="px-8 py-3 rounded-[14px] border-none bg-primary text-primary-foreground text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110 shadow-[0_4px_12px_rgba(var(--primary-rgb),0.2)]"
             style={{ fontFamily: 'inherit' }}
           >
             {saving ? 'Saving...' : editing ? 'Update' : 'Save'}
