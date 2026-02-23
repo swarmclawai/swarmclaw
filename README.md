@@ -9,11 +9,11 @@
 
 Self-hosted AI agent orchestration dashboard. Manage multiple AI providers, orchestrate agent swarms, schedule tasks, and bridge agents to chat platforms — all from a single mobile-friendly interface.
 
+SwarmClaw can connect to one or many [OpenClaw](https://github.com/openclaw/openclaw) instances and orchestrate them from a single control plane.
+
 Inspired by [OpenClaw](https://github.com/openclaw).
 
 **[Documentation](https://swarmclaw.ai/docs)** | **[Website](https://swarmclaw.ai)**
-
-Org avatar files: `public/branding/swarmclaw-org-avatar.png` (upload-ready), `public/branding/swarmclaw-org-avatar.svg` (source)
 
 ![Dashboard](public/screenshots/dashboard.png)
 ![Agent Builder](public/screenshots/agents.png)
