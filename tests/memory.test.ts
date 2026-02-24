@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import path from 'path'
-import { getMemoryDb, storeMemoryImageAsset } from '../src/lib/server/memory-db'
 import {
   normalizeLinkedMemoryIds,
   normalizeMemoryLookupLimits,
@@ -10,11 +9,9 @@ import {
   type MemoryLookupLimits,
   type LinkedMemoryNode,
 } from '../src/lib/server/memory-graph'
-import type { MemoryEntry, MemoryReference } from '../src/types'
 
 // Use a test-specific database path
 const TEST_DB_DIR = path.join(process.cwd(), 'data', 'test-memory')
-const TEST_DB_PATH = path.join(TEST_DB_DIR, 'memory.db')
 const TEST_IMAGES_DIR = path.join(TEST_DB_DIR, 'memory-images')
 
 function setupTestDb() {

@@ -27,6 +27,19 @@ import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from 
 const CLI_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'
 
+interface SessionWithTools {
+  tools?: string[] | null
+}
+
+interface SessionWithCredentials {
+  credentialId?: string | null
+}
+
+interface ProviderApiKeyConfig {
+  requiresApiKey?: boolean
+  optionalApiKey?: boolean
+}
+
 export interface ExecuteChatTurnInput {
   sessionId: string
   message: string
@@ -213,11 +226,11 @@ function extractDelegationTask(message: string, toolName: string): string | null
   return null
 }
 
-function hasToolEnabled(session: any, toolName: string): boolean {
+function hasToolEnabled(session: SessionWithTools, toolName: string): boolean {
   return Array.isArray(session?.tools) && session.tools.includes(toolName)
 }
 
-function enabledDelegationTools(session: any): DelegateTool[] {
+function enabledDelegationTools(session: SessionWithTools): DelegateTool[] {
   const tools: DelegateTool[] = []
   if (hasToolEnabled(session, 'claude_code')) tools.push('delegate_to_claude_code')
   if (hasToolEnabled(session, 'codex_cli')) tools.push('delegate_to_codex_cli')
@@ -305,7 +318,7 @@ function buildAgentSystemPrompt(session: any): string | undefined {
   return parts.join('\n\n')
 }
 
-function resolveApiKeyForSession(session: any, provider: any): string | null {
+function resolveApiKeyForSession(session: SessionWithCredentials, provider: ProviderApiKeyConfig): string | null {
   if (provider.requiresApiKey) {
     if (!session.credentialId) throw new Error('No API key configured for this session')
     const creds = loadCredentials()

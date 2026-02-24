@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSessions, saveSessions, loadSettings } from './storage'
+import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSchedules, saveSchedules, loadSessions, saveSessions, loadSettings } from './storage'
 import { createOrchestratorSession, executeOrchestrator } from './orchestrator'
 import { formatValidationFailure, validateTaskCompletion } from './task-validation'
 import { ensureTaskCompletionReport } from './task-reports'
@@ -7,6 +7,28 @@ import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import type { BoardTask } from '@/types'
 
 let processing = false
+
+interface SessionMessageLike {
+  role?: string
+  text?: string
+  time?: number
+  kind?: 'chat' | 'heartbeat' | 'system'
+}
+
+interface SessionLike {
+  name?: string
+  user?: string
+  messages?: SessionMessageLike[]
+  lastActiveAt?: number
+}
+
+interface ScheduleTaskMeta extends BoardTask {
+  user?: string | null
+  createdInSessionId?: string | null
+  sourceType?: string | null
+  sourceScheduleId?: string | null
+  sourceScheduleName?: string | null
+}
 
 function sameReasons(a?: string[] | null, b?: string[] | null): boolean {
   const av = Array.isArray(a) ? a : []
@@ -52,6 +74,97 @@ function queueContains(queue: string[], id: string): boolean {
 
 function pushQueueUnique(queue: string[], id: string): void {
   if (!queueContains(queue, id)) queue.push(id)
+}
+
+function isMainSession(session: SessionLike | null | undefined): boolean {
+  return session?.name === '__main__'
+}
+
+function resolveTaskOwnerUser(task: ScheduleTaskMeta, sessions: Record<string, SessionLike>): string | null {
+  const direct = typeof task.user === 'string' ? task.user.trim() : ''
+  if (direct) return direct
+  const createdInSessionId = typeof task.createdInSessionId === 'string'
+    ? task.createdInSessionId
+    : ''
+  if (createdInSessionId) {
+    const sourceSession = sessions[createdInSessionId]
+    const sourceUser = typeof sourceSession?.user === 'string' ? sourceSession.user.trim() : ''
+    if (sourceUser) return sourceUser
+  }
+  return null
+}
+
+function latestAssistantText(session: SessionLike | null | undefined): string {
+  if (!Array.isArray(session?.messages)) return ''
+  for (let i = session.messages.length - 1; i >= 0; i--) {
+    const msg = session.messages[i]
+    if (msg?.role !== 'assistant') continue
+    const text = typeof msg?.text === 'string' ? msg.text.trim() : ''
+    if (!text) continue
+    if (/^HEARTBEAT_OK$/i.test(text)) continue
+    return text
+  }
+  return ''
+}
+
+function summarizeScheduleTaskResult(task: BoardTask): string {
+  const result = typeof task.result === 'string' ? task.result.trim() : ''
+  if (result) return result.slice(0, 6000)
+  const err = typeof task.error === 'string' ? task.error.trim() : ''
+  if (err) return `Error: ${err.slice(0, 1200)}`
+  return 'No summary was returned.'
+}
+
+function notifyMainChatScheduleResult(task: BoardTask): void {
+  const scheduleTask = task as ScheduleTaskMeta
+  const sourceType = typeof scheduleTask.sourceType === 'string' ? scheduleTask.sourceType : ''
+  if (sourceType !== 'schedule') return
+  if (task.status !== 'completed' && task.status !== 'failed') return
+
+  const sessions = loadSessions()
+  const ownerUser = resolveTaskOwnerUser(scheduleTask, sessions as Record<string, SessionLike>)
+  const scheduleNameRaw = typeof scheduleTask.sourceScheduleName === 'string'
+    ? scheduleTask.sourceScheduleName.trim()
+    : ''
+  const scheduleName = scheduleNameRaw || (task.title || 'Scheduled Task').replace(/^\[Sched\]\s*/i, '').trim()
+
+  const runSessionId = typeof task.sessionId === 'string' ? task.sessionId : ''
+  const runSession = runSessionId ? sessions[runSessionId] : null
+  const fallbackText = runSession ? latestAssistantText(runSession) : ''
+  const summary = summarizeScheduleTaskResult({
+    ...task,
+    result: task.result || fallbackText || task.result,
+  } as BoardTask)
+
+  const statusLabel = task.status === 'completed' ? 'completed' : 'failed'
+  const body = [
+    `Scheduled run ${statusLabel}: **${scheduleName || 'Scheduled Task'}**`,
+    summary,
+  ].join('\n\n').trim()
+  if (!body) return
+
+  const now = Date.now()
+  let changed = false
+
+  for (const session of Object.values(sessions) as SessionLike[]) {
+    if (!isMainSession(session)) continue
+    if (ownerUser && session?.user && session.user !== ownerUser) continue
+    const last = Array.isArray(session.messages) ? session.messages.at(-1) : null
+    if (last?.role === 'assistant' && last?.text === body && typeof last?.time === 'number' && now - last.time < 30_000) {
+      continue
+    }
+    if (!Array.isArray(session.messages)) session.messages = []
+    session.messages.push({
+      role: 'assistant',
+      text: body,
+      time: now,
+      kind: 'system',
+    })
+    session.lastActiveAt = now
+    changed = true
+  }
+
+  if (changed) saveSessions(sessions)
 }
 
 /** Disable heartbeat on a task's session when the task finishes. */
@@ -266,7 +379,38 @@ export async function processNext() {
       task.updatedAt = Date.now()
 
       const taskCwd = task.cwd || process.cwd()
-      const sessionId = createOrchestratorSession(agent, task.title, undefined, taskCwd)
+      let sessionId = ''
+      const scheduleTask = task as ScheduleTaskMeta
+      const isScheduleTask = scheduleTask.sourceType === 'schedule'
+      const sourceScheduleId = typeof scheduleTask.sourceScheduleId === 'string'
+        ? scheduleTask.sourceScheduleId
+        : ''
+
+      if (isScheduleTask && sourceScheduleId) {
+        const schedules = loadSchedules()
+        const linkedSchedule = schedules[sourceScheduleId]
+        const existingSessionId = typeof linkedSchedule?.lastSessionId === 'string'
+          ? linkedSchedule.lastSessionId
+          : ''
+        if (existingSessionId) {
+          const sessions = loadSessions()
+          if (sessions[existingSessionId]) {
+            sessionId = existingSessionId
+          }
+        }
+        if (!sessionId) {
+          sessionId = createOrchestratorSession(agent, task.title, undefined, taskCwd)
+        }
+        if (linkedSchedule && linkedSchedule.lastSessionId !== sessionId) {
+          linkedSchedule.lastSessionId = sessionId
+          linkedSchedule.updatedAt = Date.now()
+          schedules[sourceScheduleId] = linkedSchedule
+          saveSchedules(schedules)
+        }
+      } else {
+        sessionId = createOrchestratorSession(agent, task.title, undefined, taskCwd)
+      }
+
       task.sessionId = sessionId
       task.checkpoint = {
         lastSessionId: sessionId,
@@ -358,6 +502,7 @@ export async function processNext() {
             type: 'task_completed',
             text: `Task completed: "${task.title}" (${taskId})`,
           })
+          notifyMainChatScheduleResult(doneTask)
           console.log(`[queue] Task "${task.title}" completed`)
         } else {
           if (doneTask?.status === 'queued') {
@@ -367,6 +512,7 @@ export async function processNext() {
               type: 'task_failed',
               text: `Task failed validation: "${task.title}" (${taskId})`,
             })
+            if (doneTask?.status === 'failed') notifyMainChatScheduleResult(doneTask)
             console.warn(`[queue] Task "${task.title}" failed completion validation`)
           }
         }
@@ -410,6 +556,7 @@ export async function processNext() {
             type: 'task_failed',
             text: `Task failed: "${task.title}" (${taskId}) — ${errMsg.slice(0, 200)}`,
           })
+          if (latest?.status === 'failed') notifyMainChatScheduleResult(latest)
         }
       }
     }

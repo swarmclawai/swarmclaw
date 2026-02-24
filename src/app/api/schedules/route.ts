@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { loadSchedules, saveSchedules } from '@/lib/server/storage'
 import { resolveScheduleName } from '@/lib/schedule-name'
+import { findDuplicateSchedule } from '@/lib/schedule-dedupe'
 
 export async function GET() {
   return NextResponse.json(loadSchedules())
@@ -9,16 +10,51 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const body = await req.json()
-  const id = crypto.randomBytes(4).toString('hex')
   const now = Date.now()
   const schedules = loadSchedules()
+  const scheduleType = body.scheduleType || 'cron'
+
+  const duplicate = findDuplicateSchedule(schedules, {
+    agentId: body.agentId || null,
+    taskPrompt: body.taskPrompt || '',
+    scheduleType,
+    cron: body.cron,
+    intervalMs: body.intervalMs,
+    runAt: body.runAt,
+  })
+  if (duplicate) {
+    const duplicateId = duplicate.id || ''
+    let changed = false
+    const nextName = resolveScheduleName({
+      name: body.name ?? duplicate.name,
+      taskPrompt: body.taskPrompt ?? duplicate.taskPrompt,
+    })
+    if (nextName && nextName !== duplicate.name) {
+      duplicate.name = nextName
+      changed = true
+    }
+    const normalizedStatus = typeof body.status === 'string' ? body.status.trim().toLowerCase() : ''
+    if ((normalizedStatus === 'active' || normalizedStatus === 'paused') && duplicate.status !== normalizedStatus) {
+      duplicate.status = normalizedStatus as 'active' | 'paused'
+      changed = true
+    }
+    if (changed) {
+      const mutableDuplicate = duplicate as Record<string, unknown>
+      mutableDuplicate.updatedAt = now
+      if (duplicateId) schedules[duplicateId] = duplicate
+      saveSchedules(schedules)
+    }
+    return NextResponse.json(duplicate)
+  }
+
+  const id = crypto.randomBytes(4).toString('hex')
 
   let nextRunAt: number | undefined
-  if (body.scheduleType === 'once' && body.runAt) {
+  if (scheduleType === 'once' && body.runAt) {
     nextRunAt = body.runAt
-  } else if (body.scheduleType === 'interval' && body.intervalMs) {
+  } else if (scheduleType === 'interval' && body.intervalMs) {
     nextRunAt = now + body.intervalMs
-  } else if (body.scheduleType === 'cron') {
+  } else if (scheduleType === 'cron') {
     // nextRunAt will be computed by the scheduler engine
     nextRunAt = undefined
   }
@@ -28,7 +64,7 @@ export async function POST(req: Request) {
     name: resolveScheduleName({ name: body.name, taskPrompt: body.taskPrompt }),
     agentId: body.agentId,
     taskPrompt: body.taskPrompt || '',
-    scheduleType: body.scheduleType || 'cron',
+    scheduleType,
     cron: body.cron,
     intervalMs: body.intervalMs,
     runAt: body.runAt,

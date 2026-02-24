@@ -3,9 +3,31 @@ import { loadSchedules, saveSchedules, loadAgents, loadTasks, saveTasks } from '
 import { enqueueTask } from './queue'
 import { CronExpressionParser } from 'cron-parser'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
+import { getScheduleSignatureKey } from '@/lib/schedule-dedupe'
 
 const TICK_INTERVAL = 60_000 // 60 seconds
 let intervalId: ReturnType<typeof setInterval> | null = null
+
+interface ScheduleTaskLike {
+  status?: string
+  sourceScheduleKey?: string | null
+}
+
+interface SchedulerScheduleLike {
+  id: string
+  name: string
+  agentId: string
+  taskPrompt: string
+  scheduleType: 'cron' | 'interval' | 'once'
+  cron?: string
+  intervalMs?: number
+  runAt?: number
+  lastRunAt?: number
+  nextRunAt?: number
+  status: 'active' | 'paused' | 'completed' | 'failed'
+  createdInSessionId?: string | null
+  createdByAgentId?: string | null
+}
 
 export function startScheduler() {
   if (intervalId) return
@@ -28,7 +50,7 @@ export function stopScheduler() {
 function computeNextRuns() {
   const schedules = loadSchedules()
   let changed = false
-  for (const schedule of Object.values(schedules) as any[]) {
+  for (const schedule of Object.values(schedules) as SchedulerScheduleLike[]) {
     if (schedule.status !== 'active') continue
     if (schedule.scheduleType === 'cron' && schedule.cron && !schedule.nextRunAt) {
       try {
@@ -49,10 +71,40 @@ async function tick() {
   const now = Date.now()
   const schedules = loadSchedules()
   const agents = loadAgents()
+  const tasks = loadTasks()
+  const inFlightScheduleKeys = new Set<string>(
+    Object.values(tasks as Record<string, ScheduleTaskLike>)
+      .filter((task) => task && (task.status === 'queued' || task.status === 'running'))
+      .map((task) => (typeof task.sourceScheduleKey === 'string' ? task.sourceScheduleKey : ''))
+      .filter((value: string) => value.length > 0),
+  )
 
-  for (const schedule of Object.values(schedules) as any[]) {
+  const advanceSchedule = (schedule: SchedulerScheduleLike): void => {
+    if (schedule.scheduleType === 'cron' && schedule.cron) {
+      try {
+        const interval = CronExpressionParser.parse(schedule.cron)
+        schedule.nextRunAt = interval.next().getTime()
+      } catch {
+        schedule.status = 'failed'
+      }
+    } else if (schedule.scheduleType === 'interval' && schedule.intervalMs) {
+      schedule.nextRunAt = now + schedule.intervalMs
+    } else if (schedule.scheduleType === 'once') {
+      schedule.status = 'completed'
+      schedule.nextRunAt = undefined
+    }
+  }
+
+  for (const schedule of Object.values(schedules) as SchedulerScheduleLike[]) {
     if (schedule.status !== 'active') continue
     if (!schedule.nextRunAt || schedule.nextRunAt > now) continue
+
+    const scheduleSignature = getScheduleSignatureKey(schedule)
+    if (scheduleSignature && inFlightScheduleKeys.has(scheduleSignature)) {
+      advanceSchedule(schedule)
+      saveSchedules(schedules)
+      continue
+    }
 
     const agent = agents[schedule.agentId]
     if (!agent) {
@@ -70,25 +122,12 @@ async function tick() {
     schedule.lastRunAt = now
 
     // Compute next run
-    if (schedule.scheduleType === 'cron' && schedule.cron) {
-      try {
-        const interval = CronExpressionParser.parse(schedule.cron)
-        schedule.nextRunAt = interval.next().getTime()
-      } catch {
-        schedule.status = 'failed'
-      }
-    } else if (schedule.scheduleType === 'interval' && schedule.intervalMs) {
-      schedule.nextRunAt = now + schedule.intervalMs
-    } else if (schedule.scheduleType === 'once') {
-      schedule.status = 'completed'
-      schedule.nextRunAt = undefined
-    }
+    advanceSchedule(schedule)
 
     saveSchedules(schedules)
 
     // Create a board task and enqueue it
     const taskId = crypto.randomBytes(4).toString('hex')
-    const tasks = loadTasks()
     tasks[taskId] = {
       id: taskId,
       title: `[Sched] ${schedule.name}: ${schedule.taskPrompt.slice(0, 40)}`,
@@ -103,9 +142,16 @@ async function tick() {
       queuedAt: null,
       startedAt: null,
       completedAt: null,
+      sourceType: 'schedule',
+      sourceScheduleId: schedule.id,
+      sourceScheduleName: schedule.name,
+      sourceScheduleKey: scheduleSignature || null,
+      createdInSessionId: schedule.createdInSessionId || null,
+      createdByAgentId: schedule.createdByAgentId || null,
     }
     saveTasks(tasks)
     enqueueTask(taskId)
+    if (scheduleSignature) inFlightScheduleKeys.add(scheduleSignature)
     pushMainLoopEventToMainSessions({
       type: 'schedule_fired',
       text: `Schedule fired: "${schedule.name}" (${schedule.id}) queued task "${tasks[taskId].title}" (${taskId}).`,

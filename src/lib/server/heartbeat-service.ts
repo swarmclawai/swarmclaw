@@ -12,7 +12,8 @@ interface HeartbeatState {
 }
 
 const globalKey = '__swarmclaw_heartbeat_service__' as const
-const state: HeartbeatState = (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = {
+const globalScope = globalThis as typeof globalThis & { [globalKey]?: HeartbeatState }
+const state: HeartbeatState = globalScope[globalKey] ?? (globalScope[globalKey] = {
   timer: null,
   running: false,
   lastBySession: new Map<string, number>(),

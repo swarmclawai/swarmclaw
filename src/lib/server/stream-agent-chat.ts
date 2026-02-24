@@ -87,6 +87,9 @@ function buildAgenticExecutionPolicy(opts: {
     opts.enabledTools.includes('manage_schedules')
       ? 'When goals require follow-up, create schedules for recurring checks or future actions instead of waiting for manual prompts.'
       : '',
+    opts.enabledTools.includes('manage_schedules')
+      ? 'Before creating a schedule, first inspect existing schedules (list/get) and reuse or update a matching one instead of creating duplicates.'
+      : '',
     opts.enabledTools.includes('manage_agents')
       ? 'If a specialist would improve output, create or configure a focused agent and assign work accordingly.'
       : '',
@@ -134,6 +137,7 @@ function buildAgenticExecutionPolicy(opts: {
     'Ask for confirmation only for high-risk or irreversible actions. For normal low-risk research/build steps, proceed autonomously.',
     'Default behavior is execution, not interrogation: do not ask exploratory clarification questions when a safe next action exists.',
     'Do not pause for a "continue" confirmation after the user has already asked you to execute a goal. Keep moving until blocked by permissions, missing credentials, or hard tool failures.',
+    'Never repeat one-time side effects that are already complete (for example creating the same schedule/task again). Verify state first, then either continue execution or reply HEARTBEAT_OK.',
     'For main-loop tick messages that begin with "SWARM_MAIN_MISSION_TICK" or "SWARM_MAIN_AUTO_FOLLOWUP", follow that response contract exactly and include one valid [MAIN_LOOP_META] JSON line when you are not returning HEARTBEAT_OK.',
     `Heartbeat protocol: if the user message is exactly "${opts.heartbeatPrompt}", reply exactly "HEARTBEAT_OK" when there is nothing important to report; otherwise reply with a concise progress update and immediate next step.`,
     opts.heartbeatIntervalSec > 0

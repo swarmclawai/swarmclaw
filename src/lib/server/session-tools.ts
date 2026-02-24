@@ -37,6 +37,7 @@ import { log } from './logger'
 import { queryLogs, countLogs, clearLogs, type LogCategory } from './execution-log'
 import { resolveSessionToolPolicy } from './tool-capability-policy'
 import { resolveScheduleName } from '@/lib/schedule-name'
+import { findDuplicateSchedule, type ScheduleLike } from '@/lib/schedule-dedupe'
 
 const MAX_OUTPUT = 50 * 1024 // 50KB
 const MAX_FILE = 100 * 1024 // 100KB
@@ -1951,9 +1952,9 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
       description += `\n\nAgents may self-edit their own soul. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field.`
     } else if (toolKey === 'manage_schedules') {
       if (assignScope === 'self') {
-        description += `\n\nSet "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}") or leave it null. You can only assign schedules to yourself. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Set taskPrompt for what the agent should do.`
+        description += `\n\nSet "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}") or leave it null. You can only assign schedules to yourself. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Set taskPrompt for what the agent should do. Before create, call list/get to avoid duplicate schedules. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true).`
       } else {
-        description += `\n\nSet "agentId" to assign a schedule to an agent (including yourself: "${ctx?.agentId || 'unknown'}"). Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Set taskPrompt for what the agent should do.` + agentSummary
+        description += `\n\nSet "agentId" to assign a schedule to an agent (including yourself: "${ctx?.agentId || 'unknown'}"). Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Set taskPrompt for what the agent should do. Before create, call list/get to avoid duplicate schedules. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true).` + agentSummary
       }
     } else if (toolKey === 'manage_webhooks') {
       description += '\n\nUse `source`, `events`, `agentId`, and `secret` when creating webhooks. Inbound calls should POST to `/api/webhooks/{id}` with header `x-webhook-secret` when a secret is configured.'
@@ -2014,7 +2015,6 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
             if (res.readOnly) return `Cannot ${action} ${res.label} via this tool (read-only).`
             if (action === 'create') {
               const all = res.load()
-              const newId = crypto.randomBytes(4).toString('hex')
               const raw = data ? JSON.parse(data) : {}
               const defaults = RESOURCE_DEFAULTS[toolKey]
               const parsed = defaults ? defaults(raw) : raw
@@ -2028,6 +2028,50 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
                 }
               }
               const now = Date.now()
+              if (toolKey === 'manage_schedules') {
+                const duplicate = findDuplicateSchedule(all as Record<string, ScheduleLike>, {
+                  agentId: parsed.agentId || null,
+                  taskPrompt: parsed.taskPrompt || '',
+                  scheduleType: parsed.scheduleType || 'interval',
+                  cron: parsed.cron,
+                  intervalMs: parsed.intervalMs,
+                  runAt: parsed.runAt,
+                  createdByAgentId: ctx?.agentId || null,
+                  createdInSessionId: ctx?.sessionId || null,
+                }, {
+                  creatorScope: {
+                    agentId: ctx?.agentId || null,
+                    sessionId: ctx?.sessionId || null,
+                  },
+                })
+                if (duplicate) {
+                  let changed = false
+                  const duplicateId = typeof duplicate.id === 'string' ? duplicate.id : ''
+                  const nextName = resolveScheduleName({
+                    name: parsed.name ?? duplicate.name,
+                    taskPrompt: parsed.taskPrompt ?? duplicate.taskPrompt,
+                  })
+                  if (nextName && nextName !== duplicate.name) {
+                    duplicate.name = nextName
+                    changed = true
+                  }
+                  const normalizedStatus = typeof parsed.status === 'string' ? parsed.status.trim().toLowerCase() : ''
+                  if ((normalizedStatus === 'active' || normalizedStatus === 'paused') && duplicate.status !== normalizedStatus) {
+                    duplicate.status = normalizedStatus
+                    changed = true
+                  }
+                  if (changed) {
+                    duplicate.updatedAt = now
+                    if (duplicateId) all[duplicateId] = duplicate
+                    res.save(all)
+                  }
+                  return JSON.stringify({
+                    ...duplicate,
+                    deduplicated: true,
+                  })
+                }
+              }
+              const newId = crypto.randomBytes(4).toString('hex')
               const entry = {
                 id: newId,
                 ...parsed,
