@@ -41,7 +41,7 @@ test('capability policy respects explicit allow overrides', () => {
 
 test('concrete tool checks inherit blocked family rules', () => {
   const decision = resolveSessionToolPolicy(
-    ['claude_code'],
+    ['claude_code', 'codex_cli'],
     {
       safetyBlockedTools: ['delegate_to_codex_cli'],
     },
@@ -53,6 +53,6 @@ test('concrete tool checks inherit blocked family rules', () => {
   )
   assert.equal(
     resolveConcreteToolPolicyBlock('delegate_to_claude_code', decision, { safetyBlockedTools: ['delegate_to_codex_cli'] }),
-    'blocked by safety policy',
+    null,
   )
 })

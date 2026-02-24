@@ -348,7 +348,7 @@ const COMMAND_GROUPS = [
     description: 'Version and update checks',
     commands: [
       cmd('get', 'GET', '/version', 'Get local/remote version info'),
-      cmd('update', 'POST', '/version/update', 'Pull latest code and install deps when needed'),
+      cmd('update', 'POST', '/version/update', 'Update to latest stable release tag (fallback: main) and install deps when needed'),
     ],
   },
   {

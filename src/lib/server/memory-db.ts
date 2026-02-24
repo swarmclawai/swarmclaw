@@ -439,79 +439,8 @@ function initDb() {
   })
   migrateLegacyRows()
 
-  // Seed platform knowledge for the default agent on fresh installs
-  const memCount = (db.prepare('SELECT COUNT(*) as c FROM memories').get() as { c: number }).c
-  if (memCount === 0) {
-    const now = Date.now()
-    const seeds: Array<{ category: string; title: string; content: string }> = [
-      {
-        category: 'platform',
-        title: 'swarmclaw_task_queue',
-        content: `SwarmClaw uses a single-file task queue. The background daemon picks up queued tasks on a 30-second interval and processes ONE task at a time globally. Tasks flow through statuses: backlog → queued → running → completed/failed. Only tasks with status "queued" are picked up. To assign work, create a task with manage_tasks (action: "create") setting status to "queued" and an agentId. The daemon will execute it automatically on the next heartbeat cycle.`,
-      },
-      {
-        category: 'platform',
-        title: 'swarmclaw_heartbeat_system',
-        content: `The SwarmClaw daemon runs a 30-second heartbeat loop. Every 2 minutes it performs health checks and can send alerts via WhatsApp if a connector is configured. Health monitoring only runs when the daemon is in "ongoing" loop mode (continuous operation). The daemon also processes scheduled jobs (cron/interval/once) and queued tasks on each heartbeat tick. Daemon status is visible in the UI footer and via the /api/daemon endpoint.`,
-      },
-      {
-        category: 'platform',
-        title: 'swarmclaw_cli_delegation',
-        content: `SwarmClaw supports delegating work to CLI tools: Claude Code CLI, OpenAI Codex CLI, and OpenCode CLI. Each spawns as a child process with streaming output. Claude CLI uses --print --output-format stream-json. The claude_code tool supports "resume" to continue a previous conversation by session ID. The dangerouslyAutoApprove setting (from Settings → General) controls whether CLI processes auto-approve tool use. CLI providers have auth preflight checks and timeout diagnostics.`,
-      },
-      {
-        category: 'platform',
-        title: 'swarmclaw_connectors',
-        content: `Chat connectors bridge agents to messaging platforms: Discord (discord.js, bot token, channel filtering), Slack (@slack/bolt socket mode, dual tokens, channel filtering), Telegram (telegraf, bot token, chat filtering), and WhatsApp (@whiskeysockets/baileys, QR pairing, multi-file auth state). The connector manager routes inbound messages to agents via routeMessage(). The special NO_MESSAGE sentinel value means "don't send a reply" — use it when the agent processes something silently. Connectors support media handling (images, files) and the connector_message_tool lets agents send messages through connected platforms.`,
-      },
-      {
-        category: 'platform',
-        title: 'swarmclaw_memory_system',
-        content: `Agent memory lives in a separate database (data/memory.db) from the main app DB. It uses hybrid search: FTS5 full-text search plus optional vector embeddings (cosine similarity, threshold 0.3). Memory operations: store (save knowledge with category/title/content/filePaths/imagePath/linkedMemoryIds), search (keyword + vector with depth traversal), get (by ID with linked memory traversal), link/unlink (manage memory links), delete. Memories can be scoped to an agentId and/or sessionId. Use the memory tool with action "store" to save important facts, and "search" to recall them later. Categories include: note, fact, context, platform, and any custom string. Memories support file references, image attachments, and linking to other memories for graph traversal.`,
-      },
-      {
-        category: 'platform',
-        title: 'swarmclaw_session_tools',
-        content: `The sessions_tool enables inter-session communication and management. Actions: spawn (create a new agent session and optionally send an initial message), send (send a message to another session), stop (halt a running session), history (get message history), status (check session state). The session run queue supports followup (continue conversation), steer (redirect agent behavior), and collect (gather results) modes. Each session is tied to an agent and maintains its own message history and tool state.`,
-      },
-      {
-        category: 'platform',
-        title: 'swarmclaw_agent_orchestration',
-        content: `Multi-agent orchestration uses LangGraph for structured workflows. An orchestrator agent can delegate to sub-agents automatically based on the task. Maximum 10 turns per orchestration run to prevent infinite loops. To create an orchestrator, toggle "Orchestrator" when creating/editing an agent and assign sub-agents. The orchestrator's system prompt guides how it routes tasks. Plain orchestration (orchestrator.ts) and LangGraph orchestration (orchestrator-lg.ts) are both available. Sub-agents execute independently and return results to the orchestrator.`,
-      },
-      {
-        category: 'platform',
-        title: 'swarmclaw_architecture',
-        content: `SwarmClaw is built on Next.js 16 with React 19, TypeScript, Tailwind v4, and shadcn/ui. Data is stored in SQLite with WAL mode using a JSON-blob collections pattern (each table has id TEXT PRIMARY KEY, data TEXT NOT NULL). Real-time chat uses SSE (Server-Sent Events) streaming. State management uses Zustand stores. The app runs on port 3456 by default. Production builds use Next.js standalone output mode. Native dependency better-sqlite3 requires python3/make/g++ for compilation.`,
-      },
-      {
-        category: 'platform',
-        title: 'swarmclaw_security',
-        content: `Authentication uses a single access key (generated on first run, stored in .env.local). All API requests require the key via X-Access-Key header or ?key= query param. Secrets (API keys, tokens) are encrypted with AES-256 using the CREDENTIAL_SECRET env var. Important: CLI providers (claude-cli, codex-cli, opencode-cli) have full shell access on the host machine — they can read, write, and execute anything the process user can. Never expose the dashboard to the public internet without a reverse proxy and TLS.`,
-      },
-      {
-        category: 'platform',
-        title: 'swarmclaw_new_user_onboarding',
-        content: `When helping a new user get started with SwarmClaw: 1) Guide them to set up at least one provider (Settings → Providers) — Ollama for local models, CLI providers (Claude Code, Codex, OpenCode) for terminal-based coding agents, or add an API key for cloud providers like Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral, xAI, or Fireworks AI. 2) Show them how to create a custom agent (Agents tab → "+") with a name, provider, model, system prompt, and tools. 3) Demonstrate the Task Board for queuing work. 4) Explain Skills for reusable agent instructions. 5) Point out Connectors if they want chat platform integration. 6) Mention the encrypted Secrets vault for API keys. Start simple — one provider, one custom agent — then expand.`,
-      },
-    ]
-
-    const seedStmt = db.prepare(`
-      INSERT INTO memories (id, agentId, sessionId, category, title, content, metadata, embedding, createdAt, updatedAt)
-      VALUES (?, 'default', NULL, ?, ?, ?, NULL, NULL, ?, ?)
-    `)
-    const seedAll = db.transaction(() => {
-      for (const s of seeds) {
-        const id = crypto.randomBytes(6).toString('hex')
-        seedStmt.run(id, s.category, s.title, s.content, now, now)
-      }
-    })
-    seedAll()
-
-    // Backfill FTS for seeded rows (triggers only fire for new inserts via the trigger,
-    // but since we're inside initDb the triggers are already created — rows are indexed automatically)
-    console.log(`[memory-db] Seeded ${seeds.length} platform memories for default agent`)
-  }
+  // Fresh installs now start with an empty memory graph.
+  // Durable memories are created only from actual user/agent interactions.
 
   const stmts = {
     insert: db.prepare(`

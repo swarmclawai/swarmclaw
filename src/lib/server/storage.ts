@@ -232,6 +232,8 @@ migrateFromJson()
     'manage_documents',
     'manage_webhooks',
     'claude_code',
+    'codex_cli',
+    'opencode_cli',
   ]
   const count = (db.prepare('SELECT COUNT(*) as c FROM agents').get() as { c: number }).c
   if (count === 0) {
@@ -295,85 +297,6 @@ Be concise and helpful. When users ask how to do something, guide them to the sp
         // ignore malformed default agent payloads
       }
     }
-  }
-}
-
-// Backfill/seed a practical CodeReviewer agent profile.
-{
-  const REVIEWER_SOUL = 'You are CodeReviewer: a rigorous, concise software reviewer who prioritizes correctness, security, regressions, and test gaps over stylistic commentary.'
-  const REVIEWER_PROMPT = [
-    'You are a senior code review specialist.',
-    'Primary objective: find bugs, behavioral regressions, security risks, and missing tests.',
-    'When reviewing work:',
-    '- Lead with concrete findings ordered by severity.',
-    '- Include file references and explain user impact.',
-    '- Call out risky assumptions and edge cases.',
-    '- If no critical findings exist, explicitly say so and list residual risks.',
-    'Keep feedback direct and actionable.',
-  ].join('\n')
-  const REVIEWER_TOOLS = ['files', 'edit_file', 'web_search', 'web_fetch', 'memory']
-
-  const rows = db.prepare('SELECT id, data FROM agents').all() as { id: string; data: string }[]
-  let found = false
-  for (const row of rows) {
-    let parsed: Record<string, any>
-    try {
-      parsed = JSON.parse(row.data)
-    } catch {
-      continue
-    }
-    const name = String(parsed?.name || '').toLowerCase()
-    const isReviewer = row.id === 'code-reviewer'
-      || name === 'codereviewer'
-      || name === 'code reviewer'
-    if (!isReviewer) continue
-
-    found = true
-    const currentTools = Array.isArray(parsed.tools) ? parsed.tools : []
-    const mergedTools = Array.from(new Set([...currentTools, ...REVIEWER_TOOLS]))
-
-    let changed = false
-    if (!String(parsed.description || '').trim()) {
-      parsed.description = 'Finds defects, regressions, and test gaps with actionable recommendations.'
-      changed = true
-    }
-    if (!String(parsed.soul || '').trim()) {
-      parsed.soul = REVIEWER_SOUL
-      changed = true
-    }
-    if (!String(parsed.systemPrompt || '').trim()) {
-      parsed.systemPrompt = REVIEWER_PROMPT
-      changed = true
-    }
-    if (JSON.stringify(currentTools) !== JSON.stringify(mergedTools)) {
-      parsed.tools = mergedTools
-      changed = true
-    }
-    if (changed) {
-      parsed.updatedAt = Date.now()
-      db.prepare('UPDATE agents SET data = ? WHERE id = ?').run(JSON.stringify(parsed), row.id)
-    }
-  }
-
-  if (!found) {
-    const now = Date.now()
-    const seeded = {
-      id: 'code-reviewer',
-      name: 'CodeReviewer',
-      description: 'Finds defects, regressions, and test gaps with actionable recommendations.',
-      provider: 'ollama',
-      model: 'glm-5',
-      systemPrompt: REVIEWER_PROMPT,
-      soul: REVIEWER_SOUL,
-      isOrchestrator: false,
-      tools: REVIEWER_TOOLS,
-      platformAssignScope: 'self',
-      skillIds: [],
-      subAgentIds: [],
-      createdAt: now,
-      updatedAt: now,
-    }
-    db.prepare('INSERT OR REPLACE INTO agents (id, data) VALUES (?, ?)').run(seeded.id, JSON.stringify(seeded))
   }
 }
 

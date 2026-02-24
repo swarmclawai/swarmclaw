@@ -59,6 +59,7 @@ export function AppLayout() {
   const setConnectorSheetOpen = useAppStore((s) => s.setConnectorSheetOpen)
   const setWebhookSheetOpen = useAppStore((s) => s.setWebhookSheetOpen)
   const isDesktop = useMediaQuery('(min-width: 768px)')
+  const hasSelectedSession = !!(currentSessionId && sessions[currentSessionId])
 
   const [railExpanded, setRailExpanded] = useState(() => {
     if (typeof window === 'undefined') return true
@@ -454,11 +455,24 @@ export function AppLayout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col h-full min-w-0 bg-bg">
         {!isDesktop && <MobileHeader />}
-        {activeView === 'sessions' && currentSessionId ? (
+        {activeView === 'sessions' && hasSelectedSession ? (
           <ChatArea />
         ) : activeView === 'sessions' ? (
           <div className="flex-1 flex flex-col">
-            {!isDesktop && <SessionList />}
+            {!isDesktop ? (
+              <SessionList />
+            ) : (
+              <div className="flex-1 flex items-center justify-center px-8">
+                <div className="text-center max-w-[420px]">
+                  <h2 className="font-display text-[24px] font-700 text-text mb-2 tracking-[-0.02em]">
+                    No Chat Selected
+                  </h2>
+                  <p className="text-[14px] text-text-3">
+                    Choose Main Chat from the left rail or create a new session.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         ) : activeView === 'tasks' && isDesktop ? (
           <TaskBoard />

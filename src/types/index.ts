@@ -108,7 +108,16 @@ export interface Session {
 
 export type Sessions = Record<string, Session>
 
-export type SessionTool = 'shell' | 'files' | 'claude_code' | 'web_search' | 'web_fetch' | 'edit_file' | 'process'
+export type SessionTool =
+  | 'shell'
+  | 'files'
+  | 'claude_code'
+  | 'codex_cli'
+  | 'opencode_cli'
+  | 'web_search'
+  | 'web_fetch'
+  | 'edit_file'
+  | 'process'
 
 // --- Cost Tracking ---
 

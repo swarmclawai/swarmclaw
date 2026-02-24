@@ -217,6 +217,14 @@ function hasToolEnabled(session: any, toolName: string): boolean {
   return Array.isArray(session?.tools) && session.tools.includes(toolName)
 }
 
+function enabledDelegationTools(session: any): DelegateTool[] {
+  const tools: DelegateTool[] = []
+  if (hasToolEnabled(session, 'claude_code')) tools.push('delegate_to_claude_code')
+  if (hasToolEnabled(session, 'codex_cli')) tools.push('delegate_to_codex_cli')
+  if (hasToolEnabled(session, 'opencode_cli')) tools.push('delegate_to_opencode_cli')
+  return tools
+}
+
 function parseUsdLimit(value: unknown): number | null {
   const parsed = typeof value === 'number'
     ? value
@@ -406,12 +414,16 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   const appSettings = loadSettings()
   const toolPolicy = resolveSessionToolPolicy(session.tools, appSettings)
-  const toolsForRun = toolPolicy.enabledTools
+  const isHeartbeatRun = internal && source === 'heartbeat'
+  const heartbeatStatus = session.mainLoopState?.status || 'idle'
+  const heartbeatStatusOnly = isHeartbeatRun
+    && (session.name !== '__main__' || heartbeatStatus === 'ok' || heartbeatStatus === 'idle')
+  const toolsForRun = heartbeatStatusOnly ? [] : toolPolicy.enabledTools
   const sessionForRun = toolsForRun === session.tools
     ? session
     : { ...session, tools: toolsForRun }
 
-  if (toolPolicy.blockedTools.length > 0) {
+  if (!heartbeatStatusOnly && toolPolicy.blockedTools.length > 0) {
     const blockedSummary = toolPolicy.blockedTools
       .map((entry) => `${entry.tool} (${entry.reason})`)
       .join(', ')
@@ -639,8 +651,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   }
 
   const hasDelegationCall = forcedDelegationTools.some((toolName) => calledNames.has(toolName))
+  const enabledDelegateTools = enabledDelegationTools(sessionForRun)
   const shouldAutoDelegateCoding = (!internal && source === 'chat')
-    && hasToolEnabled(sessionForRun, 'claude_code')
+    && enabledDelegateTools.length > 0
     && !hasDelegationCall
     && routingDecision?.intent === 'coding'
 
@@ -649,6 +662,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       ? routingDecision.preferredDelegates
       : forcedDelegationTools
     const delegationOrder = rankDelegatesByHealth(baseDelegationOrder as DelegateTool[])
+      .filter((tool) => enabledDelegateTools.includes(tool))
     for (const delegateTool of delegationOrder) {
       const invoked = await invokeSessionTool(delegateTool, { task: message.trim() }, 'Auto-delegation failed')
       if (invoked) break
@@ -658,7 +672,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const shouldFailoverDelegate = (!internal && source === 'chat')
     && !!errorMessage
     && !(fullResponse || '').trim()
-    && hasToolEnabled(sessionForRun, 'claude_code')
+    && enabledDelegateTools.length > 0
     && !hasDelegationCall
     && (routingDecision?.intent === 'coding' || routingDecision?.intent === 'general')
   if (shouldFailoverDelegate) {
@@ -666,6 +680,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       ? routingDecision.preferredDelegates
       : forcedDelegationTools
     const fallbackOrder = rankDelegatesByHealth(preferred as DelegateTool[])
+      .filter((tool) => enabledDelegateTools.includes(tool))
     for (const delegateTool of fallbackOrder) {
       const invoked = await invokeSessionTool(
         delegateTool,
@@ -768,12 +783,13 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
 
     if (shouldPersistAssistant) {
+      const persistedKind = internal && source !== 'session-awakening' ? 'heartbeat' : 'chat'
       current.messages.push({
         role: 'assistant',
         text: textForPersistence,
         time: Date.now(),
         toolEvents: toolEvents.length ? toolEvents : undefined,
-        kind: internal ? 'heartbeat' : 'chat',
+        kind: persistedKind,
       })
       changed = true
     }

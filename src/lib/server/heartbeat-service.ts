@@ -116,6 +116,25 @@ function heartbeatConfigForSession(session: any, settings: Record<string, any>, 
   return { enabled: enabled && intervalSec > 0, intervalSec, prompt }
 }
 
+function lastUserMessageAt(session: any): number {
+  if (!Array.isArray(session?.messages)) return 0
+  for (let i = session.messages.length - 1; i >= 0; i--) {
+    const msg = session.messages[i]
+    if (msg?.role === 'user' && typeof msg.time === 'number' && msg.time > 0) {
+      return msg.time
+    }
+  }
+  return 0
+}
+
+function resolveHeartbeatUserIdleSec(settings: Record<string, any>, fallbackSec: number): number {
+  const configured = settings.heartbeatUserIdleSec
+  if (configured === undefined || configured === null || configured === '') {
+    return fallbackSec
+  }
+  return parseIntBounded(configured, fallbackSec, 0, 86_400)
+}
+
 function shouldRunHeartbeats(settings: Record<string, any>): boolean {
   const loopMode = settings.loopMode === 'ongoing' ? 'ongoing' : 'bounded'
   return loopMode === 'ongoing'
@@ -160,9 +179,21 @@ async function tickHeartbeats() {
 
     const cfg = heartbeatConfigForSession(session, settings, agents)
     if (!cfg.enabled) continue
+
+    const userIdleThresholdSec = resolveHeartbeatUserIdleSec(
+      settings,
+      Math.max(cfg.intervalSec * 2, 180),
+    )
+    const lastUserAt = lastUserMessageAt(session)
+    if (lastUserAt <= 0) continue
+    if (now - lastUserAt < userIdleThresholdSec * 1000) continue
+
     if (isMainSession(session)) {
       const loopState = getMainLoopStateForSession(session.id)
       if (loopState?.paused) continue
+      const loopStatus = loopState?.status || 'idle'
+      const pendingEvents = loopState?.pendingEvents?.length || 0
+      if ((loopStatus === 'ok' || loopStatus === 'idle') && pendingEvents === 0) continue
     }
 
     const last = state.lastBySession.get(session.id) || 0

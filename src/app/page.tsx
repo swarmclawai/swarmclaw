@@ -84,10 +84,12 @@ export default function Home() {
   useEffect(() => {
     if (!authenticated || !currentUser) return
     const sessionList = Object.values(sessions)
-    if (!sessionList.length) return // sessions not loaded yet
     const mainSession = sessionList.find((s: any) => s.name === '__main__' && s.user === currentUser)
     if (mainSession) {
-      if (!currentSessionId) setCurrentSession(mainSession.id)
+      const selected = currentSessionId ? sessions[currentSessionId] : null
+      if (!selected || selected.user !== currentUser) {
+        setCurrentSession(mainSession.id)
+      }
       return
     }
     // Create the main chat session
@@ -100,15 +102,17 @@ export default function Home() {
           name: '__main__',
           user: currentUser,
           agentId: 'default',
+          heartbeatEnabled: true,
         })
         if (!cancelled) {
           await loadSessions()
-          if (!currentSessionId) setCurrentSession(res.id)
+          const selected = useAppStore.getState().currentSessionId
+          if (!selected) setCurrentSession(res.id)
         }
       } catch { /* ignore — will retry on next load */ }
     })()
     return () => { cancelled = true }
-  }, [authenticated, currentUser, sessions])
+  }, [authenticated, currentUser, sessions, currentSessionId, setCurrentSession, loadSessions])
 
   // Check if first-run setup is needed
   useEffect(() => {

@@ -82,7 +82,7 @@ export function routeTaskIntent(
     return {
       intent: 'coding',
       confidence: 0.9,
-      preferredTools: ['claude_code', 'shell', 'files', 'edit_file'],
+      preferredTools: ['claude_code', 'codex_cli', 'opencode_cli', 'shell', 'files', 'edit_file'],
       preferredDelegates: delegateOrder,
       primaryUrl: url,
     }

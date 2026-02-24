@@ -74,7 +74,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return new NextResponse('Mission loop is paused; resume first', { status: 409 })
     }
     const note = typeof body.note === 'string' ? body.note.trim() : ''
-    const prompt = buildMainLoopHeartbeatPrompt(session, 'SWARM_HEARTBEAT_CHECK')
+    const prompt = buildMainLoopHeartbeatPrompt(
+      session,
+      'Operator requested manual nudge: execute one concrete next step now and report concise progress.',
+    )
     const message = note ? `${prompt}\nOperator note: ${note.slice(0, 500)}` : prompt
     const run = enqueueSessionRun({
       sessionId: id,

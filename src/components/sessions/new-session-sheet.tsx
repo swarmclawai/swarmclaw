@@ -390,6 +390,8 @@ export function NewSessionSheet() {
                   { id: 'web_search' as SessionTool, label: 'Web Search' },
                   { id: 'web_fetch' as SessionTool, label: 'Web Fetch' },
                   { id: 'claude_code' as SessionTool, label: 'Claude Code' },
+                  { id: 'codex_cli' as SessionTool, label: 'Codex CLI' },
+                  { id: 'opencode_cli' as SessionTool, label: 'OpenCode CLI' },
                 ]).map(({ id, label }) => {
                   const active = selectedTools.includes(id)
                   return (

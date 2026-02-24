@@ -27,6 +27,8 @@ const ALL_TOOLS: Record<string, string> = {
   web_search: 'Web Search',
   web_fetch: 'Web Fetch',
   claude_code: 'Claude Code',
+  codex_cli: 'Codex CLI',
+  opencode_cli: 'OpenCode CLI',
   browser: 'Browser',
   memory: 'Memory',
   manage_agents: 'Agents',

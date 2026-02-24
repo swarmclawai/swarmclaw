@@ -1,7 +1,32 @@
 import { NextResponse } from 'next/server'
 import { normalizeOpenClawEndpoint } from '@/lib/openclaw-endpoint'
 
-type SetupProvider = 'openai' | 'anthropic' | 'ollama' | 'openclaw'
+type SetupProvider =
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'deepseek'
+  | 'groq'
+  | 'together'
+  | 'mistral'
+  | 'xai'
+  | 'fireworks'
+  | 'ollama'
+  | 'openclaw'
+
+const OPENAI_COMPATIBLE_PROVIDER_INFO: Record<
+  'openai' | 'google' | 'deepseek' | 'groq' | 'together' | 'mistral' | 'xai' | 'fireworks',
+  { name: string; defaultEndpoint: string }
+> = {
+  openai: { name: 'OpenAI', defaultEndpoint: 'https://api.openai.com/v1' },
+  google: { name: 'Google Gemini', defaultEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai' },
+  deepseek: { name: 'DeepSeek', defaultEndpoint: 'https://api.deepseek.com/v1' },
+  groq: { name: 'Groq', defaultEndpoint: 'https://api.groq.com/openai/v1' },
+  together: { name: 'Together AI', defaultEndpoint: 'https://api.together.xyz/v1' },
+  mistral: { name: 'Mistral AI', defaultEndpoint: 'https://api.mistral.ai/v1' },
+  xai: { name: 'xAI (Grok)', defaultEndpoint: 'https://api.x.ai/v1' },
+  fireworks: { name: 'Fireworks AI', defaultEndpoint: 'https://api.fireworks.ai/inference/v1' },
+}
 
 interface SetupCheckBody {
   provider?: string
@@ -34,8 +59,13 @@ async function parseErrorMessage(res: Response, fallback: string): Promise<strin
   return text.slice(0, 300).trim() || fallback
 }
 
-async function checkOpenAi(apiKey: string, endpointRaw: string): Promise<{ ok: boolean; message: string; normalizedEndpoint: string }> {
-  const normalizedEndpoint = (endpointRaw || 'https://api.openai.com/v1').replace(/\/+$/, '')
+async function checkOpenAiCompatible(
+  providerName: string,
+  apiKey: string,
+  endpointRaw: string,
+  defaultEndpoint: string,
+): Promise<{ ok: boolean; message: string; normalizedEndpoint: string }> {
+  const normalizedEndpoint = (endpointRaw || defaultEndpoint).replace(/\/+$/, '')
   const res = await fetch(`${normalizedEndpoint}/models`, {
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -44,14 +74,14 @@ async function checkOpenAi(apiKey: string, endpointRaw: string): Promise<{ ok: b
     cache: 'no-store',
   })
   if (!res.ok) {
-    const detail = await parseErrorMessage(res, `OpenAI returned ${res.status}.`)
+    const detail = await parseErrorMessage(res, `${providerName} returned ${res.status}.`)
     return { ok: false, message: detail, normalizedEndpoint }
   }
   const payload = await res.json().catch(() => ({} as any))
   const count = Array.isArray(payload?.data) ? payload.data.length : 0
   return {
     ok: true,
-    message: count > 0 ? `Connected to OpenAI. ${count} model(s) available.` : 'Connected to OpenAI.',
+    message: count > 0 ? `Connected to ${providerName}. ${count} model(s) available.` : `Connected to ${providerName}.`,
     normalizedEndpoint,
   }
 }
@@ -185,12 +215,25 @@ export async function POST(req: Request) {
     switch (provider) {
       case 'openai': {
         if (!apiKey) return NextResponse.json({ ok: false, message: 'OpenAI API key is required.' })
-        const result = await checkOpenAi(apiKey, endpoint)
+        const info = OPENAI_COMPATIBLE_PROVIDER_INFO.openai
+        const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint)
         return NextResponse.json(result)
       }
       case 'anthropic': {
         if (!apiKey) return NextResponse.json({ ok: false, message: 'Anthropic API key is required.' })
         const result = await checkAnthropic(apiKey, model)
+        return NextResponse.json(result)
+      }
+      case 'google':
+      case 'deepseek':
+      case 'groq':
+      case 'together':
+      case 'mistral':
+      case 'xai':
+      case 'fireworks': {
+        const info = OPENAI_COMPATIBLE_PROVIDER_INFO[provider]
+        if (!apiKey) return NextResponse.json({ ok: false, message: `${info.name} API key is required.` })
+        const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint)
         return NextResponse.json(result)
       }
       case 'ollama': {

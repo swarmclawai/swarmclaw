@@ -20,6 +20,8 @@ interface CommandResult {
   error?: string
 }
 
+const RELEASE_TAG_RE = /^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/
+
 function run(command: string, args: string[], timeoutMs = 8_000): CommandResult {
   try {
     const result = spawnSync(command, args, {
@@ -38,6 +40,16 @@ function run(command: string, args: string[], timeoutMs = 8_000): CommandResult 
   } catch (err: any) {
     return { ok: false, output: '', error: err?.message || String(err) }
   }
+}
+
+function getLatestStableTag(): string | null {
+  const listed = run('git', ['tag', '--list', 'v*', '--sort=-v:refname'], 4_000)
+  if (!listed.ok) return null
+  const tags = listed.output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  return tags.find((tag) => RELEASE_TAG_RE.test(tag)) || null
 }
 
 function commandExists(name: string): boolean {
@@ -190,23 +202,28 @@ export async function GET(req: Request) {
     }
 
     if (includeRemote) {
-      const fetch = run('git', ['fetch', 'origin', 'main', '--quiet'], 12_000)
+      const fetch = run('git', ['fetch', '--tags', 'origin', '--quiet'], 12_000)
       if (!fetch.ok) {
-        pushCheck(checks, 'git-remote', 'Remote update check', 'warn', fetch.error || 'Could not check origin/main.')
+        pushCheck(checks, 'git-remote', 'Remote update check', 'warn', fetch.error || 'Could not check remote release tags.')
       } else {
-        const behind = run('git', ['rev-list', 'HEAD..origin/main', '--count'], 4_000)
-        behindBy = Number.parseInt(behind.output || '0', 10) || 0
-        remoteSha = behindBy > 0 ? run('git', ['rev-parse', '--short', 'origin/main'], 4_000).output || null : localSha
-
-        if (behindBy > 0) {
-          pushCheck(checks, 'git-update', 'Update availability', 'warn', `${behindBy} commit(s) available from origin/main.`)
-          actions.push('Run `npm run update:easy` or use the in-app update banner.')
+        const latestTag = getLatestStableTag()
+        if (!latestTag) {
+          pushCheck(checks, 'git-update', 'Update availability', 'warn', 'No stable release tags found yet; updater will fallback to main.')
         } else {
-          pushCheck(checks, 'git-update', 'Update availability', 'pass', 'Already on latest origin/main commit.')
+          const behind = run('git', ['rev-list', `HEAD..${latestTag}^{commit}`, '--count'], 4_000)
+          behindBy = Number.parseInt(behind.output || '0', 10) || 0
+          remoteSha = run('git', ['rev-parse', '--short', `${latestTag}^{commit}`], 4_000).output || localSha
+
+          if (behindBy > 0) {
+            pushCheck(checks, 'git-update', 'Update availability', 'warn', `${behindBy} commit(s) available to stable release ${latestTag}.`)
+            actions.push('Run `npm run update:easy` or use the in-app update banner.')
+          } else {
+            pushCheck(checks, 'git-update', 'Update availability', 'pass', `Already on stable release ${latestTag} or newer.`)
+          }
         }
       }
     } else {
-      pushCheck(checks, 'git-remote', 'Remote update check', 'warn', 'Skipped (pass ?remote=1 to include remote update check).')
+      pushCheck(checks, 'git-remote', 'Remote update check', 'warn', 'Skipped (pass ?remote=1 to include remote stable-tag check).')
     }
   }
 

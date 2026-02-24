@@ -239,7 +239,7 @@ const COMMAND_GROUPS = {
       ip: { description: 'Get local bind IP/port', method: 'GET', path: '/ip' },
       usage: { description: 'Get usage summary', method: 'GET', path: '/usage' },
       version: { description: 'Get local/remote git version info', method: 'GET', path: '/version' },
-      update: { description: 'Pull latest main branch', method: 'POST', path: '/version/update' },
+      update: { description: 'Update to latest stable release tag (fallback: main)', method: 'POST', path: '/version/update' },
     },
   },
   tasks: {

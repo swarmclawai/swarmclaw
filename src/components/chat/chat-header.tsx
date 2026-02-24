@@ -59,6 +59,8 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const [copied, setCopied] = useState(false)
   const [heartbeatSaving, setHeartbeatSaving] = useState(false)
   const [mainLoopSaving, setMainLoopSaving] = useState(false)
+  const [mainLoopError, setMainLoopError] = useState('')
+  const [mainLoopNotice, setMainLoopNotice] = useState('')
 
   // Find linked task for this session
   const linkedTask = useMemo(() => {
@@ -143,11 +145,22 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     if (!isMainSession || mainLoopSaving) return
     setMainLoopSaving(true)
     try {
-      await api('POST', `/sessions/${session.id}/main-loop`, {
+      const result = await api<{ runId?: string; deduped?: boolean }>('POST', `/sessions/${session.id}/main-loop`, {
         action,
         ...(extra || {}),
       })
+      setMainLoopError('')
+      if (action === 'nudge') {
+        setMainLoopNotice(result?.deduped ? 'Nudge already queued.' : 'Nudge queued.')
+      } else if (action === 'set_mode') {
+        setMainLoopNotice(`Mode set to ${extra?.mode === 'assist' ? 'Assist' : 'Auto'}.`)
+      } else {
+        setMainLoopNotice('')
+      }
       await loadSessions()
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to update mission controls.'
+      setMainLoopError(message)
     } finally {
       setMainLoopSaving(false)
     }
@@ -185,6 +198,17 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       void loadConnectors()
     }
   }, [session.name, loadConnectors])
+
+  useEffect(() => {
+    setMainLoopError('')
+    setMainLoopNotice('')
+  }, [session.id])
+
+  useEffect(() => {
+    if (!mainLoopNotice) return
+    const timer = setTimeout(() => setMainLoopNotice(''), 2500)
+    return () => clearTimeout(timer)
+  }, [mainLoopNotice])
 
   return (
     <header className="relative z-20 flex flex-col border-b border-white/[0.04] bg-bg/80 backdrop-blur-md shrink-0"
@@ -332,7 +356,11 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <button
                 onClick={handleToggleMissionMode}
                 disabled={mainLoopSaving}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-text-3 transition-colors cursor-pointer border-none"
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] transition-colors cursor-pointer border-none
+                  ${missionMode === 'autonomous'
+                    ? 'bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200'
+                    : 'bg-white/[0.04] hover:bg-white/[0.07] text-text-3'
+                  }`}
                 title="Toggle mission autonomy mode"
               >
                 <span className="text-[11px] font-600">
@@ -368,6 +396,16 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <span className="text-[10px] text-text-3/50 uppercase tracking-wider">
                 {`State ${missionStatus}${missionMomentum !== null ? ` · ${missionMomentum}` : ''}`}
               </span>
+              {mainLoopError && (
+                <span className="text-[10px] text-red-300/90 truncate max-w-[280px]" title={mainLoopError}>
+                  {mainLoopError}
+                </span>
+              )}
+              {mainLoopNotice && (
+                <span className="text-[10px] text-emerald-300/90 truncate max-w-[220px]" title={mainLoopNotice}>
+                  {mainLoopNotice}
+                </span>
+              )}
             </>
           )}
           {agent && session.tools?.includes('memory') && (

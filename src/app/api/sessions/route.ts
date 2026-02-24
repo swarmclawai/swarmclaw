@@ -51,8 +51,11 @@ export async function POST(req: Request) {
   if (body.id && sessions[id]) {
     return NextResponse.json(sessions[id])
   }
+
+  const sessionName = body.name || 'New Session'
+
   sessions[id] = {
-    id, name: body.name || 'New Session', cwd,
+    id, name: sessionName, cwd,
     user: body.user || 'wayde',
     provider: body.provider || agent?.provider || 'claude-cli',
     model: body.model || agent?.model || '',
@@ -69,7 +72,7 @@ export async function POST(req: Request) {
       codex: null,
       opencode: null,
     },
-    messages: [],
+    messages: Array.isArray(body.messages) ? body.messages : [],
     createdAt: Date.now(), lastActiveAt: Date.now(),
     sessionType: body.sessionType || 'human',
     agentId: body.agentId || null,

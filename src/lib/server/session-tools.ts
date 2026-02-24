@@ -668,19 +668,35 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
   }
 
-  if (hasTool('claude_code')) {
+  const wantsClaudeDelegate = hasTool('claude_code')
+  const wantsCodexDelegate = hasTool('codex_cli')
+  const wantsOpenCodeDelegate = hasTool('opencode_cli')
+
+  if (wantsClaudeDelegate || wantsCodexDelegate || wantsOpenCodeDelegate) {
     const claudeBinary = findBinaryOnPath('claude')
     const codexBinary = findBinaryOnPath('codex')
     const opencodeBinary = findBinaryOnPath('opencode')
 
-    if (!claudeBinary && !codexBinary && !opencodeBinary) {
-      log.warn('session-tools', 'Delegation tool enabled but no CLI binaries found', {
+    if (wantsClaudeDelegate && !claudeBinary) {
+      log.warn('session-tools', 'Claude delegation enabled but claude binary not found', {
+        sessionId: ctx?.sessionId || null,
+        agentId: ctx?.agentId || null,
+      })
+    }
+    if (wantsCodexDelegate && !codexBinary) {
+      log.warn('session-tools', 'Codex delegation enabled but codex binary not found', {
+        sessionId: ctx?.sessionId || null,
+        agentId: ctx?.agentId || null,
+      })
+    }
+    if (wantsOpenCodeDelegate && !opencodeBinary) {
+      log.warn('session-tools', 'OpenCode delegation enabled but opencode binary not found', {
         sessionId: ctx?.sessionId || null,
         agentId: ctx?.agentId || null,
       })
     }
 
-    if (claudeBinary) {
+    if (claudeBinary && wantsClaudeDelegate) {
     tools.push(
       tool(
         async ({ task, resume, resumeId }) => {
@@ -882,7 +898,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
     }
 
-    if (codexBinary) {
+    if (codexBinary && wantsCodexDelegate) {
     tools.push(
       tool(
         async ({ task, resume, resumeId }) => {
@@ -1094,7 +1110,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     )
     }
 
-    if (opencodeBinary) {
+    if (opencodeBinary && wantsOpenCodeDelegate) {
     tools.push(
       tool(
         async ({ task, resume, resumeId }) => {

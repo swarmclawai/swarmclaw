@@ -34,7 +34,9 @@ function buildToolCapabilityLines(enabledTools: string[]): string[] {
   if (enabledTools.includes('web_search')) lines.push('- Web search is available (`web_search`). Use it for external research, options discovery, and validation.')
   if (enabledTools.includes('web_fetch')) lines.push('- URL content extraction is available (`web_fetch`) for source-backed analysis.')
   if (enabledTools.includes('browser')) lines.push('- Browser automation is available (`browser`). Use it for interactive websites and screenshots.')
-  if (enabledTools.includes('claude_code')) lines.push('- CLI delegation is available (`delegate_to_claude_code`, `delegate_to_codex_cli`, `delegate_to_opencode_cli`) for deep coding/refactor tasks. Resume IDs may be returned via `[delegate_meta]`.')
+  if (enabledTools.includes('claude_code')) lines.push('- Claude delegation is available (`delegate_to_claude_code`) for deep coding/refactor tasks. Resume IDs may be returned via `[delegate_meta]`.')
+  if (enabledTools.includes('codex_cli')) lines.push('- Codex delegation is available (`delegate_to_codex_cli`) for deep coding/refactor tasks. Resume IDs may be returned via `[delegate_meta]`.')
+  if (enabledTools.includes('opencode_cli')) lines.push('- OpenCode delegation is available (`delegate_to_opencode_cli`) for deep coding/refactor tasks. Resume IDs may be returned via `[delegate_meta]`.')
   if (enabledTools.includes('memory')) lines.push('- Long-term memory is available (`memory_tool`) to store and recall durable context.')
   if (enabledTools.includes('manage_agents')) lines.push('- Agent management is available (`manage_agents`) to create or adjust specialist agents.')
   if (enabledTools.includes('manage_tasks')) lines.push('- Task management is available (`manage_tasks`) to create and track execution plans.')
@@ -58,6 +60,12 @@ function buildAgenticExecutionPolicy(opts: {
 }) {
   const hasTooling = opts.enabledTools.length > 0
   const toolLines = buildToolCapabilityLines(opts.enabledTools)
+  const delegationOrder = [
+    opts.enabledTools.includes('claude_code') ? '`delegate_to_claude_code`' : null,
+    opts.enabledTools.includes('codex_cli') ? '`delegate_to_codex_cli`' : null,
+    opts.enabledTools.includes('opencode_cli') ? '`delegate_to_opencode_cli`' : null,
+  ].filter(Boolean) as string[]
+  const hasDelegationTool = delegationOrder.length > 0
   return [
     '## Agentic Execution Policy',
     'You are not a passive chatbot. Execute work proactively and use available tools to gather evidence, create artifacts, and make progress.',
@@ -94,10 +102,10 @@ function buildAgenticExecutionPolicy(opts: {
     opts.enabledTools.includes('manage_sessions')
       ? 'When coordinating platform work, inspect existing sessions and avoid duplicating active efforts.'
       : '',
-    opts.enabledTools.includes('claude_code')
-      ? 'For substantial coding/build/refactor/test requests, prefer CLI delegation first: try `delegate_to_claude_code` by default, then `delegate_to_codex_cli`, then `delegate_to_opencode_cli` if needed.'
+    hasDelegationTool
+      ? `For substantial coding/build/refactor/test requests, prefer CLI delegation first using this order: ${delegationOrder.join(' -> ')}.`
       : '',
-    opts.enabledTools.includes('claude_code')
+    hasDelegationTool
       ? 'Use direct shell/file tool loops yourself mainly for small edits, quick verification, or when delegation tools are unavailable/failing.'
       : '',
     opts.enabledTools.includes('memory')

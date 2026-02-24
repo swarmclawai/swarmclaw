@@ -2,10 +2,37 @@
 
 import { useMemo, useState } from 'react'
 import { api } from '@/lib/api-client'
+import { useAppStore } from '@/stores/use-app-store'
 import type { ProviderType, Credential } from '@/types'
 
-type WizardProvider = 'anthropic' | 'openai' | 'ollama' | 'openclaw'
+type WizardProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'deepseek'
+  | 'groq'
+  | 'together'
+  | 'mistral'
+  | 'xai'
+  | 'fireworks'
+  | 'ollama'
+  | 'openclaw'
 type CheckState = 'idle' | 'checking' | 'ok' | 'error'
+
+interface WizardProviderOption {
+  id: WizardProvider
+  name: string
+  description: string
+  requiresKey: boolean
+  supportsEndpoint: boolean
+  defaultEndpoint?: string
+  keyUrl?: string
+  keyLabel?: string
+  keyPlaceholder?: string
+  optionalKey?: boolean
+  badge?: string
+  icon: string
+}
 
 interface ProviderCheckResponse {
   ok: boolean
@@ -33,17 +60,46 @@ interface SetupWizardProps {
   onComplete: () => void
 }
 
-const PROVIDERS: Array<{
-  id: WizardProvider
-  name: string
-  description: string
-  requiresKey: boolean
-  supportsEndpoint: boolean
-  defaultEndpoint?: string
-  keyUrl?: string
-  keyLabel?: string
-  badge?: string
-}> = [
+const STARTER_AGENT_TOOLS = [
+  'memory',
+  'files',
+  'web_search',
+  'web_fetch',
+  'browser',
+  'manage_agents',
+  'manage_tasks',
+  'manage_schedules',
+  'manage_skills',
+  'manage_connectors',
+  'manage_sessions',
+  'manage_secrets',
+  'manage_documents',
+  'manage_webhooks',
+  'claude_code',
+  'codex_cli',
+  'opencode_cli',
+]
+
+const SWARMCLAW_ASSISTANT_PROMPT = `You are the default SwarmClaw assistant inside the SwarmClaw dashboard.
+
+Primary objective:
+- Help the user operate SwarmClaw itself before anything else.
+
+When the user asks about SwarmClaw, prioritize concrete guidance with exact UI paths and commands:
+- Sessions: create, configure provider/model, and run chats.
+- Agents: create specialist agents/orchestrators, set provider/model, tools, and prompts.
+- Providers: connect API keys/endpoints, troubleshoot auth/model issues.
+- Tasks + Schedules: queue work and automate recurring runs.
+- Skills + Connectors + Webhooks + Secrets + Memory: explain when to use each and how to configure safely.
+
+Behavior:
+- Be concise, direct, and action-oriented.
+- If the request is ambiguous, ask one focused clarifying question.
+- Prefer step-by-step instructions that can be executed immediately.
+- When the user asks for direct execution (for example browsing, screenshots, research, or file edits), use available tools and return real results instead of only describing what to do.
+- If a capability depends on provider/tool configuration, call that out explicitly.`
+
+const PROVIDERS: WizardProviderOption[] = [
   {
     id: 'openai',
     name: 'OpenAI',
@@ -54,6 +110,7 @@ const PROVIDERS: Array<{
     keyUrl: 'https://platform.openai.com/api-keys',
     keyLabel: 'platform.openai.com',
     badge: 'Recommended',
+    icon: 'O',
   },
   {
     id: 'anthropic',
@@ -63,6 +120,78 @@ const PROVIDERS: Array<{
     supportsEndpoint: false,
     keyUrl: 'https://console.anthropic.com/settings/keys',
     keyLabel: 'console.anthropic.com',
+    icon: 'A',
+  },
+  {
+    id: 'google',
+    name: 'Google Gemini',
+    description: 'Gemini models with strong multimodal and coding support.',
+    requiresKey: true,
+    supportsEndpoint: false,
+    keyUrl: 'https://aistudio.google.com/app/apikey',
+    keyLabel: 'aistudio.google.com',
+    keyPlaceholder: 'AIza...',
+    icon: 'G',
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    description: 'High-value reasoning and coding models from DeepSeek.',
+    requiresKey: true,
+    supportsEndpoint: false,
+    keyUrl: 'https://platform.deepseek.com/api_keys',
+    keyLabel: 'platform.deepseek.com',
+    icon: 'D',
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    description: 'Very fast inference with open and reasoning model options.',
+    requiresKey: true,
+    supportsEndpoint: false,
+    keyUrl: 'https://console.groq.com/keys',
+    keyLabel: 'console.groq.com',
+    icon: 'G',
+  },
+  {
+    id: 'together',
+    name: 'Together AI',
+    description: 'Broad catalog of open models with OpenAI-compatible APIs.',
+    requiresKey: true,
+    supportsEndpoint: false,
+    keyUrl: 'https://api.together.xyz/settings/api-keys',
+    keyLabel: 'api.together.xyz',
+    icon: 'T',
+  },
+  {
+    id: 'mistral',
+    name: 'Mistral AI',
+    description: 'Efficient frontier models with strong latency and quality.',
+    requiresKey: true,
+    supportsEndpoint: false,
+    keyUrl: 'https://console.mistral.ai/api-keys/',
+    keyLabel: 'console.mistral.ai',
+    icon: 'M',
+  },
+  {
+    id: 'xai',
+    name: 'xAI (Grok)',
+    description: 'Grok models for fast answers, coding, and analysis.',
+    requiresKey: true,
+    supportsEndpoint: false,
+    keyUrl: 'https://console.x.ai',
+    keyLabel: 'console.x.ai',
+    icon: 'X',
+  },
+  {
+    id: 'fireworks',
+    name: 'Fireworks AI',
+    description: 'Serverless and optimized open-model inference endpoints.',
+    requiresKey: true,
+    supportsEndpoint: false,
+    keyUrl: 'https://fireworks.ai/account/api-keys',
+    keyLabel: 'fireworks.ai',
+    icon: 'F',
   },
   {
     id: 'openclaw',
@@ -71,7 +200,9 @@ const PROVIDERS: Array<{
     requiresKey: false,
     supportsEndpoint: true,
     defaultEndpoint: 'http://localhost:18789/v1',
+    optionalKey: true,
     badge: 'OpenClaw',
+    icon: 'C',
   },
   {
     id: 'ollama',
@@ -81,33 +212,87 @@ const PROVIDERS: Array<{
     supportsEndpoint: true,
     defaultEndpoint: 'http://localhost:11434',
     badge: 'Local',
+    icon: 'L',
   },
 ]
 
-const DEFAULT_AGENTS: Record<WizardProvider, { name: string; description: string; systemPrompt: string; model: string }> = {
+const DEFAULT_AGENTS: Record<WizardProvider, { name: string; description: string; systemPrompt: string; model: string; tools: string[] }> = {
   anthropic: {
     name: 'Assistant',
     description: 'A helpful Claude-powered assistant.',
-    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
     model: 'claude-sonnet-4-6',
+    tools: STARTER_AGENT_TOOLS,
   },
   openai: {
     name: 'Assistant',
     description: 'A helpful GPT-powered assistant.',
-    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
     model: 'gpt-4o',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  google: {
+    name: 'Assistant',
+    description: 'A helpful Gemini-powered assistant.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'gemini-2.5-pro',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  deepseek: {
+    name: 'Assistant',
+    description: 'A helpful DeepSeek-powered assistant.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'deepseek-chat',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  groq: {
+    name: 'Assistant',
+    description: 'A low-latency assistant powered by Groq.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'llama-3.3-70b-versatile',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  together: {
+    name: 'Assistant',
+    description: 'A helpful assistant powered by Together AI.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  mistral: {
+    name: 'Assistant',
+    description: 'A helpful assistant powered by Mistral.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'mistral-large-latest',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  xai: {
+    name: 'Assistant',
+    description: 'A helpful assistant powered by xAI Grok.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'grok-3',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  fireworks: {
+    name: 'Assistant',
+    description: 'A helpful assistant powered by Fireworks AI.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: 'accounts/fireworks/models/deepseek-r1-0528',
+    tools: STARTER_AGENT_TOOLS,
   },
   ollama: {
     name: 'Assistant',
     description: 'A local assistant running through Ollama.',
-    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
     model: 'llama3',
+    tools: STARTER_AGENT_TOOLS,
   },
   openclaw: {
     name: 'OpenClaw Operator',
     description: 'A manager agent for talking to and coordinating OpenClaw instances.',
     systemPrompt: 'You are an operator focused on reliable execution, clear status updates, and task completion.',
     model: 'default',
+    tools: STARTER_AGENT_TOOLS,
   },
 }
 
@@ -200,7 +385,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const totalSteps = 3
   const requiresKey = selectedProvider?.requiresKey || false
   const supportsEndpoint = selectedProvider?.supportsEndpoint || false
-  const keyIsOptional = provider === 'openclaw'
+  const keyIsOptional = selectedProvider?.optionalKey || false
   const requiresVerifiedConnection = provider === 'openclaw'
 
   const skip = async () => {
@@ -304,10 +489,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       }
 
       let nextCredentialId = credentialId
-      const shouldSaveCredential = (
-        (provider === 'openai' || provider === 'anthropic' || provider === 'openclaw')
-        && !!apiKey.trim()
-      )
+      const shouldSaveCredential = !!apiKey.trim() && (requiresKey || keyIsOptional)
 
       if (shouldSaveCredential && !nextCredentialId) {
         const cred = await api<Credential>('POST', '/credentials', {
@@ -344,13 +526,65 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         provider: provider as ProviderType,
         model: agentModel.trim() || DEFAULT_AGENTS[provider].model,
         credentialId: credentialId || null,
+        tools: DEFAULT_AGENTS[provider].tools,
       }
 
       if (supportsEndpoint && endpoint.trim()) {
         payload.apiEndpoint = endpoint.trim()
       }
 
-      await api('POST', '/agents', payload)
+      const agents = await api<Record<string, { id: string }>>('GET', '/agents')
+      const canReuseDefault =
+        !!agents.default
+        && Object.keys(agents).length === 1
+        && agentName.trim().toLowerCase() === 'assistant'
+
+      const agentId = canReuseDefault
+        ? 'default'
+        : (await api<{ id: string }>('POST', '/agents', payload)).id
+
+      if (canReuseDefault) {
+        await api('PUT', '/agents/default', payload)
+      }
+
+      const appState = useAppStore.getState()
+      const currentUser = appState.currentUser
+      if (currentUser && agentId) {
+        const sessionMap = await api<Record<string, { id: string; name: string; user: string }>>('GET', '/sessions')
+        const existingMain = Object.values(sessionMap).find((s) => s.name === '__main__' && s.user === currentUser)
+        const mainId = existingMain?.id || `main-${currentUser}`
+        const selectedModel = (payload.model as string) || DEFAULT_AGENTS[provider].model
+        const selectedEndpoint = supportsEndpoint ? (payload.apiEndpoint as string | undefined) || null : null
+        const selectedTools = Array.isArray(payload.tools) ? payload.tools as string[] : DEFAULT_AGENTS[provider].tools
+
+        if (!existingMain) {
+          await api('POST', '/sessions', {
+            id: mainId,
+            name: '__main__',
+            user: currentUser,
+            agentId,
+            provider,
+            model: selectedModel,
+            credentialId: credentialId || null,
+            apiEndpoint: selectedEndpoint,
+            tools: selectedTools,
+            heartbeatEnabled: true,
+          })
+        }
+
+        await api('PUT', `/sessions/${mainId}`, {
+          agentId,
+          provider,
+          model: selectedModel,
+          credentialId: credentialId || null,
+          apiEndpoint: selectedEndpoint,
+          tools: selectedTools,
+          heartbeatEnabled: true,
+        })
+
+        await appState.loadSessions()
+        appState.setCurrentSession(mainId)
+      }
       await api('PUT', '/settings', { setupCompleted: true })
       onComplete()
     } catch (err: any) {
@@ -391,7 +625,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
               You can change providers, models, and agent settings anytime later.
             </p>
 
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 max-h-[44vh] overflow-y-auto pr-1">
               {PROVIDERS.map((p) => (
                 <button
                   key={p.id}
@@ -402,7 +636,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 >
                   <div className="w-10 h-10 rounded-[10px] bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0 mt-0.5">
                     <span className="text-[16px] font-display font-700 text-accent-bright">
-                      {p.id === 'anthropic' ? 'A' : p.id === 'openai' ? 'O' : p.id === 'openclaw' ? 'C' : 'L'}
+                      {p.icon}
                     </span>
                   </div>
                   <div>
@@ -500,7 +734,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                     type="password"
                     value={apiKey}
                     onChange={(e) => { setApiKey(e.target.value); setCheckState('idle'); setCheckMessage(''); setError('') }}
-                    placeholder={provider === 'openclaw' ? 'Paste OpenClaw bearer token' : 'sk-...'}
+                    placeholder={selectedProvider.keyPlaceholder || (provider === 'openclaw' ? 'Paste OpenClaw bearer token' : 'sk-...')}
                     className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface
                       text-text text-[14px] font-mono outline-none transition-all duration-200
                       focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"

@@ -46,10 +46,9 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   web_search: { categories: ['network'], concreteTools: ['web_search'] },
   web_fetch: { categories: ['network'], concreteTools: ['web_fetch'] },
   browser: { categories: ['browser', 'network'], concreteTools: ['browser'] },
-  claude_code: {
-    categories: ['delegation', 'execution'],
-    concreteTools: ['delegate_to_claude_code', 'delegate_to_codex_cli', 'delegate_to_opencode_cli'],
-  },
+  claude_code: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_claude_code'] },
+  codex_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_codex_cli'] },
+  opencode_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_opencode_cli'] },
   memory: { categories: ['memory'], concreteTools: ['memory_tool', 'context_status', 'context_summarize'] },
   manage_agents: { categories: ['platform'], concreteTools: ['manage_agents'] },
   manage_tasks: { categories: ['platform'], concreteTools: ['manage_tasks'] },
@@ -123,11 +122,9 @@ function safetyMatchesTool(safetyBlocked: Set<string>, toolName: string, descrip
     || safetyBlocked.has('search_history_tool')
     || safetyBlocked.has('whoami_tool')
   )) return true
-  if (toolName === 'claude_code' && (
-    safetyBlocked.has('delegate_to_claude_code')
-    || safetyBlocked.has('delegate_to_codex_cli')
-    || safetyBlocked.has('delegate_to_opencode_cli')
-  )) return true
+  if (toolName === 'claude_code' && safetyBlocked.has('delegate_to_claude_code')) return true
+  if (toolName === 'codex_cli' && safetyBlocked.has('delegate_to_codex_cli')) return true
+  if (toolName === 'opencode_cli' && safetyBlocked.has('delegate_to_opencode_cli')) return true
   return false
 }
 

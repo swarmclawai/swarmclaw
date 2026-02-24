@@ -19,6 +19,8 @@ const AVAILABLE_TOOLS: { id: string; label: string; description: string }[] = [
   { id: 'web_search', label: 'Web Search', description: 'Search the web via DuckDuckGo' },
   { id: 'web_fetch', label: 'Web Fetch', description: 'Fetch and extract text from URLs' },
   { id: 'claude_code', label: 'Claude Code', description: 'Delegate complex tasks to Claude Code CLI' },
+  { id: 'codex_cli', label: 'Codex CLI', description: 'Delegate complex tasks to OpenAI Codex CLI' },
+  { id: 'opencode_cli', label: 'OpenCode CLI', description: 'Delegate complex tasks to OpenCode CLI' },
   { id: 'browser', label: 'Browser', description: 'Playwright — browse, scrape, interact with web pages' },
   { id: 'memory', label: 'Memory', description: 'Store and retrieve long-term memories across sessions' },
 ]
