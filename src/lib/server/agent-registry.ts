@@ -25,9 +25,9 @@ export function getAgentDirectory(excludeId?: string): AgentDirectoryEntry[] {
 
   // Find active sessions per agent
   const activeSessions = new Set<string>()
-  for (const session of Object.values(sessions) as any[]) {
+  for (const session of Object.values(sessions) as Record<string, unknown>[]) {
     if (session.active && session.agentId) {
-      activeSessions.add(session.agentId)
+      activeSessions.add(session.agentId as string)
     }
   }
 

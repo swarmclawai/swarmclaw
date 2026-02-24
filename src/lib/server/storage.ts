@@ -296,7 +296,7 @@ Be concise and helpful. When users ask how to do something, guide them to the sp
     const row = db.prepare('SELECT data FROM agents WHERE id = ?').get('default') as { data: string } | undefined
     if (row?.data) {
       try {
-        const existing = JSON.parse(row.data) as Record<string, any>
+        const existing = JSON.parse(row.data) as Record<string, unknown>
         const existingTools = Array.isArray(existing.tools) ? existing.tools : []
         const mergedTools = Array.from(new Set([...existingTools, ...defaultStarterTools])).filter((t) => t !== 'delete_file')
         if (JSON.stringify(existingTools) !== JSON.stringify(mergedTools)) {

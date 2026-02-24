@@ -107,7 +107,7 @@ export function TaskSheet() {
   }
 
   const handleSave = async () => {
-    const payload = { title: title.trim() || 'Untitled Task', description, agentId, images, cwd: cwd || undefined, file: file || undefined } as any
+    const payload: Partial<BoardTask> & { title: string; description: string; agentId: string } = { title: title.trim() || 'Untitled Task', description, agentId, images, cwd: cwd || undefined, file: file || undefined }
     if (editing) {
       await updateTask(editing.id, payload)
     } else {
@@ -167,7 +167,7 @@ export function TaskSheet() {
       createdAt: Date.now(),
     }
     // Use atomic append to avoid race conditions with queue-added comments
-    await updateTask(editing.id, { appendComment: c } as any)
+    await updateTask(editing.id, { appendComment: c } as Partial<BoardTask> & { appendComment: TaskComment })
     await loadTasks()
     setCommentText('')
   }
@@ -301,29 +301,29 @@ export function TaskSheet() {
         </div>
       )}
 
-      {editing && ((editing as any).claudeResumeId || (editing as any).codexResumeId || (editing as any).opencodeResumeId || editing.cliResumeId) && (
+      {editing && (editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId || editing.cliResumeId) && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">CLI Sessions</label>
           <div className="flex flex-wrap gap-2">
-            {(editing as any).claudeResumeId && (
+            {editing.claudeResumeId && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
                 <span className="text-[11px] font-600 text-amber-400">Claude</span>
-                <code className="text-[11px] text-text-3 font-mono">{(editing as any).claudeResumeId}</code>
+                <code className="text-[11px] text-text-3 font-mono">{editing.claudeResumeId}</code>
               </div>
             )}
-            {(editing as any).codexResumeId && (
+            {editing.codexResumeId && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
                 <span className="text-[11px] font-600 text-emerald-400">Codex</span>
-                <code className="text-[11px] text-text-3 font-mono">{(editing as any).codexResumeId}</code>
+                <code className="text-[11px] text-text-3 font-mono">{editing.codexResumeId}</code>
               </div>
             )}
-            {(editing as any).opencodeResumeId && (
+            {editing.opencodeResumeId && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
                 <span className="text-[11px] font-600 text-sky-400">OpenCode</span>
-                <code className="text-[11px] text-text-3 font-mono">{(editing as any).opencodeResumeId}</code>
+                <code className="text-[11px] text-text-3 font-mono">{editing.opencodeResumeId}</code>
               </div>
             )}
-            {!((editing as any).claudeResumeId || (editing as any).codexResumeId || (editing as any).opencodeResumeId) && editing.cliResumeId && (
+            {!(editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId) && editing.cliResumeId && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
                 <span className="text-[11px] font-600 text-text-2">{editing.cliProvider || 'CLI'}</span>
                 <code className="text-[11px] text-text-3 font-mono">{editing.cliResumeId}</code>

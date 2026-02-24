@@ -35,8 +35,8 @@ interface PreviewServer {
 }
 
 const globalKey = '__swarmclaw_preview_servers__' as const
-const servers: Map<string, PreviewServer> = (globalThis as any)[globalKey]
-  ?? ((globalThis as any)[globalKey] = new Map<string, PreviewServer>())
+const servers: Map<string, PreviewServer> = (globalThis as unknown as Record<string, unknown>)[globalKey] as Map<string, PreviewServer>
+  ?? ((globalThis as unknown as Record<string, unknown>)[globalKey] = new Map<string, PreviewServer>())
 
 // ---------------------------------------------------------------------------
 // Helpers

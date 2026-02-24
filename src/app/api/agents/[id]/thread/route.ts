@@ -21,10 +21,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Check if an existing session is already linked to this agent as a thread
   const existing = Object.values(sessions).find(
-    (s: any) => s.name === `agent-thread:${agentId}` && s.user === user
+    (s: Record<string, unknown>) => s.name === `agent-thread:${agentId}` && s.user === user
   )
   if (existing) {
-    agent.threadSessionId = (existing as any).id
+    agent.threadSessionId = (existing as Record<string, unknown>).id as string
     agent.updatedAt = Date.now()
     saveAgents(agents)
     return NextResponse.json(existing)
@@ -55,7 +55,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     heartbeatIntervalSec: agent.heartbeatIntervalSec || null,
   }
 
-  sessions[sessionId] = session as any
+  sessions[sessionId] = session as Record<string, unknown>
   saveSessions(sessions)
 
   agent.threadSessionId = sessionId

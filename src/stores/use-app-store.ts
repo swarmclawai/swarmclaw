@@ -230,7 +230,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ currentAgentId: id })
     try {
       const user = get().currentUser || 'default'
-      const session = await api<any>('POST', `/agents/${id}/thread`, { user })
+      const session = await api<Session>('POST', `/agents/${id}/thread`, { user })
       if (session?.id) {
         const sessions = { ...get().sessions, [session.id]: session }
         set({ sessions, currentSessionId: session.id })

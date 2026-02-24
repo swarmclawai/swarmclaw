@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-02-24T19:52:36.427Z",
-  "totalIssues": 561,
-  "uniqueIssues": 172,
+  "generatedAt": "2026-02-24T19:57:17.848Z",
+  "totalIssues": 511,
+  "uniqueIssues": 161,
   "issues": [
     {
       "filePath": "bin/swarmclaw.js",
@@ -10,13 +10,6 @@
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
       "count": 2
-    },
-    {
-      "filePath": "src/app/api/agents/[id]/thread/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 3
     },
     {
       "filePath": "src/app/api/agents/generate/route.ts",
@@ -82,25 +75,11 @@
       "count": 2
     },
     {
-      "filePath": "src/app/api/preview-server/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
-    },
-    {
       "filePath": "src/app/api/providers/ollama/route.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 2
-    },
-    {
-      "filePath": "src/app/api/schedules/[id]/run/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
     },
     {
       "filePath": "src/app/api/secrets/[id]/route.ts",
@@ -146,13 +125,6 @@
     },
     {
       "filePath": "src/app/api/setup/doctor/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
-    },
-    {
-      "filePath": "src/app/api/tasks/route.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
@@ -213,13 +185,6 @@
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
       "count": 6
-    },
-    {
-      "filePath": "src/components/agents/agent-chat-list.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has a missing dependency: 'loadAgents'. Either include it or remove the dependency array.",
-      "count": 1
     },
     {
       "filePath": "src/components/agents/agent-list.tsx",
@@ -747,13 +712,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/tasks/task-card.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 7
-    },
-    {
       "filePath": "src/components/tasks/task-list.tsx",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -776,13 +734,6 @@
     },
     {
       "filePath": "src/components/tasks/task-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'BoardTask' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/tasks/task-sheet.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
       "message": "React Hook useEffect has missing dependencies: 'agentId', 'editing', 'open', and 'orchestrators'. Either include them or remove the dependency array.",
@@ -794,13 +745,6 @@
       "severity": 1,
       "message": "React Hook useEffect has missing dependencies: 'editing', 'loadAgents', 'loadSettings', and 'orchestrators'. Either include them or remove the dependency array.",
       "count": 1
-    },
-    {
-      "filePath": "src/components/tasks/task-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 14
     },
     {
       "filePath": "src/components/tasks/task-sheet.tsx",
@@ -874,13 +818,6 @@
     },
     {
       "filePath": "src/lib/providers/opencode-cli.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/agent-registry.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
@@ -1104,13 +1041,6 @@
       "count": 2
     },
     {
-      "filePath": "src/lib/server/queue.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 14
-    },
-    {
       "filePath": "src/lib/server/scheduler.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1171,7 +1101,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 92
+      "count": 90
     },
     {
       "filePath": "src/lib/server/session-tools.ts",
@@ -1185,7 +1115,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 43
+      "count": 42
     },
     {
       "filePath": "src/lib/server/stream-agent-chat.ts",
@@ -1193,13 +1123,6 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 4
-    },
-    {
-      "filePath": "src/stores/use-app-store.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
     },
     {
       "filePath": "src/types/index.ts",

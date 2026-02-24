@@ -3039,8 +3039,8 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
             // Fallback: resolve by name if the ID doesn't match directly
             if (!target) {
               const byName = Object.values(agents).find(
-                (a: any) => a.name.toLowerCase() === targetAgentId.toLowerCase(),
-              ) as any
+                (a) => a.name.toLowerCase() === targetAgentId.toLowerCase(),
+              )
               if (byName) {
                 target = byName
                 resolvedId = byName.id

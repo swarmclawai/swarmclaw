@@ -38,7 +38,7 @@ export async function DELETE(req: Request) {
   for (const [id, task] of Object.entries(tasks)) {
     const shouldRemove =
       filter === 'all' ||
-      (filter === 'schedule' && (task as any).sourceType === 'schedule') ||
+      (filter === 'schedule' && (task as Record<string, unknown>).sourceType === 'schedule') ||
       (!filter && task.status === 'archived')
     if (shouldRemove) {
       removed++
@@ -52,7 +52,7 @@ export async function DELETE(req: Request) {
   for (const [id, task] of Object.entries(tasks)) {
     const shouldRemove =
       filter === 'all' ||
-      (filter === 'schedule' && (task as any).sourceType === 'schedule') ||
+      (filter === 'schedule' && (task as Record<string, unknown>).sourceType === 'schedule') ||
       (!filter && task.status === 'archived')
     if (shouldRemove) deleteTask(id)
   }

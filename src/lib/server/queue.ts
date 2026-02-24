@@ -6,7 +6,7 @@ import { ensureTaskCompletionReport } from './task-reports'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { executeSessionChatTurn } from './chat-execution'
 import { extractTaskResult, formatResultBody } from './task-result'
-import type { Agent, BoardTask } from '@/types'
+import type { Agent, BoardTask, Message } from '@/types'
 
 let processing = false
 
@@ -170,8 +170,8 @@ function notifyMainChatScheduleResult(task: BoardTask): void {
   const now = Date.now()
   let changed = false
 
-  const buildMsg = (): any => {
-    const msg: any = { role: 'assistant', text: body, time: now, kind: 'system' }
+  const buildMsg = (): Message => {
+    const msg: Message = { role: 'assistant', text: body, time: now, kind: 'system' }
     if (firstImage) msg.imageUrl = firstImage.url
     return msg
   }
@@ -232,9 +232,9 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
 
   // Build CLI resume ID info lines
   const resumeLines: string[] = []
-  if ((task as any).claudeResumeId) resumeLines.push(`Claude session: \`${(task as any).claudeResumeId}\``)
-  if ((task as any).codexResumeId) resumeLines.push(`Codex thread: \`${(task as any).codexResumeId}\``)
-  if ((task as any).opencodeResumeId) resumeLines.push(`OpenCode session: \`${(task as any).opencodeResumeId}\``)
+  if (task.claudeResumeId) resumeLines.push(`Claude session: \`${task.claudeResumeId}\``)
+  if (task.codexResumeId) resumeLines.push(`Codex thread: \`${task.codexResumeId}\``)
+  if (task.opencodeResumeId) resumeLines.push(`OpenCode session: \`${task.opencodeResumeId}\``)
   // Fallback to legacy field
   if (resumeLines.length === 0 && task.cliResumeId) {
     resumeLines.push(`${task.cliProvider || 'CLI'} session: \`${task.cliResumeId}\``)
@@ -243,8 +243,8 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
   // Get working directory from execution session
   const execCwd = runSession?.cwd || ''
 
-  const buildMsg = (text: string): any => {
-    const msg: any = { role: 'assistant', text, time: now, kind: 'system' }
+  const buildMsg = (text: string): Message => {
+    const msg: Message = { role: 'assistant', text, time: now, kind: 'system' }
     if (firstImage) msg.imageUrl = firstImage.url
     return msg
   }
@@ -260,7 +260,7 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
   // 1. Push to executing agent's thread
   if (agent?.threadSessionId && sessions[agent.threadSessionId]) {
     const thread = sessions[agent.threadSessionId]
-    if (!Array.isArray(thread.messages)) (thread as any).messages = []
+    if (!Array.isArray(thread.messages)) thread.messages = []
     const body = buildResultBlock(`Task ${statusLabel}: **${taskLink}**`)
     thread.messages.push(buildMsg(body))
     thread.lastActiveAt = now
@@ -268,12 +268,12 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
   }
 
   // 2. If delegated, push to delegating agent's thread
-  const delegatedBy = (task as any).delegatedByAgentId
+  const delegatedBy = (task as unknown as Record<string, unknown>).delegatedByAgentId
   if (typeof delegatedBy === 'string' && delegatedBy !== task.agentId) {
     const delegator = agents[delegatedBy]
     if (delegator?.threadSessionId && sessions[delegator.threadSessionId]) {
       const thread = sessions[delegator.threadSessionId]
-      if (!Array.isArray(thread.messages)) (thread as any).messages = []
+      if (!Array.isArray(thread.messages)) thread.messages = []
       const agentName = agent?.name || task.agentId
       const body = buildResultBlock(`Delegated task ${statusLabel}: **${taskLink}** (by ${agentName})`)
       thread.messages.push(buildMsg(body))
@@ -554,7 +554,7 @@ export async function processNext() {
           const threadSessions = loadSessions()
           const thread = threadSessions[agentThreadSessionId]
           if (thread) {
-            if (!Array.isArray(thread.messages)) (thread as any).messages = []
+            if (!Array.isArray(thread.messages)) thread.messages = []
             const scheduleTask2 = task as ScheduleTaskMeta
             const schedId = typeof scheduleTask2.sourceScheduleId === 'string' ? scheduleTask2.sourceScheduleId : ''
             const runLabel = task.runNumber ? ` (run #${task.runNumber})` : ''

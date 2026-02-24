@@ -43,10 +43,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   if (existingTask && existingTask.status !== 'queued' && existingTask.status !== 'running') {
     taskId = existingTaskId
-    const prev = existingTask as any
-    prev.totalRuns = (prev.totalRuns || 0) + 1
-    if (existingTask.status === 'completed') prev.totalCompleted = (prev.totalCompleted || 0) + 1
-    if (existingTask.status === 'failed') prev.totalFailed = (prev.totalFailed || 0) + 1
+    const prev = existingTask as Record<string, unknown>
+    prev.totalRuns = ((prev.totalRuns as number) || 0) + 1
+    if (existingTask.status === 'completed') prev.totalCompleted = ((prev.totalCompleted as number) || 0) + 1
+    if (existingTask.status === 'failed') prev.totalFailed = ((prev.totalFailed as number) || 0) + 1
 
     existingTask.status = 'backlog'
     existingTask.title = `[Sched] ${schedule.name} (run #${schedule.runNumber})`

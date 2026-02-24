@@ -22,7 +22,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
   const tasks = useAppStore((s) => s.tasks)
   const [search, setSearch] = useState('')
 
-  useEffect(() => { loadAgents() }, [])
+  useEffect(() => { loadAgents() }, [loadAgents])
 
   // Build agent list sorted by last activity in their thread session
   const sortedAgents = useMemo(() => {
