@@ -43,6 +43,8 @@ export function createOrchestratorSession(
     sessionType: 'orchestrated' as const,
     agentId: orchestrator.id,
     parentSessionId: parentSessionId || null,
+    tools: Array.isArray(orchestrator.tools) ? [...orchestrator.tools] : [],
+    heartbeatEnabled: false,
   }
   saveSessions(sessions)
   return sessionId

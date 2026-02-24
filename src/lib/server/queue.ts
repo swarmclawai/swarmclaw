@@ -4,7 +4,8 @@ import { createOrchestratorSession, executeOrchestrator } from './orchestrator'
 import { formatValidationFailure, validateTaskCompletion } from './task-validation'
 import { ensureTaskCompletionReport } from './task-reports'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
-import type { BoardTask } from '@/types'
+import { executeSessionChatTurn } from './chat-execution'
+import type { Agent, BoardTask } from '@/types'
 
 let processing = false
 
@@ -13,6 +14,7 @@ interface SessionMessageLike {
   text?: string
   time?: number
   kind?: 'chat' | 'heartbeat' | 'system'
+  toolEvents?: Array<{ name?: string; output?: string }>
 }
 
 interface SessionLike {
@@ -115,6 +117,48 @@ function summarizeScheduleTaskResult(task: BoardTask): string {
   return 'No summary was returned.'
 }
 
+function extractLatestUploadUrl(session: SessionLike | null | undefined): string | null {
+  if (!Array.isArray(session?.messages)) return null
+  for (let i = session.messages.length - 1; i >= 0; i--) {
+    const msg = session.messages[i]
+    const text = typeof msg?.text === 'string' ? msg.text : ''
+    const textMatch = text.match(/\/api\/uploads\/[^\s)"'>]+/i)
+    if (textMatch?.[0]) return textMatch[0]
+
+    const events = Array.isArray(msg?.toolEvents) ? msg.toolEvents : []
+    for (let j = events.length - 1; j >= 0; j--) {
+      const ev = events[j]
+      if (ev?.name !== 'send_file') continue
+      const output = typeof ev.output === 'string' ? ev.output : ''
+      const match = output.match(/\/api\/uploads\/[^\s)"'>]+/i)
+      if (match?.[0]) return match[0]
+    }
+  }
+  return null
+}
+
+async function executeTaskRun(
+  task: BoardTask,
+  agent: Agent,
+  sessionId: string,
+): Promise<string> {
+  const prompt = task.description || task.title
+  if (agent?.isOrchestrator) {
+    return executeOrchestrator(agent, prompt, sessionId)
+  }
+
+  const run = await executeSessionChatTurn({
+    sessionId,
+    message: prompt,
+    internal: false,
+    source: 'task',
+  })
+  const text = typeof run.text === 'string' ? run.text.trim() : ''
+  if (text) return text
+  if (run.error) return `Error: ${run.error}`
+  return ''
+}
+
 function notifyMainChatScheduleResult(task: BoardTask): void {
   const scheduleTask = task as ScheduleTaskMeta
   const sourceType = typeof scheduleTask.sourceType === 'string' ? scheduleTask.sourceType : ''
@@ -135,11 +179,15 @@ function notifyMainChatScheduleResult(task: BoardTask): void {
     ...task,
     result: task.result || fallbackText || task.result,
   } as BoardTask)
+  const latestUploadUrl = extractLatestUploadUrl(runSession)
 
   const statusLabel = task.status === 'completed' ? 'completed' : 'failed'
+  const summaryWithArtifact = (latestUploadUrl && !summary.includes(latestUploadUrl))
+    ? `${summary}\n\nArtifact: ${latestUploadUrl}`
+    : summary
   const body = [
     `Scheduled run ${statusLabel}: **${scheduleName || 'Scheduled Task'}**`,
-    summary,
+    summaryWithArtifact,
   ].join('\n\n').trim()
   if (!body) return
 
@@ -437,7 +485,7 @@ export async function processNext() {
       console.log(`[queue] Running task "${task.title}" (${taskId}) with ${agent.name}`)
 
       try {
-        const result = await executeOrchestrator(agent, task.description || task.title, sessionId)
+        const result = await executeTaskRun(task, agent, sessionId)
         const t2 = loadTasks()
         if (t2[taskId]) {
           applyTaskPolicyDefaults(t2[taskId])
