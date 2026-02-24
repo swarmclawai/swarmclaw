@@ -331,16 +331,14 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                   <span className="text-[10px] text-text-3/50">(bounded)</span>
                 )}
               </button>
-              {session.name === '__main__' && (
-                <button
-                  onClick={handleCycleHeartbeatInterval}
-                  disabled={heartbeatSaving}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-text-3 transition-colors cursor-pointer border-none"
-                  title="Cycle heartbeat interval for this chat"
-                >
-                  <span className="text-[11px] font-600">HB {heartbeatIntervalSec}s</span>
-                </button>
-              )}
+              <button
+                onClick={handleCycleHeartbeatInterval}
+                disabled={heartbeatSaving}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-text-3 transition-colors cursor-pointer border-none"
+                title="Cycle heartbeat interval for this session"
+              >
+                <span className="text-[11px] font-600">{heartbeatIntervalSec}s</span>
+              </button>
             </>
           )}
           {isMainSession && (

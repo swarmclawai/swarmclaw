@@ -145,15 +145,35 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
             )
           }
+          const isPreviewable = /\.(html?|svg)$/i.test(filename)
           return (
-            <a href={url} download={filename}
-              className="flex items-center gap-3 px-4 py-3 mb-3 rounded-[12px] border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors no-underline">
+            <div className="flex items-center gap-3 px-4 py-3 mb-3 rounded-[12px] border border-white/10 bg-white/[0.03]">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3 shrink-0">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
               </svg>
-              <span className="text-[13px] text-text-2 font-500 truncate">{filename}</span>
-            </a>
+              <span className="text-[13px] text-text-2 font-500 truncate flex-1">{filename}</span>
+              {isPreviewable && (
+                <a href={url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-accent-soft hover:bg-accent-soft/80 text-accent-bright text-[11px] font-600 no-underline transition-colors shrink-0"
+                  title="Preview in new tab">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  Preview
+                </a>
+              )}
+              <a href={url} download={filename}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.06] hover:bg-white/[0.10] text-text-3 text-[11px] font-600 no-underline transition-colors shrink-0">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Download
+              </a>
+            </div>
           )
         })()}
 
@@ -268,15 +288,29 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                   }
                   const isUpload = href.startsWith('/api/uploads/')
                   if (isUpload) {
+                    const uploadIsHtml = /\.(html?|svg)$/i.test(href.split('?')[0])
                     return (
-                      <a href={href} download className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 underline">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="7 10 12 15 17 10" />
-                          <line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
-                        {children}
-                      </a>
+                      <span className="inline-flex items-center gap-1.5">
+                        <a href={href} download className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 underline">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          {children}
+                        </a>
+                        {uploadIsHtml && (
+                          <a href={href} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-accent-soft hover:bg-accent-soft/80 text-accent-bright text-[10px] font-600 no-underline transition-colors"
+                            title="Preview in new tab">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                            Preview
+                          </a>
+                        )}
+                      </span>
                     )
                   }
                   // YouTube embed
