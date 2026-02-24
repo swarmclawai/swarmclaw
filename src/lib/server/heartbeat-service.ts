@@ -180,7 +180,7 @@ async function tickHeartbeats() {
     // If global loopMode is bounded, only allow sessions with explicit opt-in
     if (!globalOngoing && !explicitOptIn) continue
 
-    if (hasScopedAgents) {
+    if (hasScopedAgents && !explicitOptIn) {
       const sessionForcedOn = session.heartbeatEnabled === true
       if (!sessionForcedOn && (!agent || agent.heartbeatEnabled !== true)) continue
     }
@@ -188,13 +188,22 @@ async function tickHeartbeats() {
     const cfg = heartbeatConfigForSession(session, settings, agents)
     if (!cfg.enabled) continue
 
-    const userIdleThresholdSec = resolveHeartbeatUserIdleSec(
-      settings,
-      Math.max(cfg.intervalSec * 2, 180),
-    )
+    // For sessions with explicit opt-in, use a shorter idle threshold (just intervalSec * 2).
+    // For inherited/global heartbeats, keep the 180s minimum to avoid noisy auto-fire.
+    const defaultIdleSec = explicitOptIn
+      ? cfg.intervalSec * 2
+      : Math.max(cfg.intervalSec * 2, 180)
+    const userIdleThresholdSec = resolveHeartbeatUserIdleSec(settings, defaultIdleSec)
     const lastUserAt = lastUserMessageAt(session)
-    if (lastUserAt <= 0) continue
-    if (now - lastUserAt < userIdleThresholdSec * 1000) continue
+    if (lastUserAt <= 0) {
+      log.debug('heartbeat', `skip ${session.id}: no user messages`)
+      continue
+    }
+    const idleMs = now - lastUserAt
+    if (idleMs < userIdleThresholdSec * 1000) {
+      log.debug('heartbeat', `skip ${session.id}: user idle ${Math.round(idleMs / 1000)}s < threshold ${userIdleThresholdSec}s`)
+      continue
+    }
 
     if (isMainSession(session)) {
       const loopState = getMainLoopStateForSession(session.id)
@@ -208,12 +217,17 @@ async function tickHeartbeats() {
     if (now - last < cfg.intervalSec * 1000) continue
 
     const runState = getSessionRunState(session.id)
-    if (runState.runningRunId) continue
+    if (runState.runningRunId) {
+      log.debug('heartbeat', `skip ${session.id}: already running`)
+      continue
+    }
 
     state.lastBySession.set(session.id, now)
     const heartbeatMessage = isMainSession(session)
       ? buildMainLoopHeartbeatPrompt(session, cfg.prompt)
       : cfg.prompt
+
+    log.info('heartbeat', `firing for session ${session.id} (interval=${cfg.intervalSec}s, idle=${Math.round(idleMs / 1000)}s)`)
 
     const enqueue = enqueueSessionRun({
       sessionId: session.id,
