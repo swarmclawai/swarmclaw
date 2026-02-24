@@ -262,9 +262,15 @@ function seedLastActive() {
 }
 
 export function startHeartbeatService() {
-  if (state.running) return
+  // Always replace the timer so HMR picks up the latest tickHeartbeats function.
+  // Without this, the old setInterval closure keeps running stale code.
+  if (state.timer) {
+    clearInterval(state.timer)
+    state.timer = null
+  }
   state.running = true
   seedLastActive()
+  log.info('heartbeat', `Heartbeat service started (tick every ${HEARTBEAT_TICK_MS}ms, tracking ${state.lastBySession.size} sessions)`)
   state.timer = setInterval(() => {
     tickHeartbeats().catch((err) => {
       log.error('heartbeat', 'Heartbeat tick failed', err?.message || String(err))
