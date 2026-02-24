@@ -164,7 +164,7 @@ export function LogList() {
               className={`px-2 py-1 rounded-[6px] text-[10px] font-700 uppercase tracking-wider cursor-pointer transition-all border-none ${
                 levelFilter.length === 0 || levelFilter.includes(level)
                   ? `${LEVEL_BG[level]} ${LEVEL_COLORS[level]}`
-                  : 'bg-white/[0.02] text-text-3/40'
+                  : 'bg-white/[0.02] text-text-3/70'
               }`}
             >
               {level}
@@ -223,7 +223,7 @@ export function LogList() {
                   {entry.message}
                 </span>
                 {/* Arrow indicator */}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/20 shrink-0 mt-[2px]">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/50 shrink-0 mt-[2px]">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </div>

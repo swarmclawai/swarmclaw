@@ -9,7 +9,7 @@ import type { Webhook } from '@/types'
 type WebhookApiResponse = Webhook | { error: string }
 type DeleteWebhookResponse = { ok: boolean } | { error: string }
 
-const inputClass = 'w-full px-4 py-3 rounded-[14px] bg-bg border border-white/[0.06] text-text text-[14px] outline-none focus:border-accent-bright/40 transition-colors placeholder:text-text-3/40'
+const inputClass = 'w-full px-4 py-3 rounded-[14px] bg-bg border border-white/[0.06] text-text text-[14px] outline-none focus:border-accent-bright/40 transition-colors placeholder:text-text-3/70'
 
 function webhookUrl(id: string): string {
   if (typeof window === 'undefined') return `/api/webhooks/${id}`

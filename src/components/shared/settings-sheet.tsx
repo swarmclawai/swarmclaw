@@ -990,7 +990,7 @@ export function SettingsSheet() {
         </h3>
         <p className="text-[12px] text-text-3 mb-5">
           Extend agent behavior with hooks. Install from the marketplace, a URL, or drop .js files into <code className="text-[11px] font-mono text-text-2">data/plugins/</code>.
-          <span className="text-text-3/40 ml-1">OpenClaw plugins are also supported.</span>
+          <span className="text-text-3/70 ml-1">OpenClaw plugins are also supported.</span>
         </p>
         <PluginManager />
       </div>
@@ -1094,7 +1094,7 @@ function PluginManager() {
 
       {tab === 'installed' && (
         plugins.length === 0
-          ? <p className="text-[12px] text-text-3/40">No plugins installed</p>
+          ? <p className="text-[12px] text-text-3/70">No plugins installed</p>
           : <div className="space-y-2.5">
               {plugins.map((p) => (
                 <div key={p.filename} className="flex items-center gap-3 py-3 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
@@ -1121,9 +1121,9 @@ function PluginManager() {
 
       {tab === 'marketplace' && (
         loading
-          ? <p className="text-[12px] text-text-3/40">Loading marketplace...</p>
+          ? <p className="text-[12px] text-text-3/70">Loading marketplace...</p>
           : marketplace.length === 0
-            ? <p className="text-[12px] text-text-3/40">No plugins available</p>
+            ? <p className="text-[12px] text-text-3/70">No plugins available</p>
             : <div className="space-y-2.5">
                 {marketplace.map((p) => {
                   const isInstalled = installedFilenames.has(`${p.id}.js`)
@@ -1133,13 +1133,13 @@ function PluginManager() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-[14px] font-600 text-text">{p.name}</span>
-                            <span className="text-[10px] font-mono text-text-3/40">v{p.version}</span>
+                            <span className="text-[10px] font-mono text-text-3/70">v{p.version}</span>
                             {p.openclaw && <span className="text-[9px] font-600 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">OpenClaw</span>}
                           </div>
                           <div className="text-[11px] text-text-3/60 mt-1">{p.description}</div>
                           <div className="flex items-center gap-2 mt-2">
-                            <span className="text-[10px] text-text-3/40">by {p.author}</span>
-                            <span className="text-[10px] text-text-3/20">·</span>
+                            <span className="text-[10px] text-text-3/70">by {p.author}</span>
+                            <span className="text-[10px] text-text-3/50">·</span>
                             {p.tags.slice(0, 3).map((t) => (
                               <span key={t} className="text-[9px] font-600 text-text-3/50 bg-white/[0.04] px-1.5 py-0.5 rounded-full">{t}</span>
                             ))}
@@ -1150,7 +1150,7 @@ function PluginManager() {
                           disabled={isInstalled || installing === p.id}
                           className={`shrink-0 py-2 px-4 rounded-[10px] text-[12px] font-600 transition-all cursor-pointer
                             ${isInstalled
-                              ? 'bg-white/[0.04] text-text-3/40 cursor-default'
+                              ? 'bg-white/[0.04] text-text-3/70 cursor-default'
                               : installing === p.id
                                 ? 'bg-accent-soft text-accent-bright animate-pulse'
                                 : 'bg-accent-soft text-accent-bright hover:bg-accent-soft/80 border border-accent-bright/20'}`}
@@ -1174,7 +1174,7 @@ function PluginManager() {
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
               placeholder="https://example.com/my-plugin.js"
-              className="w-full py-2.5 px-3 rounded-[10px] text-[13px] bg-bg border border-white/[0.06] text-text placeholder:text-text-3/30 outline-none focus:border-accent-bright/30"
+              className="w-full py-2.5 px-3 rounded-[10px] text-[13px] bg-bg border border-white/[0.06] text-text placeholder:text-text-3/60 outline-none focus:border-accent-bright/30"
               style={{ fontFamily: 'inherit' }}
             />
           </div>
@@ -1185,7 +1185,7 @@ function PluginManager() {
               value={urlFilename}
               onChange={(e) => setUrlFilename(e.target.value)}
               placeholder="my-plugin.js"
-              className="w-full py-2.5 px-3 rounded-[10px] text-[13px] bg-bg border border-white/[0.06] text-text placeholder:text-text-3/30 outline-none focus:border-accent-bright/30"
+              className="w-full py-2.5 px-3 rounded-[10px] text-[13px] bg-bg border border-white/[0.06] text-text placeholder:text-text-3/60 outline-none focus:border-accent-bright/30"
               style={{ fontFamily: 'inherit' }}
             />
           </div>
@@ -1203,7 +1203,7 @@ function PluginManager() {
               {urlStatus.message}
             </p>
           )}
-          <p className="text-[10px] text-text-3/30 mt-3">
+          <p className="text-[10px] text-text-3/60 mt-3">
             Works with SwarmClaw and OpenClaw plugin formats. URL must be HTTPS.
           </p>
         </div>

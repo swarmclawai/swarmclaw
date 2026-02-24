@@ -315,7 +315,7 @@ export function AgentSheet() {
             style={{ fontFamily: 'inherit' }}
           />
         </div>
-        <p className="text-[11px] text-text-3/40 mt-1.5">Press Enter or comma to add. Other agents see these when deciding delegation.</p>
+        <p className="text-[11px] text-text-3/70 mt-1.5">Press Enter or comma to add. Other agents see these when deciding delegation.</p>
       </div>
 
       <div className="mb-8">
@@ -660,7 +660,7 @@ export function AgentSheet() {
               })}
             </div>
           ) : (
-            <p className="text-[12px] text-text-3/40">No skills found in ~/.claude/skills/</p>
+            <p className="text-[12px] text-text-3/70">No skills found in ~/.claude/skills/</p>
           )}
         </div>
       )}

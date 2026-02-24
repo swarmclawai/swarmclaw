@@ -53,7 +53,7 @@ export function AiGenBlock({ aiPrompt, setAiPrompt, generating, generated, genEr
             onChange={(e) => setAiPrompt(e.target.value)}
             placeholder={placeholder}
             rows={2}
-            className="w-full px-4 py-3 rounded-[12px] border border-[#6366F1]/10 bg-[#6366F1]/[0.02] text-text text-[14px] outline-none transition-all duration-200 placeholder:text-text-3/40 focus:border-[#6366F1]/30 resize-none"
+            className="w-full px-4 py-3 rounded-[12px] border border-[#6366F1]/10 bg-[#6366F1]/[0.02] text-text text-[14px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus:border-[#6366F1]/30 resize-none"
             style={{ fontFamily: 'inherit' }}
             autoFocus
           />

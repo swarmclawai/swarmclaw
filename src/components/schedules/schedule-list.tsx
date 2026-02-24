@@ -61,7 +61,7 @@ export function ScheduleList({ inSidebar }: Props) {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search schedules..."
             className="w-full px-4 py-2.5 rounded-[12px] border border-white/[0.04] bg-surface text-text
-              text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/40 focus-glow"
+              text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
             style={{ fontFamily: 'inherit' }}
           />
         </div>

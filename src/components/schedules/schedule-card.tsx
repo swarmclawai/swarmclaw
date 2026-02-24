@@ -52,10 +52,10 @@ export function ScheduleCard({ schedule }: Props) {
           {schedule.status}
         </span>
       </div>
-      <div className="text-[12px] text-text-3/40 mt-1.5 truncate">
+      <div className="text-[12px] text-text-3/70 mt-1.5 truncate">
         {agent?.name || 'Unknown agent'} &middot; {schedule.scheduleType}
       </div>
-      <div className="text-[11px] text-text-3/30 mt-1">
+      <div className="text-[11px] text-text-3/60 mt-1">
         Next: {formatNext(schedule.nextRunAt)}
       </div>
     </div>

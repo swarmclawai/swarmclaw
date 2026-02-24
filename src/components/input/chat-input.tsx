@@ -124,7 +124,7 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
             placeholder="Ask me anything..."
             rows={1}
             className="w-full px-5 pt-4 pb-2 bg-transparent text-text text-[15px] outline-none resize-none
-              max-h-[140px] leading-[1.55] placeholder:text-text-3/40 border-none"
+              max-h-[140px] leading-[1.55] placeholder:text-text-3/70 border-none"
             style={{ fontFamily: 'inherit' }}
           />
 
@@ -173,7 +173,7 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
 
             <div className="flex-1" />
 
-            <span className="text-[11px] text-text-3/30 tabular-nums mr-2 font-mono">
+            <span className="text-[11px] text-text-3/60 tabular-nums mr-2 font-mono">
               {value.length > 0 && value.length}
             </span>
 

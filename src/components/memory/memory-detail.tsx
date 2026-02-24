@@ -84,14 +84,14 @@ export function MemoryDetail() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-3 p-8 text-center">
         <div className="w-14 h-14 rounded-[16px] bg-white/[0.03] flex items-center justify-center mb-2">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3/30">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3/60">
             <ellipse cx="12" cy="5" rx="9" ry="3" />
             <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
             <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
           </svg>
         </div>
         <p className="font-display text-[17px] font-600 text-text-2">Memory</p>
-        <p className="text-[13px] text-text-3/40 max-w-[300px]">
+        <p className="text-[13px] text-text-3/70 max-w-[300px]">
           Select a memory from the sidebar to view and edit it
         </p>
       </div>
@@ -107,7 +107,7 @@ export function MemoryDetail() {
       : imagePath
     : null
 
-  const inputClass = "w-full px-4 py-3 rounded-[12px] border border-white/[0.06] bg-white/[0.02] text-text outline-none transition-all duration-200 placeholder:text-text-3/40 focus:border-accent-bright/20 focus:bg-white/[0.03]"
+  const inputClass = "w-full px-4 py-3 rounded-[12px] border border-white/[0.06] bg-white/[0.02] text-text outline-none transition-all duration-200 placeholder:text-text-3/70 focus:border-accent-bright/20 focus:bg-white/[0.03]"
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0">
@@ -136,7 +136,7 @@ export function MemoryDetail() {
                 {sessionName}
               </button>
             )}
-            <span className="text-[10px] text-text-3/25 font-mono tabular-nums">
+            <span className="text-[10px] text-text-3/50 font-mono tabular-nums">
               {new Date(entry.createdAt).toLocaleString()}
             </span>
           </div>
@@ -157,7 +157,7 @@ export function MemoryDetail() {
           )}
           <button
             onClick={() => setConfirmDelete(true)}
-            className="p-2 rounded-[8px] text-text-3/40 hover:text-red-400 hover:bg-red-400/[0.06]
+            className="p-2 rounded-[8px] text-text-3/70 hover:text-red-400 hover:bg-red-400/[0.06]
               cursor-pointer transition-all bg-transparent border-none"
             title="Delete memory"
           >
@@ -272,26 +272,26 @@ export function MemoryDetail() {
           <div className="pt-4 border-t border-white/[0.04]">
             <div className="grid grid-cols-2 gap-4 text-[11px]">
               <div>
-                <span className="text-text-3/40 block mb-1">ID</span>
+                <span className="text-text-3/70 block mb-1">ID</span>
                 <span className="text-text-3/60 font-mono">{entry.id}</span>
               </div>
               <div>
-                <span className="text-text-3/40 block mb-1">Created</span>
+                <span className="text-text-3/70 block mb-1">Created</span>
                 <span className="text-text-3/60 font-mono">{new Date(entry.createdAt).toLocaleString()}</span>
               </div>
               <div>
-                <span className="text-text-3/40 block mb-1">Updated</span>
+                <span className="text-text-3/70 block mb-1">Updated</span>
                 <span className="text-text-3/60 font-mono">{new Date(entry.updatedAt).toLocaleString()}</span>
               </div>
               {entry.agentId && (
                 <div>
-                  <span className="text-text-3/40 block mb-1">Agent</span>
+                  <span className="text-text-3/70 block mb-1">Agent</span>
                   <span className="text-text-3/60 font-mono">{agentName}</span>
                 </div>
               )}
               {entry.sessionId && (
                 <div>
-                  <span className="text-text-3/40 block mb-1">Session</span>
+                  <span className="text-text-3/70 block mb-1">Session</span>
                   <button
                     onClick={handleNavigateToSession}
                     className="text-accent-bright/60 hover:text-accent-bright font-mono bg-transparent border-none cursor-pointer p-0 text-[11px] transition-colors"

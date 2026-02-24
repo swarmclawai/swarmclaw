@@ -233,7 +233,7 @@ export function SkillSheet() {
           className={`${inputClass} resize-y min-h-[200px] font-mono text-[13px]`}
           style={{ fontFamily: 'inherit' }}
         />
-        <p className="text-[11px] text-text-3/40 mt-2">{content.length} characters</p>
+        <p className="text-[11px] text-text-3/70 mt-2">{content.length} characters</p>
       </div>
 
       <div className="flex gap-3 pt-2 border-t border-white/[0.04]">

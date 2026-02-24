@@ -237,7 +237,7 @@ export function ProviderSheet() {
           <input type="text" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
             placeholder={editingBuiltin?.defaultEndpoint || 'https://openrouter.ai/api/v1'}
             className={`${inputClass} font-mono text-[14px]`} />
-          <p className="text-[11px] text-text-3/40 mt-2">
+          <p className="text-[11px] text-text-3/70 mt-2">
             {isBuiltin ? `Default: ${editingBuiltin?.defaultEndpoint || 'none'}` : 'OpenAI-compatible API endpoint (without /chat/completions)'}
           </p>
         </div>
@@ -303,7 +303,7 @@ export function ProviderSheet() {
             })()}
 
             {editingId === 'ollama' && localLoading && (
-              <p className="text-[11px] text-text-3/40 mb-3">Checking local Ollama instance...</p>
+              <p className="text-[11px] text-text-3/70 mb-3">Checking local Ollama instance...</p>
             )}
             {editingId === 'ollama' && localError && (
               <p className="text-[11px] text-amber-400/60 mb-3">{localError}</p>
@@ -340,7 +340,7 @@ export function ProviderSheet() {
               className={`${inputClass} resize-y min-h-[80px] font-mono text-[14px]`}
               style={{ fontFamily: 'inherit' }}
             />
-            <p className="text-[11px] text-text-3/40 mt-2">Comma-separated model IDs</p>
+            <p className="text-[11px] text-text-3/70 mt-2">Comma-separated model IDs</p>
           </>
         )}
       </div>

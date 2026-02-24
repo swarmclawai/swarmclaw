@@ -41,7 +41,7 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
               {skill.description && (
                 <p className="text-[12px] text-text-3/60 line-clamp-2">{skill.description}</p>
               )}
-              <div className="text-[11px] text-text-3/40 mt-1.5">
+              <div className="text-[11px] text-text-3/70 mt-1.5">
                 {skill.content.length} chars
               </div>
             </button>

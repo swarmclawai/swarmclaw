@@ -36,7 +36,7 @@ export function MemoryCard({ entry, active, agentName, onClick }: Props) {
           {entry.category || 'note'}
         </span>
         <span className="font-display text-[13px] font-600 truncate flex-1 tracking-[-0.01em]">{entry.title}</span>
-        <span className="text-[10px] text-text-3/30 shrink-0 tabular-nums font-mono">
+        <span className="text-[10px] text-text-3/60 shrink-0 tabular-nums font-mono">
           {timeAgo(entry.updatedAt || entry.createdAt)}
         </span>
       </div>
@@ -52,10 +52,10 @@ export function MemoryCard({ entry, active, agentName, onClick }: Props) {
       )}
       {agentName && (
         <div className="flex items-center gap-1 mt-1.5">
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/25">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/50">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
           </svg>
-          <span className="text-[10px] text-text-3/30 truncate">{agentName}</span>
+          <span className="text-[10px] text-text-3/60 truncate">{agentName}</span>
         </div>
       )}
     </div>

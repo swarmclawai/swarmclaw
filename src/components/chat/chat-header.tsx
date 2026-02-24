@@ -265,13 +265,13 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
             <span className="text-[11px] text-text-3/60 font-mono block truncate">{shortPath(session.cwd)}</span>
             {modelName && (
               <>
-                <span className="text-[11px] text-text-3/30">·</span>
+                <span className="text-[11px] text-text-3/60">·</span>
                 <span className="text-[11px] text-text-3/50 font-mono truncate shrink-0">{modelName}</span>
               </>
             )}
             {lastUsage && !streaming && (
               <>
-                <span className="text-[11px] text-text-3/30">·</span>
+                <span className="text-[11px] text-text-3/60">·</span>
                 <UsageBadge {...lastUsage} />
               </>
             )}
@@ -456,7 +456,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 {copied ? 'Copied!' : `${resumeHandle.label}: ${resumeHandle.id}`}
               </span>
               {!copied && (
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/30 shrink-0">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/60 shrink-0">
                   <rect x="9" y="9" width="13" height="13" rx="2" />
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                 </svg>
@@ -478,7 +478,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <span className="text-[11px] font-600 text-[#3B82F6] group-hover:text-[#F43F5E]">
                 Browser Active
               </span>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-3/30 group-hover:text-[#F43F5E] shrink-0">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-3/60 group-hover:text-[#F43F5E] shrink-0">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>

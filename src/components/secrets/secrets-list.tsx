@@ -65,7 +65,7 @@ export function SecretsList({ inSidebar }: Props) {
               </div>
               <div className="flex items-center gap-2 pl-[22px]">
                 <span className="text-[11px] font-mono text-text-3">{secret.service}</span>
-                <span className="text-[11px] text-text-3/30">·</span>
+                <span className="text-[11px] text-text-3/60">·</span>
                 <span className={`text-[10px] font-600 ${
                   secret.scope === 'global' ? 'text-emerald-400' : 'text-amber-400'
                 }`}>

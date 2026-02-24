@@ -67,7 +67,7 @@ export function UserPicker() {
             autoFocus
             className="w-full max-w-[280px] px-6 py-4 rounded-[16px] border border-white/[0.08] bg-surface
               text-text text-[18px] text-center font-display font-600 outline-none
-              transition-all duration-200 placeholder:text-text-3/40
+              transition-all duration-200 placeholder:text-text-3/70
               focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
             style={{ fontFamily: 'inherit' }}
           />

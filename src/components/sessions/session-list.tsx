@@ -116,7 +116,7 @@ export function SessionList({ inSidebar, onSelect }: Props) {
               if (!window.confirm(`Delete ${filtered.length} session${filtered.length === 1 ? '' : 's'}?`)) return
               await clearSessions(filtered.map((s) => s.id))
             }}
-            className="ml-auto p-1.5 rounded-[8px] text-text-3/40 hover:text-red-400 hover:bg-red-400/[0.06]
+            className="ml-auto p-1.5 rounded-[8px] text-text-3/70 hover:text-red-400 hover:bg-red-400/[0.06]
               cursor-pointer transition-all bg-transparent border-none"
             title="Clear all sessions"
           >
@@ -136,7 +136,7 @@ export function SessionList({ inSidebar, onSelect }: Props) {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search..."
             className="w-full px-4 py-2.5 rounded-[12px] border border-white/[0.04] bg-surface text-text
-              text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/40 focus-glow"
+              text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
             style={{ fontFamily: 'inherit' }}
           />
         </div>

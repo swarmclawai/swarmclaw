@@ -158,7 +158,7 @@ export function SessionDebugPanel({ messages, open, onClose }: Props) {
                   <span className="text-[11px] font-700 uppercase tracking-wider" style={{ color }}>
                     {event.label}
                   </span>
-                  <span className="text-[10px] text-text-3/40 font-mono">{fmtTime(event.time)}</span>
+                  <span className="text-[10px] text-text-3/70 font-mono">{fmtTime(event.time)}</span>
                 </div>
 
                 <p className={`text-[12px] text-text-3 leading-[1.5] ${expanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>

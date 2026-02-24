@@ -189,7 +189,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
         <span className={`text-[12px] font-600 ${isUser ? 'text-accent-bright/70' : 'text-text-3'}`}>
           {isUser ? (currentUser ? currentUser.charAt(0).toUpperCase() + currentUser.slice(1) : 'You') : (assistantName || 'Claude')}
         </span>
-        <span className="text-[11px] text-text-3/40 font-mono">
+        <span className="text-[11px] text-text-3/70 font-mono">
           {message.time ? fmtTime(message.time) : ''}
         </span>
       </div>

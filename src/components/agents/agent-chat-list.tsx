@@ -104,7 +104,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search agents..."
             className="w-full px-4 py-2.5 rounded-[12px] border border-white/[0.04] bg-surface text-text
-              text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/40 focus-glow"
+              text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
             style={{ fontFamily: 'inherit' }}
           />
         </div>
@@ -136,12 +136,12 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
                   {agent.name}
                 </span>
                 {/* Provider badge */}
-                <span className="text-[10px] text-text-3/30 font-mono shrink-0">
+                <span className="text-[10px] text-text-3/60 font-mono shrink-0">
                   {agent.model ? agent.model.split('/').pop()?.split(':')[0] : agent.provider}
                 </span>
               </div>
               {preview && (
-                <div className="text-[12px] text-text-3/40 mt-1 truncate pl-[18px]">
+                <div className="text-[12px] text-text-3/70 mt-1 truncate pl-[18px]">
                   {preview}
                 </div>
               )}

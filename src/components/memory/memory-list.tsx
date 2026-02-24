@@ -87,7 +87,7 @@ export function MemoryList({ inSidebar: _inSidebar, onSelect }: Props) {
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search memories..."
           className="w-full px-3 py-2 rounded-[10px] border border-white/[0.04] bg-surface text-text
-            text-[12px] outline-none transition-all duration-200 placeholder:text-text-3/40 focus-glow"
+            text-[12px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
           style={{ fontFamily: 'inherit' }}
         />
       </div>
@@ -130,7 +130,7 @@ export function MemoryList({ inSidebar: _inSidebar, onSelect }: Props) {
             <button
               onClick={() => setCategoryFilter('')}
               className={`px-2 py-0.5 rounded-[6px] text-[9px] font-600 cursor-pointer transition-all uppercase tracking-wider
-                ${!categoryFilter ? 'bg-white/[0.06] text-text-2' : 'bg-transparent text-text-3/40 hover:text-text-3'}`}
+                ${!categoryFilter ? 'bg-white/[0.06] text-text-2' : 'bg-transparent text-text-3/70 hover:text-text-3'}`}
               style={{ fontFamily: 'inherit' }}
             >
               all
@@ -140,7 +140,7 @@ export function MemoryList({ inSidebar: _inSidebar, onSelect }: Props) {
                 key={c}
                 onClick={() => setCategoryFilter(categoryFilter === c ? '' : c)}
                 className={`px-2 py-0.5 rounded-[6px] text-[9px] font-600 cursor-pointer transition-all uppercase tracking-wider
-                  ${categoryFilter === c ? 'bg-white/[0.06] text-text-2' : 'bg-transparent text-text-3/40 hover:text-text-3'}`}
+                  ${categoryFilter === c ? 'bg-white/[0.06] text-text-2' : 'bg-transparent text-text-3/70 hover:text-text-3'}`}
                 style={{ fontFamily: 'inherit' }}
               >
                 {c}

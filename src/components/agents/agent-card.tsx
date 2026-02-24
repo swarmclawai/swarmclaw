@@ -62,7 +62,7 @@ export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
           <button
             onClick={(e) => { e.stopPropagation(); onSetDefault(agent.id) }}
             className="shrink-0 text-[10px] font-600 uppercase tracking-wider px-2 py-0.5 rounded-[6px] cursor-pointer
-              transition-all border-none bg-transparent text-text-3/30 hover:text-accent-bright hover:bg-accent-soft"
+              transition-all border-none bg-transparent text-text-3/60 hover:text-accent-bright hover:bg-accent-soft"
             style={{ fontFamily: 'inherit' }}
             title="Set as default agent for Main Chat"
           >
@@ -86,9 +86,9 @@ export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
           </span>
         )}
       </div>
-      <div className="text-[12px] text-text-3/40 mt-1.5 truncate">{agent.description}</div>
+      <div className="text-[12px] text-text-3/70 mt-1.5 truncate">{agent.description}</div>
       <div className="flex items-center gap-2 mt-1.5">
-        <span className="text-[11px] text-text-3/30 font-mono">{agent.model || agent.provider}</span>
+        <span className="text-[11px] text-text-3/60 font-mono">{agent.model || agent.provider}</span>
         {agent.tools?.includes('browser') && (
           <span className="text-[10px] font-600 uppercase tracking-wider text-sky-400/70 bg-sky-400/[0.08] px-1.5 py-0.5 rounded-[5px]">
             browser

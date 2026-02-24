@@ -107,7 +107,7 @@ export function SessionCard({ session, active, onClick }: Props) {
             {providerLabel}
           </span>
         )}
-        <span className="text-[11px] text-text-3/40 shrink-0 tabular-nums font-mono">
+        <span className="text-[11px] text-text-3/70 shrink-0 tabular-nums font-mono">
           {timeAgo(session.lastActiveAt)}
         </span>
         <button
@@ -121,7 +121,7 @@ export function SessionCard({ session, active, onClick }: Props) {
           </svg>
         </button>
       </div>
-      <div className="text-[12px] text-text-3/40 font-mono mt-1.5 truncate">
+      <div className="text-[12px] text-text-3/70 font-mono mt-1.5 truncate">
         {shortPath(session.cwd)}
       </div>
       <div className="text-[13px] text-text-2/50 truncate mt-1 leading-relaxed">{preview}</div>

@@ -126,7 +126,7 @@ export function ChatToolToggles({ session }: Props) {
                     <span className={`text-[12px] ${enabled ? 'text-text-2' : 'text-text-3/70'}`}>
                       {label}
                       {TOOL_HINTS[toolId] && (
-                        <span className="ml-2 text-[10px] text-text-3/40 font-400">{TOOL_HINTS[toolId]}</span>
+                        <span className="ml-2 text-[10px] text-text-3/70 font-400">{TOOL_HINTS[toolId]}</span>
                       )}
                     </span>
                   </label>
@@ -152,7 +152,7 @@ export function ChatToolToggles({ session }: Props) {
           )}
 
           <div className="px-3 py-2 border-t border-white/[0.04] bg-white/[0.02]">
-            <p className="text-[10px] text-text-3/40">Changes apply to the next message</p>
+            <p className="text-[10px] text-text-3/70">Changes apply to the next message</p>
           </div>
         </div>
       )}
