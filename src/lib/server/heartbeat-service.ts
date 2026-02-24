@@ -143,7 +143,7 @@ function shouldRunHeartbeats(settings: Record<string, any>): boolean {
 
 async function tickHeartbeats() {
   const settings = loadSettings()
-  if (!shouldRunHeartbeats(settings)) return
+  const globalOngoing = shouldRunHeartbeats(settings)
 
   const now = Date.now()
   const nowDate = new Date(now)
@@ -172,8 +172,15 @@ async function tickHeartbeats() {
     if (!session?.id) continue
     if (!Array.isArray(session.tools) || session.tools.length === 0) continue
     if (session.sessionType && session.sessionType !== 'human' && session.sessionType !== 'orchestrated') continue
+
+    // Check if this session or its agent has explicit heartbeat opt-in
+    const agent = session.agentId ? agents[session.agentId] : null
+    const explicitOptIn = session.heartbeatEnabled === true || (agent && agent.heartbeatEnabled === true)
+
+    // If global loopMode is bounded, only allow sessions with explicit opt-in
+    if (!globalOngoing && !explicitOptIn) continue
+
     if (hasScopedAgents) {
-      const agent = session.agentId ? agents[session.agentId] : null
       const sessionForcedOn = session.heartbeatEnabled === true
       if (!sessionForcedOn && (!agent || agent.heartbeatEnabled !== true)) continue
     }
