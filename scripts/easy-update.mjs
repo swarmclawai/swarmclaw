@@ -5,7 +5,9 @@ import { spawnSync } from 'node:child_process'
 const args = new Set(process.argv.slice(2))
 const skipBuild = args.has('--skip-build')
 const allowDirty = args.has('--allow-dirty')
+const forceMain = args.has('--main')
 const cwd = process.cwd()
+const RELEASE_TAG_RE = /^v\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$/
 
 function log(message) {
   process.stdout.write(`[update] ${message}\n`)
@@ -45,6 +47,13 @@ function runOrThrow(command, commandArgs, options = {}) {
   }
 }
 
+function getLatestStableTag() {
+  const tagList = run('git', ['tag', '--list', 'v*', '--sort=-v:refname'])
+  if (!tagList.ok) return null
+  const tags = tagList.out.split('\n').map((line) => line.trim()).filter(Boolean)
+  return tags.find((tag) => RELEASE_TAG_RE.test(tag)) || null
+}
+
 function main() {
   const gitCheck = run('git', ['rev-parse', '--is-inside-work-tree'])
   if (!gitCheck.ok) {
@@ -68,17 +77,40 @@ function main() {
     fail('Could not resolve current git SHA.')
   }
 
-  runOrThrow('git', ['fetch', 'origin', 'main', '--quiet'])
-  const behind = run('git', ['rev-list', 'HEAD..origin/main', '--count'])
-  const behindBy = Number.parseInt(behind.out || '0', 10) || 0
+  runOrThrow('git', ['fetch', '--tags', 'origin', '--quiet'])
 
-  if (behindBy <= 0) {
-    log('Already up to date. Nothing to install.')
-    return
+  let updateSource = 'main'
+  let pullOutput = ''
+  const latestTag = forceMain ? null : getLatestStableTag()
+
+  if (latestTag) {
+    const behind = run('git', ['rev-list', `HEAD..${latestTag}^{commit}`, '--count'])
+    const behindBy = Number.parseInt(behind.out || '0', 10) || 0
+
+    if (behindBy <= 0) {
+      log(`Already on latest stable release (${latestTag}) or newer.`)
+      return
+    }
+
+    updateSource = `stable release ${latestTag}`
+    log(`Found ${behindBy} commit(s) behind ${latestTag}. Updating now...`)
+    runOrThrow('git', ['checkout', '-B', 'stable', `${latestTag}^{commit}`])
+    pullOutput = `Updated to ${latestTag}`
+  } else {
+    runOrThrow('git', ['fetch', 'origin', 'main', '--quiet'])
+    const behind = run('git', ['rev-list', 'HEAD..origin/main', '--count'])
+    const behindBy = Number.parseInt(behind.out || '0', 10) || 0
+
+    if (behindBy <= 0) {
+      log('Already up to date. Nothing to install.')
+      return
+    }
+
+    updateSource = 'main branch'
+    log(`Found ${behindBy} new commit(s) on origin/main. Updating now...`)
+    runOrThrow('git', ['pull', '--ff-only', 'origin', 'main'])
+    pullOutput = `Pulled origin/main (+${behindBy})`
   }
-
-  log(`Found ${behindBy} new commit(s). Updating now...`)
-  runOrThrow('git', ['pull', '--ff-only', 'origin', 'main'])
 
   const changed = run('git', ['diff', '--name-only', `${beforeSha.out}..HEAD`])
   const changedFiles = new Set((changed.out || '').split('\n').map((s) => s.trim()).filter(Boolean))
@@ -97,6 +129,7 @@ function main() {
   }
 
   log('Update complete.')
+  log(`Source: ${updateSource}. ${pullOutput}`.trim())
   log('Restart SwarmClaw to apply the new version.')
 }
 

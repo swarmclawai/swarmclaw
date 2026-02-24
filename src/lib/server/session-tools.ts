@@ -36,6 +36,7 @@ import {
 import { log } from './logger'
 import { queryLogs, countLogs, clearLogs, type LogCategory } from './execution-log'
 import { resolveSessionToolPolicy } from './tool-capability-policy'
+import { resolveScheduleName } from '@/lib/schedule-name'
 
 const MAX_OUTPUT = 50 * 1024 // 50KB
 const MAX_FILE = 100 * 1024 // 100KB
@@ -1859,7 +1860,7 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
     manage_schedules: (p) => {
       const now = Date.now()
       const base = {
-        name: p.name || 'Unnamed Schedule',
+        name: resolveScheduleName({ name: p.name, taskPrompt: p.taskPrompt }),
         agentId: p.agentId || null,
         taskPrompt: p.taskPrompt || '',
         scheduleType: p.scheduleType || 'interval',

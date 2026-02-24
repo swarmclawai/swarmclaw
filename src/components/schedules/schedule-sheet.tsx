@@ -138,7 +138,7 @@ export function ScheduleSheet() {
 
   const handleSave = async () => {
     const data = {
-      name: name.trim() || 'Unnamed Schedule',
+      name: name.trim(),
       agentId,
       taskPrompt,
       scheduleType,

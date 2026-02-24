@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { loadSchedules, saveSchedules } from '@/lib/server/storage'
+import { resolveScheduleName } from '@/lib/schedule-name'
 
 export async function GET() {
   return NextResponse.json(loadSchedules())
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
 
   schedules[id] = {
     id,
-    name: body.name || 'Unnamed Schedule',
+    name: resolveScheduleName({ name: body.name, taskPrompt: body.taskPrompt }),
     agentId: body.agentId,
     taskPrompt: body.taskPrompt || '',
     scheduleType: body.scheduleType || 'cron',
