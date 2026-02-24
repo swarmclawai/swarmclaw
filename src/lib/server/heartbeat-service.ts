@@ -85,7 +85,7 @@ function heartbeatConfigForSession(session: any, settings: Record<string, any>, 
   const globalIntervalSec = parseIntBounded(settings.heartbeatIntervalSec, 120, 0, 3600)
   const globalPrompt = (typeof settings.heartbeatPrompt === 'string' && settings.heartbeatPrompt.trim())
     ? settings.heartbeatPrompt.trim()
-    : 'SWARM_HEARTBEAT_CHECK'
+    : 'Continue working on your current goals. Review what you have done so far, decide what to do next, and take action.'
 
   let enabled = globalIntervalSec > 0
   let intervalSec = globalIntervalSec
@@ -195,15 +195,9 @@ async function tickHeartbeats() {
       : Math.max(cfg.intervalSec * 2, 180)
     const userIdleThresholdSec = resolveHeartbeatUserIdleSec(settings, defaultIdleSec)
     const lastUserAt = lastUserMessageAt(session)
-    if (lastUserAt <= 0) {
-      log.debug('heartbeat', `skip ${session.id}: no user messages`)
-      continue
-    }
+    if (lastUserAt <= 0) continue
     const idleMs = now - lastUserAt
-    if (idleMs < userIdleThresholdSec * 1000) {
-      log.debug('heartbeat', `skip ${session.id}: user idle ${Math.round(idleMs / 1000)}s < threshold ${userIdleThresholdSec}s`)
-      continue
-    }
+    if (idleMs < userIdleThresholdSec * 1000) continue
 
     if (isMainSession(session)) {
       const loopState = getMainLoopStateForSession(session.id)
@@ -217,17 +211,12 @@ async function tickHeartbeats() {
     if (now - last < cfg.intervalSec * 1000) continue
 
     const runState = getSessionRunState(session.id)
-    if (runState.runningRunId) {
-      log.debug('heartbeat', `skip ${session.id}: already running`)
-      continue
-    }
+    if (runState.runningRunId) continue
 
     state.lastBySession.set(session.id, now)
     const heartbeatMessage = isMainSession(session)
       ? buildMainLoopHeartbeatPrompt(session, cfg.prompt)
       : cfg.prompt
-
-    log.info('heartbeat', `firing for session ${session.id} (interval=${cfg.intervalSec}s, idle=${Math.round(idleMs / 1000)}s)`)
 
     const enqueue = enqueueSessionRun({
       sessionId: session.id,
@@ -270,7 +259,6 @@ export function startHeartbeatService() {
   }
   state.running = true
   seedLastActive()
-  log.info('heartbeat', `Heartbeat service started (tick every ${HEARTBEAT_TICK_MS}ms, tracking ${state.lastBySession.size} sessions)`)
   state.timer = setInterval(() => {
     tickHeartbeats().catch((err) => {
       log.error('heartbeat', 'Heartbeat tick failed', err?.message || String(err))
