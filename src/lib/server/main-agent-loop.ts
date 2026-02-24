@@ -18,6 +18,19 @@ const MEMORY_NOTE_MIN_INTERVAL_MS = 90 * 60 * 1000
 const DEFAULT_FOLLOWUP_DELAY_SEC = 45
 const MAX_FOLLOWUP_CHAIN = 6
 const META_LINE_RE = /\[MAIN_LOOP_META\]\s*(\{[^\n]*\})/i
+const SCREENSHOT_GOAL_HINT = /\b(screenshot|screen shot|snapshot|capture)\b/i
+const DELIVERY_GOAL_HINT = /\b(send|deliver|return|share|upload|post|message)\b/i
+const SCHEDULE_GOAL_HINT = /\b(schedule|scheduled|every\s+\w+|interval|cron|recurr)\b/i
+const UPLOAD_ARTIFACT_HINT = /(?:sandbox:)?\/api\/uploads\/[^\s)\]]+|https?:\/\/[^\s)\]]+\.(?:png|jpe?g|webp|gif|pdf)\b/i
+const SENT_ARTIFACT_HINT = /\b(sent|shared|uploaded|returned)\b[^.]*\b(screenshot|snapshot|image|file)\b/i
+
+interface MainLoopSessionMessageLike {
+  text?: string
+}
+
+interface MainLoopSessionEvidenceLike {
+  messages?: MainLoopSessionMessageLike[]
+}
 
 export interface MainLoopEvent {
   id: string
@@ -425,6 +438,39 @@ function buildGoalContractLines(state: MainLoopState): string[] {
   return lines
 }
 
+function missionNeedsScreenshotArtifactEvidence(state: MainLoopState): boolean {
+  const haystack = [
+    state.goal || '',
+    state.goalContract?.objective || '',
+    state.goalContract?.successMetric || '',
+    state.nextAction || '',
+    ...(state.planSteps || []),
+    state.currentPlanStep || '',
+  ].join(' ')
+  if (!SCREENSHOT_GOAL_HINT.test(haystack)) return false
+  return DELIVERY_GOAL_HINT.test(haystack) || SCHEDULE_GOAL_HINT.test(haystack)
+}
+
+function missionHasScreenshotArtifactEvidence(session: MainLoopSessionEvidenceLike | null | undefined, state: MainLoopState, additionalText = ''): boolean {
+  const candidates: string[] = [
+    state.summary || '',
+    additionalText || '',
+  ]
+  if (Array.isArray(session?.messages)) {
+    for (let i = session.messages.length - 1; i >= 0 && candidates.length < 16; i--) {
+      const text = typeof session.messages[i]?.text === 'string' ? session.messages[i].text : ''
+      if (text.trim()) candidates.push(text)
+    }
+  }
+  return candidates.some((value) => UPLOAD_ARTIFACT_HINT.test(value) || SENT_ARTIFACT_HINT.test(value))
+}
+
+function getMissionCompletionGateReason(session: MainLoopSessionEvidenceLike | null | undefined, state: MainLoopState, additionalText = ''): string | null {
+  if (!missionNeedsScreenshotArtifactEvidence(state)) return null
+  if (missionHasScreenshotArtifactEvidence(session, state, additionalText)) return null
+  return 'Mission requires screenshot artifact evidence (upload link or explicit sent screenshot confirmation) before completion.'
+}
+
 function upsertMissionTask(session: any, state: MainLoopState, now: number): string | null {
   if (!state.goal) return state.missionTaskId || null
 
@@ -445,7 +491,11 @@ function upsertMissionTask(session: any, state: MainLoopState, now: number): str
     blocked: 'failed',
     ok: 'completed',
   } as const
-  const mappedStatus = statusMap[state.status]
+  let mappedStatus = statusMap[state.status]
+  const completionGateReason = mappedStatus === 'completed'
+    ? getMissionCompletionGateReason(session, state)
+    : null
+  if (completionGateReason) mappedStatus = 'running'
 
   let changed = false
   const contractLines = buildGoalContractLines(state)
@@ -459,6 +509,7 @@ function upsertMissionTask(session: any, state: MainLoopState, now: number): str
     'Autonomous mission goal tracked from main loop.',
     `Goal: ${state.goal}`,
     state.nextAction ? `Next action: ${state.nextAction}` : '',
+    completionGateReason ? `Completion gate: ${completionGateReason}` : '',
     ...contractLines,
     ...planLines,
   ].filter(Boolean).join('\n')
@@ -604,6 +655,7 @@ function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: bool
       ? 'Use memory_tool actively: recall relevant prior notes before acting, and store a concise note after each meaningful step.'
       : 'memory_tool is unavailable in this session. Keep concise progress summaries in your status/meta output.',
     'If you are blocked by missing credentials, permissions, or policy limits, say exactly what is blocked and the smallest unblock needed.',
+    'For screenshot/image delivery goals (including scheduled captures), do not report status "ok" until a real artifact exists (upload link or explicit sent-file confirmation).',
     'If no meaningful action remains right now, reply exactly HEARTBEAT_OK.',
     'Otherwise include a concise human update, then append exactly one [MAIN_LOOP_META] JSON line.',
     'Optionally append one [MAIN_LOOP_PLAN] JSON line when you create/revise a plan.',
@@ -657,6 +709,7 @@ export function buildMainLoopHeartbeatPrompt(session: any, fallbackPrompt: strin
       ? 'Use memory_tool actively: recall relevant prior notes before acting, and store concise notes about progress, constraints, and next step after each meaningful action.'
       : 'If memory_tool is unavailable, keep concise state in summary/next_action and continue execution.',
     'Use a planner-executor-review loop: keep a concrete step plan, execute one meaningful step, then self-review and either continue or re-plan.',
+    'For screenshot/image delivery goals (including scheduled captures), do not report status "ok" until a real artifact exists (upload link or explicit sent-file confirmation).',
     'If nothing important changed and no action is needed now, reply exactly HEARTBEAT_OK.',
     'Otherwise: provide a concise human-readable update, then append exactly one [MAIN_LOOP_META] JSON line.',
     'Optionally append one [MAIN_LOOP_PLAN] JSON line when creating/updating plan steps.',
@@ -934,6 +987,19 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     } else if (isHeartbeatOk) {
       state.metaMissCount = 0
       appendTimeline(state, 'heartbeat_ok', 'Heartbeat returned HEARTBEAT_OK.', now, state.status)
+    }
+  }
+
+  if (input.internal && state.status === 'ok') {
+    const completionGateReason = getMissionCompletionGateReason(session, state, input.resultText || '')
+    if (completionGateReason) {
+      state.status = 'progress'
+      if (!state.nextAction || /^no queued action/i.test(state.nextAction)) {
+        state.nextAction = 'Wait for the next schedule run and verify a screenshot artifact link is delivered.'
+      }
+      appendEvent(state, 'completion_gate', completionGateReason, now)
+      appendTimeline(state, 'completion_gate', 'Holding completion until screenshot artifact evidence is observed.', now, state.status)
+      appendWorkingMemoryNote(state, `gate:${toOneLine(completionGateReason, 180)}`)
     }
   }
 

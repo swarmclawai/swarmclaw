@@ -25,6 +25,10 @@ const WEAK_RESULT_PATTERNS: RegExp[] = [
 
 const IMPLEMENTATION_HINT = /\b(add|build|create|fix|implement|integrat|refactor|update|write)\b/i
 const EXECUTION_EVIDENCE = /\b(changed|updated|added|modified|files?|commands?|tests?|build|lint|typecheck|verified|report)\b/i
+const SCREENSHOT_HINT = /\b(screenshot|screen shot|snapshot|capture)\b/i
+const DELIVERY_HINT = /\b(send|deliver|return|share|upload|post|message)\b/i
+const SCREENSHOT_ARTIFACT_HINT = /(?:sandbox:)?\/api\/uploads\/[^\s)\]]+|https?:\/\/[^\s)\]]+\.(?:png|jpe?g|webp|gif|pdf)\b/i
+const SENT_SCREENSHOT_HINT = /\b(sent|shared|uploaded|returned)\b[^.]*\b(screenshot|snapshot|image)\b/i
 
 function normalizeText(value: unknown): string {
   if (typeof value !== 'string') return ''
@@ -62,6 +66,15 @@ export function validateTaskCompletion(
       reasons.push(`Implementation task is missing concrete execution evidence in result or ${report.relativePath}.`)
     } else {
       reasons.push('Implementation task is missing concrete execution evidence in result.')
+    }
+  }
+
+  const screenshotTask = SCREENSHOT_HINT.test(title) || SCREENSHOT_HINT.test(description)
+  const screenshotDeliveryTask = screenshotTask && (DELIVERY_HINT.test(title) || DELIVERY_HINT.test(description))
+  if (screenshotDeliveryTask) {
+    const hasScreenshotArtifact = SCREENSHOT_ARTIFACT_HINT.test(result) || SENT_SCREENSHOT_HINT.test(result)
+    if (!hasScreenshotArtifact) {
+      reasons.push('Screenshot delivery task is missing artifact evidence (upload link or explicit sent screenshot confirmation).')
     }
   }
 
