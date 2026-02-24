@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadSchedules, saveSchedules } from '@/lib/server/storage'
+import { loadSchedules, saveSchedules, deleteSchedule } from '@/lib/server/storage'
 import { resolveScheduleName } from '@/lib/schedule-name'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -23,7 +23,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id } = await params
   const schedules = loadSchedules()
   if (!schedules[id]) return new NextResponse(null, { status: 404 })
-  delete schedules[id]
-  saveSchedules(schedules)
+  deleteSchedule(id)
   return NextResponse.json('ok')
 }

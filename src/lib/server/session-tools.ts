@@ -21,7 +21,7 @@ import {
 } from './process-manager'
 import {
   loadAgents, saveAgents,
-  loadTasks, saveTasks,
+  loadTasks, saveTasks, upsertTask,
   loadSchedules, saveSchedules,
   loadSkills, saveSkills,
   loadConnectors, saveConnectors,
@@ -3026,6 +3026,113 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
       ),
     )
   }
+
+  // delegate_to_agent: requires orchestrator capability to be enabled
+  if (activeTools.includes('orchestrator') && ctx?.agentId) {
+    tools.push(
+      tool(
+        async ({ agentId: targetAgentId, task: taskPrompt, description: taskDesc, startImmediately }) => {
+          try {
+            const agents = loadAgents()
+            let target = agents[targetAgentId]
+            let resolvedId = targetAgentId
+            // Fallback: resolve by name if the ID doesn't match directly
+            if (!target) {
+              const byName = Object.values(agents).find(
+                (a: any) => a.name.toLowerCase() === targetAgentId.toLowerCase(),
+              ) as any
+              if (byName) {
+                target = byName
+                resolvedId = byName.id
+              }
+            }
+            if (!target) return `Error: Agent "${targetAgentId}" not found. Use the agent directory in your system prompt to find valid agent IDs.`
+
+            const taskId = crypto.randomBytes(4).toString('hex')
+            const now = Date.now()
+            const newTask = {
+              id: taskId,
+              title: taskPrompt.slice(0, 100),
+              description: taskDesc || taskPrompt,
+              status: 'todo',
+              agentId: resolvedId,
+              sourceType: 'delegation' as const,
+              delegatedByAgentId: ctx.agentId!,
+              createdAt: now,
+              updatedAt: now,
+              comments: [{
+                id: crypto.randomBytes(4).toString('hex'),
+                author: agents[ctx.agentId!]?.name || 'Agent',
+                agentId: ctx.agentId!,
+                text: `Delegated from ${agents[ctx.agentId!]?.name || ctx.agentId}`,
+                createdAt: now,
+              }],
+            }
+            // Atomic upsert to avoid race with concurrent queue processing
+            upsertTask(taskId, newTask)
+            console.log(`[delegate] Created task ${taskId} for agent ${resolvedId}, startImmediately=${startImmediately}`)
+
+            // Verify it persisted
+            const verify = loadTasks()
+            if (!verify[taskId]) {
+              console.error(`[delegate] RACE: task ${taskId} not found after upsert!`)
+            }
+
+            if (startImmediately) {
+              // Lazy import to avoid circular: session-tools → queue → chat-execution → session-tools
+              const { enqueueTask } = await import('./queue')
+              enqueueTask(taskId)
+              console.log(`[delegate] Enqueued task ${taskId}`)
+            }
+
+            return JSON.stringify({
+              ok: true,
+              taskId,
+              agentId: resolvedId,
+              agentName: target.name,
+              message: startImmediately
+                ? `Task delegated to ${target.name} and queued for immediate execution. Task ID: ${taskId}.`
+                : `Task delegated to ${target.name}. Task ID: ${taskId}. Status: todo. Ask the user if they want to start it now — call again with startImmediately: true to queue it.`,
+            })
+          } catch (err: unknown) {
+            return `Error delegating task: ${err instanceof Error ? err.message : String(err)}`
+          }
+        },
+        {
+          name: 'delegate_to_agent',
+          description: 'Delegate a task to another agent. Creates a task on the task board. By default the task goes to "todo" status. Set startImmediately=true to queue it for execution right away. Ask the user to confirm before starting immediately.',
+          schema: z.object({
+            agentId: z.string().describe('ID or name of the target agent to delegate to'),
+            task: z.string().describe('What the target agent should do'),
+            description: z.string().optional().describe('Optional longer description of the task'),
+            startImmediately: z.boolean().optional().default(false).describe('If true, queue the task for immediate execution instead of putting it in todo'),
+          }),
+        },
+      ),
+    )
+  }
+
+  // request_tool_access: always available, lets the agent ask for tools it doesn't have
+  tools.push(
+    tool(
+      async ({ toolId, reason }) => {
+        return JSON.stringify({
+          type: 'tool_request',
+          toolId,
+          reason,
+          message: `Tool access request sent to user for "${toolId}". Wait for the user to grant access before trying to use it.`,
+        })
+      },
+      {
+        name: 'request_tool_access',
+        description: 'Request access to a tool that is currently disabled. The user will be prompted to grant access. Use this when you need a tool from the disabled tools list.',
+        schema: z.object({
+          toolId: z.string().describe('The tool ID to request access for (e.g. manage_tasks, shell, claude_code)'),
+          reason: z.string().describe('Brief explanation of why you need this tool'),
+        }),
+      },
+    ),
+  )
 
   return {
     tools,

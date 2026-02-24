@@ -301,6 +301,38 @@ export function TaskSheet() {
         </div>
       )}
 
+      {editing && ((editing as any).claudeResumeId || (editing as any).codexResumeId || (editing as any).opencodeResumeId || editing.cliResumeId) && (
+        <div className="mb-8">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">CLI Sessions</label>
+          <div className="flex flex-wrap gap-2">
+            {(editing as any).claudeResumeId && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
+                <span className="text-[11px] font-600 text-amber-400">Claude</span>
+                <code className="text-[11px] text-text-3 font-mono">{(editing as any).claudeResumeId}</code>
+              </div>
+            )}
+            {(editing as any).codexResumeId && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
+                <span className="text-[11px] font-600 text-emerald-400">Codex</span>
+                <code className="text-[11px] text-text-3 font-mono">{(editing as any).codexResumeId}</code>
+              </div>
+            )}
+            {(editing as any).opencodeResumeId && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
+                <span className="text-[11px] font-600 text-sky-400">OpenCode</span>
+                <code className="text-[11px] text-text-3 font-mono">{(editing as any).opencodeResumeId}</code>
+              </div>
+            )}
+            {!((editing as any).claudeResumeId || (editing as any).codexResumeId || (editing as any).opencodeResumeId) && editing.cliResumeId && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
+                <span className="text-[11px] font-600 text-text-2">{editing.cliProvider || 'CLI'}</span>
+                <code className="text-[11px] text-text-3 font-mono">{editing.cliResumeId}</code>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {editing?.error && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-red-400 uppercase tracking-[0.08em] mb-3">Error</label>

@@ -458,8 +458,8 @@ function missionHasScreenshotArtifactEvidence(session: MainLoopSessionEvidenceLi
   ]
   if (Array.isArray(session?.messages)) {
     for (let i = session.messages.length - 1; i >= 0 && candidates.length < 16; i--) {
-      const text = typeof session.messages[i]?.text === 'string' ? session.messages[i].text : ''
-      if (text.trim()) candidates.push(text)
+      const text = typeof session.messages[i]?.text === 'string' ? session.messages[i].text! : ''
+      if (text && text.trim()) candidates.push(text)
     }
   }
   return candidates.some((value) => UPLOAD_ARTIFACT_HINT.test(value) || SENT_ARTIFACT_HINT.test(value))

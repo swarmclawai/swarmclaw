@@ -5,6 +5,7 @@ import { formatValidationFailure, validateTaskCompletion } from './task-validati
 import { ensureTaskCompletionReport } from './task-reports'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { executeSessionChatTurn } from './chat-execution'
+import { extractTaskResult, formatResultBody } from './task-result'
 import type { Agent, BoardTask } from '@/types'
 
 let processing = false
@@ -20,6 +21,7 @@ interface SessionMessageLike {
 interface SessionLike {
   name?: string
   user?: string
+  cwd?: string
   messages?: SessionMessageLike[]
   lastActiveAt?: number
 }
@@ -27,9 +29,7 @@ interface SessionLike {
 interface ScheduleTaskMeta extends BoardTask {
   user?: string | null
   createdInSessionId?: string | null
-  sourceType?: string | null
-  sourceScheduleId?: string | null
-  sourceScheduleName?: string | null
+  createdByAgentId?: string | null
 }
 
 function sameReasons(a?: string[] | null, b?: string[] | null): boolean {
@@ -109,33 +109,8 @@ function latestAssistantText(session: SessionLike | null | undefined): string {
   return ''
 }
 
-function summarizeScheduleTaskResult(task: BoardTask): string {
-  const result = typeof task.result === 'string' ? task.result.trim() : ''
-  if (result) return result.slice(0, 6000)
-  const err = typeof task.error === 'string' ? task.error.trim() : ''
-  if (err) return `Error: ${err.slice(0, 1200)}`
-  return 'No summary was returned.'
-}
-
-function extractLatestUploadUrl(session: SessionLike | null | undefined): string | null {
-  if (!Array.isArray(session?.messages)) return null
-  for (let i = session.messages.length - 1; i >= 0; i--) {
-    const msg = session.messages[i]
-    const text = typeof msg?.text === 'string' ? msg.text : ''
-    const textMatch = text.match(/\/api\/uploads\/[^\s)"'>]+/i)
-    if (textMatch?.[0]) return textMatch[0]
-
-    const events = Array.isArray(msg?.toolEvents) ? msg.toolEvents : []
-    for (let j = events.length - 1; j >= 0; j--) {
-      const ev = events[j]
-      if (ev?.name !== 'send_file') continue
-      const output = typeof ev.output === 'string' ? ev.output : ''
-      const match = output.match(/\/api\/uploads\/[^\s)"'>]+/i)
-      if (match?.[0]) return match[0]
-    }
-  }
-  return null
-}
+// Task result extraction now uses Zod-validated structured data
+// from ./task-result.ts (extractTaskResult, formatResultBody)
 
 async function executeTaskRun(
   task: BoardTask,
@@ -175,41 +150,136 @@ function notifyMainChatScheduleResult(task: BoardTask): void {
   const runSessionId = typeof task.sessionId === 'string' ? task.sessionId : ''
   const runSession = runSessionId ? sessions[runSessionId] : null
   const fallbackText = runSession ? latestAssistantText(runSession) : ''
-  const summary = summarizeScheduleTaskResult({
-    ...task,
-    result: task.result || fallbackText || task.result,
-  } as BoardTask)
-  const latestUploadUrl = extractLatestUploadUrl(runSession)
+
+  // Zod-validated structured extraction: one pass to get summary + all artifacts
+  const taskResult = extractTaskResult(runSession, task.result || fallbackText || null)
+  const resultBody = formatResultBody(taskResult)
 
   const statusLabel = task.status === 'completed' ? 'completed' : 'failed'
-  const summaryWithArtifact = (latestUploadUrl && !summary.includes(latestUploadUrl))
-    ? `${summary}\n\nArtifact: ${latestUploadUrl}`
-    : summary
+  const srcScheduleId = typeof scheduleTask.sourceScheduleId === 'string' ? scheduleTask.sourceScheduleId : ''
+  const taskLink = `[${task.title}](#task:${task.id})`
+  const schedLink = srcScheduleId ? ` | [Schedule](#schedule:${srcScheduleId})` : ''
   const body = [
-    `Scheduled run ${statusLabel}: **${scheduleName || 'Scheduled Task'}**`,
-    summaryWithArtifact,
+    `Scheduled run ${statusLabel}: **${scheduleName || 'Scheduled Task'}** ${taskLink}${schedLink}`,
+    resultBody || 'No summary was returned.',
   ].join('\n\n').trim()
   if (!body) return
 
+  // First image artifact goes on imageUrl for the inline preview above markdown
+  const firstImage = taskResult.artifacts.find((a) => a.type === 'image')
   const now = Date.now()
   let changed = false
+
+  const buildMsg = (): any => {
+    const msg: any = { role: 'assistant', text: body, time: now, kind: 'system' }
+    if (firstImage) msg.imageUrl = firstImage.url
+    return msg
+  }
 
   for (const session of Object.values(sessions) as SessionLike[]) {
     if (!isMainSession(session)) continue
     if (ownerUser && session?.user && session.user !== ownerUser) continue
     const last = Array.isArray(session.messages) ? session.messages.at(-1) : null
-    if (last?.role === 'assistant' && last?.text === body && typeof last?.time === 'number' && now - last.time < 30_000) {
-      continue
-    }
+    if (last?.role === 'assistant' && last?.text === body && typeof last?.time === 'number' && now - last.time < 30_000) continue
     if (!Array.isArray(session.messages)) session.messages = []
-    session.messages.push({
-      role: 'assistant',
-      text: body,
-      time: now,
-      kind: 'system',
-    })
+    session.messages.push(buildMsg())
     session.lastActiveAt = now
     changed = true
+  }
+
+  // Also push to the agent's persistent thread session
+  try {
+    const agents = loadAgents()
+    const agent = agents[task.agentId]
+    if (agent?.threadSessionId && sessions[agent.threadSessionId]) {
+      const thread = sessions[agent.threadSessionId] as SessionLike
+      const threadLast = Array.isArray(thread.messages) ? thread.messages.at(-1) : null
+      if (!(threadLast?.role === 'assistant' && threadLast?.text === body && typeof threadLast?.time === 'number' && now - threadLast.time < 30_000)) {
+        if (!Array.isArray(thread.messages)) thread.messages = []
+        thread.messages.push(buildMsg())
+        thread.lastActiveAt = now
+        changed = true
+      }
+    }
+  } catch { /* ignore thread push failure */ }
+
+  if (changed) saveSessions(sessions)
+}
+
+/**
+ * Notify agent thread sessions when a task completes or fails.
+ * - Always pushes to the executing agent's thread
+ * - If delegated, also pushes to the delegating agent's thread
+ */
+function notifyAgentThreadTaskResult(task: BoardTask): void {
+  if (task.status !== 'completed' && task.status !== 'failed') return
+
+  const sessions = loadSessions()
+  const agents = loadAgents()
+  const agent = agents[task.agentId]
+
+  const runSessionId = typeof task.sessionId === 'string' ? task.sessionId : ''
+  const runSession = runSessionId ? sessions[runSessionId] : null
+  const fallbackText = runSession ? latestAssistantText(runSession) : ''
+  const taskResult = extractTaskResult(runSession, task.result || fallbackText || null)
+  const resultBody = formatResultBody(taskResult)
+
+  const statusLabel = task.status === 'completed' ? 'completed' : 'failed'
+  const taskLink = `[${task.title}](#task:${task.id})`
+  const firstImage = taskResult.artifacts.find((a) => a.type === 'image')
+  const now = Date.now()
+  let changed = false
+
+  // Build CLI resume ID info lines
+  const resumeLines: string[] = []
+  if ((task as any).claudeResumeId) resumeLines.push(`Claude session: \`${(task as any).claudeResumeId}\``)
+  if ((task as any).codexResumeId) resumeLines.push(`Codex thread: \`${(task as any).codexResumeId}\``)
+  if ((task as any).opencodeResumeId) resumeLines.push(`OpenCode session: \`${(task as any).opencodeResumeId}\``)
+  // Fallback to legacy field
+  if (resumeLines.length === 0 && task.cliResumeId) {
+    resumeLines.push(`${task.cliProvider || 'CLI'} session: \`${task.cliResumeId}\``)
+  }
+
+  // Get working directory from execution session
+  const execCwd = runSession?.cwd || ''
+
+  const buildMsg = (text: string): any => {
+    const msg: any = { role: 'assistant', text, time: now, kind: 'system' }
+    if (firstImage) msg.imageUrl = firstImage.url
+    return msg
+  }
+
+  const buildResultBlock = (prefix: string): string => {
+    const parts = [prefix]
+    if (execCwd) parts.push(`Working directory: \`${execCwd}\``)
+    if (resumeLines.length > 0) parts.push(resumeLines.join(' | '))
+    parts.push(resultBody || 'No summary.')
+    return parts.join('\n\n')
+  }
+
+  // 1. Push to executing agent's thread
+  if (agent?.threadSessionId && sessions[agent.threadSessionId]) {
+    const thread = sessions[agent.threadSessionId]
+    if (!Array.isArray(thread.messages)) (thread as any).messages = []
+    const body = buildResultBlock(`Task ${statusLabel}: **${taskLink}**`)
+    thread.messages.push(buildMsg(body))
+    thread.lastActiveAt = now
+    changed = true
+  }
+
+  // 2. If delegated, push to delegating agent's thread
+  const delegatedBy = (task as any).delegatedByAgentId
+  if (typeof delegatedBy === 'string' && delegatedBy !== task.agentId) {
+    const delegator = agents[delegatedBy]
+    if (delegator?.threadSessionId && sessions[delegator.threadSessionId]) {
+      const thread = sessions[delegator.threadSessionId]
+      if (!Array.isArray(thread.messages)) (thread as any).messages = []
+      const agentName = agent?.name || task.agentId
+      const body = buildResultBlock(`Delegated task ${statusLabel}: **${taskLink}** (by ${agentName})`)
+      thread.messages.push(buildMsg(body))
+      thread.lastActiveAt = now
+      changed = true
+    }
   }
 
   if (changed) saveSessions(sessions)
@@ -389,6 +459,22 @@ export async function processNext() {
   processing = true
 
   try {
+    // Recover orphaned tasks: status is 'queued' but missing from the queue array
+    {
+      const allTasks = loadTasks()
+      const currentQueue = loadQueue()
+      const queueSet = new Set(currentQueue)
+      let recovered = false
+      for (const [id, t] of Object.entries(allTasks) as [string, BoardTask][]) {
+        if (t.status === 'queued' && !queueSet.has(id)) {
+          console.log(`[queue] Recovering orphaned queued task: "${t.title}" (${id})`)
+          pushQueueUnique(currentQueue, id)
+          recovered = true
+        }
+      }
+      if (recovered) saveQueue(currentQueue)
+    }
+
     while (true) {
       const tasks = loadTasks()
       const queue = loadQueue()
@@ -434,6 +520,9 @@ export async function processNext() {
         ? scheduleTask.sourceScheduleId
         : ''
 
+      // Resolve the agent's persistent thread session to use as parentSessionId
+      const agentThreadSessionId = agent.threadSessionId || null
+
       if (isScheduleTask && sourceScheduleId) {
         const schedules = loadSchedules()
         const linkedSchedule = schedules[sourceScheduleId]
@@ -447,7 +536,7 @@ export async function processNext() {
           }
         }
         if (!sessionId) {
-          sessionId = createOrchestratorSession(agent, task.title, undefined, taskCwd)
+          sessionId = createOrchestratorSession(agent, task.title, agentThreadSessionId || undefined, taskCwd)
         }
         if (linkedSchedule && linkedSchedule.lastSessionId !== sessionId) {
           linkedSchedule.lastSessionId = sessionId
@@ -456,7 +545,31 @@ export async function processNext() {
           saveSchedules(schedules)
         }
       } else {
-        sessionId = createOrchestratorSession(agent, task.title, undefined, taskCwd)
+        sessionId = createOrchestratorSession(agent, task.title, agentThreadSessionId || undefined, taskCwd)
+      }
+
+      // Notify the agent's thread that a task has started
+      if (agentThreadSessionId) {
+        try {
+          const threadSessions = loadSessions()
+          const thread = threadSessions[agentThreadSessionId]
+          if (thread) {
+            if (!Array.isArray(thread.messages)) (thread as any).messages = []
+            const scheduleTask2 = task as ScheduleTaskMeta
+            const schedId = typeof scheduleTask2.sourceScheduleId === 'string' ? scheduleTask2.sourceScheduleId : ''
+            const runLabel = task.runNumber ? ` (run #${task.runNumber})` : ''
+            const taskLink = `[${task.title}](#task:${task.id})`
+            const schedLink = schedId ? ` | [Schedule](#schedule:${schedId})` : ''
+            thread.messages.push({
+              role: 'assistant',
+              text: `Started task: **${taskLink}**${runLabel}${schedLink}`,
+              time: Date.now(),
+              kind: 'system',
+            })
+            thread.lastActiveAt = Date.now()
+            saveSessions(threadSessions)
+          }
+        } catch { /* ignore thread notification failure */ }
       }
 
       task.sessionId = sessionId
@@ -489,7 +602,11 @@ export async function processNext() {
         const t2 = loadTasks()
         if (t2[taskId]) {
           applyTaskPolicyDefaults(t2[taskId])
-          t2[taskId].result = result?.slice(0, 2000) || null
+          // Structured extraction: Zod-validated result with typed artifacts
+          const runSessions = loadSessions()
+          const taskResult = extractTaskResult(runSessions[sessionId], result || null)
+          const enrichedResult = formatResultBody(taskResult)
+          t2[taskId].result = enrichedResult.slice(0, 4000) || null
           t2[taskId].updatedAt = Date.now()
           const report = ensureTaskCompletionReport(t2[taskId])
           if (report?.relativePath) t2[taskId].completionReportPath = report.relativePath
@@ -541,6 +658,35 @@ export async function processNext() {
             }
           }
 
+          // Copy ALL CLI resume IDs from the execution session to the task record
+          try {
+            const execSessions = loadSessions()
+            const execSession = execSessions[sessionId] as Record<string, unknown> | undefined
+            if (execSession) {
+              const delegateIds = execSession.delegateResumeIds as
+                | { claudeCode?: string | null; codex?: string | null; opencode?: string | null }
+                | undefined
+              // Store each CLI resume ID separately
+              const claudeId = (execSession.claudeSessionId as string) || delegateIds?.claudeCode || null
+              const codexId = (execSession.codexThreadId as string) || delegateIds?.codex || null
+              const opencodeId = (execSession.opencodeSessionId as string) || delegateIds?.opencode || null
+              if (claudeId) t2[taskId].claudeResumeId = claudeId
+              if (codexId) t2[taskId].codexResumeId = codexId
+              if (opencodeId) t2[taskId].opencodeResumeId = opencodeId
+              // Keep backward-compat single field (first available)
+              const primaryId = claudeId || codexId || opencodeId
+              if (primaryId) {
+                t2[taskId].cliResumeId = primaryId
+                if (claudeId) t2[taskId].cliProvider = 'claude-cli'
+                else if (codexId) t2[taskId].cliProvider = 'codex-cli'
+                else if (opencodeId) t2[taskId].cliProvider = 'opencode-cli'
+              }
+              console.log(`[queue] CLI resume IDs for task ${taskId}: claude=${claudeId}, codex=${codexId}, opencode=${opencodeId}`)
+            }
+          } catch (e) {
+            console.warn(`[queue] Failed to extract CLI resume IDs for task ${taskId}:`, e)
+          }
+
           saveTasks(t2)
           disableSessionHeartbeat(t2[taskId].sessionId)
         }
@@ -551,6 +697,7 @@ export async function processNext() {
             text: `Task completed: "${task.title}" (${taskId})`,
           })
           notifyMainChatScheduleResult(doneTask)
+          notifyAgentThreadTaskResult(doneTask)
           console.log(`[queue] Task "${task.title}" completed`)
         } else {
           if (doneTask?.status === 'queued') {
@@ -560,7 +707,10 @@ export async function processNext() {
               type: 'task_failed',
               text: `Task failed validation: "${task.title}" (${taskId})`,
             })
-            if (doneTask?.status === 'failed') notifyMainChatScheduleResult(doneTask)
+            if (doneTask?.status === 'failed') {
+              notifyMainChatScheduleResult(doneTask)
+              notifyAgentThreadTaskResult(doneTask)
+            }
             console.warn(`[queue] Task "${task.title}" failed completion validation`)
           }
         }
@@ -604,7 +754,10 @@ export async function processNext() {
             type: 'task_failed',
             text: `Task failed: "${task.title}" (${taskId}) — ${errMsg.slice(0, 200)}`,
           })
-          if (latest?.status === 'failed') notifyMainChatScheduleResult(latest)
+          if (latest?.status === 'failed') {
+            notifyMainChatScheduleResult(latest)
+            notifyAgentThreadTaskResult(latest)
+          }
         }
       }
     }

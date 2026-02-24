@@ -47,7 +47,10 @@ function buildToolCapabilityLines(enabledTools: string[]): string[] {
   if (enabledTools.includes('manage_connectors')) lines.push('- Connector management is available (`manage_connectors`) for channels like WhatsApp/Telegram/Slack, plus proactive outbound notifications via `connector_message_tool`.')
   if (enabledTools.includes('manage_sessions')) lines.push('- Session management is available (`manage_sessions`, `sessions_tool`, `whoami_tool`, `search_history_tool`) for session identity, history lookup, delegation, and inter-session messaging.')
   // Context tools are available to any session with tools (not just manage_sessions)
-  if (enabledTools.length > 0) lines.push('- Context management is available (`context_status`, `context_summarize`). Use `context_status` to check token usage and `context_summarize` to compact conversation history when approaching limits.')
+  if (enabledTools.length > 0) {
+    lines.push('- Context management is available (`context_status`, `context_summarize`). Use `context_status` to check token usage and `context_summarize` to compact conversation history when approaching limits.')
+    lines.push('- Agent delegation is available (`delegate_to_agent`). Use it to assign tasks to other agents based on their capabilities.')
+  }
   if (enabledTools.includes('manage_secrets')) lines.push('- Secret management is available (`manage_secrets`) for durable encrypted credentials and API tokens.')
   return lines
 }
@@ -283,6 +286,40 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       }
     } catch {
       // If memory context fails to load, continue without blocking the run.
+    }
+  }
+
+  // Inject agent awareness (Phase 2: agents know about each other)
+  if ((session.tools || []).length > 0 && session.agentId) {
+    try {
+      const { buildAgentAwarenessBlock } = await import('./agent-registry')
+      const awarenessBlock = buildAgentAwarenessBlock(session.agentId)
+      if (awarenessBlock) stateModifierParts.push(awarenessBlock)
+    } catch {
+      // If agent registry fails, continue without blocking the run.
+    }
+  }
+
+  // Tell the LLM about tools it could use but doesn't have enabled
+  {
+    const enabledSet = new Set(session.tools || [])
+    const allToolIds = [
+      'shell', 'files', 'edit_file', 'process', 'web_search', 'web_fetch', 'browser', 'memory',
+      'claude_code', 'codex_cli', 'opencode_cli',
+      'orchestrator',
+      'manage_agents', 'manage_tasks', 'manage_schedules', 'manage_skills',
+      'manage_documents', 'manage_webhooks', 'manage_connectors', 'manage_sessions', 'manage_secrets',
+    ]
+    const disabled = allToolIds.filter((t) => !enabledSet.has(t))
+    if (disabled.length > 0) {
+      const delegateNote = disabled.includes('orchestrator')
+        ? '\n\nIMPORTANT: The `delegate_to_agent` tool requires the `orchestrator` capability to be enabled. You must request access to `orchestrator` before you can delegate work to other agents.'
+        : ''
+      stateModifierParts.push(
+        `## Disabled Tools\nThe following tools exist but are not enabled for you: ${disabled.join(', ')}.\n` +
+        'If you need one of these to complete a task, use the `request_tool_access` tool to ask the user for permission.' +
+        delegateNote,
+      )
     }
   }
 

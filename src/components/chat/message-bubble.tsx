@@ -9,6 +9,38 @@ import { useAppStore } from '@/stores/use-app-store'
 import { AiAvatar } from '@/components/shared/avatar'
 import { CodeBlock } from './code-block'
 import { ToolCallBubble } from './tool-call-bubble'
+import { ToolRequestBanner } from './tool-request-banner'
+
+const FILE_PATH_RE = /^(\/[\w./-]+\.\w{1,10})$/
+const PREVIEWABLE_EXT = /\.(html?|svg|css|js|jsx|ts|tsx|json|md|txt|py|sh)$/i
+const HTML_EXT = /\.(html?|svg)$/i
+
+function FilePathChip({ filePath }: { filePath: string }) {
+  const canPreview = PREVIEWABLE_EXT.test(filePath)
+  const isHtml = HTML_EXT.test(filePath)
+  const serveUrl = `/api/files/serve?path=${encodeURIComponent(filePath)}`
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[6px] bg-white/[0.06] border border-white/[0.08] font-mono text-[13px]">
+      <span className="text-sky-400">{filePath}</span>
+      {canPreview && (
+        <a
+          href={serveUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-[4px] bg-white/[0.06] hover:bg-white/[0.10] text-[10px] font-600 text-text-3 hover:text-text-2 no-underline transition-colors cursor-pointer"
+          title={isHtml ? 'Preview in new tab' : 'Open file'}
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+          {isHtml ? 'Preview' : 'Open'}
+        </a>
+      )}
+    </span>
+  )
+}
 
 function fmtTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -104,7 +136,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
       <div className={`max-w-[85%] md:max-w-[72%] ${isUser ? 'bubble-user px-5 py-3.5' : isHeartbeat ? 'bubble-ai px-4 py-3' : 'bubble-ai px-5 py-3.5'}`}>
         {(message.imagePath || message.imageUrl) && (() => {
           const url = message.imageUrl || `/api/uploads/${message.imagePath?.split('/').pop()}`
-          const filename = message.imagePath?.split('/').pop()?.replace(/^[a-f0-9]+-/, '') || 'file'
+          const rawName = message.imagePath?.split('/').pop() || message.imageUrl?.split('/').pop() || 'file'
+          const filename = rawName.replace(/^[a-f0-9]+-/, '').split('?')[0]
           const isImage = /\.(png|jpg|jpeg|gif|webp|svg|bmp|ico)$/i.test(filename)
           if (isImage) {
             return (
@@ -175,6 +208,11 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                   if (isBlock) {
                     return <CodeBlock className={className}>{children}</CodeBlock>
                   }
+                  // Detect file paths in inline code and make them interactive
+                  const text = typeof children === 'string' ? children : ''
+                  if (text && FILE_PATH_RE.test(text)) {
+                    return <FilePathChip filePath={text} />
+                  }
                   return <code className={className}>{children}</code>
                 },
                 img({ src, alt }) {
@@ -193,6 +231,41 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                 },
                 a({ href, children }) {
                   if (!href) return <>{children}</>
+                  // Internal app links: #task:<id> and #schedule:<id>
+                  const taskMatch = href.match(/^#task:(.+)$/)
+                  if (taskMatch) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const store = useAppStore.getState()
+                          await store.loadTasks(true)
+                          store.setEditingTaskId(taskMatch[1])
+                          store.setTaskSheetOpen(true)
+                        }}
+                        className="inline-flex items-center gap-1 text-purple-400 hover:text-purple-300 underline cursor-pointer bg-transparent border-none p-0 font-inherit text-inherit"
+                      >
+                        {children}
+                      </button>
+                    )
+                  }
+                  const schedMatch = href.match(/^#schedule:(.+)$/)
+                  if (schedMatch) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const store = useAppStore.getState()
+                          await store.loadSchedules()
+                          store.setEditingScheduleId(schedMatch[1])
+                          store.setScheduleSheetOpen(true)
+                        }}
+                        className="inline-flex items-center gap-1 text-amber-400 hover:text-amber-300 underline cursor-pointer bg-transparent border-none p-0 font-inherit text-inherit"
+                      >
+                        {children}
+                      </button>
+                    )
+                  }
                   const isUpload = href.startsWith('/api/uploads/')
                   if (isUpload) {
                     return (
@@ -230,6 +303,12 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           </div>
         )}
       </div>
+
+      {/* Tool access request banners */}
+      {!isUser && <ToolRequestBanner
+        text={message.text || ''}
+        toolOutputs={toolEvents.map((e) => e.output || '').filter(Boolean)}
+      />}
 
       {/* Action buttons (AI messages only) */}
       {!isUser && (

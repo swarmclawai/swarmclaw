@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadSessions, saveSessions, active, loadAgents } from '@/lib/server/storage'
+import { loadSessions, saveSessions, deleteSession, active, loadAgents } from '@/lib/server/storage'
 import { enqueueSessionRun } from '@/lib/server/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 
@@ -97,7 +97,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     try { active.get(id).kill() } catch {}
     active.delete(id)
   }
-  delete sessions[id]
-  saveSessions(sessions)
+  deleteSession(id)
   return new NextResponse('OK')
 }

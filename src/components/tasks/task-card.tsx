@@ -87,6 +87,26 @@ export function TaskCard({ task }: { task: BoardTask }) {
         </div>
       )}
 
+      {/* Schedule run stats */}
+      {(task as any).sourceType === 'schedule' && (
+        <div className="flex items-center gap-2 mb-3 text-[11px] text-text-3">
+          <span className="px-1.5 py-0.5 rounded-[5px] bg-purple-500/10 text-purple-400 font-600">
+            Run #{task.runNumber || 1}
+          </span>
+          {((task as any).totalRuns ?? 0) > 0 && (
+            <>
+              <span title="Total runs">{(task as any).totalRuns} runs</span>
+              {((task as any).totalCompleted ?? 0) > 0 && (
+                <span className="text-green-400" title="Completed">{(task as any).totalCompleted} ok</span>
+              )}
+              {((task as any).totalFailed ?? 0) > 0 && (
+                <span className="text-red-400" title="Failed">{(task as any).totalFailed} fail</span>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         {agent && (
           <span className="px-2 py-1 rounded-[6px] bg-accent-soft text-accent-bright text-[11px] font-600">

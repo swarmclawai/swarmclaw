@@ -81,6 +81,8 @@ export function AgentSheet() {
   const [skillIds, setSkillIds] = useState<string[]>([])
   const [fallbackCredentialIds, setFallbackCredentialIds] = useState<string[]>([])
   const [platformAssignScope, setPlatformAssignScope] = useState<'self' | 'all'>('self')
+  const [capabilities, setCapabilities] = useState<string[]>([])
+  const [capInput, setCapInput] = useState('')
   const [ollamaMode, setOllamaMode] = useState<'local' | 'cloud'>('local')
   const [addingKey, setAddingKey] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
@@ -137,6 +139,8 @@ export function AgentSheet() {
         setSkillIds(editing.skillIds || [])
         setFallbackCredentialIds(editing.fallbackCredentialIds || [])
         setPlatformAssignScope(editing.platformAssignScope || 'self')
+        setCapabilities(editing.capabilities || [])
+        setCapInput('')
         setOllamaMode(editing.credentialId && editing.provider === 'ollama' ? 'cloud' : 'local')
       } else {
         setName('')
@@ -154,6 +158,8 @@ export function AgentSheet() {
         setSkillIds([])
         setFallbackCredentialIds([])
         setPlatformAssignScope('self')
+        setCapabilities([])
+        setCapInput('')
         setOllamaMode('local')
       }
     }
@@ -212,6 +218,7 @@ export function AgentSheet() {
       skillIds,
       fallbackCredentialIds,
       platformAssignScope,
+      capabilities,
     }
     if (editing) {
       await updateAgent(editing.id, data)
@@ -265,6 +272,50 @@ export function AgentSheet() {
       <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Description</label>
         <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What does this agent do?" className={inputClass} style={{ fontFamily: 'inherit' }} />
+      </div>
+
+      {/* Capabilities */}
+      <div className="mb-8">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
+          Capabilities <span className="normal-case tracking-normal font-normal text-text-3">(for agent delegation)</span>
+        </label>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {capabilities.map((cap) => (
+            <span
+              key={cap}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[8px] bg-accent-soft text-accent-bright text-[12px] font-600"
+            >
+              {cap}
+              <button
+                onClick={() => setCapabilities((prev) => prev.filter((c) => c !== cap))}
+                className="bg-transparent border-none text-accent-bright/60 hover:text-accent-bright cursor-pointer text-[14px] leading-none p-0"
+              >
+                x
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={capInput}
+            onChange={(e) => setCapInput(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.key === 'Enter' || e.key === ',') && capInput.trim()) {
+                e.preventDefault()
+                const val = capInput.trim().toLowerCase().replace(/,/g, '')
+                if (val && !capabilities.includes(val)) {
+                  setCapabilities((prev) => [...prev, val])
+                }
+                setCapInput('')
+              }
+            }}
+            placeholder="e.g. frontend, research, devops"
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          />
+        </div>
+        <p className="text-[11px] text-text-3/40 mt-1.5">Press Enter or comma to add. Other agents see these when deciding delegation.</p>
       </div>
 
       <div className="mb-8">

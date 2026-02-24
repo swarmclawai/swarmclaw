@@ -46,6 +46,9 @@ interface AppState {
   activeView: AppView
   setActiveView: (view: AppView) => void
 
+  currentAgentId: string | null
+  setCurrentAgent: (id: string | null) => Promise<void>
+
   agents: Record<string, Agent>
   loadAgents: () => Promise<void>
 
@@ -215,8 +218,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   newSessionOpen: false,
   setNewSessionOpen: (open) => set({ newSessionOpen: open }),
 
-  activeView: 'sessions',
+  activeView: 'agents',
   setActiveView: (view) => set({ activeView: view }),
+
+  currentAgentId: null,
+  setCurrentAgent: async (id) => {
+    if (!id) {
+      set({ currentAgentId: null })
+      return
+    }
+    set({ currentAgentId: id })
+    try {
+      const user = get().currentUser || 'default'
+      const session = await api<any>('POST', `/agents/${id}/thread`, { user })
+      if (session?.id) {
+        const sessions = { ...get().sessions, [session.id]: session }
+        set({ sessions, currentSessionId: session.id })
+      }
+    } catch {
+      // ignore — thread creation failed
+    }
+  },
 
   agents: {},
   loadAgents: async () => {

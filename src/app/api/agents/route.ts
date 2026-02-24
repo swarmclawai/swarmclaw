@@ -24,6 +24,7 @@ export async function POST(req: Request) {
     isOrchestrator: body.isOrchestrator || false,
     subAgentIds: body.subAgentIds || [],
     tools: body.tools || [],
+    capabilities: body.capabilities || [],
     createdAt: now,
     updatedAt: now,
   }

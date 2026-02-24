@@ -225,6 +225,8 @@ export interface Agent {
   tools?: string[]              // e.g. ['browser'] — available tool integrations
   skills?: string[]             // e.g. ['frontend-design'] — Claude Code skills to use
   skillIds?: string[]           // IDs of uploaded skills from the Skills manager
+  capabilities?: string[]       // e.g. ['frontend', 'screenshots', 'research', 'devops']
+  threadSessionId?: string | null  // persistent chat thread session for agent-centric UI
   platformAssignScope?: 'self' | 'all'  // defaults to 'self'
   heartbeatEnabled?: boolean
   heartbeatIntervalSec?: number | null
@@ -256,6 +258,8 @@ export interface Schedule {
   lastRunAt?: number
   nextRunAt?: number
   status: ScheduleStatus
+  linkedTaskId?: string | null
+  runNumber?: number
   createdAt: number
 }
 
@@ -306,7 +310,7 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human' | 'orchestrated'
-export type AppView = 'sessions' | 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'logs'
+export type AppView = 'sessions' | 'agents' | 'agent-config' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'logs'
 
 // --- App Settings ---
 
@@ -508,7 +512,20 @@ export interface BoardTask {
   maxAttempts?: number
   retryBackoffSec?: number
   retryScheduledAt?: number | null
+  runNumber?: number
+  totalRuns?: number
+  totalCompleted?: number
+  totalFailed?: number
+  sourceType?: 'schedule' | 'delegation' | 'manual'
+  sourceScheduleId?: string | null
+  sourceScheduleName?: string | null
+  sourceScheduleKey?: string | null
   deadLetteredAt?: number | null
+  cliResumeId?: string | null
+  cliProvider?: string | null
+  claudeResumeId?: string | null
+  codexResumeId?: string | null
+  opencodeResumeId?: string | null
   checkpoint?: {
     lastRunId?: string | null
     lastSessionId?: string | null

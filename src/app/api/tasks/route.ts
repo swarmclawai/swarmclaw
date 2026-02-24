@@ -28,6 +28,37 @@ export async function GET(req: Request) {
   return NextResponse.json(filtered)
 }
 
+export async function DELETE(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const filter = searchParams.get('filter') // 'all' | 'schedule' | null
+  const tasks = loadTasks()
+  const kept: Record<string, (typeof tasks)[string]> = {}
+  let removed = 0
+
+  for (const [id, task] of Object.entries(tasks)) {
+    const shouldRemove =
+      filter === 'all' ||
+      (filter === 'schedule' && (task as any).sourceType === 'schedule') ||
+      (!filter && task.status === 'archived')
+    if (shouldRemove) {
+      removed++
+    } else {
+      kept[id] = task
+    }
+  }
+
+  // Delete removed tasks atomically
+  const { deleteTask } = await import('@/lib/server/storage')
+  for (const [id, task] of Object.entries(tasks)) {
+    const shouldRemove =
+      filter === 'all' ||
+      (filter === 'schedule' && (task as any).sourceType === 'schedule') ||
+      (!filter && task.status === 'archived')
+    if (shouldRemove) deleteTask(id)
+  }
+  return NextResponse.json({ removed, remaining: Object.keys(tasks).length - removed })
+}
+
 export async function POST(req: Request) {
   const body = await req.json()
   const id = crypto.randomBytes(4).toString('hex')

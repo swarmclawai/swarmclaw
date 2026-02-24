@@ -85,36 +85,47 @@ function loadCollection(table: string): Record<string, any> {
 
 function saveCollection(table: string, data: Record<string, any>) {
   const current = getCollectionRawCache(table)
-  const next = new Map<string, string>()
   const toUpsert: Array<[string, string]> = []
-  const toDelete: string[] = []
 
   for (const [id, val] of Object.entries(data)) {
     const serialized = JSON.stringify(val)
     if (typeof serialized !== 'string') continue
-    next.set(id, serialized)
     if (current.get(id) !== serialized) {
       toUpsert.push([id, serialized])
     }
-  }
-  for (const id of current.keys()) {
-    if (!next.has(id)) toDelete.push(id)
+    current.set(id, serialized)
   }
 
-  if (!toUpsert.length && !toDelete.length) return
+  if (!toUpsert.length) return
 
   const transaction = db.transaction(() => {
     const upsert = db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`)
-    const del = db.prepare(`DELETE FROM ${table} WHERE id = ?`)
     for (const [id, serialized] of toUpsert) {
       upsert.run(id, serialized)
     }
-    for (const id of toDelete) {
-      del.run(id)
-    }
   })
   transaction()
-  collectionCache.set(table, next)
+}
+
+function deleteCollectionItem(table: string, id: string) {
+  db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id)
+  const cached = collectionCache.get(table)
+  if (cached) cached.delete(id)
+}
+
+/**
+ * Atomically insert or update a single item in a collection without
+ * loading/saving the entire collection. Prevents race conditions when
+ * concurrent processes are modifying different items.
+ */
+function upsertCollectionItem(table: string, id: string, value: any) {
+  const serialized = JSON.stringify(value)
+  db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`).run(id, serialized)
+  // Update the in-memory cache
+  const cached = collectionCache.get(table)
+  if (cached) {
+    cached.set(id, serialized)
+  }
 }
 
 function loadSingleton(table: string, fallback: any): any {
@@ -446,6 +457,13 @@ export function loadTasks(): Record<string, any> {
 export function saveTasks(t: Record<string, any>) {
   saveCollection('tasks', t)
 }
+export function upsertTask(id: string, task: any) {
+  upsertCollectionItem('tasks', id, task)
+}
+export function deleteTask(id: string) { deleteCollectionItem('tasks', id) }
+export function deleteSession(id: string) { deleteCollectionItem('sessions', id) }
+export function deleteAgent(id: string) { deleteCollectionItem('agents', id) }
+export function deleteSchedule(id: string) { deleteCollectionItem('schedules', id) }
 
 // --- Queue ---
 export function loadQueue(): string[] {

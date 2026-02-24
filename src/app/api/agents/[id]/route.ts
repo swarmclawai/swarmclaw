@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadAgents, saveAgents } from '@/lib/server/storage'
+import { loadAgents, saveAgents, deleteAgent } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -25,7 +25,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id } = await params
   const agents = loadAgents()
   if (!agents[id]) return new NextResponse(null, { status: 404 })
-  delete agents[id]
-  saveAgents(agents)
+  deleteAgent(id)
   return NextResponse.json('ok')
 }

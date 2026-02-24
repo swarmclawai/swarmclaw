@@ -16,8 +16,6 @@ export default function Home() {
   const hydrate = useAppStore((s) => s.hydrate)
   const loadNetworkInfo = useAppStore((s) => s.loadNetworkInfo)
   const sessions = useAppStore((s) => s.sessions)
-  const currentSessionId = useAppStore((s) => s.currentSessionId)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const loadSessions = useAppStore((s) => s.loadSessions)
   const loadSettings = useAppStore((s) => s.loadSettings)
 
@@ -80,39 +78,52 @@ export default function Home() {
     return () => clearInterval(interval)
   }, [authenticated])
 
-  // Auto-create and select main chat session
+  // Auto-select default agent's thread on load
+  useEffect(() => {
+    if (!authenticated || !currentUser) return
+    const state = useAppStore.getState()
+    // Only auto-select if no agent is selected yet
+    if (state.currentAgentId) return
+
+    // Load agents and select 'default' agent
+    let cancelled = false
+    ;(async () => {
+      try {
+        await state.loadAgents()
+        if (cancelled) return
+        const agents = useAppStore.getState().agents
+        // Try 'default' agent first, then fall back to first agent
+        const defaultAgent = agents['default'] || Object.values(agents)[0]
+        if (defaultAgent) {
+          await useAppStore.getState().setCurrentAgent(defaultAgent.id)
+        }
+      } catch { /* ignore */ }
+    })()
+    return () => { cancelled = true }
+  }, [authenticated, currentUser])
+
+  // Keep __main__ session for backward compat — create if missing
   useEffect(() => {
     if (!authenticated || !currentUser) return
     const sessionList = Object.values(sessions)
     const mainSession = sessionList.find((s: any) => s.name === '__main__' && s.user === currentUser)
-    if (mainSession) {
-      const selected = currentSessionId ? sessions[currentSessionId] : null
-      if (!selected || selected.user !== currentUser) {
-        setCurrentSession(mainSession.id)
-      }
-      return
-    }
-    // Create the main chat session
+    if (mainSession) return
     let cancelled = false
     ;(async () => {
       try {
         const mainId = `main-${currentUser}`
-        const res = await api<any>('POST', '/sessions', {
+        await api<any>('POST', '/sessions', {
           id: mainId,
           name: '__main__',
           user: currentUser,
           agentId: 'default',
           heartbeatEnabled: true,
         })
-        if (!cancelled) {
-          await loadSessions()
-          const selected = useAppStore.getState().currentSessionId
-          if (!selected) setCurrentSession(res.id)
-        }
-      } catch { /* ignore — will retry on next load */ }
+        if (!cancelled) await loadSessions()
+      } catch { /* ignore */ }
     })()
     return () => { cancelled = true }
-  }, [authenticated, currentUser, sessions, currentSessionId, setCurrentSession, loadSessions])
+  }, [authenticated, currentUser, sessions, loadSessions])
 
   // Check if first-run setup is needed
   useEffect(() => {

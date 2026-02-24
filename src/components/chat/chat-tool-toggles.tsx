@@ -5,41 +5,51 @@ import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import type { Session } from '@/types'
 
-const ALL_TOOLS: Record<string, string> = {
-  execute_command: 'Shell',
-  read_file: 'Read File',
-  write_file: 'Write File',
-  list_files: 'List Files',
-  copy_file: 'Copy File',
-  move_file: 'Move File',
-  delete_file: 'Delete File',
-  send_file: 'Send File',
-  delegate_to_claude_code: 'Claude Code',
-  delegate_to_codex_cli: 'Codex CLI',
-  delegate_to_opencode_cli: 'OpenCode CLI',
-  whoami_tool: 'Who Am I',
-  connector_message_tool: 'Connector Message',
-  search_history_tool: 'Search History',
-  shell: 'Shell',
-  files: 'Files',
-  edit_file: 'Edit File',
-  process: 'Process',
-  web_search: 'Web Search',
-  web_fetch: 'Web Fetch',
-  claude_code: 'Claude Code',
-  codex_cli: 'Codex CLI',
-  opencode_cli: 'OpenCode CLI',
-  browser: 'Browser',
-  memory: 'Memory',
-  manage_agents: 'Agents',
-  manage_tasks: 'Tasks',
-  manage_schedules: 'Schedules',
-  manage_skills: 'Skills',
-  manage_documents: 'Documents',
-  manage_webhooks: 'Webhooks',
-  manage_connectors: 'Connectors',
-  manage_sessions: 'Sessions',
-  manage_secrets: 'Secrets',
+const TOOL_GROUPS: { label: string; tools: Record<string, string> }[] = [
+  {
+    label: 'Tools',
+    tools: {
+      shell: 'Shell',
+      files: 'Files',
+      edit_file: 'Edit File',
+      process: 'Process',
+      web_search: 'Web Search',
+      web_fetch: 'Web Fetch',
+      browser: 'Browser',
+      memory: 'Memory',
+    },
+  },
+  {
+    label: 'Delegation',
+    tools: {
+      claude_code: 'Claude Code',
+      codex_cli: 'Codex CLI',
+      opencode_cli: 'OpenCode CLI',
+    },
+  },
+  {
+    label: 'Platform',
+    tools: {
+      orchestrator: 'Orchestrator',
+      manage_agents: 'Agents',
+      manage_tasks: 'Tasks',
+      manage_schedules: 'Schedules',
+      manage_skills: 'Skills',
+      manage_documents: 'Documents',
+      manage_webhooks: 'Webhooks',
+      manage_connectors: 'Connectors',
+      manage_sessions: 'Sessions',
+      manage_secrets: 'Secrets',
+    },
+  },
+]
+
+// Flat lookup for display names
+const ALL_TOOLS: Record<string, string> = {}
+for (const g of TOOL_GROUPS) Object.assign(ALL_TOOLS, g.tools)
+
+const TOOL_HINTS: Record<string, string> = {
+  orchestrator: 'Can delegate tasks to other agents',
 }
 
 interface Props {
@@ -54,9 +64,7 @@ export function ChatToolToggles({ session }: Props) {
   const skills = useAppStore((s) => s.skills)
 
   const agent = session.agentId ? agents[session.agentId] : null
-  const agentTools: string[] = agent?.tools || []
   const sessionTools: string[] = session.tools || []
-  const availableTools: string[] = Array.from(new Set([...agentTools, ...sessionTools]))
 
   // Agent's skill IDs
   const agentSkillIds: string[] = agent?.skillIds || []
@@ -78,12 +86,8 @@ export function ChatToolToggles({ session }: Props) {
     loadSessions()
   }
 
-  // Separate available tools into categories
-  const regularTools = availableTools.filter((t) => !t.startsWith('manage_'))
-  const platformTools = availableTools.filter((t) => t.startsWith('manage_'))
-
   const enabledCount = sessionTools.length
-  const totalCount = availableTools.length
+  const totalCount = Object.keys(ALL_TOOLS).length
 
   return (
     <div className="relative" ref={ref}>
@@ -101,45 +105,35 @@ export function ChatToolToggles({ session }: Props) {
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 w-[240px] rounded-[12px] border border-white/[0.08] shadow-xl z-[120] overflow-hidden"
+        <div className="absolute top-full left-0 mt-1.5 w-[260px] max-h-[420px] overflow-y-auto rounded-[12px] border border-white/[0.08] shadow-xl z-[120] overflow-hidden"
           style={{ animation: 'fade-in 0.15s ease', backgroundColor: '#171a2b' }}>
-          {regularTools.length > 0 && (
-            <div className="px-3 pt-3 pb-1">
-              <p className="text-[10px] font-600 text-text-3/60 uppercase tracking-wider mb-2">Tools</p>
-              {regularTools.map((toolId) => (
-                <label key={toolId} className="flex items-center gap-2.5 py-1.5 cursor-pointer">
-                  <div
-                    onClick={() => toggleTool(toolId)}
-                    className={`w-8 h-[18px] rounded-full transition-all duration-200 relative cursor-pointer shrink-0
-                      ${sessionTools.includes(toolId) ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
-                  >
-                    <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all duration-200
-                      ${sessionTools.includes(toolId) ? 'left-[16px]' : 'left-[2px]'}`} />
-                  </div>
-                  <span className="text-[12px] text-text-2">{ALL_TOOLS[toolId] || toolId}</span>
-                </label>
-              ))}
-            </div>
-          )}
 
-          {platformTools.length > 0 && (
-            <div className={`px-3 pb-1 ${regularTools.length > 0 ? 'pt-1 border-t border-white/[0.04]' : 'pt-3'}`}>
-              <p className="text-[10px] font-600 text-text-3/60 uppercase tracking-wider mb-2">Platform</p>
-              {platformTools.map((toolId) => (
-                <label key={toolId} className="flex items-center gap-2.5 py-1.5 cursor-pointer">
-                  <div
-                    onClick={() => toggleTool(toolId)}
-                    className={`w-8 h-[18px] rounded-full transition-all duration-200 relative cursor-pointer shrink-0
-                      ${sessionTools.includes(toolId) ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
-                  >
-                    <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all duration-200
-                      ${sessionTools.includes(toolId) ? 'left-[16px]' : 'left-[2px]'}`} />
-                  </div>
-                  <span className="text-[12px] text-text-2">{ALL_TOOLS[toolId] || toolId}</span>
-                </label>
-              ))}
+          {TOOL_GROUPS.map((group, gi) => (
+            <div key={group.label} className={`px-3 pb-1 ${gi === 0 ? 'pt-3' : 'pt-1 border-t border-white/[0.04]'}`}>
+              <p className="text-[10px] font-600 text-text-3/60 uppercase tracking-wider mb-2">{group.label}</p>
+              {Object.entries(group.tools).map(([toolId, label]) => {
+                const enabled = sessionTools.includes(toolId)
+                return (
+                  <label key={toolId} className="flex items-center gap-2.5 py-1.5 cursor-pointer">
+                    <div
+                      onClick={() => toggleTool(toolId)}
+                      className={`w-8 h-[18px] rounded-full transition-all duration-200 relative cursor-pointer shrink-0
+                        ${enabled ? 'bg-[#6366F1]' : 'bg-white/[0.12]'}`}
+                    >
+                      <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all duration-200
+                        ${enabled ? 'left-[16px]' : 'left-[2px]'}`} />
+                    </div>
+                    <span className={`text-[12px] ${enabled ? 'text-text-2' : 'text-text-3/70'}`}>
+                      {label}
+                      {TOOL_HINTS[toolId] && (
+                        <span className="ml-2 text-[10px] text-text-3/40 font-400">{TOOL_HINTS[toolId]}</span>
+                      )}
+                    </span>
+                  </label>
+                )
+              })}
             </div>
-          )}
+          ))}
 
           {agentSkillIds.length > 0 && (
             <div className="px-3 pb-2 pt-1 border-t border-white/[0.04]">
@@ -154,12 +148,6 @@ export function ChatToolToggles({ session }: Props) {
                   </div>
                 )
               })}
-            </div>
-          )}
-
-          {availableTools.length === 0 && agentSkillIds.length === 0 && (
-            <div className="px-3 py-4 text-center">
-              <p className="text-[12px] text-text-3/60">No tools configured for this session</p>
             </div>
           )}
 

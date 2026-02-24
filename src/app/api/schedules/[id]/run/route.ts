@@ -34,37 +34,71 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   const now = Date.now()
-  const taskId = crypto.randomBytes(4).toString('hex')
-  tasks[taskId] = {
-    id: taskId,
-    title: `[Sched] ${schedule.name}: ${String(schedule.taskPrompt || '').slice(0, 40)}`,
-    description: schedule.taskPrompt || '',
-    status: 'backlog',
-    agentId: schedule.agentId,
-    sessionId: null,
-    result: null,
-    error: null,
-    createdAt: now,
-    updatedAt: now,
-    queuedAt: null,
-    startedAt: null,
-    completedAt: null,
-    sourceType: 'schedule',
-    sourceScheduleId: schedule.id,
-    sourceScheduleName: schedule.name,
-    sourceScheduleKey: scheduleSignature || null,
-    createdInSessionId: schedule.createdInSessionId || null,
-    createdByAgentId: schedule.createdByAgentId || null,
+  schedule.runNumber = (schedule.runNumber || 0) + 1
+
+  // Reuse linked task if it exists and is not in-flight
+  let taskId = ''
+  const existingTaskId = typeof schedule.linkedTaskId === 'string' ? schedule.linkedTaskId : ''
+  const existingTask = existingTaskId ? tasks[existingTaskId] : null
+
+  if (existingTask && existingTask.status !== 'queued' && existingTask.status !== 'running') {
+    taskId = existingTaskId
+    const prev = existingTask as any
+    prev.totalRuns = (prev.totalRuns || 0) + 1
+    if (existingTask.status === 'completed') prev.totalCompleted = (prev.totalCompleted || 0) + 1
+    if (existingTask.status === 'failed') prev.totalFailed = (prev.totalFailed || 0) + 1
+
+    existingTask.status = 'backlog'
+    existingTask.title = `[Sched] ${schedule.name} (run #${schedule.runNumber})`
+    existingTask.result = null
+    existingTask.error = null
+    existingTask.sessionId = null
+    existingTask.updatedAt = now
+    existingTask.queuedAt = null
+    existingTask.startedAt = null
+    existingTask.completedAt = null
+    existingTask.archivedAt = null
+    existingTask.attempts = 0
+    existingTask.retryScheduledAt = null
+    existingTask.deadLetteredAt = null
+    existingTask.validation = null
+    prev.runNumber = schedule.runNumber
+  } else {
+    taskId = crypto.randomBytes(4).toString('hex')
+    tasks[taskId] = {
+      id: taskId,
+      title: `[Sched] ${schedule.name} (run #${schedule.runNumber})`,
+      description: schedule.taskPrompt || '',
+      status: 'backlog',
+      agentId: schedule.agentId,
+      sessionId: null,
+      result: null,
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+      queuedAt: null,
+      startedAt: null,
+      completedAt: null,
+      sourceType: 'schedule',
+      sourceScheduleId: schedule.id,
+      sourceScheduleName: schedule.name,
+      sourceScheduleKey: scheduleSignature || null,
+      createdInSessionId: schedule.createdInSessionId || null,
+      createdByAgentId: schedule.createdByAgentId || null,
+      runNumber: schedule.runNumber,
+    }
+    schedule.linkedTaskId = taskId
   }
+
   saveTasks(tasks)
   enqueueTask(taskId)
   pushMainLoopEventToMainSessions({
     type: 'schedule_fired',
-    text: `Schedule fired manually: "${schedule.name}" (${schedule.id}) queued task "${tasks[taskId].title}" (${taskId}).`,
+    text: `Schedule fired manually: "${schedule.name}" (${schedule.id}) run #${schedule.runNumber} — task ${taskId}`,
   })
 
   schedule.lastRunAt = now
   saveSchedules(schedules)
 
-  return NextResponse.json({ ok: true, queued: true, taskId })
+  return NextResponse.json({ ok: true, queued: true, taskId, runNumber: schedule.runNumber })
 }

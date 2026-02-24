@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import os from 'os'
 import path from 'path'
-import { loadSessions, saveSessions, active, loadAgents } from '@/lib/server/storage'
+import { loadSessions, saveSessions, deleteSession, active, loadAgents } from '@/lib/server/storage'
 import { getSessionRunState } from '@/lib/server/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 
@@ -29,9 +29,8 @@ export async function DELETE(req: Request) {
       try { active.get(id).kill() } catch {}
       active.delete(id)
     }
-    delete sessions[id]
+    deleteSession(id)
   }
-  saveSessions(sessions)
   return NextResponse.json({ deleted: ids.length })
 }
 

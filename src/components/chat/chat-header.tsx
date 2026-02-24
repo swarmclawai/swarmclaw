@@ -223,7 +223,11 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5">
-            <span className="font-display text-[16px] font-600 block truncate tracking-[-0.02em]">{session.name === '__main__' ? 'Main Chat' : session.name}</span>
+            <span className="font-display text-[16px] font-600 block truncate tracking-[-0.02em]">{
+              session.name === '__main__' ? 'Main Chat'
+              : session.name.startsWith('agent-thread:') ? (agent?.name || session.name)
+              : session.name
+            }</span>
             {connector && connectorMeta && (
               <span
                 className="shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[7px] border text-[10px] font-700 uppercase tracking-wider"

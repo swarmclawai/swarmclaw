@@ -25,6 +25,8 @@ interface SchedulerScheduleLike {
   lastRunAt?: number
   nextRunAt?: number
   status: 'active' | 'paused' | 'completed' | 'failed'
+  linkedTaskId?: string | null
+  runNumber?: number
   createdInSessionId?: string | null
   createdByAgentId?: string | null
 }
@@ -120,41 +122,75 @@ async function tick() {
 
     console.log(`[scheduler] Firing schedule "${schedule.name}" (${schedule.id})`)
     schedule.lastRunAt = now
+    schedule.runNumber = (schedule.runNumber || 0) + 1
 
     // Compute next run
     advanceSchedule(schedule)
 
+    // Reuse linked task if it exists and is not currently in-flight
+    let taskId = ''
+    const existingTaskId = typeof schedule.linkedTaskId === 'string' ? schedule.linkedTaskId : ''
+    const existingTask = existingTaskId ? tasks[existingTaskId] : null
+    if (existingTask && existingTask.status !== 'queued' && existingTask.status !== 'running') {
+      // Accumulate stats from the previous run before resetting
+      taskId = existingTaskId
+      const prev = existingTask as any
+      prev.totalRuns = (prev.totalRuns || 0) + 1
+      if (existingTask.status === 'completed') prev.totalCompleted = (prev.totalCompleted || 0) + 1
+      if (existingTask.status === 'failed') prev.totalFailed = (prev.totalFailed || 0) + 1
+
+      // Reset for the new run
+      existingTask.status = 'backlog'
+      existingTask.title = `[Sched] ${schedule.name} (run #${schedule.runNumber})`
+      existingTask.result = null
+      existingTask.error = null
+      existingTask.sessionId = null
+      existingTask.updatedAt = now
+      existingTask.queuedAt = null
+      existingTask.startedAt = null
+      existingTask.completedAt = null
+      existingTask.archivedAt = null
+      existingTask.attempts = 0
+      existingTask.retryScheduledAt = null
+      existingTask.deadLetteredAt = null
+      existingTask.validation = null
+      prev.runNumber = schedule.runNumber
+    } else {
+      // Create a new linked task (first run or previous task still in-flight)
+      taskId = crypto.randomBytes(4).toString('hex')
+      tasks[taskId] = {
+        id: taskId,
+        title: `[Sched] ${schedule.name} (run #${schedule.runNumber})`,
+        description: schedule.taskPrompt,
+        status: 'backlog',
+        agentId: schedule.agentId,
+        sessionId: null,
+        result: null,
+        error: null,
+        createdAt: now,
+        updatedAt: now,
+        queuedAt: null,
+        startedAt: null,
+        completedAt: null,
+        sourceType: 'schedule',
+        sourceScheduleId: schedule.id,
+        sourceScheduleName: schedule.name,
+        sourceScheduleKey: scheduleSignature || null,
+        createdInSessionId: schedule.createdInSessionId || null,
+        createdByAgentId: schedule.createdByAgentId || null,
+        runNumber: schedule.runNumber,
+      }
+      schedule.linkedTaskId = taskId
+    }
+
+    saveTasks(tasks)
     saveSchedules(schedules)
 
-    // Create a board task and enqueue it
-    const taskId = crypto.randomBytes(4).toString('hex')
-    tasks[taskId] = {
-      id: taskId,
-      title: `[Sched] ${schedule.name}: ${schedule.taskPrompt.slice(0, 40)}`,
-      description: schedule.taskPrompt,
-      status: 'backlog',
-      agentId: schedule.agentId,
-      sessionId: null,
-      result: null,
-      error: null,
-      createdAt: now,
-      updatedAt: now,
-      queuedAt: null,
-      startedAt: null,
-      completedAt: null,
-      sourceType: 'schedule',
-      sourceScheduleId: schedule.id,
-      sourceScheduleName: schedule.name,
-      sourceScheduleKey: scheduleSignature || null,
-      createdInSessionId: schedule.createdInSessionId || null,
-      createdByAgentId: schedule.createdByAgentId || null,
-    }
-    saveTasks(tasks)
     enqueueTask(taskId)
     if (scheduleSignature) inFlightScheduleKeys.add(scheduleSignature)
     pushMainLoopEventToMainSessions({
       type: 'schedule_fired',
-      text: `Schedule fired: "${schedule.name}" (${schedule.id}) queued task "${tasks[taskId].title}" (${taskId}).`,
+      text: `Schedule fired: "${schedule.name}" (${schedule.id}) run #${schedule.runNumber} — task ${taskId}`,
     })
   }
 }
