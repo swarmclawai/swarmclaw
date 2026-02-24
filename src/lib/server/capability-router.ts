@@ -6,7 +6,6 @@ export type TaskIntent =
   | 'browsing'
   | 'outreach'
   | 'scheduling'
-  | 'memory'
   | 'general'
 
 export interface CapabilityRoutingDecision {
@@ -158,17 +157,6 @@ export function routeTaskIntent(
       intent: 'research',
       confidence: 0.7,
       preferredTools: ['web_search', 'web_fetch', 'browser'],
-      preferredDelegates: delegateOrder,
-      primaryUrl: url,
-    }
-  }
-
-  const memory = containsAny(text, ['remember', 'memory', 'recall', 'what do we know', 'notes'])
-  if (memory) {
-    return {
-      intent: 'memory',
-      confidence: 0.65,
-      preferredTools: ['memory_tool'],
       preferredDelegates: delegateOrder,
       primaryUrl: url,
     }

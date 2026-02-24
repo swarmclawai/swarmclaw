@@ -115,6 +115,9 @@ function buildAgenticExecutionPolicy(opts: {
       ? 'Memory is active and required for long-horizon work: before major tasks, run memory_tool search/list for relevant prior work; after each meaningful step, store concise reusable notes (what changed, where it lives, constraints, next step). Treat memory as shared context plus your own agent notes, not as user-owned personal profile data.'
       : '',
     opts.enabledTools.includes('memory')
+      ? 'The platform preloads relevant memory context each turn. Use memory_tool for deeper lookup, explicit recall requests, and durable storage.'
+      : '',
+    opts.enabledTools.includes('memory')
       ? 'If the user gives an open goal (e.g. "go make money"), do not keep re-asking broad clarifying questions. Form a hypothesis, execute a concrete step, then adapt using memory + evidence.'
       : '',
     '## Knowing When Not to Reply',

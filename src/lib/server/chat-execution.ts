@@ -729,14 +729,6 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
   }
 
-  if (canAutoRouteWithTools && routingDecision?.intent === 'memory' && hasToolEnabled(sessionForRun, 'memory')) {
-    await invokeSessionTool(
-      'memory_tool',
-      { action: 'search', key: message.trim(), query: message.trim(), scope: 'auto' },
-      'Auto memory routing failed',
-    )
-  }
-
   if (requestedToolNames.length > 0) {
     const missed = requestedToolNames.filter((name) => !calledNames.has(name))
     if (missed.length > 0) {
