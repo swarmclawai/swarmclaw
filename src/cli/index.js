@@ -18,6 +18,7 @@ const COMMAND_GROUPS = [
       cmd('update', 'PUT', '/agents/:id', 'Update an agent', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/agents/:id', 'Delete an agent'),
       cmd('generate', 'POST', '/agents/generate', 'Generate agent definition from prompt', { expectsJsonBody: true }),
+      cmd('thread', 'POST', '/agents/:id/thread', 'Get or create agent thread session'),
     ],
   },
   {
@@ -108,6 +109,13 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'files',
+    description: 'Serve and manage local files',
+    commands: [
+      cmd('serve', 'GET', '/files/serve', 'Serve a local file (use --query path=/abs/path)'),
+    ],
+  },
+  {
     name: 'generate',
     description: 'AI generation endpoints',
     commands: [
@@ -164,6 +172,13 @@ const COMMAND_GROUPS = [
         expectsJsonBody: true,
         waitEntityFrom: 'taskId',
       }),
+    ],
+  },
+  {
+    name: 'preview-server',
+    description: 'Manage preview dev servers',
+    commands: [
+      cmd('manage', 'POST', '/preview-server', 'Start/stop/status/detect preview server', { expectsJsonBody: true }),
     ],
   },
   {
@@ -306,6 +321,7 @@ const COMMAND_GROUPS = [
       cmd('create', 'POST', '/tasks', 'Create task', { expectsJsonBody: true }),
       cmd('update', 'PUT', '/tasks/:id', 'Update task', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/tasks/:id', 'Delete task'),
+      cmd('purge', 'DELETE', '/tasks', 'Bulk delete tasks', { expectsJsonBody: true }),
     ],
   },
   {
