@@ -464,6 +464,7 @@ export function deleteTask(id: string) { deleteCollectionItem('tasks', id) }
 export function deleteSession(id: string) { deleteCollectionItem('sessions', id) }
 export function deleteAgent(id: string) { deleteCollectionItem('agents', id) }
 export function deleteSchedule(id: string) { deleteCollectionItem('schedules', id) }
+export function deleteSkill(id: string) { deleteCollectionItem('skills', id) }
 
 // --- Queue ---
 export function loadQueue(): string[] {

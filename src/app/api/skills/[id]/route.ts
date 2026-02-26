@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadSkills, saveSkills } from '@/lib/server/storage'
+import { loadSkills, saveSkills, deleteSkill } from '@/lib/server/storage'
 import { normalizeSkillPayload } from '@/lib/server/skills-normalize'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -35,7 +35,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id } = await params
   const skills = loadSkills()
   if (!skills[id]) return new NextResponse(null, { status: 404 })
-  delete skills[id]
-  saveSkills(skills)
-  return NextResponse.json({ ok: true })
+  deleteSkill(id)
+  return NextResponse.json({ deleted: id })
 }
