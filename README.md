@@ -64,6 +64,15 @@ SwarmClaw can spawn **Claude Code CLI** processes with full shell access on your
 
 ## Quick Start
 
+### npm (recommended)
+
+```bash
+npm i -g @swarmclawai/swarmclaw
+swarmclaw
+```
+
+### Install script
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.sh | bash
 ```
