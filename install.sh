@@ -87,6 +87,14 @@ main() {
   cd "$INSTALL_DIR"
   checkout_target "$target"
 
+  # Install Deno (sandbox runtime)
+  if ! command -v deno >/dev/null 2>&1; then
+    log "Installing Deno (sandbox runtime)..."
+    curl -fsSL https://deno.land/install.sh | sh
+    export DENO_INSTALL="$HOME/.deno"
+    export PATH="$DENO_INSTALL/bin:$PATH"
+  fi
+
   log "Installing dependencies"
   npm install
 

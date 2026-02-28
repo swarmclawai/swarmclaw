@@ -38,6 +38,7 @@ function buildToolCapabilityLines(enabledTools: string[]): string[] {
   if (enabledTools.includes('codex_cli')) lines.push('- Codex delegation is available (`delegate_to_codex_cli`) for deep coding/refactor tasks. Resume IDs may be returned via `[delegate_meta]`.')
   if (enabledTools.includes('opencode_cli')) lines.push('- OpenCode delegation is available (`delegate_to_opencode_cli`) for deep coding/refactor tasks. Resume IDs may be returned via `[delegate_meta]`.')
   if (enabledTools.includes('memory')) lines.push('- Long-term memory is available (`memory_tool`) to store and recall durable context.')
+  if (enabledTools.includes('sandbox')) lines.push('- Sandboxed code execution is available (`sandbox_exec`). Write and run JS/TS (Deno) or Python scripts in an isolated environment. Output includes stdout, stderr, and any files created as downloadable artifacts.')
   if (enabledTools.includes('manage_agents')) lines.push('- Agent management is available (`manage_agents`) to create or adjust specialist agents.')
   if (enabledTools.includes('manage_tasks')) lines.push('- Task management is available (`manage_tasks`) to create and track execution plans.')
   if (enabledTools.includes('manage_schedules')) lines.push('- Schedule management is available (`manage_schedules`) for recurring/ongoing runs.')

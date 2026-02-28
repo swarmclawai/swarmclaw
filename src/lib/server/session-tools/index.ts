@@ -14,6 +14,7 @@ import { buildCrudTools } from './crud'
 import { buildSessionInfoTools } from './session-info'
 import { buildConnectorTools } from './connector'
 import { buildContextTools } from './context-mgmt'
+import { buildSandboxTools } from './sandbox'
 
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
@@ -93,6 +94,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
     ...buildSessionInfoTools(bctx),
     ...buildConnectorTools(bctx),
     ...buildContextTools(bctx),
+    ...buildSandboxTools(bctx),
   )
 
   // ---------------------------------------------------------------------------

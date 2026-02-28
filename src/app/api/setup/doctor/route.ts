@@ -165,6 +165,7 @@ export async function GET(req: Request) {
     { id: 'claude-cli', label: 'Claude Code CLI', command: 'claude' },
     { id: 'codex-cli', label: 'OpenAI Codex CLI', command: 'codex' },
     { id: 'opencode-cli', label: 'OpenCode CLI', command: 'opencode' },
+    { id: 'deno', label: 'Deno (sandbox runtime)', command: 'deno' },
   ]
 
   for (const binary of optionalBinaries) {

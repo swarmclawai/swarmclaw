@@ -24,6 +24,7 @@ const AVAILABLE_TOOLS: { id: string; label: string; description: string }[] = [
   { id: 'opencode_cli', label: 'OpenCode CLI', description: 'Delegate complex tasks to OpenCode CLI' },
   { id: 'browser', label: 'Browser', description: 'Playwright — browse, scrape, interact with web pages' },
   { id: 'memory', label: 'Memory', description: 'Store and retrieve long-term memories across sessions' },
+  { id: 'sandbox', label: 'Sandbox', description: 'Run JS/TS/Python code in an isolated Deno sandbox' },
 ]
 
 const PLATFORM_TOOLS: { id: string; label: string; description: string }[] = [
