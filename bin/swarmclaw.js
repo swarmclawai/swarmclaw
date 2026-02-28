@@ -4,9 +4,11 @@
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
-// Route 'server' subcommand to the CJS server script (no TS dependency)
+// Route 'server' and 'update' subcommands to CJS scripts (no TS dependency)
 if (process.argv[2] === 'server') {
   require('./server-cmd.js')
+} else if (process.argv[2] === 'update') {
+  require('./update-cmd.js')
 } else {
   const cliPath = path.join(__dirname, '..', 'src', 'cli', 'index.ts')
 

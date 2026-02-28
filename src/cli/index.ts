@@ -1140,14 +1140,57 @@ export function buildProgram(): Command {
       console.log('Run: swarmclaw server --help')
     })
 
+  program
+    .command('update')
+    .description('Pull the latest SwarmClaw release via git')
+    .action(() => {
+      console.log('The update command is handled directly by the swarmclaw binary.')
+      console.log('Run: swarmclaw update --help')
+    })
+
   return program
+}
+
+async function checkForUpdate(baseUrl: string, accessKey: string): Promise<void> {
+  try {
+    const url = `${baseUrl}/api/version`
+    const headers: Record<string, string> = {}
+    if (accessKey) headers['X-Access-Key'] = accessKey
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 2000)
+    const res = await fetch(url, { headers, signal: controller.signal })
+    clearTimeout(timeout)
+    if (!res.ok) return
+    const data = (await res.json()) as { updateAvailable?: boolean; behindBy?: number }
+    if (data.updateAvailable && data.behindBy) {
+      process.stderr.write(`\n  Update available (${data.behindBy} behind). Run: swarmclaw update\n`)
+    }
+  } catch {
+    // Server unreachable or timed out — silently skip
+  }
 }
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   const program = buildProgram()
   try {
+    // Skip update hint for commands that don't talk to the server
+    const skipHint = !argv.length || ['update', 'server', '--help', '-h'].includes(argv[0])
+    const hintPromise = skipHint
+      ? null
+      : checkForUpdate(
+          normalizeBaseUrl(process.env.SWARMCLAW_URL || process.env.SWARMCLAW_BASE_URL || 'http://localhost:3456'),
+          (process.env.SWARMCLAW_ACCESS_KEY || '').trim(),
+        )
+
     await program.parseAsync(['node', 'swarmclaw', ...argv])
-    return (process.exitCode as number | undefined) ?? 0
+    const code = (process.exitCode as number | undefined) ?? 0
+
+    // Wait briefly for the hint if the command succeeded
+    if (hintPromise && code === 0) {
+      await Promise.race([hintPromise, new Promise((r) => setTimeout(r, 2000))])
+    }
+
+    return code
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(msg)
