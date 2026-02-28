@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useCallback, useState } from 'react'
+import { useEffect, useCallback, useState, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { fetchMessages, clearMessages, deleteSession, devServer, checkBrowser, stopBrowser } from '@/lib/sessions'
+import { uploadImage } from '@/lib/upload'
 import { deleteAgent } from '@/lib/agents'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { ChatHeader } from './chat-header'
@@ -46,6 +47,9 @@ export function ChatArea() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmDeleteAgent, setConfirmDeleteAgent] = useState(false)
   const [browserActive, setBrowserActive] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const dragCounter = useRef(0)
+  const setPendingImage = useChatStore((s) => s.setPendingImage)
 
   useEffect(() => {
     if (!sessionId) return
@@ -176,6 +180,40 @@ export function ChatArea() {
     sendMessage(text)
   }, [sendMessage])
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }, [])
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current++
+    if (e.dataTransfer.types.includes('Files')) setIsDragging(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current--
+    if (dragCounter.current === 0) setIsDragging(false)
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current = 0
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (!file) return
+    try {
+      const result = await uploadImage(file)
+      setPendingImage({ file, path: result.path, url: result.url })
+    } catch {
+      // ignore
+    }
+  }, [setPendingImage])
+
   if (!session) return null
 
   const streamingForThisSession = streaming && (!streamingSessionId || streamingSessionId === session.id)
@@ -183,7 +221,13 @@ export function ChatArea() {
   const isEmpty = !messages.length && !streamingForThisSession
 
   return (
-    <div className="flex-1 flex flex-col h-full min-h-0 relative">
+    <div
+      className="flex-1 flex flex-col h-full min-h-0 relative"
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {isDesktop && (
         <ChatHeader
           session={session}
@@ -327,6 +371,19 @@ export function ChatArea() {
           }}
           onCancel={() => setConfirmDeleteAgent(false)}
         />
+      )}
+
+      {isDragging && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
+          <div className="px-8 py-6 rounded-[20px] border-2 border-dashed border-accent-bright/50 bg-surface/80 text-center">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-accent-bright mx-auto mb-3">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <p className="text-[15px] font-600 text-text">Drop file to attach</p>
+          </div>
+        </div>
       )}
     </div>
   )

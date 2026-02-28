@@ -121,6 +121,75 @@ const PLATFORMS: {
       { key: 'tickIntervalMs', label: 'Tick Interval Override (ms)', placeholder: '30000', help: 'Optional watchdog interval override when policy tick is unavailable.' },
     ],
   },
+  {
+    id: 'matrix',
+    label: 'Matrix',
+    color: '#0DBD8B',
+    setupSteps: [
+      'Create a bot user on your Matrix homeserver',
+      'Generate an access token for the bot user',
+      'Set the homeserver URL (e.g. https://matrix.org)',
+      'Optionally restrict to specific room IDs',
+    ],
+    tokenLabel: 'Access Token',
+    tokenHelp: 'Matrix access token for the bot user',
+    configFields: [
+      { key: 'homeserverUrl', label: 'Homeserver URL', placeholder: 'https://matrix.org', help: 'The Matrix homeserver URL' },
+      { key: 'roomIds', label: 'Room IDs', placeholder: '!abc123:matrix.org', help: 'Comma-separated room IDs. Leave empty for all rooms.' },
+    ],
+  },
+  {
+    id: 'googlechat',
+    label: 'Google Chat',
+    color: '#00AC47',
+    setupSteps: [
+      'Create a Google Cloud project and enable the Google Chat API',
+      'Create a service account and download the JSON key file',
+      'In Google Chat Admin, configure the bot with your app URL',
+      'Paste the full service account JSON as the bot token',
+    ],
+    tokenLabel: 'Service Account JSON',
+    tokenHelp: 'Paste the full service account JSON key file contents',
+    configFields: [
+      { key: 'spaceIds', label: 'Space IDs', placeholder: 'spaces/AAAA123', help: 'Comma-separated Google Chat space IDs' },
+    ],
+  },
+  {
+    id: 'teams',
+    label: 'Microsoft Teams',
+    color: '#6264A7',
+    setupSteps: [
+      'Register a bot in the Azure Bot Framework portal',
+      'Note the Microsoft App ID and generate an App Secret',
+      'Set up a public HTTPS endpoint for webhook delivery',
+      'Configure the messaging endpoint in Azure to your notify URL',
+    ],
+    tokenLabel: 'App Secret',
+    tokenHelp: 'Microsoft App Secret from Azure Bot registration',
+    configFields: [
+      { key: 'appId', label: 'Microsoft App ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', help: 'Azure Bot Framework App ID' },
+      { key: 'notifyUrl', label: 'Notify URL', placeholder: 'https://your-server.com/api/teams/webhook', help: 'Public HTTPS endpoint for receiving messages' },
+    ],
+  },
+  {
+    id: 'signal',
+    label: 'Signal',
+    color: '#3A76F0',
+    setupSteps: [
+      'Install signal-cli (https://github.com/AsamK/signal-cli)',
+      'Register a phone number: signal-cli -u +1234567890 register',
+      'Verify the number: signal-cli -u +1234567890 verify CODE',
+      'The connector spawns signal-cli daemon to listen for messages',
+    ],
+    tokenLabel: '',
+    tokenHelp: '',
+    configFields: [
+      { key: 'phoneNumber', label: 'Phone Number', placeholder: '+1234567890', help: 'Pre-registered Signal phone number' },
+      { key: 'signalCliPath', label: 'signal-cli Path', placeholder: 'signal-cli', help: 'Path to signal-cli binary (defaults to signal-cli)' },
+      { key: 'signalCliMode', label: 'Mode', placeholder: 'stdio', help: 'stdio (default) or http' },
+      { key: 'signalCliHttpUrl', label: 'HTTP API URL', placeholder: 'http://localhost:8080', help: 'Only needed for http mode' },
+    ],
+  },
 ]
 
 export function ConnectorSheet() {
@@ -302,7 +371,7 @@ export function ConnectorSheet() {
                 <div>
                   <div className={`text-[14px] font-600 ${platform === p.id ? 'text-text' : 'text-text-2'}`}>{p.label}</div>
                   <div className="text-[11px] text-text-3 mt-0.5">
-                    {p.id === 'whatsapp' ? 'QR code pairing' : p.id === 'openclaw' ? 'WebSocket gateway' : 'Bot token'}
+                    {p.id === 'whatsapp' ? 'QR code pairing' : p.id === 'openclaw' ? 'WebSocket gateway' : p.id === 'signal' ? 'signal-cli binary' : p.id === 'matrix' ? 'Access token' : p.id === 'googlechat' ? 'Service account' : p.id === 'teams' ? 'Bot Framework' : 'Bot token'}
                   </div>
                 </div>
               </button>

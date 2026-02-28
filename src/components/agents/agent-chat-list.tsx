@@ -20,6 +20,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
   const setMessages = useChatStore((s) => s.setMessages)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const tasks = useAppStore((s) => s.tasks)
+  const streamingSessionId = useChatStore((s) => s.streamingSessionId)
   const [search, setSearch] = useState('')
 
   useEffect(() => { loadAgents() }, [loadAgents])
@@ -115,6 +116,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
           const lastMsg = threadSession?.messages?.at(-1)
           const isActive = currentAgentId === agent.id
           const isWorking = runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || (threadSession?.heartbeatEnabled ?? false)
+          const isTyping = streamingSessionId === agent.threadSessionId
           const preview = lastMsg?.text?.slice(0, 80)?.replace(/\n/g, ' ') || ''
 
           return (
@@ -140,11 +142,20 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
                   {agent.model ? agent.model.split('/').pop()?.split(':')[0] : agent.provider}
                 </span>
               </div>
-              {preview && (
+              {isTyping ? (
+                <div className="text-[12px] text-accent-bright/70 mt-1 pl-[18px] flex items-center gap-1.5">
+                  <span className="flex gap-0.5">
+                    <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:0ms]" />
+                    <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:150ms]" />
+                    <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:300ms]" />
+                  </span>
+                  Typing...
+                </div>
+              ) : preview ? (
                 <div className="text-[12px] text-text-3/70 mt-1 truncate pl-[18px]">
                   {preview}
                 </div>
-              )}
+              ) : null}
             </button>
           )
         })}

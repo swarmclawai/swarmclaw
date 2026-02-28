@@ -1008,3 +1008,69 @@ export function getMemoryDb() {
   if (!_db) _db = initDb()
   return _db
 }
+
+// ---------------------------------------------------------------------------
+// Cross-Agent Knowledge Base helpers
+// ---------------------------------------------------------------------------
+
+export function addKnowledge(params: {
+  title: string
+  content: string
+  tags?: string[]
+  createdByAgentId?: string | null
+  createdBySessionId?: string | null
+}): MemoryEntry {
+  const db = getMemoryDb()
+  return db.add({
+    agentId: null,
+    sessionId: null,
+    category: 'knowledge',
+    title: params.title,
+    content: params.content,
+    metadata: {
+      tags: params.tags || [],
+      createdByAgentId: params.createdByAgentId || null,
+      createdBySessionId: params.createdBySessionId || null,
+    },
+  })
+}
+
+export function searchKnowledge(query: string, tags?: string[], limit?: number): MemoryEntry[] {
+  const db = getMemoryDb()
+  const results = db.search(query)
+  let filtered = results.filter((e) => e.category === 'knowledge')
+
+  if (tags && tags.length > 0) {
+    const tagSet = new Set(tags.map((t) => t.toLowerCase()))
+    filtered = filtered.filter((e) => {
+      const entryTags: string[] = (e.metadata as Record<string, unknown>)?.tags as string[] || []
+      return entryTags.some((t) => tagSet.has(t.toLowerCase()))
+    })
+  }
+
+  if (limit && limit > 0) {
+    filtered = filtered.slice(0, limit)
+  }
+
+  return filtered
+}
+
+export function listKnowledge(tags?: string[], limit?: number): MemoryEntry[] {
+  const db = getMemoryDb()
+  const all = db.list(undefined, 500)
+  let filtered = all.filter((e) => e.category === 'knowledge')
+
+  if (tags && tags.length > 0) {
+    const tagSet = new Set(tags.map((t) => t.toLowerCase()))
+    filtered = filtered.filter((e) => {
+      const entryTags: string[] = (e.metadata as Record<string, unknown>)?.tags as string[] || []
+      return entryTags.some((t) => tagSet.has(t.toLowerCase()))
+    })
+  }
+
+  if (limit && limit > 0) {
+    filtered = filtered.slice(0, limit)
+  }
+
+  return filtered
+}

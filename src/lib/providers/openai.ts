@@ -1,6 +1,4 @@
 import fs from 'fs'
-import https from 'https'
-import http from 'http'
 import type { StreamChatOptions } from './index'
 
 const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|webp|bmp)$/i
@@ -25,7 +23,7 @@ function fileToContentParts(filePath: string): any[] {
 }
 
 export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPrompt, write, active, loadHistory }: StreamChatOptions): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     const messages = buildMessages(session, message, imagePath, systemPrompt, loadHistory)
     const model = session.model || 'gpt-4o'
 
@@ -35,53 +33,74 @@ export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPr
       stream: true,
     })
 
-    const abortController = { aborted: false }
     let fullResponse = ''
 
     // Support custom base URLs for custom providers
     const baseUrl = session.apiEndpoint || 'https://api.openai.com/v1'
-    const url = new URL(`${baseUrl.replace(/\/+$/, '')}/chat/completions`)
-    const isHttps = url.protocol === 'https:'
-    const transport = isHttps ? https : http
+    const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`
 
     // OpenClaw endpoints behind Hostinger's proxy use express.json() middleware
     // which consumes the request body before http-proxy-middleware can forward it.
     // Sending as text/plain bypasses the body parser while the gateway still parses JSON.
     const contentType = session.contentType || 'application/json'
 
-    const apiReq = transport.request({
-      hostname: url.hostname,
-      port: url.port || (isHttps ? 443 : 80),
-      path: url.pathname + url.search,
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': contentType,
-      },
-    }, (apiRes) => {
-      if (apiRes.statusCode !== 200) {
-        let errBody = ''
-        apiRes.on('data', (c: Buffer) => errBody += c)
-        apiRes.on('end', () => {
-          console.error(`[${session.id}] openai error ${apiRes.statusCode}:`, errBody.slice(0, 200))
-          let errMsg = `API error (${apiRes.statusCode})`
-          try {
-            const parsed = JSON.parse(errBody)
-            if (parsed.error?.message) errMsg = parsed.error.message
-            else if (parsed.message) errMsg = parsed.message
-            else if (parsed.detail) errMsg = parsed.detail
-          } catch {}
-          write(`data: ${JSON.stringify({ t: 'err', text: errMsg })}\n\n`)
-          active.delete(session.id)
-          resolve(fullResponse)
-        })
+    const abortController = new AbortController()
+    active.set(session.id, { kill: () => abortController.abort() })
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': contentType,
+        },
+        body: payload,
+        signal: abortController.signal,
+      })
+
+      // Detect HTML responses (e.g. landing page returned instead of API)
+      const resContentType = res.headers.get('content-type') || ''
+      if (resContentType.includes('text/html')) {
+        console.error(`[${session.id}] received HTML instead of API response from ${baseUrl} (provider: ${session.provider})`)
+        write(`data: ${JSON.stringify({ t: 'err', text: 'Received HTML instead of API response. The endpoint may be misconfigured or returning a landing page.' })}\n\n`)
+        active.delete(session.id)
+        resolve(fullResponse)
         return
       }
 
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '')
+        console.error(`[${session.id}] openai error ${res.status}:`, errBody.slice(0, 200))
+        let errMsg = `API error (${res.status})`
+        try {
+          const parsed = JSON.parse(errBody)
+          if (parsed.error?.message) errMsg = parsed.error.message
+          else if (parsed.message) errMsg = parsed.message
+          else if (parsed.detail) errMsg = parsed.detail
+        } catch {}
+        write(`data: ${JSON.stringify({ t: 'err', text: errMsg })}\n\n`)
+        active.delete(session.id)
+        resolve(fullResponse)
+        return
+      }
+
+      if (!res.body) {
+        console.error(`[${session.id}] no response body from ${baseUrl}`)
+        active.delete(session.id)
+        resolve(fullResponse)
+        return
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
       let buf = ''
-      apiRes.on('data', (chunk: Buffer) => {
-        if (abortController.aborted) return
-        buf += chunk.toString()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (abortController.signal.aborted) break
+
+        buf += decoder.decode(value, { stream: true })
         const lines = buf.split('\n')
         buf = lines.pop()!
 
@@ -98,27 +117,20 @@ export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPr
             }
           } catch {}
         }
-      })
+      }
 
-      apiRes.on('end', () => {
-        if (!fullResponse) {
-          console.error(`[${session.id}] openai stream ended with no content (provider: ${session.provider}, endpoint: ${baseUrl})`)
-        }
-        active.delete(session.id)
-        resolve(fullResponse)
-      })
-    })
-
-    active.set(session.id, { kill: () => { abortController.aborted = true; apiReq.destroy() } })
-
-    apiReq.on('error', (e) => {
-      console.error(`[${session.id}] openai request error:`, e.message)
-      write(`data: ${JSON.stringify({ t: 'err', text: `Connection failed: ${e.message}` })}\n\n`)
+      if (!fullResponse) {
+        console.error(`[${session.id}] openai stream ended with no content (provider: ${session.provider}, endpoint: ${baseUrl})`)
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.error(`[${session.id}] openai request error:`, err.message)
+        write(`data: ${JSON.stringify({ t: 'err', text: `Connection failed: ${err.message}` })}\n\n`)
+      }
+    } finally {
       active.delete(session.id)
       resolve(fullResponse)
-    })
-
-    apiReq.end(payload)
+    }
   })
 }
 

@@ -48,7 +48,15 @@ export function buildChatModel(opts: {
 
   // All other providers — OpenAI-compatible with their registered endpoint
   const config: any = { model: model || 'gpt-4o', apiKey: apiKey || undefined }
-  if (endpoint) config.configuration = { baseURL: endpoint }
+  if (endpoint) {
+    config.configuration = { baseURL: endpoint }
+    // OpenClaw endpoints behind Hostinger's proxy use express.json() middleware
+    // which consumes the request body before http-proxy-middleware can forward it.
+    // Sending as text/plain bypasses the body parser while the gateway still parses JSON.
+    if (provider === 'openclaw') {
+      config.configuration.defaultHeaders = { 'Content-Type': 'text/plain' }
+    }
+  }
   return config.configuration
     ? new ChatOpenAI(config)
     : new ChatOpenAI({ model: config.model, apiKey: config.apiKey })

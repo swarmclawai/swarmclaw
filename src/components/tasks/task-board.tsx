@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { updateTask } from '@/lib/tasks'
 import { TaskColumn } from './task-column'
@@ -14,8 +14,10 @@ export function TaskBoard() {
   const loadAgents = useAppStore((s) => s.loadAgents)
   const setTaskSheetOpen = useAppStore((s) => s.setTaskSheetOpen)
   const setEditingTaskId = useAppStore((s) => s.setEditingTaskId)
+  const agents = useAppStore((s) => s.agents)
   const showArchived = useAppStore((s) => s.showArchivedTasks)
   const setShowArchived = useAppStore((s) => s.setShowArchivedTasks)
+  const [filterAgentId, setFilterAgentId] = useState<string>('')
 
   useEffect(() => {
     loadTasks()
@@ -28,7 +30,7 @@ export function TaskBoard() {
 
   const tasksByStatus = (status: BoardTaskStatus) =>
     Object.values(tasks)
-      .filter((t) => t.status === status)
+      .filter((t) => t.status === status && (!filterAgentId || t.agentId === filterAgentId))
       .sort((a, b) => b.updatedAt - a.updatedAt)
 
   const handleDrop = useCallback(async (taskId: string, newStatus: BoardTaskStatus) => {
@@ -48,6 +50,18 @@ export function TaskBoard() {
           <p className="text-[13px] text-text-3 mt-1">Create tasks and assign orchestrators to run them sequentially</p>
         </div>
         <div className="flex items-center gap-3">
+          <select
+            value={filterAgentId}
+            onChange={(e) => setFilterAgentId(e.target.value)}
+            className="px-3 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border
+              bg-transparent border-white/[0.06] text-text-3 hover:bg-white/[0.03] appearance-none"
+            style={{ fontFamily: 'inherit', minWidth: 130 }}
+          >
+            <option value="">All Agents</option>
+            {Object.values(agents).map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
           <button
             onClick={() => setShowArchived(!showArchived)}
             className={`px-4 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border

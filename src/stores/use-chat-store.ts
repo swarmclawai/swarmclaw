@@ -54,6 +54,7 @@ interface ChatState {
   setDebugOpen: (open: boolean) => void
 
   sendMessage: (text: string) => Promise<void>
+  retryLastMessage: () => Promise<void>
   sendHeartbeat: (sessionId: string) => Promise<void>
   stopStreaming: () => void
 }
@@ -188,6 +189,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     useAppStore.getState().loadSessions()
+  },
+
+  retryLastMessage: async () => {
+    if (get().streaming) return
+    const sessionId = useAppStore.getState().currentSessionId
+    if (!sessionId) return
+    try {
+      const key = getStoredAccessKey()
+      const res = await fetch(`/api/sessions/${sessionId}/retry`, {
+        method: 'POST',
+        headers: key ? { 'X-Access-Key': key } : undefined,
+      })
+      if (!res.ok) return
+      const { message, imagePath } = await res.json()
+      if (!message) return
+      // Reload messages from server (without the popped ones)
+      const msgsRes = await fetch(`/api/sessions/${sessionId}/messages`, {
+        headers: key ? { 'X-Access-Key': key } : undefined,
+      })
+      if (msgsRes.ok) {
+        const msgs = await msgsRes.json()
+        set({ messages: msgs })
+      }
+      // Re-send the last user message through the normal SSE flow
+      // Temporarily set pendingImage if there was one
+      if (imagePath) {
+        set({ pendingImage: { file: new File([], ''), path: imagePath, url: '' } })
+      }
+      await get().sendMessage(message)
+    } catch {
+      // ignore
+    }
   },
 
   sendHeartbeat: async (sessionId: string) => {

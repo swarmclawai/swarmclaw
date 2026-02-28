@@ -59,6 +59,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
   if (updates.heartbeatEnabled !== undefined) sessions[id].heartbeatEnabled = updates.heartbeatEnabled
   if (updates.heartbeatIntervalSec !== undefined) sessions[id].heartbeatIntervalSec = updates.heartbeatIntervalSec
+  if (updates.pinned !== undefined) sessions[id].pinned = !!updates.pinned
   if (!Array.isArray(sessions[id].messages)) sessions[id].messages = []
 
   const shouldKickoffAwakening = sessions[id].name === '__main__'

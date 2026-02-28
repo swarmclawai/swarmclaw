@@ -184,10 +184,9 @@ export async function summarizeAndCompact(opts: {
   keepLastN: number
   agentId: string | null
   sessionId: string
-  summaryPrompt?: string
-  generateSummary: (text: string, prompt?: string) => Promise<string>
+  generateSummary: (text: string) => Promise<string>
 }): Promise<CompactionResult> {
-  const { messages, keepLastN, agentId, sessionId, summaryPrompt, generateSummary } = opts
+  const { messages, keepLastN, agentId, sessionId, generateSummary } = opts
   if (messages.length <= keepLastN) {
     return { messages, prunedCount: 0, memoriesStored: 0, summaryAdded: false }
   }
@@ -203,8 +202,7 @@ export async function summarizeAndCompact(opts: {
     .map((m) => `${m.role}: ${m.text}`)
     .join('\n\n')
 
-  const prompt = summaryPrompt || 'Summarize the key points, decisions, and outcomes from this conversation. Be concise but preserve important details, commitments, and context needed for continuing the work.'
-  const summary = await generateSummary(conversationText, prompt)
+  const summary = await generateSummary(conversationText)
 
   const summaryMessage: Message = {
     role: 'assistant',

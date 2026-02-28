@@ -89,6 +89,7 @@ export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
           <DropdownMenuTrigger asChild>
             <button
               onClick={(e) => e.stopPropagation()}
+              aria-label="Agent options"
               className="absolute top-3 right-3 p-0.5 rounded-[6px] opacity-0 group-hover:opacity-60 hover:!opacity-100
                 transition-opacity bg-transparent border-none cursor-pointer text-text-3 hover:bg-white/[0.06]"
             >
@@ -146,6 +147,22 @@ export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
             <span className="text-[10px] font-600 uppercase tracking-wider text-sky-400/70 bg-sky-400/[0.08] px-1.5 py-0.5 rounded-[5px]">
               browser
             </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-text-3/50">
+          {(agent as any).lastUsedAt ? (
+            <span>Last used: {(() => {
+              const days = Math.floor((Date.now() - (agent as any).lastUsedAt) / 86400000)
+              return days === 0 ? 'today' : `${days}d ago`
+            })()}</span>
+          ) : (agent as any).updatedAt ? (
+            <span>Updated: {(() => {
+              const days = Math.floor((Date.now() - agent.updatedAt) / 86400000)
+              return days === 0 ? 'today' : `${days}d ago`
+            })()}</span>
+          ) : null}
+          {(agent as any).totalCost != null && (agent as any).totalCost > 0 && (
+            <span>Cost: ${((agent as any).totalCost as number).toFixed(2)}</span>
           )}
         </div>
       </div>

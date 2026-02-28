@@ -15,6 +15,7 @@ export function ConnectorList({ inSidebar: _inSidebar }: { inSidebar?: boolean }
   const agents = useAppStore((s) => s.agents)
   const loadAgents = useAppStore((s) => s.loadAgents)
   const [toggling, setToggling] = useState<string | null>(null)
+  const [reconnecting, setReconnecting] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -51,6 +52,24 @@ export function ConnectorList({ inSidebar: _inSidebar }: { inSidebar?: boolean }
       await refresh()
     } finally {
       setToggling(null)
+    }
+  }
+
+  const handleReconnect = async (e: React.MouseEvent, c: Connector) => {
+    e.stopPropagation()
+    setReconnecting(c.id)
+    setError(null)
+    try {
+      // Stop then start to reconnect
+      try { await api('PUT', `/connectors/${c.id}`, { action: 'stop' }) } catch { /* may already be stopped */ }
+      await api('PUT', `/connectors/${c.id}`, { action: 'start' })
+      await refresh()
+    } catch (err: unknown) {
+      const msg = err instanceof Error && err.message ? err.message : 'Failed to reconnect'
+      setError(msg)
+      await refresh()
+    } finally {
+      setReconnecting(null)
     }
   }
 
@@ -113,6 +132,11 @@ export function ConnectorList({ inSidebar: _inSidebar }: { inSidebar?: boolean }
                       c.status === 'error' ? 'bg-red-400' : 'bg-white/20'
                     }`}
                   />
+                  {c.qrDataUrl && (
+                    <span className="shrink-0 text-[10px] font-600 uppercase tracking-wider text-violet-400/80 bg-violet-400/[0.08] px-1.5 py-0.5 rounded-[5px]">
+                      QR Ready
+                    </span>
+                  )}
                 </div>
                 <div className="text-[11px] text-text-3 truncate">
                   {c.lastError
@@ -123,11 +147,27 @@ export function ConnectorList({ inSidebar: _inSidebar }: { inSidebar?: boolean }
               </div>
             </button>
 
+            {/* Reconnect button for error-state connectors */}
+            {c.status === 'error' && hasCredentials && (
+              <button
+                onClick={(e) => handleReconnect(e, c)}
+                disabled={reconnecting === c.id}
+                title="Reconnect"
+                aria-label="Reconnect connector"
+                className={`shrink-0 px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 transition-all cursor-pointer border-none
+                  ${reconnecting === c.id ? 'opacity-50' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'}
+                  bg-amber-500/10 text-amber-400 hover:bg-amber-500/20`}
+              >
+                {reconnecting === c.id ? '...' : 'Reconnect'}
+              </button>
+            )}
+
             {/* Toggle button — visible on hover, only if connector has credentials */}
             {hasCredentials && <button
               onClick={(e) => handleToggle(e, c)}
               disabled={isToggling}
               title={isRunning ? 'Stop connector' : 'Start connector'}
+              aria-label={isRunning ? 'Stop connector' : 'Start connector'}
               className={`shrink-0 w-8 h-8 rounded-[8px] flex items-center justify-center transition-all cursor-pointer border-none ${
                 isToggling ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
               } ${

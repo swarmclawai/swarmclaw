@@ -201,10 +201,12 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   // Load agent context when a full prompt was not already composed by the route layer.
   let agentPlatformAssignScope: 'self' | 'all' = 'self'
+  let agentMcpServerIds: string[] | undefined
   if (session.agentId) {
     const agents = loadAgents()
     const agent = agents[session.agentId]
     agentPlatformAssignScope = agent?.platformAssignScope || 'self'
+    agentMcpServerIds = agent?.mcpServerIds
     if (!hasProvidedSystemPrompt) {
       if (agent?.soul) stateModifierParts.push(agent.soul)
       if (agent?.systemPrompt) stateModifierParts.push(agent.systemPrompt)
@@ -338,6 +340,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     agentId: session.agentId,
     sessionId: session.id,
     platformAssignScope: agentPlatformAssignScope,
+    mcpServerIds: agentMcpServerIds,
   })
   const agent = createReactAgent({ llm, tools, stateModifier })
   const recursionLimit = getAgentLoopRecursionLimit(runtime)

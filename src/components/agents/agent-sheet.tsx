@@ -52,6 +52,7 @@ export function AgentSheet() {
   const credentials = useAppStore((s) => s.credentials)
   const loadCredentials = useAppStore((s) => s.loadCredentials)
   const dynamicSkills = useAppStore((s) => s.skills)
+  const mcpServers = useAppStore((s) => s.mcpServers)
   const loadSkills = useAppStore((s) => s.loadSkills)
   const appSettings = useAppStore((s) => s.appSettings)
   const loadSettings = useAppStore((s) => s.loadSettings)
@@ -80,11 +81,13 @@ export function AgentSheet() {
   const [tools, setTools] = useState<string[]>([])
   const [skills, setSkills] = useState<string[]>([])
   const [skillIds, setSkillIds] = useState<string[]>([])
+  const [mcpServerIds, setMcpServerIds] = useState<string[]>([])
   const [fallbackCredentialIds, setFallbackCredentialIds] = useState<string[]>([])
   const [platformAssignScope, setPlatformAssignScope] = useState<'self' | 'all'>('self')
   const [capabilities, setCapabilities] = useState<string[]>([])
   const [capInput, setCapInput] = useState('')
   const [ollamaMode, setOllamaMode] = useState<'local' | 'cloud'>('local')
+  const [openclawEnabled, setOpenclawEnabled] = useState(false)
   const [addingKey, setAddingKey] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyValue, setNewKeyValue] = useState('')
@@ -96,6 +99,7 @@ export function AgentSheet() {
 
   const soulFileRef = useRef<HTMLInputElement>(null)
   const promptFileRef = useRef<HTMLInputElement>(null)
+  const importFileRef = useRef<HTMLInputElement>(null)
 
   const handleFileUpload = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -114,6 +118,7 @@ export function AgentSheet() {
 
   const currentProvider = providers.find((p) => p.id === provider)
   const providerCredentials = Object.values(credentials).filter((c) => c.provider === provider)
+  const openclawCredentials = Object.values(credentials).filter((c) => c.provider === 'openclaw')
   const editing = editingId ? agents[editingId] : null
   const hasNativeCapabilities = NATIVE_CAPABILITY_PROVIDER_IDS.has(provider)
 
@@ -149,11 +154,13 @@ export function AgentSheet() {
         setTools(editing.tools || [])
         setSkills(editing.skills || [])
         setSkillIds(editing.skillIds || [])
+        setMcpServerIds(editing.mcpServerIds || [])
         setFallbackCredentialIds(editing.fallbackCredentialIds || [])
         setPlatformAssignScope(editing.platformAssignScope || 'self')
         setCapabilities(editing.capabilities || [])
         setCapInput('')
         setOllamaMode(editing.credentialId && editing.provider === 'ollama' ? 'cloud' : 'local')
+        setOpenclawEnabled(editing.provider === 'openclaw')
       } else {
         setName('')
         setDescription('')
@@ -173,6 +180,7 @@ export function AgentSheet() {
         setCapabilities([])
         setCapInput('')
         setOllamaMode('local')
+        setOpenclawEnabled(false)
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -234,6 +242,7 @@ export function AgentSheet() {
       tools,
       skills,
       skillIds,
+      mcpServerIds,
       fallbackCredentialIds,
       platformAssignScope,
       capabilities,
@@ -253,6 +262,40 @@ export function AgentSheet() {
       await loadAgents()
       onClose()
     }
+  }
+
+  const handleExport = () => {
+    if (!editing) return
+    const { id: _id, createdAt: _ca, updatedAt: _ua, threadSessionId: _ts, ...exportData } = editing
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${editing.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.agent.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success('Agent exported')
+  }
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string)
+        // Strip IDs and timestamps
+        const { id: _id, createdAt: _ca, updatedAt: _ua, threadSessionId: _ts, ...agentData } = data
+        await createAgent({ ...agentData, name: agentData.name || 'Imported Agent' })
+        await loadAgents()
+        toast.success('Agent imported')
+        onClose()
+      } catch (err) {
+        toast.error('Invalid agent JSON file')
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
   }
 
   const handleTestConnection = async (): Promise<boolean> => {
@@ -420,7 +463,123 @@ export function AgentSheet() {
         </div>
       )}
 
+      {/* OpenClaw Gateway Toggle */}
       <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">OpenClaw Gateway</label>
+          <button
+            type="button"
+            onClick={() => {
+              if (!openclawEnabled) {
+                setOpenclawEnabled(true)
+                setProvider('openclaw')
+                setModel('default')
+                if (!apiEndpoint) setApiEndpoint('http://localhost:18789')
+              } else {
+                setOpenclawEnabled(false)
+                setProvider('claude-cli')
+                setModel('')
+                setApiEndpoint(null)
+                setCredentialId(null)
+              }
+            }}
+            className={`relative w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer border-none ${openclawEnabled ? 'bg-accent-bright' : 'bg-white/[0.12]'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform duration-200 ${openclawEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+        {openclawEnabled && (
+          <div className="mt-4 space-y-4">
+            <div>
+              <label className="block text-[12px] text-text-3 mb-2">Gateway URL</label>
+              <input
+                type="text"
+                value={apiEndpoint || ''}
+                onChange={(e) => setApiEndpoint(e.target.value || null)}
+                placeholder="http://localhost:18789"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+            <div>
+              <label className="block text-[12px] text-text-3 mb-2">Gateway Token</label>
+              {openclawCredentials.length > 0 && !addingKey ? (
+                <div className="flex gap-2">
+                  <select value={credentialId || ''} onChange={(e) => {
+                    if (e.target.value === '__add__') {
+                      setAddingKey(true)
+                      setNewKeyName('')
+                      setNewKeyValue('')
+                    } else {
+                      setCredentialId(e.target.value || null)
+                    }
+                  }} className={`${inputClass} appearance-none cursor-pointer flex-1`} style={{ fontFamily: 'inherit' }}>
+                    <option value="">Select a token...</option>
+                    {openclawCredentials.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                    <option value="__add__">+ Add new token...</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => { setAddingKey(true); setNewKeyName(''); setNewKeyValue('') }}
+                    className="shrink-0 px-3 py-2.5 rounded-[10px] bg-accent-soft/50 text-accent-bright text-[12px] font-600 hover:bg-accent-soft transition-colors cursor-pointer border border-accent-bright/20"
+                  >
+                    + New
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3 p-4 rounded-[12px] border border-accent-bright/15 bg-accent-soft/20">
+                  <input
+                    type="text"
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    placeholder="Token name (optional)"
+                    className={inputClass}
+                    style={{ fontFamily: 'inherit' }}
+                  />
+                  <input
+                    type="password"
+                    value={newKeyValue}
+                    onChange={(e) => setNewKeyValue(e.target.value)}
+                    placeholder="Paste gateway token..."
+                    className={inputClass}
+                    style={{ fontFamily: 'inherit' }}
+                  />
+                  <div className="flex gap-2 justify-end">
+                    {openclawCredentials.length > 0 && (
+                      <button type="button" onClick={() => setAddingKey(false)} className="px-3 py-1.5 text-[12px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none" style={{ fontFamily: 'inherit' }}>Cancel</button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={savingKey || !newKeyValue.trim()}
+                      onClick={async () => {
+                        setSavingKey(true)
+                        try {
+                          const cred = await api<any>('POST', '/credentials', { provider: 'openclaw', name: newKeyName.trim() || 'OpenClaw token', apiKey: newKeyValue.trim() })
+                          await loadCredentials()
+                          setCredentialId(cred.id)
+                          setAddingKey(false)
+                          setNewKeyName('')
+                          setNewKeyValue('')
+                        } catch (err: any) { toast.error(`Failed to save: ${err.message}`) }
+                        finally { setSavingKey(false) }
+                      }}
+                      className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40"
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      {savingKey ? 'Saving...' : 'Save Token'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <p className="text-[11px] text-text-3/70">Enter the URL and token for your local or remote OpenClaw gateway.</p>
+          </div>
+        )}
+      </div>
+
+      {!openclawEnabled && <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Provider</label>
         <div className="grid grid-cols-3 gap-3">
           {providers.filter((p) => !isOrchestrator || p.id !== 'claude-cli').map((p) => {
@@ -430,7 +589,6 @@ export function AgentSheet() {
                 key={p.id}
                 onClick={() => {
                   setProvider(p.id)
-                  if (p.id === 'openclaw') setIsOrchestrator(false)
                 }}
                 className={`relative py-3.5 px-4 rounded-[14px] text-center cursor-pointer transition-all duration-200
                   active:scale-[0.97] text-[14px] font-600 border
@@ -447,9 +605,9 @@ export function AgentSheet() {
             )
           })}
         </div>
-      </div>
+      </div>}
 
-      {currentProvider && currentProvider.models.length > 0 && (
+      {!openclawEnabled && currentProvider && currentProvider.models.length > 0 && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Model</label>
           <select value={model} onChange={(e) => setModel(e.target.value)} className={`${inputClass} appearance-none cursor-pointer`} style={{ fontFamily: 'inherit' }}>
@@ -461,7 +619,7 @@ export function AgentSheet() {
       )}
 
       {/* Ollama Mode Toggle */}
-      {provider === 'ollama' && (
+      {!openclawEnabled && provider === 'ollama' && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Mode</label>
           <div className="flex p-1 rounded-[14px] bg-surface border border-white/[0.06]">
@@ -492,7 +650,7 @@ export function AgentSheet() {
         </div>
       )}
 
-      {(currentProvider?.requiresApiKey || currentProvider?.optionalApiKey || (provider === 'ollama' && ollamaMode === 'cloud')) && (
+      {!openclawEnabled && (currentProvider?.requiresApiKey || currentProvider?.optionalApiKey || (provider === 'ollama' && ollamaMode === 'cloud')) && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
             API Key{currentProvider?.optionalApiKey && !currentProvider?.requiresApiKey && <span className="normal-case tracking-normal font-normal text-text-3"> (optional)</span>}
@@ -571,7 +729,7 @@ export function AgentSheet() {
       )}
 
       {/* Fallback Credentials */}
-      {(currentProvider?.requiresApiKey || currentProvider?.optionalApiKey || (provider === 'ollama' && ollamaMode === 'cloud')) && providerCredentials.length > 1 && (
+      {!openclawEnabled && (currentProvider?.requiresApiKey || currentProvider?.optionalApiKey || (provider === 'ollama' && ollamaMode === 'cloud')) && providerCredentials.length > 1 && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
             Fallback Keys <span className="normal-case tracking-normal font-normal text-text-3">(for auto-failover)</span>
@@ -766,6 +924,35 @@ export function AgentSheet() {
         </div>
       )}
 
+      {/* MCP Servers */}
+      {Object.keys(mcpServers).length > 0 && (
+        <div className="mb-8">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            MCP Servers
+          </label>
+          <p className="text-[12px] text-text-3/60 mb-3">Connect external tool servers to this agent via MCP.</p>
+          <div className="flex flex-wrap gap-2">
+            {Object.values(mcpServers).map((s: any) => {
+              const active = mcpServerIds.includes(s.id)
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setMcpServerIds((prev) => active ? prev.filter((x) => x !== s.id) : [...prev, s.id])}
+                  className={`px-3 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border
+                    ${active
+                      ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                      : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
+                  style={{ fontFamily: 'inherit' }}
+                  title={`${s.transport} — ${s.command || s.url || ''}`}
+                >
+                  {s.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {provider !== 'openclaw' && (
         <div className="mb-8">
           <label className="flex items-center gap-3 cursor-pointer">
@@ -829,10 +1016,23 @@ export function AgentSheet() {
         </div>
       )}
 
+      {/* Import file input (hidden) */}
+      <input ref={importFileRef} type="file" accept=".json" onChange={handleImport} className="hidden" />
+
       <div className="flex gap-3 pt-2 border-t border-white/[0.04]">
         {editing && (
           <button onClick={handleDelete} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
             Delete
+          </button>
+        )}
+        {editing && (
+          <button onClick={handleExport} className="py-3.5 px-4 rounded-[14px] border border-white/[0.08] bg-transparent text-text-3 text-[13px] font-600 cursor-pointer hover:bg-surface-2 hover:text-text-2 transition-all" style={{ fontFamily: 'inherit' }} title="Export agent as JSON">
+            Export
+          </button>
+        )}
+        {!editing && (
+          <button onClick={() => importFileRef.current?.click()} className="py-3.5 px-4 rounded-[14px] border border-white/[0.08] bg-transparent text-text-3 text-[13px] font-600 cursor-pointer hover:bg-surface-2 hover:text-text-2 transition-all" style={{ fontFamily: 'inherit' }} title="Import agent from JSON">
+            Import
           </button>
         )}
         <button onClick={onClose} className="flex-1 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all" style={{ fontFamily: 'inherit' }}>

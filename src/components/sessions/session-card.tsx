@@ -3,6 +3,7 @@
 import type { Session } from '@/types'
 import { api } from '@/lib/api-client'
 import { useAppStore } from '@/stores/use-app-store'
+import { useChatStore } from '@/stores/use-chat-store'
 import { ConnectorPlatformBadge, getSessionConnector } from '@/components/shared/connector-platform-icon'
 
 function timeAgo(ts: number): string {
@@ -36,6 +37,8 @@ export function SessionCard({ session, active, onClick }: Props) {
   const appSettings = useAppStore((s) => s.appSettings)
   const agents = useAppStore((s) => s.agents)
   const connectors = useAppStore((s) => s.connectors)
+  const streamingSessionId = useChatStore((s) => s.streamingSessionId)
+  const isTyping = streamingSessionId === session.id
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -124,7 +127,18 @@ export function SessionCard({ session, active, onClick }: Props) {
       <div className="text-[12px] text-text-3/70 font-mono mt-1.5 truncate">
         {shortPath(session.cwd)}
       </div>
-      <div className="text-[13px] text-text-2/50 truncate mt-1 leading-relaxed">{preview}</div>
+      {isTyping ? (
+        <div className="text-[13px] text-accent-bright/70 truncate mt-1 leading-relaxed flex items-center gap-1.5">
+          <span className="flex gap-0.5">
+            <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:0ms]" />
+            <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:150ms]" />
+            <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:300ms]" />
+          </span>
+          Typing...
+        </div>
+      ) : (
+        <div className="text-[13px] text-text-2/50 truncate mt-1 leading-relaxed">{preview}</div>
+      )}
     </div>
   )
 }

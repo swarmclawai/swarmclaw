@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { NextResponse } from 'next/server'
-import { loadAgents, loadSessions, loadWebhooks, saveSessions, saveWebhooks } from '@/lib/server/storage'
+import { loadAgents, loadSessions, loadWebhooks, saveSessions, saveWebhooks, appendWebhookLog } from '@/lib/server/storage'
 import { enqueueSessionRun } from '@/lib/server/session-run-manager'
 
 function normalizeEvents(value: unknown): string[] {
@@ -59,13 +59,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const webhooks = loadWebhooks()
   const webhook = webhooks[id]
   if (!webhook) return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
-  if (webhook.isEnabled === false) return NextResponse.json({ error: 'Webhook is disabled' }, { status: 409 })
+  if (webhook.isEnabled === false) {
+    appendWebhookLog(crypto.randomBytes(8).toString('hex'), {
+      id: crypto.randomBytes(8).toString('hex'), webhookId: id, event: 'unknown',
+      payload: '', status: 'error', error: 'Webhook is disabled', timestamp: Date.now(),
+    })
+    return NextResponse.json({ error: 'Webhook is disabled' }, { status: 409 })
+  }
 
   const secret = typeof webhook.secret === 'string' ? webhook.secret.trim() : ''
   if (secret) {
     const url = new URL(req.url)
     const provided = req.headers.get('x-webhook-secret') || url.searchParams.get('secret') || ''
     if (provided !== secret) {
+      appendWebhookLog(crypto.randomBytes(8).toString('hex'), {
+        id: crypto.randomBytes(8).toString('hex'), webhookId: id, event: 'unknown',
+        payload: '', status: 'error', error: 'Invalid webhook secret', timestamp: Date.now(),
+      })
       return NextResponse.json({ error: 'Invalid webhook secret' }, { status: 401 })
     }
   }
@@ -110,7 +120,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const agents = loadAgents()
   const agent = webhook.agentId ? agents[webhook.agentId] : null
-  if (!agent) return NextResponse.json({ error: 'Webhook agent is not configured or missing' }, { status: 400 })
+  if (!agent) {
+    appendWebhookLog(crypto.randomBytes(8).toString('hex'), {
+      id: crypto.randomBytes(8).toString('hex'), webhookId: id, event: incomingEvent,
+      payload: (rawBody || '').slice(0, 2000), status: 'error', error: 'Webhook agent is not configured or missing', timestamp: Date.now(),
+    })
+    return NextResponse.json({ error: 'Webhook agent is not configured or missing' }, { status: 400 })
+  }
 
   const sessions = loadSessions()
   const sessionName = `webhook:${id}`
@@ -170,6 +186,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     source: 'webhook',
     internal: false,
     mode: 'followup',
+  })
+
+  appendWebhookLog(crypto.randomBytes(8).toString('hex'), {
+    id: crypto.randomBytes(8).toString('hex'), webhookId: id, event: incomingEvent,
+    payload: (rawBody || '').slice(0, 2000), status: 'success',
+    sessionId: session.id, runId: run.runId, timestamp: Date.now(),
   })
 
   return NextResponse.json({

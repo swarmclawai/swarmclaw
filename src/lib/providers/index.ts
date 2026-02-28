@@ -4,8 +4,8 @@ import { streamOpenCodeCliChat } from './opencode-cli'
 import { streamOpenAiChat } from './openai'
 import { streamOllamaChat } from './ollama'
 import { streamAnthropicChat } from './anthropic'
+import { streamOpenClawChat } from './openclaw'
 import type { ProviderInfo, ProviderConfig as CustomProviderConfig } from '../../types'
-import { normalizeOpenClawEndpoint } from '../openclaw-endpoint'
 
 const RETRYABLE_STATUS_CODES = [401, 429, 500, 502, 503]
 
@@ -67,19 +67,8 @@ const PROVIDERS: Record<string, BuiltinProviderConfig> = {
     models: ['default'],
     requiresApiKey: true,
     requiresEndpoint: true,
-    defaultEndpoint: 'http://localhost:18789/v1',
-    handler: {
-      streamChat: (opts) => {
-        const patchedSession = {
-          ...opts.session,
-          apiEndpoint: normalizeOpenClawEndpoint(opts.session.apiEndpoint || 'http://localhost:18789/v1'),
-          // Use text/plain to bypass Express body parsers in Hostinger/proxy setups.
-          // The OpenClaw gateway parses the body as JSON regardless of Content-Type.
-          contentType: 'text/plain',
-        }
-        return streamOpenAiChat({ ...opts, session: patchedSession })
-      },
-    },
+    defaultEndpoint: 'http://localhost:18789',
+    handler: { streamChat: streamOpenClawChat },
   },
   'opencode-cli': {
     id: 'opencode-cli',
@@ -251,10 +240,12 @@ function getModelOverrides(): Record<string, string[]> {
 
 export function getProviderList(): ProviderInfo[] {
   const overrides = getModelOverrides()
-  const builtins = Object.values(PROVIDERS).map(({ handler, ...info }) => ({
-    ...info,
-    models: overrides[info.id] || info.models,
-  }))
+  const builtins = Object.values(PROVIDERS)
+    .filter(({ id }) => id !== 'openclaw')
+    .map(({ handler, ...info }) => ({
+      ...info,
+      models: overrides[info.id] || info.models,
+    }))
   const customs = Object.values(getCustomProviders())
     .filter((c) => c.isEnabled)
     .map((c) => ({
@@ -313,7 +304,6 @@ export async function streamChatWithFailover(
   }
 
   let lastError: any = null
-  let collectedOutput = ''
 
   for (let i = 0; i < credentialIds.length; i++) {
     const credId = credentialIds[i]
@@ -330,14 +320,9 @@ export async function streamChatWithFailover(
         }
       }
 
-      collectedOutput = ''
       const result = await provider.handler.streamChat({
         ...opts,
         apiKey,
-        write: (data: string) => {
-          collectedOutput += data
-          opts.write(data)
-        },
       })
       return result // success
     } catch (err: any) {

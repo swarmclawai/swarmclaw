@@ -1,6 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { Component, useState, useEffect, useCallback } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAppStore } from '@/stores/use-app-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { Avatar } from '@/components/shared/avatar'
@@ -29,6 +31,14 @@ import { ConnectorSheet } from '@/components/connectors/connector-sheet'
 import { WebhookList } from '@/components/webhooks/webhook-list'
 import { WebhookSheet } from '@/components/webhooks/webhook-sheet'
 import { LogList } from '@/components/logs/log-list'
+import { McpServerList } from '@/components/mcp-servers/mcp-server-list'
+import { McpServerSheet } from '@/components/mcp-servers/mcp-server-sheet'
+import { KnowledgeList } from '@/components/knowledge/knowledge-list'
+import { KnowledgeSheet } from '@/components/knowledge/knowledge-sheet'
+import { PluginList } from '@/components/plugins/plugin-list'
+import { PluginSheet } from '@/components/plugins/plugin-sheet'
+import { UsageList } from '@/components/usage/usage-list'
+import { RunList } from '@/components/runs/run-list'
 import { NetworkBanner } from './network-banner'
 import { UpdateBanner } from './update-banner'
 import { MobileHeader } from './mobile-header'
@@ -59,10 +69,36 @@ export function AppLayout() {
   const setSkillSheetOpen = useAppStore((s) => s.setSkillSheetOpen)
   const setConnectorSheetOpen = useAppStore((s) => s.setConnectorSheetOpen)
   const setWebhookSheetOpen = useAppStore((s) => s.setWebhookSheetOpen)
+  const setMcpServerSheetOpen = useAppStore((s) => s.setMcpServerSheetOpen)
+  const setKnowledgeSheetOpen = useAppStore((s) => s.setKnowledgeSheetOpen)
+  const setPluginSheetOpen = useAppStore((s) => s.setPluginSheetOpen)
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const hasSelectedSession = !!(currentSessionId && sessions[currentSessionId])
 
   const [agentViewMode, setAgentViewMode] = useState<'chat' | 'config'>('chat')
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+
+  const handleShortcutKey = useCallback((e: KeyboardEvent) => {
+    // Ctrl+/ or Cmd+/
+    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+      e.preventDefault()
+      setShortcutsOpen((v) => !v)
+      return
+    }
+    // ? key when not in an input/textarea/contenteditable
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
+      const editable = (e.target as HTMLElement)?.isContentEditable
+      if (tag === 'input' || tag === 'textarea' || editable) return
+      e.preventDefault()
+      setShortcutsOpen((v) => !v)
+    }
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleShortcutKey)
+    return () => window.removeEventListener('keydown', handleShortcutKey)
+  }, [handleShortcutKey])
 
   const [railExpanded, setRailExpanded] = useState(() => {
     if (typeof window === 'undefined') return true
@@ -91,6 +127,9 @@ export function AppLayout() {
     else if (activeView === 'skills') setSkillSheetOpen(true)
     else if (activeView === 'connectors') setConnectorSheetOpen(true)
     else if (activeView === 'webhooks') setWebhookSheetOpen(true)
+    else if (activeView === 'mcp_servers') setMcpServerSheetOpen(true)
+    else if (activeView === 'knowledge') setKnowledgeSheetOpen(true)
+    else if (activeView === 'plugins') setPluginSheetOpen(true)
   }
 
   const agents = useAppStore((s) => s.agents)
@@ -241,6 +280,31 @@ export function AppLayout() {
                 <path d="M22 12h-4l-3 7L9 5l-3 7H2" />
               </svg>
             </NavItem>
+            <NavItem view="mcp_servers" label="MCP" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('mcp_servers'); setSidebarOpen(true) }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><line x1="6" y1="6" x2="6.01" y2="6" /><line x1="6" y1="18" x2="6.01" y2="18" />
+              </svg>
+            </NavItem>
+            <NavItem view="knowledge" label="Knowledge" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('knowledge'); setSidebarOpen(true) }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+            </NavItem>
+            <NavItem view="plugins" label="Plugins" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('plugins'); setSidebarOpen(true) }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2v4m0 12v4M2 12h4m12 0h4" /><circle cx="12" cy="12" r="4" /><path d="M8 8L5.5 5.5M16 8l2.5-2.5M8 16l-2.5 2.5M16 16l2.5 2.5" />
+              </svg>
+            </NavItem>
+            <NavItem view="usage" label="Usage" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('usage'); setSidebarOpen(true) }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+              </svg>
+            </NavItem>
+            <NavItem view="runs" label="Runs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('runs'); setSidebarOpen(true) }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </NavItem>
             <NavItem view="logs" label="Logs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('logs'); setSidebarOpen(true) }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
@@ -337,7 +401,7 @@ export function AppLayout() {
         >
           <div className="flex items-center px-5 pt-5 pb-3 shrink-0">
             <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">{activeView === 'sessions' ? 'History' : activeView}</h2>
-            {activeView === 'logs' ? null : activeView === 'memory' ? (
+            {activeView === 'logs' || activeView === 'usage' || activeView === 'runs' ? null : activeView === 'memory' ? (
               <button
                 onClick={() => useAppStore.getState().setMemorySheetOpen(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 text-accent-bright bg-accent-soft hover:bg-[#6366F1]/15 transition-all cursor-pointer"
@@ -358,7 +422,7 @@ export function AppLayout() {
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'New'}
+                {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : 'New'}
               </button>
             )}
           </div>
@@ -395,6 +459,10 @@ export function AppLayout() {
           {activeView === 'skills' && <SkillList inSidebar />}
           {activeView === 'connectors' && <ConnectorList inSidebar />}
           {activeView === 'webhooks' && <WebhookList inSidebar />}
+          {activeView === 'mcp_servers' && <McpServerList />}
+          {activeView === 'knowledge' && <KnowledgeList />}
+          {activeView === 'usage' && <UsageList />}
+          {activeView === 'runs' && <RunList />}
           {activeView === 'logs' && <LogList />}
         </div>
       )}
@@ -432,7 +500,7 @@ export function AppLayout() {
             </div>
             {/* View selector tabs */}
             <div className="flex px-4 py-2 gap-1 shrink-0 flex-wrap">
-              {(['agents', 'sessions', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'webhooks', 'logs'] as AppView[]).map((v) => (
+              {(['agents', 'sessions', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'plugins', 'usage', 'runs', 'logs'] as AppView[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setActiveView(v)}
@@ -446,6 +514,7 @@ export function AppLayout() {
                 </button>
               ))}
             </div>
+            {activeView !== 'logs' && activeView !== 'usage' && activeView !== 'runs' && (
             <div className="px-4 py-2.5 shrink-0">
               <button
                 onClick={() => {
@@ -457,9 +526,10 @@ export function AppLayout() {
                   shadow-[0_2px_12px_rgba(99,102,241,0.15)]"
                 style={{ fontFamily: 'inherit' }}
               >
-                + New {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'Entry'}
+                + New {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : activeView === 'plugins' ? 'Plugin' : 'Entry'}
               </button>
             </div>
+            )}
             {activeView === 'sessions' && (
               <>
                 <UpdateBanner />
@@ -493,60 +563,67 @@ export function AppLayout() {
             {activeView === 'skills' && <SkillList inSidebar />}
             {activeView === 'connectors' && <ConnectorList inSidebar />}
             {activeView === 'webhooks' && <WebhookList inSidebar />}
+            {activeView === 'mcp_servers' && <McpServerList />}
+            {activeView === 'knowledge' && <KnowledgeList />}
+            {activeView === 'plugins' && <PluginList inSidebar />}
+            {activeView === 'usage' && <UsageList />}
+            {activeView === 'runs' && <RunList />}
             {activeView === 'logs' && <LogList />}
           </div>
         </div>
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col h-full min-w-0 bg-bg">
-        {!isDesktop && <MobileHeader />}
-        {activeView === 'agents' && hasSelectedSession ? (
-          <ChatArea />
-        ) : activeView === 'agents' ? (
-          <div className="flex-1 flex flex-col">
-            {!isDesktop ? (
-              <AgentChatList />
-            ) : (
-              <div className="flex-1 flex items-center justify-center px-8">
-                <div className="text-center max-w-[420px]">
-                  <h2 className="font-display text-[24px] font-700 text-text mb-2 tracking-[-0.02em]">
-                    Select an Agent
-                  </h2>
-                  <p className="text-[14px] text-text-3">
-                    Choose an agent from the sidebar to start chatting.
-                  </p>
+      <ErrorBoundary>
+        <div className="flex-1 flex flex-col h-full min-w-0 bg-bg">
+          {!isDesktop && <MobileHeader />}
+          {activeView === 'agents' && hasSelectedSession ? (
+            <ChatArea />
+          ) : activeView === 'agents' ? (
+            <div className="flex-1 flex flex-col">
+              {!isDesktop ? (
+                <AgentChatList />
+              ) : (
+                <div className="flex-1 flex items-center justify-center px-8">
+                  <div className="text-center max-w-[420px]">
+                    <h2 className="font-display text-[24px] font-700 text-text mb-2 tracking-[-0.02em]">
+                      Select an Agent
+                    </h2>
+                    <p className="text-[14px] text-text-3">
+                      Choose an agent from the sidebar to start chatting.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        ) : activeView === 'sessions' && hasSelectedSession ? (
-          <ChatArea />
-        ) : activeView === 'sessions' ? (
-          <div className="flex-1 flex flex-col">
-            {!isDesktop ? (
-              <SessionList />
-            ) : (
-              <div className="flex-1 flex items-center justify-center px-8">
-                <div className="text-center max-w-[420px]">
-                  <h2 className="font-display text-[24px] font-700 text-text mb-2 tracking-[-0.02em]">
-                    No Chat Selected
-                  </h2>
-                  <p className="text-[14px] text-text-3">
-                    Choose a session from the sidebar or switch to Agents view.
-                  </p>
+              )}
+            </div>
+          ) : activeView === 'sessions' && hasSelectedSession ? (
+            <ChatArea />
+          ) : activeView === 'sessions' ? (
+            <div className="flex-1 flex flex-col">
+              {!isDesktop ? (
+                <SessionList />
+              ) : (
+                <div className="flex-1 flex items-center justify-center px-8">
+                  <div className="text-center max-w-[420px]">
+                    <h2 className="font-display text-[24px] font-700 text-text mb-2 tracking-[-0.02em]">
+                      No Chat Selected
+                    </h2>
+                    <p className="text-[14px] text-text-3">
+                      Choose a session from the sidebar or switch to Agents view.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        ) : activeView === 'tasks' && isDesktop ? (
-          <TaskBoard />
-        ) : activeView === 'memory' ? (
-          <MemoryDetail />
-        ) : (
-          <ViewEmptyState view={activeView} />
-        )}
-      </div>
+              )}
+            </div>
+          ) : activeView === 'tasks' && isDesktop ? (
+            <TaskBoard />
+          ) : activeView === 'memory' ? (
+            <MemoryDetail />
+          ) : (
+            <ViewEmptyState view={activeView} />
+          )}
+        </div>
+      </ErrorBoundary>
 
       <NewSessionSheet />
       <SettingsSheet />
@@ -559,8 +636,85 @@ export function AppLayout() {
       <SkillSheet />
       <ConnectorSheet />
       <WebhookSheet />
+      <McpServerSheet />
+      <KnowledgeSheet />
+      <PluginSheet />
+
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent className="sm:max-w-[380px] bg-raised border-white/[0.08]">
+          <DialogHeader>
+            <DialogTitle className="text-text">Keyboard Shortcuts</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {([
+              ['Enter', 'Send message'],
+              ['Shift + Enter', 'New line'],
+              ['Ctrl + F', 'Search in chat'],
+              ['Ctrl + /', 'Show shortcuts'],
+            ] as const).map(([keys, desc]) => (
+              <div key={keys} className="flex items-center justify-between">
+                <span className="text-[13px] text-text-2">{desc}</span>
+                <kbd className="px-2 py-1 rounded-[6px] bg-white/[0.06] border border-white/[0.08] text-[11px] font-mono text-text-3">{keys}</kbd>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
+}
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(_error: Error) {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('ErrorBoundary caught:', error, info)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center px-8 bg-bg">
+          <div className="text-center max-w-[400px]">
+            <div className="w-14 h-14 rounded-[16px] bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-5">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-red-400">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <h2 className="font-display text-[22px] font-700 text-text mb-2 tracking-[-0.02em]">
+              Something went wrong
+            </h2>
+            <p className="text-[14px] text-text-3 mb-6">
+              An unexpected error occurred. Try reloading the page.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-[12px] border-none bg-[#6366F1] text-white text-[14px] font-600 cursor-pointer
+                hover:brightness-110 active:scale-[0.97] transition-all shadow-[0_4px_16px_rgba(99,102,241,0.2)]"
+              style={{ fontFamily: 'inherit' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+              Reload
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
 }
 
 const VIEW_DESCRIPTIONS: Record<AppView, string> = {
@@ -574,7 +728,12 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   skills: 'Reusable instruction sets for agents',
   connectors: 'Chat platform bridges (Discord, Slack, etc.)',
   webhooks: 'Inbound HTTP triggers for event-driven workflows',
+  mcp_servers: 'Connect agents to external MCP tool servers',
+  knowledge: 'Shared knowledge base accessible by all agents',
   logs: 'Application logs & error tracking',
+  plugins: 'Extend agent capabilities with custom plugins',
+  usage: 'Token usage analytics & cost tracking',
+  runs: 'Live session run monitoring & history',
 }
 
 const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'sessions' | 'agents'>, { icon: string; title: string; description: string; features: string[] }> = {
@@ -626,11 +785,41 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'sessions' | 'agents'>, { icon:
     description: 'Receive external events over HTTP and trigger orchestrator runs automatically.',
     features: ['Create secure inbound webhook endpoints', 'Filter events by type or source', 'Route each webhook to a specific orchestrator', 'Use x-webhook-secret for request authentication'],
   },
+  mcp_servers: {
+    icon: 'server',
+    title: 'MCP Servers',
+    description: 'Connect agents to external MCP (Model Context Protocol) servers, injecting their tools into chat sessions.',
+    features: ['Configure stdio, SSE, or streamable HTTP transports', 'Test connections and discover available tools', 'Assign MCP servers to specific agents', 'Tools appear alongside built-in tools in chat'],
+  },
+  knowledge: {
+    icon: 'globe',
+    title: 'Knowledge Base',
+    description: 'A shared knowledge graph accessible by all agents, enabling cross-agent information sharing and orchestration.',
+    features: ['Create tagged knowledge entries', 'Agents can store and search knowledge via tools', 'Full-text and vector search', 'Provenance tracking per entry'],
+  },
   logs: {
     icon: 'file-text',
     title: 'Logs',
     description: 'View application logs, errors, and debug information. Logs auto-refresh in real-time.',
     features: ['Filter by level: ERROR, WARN, INFO, DEBUG', 'Search through log entries', 'Auto-refresh with live mode', 'Click entries to expand details'],
+  },
+  plugins: {
+    icon: 'puzzle',
+    title: 'Plugins',
+    description: 'Extend agent behavior with hooks. Install from the marketplace, a URL, or drop .js files into data/plugins/.',
+    features: ['Install plugins from the marketplace or a URL', 'Toggle plugins on/off', 'Lifecycle hooks: beforeChat, afterChat, onError', 'Compatible with OpenClaw plugin format'],
+  },
+  usage: {
+    icon: 'bar-chart',
+    title: 'Usage',
+    description: 'Track token usage and costs across all providers and sessions.',
+    features: ['Per-provider cost breakdown', 'Token usage over time', 'Session-level cost tracking', 'Export usage data'],
+  },
+  runs: {
+    icon: 'activity',
+    title: 'Runs',
+    description: 'View the session run queue and execution history.',
+    features: ['Monitor queued and running tasks', 'View run results and errors', 'Cancel pending runs', 'Automatic retry tracking'],
   },
 }
 
@@ -701,6 +890,18 @@ function ViewEmptyIcon({ type }: { type: string }) {
       return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
     case 'webhook':
       return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><path d="M22 12h-4l-3 7L9 5l-3 7H2" /></svg>
+    case 'server':
+      return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><line x1="6" y1="6" x2="6.01" y2="6" /><line x1="6" y1="18" x2="6.01" y2="18" /></svg>
+    case 'globe':
+      return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+    case 'file-text':
+      return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+    case 'puzzle':
+      return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={cls}><path d="M12 2v4m0 12v4M2 12h4m12 0h4" /><circle cx="12" cy="12" r="4" /><path d="M8 8L5.5 5.5M16 8l2.5-2.5M8 16l-2.5 2.5M16 16l2.5 2.5" /></svg>
+    case 'bar-chart':
+      return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>
+    case 'activity':
+      return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={cls}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
     default:
       return null
   }

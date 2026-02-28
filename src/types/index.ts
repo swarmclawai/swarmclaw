@@ -103,6 +103,7 @@ export interface Session {
     lastTickAt?: number | null
     updatedAt?: number
   }
+  pinned?: boolean
   file?: string | null
   queuedCount?: number
   currentRunId?: string | null
@@ -227,6 +228,7 @@ export interface Agent {
   tools?: string[]              // e.g. ['browser'] — available tool integrations
   skills?: string[]             // e.g. ['frontend-design'] — Claude Code skills to use
   skillIds?: string[]           // IDs of uploaded skills from the Skills manager
+  mcpServerIds?: string[]       // IDs of configured MCP servers to inject tools from
   capabilities?: string[]       // e.g. ['frontend', 'screenshots', 'research', 'devops']
   threadSessionId?: string | null  // persistent chat thread session for agent-centric UI
   platformAssignScope?: 'self' | 'all'  // defaults to 'self'
@@ -318,7 +320,41 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human' | 'orchestrated'
-export type AppView = 'sessions' | 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'logs'
+export type AppView = 'sessions' | 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'runs' | 'logs'
+
+// --- Session Runs ---
+
+export type SessionRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface SessionRunRecord {
+  id: string
+  sessionId: string
+  source: string
+  internal: boolean
+  mode: string
+  status: SessionRunStatus
+  messagePreview: string
+  dedupeKey?: string
+  queuedAt: number
+  startedAt?: number
+  endedAt?: number
+  error?: string
+  resultPreview?: string
+}
+
+// --- Webhook Logs ---
+
+export interface WebhookLogEntry {
+  id: string
+  webhookId: string
+  event: string
+  payload: string
+  status: 'success' | 'error'
+  sessionId?: string
+  runId?: string
+  error?: string
+  timestamp: number
+}
 
 // --- App Settings ---
 
@@ -453,7 +489,7 @@ export interface Skill {
 
 // --- Connectors (Chat Platform Bridges) ---
 
-export type ConnectorPlatform = 'discord' | 'telegram' | 'slack' | 'whatsapp' | 'openclaw'
+export type ConnectorPlatform = 'discord' | 'telegram' | 'slack' | 'whatsapp' | 'openclaw' | 'signal' | 'teams' | 'googlechat' | 'matrix'
 export type ConnectorStatus = 'stopped' | 'running' | 'error'
 
 export interface Connector {
@@ -551,4 +587,34 @@ export interface BoardTask {
     reasons: string[]
     checkedAt: number
   } | null
+}
+
+// --- MCP Servers ---
+
+export type McpTransport = 'stdio' | 'sse' | 'streamable-http'
+
+export interface McpServerConfig {
+  id: string
+  name: string
+  transport: McpTransport
+  command?: string             // for stdio transport
+  args?: string[]              // for stdio transport
+  url?: string                 // for sse/streamable-http transport
+  env?: Record<string, string> // environment variables
+  headers?: Record<string, string> // HTTP headers for sse/streamable-http
+  createdAt: number
+  updatedAt: number
+}
+
+// --- ClawHub ---
+
+export interface ClawHubSkill {
+  id: string
+  name: string
+  description: string
+  author: string
+  tags: string[]
+  downloads: number
+  url: string
+  version: string
 }

@@ -75,40 +75,33 @@ export function NewSessionSheet() {
     }
   }, [open])
 
+  // Derive model, endpoint, and credential from provider + ollamaMode (consolidated)
   useEffect(() => {
+    // Set model from provider defaults
     if (currentProvider?.models.length) {
       setModel(currentProvider.models[0])
     }
-    setCredentialId(null)
+
+    // Reset ollama mode for non-ollama providers
     if (provider !== 'ollama') {
       setOllamaMode('local')
     }
-    if (currentProvider?.defaultEndpoint) {
+
+    // Derive endpoint
+    if (provider === 'ollama') {
+      setEndpoint(ollamaMode === 'local' ? 'http://localhost:11434' : '')
+    } else if (currentProvider?.defaultEndpoint) {
       setEndpoint(currentProvider.defaultEndpoint)
     }
-  }, [provider, providers])
 
-  useEffect(() => {
+    // Derive credential
     const needsKey = currentProvider?.requiresApiKey || (provider === 'ollama' && ollamaMode === 'cloud')
-    if (needsKey && providerCredentials.length > 0 && !credentialId) {
+    if (needsKey && providerCredentials.length > 0) {
       setCredentialId(providerCredentials[0].id)
-    }
-  }, [providerCredentials.length, provider, ollamaMode])
-
-  useEffect(() => {
-    if (ollamaMode === 'local') {
-      setEndpoint('http://localhost:11434')
-      setCredentialId(null)
     } else {
-      setEndpoint('')
-      // Auto-select first credential for cloud
-      if (providerCredentials.length > 0) {
-        setCredentialId(providerCredentials[0].id)
-      } else {
-        setCredentialId(null)
-      }
+      setCredentialId(null)
     }
-  }, [ollamaMode])
+  }, [provider, providers, ollamaMode, providerCredentials.length])
 
   const handleAddKey = async () => {
     if (!newKeyValue.trim()) return

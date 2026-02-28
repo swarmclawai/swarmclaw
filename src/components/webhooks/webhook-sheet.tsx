@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { api } from '@/lib/api-client'
-import type { Webhook } from '@/types'
+import type { Webhook, WebhookLogEntry } from '@/types'
 
 type WebhookApiResponse = Webhook | { error: string }
 type DeleteWebhookResponse = { ok: boolean } | { error: string }
@@ -56,6 +56,9 @@ export function WebhookSheet() {
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState<'endpoint' | 'secret' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<'config' | 'history'>('config')
+  const [history, setHistory] = useState<WebhookLogEntry[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   const editing = editingId ? (webhooks[editingId] as Webhook | undefined) : null
   const endpoint = editing ? webhookUrl(editing.id) : ''
@@ -70,8 +73,20 @@ export function WebhookSheet() {
       loadAgents()
       setCopied(null)
       setError(null)
+      setTab('config')
+      setHistory([])
     }
   }, [open, loadWebhooks, loadAgents])
+
+  useEffect(() => {
+    if (tab === 'history' && editing) {
+      setHistoryLoading(true)
+      api<WebhookLogEntry[]>('GET', `/webhooks/${editing.id}/history`)
+        .then((res) => setHistory(Array.isArray(res) ? res : []))
+        .catch(() => setHistory([]))
+        .finally(() => setHistoryLoading(false))
+    }
+  }, [tab, editing])
 
   useEffect(() => {
     if (editing) {
@@ -163,13 +178,64 @@ export function WebhookSheet() {
           <p className="text-[13px] text-text-3">Create an inbound endpoint that triggers an orchestrator</p>
         </div>
 
-        {error && (
+        {editing && (
+          <div className="flex gap-1 p-1 rounded-[12px] bg-bg border border-white/[0.06]">
+            {(['config', 'history'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`flex-1 py-2 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 border-none capitalize ${
+                  tab === t ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'
+                }`}
+                style={{ fontFamily: 'inherit' }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {tab === 'history' && editing ? (
+          <div>
+            {historyLoading ? (
+              <div className="text-center py-8 text-[13px] text-text-3">Loading history...</div>
+            ) : history.length === 0 ? (
+              <div className="text-center py-8 text-[13px] text-text-3/60">No webhook invocations yet</div>
+            ) : (
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {history.map((entry) => (
+                  <div key={entry.id} className="p-3 rounded-[10px] border border-white/[0.06] bg-white/[0.02]">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-[10px] font-700 uppercase tracking-wider px-1.5 py-0.5 rounded-[4px] ${
+                        entry.status === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                      }`}>
+                        {entry.status}
+                      </span>
+                      <span className="text-[11px] text-text-3/60 font-mono">{entry.event}</span>
+                      <span className="text-[10px] text-text-3/40 ml-auto">
+                        {new Date(entry.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+                    {entry.error && (
+                      <div className="text-[11px] text-red-300/80 mt-1">{entry.error}</div>
+                    )}
+                    {entry.sessionId && (
+                      <div className="text-[10px] text-text-3/50 mt-1 font-mono">Session: {entry.sessionId}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {tab === 'config' && error && (
           <div className="px-3.5 py-2.5 rounded-[12px] bg-red-500/10 border border-red-500/20 text-[12px] text-red-300">
             {error}
           </div>
         )}
 
-        {editing && (
+        {tab === 'config' && editing && (
           <div className="p-4 rounded-[14px] bg-white/[0.02] border border-white/[0.06]">
             <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Endpoint URL</label>
             <div className="flex gap-2">
@@ -192,6 +258,7 @@ export function WebhookSheet() {
           </div>
         )}
 
+        {tab === 'config' && <>
         <div>
           <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Name</label>
           <input
@@ -328,6 +395,7 @@ export function WebhookSheet() {
             {saving ? 'Saving...' : editing ? 'Update' : 'Create'}
           </button>
         </div>
+        </>}
       </div>
     </BottomSheet>
   )

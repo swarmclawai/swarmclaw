@@ -137,6 +137,19 @@ function fmtTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+function relativeTime(ts: number): string {
+  const now = Date.now()
+  const diff = now - ts
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  const d = new Date(ts)
+  const today = new Date()
+  if (d.toDateString() === today.toDateString()) return fmtTime(ts)
+  if (diff < 604_800_000) return d.toLocaleDateString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
 function heartbeatSummary(text: string): string {
   const clean = (text || '')
     .replace(/\bHEARTBEAT_OK\b/gi, '')
@@ -158,9 +171,11 @@ function heartbeatSummary(text: string): string {
 interface Props {
   message: Message
   assistantName?: string
+  isLast?: boolean
+  onRetry?: () => void
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, assistantName }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, assistantName, isLast, onRetry }: Props) {
   const isUser = message.role === 'user'
   const isHeartbeat = !isUser && (message.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(message.text || ''))
   const currentUser = useAppStore((s) => s.currentUser)
@@ -189,8 +204,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
         <span className={`text-[12px] font-600 ${isUser ? 'text-accent-bright/70' : 'text-text-3'}`}>
           {isUser ? (currentUser ? currentUser.charAt(0).toUpperCase() + currentUser.slice(1) : 'You') : (assistantName || 'Claude')}
         </span>
-        <span className="text-[11px] text-text-3/70 font-mono">
-          {message.time ? fmtTime(message.time) : ''}
+        <span className="text-[11px] text-text-3/70 font-mono" title={message.time ? new Date(message.time).toLocaleString() : ''}>
+          {message.time ? relativeTime(message.time) : ''}
         </span>
       </div>
 
@@ -435,23 +450,37 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
         toolOutputs={toolEvents.map((e) => e.output || '').filter(Boolean)}
       />}
 
-      {/* Action buttons (AI messages only) */}
-      {!isUser && (
-        <div className="flex items-center gap-1 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+      {/* Action buttons */}
+      <div className={`flex items-center gap-1 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${isUser ? 'justify-end' : ''}`}>
+        <button
+          onClick={handleCopy}
+          aria-label="Copy message"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
+            text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all"
+          style={{ fontFamily: 'inherit' }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+        {!isUser && isLast && onRetry && (
           <button
-            onClick={handleCopy}
+            onClick={onRetry}
+            aria-label="Retry message"
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
               text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all"
             style={{ fontFamily: 'inherit' }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
             </svg>
-            {copied ? 'Copied' : 'Copy'}
+            Retry
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 })

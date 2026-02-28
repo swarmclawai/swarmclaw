@@ -7,6 +7,10 @@ export const CONNECTOR_PLATFORM_META: Record<ConnectorPlatform, { label: string;
   slack: { label: 'Slack', color: '#4A154B' },
   whatsapp: { label: 'WhatsApp', color: '#25D366' },
   openclaw: { label: 'OpenClaw', color: '#F97316' },
+  signal: { label: 'Signal', color: '#3A76F0' },
+  teams: { label: 'Teams', color: '#6264A7' },
+  googlechat: { label: 'Google Chat', color: '#00AC47' },
+  matrix: { label: 'Matrix', color: '#0DBD8B' },
 }
 
 export function getConnectorPlatformLabel(platform: ConnectorPlatform): string {

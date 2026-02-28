@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook } from '../types'
+import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta } from '../types'
 import { fetchSessions, fetchDirs, fetchProviders, fetchCredentials } from '../lib/sessions'
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
@@ -20,6 +20,7 @@ interface AppState {
   setCurrentSession: (id: string | null) => void
   removeSession: (id: string) => void
   clearSessions: (ids: string[]) => Promise<void>
+  togglePinSession: (id: string) => void
   updateSessionInStore: (session: Session) => void
 
   sidebarOpen: boolean
@@ -126,6 +127,30 @@ interface AppState {
   editingWebhookId: string | null
   setEditingWebhookId: (id: string | null) => void
 
+  // MCP Servers
+  mcpServers: Record<string, McpServerConfig>
+  loadMcpServers: () => Promise<void>
+  mcpServerSheetOpen: boolean
+  setMcpServerSheetOpen: (open: boolean) => void
+  editingMcpServerId: string | null
+  setEditingMcpServerId: (id: string | null) => void
+
+  // Knowledge Base
+  knowledgeSheetOpen: boolean
+  setKnowledgeSheetOpen: (open: boolean) => void
+  editingKnowledgeId: string | null
+  setEditingKnowledgeId: (id: string | null) => void
+  knowledgeRefreshKey: number
+  triggerKnowledgeRefresh: () => void
+
+  // Plugins
+  plugins: Record<string, PluginMeta>
+  loadPlugins: () => Promise<void>
+  pluginSheetOpen: boolean
+  setPluginSheetOpen: (open: boolean) => void
+  editingPluginFilename: string | null
+  setEditingPluginFilename: (filename: string | null) => void
+
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -164,6 +189,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const sessions = { ...get().sessions }
     for (const id of ids) delete sessions[id]
     set({ sessions, currentSessionId: ids.includes(get().currentSessionId!) ? null : get().currentSessionId })
+  },
+  togglePinSession: (id) => {
+    const sessions = { ...get().sessions }
+    if (sessions[id]) {
+      sessions[id] = { ...sessions[id], pinned: !sessions[id].pinned }
+      set({ sessions })
+      // Persist to server
+      void api('PUT', `/sessions/${id}`, { pinned: sessions[id].pinned })
+    }
   },
   updateSessionInStore: (session) => {
     set({ sessions: { ...get().sessions, [session.id]: session } })
@@ -390,5 +424,45 @@ export const useAppStore = create<AppState>((set, get) => ({
   setWebhookSheetOpen: (open) => set({ webhookSheetOpen: open }),
   editingWebhookId: null,
   setEditingWebhookId: (id) => set({ editingWebhookId: id }),
+
+  // MCP Servers
+  mcpServers: {},
+  loadMcpServers: async () => {
+    try {
+      const mcpServers = await api<Record<string, McpServerConfig>>('GET', '/mcp-servers')
+      set({ mcpServers })
+    } catch {
+      // ignore
+    }
+  },
+  mcpServerSheetOpen: false,
+  setMcpServerSheetOpen: (open) => set({ mcpServerSheetOpen: open }),
+  editingMcpServerId: null,
+  setEditingMcpServerId: (id) => set({ editingMcpServerId: id }),
+
+  // Knowledge Base
+  knowledgeSheetOpen: false,
+  setKnowledgeSheetOpen: (open) => set({ knowledgeSheetOpen: open }),
+  editingKnowledgeId: null,
+  setEditingKnowledgeId: (id) => set({ editingKnowledgeId: id }),
+  knowledgeRefreshKey: 0,
+  triggerKnowledgeRefresh: () => set((s) => ({ knowledgeRefreshKey: s.knowledgeRefreshKey + 1 })),
+
+  // Plugins
+  plugins: {},
+  loadPlugins: async () => {
+    try {
+      const list = await api<PluginMeta[]>('GET', '/plugins')
+      const plugins: Record<string, PluginMeta> = {}
+      for (const p of list) plugins[p.filename] = p
+      set({ plugins })
+    } catch {
+      // ignore
+    }
+  },
+  pluginSheetOpen: false,
+  setPluginSheetOpen: (open) => set({ pluginSheetOpen: open }),
+  editingPluginFilename: null,
+  setEditingPluginFilename: (filename) => set({ editingPluginFilename: filename }),
 
 }))

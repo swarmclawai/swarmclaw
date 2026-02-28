@@ -34,18 +34,22 @@ const locks: Map<string, Promise<void>> =
   (globalThis as any)[lockKey] ?? ((globalThis as any)[lockKey] = new Map<string, Promise<void>>())
 
 /** Get platform implementation lazily */
-async function getPlatform(platform: string) {
+export async function getPlatform(platform: string) {
   switch (platform) {
     case 'discord':  return (await import('./discord')).default
     case 'telegram': return (await import('./telegram')).default
     case 'slack':    return (await import('./slack')).default
     case 'whatsapp': return (await import('./whatsapp')).default
     case 'openclaw': return (await import('./openclaw')).default
+    case 'signal':    return (await import('./signal')).default
+    case 'teams':     return (await import('./teams')).default
+    case 'googlechat': return (await import('./googlechat')).default
+    case 'matrix':    return (await import('./matrix')).default
     default: throw new Error(`Unknown platform: ${platform}`)
   }
 }
 
-function formatMediaLine(media: InboundMedia): string {
+export function formatMediaLine(media: InboundMedia): string {
   const typeLabel = media.type.toUpperCase()
   const name = media.fileName || media.mimeType || 'attachment'
   const size = media.sizeBytes ? ` (${Math.max(1, Math.round(media.sizeBytes / 1024))} KB)` : ''
@@ -53,7 +57,7 @@ function formatMediaLine(media: InboundMedia): string {
   return `- ${typeLabel}: ${name}${size}`
 }
 
-function formatInboundUserText(msg: InboundMessage): string {
+export function formatInboundUserText(msg: InboundMessage): string {
   const baseText = (msg.text || '').trim()
   const lines: string[] = []
   if (baseText) lines.push(`[${msg.senderName}] ${baseText}`)
@@ -320,7 +324,7 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
     botToken = connector.config.botToken
   }
 
-  if (!botToken && connector.platform !== 'whatsapp' && connector.platform !== 'openclaw') {
+  if (!botToken && connector.platform !== 'whatsapp' && connector.platform !== 'openclaw' && connector.platform !== 'signal') {
     throw new Error('No bot token configured')
   }
 

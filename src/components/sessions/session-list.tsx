@@ -12,6 +12,7 @@ interface Props {
 }
 
 type SessionFilter = 'all' | 'active' | 'human' | 'orchestrated'
+type SortMode = 'lastActive' | 'name' | 'messages'
 
 export function SessionList({ inSidebar, onSelect }: Props) {
   const sessions = useAppStore((s) => s.sessions)
@@ -22,9 +23,11 @@ export function SessionList({ inSidebar, onSelect }: Props) {
   const loadConnectors = useAppStore((s) => s.loadConnectors)
   const setNewSessionOpen = useAppStore((s) => s.setNewSessionOpen)
   const clearSessions = useAppStore((s) => s.clearSessions)
+  const togglePinSession = useAppStore((s) => s.togglePinSession)
   const setMessages = useChatStore((s) => s.setMessages)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<SessionFilter>('all')
+  const [sortMode, setSortMode] = useState<SortMode>('lastActive')
 
   useEffect(() => {
     void loadConnectors()
@@ -51,8 +54,16 @@ export function SessionList({ inSidebar, onSelect }: Props) {
         if (typeFilter === 'orchestrated' && s.sessionType !== 'orchestrated') return false
         return true
       })
-      .sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0))
-  }, [allUserSessions, search, typeFilter])
+      .sort((a, b) => {
+        // Pinned always first
+        if (a.pinned && !b.pinned) return -1
+        if (!a.pinned && b.pinned) return 1
+        // Then by sort mode
+        if (sortMode === 'name') return a.name.localeCompare(b.name)
+        if (sortMode === 'messages') return (b.messages?.length || 0) - (a.messages?.length || 0)
+        return (b.lastActiveAt || 0) - (a.lastActiveAt || 0)
+      })
+  }, [allUserSessions, search, typeFilter, sortMode])
 
   const handleSelect = async (id: string) => {
     setCurrentSession(id)
@@ -128,29 +139,55 @@ export function SessionList({ inSidebar, onSelect }: Props) {
         )}
       </div>
 
-      {(filtered.length > 3 || search) && (
-        <div className="px-4 py-2.5 shrink-0">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="w-full px-4 py-2.5 rounded-[12px] border border-white/[0.04] bg-surface text-text
-              text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
-            style={{ fontFamily: 'inherit' }}
-          />
-        </div>
-      )}
+      {/* Search — always visible */}
+      <div className="px-4 py-2 shrink-0 flex gap-2">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search..."
+          className="flex-1 px-4 py-2.5 rounded-[12px] border border-white/[0.04] bg-surface text-text
+            text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
+          style={{ fontFamily: 'inherit' }}
+        />
+        {/* Sort dropdown */}
+        <select
+          value={sortMode}
+          onChange={(e) => setSortMode(e.target.value as SortMode)}
+          aria-label="Sort sessions"
+          className="px-2 py-2 rounded-[12px] border border-white/[0.04] bg-surface text-text
+            text-[11px] outline-none cursor-pointer"
+          style={{ fontFamily: 'inherit' }}
+        >
+          <option value="lastActive">Recent</option>
+          <option value="name">Name</option>
+          <option value="messages">Messages</option>
+        </select>
+      </div>
 
       {filtered.length > 0 ? (
         <div className="flex flex-col gap-1 px-2 pb-4">
           {filtered.map((s) => (
-            <SessionCard
-              key={s.id}
-              session={s}
-              active={s.id === currentSessionId}
-              onClick={() => handleSelect(s.id)}
-            />
+            <div key={s.id} className="group/pin relative">
+              <SessionCard
+                session={s}
+                active={s.id === currentSessionId}
+                onClick={() => handleSelect(s.id)}
+              />
+              <button
+                onClick={(e) => { e.stopPropagation(); togglePinSession(s.id) }}
+                aria-label={s.pinned ? 'Unpin session' : 'Pin session'}
+                className={`absolute top-2 right-2 p-1 rounded-[6px] border-none cursor-pointer transition-all
+                  ${s.pinned
+                    ? 'text-amber-400 bg-amber-400/10 opacity-100'
+                    : 'text-text-3/50 bg-transparent opacity-0 group-hover/pin:opacity-100 hover:text-text-2 hover:bg-white/[0.04]'}`}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill={s.pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M12 17v5" />
+                  <path d="M9 2h6l-1 7h4l-8 8 2-8H8z" />
+                </svg>
+              </button>
+            </div>
           ))}
         </div>
       ) : (

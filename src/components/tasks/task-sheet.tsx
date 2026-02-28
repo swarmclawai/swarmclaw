@@ -94,12 +94,12 @@ export function TaskSheet() {
     }
   }, [open, editingId])
 
-  // Update default agent when orchestrators load
+  // Update default agent when orchestrators load (only if no agent selected yet)
   useEffect(() => {
     if (open && !editing && !agentId && orchestrators.length) {
       setAgentId(orchestrators[0].id)
     }
-  }, [agents])
+  }, [open, editing, agentId, orchestrators.length, agents])
 
   const onClose = () => {
     setOpen(false)

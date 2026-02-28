@@ -635,6 +635,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       agentId: session.agentId || null,
       sessionId,
       platformAssignScope: agent?.platformAssignScope || 'self',
+      mcpServerIds: agent?.mcpServerIds,
     })
     try {
       const selectedTool = tools.find((t: any) => t?.name === toolName) as any

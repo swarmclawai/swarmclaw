@@ -37,6 +37,10 @@ export function LogList() {
   const [selected, setSelected] = useState<LogEntry | null>(null)
   const [creatingTask, setCreatingTask] = useState(false)
   const [taskAgentId, setTaskAgentId] = useState('')
+  const [savedFilters, setSavedFilters] = useState<Array<{ name: string; levels: string[]; search: string }>>(() => {
+    if (typeof window === 'undefined') return []
+    try { return JSON.parse(localStorage.getItem('sc_log_filters') || '[]') } catch { return [] }
+  })
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const agents = useAppStore((s) => s.agents)
@@ -155,6 +159,31 @@ export function LogList() {
           placeholder="Search logs..."
           className="w-full px-3 py-2 rounded-[8px] bg-white/[0.04] border border-white/[0.06] text-[12px] text-text placeholder:text-text-3/50 outline-none focus:border-accent/30"
         />
+        {/* Saved filters */}
+        {savedFilters.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {savedFilters.map((f, i) => (
+              <button
+                key={i}
+                onClick={() => { setLevelFilter(f.levels); setSearch(f.search) }}
+                className="group flex items-center gap-1 px-2 py-1 rounded-[6px] text-[10px] font-600 cursor-pointer transition-all border-none bg-accent-soft text-accent-bright hover:bg-[#6366F1]/15"
+              >
+                {f.name}
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const next = savedFilters.filter((_, j) => j !== i)
+                    localStorage.setItem('sc_log_filters', JSON.stringify(next))
+                    setSavedFilters(next)
+                  }}
+                  className="text-accent-bright/50 hover:text-red-400 ml-0.5"
+                >
+                  x
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         {/* Level filters + controls */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {['ERROR', 'WARN', 'INFO', 'DEBUG'].map((level) => (
@@ -186,6 +215,36 @@ export function LogList() {
             title="Clear all logs"
           >
             CLEAR
+          </button>
+          <button
+            onClick={() => {
+              const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `swarmclaw-logs-${new Date().toISOString().slice(0, 10)}.json`
+              a.click()
+              URL.revokeObjectURL(url)
+            }}
+            className="px-2 py-1 rounded-[6px] text-[10px] font-600 cursor-pointer transition-all border-none bg-white/[0.04] text-text-3 hover:text-accent-bright hover:bg-accent-soft"
+            title="Export logs as JSON"
+          >
+            EXPORT
+          </button>
+          <button
+            onClick={() => {
+              const name = prompt('Filter name:')
+              if (!name?.trim()) return
+              const filter = { name: name.trim(), levels: levelFilter, search }
+              const existing = JSON.parse(localStorage.getItem('sc_log_filters') || '[]')
+              existing.push(filter)
+              localStorage.setItem('sc_log_filters', JSON.stringify(existing))
+              setSavedFilters(existing)
+            }}
+            className="px-2 py-1 rounded-[6px] text-[10px] font-600 cursor-pointer transition-all border-none bg-white/[0.04] text-text-3 hover:text-accent-bright hover:bg-accent-soft"
+            title="Save current filter"
+          >
+            SAVE
           </button>
         </div>
       </div>

@@ -29,8 +29,8 @@ SwarmClaw can spawn **Claude Code CLI** processes with full shell access on your
 
 ## Features
 
-- **15 Built-in Providers** — Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, OpenClaw, plus custom OpenAI-compatible endpoints
-- **OpenClaw Integration** — First-tier OpenClaw support with endpoint normalization (`ws://`, root HTTP, `/v1`), live health checks, and provider-level diagnostics
+- **15 Built-in Providers** — Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, plus custom OpenAI-compatible endpoints
+- **OpenClaw Gateway** — Per-agent toggle to connect any agent to a local or remote OpenClaw gateway. Each agent gets its own gateway URL and token — run a swarm of OpenClaws from one dashboard. The `openclaw` CLI ships as a bundled dependency (no separate install needed)
 - **Agent Builder** — Create agents with custom personalities (soul), system prompts, tools, and skills. AI-powered generation from a description
 - **Agent Tools** — Shell, process control for long-running commands, files, edit file, send file, web search, web fetch, CLI delegation (Claude/Codex/OpenCode), Playwright browser automation, and persistent memory
 - **Platform Tools** — Agents can manage other agents, tasks, schedules, skills, connectors, sessions, and encrypted secrets via built-in platform tools
@@ -114,15 +114,15 @@ Notes:
 
 After login, SwarmClaw opens a guided wizard designed for non-technical users:
 
-1. Choose a provider: **OpenAI**, **Anthropic**, **OpenClaw**, or **Ollama**
+1. Choose a provider: **OpenAI**, **Anthropic**, or **Ollama**
 2. Add only required fields (API key and/or endpoint)
 3. Click **Check Connection** for live validation before continuing
 4. (Optional) click **Run System Check** for setup diagnostics
 5. Create a starter assistant (advanced settings are optional)
 
 Notes:
-- OpenClaw supports endpoint + optional bearer token.
-- Ollama and OpenClaw checks can auto-suggest a model from the connected endpoint.
+- Ollama checks can auto-suggest a model from the connected endpoint.
+- OpenClaw is configured per-agent via the **OpenClaw Gateway** toggle (not in the setup wizard).
 - You can skip setup and configure everything later in the sidebar.
 
 ## Configuration
@@ -193,38 +193,24 @@ src/
 | Provider | Type | Notes |
 |-|-|-|
 | Ollama | Local/Cloud | Connects to `localhost:11434`. No API key needed. 50+ models. |
-| OpenClaw | Remote Agent | Connects to a remote [OpenClaw](https://github.com/openclaw/openclaw) instance via its `/v1` API. |
+| OpenClaw | Per-Agent Gateway | Toggle in agent editor connects to any OpenClaw gateway via the bundled CLI. |
 | Custom | API | Any OpenAI-compatible endpoint. Add via Providers sidebar. |
 
 ### OpenClaw
 
-[OpenClaw](https://github.com/openclaw/openclaw) is an open-source autonomous AI agent that runs on your own devices. SwarmClaw has first-class OpenClaw support — add any number of remote OpenClaw instances as providers and orchestrate them all from one place.
+[OpenClaw](https://github.com/openclaw/openclaw) is an open-source autonomous AI agent that runs on your own devices. SwarmClaw includes the `openclaw` CLI as a bundled dependency — no separate install needed.
 
-To connect an OpenClaw instance:
+To connect an agent to an OpenClaw gateway:
 
-1. Enable the HTTP endpoint on OpenClaw:
-   ```bash
-   openclaw config set gateway.http.endpoints.chatCompletions.enabled true
-   launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway
-   ```
-2. In SwarmClaw, select **OpenClaw** as the provider when creating a session or agent
-3. Enter the endpoint URL (e.g. `http://192.168.1.50:18789/v1`)
-4. Optionally add a Bearer token if your OpenClaw instance requires authentication
+1. Create or edit an agent
+2. Toggle **OpenClaw Gateway** ON
+3. Enter the gateway URL (e.g. `http://192.168.1.50:18789` or `https://my-vps:18789`)
+4. Add a gateway token if authentication is enabled on the remote gateway
+5. Click **Test & Save** to verify the connection
 
-Each agent can point to a different OpenClaw instance — this is how you manage a **swarm of OpenClaws** from a single dashboard.
+Each agent can point to a **different** OpenClaw gateway — one local, several remote. This is how you manage a **swarm of OpenClaws** from a single dashboard.
 
-SwarmClaw normalizes common endpoint forms automatically:
-- `ws://host:18789` → `http://host:18789/v1`
-- `http://host:18789` → `http://host:18789/v1`
-- `http://host:18789/v1/chat/completions` → `http://host:18789/v1`
-
-Validate connectivity/auth via the Providers UI, or call the health endpoint directly:
-
-```bash
-curl -sS \
-  -H "x-access-key: ${ACCESS_KEY}" \
-  "http://localhost:3456/api/providers/openclaw/health?endpoint=ws://127.0.0.1:18789&credentialId=cred_openclaw"
-```
+URLs without a protocol are auto-prefixed with `http://`. For remote gateways with TLS, use `https://` explicitly.
 
 ## Chat Connectors
 

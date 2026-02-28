@@ -47,6 +47,25 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
     { lang: speechRecognitionLang || undefined },
   )
 
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (!file) return
+        try {
+          const result = await uploadImage(file)
+          setPendingImage({ file, path: result.path, url: result.url })
+        } catch {
+          // ignore
+        }
+        return
+      }
+    }
+  }, [])
+
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -121,6 +140,7 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
             value={value}
             onChange={(e) => { setValue(e.target.value); resize() }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="Ask me anything..."
             rows={1}
             className="w-full px-5 pt-4 pb-2 bg-transparent text-text text-[15px] outline-none resize-none
@@ -201,6 +221,10 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
           onChange={handleFileChange}
           className="hidden"
         />
+
+        <p className="text-[10px] text-text-3/40 mt-1.5 px-1 select-none">
+          Shift+Enter for newline
+        </p>
 
         {micError && (
           <p className="text-[11px] text-danger/80 mt-2 px-1">{micError}</p>

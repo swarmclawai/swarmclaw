@@ -41,6 +41,8 @@ const COLLECTIONS = [
   'documents',
   'webhooks',
   'model_overrides',
+  'mcp_servers',
+  'webhook_logs',
 ] as const
 
 for (const table of COLLECTIONS) {
@@ -637,6 +639,26 @@ export function localIP(): string {
     }
   }
   return 'localhost'
+}
+
+// --- MCP Servers ---
+export function loadMcpServers(): Record<string, any> {
+  return loadCollection('mcp_servers')
+}
+
+export function saveMcpServers(m: Record<string, any>) {
+  saveCollection('mcp_servers', m)
+}
+
+export function deleteMcpServer(id: string) { deleteCollectionItem('mcp_servers', id) }
+
+// --- Webhook Logs ---
+export function loadWebhookLogs(): Record<string, any> {
+  return loadCollection('webhook_logs')
+}
+
+export function appendWebhookLog(id: string, entry: any) {
+  upsertCollectionItem('webhook_logs', id, entry)
 }
 
 export function getSessionMessages(sessionId: string): any[] {

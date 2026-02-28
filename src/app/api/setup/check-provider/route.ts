@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
-import { normalizeOpenClawEndpoint } from '@/lib/openclaw-endpoint'
+import fs from 'fs'
+import path from 'path'
+import { spawnSync } from 'child_process'
 import { loadCredentials, decryptKey } from '@/lib/server/storage'
 
 type SetupProvider =
@@ -144,65 +146,50 @@ async function checkOllama(endpointRaw: string): Promise<{ ok: boolean; message:
   }
 }
 
-async function checkOpenClaw(apiKey: string, endpointRaw: string, modelRaw: string): Promise<{ ok: boolean; message: string; normalizedEndpoint: string; recommendedModel?: string }> {
-  const normalizedEndpoint = normalizeOpenClawEndpoint(endpointRaw || 'http://localhost:18789/v1')
-  const headers: Record<string, string> = {}
-  if (apiKey) headers.authorization = `Bearer ${apiKey}`
+function findOpenClawBin(): string {
+  const candidates = [
+    path.join(process.cwd(), 'node_modules/.bin/openclaw'),
+    path.join(__dirname, '../../..', 'node_modules/.bin/openclaw'),
+  ]
+  for (const loc of candidates) {
+    if (fs.existsSync(loc)) return loc
+  }
+  return 'openclaw'
+}
 
-  // Use text/plain to bypass Express body parsers in Hostinger/proxy setups.
-  // The OpenClaw gateway parses the body as JSON regardless of Content-Type.
-  headers['content-type'] = 'text/plain'
+function checkOpenClaw(apiKey: string, endpointRaw: string): { ok: boolean; message: string; normalizedEndpoint: string } {
+  let normalizedEndpoint = (endpointRaw || 'http://localhost:18789').replace(/\/+$/, '')
+  if (!/^https?:\/\//i.test(normalizedEndpoint)) normalizedEndpoint = `http://${normalizedEndpoint}`
+  const env = { ...process.env }
+  if (normalizedEndpoint) env.OPENCLAW_GATEWAY_URL = normalizedEndpoint
+  if (apiKey) env.OPENCLAW_GATEWAY_TOKEN = apiKey
 
-  const modelsRes = await fetch(`${normalizedEndpoint}/models`, {
-    headers,
-    signal: AbortSignal.timeout(10_000),
-    cache: 'no-store',
+  const result = spawnSync(findOpenClawBin(), ['agent', '--agent', 'main', '--message', 'test', '--timeout', '10'], {
+    env,
+    timeout: 15_000,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
-  if (!modelsRes.ok) {
-    const detail = await parseErrorMessage(modelsRes, `OpenClaw returned ${modelsRes.status}.`)
-    return { ok: false, message: detail, normalizedEndpoint }
+
+  if (result.error) {
+    const msg = (result.error as any).code === 'ENOENT'
+      ? 'openclaw CLI not found. Run `npm install` to restore project dependencies.'
+      : `Failed to spawn openclaw CLI: ${result.error.message}`
+    return { ok: false, message: msg, normalizedEndpoint }
   }
 
-  const modelsPayload = await modelsRes.json().catch(() => ({} as any))
-  const candidates = Array.isArray(modelsPayload?.data)
-    ? modelsPayload.data
-    : Array.isArray(modelsPayload?.models)
-      ? modelsPayload.models
-      : []
-  const firstModel = candidates
-    .map((entry: any) => String(entry?.id || entry?.name || entry?.model || '').trim())
-    .find((value: string) => !!value)
-  const model = modelRaw || firstModel || 'default'
-  const chatRes = await fetch(`${normalizedEndpoint}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      ...headers,
-      'content-type': 'text/plain',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: 'Reply with OPENCLAW_SETUP_OK' }],
-      stream: false,
-      max_tokens: 12,
-    }),
-    signal: AbortSignal.timeout(12_000),
-    cache: 'no-store',
-  })
-  if (!chatRes.ok) {
-    const detail = await parseErrorMessage(chatRes, `OpenClaw returned ${chatRes.status}.`)
-    return { ok: false, message: detail, normalizedEndpoint, recommendedModel: firstModel }
+  if (result.status !== 0) {
+    const stderr = (result.stderr || '').trim()
+    const stdout = (result.stdout || '').trim()
+    const detail = stderr || stdout || `openclaw exited with code ${result.status}`
+    return { ok: false, message: detail.slice(0, 300), normalizedEndpoint }
   }
 
-  const payload = await chatRes.json().catch(() => ({} as any))
-  const text = typeof payload?.choices?.[0]?.message?.content === 'string'
-    ? payload.choices[0].message.content.trim()
-    : ''
-
+  const output = (result.stdout || '').trim()
   return {
     ok: true,
-    message: text ? `Connected to OpenClaw. Sample: ${text.slice(0, 120)}` : 'Connected to OpenClaw.',
+    message: output ? `Connected to OpenClaw. Response: ${output.slice(0, 120)}` : 'Connected to OpenClaw gateway.',
     normalizedEndpoint,
-    recommendedModel: firstModel,
   }
 }
 
@@ -261,7 +248,7 @@ export async function POST(req: Request) {
         return NextResponse.json(result)
       }
       case 'openclaw': {
-        const result = await checkOpenClaw(apiKey, endpoint, model)
+        const result = checkOpenClaw(apiKey, endpoint)
         return NextResponse.json(result)
       }
       default:
