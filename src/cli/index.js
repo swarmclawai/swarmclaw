@@ -335,6 +335,7 @@ const COMMAND_GROUPS = [
     commands: [
       cmd('check-provider', 'POST', '/setup/check-provider', 'Validate provider credentials/endpoint', { expectsJsonBody: true }),
       cmd('doctor', 'GET', '/setup/doctor', 'Run local setup diagnostics'),
+      cmd('openclaw-device', 'GET', '/setup/openclaw-device', 'Show the local OpenClaw device ID'),
     ],
   },
   {

@@ -901,6 +901,13 @@ export function buildProgram(): Command {
       })
     })
 
+  setup
+    .command('openclaw-device')
+    .description('Show the local OpenClaw device ID')
+    .action(async function () {
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'GET', '/setup/openclaw-device'))
+    })
+
   const connectors = program.command('connectors').description('Manage connectors')
 
   connectors
