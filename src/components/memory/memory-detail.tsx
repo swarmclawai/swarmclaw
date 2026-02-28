@@ -48,7 +48,7 @@ export function MemoryDetail() {
         setCategory(resolved.category || 'note')
         setDirty(false)
       })
-      .catch(() => {})
+      .catch((err) => console.error('Memory operation failed:', err))
 
     return () => {
       cancelled = true

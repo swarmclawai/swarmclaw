@@ -6,6 +6,7 @@ import { createAgent, updateAgent, deleteAgent } from '@/lib/agents'
 import { api } from '@/lib/api-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AiGenBlock } from '@/components/shared/ai-gen-block'
+import { toast } from 'sonner'
 import type { ProviderType, ClaudeSkill } from '@/types'
 
 const AVAILABLE_TOOLS: { id: string; label: string; description: string }[] = [
@@ -89,6 +90,10 @@ export function AgentSheet() {
   const [newKeyValue, setNewKeyValue] = useState('')
   const [savingKey, setSavingKey] = useState(false)
 
+  // Test connection state
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'pass' | 'fail'>('idle')
+  const [testMessage, setTestMessage] = useState('')
+
   const soulFileRef = useRef<HTMLInputElement>(null)
   const promptFileRef = useRef<HTMLInputElement>(null)
 
@@ -112,6 +117,11 @@ export function AgentSheet() {
   const editing = editingId ? agents[editingId] : null
   const hasNativeCapabilities = NATIVE_CAPABILITY_PROVIDER_IDS.has(provider)
 
+  const providerNeedsKey = !editing && (
+    (currentProvider?.requiresApiKey && providerCredentials.length === 0 && !addingKey) ||
+    (provider === 'ollama' && ollamaMode === 'cloud' && providerCredentials.length === 0 && !addingKey)
+  )
+
   useEffect(() => {
     if (open) {
       loadProviders()
@@ -123,6 +133,8 @@ export function AgentSheet() {
       setGenerating(false)
       setGenerated(false)
       setGenError('')
+      setTestStatus('idle')
+      setTestMessage('')
       if (editing) {
         setName(editing.name)
         setDescription(editing.description)
@@ -172,6 +184,12 @@ export function AgentSheet() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, providers])
+
+  // Reset test status when connection params change
+  useEffect(() => {
+    setTestStatus('idle')
+    setTestMessage('')
+  }, [provider, credentialId, apiEndpoint])
 
   const handleGenerate = async () => {
     if (!aiPrompt.trim()) return
@@ -235,6 +253,46 @@ export function AgentSheet() {
       await loadAgents()
       onClose()
     }
+  }
+
+  const handleTestConnection = async (): Promise<boolean> => {
+    setTestStatus('testing')
+    setTestMessage('')
+    try {
+      const result = await api<{ ok: boolean; message: string }>('POST', '/setup/check-provider', {
+        provider,
+        credentialId,
+        endpoint: apiEndpoint,
+        model,
+      })
+      if (result.ok) {
+        setTestStatus('pass')
+        setTestMessage(result.message)
+        return true
+      } else {
+        setTestStatus('fail')
+        setTestMessage(result.message)
+        return false
+      }
+    } catch (err: unknown) {
+      setTestStatus('fail')
+      setTestMessage(err instanceof Error ? err.message : 'Connection test failed')
+      return false
+    }
+  }
+
+  // Whether this provider needs a connection test before saving
+  const needsTest = !providerNeedsKey && (
+    (currentProvider?.requiresApiKey && !NATIVE_CAPABILITY_PROVIDER_IDS.has(provider)) ||
+    (provider === 'ollama' && ollamaMode === 'cloud')
+  )
+
+  const handleTestAndSave = async () => {
+    if (needsTest) {
+      const passed = await handleTestConnection()
+      if (!passed) return
+    }
+    await handleSave()
   }
 
   const agentOptions = Object.values(agents).filter((p) => !p.isOrchestrator && p.id !== editingId)
@@ -318,40 +376,44 @@ export function AgentSheet() {
         <p className="text-[11px] text-text-3/70 mt-1.5">Press Enter or comma to add. Other agents see these when deciding delegation.</p>
       </div>
 
-      <div className="mb-8">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-          Soul / Personality <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
-        </label>
-        <div className="flex items-center gap-2 mb-3">
-          <p className="text-[12px] text-text-3/60">Define the agent&apos;s voice, tone, and personality. Injected before the system prompt.</p>
-          <button onClick={() => soulFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
-          <input ref={soulFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSoul)} className="hidden" />
+      {provider !== 'openclaw' && (
+        <div className="mb-8">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            Soul / Personality <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+          </label>
+          <div className="flex items-center gap-2 mb-3">
+            <p className="text-[12px] text-text-3/60">Define the agent&apos;s voice, tone, and personality. Injected before the system prompt.</p>
+            <button onClick={() => soulFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
+            <input ref={soulFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSoul)} className="hidden" />
+          </div>
+          <textarea
+            value={soul}
+            onChange={(e) => setSoul(e.target.value)}
+            placeholder="e.g. You speak concisely and directly. You have a dry sense of humor. You always back claims with data."
+            rows={3}
+            className={`${inputClass} resize-y min-h-[80px]`}
+            style={{ fontFamily: 'inherit' }}
+          />
         </div>
-        <textarea
-          value={soul}
-          onChange={(e) => setSoul(e.target.value)}
-          placeholder="e.g. You speak concisely and directly. You have a dry sense of humor. You always back claims with data."
-          rows={3}
-          className={`${inputClass} resize-y min-h-[80px]`}
-          style={{ fontFamily: 'inherit' }}
-        />
-      </div>
+      )}
 
-      <div className="mb-8">
-        <div className="flex items-center gap-2 mb-3">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">System Prompt</label>
-          <button onClick={() => promptFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
-          <input ref={promptFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSystemPrompt)} className="hidden" />
+      {provider !== 'openclaw' && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">System Prompt</label>
+            <button onClick={() => promptFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
+            <input ref={promptFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSystemPrompt)} className="hidden" />
+          </div>
+          <textarea
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+            placeholder="You are an expert..."
+            rows={5}
+            className={`${inputClass} resize-y min-h-[120px]`}
+            style={{ fontFamily: 'inherit' }}
+          />
         </div>
-        <textarea
-          value={systemPrompt}
-          onChange={(e) => setSystemPrompt(e.target.value)}
-          placeholder="You are an expert..."
-          rows={5}
-          className={`${inputClass} resize-y min-h-[120px]`}
-          style={{ fontFamily: 'inherit' }}
-        />
-      </div>
+      )}
 
       <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Provider</label>
@@ -361,7 +423,10 @@ export function AgentSheet() {
             return (
               <button
                 key={p.id}
-                onClick={() => setProvider(p.id)}
+                onClick={() => {
+                  setProvider(p.id)
+                  if (p.id === 'openclaw') setIsOrchestrator(false)
+                }}
                 className={`relative py-3.5 px-4 rounded-[14px] text-center cursor-pointer transition-all duration-200
                   active:scale-[0.97] text-[14px] font-600 border
                   ${provider === p.id
@@ -484,7 +549,7 @@ export function AgentSheet() {
                       setAddingKey(false)
                       setNewKeyName('')
                       setNewKeyValue('')
-                    } catch (err: any) { alert(`Failed to save: ${err.message}`) }
+                    } catch (err: any) { toast.error(`Failed to save: ${err.message}`) }
                     finally { setSavingKey(false) }
                   }}
                   className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40"
@@ -694,26 +759,28 @@ export function AgentSheet() {
         </div>
       )}
 
-      <div className="mb-8">
-        <label className="flex items-center gap-3 cursor-pointer">
-          <div
-            onClick={() => {
-              const next = !isOrchestrator
-              setIsOrchestrator(next)
-              if (next && provider === 'claude-cli') setProvider('anthropic')
-            }}
-            className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer
-              ${isOrchestrator ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
-          >
-            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
-              ${isOrchestrator ? 'left-[22px]' : 'left-0.5'}`} />
-          </div>
-          <span className="font-display text-[14px] font-600 text-text-2">Orchestrator</span>
-          <span className="text-[12px] text-text-3">Can delegate tasks to other agents</span>
-        </label>
-      </div>
+      {provider !== 'openclaw' && (
+        <div className="mb-8">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <div
+              onClick={() => {
+                const next = !isOrchestrator
+                setIsOrchestrator(next)
+                if (next && provider === 'claude-cli') setProvider('anthropic')
+              }}
+              className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer
+                ${isOrchestrator ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
+            >
+              <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+                ${isOrchestrator ? 'left-[22px]' : 'left-0.5'}`} />
+            </div>
+            <span className="font-display text-[14px] font-600 text-text-2">Orchestrator</span>
+            <span className="text-[12px] text-text-3">Can delegate tasks to other agents</span>
+          </label>
+        </div>
+      )}
 
-      {isOrchestrator && agentOptions.length > 0 && (
+      {provider !== 'openclaw' && isOrchestrator && agentOptions.length > 0 && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Available Agents</label>
           <div className="flex flex-wrap gap-2">
@@ -734,6 +801,27 @@ export function AgentSheet() {
         </div>
       )}
 
+      {/* Provider key warning */}
+      {providerNeedsKey && (
+        <div className="mb-4 p-3 rounded-[12px] bg-amber-500/[0.08] border border-amber-500/20">
+          <p className="text-[13px] text-amber-400">
+            Add an API key for {currentProvider?.name || provider} above before creating this agent.
+          </p>
+        </div>
+      )}
+
+      {/* Test connection result */}
+      {testStatus === 'fail' && (
+        <div className="mb-4 p-3 rounded-[12px] bg-red-500/[0.08] border border-red-500/20">
+          <p className="text-[13px] text-red-400">{testMessage || 'Connection test failed'}</p>
+        </div>
+      )}
+      {testStatus === 'pass' && (
+        <div className="mb-4 p-3 rounded-[12px] bg-emerald-500/[0.08] border border-emerald-500/20">
+          <p className="text-[13px] text-emerald-400">{testMessage || 'Connected successfully'}</p>
+        </div>
+      )}
+
       <div className="flex gap-3 pt-2 border-t border-white/[0.04]">
         {editing && (
           <button onClick={handleDelete} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
@@ -743,8 +831,13 @@ export function AgentSheet() {
         <button onClick={onClose} className="flex-1 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all" style={{ fontFamily: 'inherit' }}>
           Cancel
         </button>
-        <button onClick={handleSave} disabled={!name.trim()} className="flex-1 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110" style={{ fontFamily: 'inherit' }}>
-          {editing ? 'Save' : 'Create'}
+        <button
+          onClick={handleTestAndSave}
+          disabled={!name.trim() || providerNeedsKey || testStatus === 'testing'}
+          className="flex-1 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110"
+          style={{ fontFamily: 'inherit' }}
+        >
+          {testStatus === 'testing' ? 'Testing...' : needsTest ? 'Test & Save' : editing ? 'Save' : 'Create'}
         </button>
       </div>
     </BottomSheet>

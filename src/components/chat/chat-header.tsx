@@ -279,26 +279,26 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         </div>
         <div className="flex gap-1.5">
           {streaming && (
-            <IconButton onClick={onStop} variant="danger">
+            <IconButton onClick={onStop} variant="danger" aria-label="Stop generation">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
                 <rect x="6" y="6" width="12" height="12" rx="2" />
               </svg>
             </IconButton>
           )}
-          <IconButton onClick={() => setDebugOpen(!debugOpen)} active={debugOpen}>
+          <IconButton onClick={() => setDebugOpen(!debugOpen)} active={debugOpen} aria-label="Toggle debug panel">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M12 20V10" />
               <path d="M18 20V4" />
               <path d="M6 20v-4" />
             </svg>
           </IconButton>
-          <IconButton onClick={toggleTts} active={ttsEnabled}>
+          <IconButton onClick={toggleTts} active={ttsEnabled} aria-label="Toggle text-to-speech">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
               <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
             </svg>
           </IconButton>
-          <IconButton onClick={(e) => { e.stopPropagation(); onMenuToggle() }}>
+          <IconButton onClick={(e) => { e.stopPropagation(); onMenuToggle() }} aria-label="Session menu">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <circle cx="12" cy="6" r="1" />
               <circle cx="12" cy="12" r="1" />

@@ -107,7 +107,7 @@ export function SessionDebugPanel({ messages, open, onClose }: Props) {
         </svg>
         <span className="font-display text-[16px] font-600 tracking-[-0.02em] flex-1">Session Debug</span>
         <span className="text-[12px] text-text-3 font-mono">{events.length} events</span>
-        <IconButton onClick={onClose}>
+        <IconButton onClick={onClose} aria-label="Close debug panel">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />

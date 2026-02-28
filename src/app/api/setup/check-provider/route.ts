@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { normalizeOpenClawEndpoint } from '@/lib/openclaw-endpoint'
+import { loadCredentials, decryptKey } from '@/lib/server/storage'
 
 type SetupProvider =
   | 'openai'
@@ -31,6 +32,7 @@ const OPENAI_COMPATIBLE_PROVIDER_INFO: Record<
 interface SetupCheckBody {
   provider?: string
   apiKey?: string
+  credentialId?: string
   endpoint?: string
   model?: string
 }
@@ -207,9 +209,23 @@ async function checkOpenClaw(apiKey: string, endpointRaw: string, modelRaw: stri
 export async function POST(req: Request) {
   const body = parseBody(await req.json().catch(() => ({})))
   const provider = clean(body.provider) as SetupProvider
-  const apiKey = clean(body.apiKey)
+  let apiKey = clean(body.apiKey)
+  const credentialId = clean(body.credentialId)
   const endpoint = clean(body.endpoint)
   const model = clean(body.model)
+
+  // Resolve credentialId to an API key if no raw key was provided
+  if (!apiKey && credentialId) {
+    try {
+      const creds = loadCredentials()
+      const cred = creds[credentialId]
+      if (cred?.encryptedKey) {
+        apiKey = decryptKey(cred.encryptedKey)
+      }
+    } catch {
+      return NextResponse.json({ ok: false, message: 'Failed to decrypt credential.' }, { status: 500 })
+    }
+  }
 
   if (!provider) {
     return NextResponse.json({ ok: false, message: 'Provider is required.' }, { status: 400 })

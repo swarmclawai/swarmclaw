@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { api } from '@/lib/api-client'
+import { toast } from 'sonner'
 import type { Connector, ConnectorPlatform } from '@/types'
 import { ConnectorPlatformBadge } from '@/components/shared/connector-platform-icon'
 
@@ -228,7 +229,7 @@ export function ConnectorSheet() {
       setOpen(false)
       setEditingId(null)
     } catch (err: any) {
-      alert(err.message)
+      toast.error(err.message)
     } finally {
       setSaving(false)
     }
@@ -253,7 +254,7 @@ export function ConnectorSheet() {
       await loadConnectors()
     } catch (err: any) {
       setWaConnecting(false)
-      alert(`Failed to ${action}: ${err.message}`)
+      toast.error(`Failed to ${action}: ${err.message}`)
     } finally {
       setActionLoading(false)
     }
@@ -469,7 +470,7 @@ export function ConnectorSheet() {
                       setNewCredName('')
                       setNewCredValue('')
                     } catch (err: any) {
-                      alert(`Failed to save: ${err.message}`)
+                      toast.error(`Failed to save: ${err.message}`)
                     } finally {
                       setSavingCred(false)
                     }
@@ -642,7 +643,7 @@ export function ConnectorSheet() {
                 setWaConnecting(true)
                 await loadConnectors()
               } catch (err: any) {
-                alert(`Failed to unlink: ${err.message}`)
+                toast.error(`Failed to unlink: ${err.message}`)
               } finally {
                 setActionLoading(false)
               }
@@ -683,7 +684,7 @@ export function ConnectorSheet() {
                   setWaConnecting(true)
                   await loadConnectors()
                 } catch (err: any) {
-                  alert(`Failed to re-pair: ${err.message}`)
+                  toast.error(`Failed to re-pair: ${err.message}`)
                 } finally {
                   setActionLoading(false)
                 }

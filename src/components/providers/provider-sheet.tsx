@@ -6,6 +6,7 @@ import { createProviderConfig, updateProviderConfig, deleteProviderConfig } from
 import { api } from '@/lib/api-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AiGenBlock } from '@/components/shared/ai-gen-block'
+import { toast } from 'sonner'
 
 export function ProviderSheet() {
   const open = useAppStore((s) => s.providerSheetOpen)
@@ -30,6 +31,10 @@ export function ProviderSheet() {
   const [newKeyValue, setNewKeyValue] = useState('')
   const [savingKey, setSavingKey] = useState(false)
   const [newModel, setNewModel] = useState('')
+
+  // Test connection state
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'pass' | 'fail'>('idle')
+  const [testMessage, setTestMessage] = useState('')
 
   // Ollama local models
   const [localModels, setLocalModels] = useState<string[]>([])
@@ -84,6 +89,8 @@ export function ProviderSheet() {
       setNewModel('')
       setLocalModels([])
       setLocalError('')
+      setTestStatus('idle')
+      setTestMessage('')
       if (editingCustom) {
         setName(editingCustom.name)
         setBaseUrl(editingCustom.baseUrl || '')
@@ -131,6 +138,34 @@ export function ProviderSheet() {
       })
       .finally(() => setLocalLoading(false))
   }, [open, editingId, baseUrl])
+
+  // Reset test status when connection params change
+  useEffect(() => {
+    setTestStatus('idle')
+    setTestMessage('')
+  }, [credentialId, baseUrl])
+
+  const handleTestConnection = async () => {
+    setTestStatus('testing')
+    setTestMessage('')
+    try {
+      const result = await api<{ ok: boolean; message: string }>('POST', '/setup/check-provider', {
+        provider: editingId || 'custom',
+        credentialId,
+        endpoint: baseUrl,
+      })
+      if (result.ok) {
+        setTestStatus('pass')
+        setTestMessage(result.message)
+      } else {
+        setTestStatus('fail')
+        setTestMessage(result.message)
+      }
+    } catch (err: unknown) {
+      setTestStatus('fail')
+      setTestMessage(err instanceof Error ? err.message : 'Connection test failed')
+    }
+  }
 
   const onClose = () => {
     setOpen(false)
@@ -430,7 +465,7 @@ export function ProviderSheet() {
                       setAddingKey(false)
                       setNewKeyName('')
                       setNewKeyValue('')
-                    } catch (err: any) { alert(`Failed to save: ${err.message}`) }
+                    } catch (err: any) { toast.error(`Failed to save: ${err.message}`) }
                     finally { setSavingKey(false) }
                   }}
                   className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40"
@@ -461,6 +496,18 @@ export function ProviderSheet() {
         </div>
       )}
 
+      {/* Test connection result */}
+      {testStatus === 'fail' && (
+        <div className="mb-4 p-3 rounded-[12px] bg-red-500/[0.08] border border-red-500/20">
+          <p className="text-[13px] text-red-400">{testMessage || 'Connection test failed'}</p>
+        </div>
+      )}
+      {testStatus === 'pass' && (
+        <div className="mb-4 p-3 rounded-[12px] bg-emerald-500/[0.08] border border-emerald-500/20">
+          <p className="text-[13px] text-emerald-400">{testMessage || 'Connected successfully'}</p>
+        </div>
+      )}
+
       <div className="flex gap-3 pt-2 border-t border-white/[0.04]">
         {editingCustom && (
           <button onClick={handleDelete} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
@@ -470,14 +517,25 @@ export function ProviderSheet() {
         <button onClick={onClose} className="flex-1 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all" style={{ fontFamily: 'inherit' }}>
           Cancel
         </button>
-        <button
-          onClick={handleSave}
-          disabled={isBuiltin ? false : (!name.trim() || !baseUrl.trim())}
-          className="flex-1 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110"
-          style={{ fontFamily: 'inherit' }}
-        >
-          {editing ? 'Save' : 'Create'}
-        </button>
+        {showApiKey && credentialId && testStatus !== 'pass' ? (
+          <button
+            onClick={handleTestConnection}
+            disabled={testStatus === 'testing'}
+            className="flex-1 py-3.5 rounded-[14px] border-none bg-emerald-600 text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(16,185,129,0.2)] hover:brightness-110"
+            style={{ fontFamily: 'inherit' }}
+          >
+            {testStatus === 'testing' ? 'Testing...' : testStatus === 'fail' ? 'Retry Connection' : 'Test Connection'}
+          </button>
+        ) : (
+          <button
+            onClick={handleSave}
+            disabled={isBuiltin ? false : (!name.trim() || !baseUrl.trim())}
+            className="flex-1 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110"
+            style={{ fontFamily: 'inherit' }}
+          >
+            {editing ? 'Save' : 'Create'}
+          </button>
+        )}
       </div>
     </BottomSheet>
   )

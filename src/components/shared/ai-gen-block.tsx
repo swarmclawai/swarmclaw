@@ -22,7 +22,7 @@ export function AiGenBlock({ aiPrompt, setAiPrompt, generating, generated, genEr
     if (expanded && !genInfo) {
       api<{ provider: string; model: string }>('GET', '/generate/info')
         .then(setGenInfo)
-        .catch(() => {})
+        .catch((err) => console.error('AI gen info fetch failed:', err))
     }
   }, [expanded])
 

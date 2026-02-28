@@ -4,6 +4,7 @@ import { useEffect, useCallback, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { fetchMessages, clearMessages, deleteSession, devServer, checkBrowser, stopBrowser } from '@/lib/sessions'
+import { deleteAgent } from '@/lib/agents'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { ChatHeader } from './chat-header'
 import { DevServerBar } from './dev-server-bar'
@@ -35,9 +36,15 @@ export function ChatArea() {
   const { messages, setMessages, streaming, streamingSessionId, sendMessage, stopStreaming, devServer: devServerStatus, setDevServer, debugOpen, setDebugOpen, ttsEnabled } = useChatStore()
   const isDesktop = useMediaQuery('(min-width: 768px)')
 
+  const agents = useAppStore((s) => s.agents)
+  const loadAgents = useAppStore((s) => s.loadAgents)
+  const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
+  const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
+
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [confirmDeleteAgent, setConfirmDeleteAgent] = useState(false)
   const [browserActive, setBrowserActive] = useState(false)
 
   useEffect(() => {
@@ -49,7 +56,8 @@ export function ChatArea() {
     if (!preserveLocalStream) {
       useChatStore.setState({ streaming: false, streamingSessionId: null, streamText: '', toolEvents: [] })
     }
-    fetchMessages(sessionId).then(setMessages).catch(() => {
+    fetchMessages(sessionId).then(setMessages).catch((err) => {
+      console.error('Failed to load messages:', err)
       setMessages(session?.messages || [])
     })
     // If server reports session is still active, show streaming state
@@ -62,13 +70,13 @@ export function ChatArea() {
       if (refreshed?.active) {
         useChatStore.setState({ streaming: true, streamingSessionId: sessionId, streamText: '' })
       }
-    }).catch(() => {})
+    }).catch((err) => console.error('Failed to refresh messages:', err))
     devServer(sessionId, 'status').then((r) => {
       setDevServer(r.running ? r : null)
     }).catch(() => setDevServer(null))
     // Check browser status
     if (session?.tools?.includes('browser')) {
-      checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch(() => setBrowserActive(false))
+      checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch((err) => { console.error('Browser check failed:', err); setBrowserActive(false) })
     } else {
       setBrowserActive(false)
     }
@@ -101,7 +109,7 @@ export function ChatArea() {
         if (isServerActive) {
           await loadSessions()
         }
-      } catch {}
+      } catch (err) { console.error('Failed to refresh messages:', err) }
     }, 2000)
     return () => clearInterval(interval)
   }, [sessionId, isOrchestrated, isServerActive, isOngoingMonitored, messages.length])
@@ -267,9 +275,19 @@ export function ChatArea() {
       />
 
       <Dropdown open={menuOpen} onClose={() => setMenuOpen(false)}>
+        {session.agentId && agents[session.agentId] && (
+          <DropdownItem onClick={() => { setMenuOpen(false); setEditingAgentId(session.agentId!); setAgentSheetOpen(true) }}>
+            Edit Agent
+          </DropdownItem>
+        )}
         <DropdownItem onClick={() => { setMenuOpen(false); setConfirmClear(true) }}>
           Clear History
         </DropdownItem>
+        {session.agentId && agents[session.agentId] && !isMainChat && (
+          <DropdownItem danger onClick={() => { setMenuOpen(false); setConfirmDeleteAgent(true) }}>
+            Delete Agent
+          </DropdownItem>
+        )}
         {!isMainChat && (
           <DropdownItem danger onClick={() => { setMenuOpen(false); setConfirmDelete(true) }}>
             Delete Session
@@ -295,6 +313,21 @@ export function ChatArea() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(false)}
       />
+      {session.agentId && agents[session.agentId] && (
+        <ConfirmDialog
+          open={confirmDeleteAgent}
+          title="Delete Agent"
+          message={`Delete agent "${agents[session.agentId].name}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            setConfirmDeleteAgent(false)
+            await deleteAgent(session.agentId!)
+            await loadAgents()
+          }}
+          onCancel={() => setConfirmDeleteAgent(false)}
+        />
+      )}
     </div>
   )
 }

@@ -31,7 +31,7 @@ function FilePathChip({ filePath }: { filePath: string }) {
     if (!canServe) return
     api<{ running: boolean; url?: string; type?: string }>('POST', '/preview-server', { action: 'status', path: filePath })
       .then((res) => { if (res.running) setServerState({ running: true, url: res.url, type: res.type, loading: false }) })
-      .catch(() => {})
+      .catch((err) => console.error('Dev server check failed:', err))
   }, [filePath, canServe])
 
   const handleStartServer = async () => {

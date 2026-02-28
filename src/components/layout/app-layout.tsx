@@ -62,6 +62,8 @@ export function AppLayout() {
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const hasSelectedSession = !!(currentSessionId && sessions[currentSessionId])
 
+  const [agentViewMode, setAgentViewMode] = useState<'chat' | 'config'>('chat')
+
   const [railExpanded, setRailExpanded] = useState(() => {
     if (typeof window === 'undefined') return true
     const stored = localStorage.getItem(RAIL_EXPANDED_KEY)
@@ -82,7 +84,6 @@ export function AppLayout() {
   const openNewSheet = () => {
     if (activeView === 'sessions') setNewSessionOpen(true)
     else if (activeView === 'agents') setAgentSheetOpen(true)
-    else if (activeView === 'agent-config') setAgentSheetOpen(true)
     else if (activeView === 'schedules') setScheduleSheetOpen(true)
     else if (activeView === 'tasks') setTaskSheetOpen(true)
     else if (activeView === 'secrets') setSecretSheetOpen(true)
@@ -235,12 +236,6 @@ export function AppLayout() {
                 <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" />
               </svg>
             </NavItem>
-            <NavItem view="agent-config" label="Agent Config" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('agent-config'); setSidebarOpen(true) }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="12" cy="12" r="3" /><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" opacity="0" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </NavItem>
             <NavItem view="webhooks" label="Webhooks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('webhooks'); setSidebarOpen(true) }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M22 12h-4l-3 7L9 5l-3 7H2" />
@@ -341,7 +336,7 @@ export function AppLayout() {
           style={{ animation: 'panel-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)' }}
         >
           <div className="flex items-center px-5 pt-5 pb-3 shrink-0">
-            <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">{activeView === 'agent-config' ? 'Agent Config' : activeView === 'sessions' ? 'History' : activeView}</h2>
+            <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">{activeView === 'sessions' ? 'History' : activeView}</h2>
             {activeView === 'logs' ? null : activeView === 'memory' ? (
               <button
                 onClick={() => useAppStore.getState().setMemorySheetOpen(true)}
@@ -363,7 +358,7 @@ export function AppLayout() {
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'agent-config' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'New'}
+                {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'New'}
               </button>
             )}
           </div>
@@ -374,8 +369,24 @@ export function AppLayout() {
               <SessionList inSidebar onSelect={() => {}} />
             </>
           )}
-          {activeView === 'agents' && <AgentChatList inSidebar />}
-          {activeView === 'agent-config' && <AgentList inSidebar />}
+          {activeView === 'agents' && (
+            <>
+              <div className="flex gap-1 px-4 pb-2">
+                {(['chat', 'config'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setAgentViewMode(mode)}
+                    className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 capitalize cursor-pointer transition-all
+                      ${agentViewMode === mode ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+              {agentViewMode === 'chat' ? <AgentChatList inSidebar /> : <AgentList inSidebar />}
+            </>
+          )}
           {activeView === 'schedules' && <ScheduleList inSidebar />}
           {activeView === 'memory' && <MemoryList inSidebar />}
           {activeView === 'tasks' && <TaskList inSidebar />}
@@ -421,7 +432,7 @@ export function AppLayout() {
             </div>
             {/* View selector tabs */}
             <div className="flex px-4 py-2 gap-1 shrink-0 flex-wrap">
-              {(['agents', 'sessions', 'agent-config', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'webhooks', 'logs'] as AppView[]).map((v) => (
+              {(['agents', 'sessions', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'webhooks', 'logs'] as AppView[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setActiveView(v)}
@@ -446,7 +457,7 @@ export function AppLayout() {
                   shadow-[0_2px_12px_rgba(99,102,241,0.15)]"
                 style={{ fontFamily: 'inherit' }}
               >
-                + New {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'agent-config' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'Entry'}
+                + New {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : 'Entry'}
               </button>
             </div>
             {activeView === 'sessions' && (
@@ -456,8 +467,24 @@ export function AppLayout() {
                 <SessionList inSidebar onSelect={() => setSidebarOpen(false)} />
               </>
             )}
-            {activeView === 'agents' && <AgentChatList inSidebar onSelect={() => setSidebarOpen(false)} />}
-            {activeView === 'agent-config' && <AgentList inSidebar />}
+            {activeView === 'agents' && (
+              <>
+                <div className="flex gap-1 px-4 pb-2">
+                  {(['chat', 'config'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setAgentViewMode(mode)}
+                      className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 capitalize cursor-pointer transition-all
+                        ${agentViewMode === mode ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+                {agentViewMode === 'chat' ? <AgentChatList inSidebar onSelect={() => setSidebarOpen(false)} /> : <AgentList inSidebar />}
+              </>
+            )}
             {activeView === 'schedules' && <ScheduleList inSidebar />}
             {activeView === 'memory' && <MemoryList inSidebar onSelect={() => setSidebarOpen(false)} />}
             {activeView === 'tasks' && <TaskList inSidebar />}
@@ -538,8 +565,7 @@ export function AppLayout() {
 
 const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   sessions: 'Session history & debug view',
-  agents: 'Chat with your AI agents',
-  'agent-config': 'Create & configure AI agents',
+  agents: 'Chat with & configure your AI agents',
   schedules: 'Automated task schedules',
   memory: 'Long-term agent memory store',
   tasks: 'Task board for orchestrator jobs',
@@ -552,12 +578,6 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
 }
 
 const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'sessions' | 'agents'>, { icon: string; title: string; description: string; features: string[] }> = {
-  'agent-config': {
-    icon: 'user',
-    title: 'Agents',
-    description: 'Create and manage AI agents and orchestrators. Each agent has its own system prompt, provider, and model configuration.',
-    features: ['Define custom system prompts for specialized agents', 'Configure which provider and model each agent uses', 'Create orchestrators that coordinate multiple agents', 'Generate agents with AI from a natural language description'],
-  },
   schedules: {
     icon: 'clock',
     title: 'Schedules',

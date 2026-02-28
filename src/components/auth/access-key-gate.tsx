@@ -27,7 +27,7 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
           setGeneratedKey(data.key)
         }
       })
-      .catch(() => {})
+      .catch((err) => console.error('Auth check failed:', err))
       .finally(() => setChecking(false))
   }, [])
 
