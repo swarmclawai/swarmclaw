@@ -29,6 +29,34 @@ function parseIntBounded(value: unknown, fallback: number, min: number, max: num
   return Math.max(min, Math.min(max, Math.trunc(parsed)))
 }
 
+/**
+ * Parse a duration value into seconds.
+ * Accepts: "30m", "1h", "2h30m", "45s", "1800", 1800, null/undefined.
+ * Returns integer seconds clamped to [0, 86400].
+ */
+function parseDuration(value: unknown, fallbackSec: number): number {
+  if (value === null || value === undefined) return fallbackSec
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return fallbackSec
+    return Math.max(0, Math.min(86400, Math.trunc(value)))
+  }
+  if (typeof value !== 'string') return fallbackSec
+  const trimmed = value.trim().toLowerCase()
+  if (!trimmed) return fallbackSec
+  // Plain numeric string — treat as seconds (backward compat)
+  const asNum = Number(trimmed)
+  if (Number.isFinite(asNum)) {
+    return Math.max(0, Math.min(86400, Math.trunc(asNum)))
+  }
+  const m = trimmed.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/)
+  if (!m || (!m[1] && !m[2] && !m[3])) return fallbackSec
+  const hours = m[1] ? Number.parseInt(m[1], 10) : 0
+  const minutes = m[2] ? Number.parseInt(m[2], 10) : 0
+  const seconds = m[3] ? Number.parseInt(m[3], 10) : 0
+  const total = hours * 3600 + minutes * 60 + seconds
+  return Math.max(0, Math.min(86400, total))
+}
+
 function parseTimeHHMM(raw: unknown): { h: number; m: number } | null {
   if (typeof raw !== 'string') return null
   const val = raw.trim()
@@ -77,44 +105,91 @@ function inActiveWindow(nowDate: Date, startRaw: unknown, endRaw: unknown, tzRaw
   return current >= startM || current < endM
 }
 
-function heartbeatConfigForSession(session: any, settings: Record<string, any>, agents: Record<string, any>): {
+export interface HeartbeatConfig {
   intervalSec: number
   prompt: string
   enabled: boolean
-} {
-  const globalIntervalSec = parseIntBounded(settings.heartbeatIntervalSec, 120, 0, 3600)
+  model: string | null
+  ackMaxChars: number
+  showOk: boolean
+  showAlerts: boolean
+  target: string | null
+}
+
+const DEFAULT_HEARTBEAT_PROMPT = 'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.'
+
+function resolveInterval(obj: Record<string, any>, currentSec: number): number {
+  // Prefer heartbeatInterval (duration string) over heartbeatIntervalSec (raw number)
+  if (obj.heartbeatInterval !== undefined && obj.heartbeatInterval !== null) {
+    return parseDuration(obj.heartbeatInterval, currentSec)
+  }
+  if (obj.heartbeatIntervalSec !== undefined && obj.heartbeatIntervalSec !== null) {
+    return parseIntBounded(obj.heartbeatIntervalSec, currentSec, 0, 86400)
+  }
+  return currentSec
+}
+
+function resolveStr(obj: Record<string, any>, key: string, current: string | null): string | null {
+  const val = obj[key]
+  if (typeof val === 'string' && val.trim()) return val.trim()
+  return current
+}
+
+function resolveBool(obj: Record<string, any>, key: string, current: boolean): boolean {
+  if (obj[key] === true) return true
+  if (obj[key] === false) return false
+  return current
+}
+
+function resolveNum(obj: Record<string, any>, key: string, current: number): number {
+  const val = obj[key]
+  if (typeof val === 'number' && Number.isFinite(val)) return Math.trunc(val)
+  return current
+}
+
+function heartbeatConfigForSession(session: any, settings: Record<string, any>, agents: Record<string, any>): HeartbeatConfig {
+  // Global defaults — 30 min interval (was 120s)
+  let intervalSec = resolveInterval(settings, 1800)
   const globalPrompt = (typeof settings.heartbeatPrompt === 'string' && settings.heartbeatPrompt.trim())
     ? settings.heartbeatPrompt.trim()
-    : 'Continue working on your current goals. Review what you have done so far, decide what to do next, and take action.'
+    : DEFAULT_HEARTBEAT_PROMPT
 
-  let enabled = globalIntervalSec > 0
-  let intervalSec = globalIntervalSec
+  let enabled = intervalSec > 0
   let prompt = globalPrompt
+  let model: string | null = resolveStr(settings, 'heartbeatModel', null)
+  let ackMaxChars = resolveNum(settings, 'heartbeatAckMaxChars', 300)
+  let showOk = resolveBool(settings, 'heartbeatShowOk', false)
+  let showAlerts = resolveBool(settings, 'heartbeatShowAlerts', true)
+  let target: string | null = resolveStr(settings, 'heartbeatTarget', null)
 
+  // Agent layer overrides
   if (session.agentId) {
     const agent = agents[session.agentId]
     if (agent) {
       if (agent.heartbeatEnabled === false) enabled = false
       if (agent.heartbeatEnabled === true) enabled = true
-      if (agent.heartbeatIntervalSec !== undefined && agent.heartbeatIntervalSec !== null) {
-        intervalSec = parseIntBounded(agent.heartbeatIntervalSec, intervalSec, 0, 3600)
-      }
+      intervalSec = resolveInterval(agent, intervalSec)
       if (typeof agent.heartbeatPrompt === 'string' && agent.heartbeatPrompt.trim()) {
         prompt = agent.heartbeatPrompt.trim()
       }
+      model = resolveStr(agent, 'heartbeatModel', model)
+      ackMaxChars = resolveNum(agent, 'heartbeatAckMaxChars', ackMaxChars)
+      showOk = resolveBool(agent, 'heartbeatShowOk', showOk)
+      showAlerts = resolveBool(agent, 'heartbeatShowAlerts', showAlerts)
+      target = resolveStr(agent, 'heartbeatTarget', target)
     }
   }
 
+  // Session layer overrides
   if (session.heartbeatEnabled === false) enabled = false
   if (session.heartbeatEnabled === true) enabled = true
-  if (session.heartbeatIntervalSec !== undefined && session.heartbeatIntervalSec !== null) {
-    intervalSec = parseIntBounded(session.heartbeatIntervalSec, intervalSec, 0, 3600)
-  }
+  intervalSec = resolveInterval(session, intervalSec)
   if (typeof session.heartbeatPrompt === 'string' && session.heartbeatPrompt.trim()) {
     prompt = session.heartbeatPrompt.trim()
   }
+  target = resolveStr(session, 'heartbeatTarget', target)
 
-  return { enabled: enabled && intervalSec > 0, intervalSec, prompt }
+  return { enabled: enabled && intervalSec > 0, intervalSec, prompt, model, ackMaxChars, showOk, showAlerts, target }
 }
 
 function lastUserMessageAt(session: any): number {
@@ -213,7 +288,6 @@ async function tickHeartbeats() {
     const runState = getSessionRunState(session.id)
     if (runState.runningRunId) continue
 
-    state.lastBySession.set(session.id, now)
     const heartbeatMessage = isMainSession(session)
       ? buildMainLoopHeartbeatPrompt(session, cfg.prompt)
       : cfg.prompt
@@ -225,7 +299,17 @@ async function tickHeartbeats() {
       source: 'heartbeat',
       mode: 'collect',
       dedupeKey: `heartbeat:${session.id}`,
+      modelOverride: cfg.model || undefined,
+      heartbeatConfig: {
+        ackMaxChars: cfg.ackMaxChars,
+        showOk: cfg.showOk,
+        showAlerts: cfg.showAlerts,
+        target: cfg.target,
+      },
     })
+
+    // Set timestamp AFTER successful enqueue so a busy session retries next tick
+    state.lastBySession.set(session.id, now)
 
     enqueue.promise.catch((err) => {
       log.warn('heartbeat', `Heartbeat run failed for session ${session.id}`, err?.message || String(err))

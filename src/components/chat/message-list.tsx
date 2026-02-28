@@ -23,14 +23,29 @@ export function MessageList({ messages, streaming }: Props) {
   })
   const agents = useAppStore((s) => s.agents)
   const agent = session?.agentId ? agents[session.agentId] : null
+  const appSettings = useAppStore((s) => s.appSettings)
   const assistantName = agent?.name
     || (session?.provider === 'claude-cli' ? undefined : session?.model || session?.provider)
     || undefined
+
+  const showOk = appSettings.heartbeatShowOk ?? false
+  const showAlerts = appSettings.heartbeatShowAlerts ?? true
+
   const isHeartbeatMessage = (msg: Message) =>
     msg.role === 'assistant' && (msg.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(msg.text || ''))
+  const isHeartbeatOk = (msg: Message) =>
+    msg.suppressed === true || (msg.kind === 'heartbeat' && /^\s*HEARTBEAT_OK\b/i.test(msg.text || ''))
+
   const displayedMessages: Message[] = []
   for (const msg of messages) {
     const isHeartbeat = isHeartbeatMessage(msg)
+
+    // Visibility filtering based on settings
+    if (isHeartbeat) {
+      if (!showAlerts) continue // Hide all heartbeat messages
+      if (!showOk && isHeartbeatOk(msg)) continue // Hide OK messages
+    }
+
     const last = displayedMessages[displayedMessages.length - 1]
     const lastIsHeartbeat = !!last && isHeartbeatMessage(last)
     if (isHeartbeat && lastIsHeartbeat) {

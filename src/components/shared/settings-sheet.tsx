@@ -567,20 +567,19 @@ export function SettingsSheet() {
         <div className="p-6 rounded-[18px] bg-surface border border-white/[0.06]">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
             <div>
-              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Heartbeat Interval (Seconds)</label>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Heartbeat Interval</label>
               <input
-                type="number"
-                min={0}
-                max={3600}
-                value={appSettings.heartbeatIntervalSec ?? 120}
+                type="text"
+                value={appSettings.heartbeatInterval ?? appSettings.heartbeatIntervalSec ?? '30m'}
                 onChange={(e) => {
-                  const n = Number.parseInt(e.target.value, 10)
-                  updateSettings({ heartbeatIntervalSec: Number.isFinite(n) ? Math.max(0, n) : 120 })
+                  const val = e.target.value.trim()
+                  updateSettings({ heartbeatInterval: val || null })
                 }}
+                placeholder="30m"
                 className={inputClass}
                 style={{ fontFamily: 'inherit' }}
               />
-              <p className="text-[11px] text-text-3/60 mt-2">Set to 0 to disable heartbeat polling.</p>
+              <p className="text-[11px] text-text-3/60 mt-2">Duration string (e.g. 30m, 1h) or seconds. Set to 0 to disable.</p>
             </div>
             <div>
               <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Heartbeat Prompt</label>
@@ -588,7 +587,78 @@ export function SettingsSheet() {
                 type="text"
                 value={appSettings.heartbeatPrompt || ''}
                 onChange={(e) => updateSettings({ heartbeatPrompt: e.target.value || null })}
-                placeholder="SWARM_HEARTBEAT_CHECK"
+                placeholder="Leave blank for default"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Heartbeat Model</label>
+              <input
+                type="text"
+                value={appSettings.heartbeatModel || ''}
+                onChange={(e) => updateSettings({ heartbeatModel: e.target.value || null })}
+                placeholder="Leave blank for session default"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Ack Threshold (chars)</label>
+              <input
+                type="number"
+                min={0}
+                value={appSettings.heartbeatAckMaxChars ?? 300}
+                onChange={(e) => {
+                  const n = Number.parseInt(e.target.value, 10)
+                  updateSettings({ heartbeatAckMaxChars: Number.isFinite(n) ? Math.max(0, n) : 300 })
+                }}
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+              <p className="text-[11px] text-text-3/60 mt-2">Responses under this length are suppressed as HEARTBEAT_OK.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Show OK Messages</label>
+              <button
+                onClick={() => updateSettings({ heartbeatShowOk: !(appSettings.heartbeatShowOk ?? false) })}
+                className={`px-3 py-2 rounded-[10px] border text-[12px] font-600 transition-colors cursor-pointer ${
+                  appSettings.heartbeatShowOk
+                    ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-300'
+                    : 'border-white/[0.08] bg-white/[0.03] text-text-3'
+                }`}
+                style={{ fontFamily: 'inherit' }}
+              >
+                {appSettings.heartbeatShowOk ? 'On' : 'Off'}
+              </button>
+            </div>
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Show Alert Messages</label>
+              <button
+                onClick={() => updateSettings({ heartbeatShowAlerts: !(appSettings.heartbeatShowAlerts ?? true) })}
+                className={`px-3 py-2 rounded-[10px] border text-[12px] font-600 transition-colors cursor-pointer ${
+                  (appSettings.heartbeatShowAlerts ?? true)
+                    ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-300'
+                    : 'border-white/[0.08] bg-white/[0.03] text-text-3'
+                }`}
+                style={{ fontFamily: 'inherit' }}
+              >
+                {(appSettings.heartbeatShowAlerts ?? true) ? 'On' : 'Off'}
+              </button>
+            </div>
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Delivery Target</label>
+              <input
+                type="text"
+                value={appSettings.heartbeatTarget || ''}
+                onChange={(e) => updateSettings({ heartbeatTarget: e.target.value || null })}
+                placeholder="none, last, or channel ID"
                 className={inputClass}
                 style={{ fontFamily: 'inherit' }}
               />

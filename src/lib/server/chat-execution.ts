@@ -50,6 +50,8 @@ export interface ExecuteChatTurnInput {
   runId?: string
   signal?: AbortSignal
   onEvent?: (event: SSEEvent) => void
+  modelOverride?: string
+  heartbeatConfig?: { ackMaxChars: number; showOk: boolean; showAlerts: boolean; target: string | null }
 }
 
 export interface ExecuteChatTurnResult {
@@ -336,6 +338,15 @@ function resolveApiKeyForSession(session: SessionWithCredentials, provider: Prov
   return null
 }
 
+function classifyHeartbeatResponse(text: string, ackMaxChars: number): 'suppress' | 'strip' | 'keep' {
+  const trimmed = text.trim()
+  if (trimmed === 'HEARTBEAT_OK') return 'suppress'
+  const stripped = trimmed.replace(/HEARTBEAT_OK/gi, '').trim()
+  if (!stripped) return 'suppress'
+  if (stripped.length <= ackMaxChars) return 'suppress'
+  return stripped.length < trimmed.length ? 'strip' : 'keep'
+}
+
 const AUTO_MEMORY_MIN_INTERVAL_MS = 45 * 60 * 1000
 
 function normalizeMemoryText(value: string): string {
@@ -432,9 +443,14 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const heartbeatStatusOnly = isHeartbeatRun
     && (session.name !== '__main__' || heartbeatStatus === 'ok' || heartbeatStatus === 'idle')
   const toolsForRun = heartbeatStatusOnly ? [] : toolPolicy.enabledTools
-  const sessionForRun = toolsForRun === session.tools
+  let sessionForRun = toolsForRun === session.tools
     ? session
     : { ...session, tools: toolsForRun }
+
+  // Apply model override for heartbeat runs (cheaper model)
+  if (isHeartbeatRun && input.modelOverride) {
+    sessionForRun = { ...sessionForRun, model: input.modelOverride }
+  }
 
   if (!heartbeatStatusOnly && toolPolicy.blockedTools.length > 0) {
     const blockedSummary = toolPolicy.blockedTools
@@ -749,8 +765,16 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   const finalText = (fullResponse || '').trim() || (!internal && errorMessage ? `Error: ${errorMessage}` : '')
   const textForPersistence = stripMainLoopMetaForPersistence(finalText, internal)
+
+  // HEARTBEAT_OK suppression
+  const heartbeatConfig = input.heartbeatConfig
+  let heartbeatClassification: 'suppress' | 'strip' | 'keep' | null = null
+  if (isHeartbeatRun && textForPersistence.length > 0) {
+    heartbeatClassification = classifyHeartbeatResponse(textForPersistence, heartbeatConfig?.ackMaxChars ?? 300)
+  }
+
   const shouldPersistAssistant = textForPersistence.length > 0
-    && (!internal || textForPersistence !== 'HEARTBEAT_OK')
+    && heartbeatClassification !== 'suppress'
 
   const normalizeResumeId = (value: unknown): string | null =>
     typeof value === 'string' && value.trim() ? value.trim() : null
@@ -789,14 +813,45 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
     if (shouldPersistAssistant) {
       const persistedKind = internal && source !== 'session-awakening' ? 'heartbeat' : 'chat'
+      const persistedText = heartbeatClassification === 'strip'
+        ? textForPersistence.replace(/HEARTBEAT_OK/gi, '').trim()
+        : textForPersistence
       current.messages.push({
         role: 'assistant',
-        text: textForPersistence,
+        text: persistedText,
         time: Date.now(),
         toolEvents: toolEvents.length ? toolEvents : undefined,
         kind: persistedKind,
       })
       changed = true
+
+      // Target routing for non-suppressed heartbeat alerts
+      if (isHeartbeatRun && heartbeatConfig?.target && heartbeatConfig.target !== 'none' && heartbeatConfig.showAlerts !== false) {
+        try {
+          const { listRunningConnectors, sendConnectorMessage } = require('./connectors/manager')
+          let connectorId: string | undefined
+          let channelId: string | undefined
+          if (heartbeatConfig.target === 'last') {
+            const running = listRunningConnectors()
+            const first = running.find((c: any) => c.recentChannelId)
+            if (first) {
+              connectorId = first.id
+              channelId = first.recentChannelId
+            }
+          } else if (heartbeatConfig.target.includes(':')) {
+            const [cId, chId] = heartbeatConfig.target.split(':', 2)
+            connectorId = cId
+            channelId = chId
+          } else {
+            channelId = heartbeatConfig.target
+          }
+          if (channelId) {
+            sendConnectorMessage({ connectorId, channelId, text: persistedText }).catch(() => {})
+          }
+        } catch {
+          // Best effort — connector manager may not be loaded
+        }
+      }
     }
 
     const autoMemoryEligible = shouldStoreAutoMemoryNote({
@@ -818,9 +873,10 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       if (storedId) changed = true
     }
 
-    // Always update lastActiveAt after a successful run (including heartbeats),
-    // even if no messages were persisted — the session was still active.
-    current.lastActiveAt = Date.now()
+    // Don't extend idle timeout for heartbeat runs — only user-initiated activity counts
+    if (source !== 'heartbeat' && source !== 'main-loop-followup') {
+      current.lastActiveAt = Date.now()
+    }
     fresh[sessionId] = current
     saveSessions(fresh)
   }

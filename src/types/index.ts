@@ -13,6 +13,7 @@ export interface Message {
   imageUrl?: string
   toolEvents?: MessageToolEvent[]
   kind?: 'chat' | 'heartbeat' | 'system'
+  suppressed?: boolean
 }
 
 export type ProviderType = 'claude-cli' | 'codex-cli' | 'opencode-cli' | 'openai' | 'ollama' | 'anthropic' | 'openclaw' | 'google' | 'deepseek' | 'groq' | 'together' | 'mistral' | 'xai' | 'fireworks'
@@ -64,6 +65,7 @@ export interface Session {
   tools?: string[]
   heartbeatEnabled?: boolean | null
   heartbeatIntervalSec?: number | null
+  heartbeatTarget?: 'last' | 'none' | string | null
   lastAutoMemoryAt?: number | null
   mainLoopState?: {
     goal?: string | null
@@ -230,7 +232,13 @@ export interface Agent {
   platformAssignScope?: 'self' | 'all'  // defaults to 'self'
   heartbeatEnabled?: boolean
   heartbeatIntervalSec?: number | null
+  heartbeatInterval?: string | number | null
   heartbeatPrompt?: string | null
+  heartbeatModel?: string | null
+  heartbeatAckMaxChars?: number | null
+  heartbeatShowOk?: boolean | null
+  heartbeatShowAlerts?: boolean | null
+  heartbeatTarget?: 'last' | 'none' | string | null
   createdAt: number
   updatedAt: number
 }
@@ -350,6 +358,12 @@ export interface AppSettings {
   speechRecognitionLang?: string | null
   heartbeatPrompt?: string | null
   heartbeatIntervalSec?: number | null
+  heartbeatInterval?: string | number | null
+  heartbeatModel?: string | null
+  heartbeatAckMaxChars?: number | null
+  heartbeatShowOk?: boolean | null
+  heartbeatShowAlerts?: boolean | null
+  heartbeatTarget?: 'last' | 'none' | string | null
   heartbeatActiveStart?: string | null
   heartbeatActiveEnd?: string | null
   heartbeatTimezone?: string | null

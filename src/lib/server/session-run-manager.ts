@@ -34,6 +34,8 @@ interface QueueEntry {
   onEvents: Array<(event: SSEEvent) => void>
   signalController: AbortController
   maxRuntimeMs?: number
+  modelOverride?: string
+  heartbeatConfig?: { ackMaxChars: number; showOk: boolean; showAlerts: boolean; target: string | null }
   resolve: (value: ExecuteChatTurnResult) => void
   reject: (error: Error) => void
   promise: Promise<ExecuteChatTurnResult>
@@ -239,6 +241,8 @@ async function drainExecution(executionKey: string): Promise<void> {
       runId: next.run.id,
       signal: next.signalController.signal,
       onEvent: (event) => emitToSubscribers(next, event),
+      modelOverride: next.modelOverride,
+      heartbeatConfig: next.heartbeatConfig,
     })
 
     const failed = !!result.error
@@ -335,6 +339,8 @@ export interface EnqueueSessionRunInput {
   onEvent?: (event: SSEEvent) => void
   dedupeKey?: string
   maxRuntimeMs?: number
+  modelOverride?: string
+  heartbeatConfig?: { ackMaxChars: number; showOk: boolean; showAlerts: boolean; target: string | null }
 }
 
 export interface EnqueueSessionRunResult {
@@ -441,6 +447,8 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
     onEvents: input.onEvent ? [input.onEvent] : [],
     signalController: new AbortController(),
     maxRuntimeMs: effectiveMaxRuntimeMs > 0 ? effectiveMaxRuntimeMs : undefined,
+    modelOverride: input.modelOverride,
+    heartbeatConfig: input.heartbeatConfig,
     resolve,
     reject,
     promise,
