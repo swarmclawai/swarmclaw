@@ -62,5 +62,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# CI artifacts
+/artifacts/
+
 # local scratch dir accidentally created by tooling
 /~/
