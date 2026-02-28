@@ -281,11 +281,10 @@ export function AgentSheet() {
     }
   }
 
-  // Whether this provider needs a connection test before saving
-  const needsTest = !providerNeedsKey && (
-    (currentProvider?.requiresApiKey && !NATIVE_CAPABILITY_PROVIDER_IDS.has(provider)) ||
-    (provider === 'ollama' && ollamaMode === 'cloud')
-  )
+  // Whether this provider needs a connection test before saving.
+  // Only CLI providers (no remote connection) skip the test.
+  const CLI_ONLY_PROVIDERS: Set<ProviderType> = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
+  const needsTest = !providerNeedsKey && !CLI_ONLY_PROVIDERS.has(provider)
 
   const handleTestAndSave = async () => {
     if (needsTest) {
@@ -487,9 +486,11 @@ export function AgentSheet() {
         </div>
       )}
 
-      {(currentProvider?.requiresApiKey || (provider === 'ollama' && ollamaMode === 'cloud')) && (
+      {(currentProvider?.requiresApiKey || currentProvider?.optionalApiKey || (provider === 'ollama' && ollamaMode === 'cloud')) && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">API Key</label>
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
+            API Key{currentProvider?.optionalApiKey && !currentProvider?.requiresApiKey && <span className="normal-case tracking-normal font-normal text-text-3"> (optional)</span>}
+          </label>
           {providerCredentials.length > 0 && !addingKey ? (
             <div className="flex gap-2">
               <select value={credentialId || ''} onChange={(e) => {
@@ -564,7 +565,7 @@ export function AgentSheet() {
       )}
 
       {/* Fallback Credentials */}
-      {(currentProvider?.requiresApiKey || (provider === 'ollama' && ollamaMode === 'cloud')) && providerCredentials.length > 1 && (
+      {(currentProvider?.requiresApiKey || currentProvider?.optionalApiKey || (provider === 'ollama' && ollamaMode === 'cloud')) && providerCredentials.length > 1 && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
             Fallback Keys <span className="normal-case tracking-normal font-normal text-text-3">(for auto-failover)</span>
