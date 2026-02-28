@@ -77,6 +77,34 @@ Core type definitions in `src/types/index.ts`: `Agent`, `Session`, `Message`, `P
 - Never reference "Claude", "Anthropic", or "Co-Authored-By" in commit messages
 - Write commit messages as if a human authored the code
 
+### OpenClaw Device Pairing (added in v0.3.0, commit `9558813`)
+
+SwarmClaw authenticates to OpenClaw gateways using ed25519 device identity, not just API tokens. The full flow:
+
+**Identity resolution** (`src/lib/providers/openclaw.ts` — `loadOrCreateDeviceIdentity()`):
+1. Checks `~/.openclaw/identity/device.json` (or `~/.clawdbot/identity/device.json`) — reuses the CLI's keypair if already paired
+2. Falls back to `data/openclaw-device.json` (SwarmClaw's own identity)
+3. If neither exists, generates a new ed25519 keypair, writes to `data/openclaw-device.json` with mode `0o600`
+4. `deviceId` is derived from the public key via `fingerprintPublicKey()`
+
+**Connection test** (`src/app/api/setup/check-provider/route.ts` — `checkOpenClaw()`):
+1. Calls `getDeviceId()` to resolve the device identity
+2. Opens a WebSocket to the gateway via `wsConnect()` which signs a nonce challenge with the private key
+3. Gateway returns success (paired), or an error message containing "pairing"/"not paired"/"pending approval" → mapped to `PAIRING_REQUIRED`, or "signature"/"device auth" → mapped to `DEVICE_AUTH_INVALID`
+
+**Agent sheet UX** (`src/components/agents/agent-sheet.tsx`):
+- Bottom button: idle → **Connect**, testing → **Connecting...**, `PAIRING_REQUIRED` → **Retry Connection**, other fail → **Retry**, pass → **Save**
+- `PAIRING_REQUIRED` and `DEVICE_AUTH_INVALID` blocks show an **Approve in Dashboard** link that opens the gateway URL (with auto `http://` prefix for bare host:port)
+- Inline status block handles all feedback; bottom error/success bars are hidden for OpenClaw (`!openclawEnabled && ...`)
+- On successful test, skips the 1.5s delay and saves immediately
+
+**Important files**:
+- `data/openclaw-device.json` — SwarmClaw's device keypair. In `.gitignore`. **Never commit this** (contains private key)
+- `src/lib/providers/openclaw.ts` — `loadOrCreateDeviceIdentity()`, `getDeviceId()`, `wsConnect()`, nonce signing
+- `src/app/api/setup/check-provider/route.ts` — `checkOpenClaw()` calls `wsConnect` and returns `errorCode`
+- `src/app/api/setup/openclaw-device/route.ts` — GET endpoint exposing device ID
+- `src/components/agents/agent-sheet.tsx` — UI for the pairing flow (~lines 658-740)
+
 ### Key Patterns
 - **Storage**: All entities stored as JSON blobs in SQLite collections, not normalized tables
 - **Streaming**: SSE (Server-Sent Events) for real-time chat responses
