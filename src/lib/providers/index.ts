@@ -74,6 +74,9 @@ const PROVIDERS: Record<string, BuiltinProviderConfig> = {
         const patchedSession = {
           ...opts.session,
           apiEndpoint: normalizeOpenClawEndpoint(opts.session.apiEndpoint || 'http://localhost:18789/v1'),
+          // Use text/plain to bypass Express body parsers in Hostinger/proxy setups.
+          // The OpenClaw gateway parses the body as JSON regardless of Content-Type.
+          contentType: 'text/plain',
         }
         return streamOpenAiChat({ ...opts, session: patchedSession })
       },

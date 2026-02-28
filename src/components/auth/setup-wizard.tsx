@@ -359,6 +359,19 @@ function ProviderBadge({ label }: { label?: string }) {
   )
 }
 
+function getOpenClawErrorHint(message: string): string | null {
+  const lower = message.toLowerCase()
+  if (lower.includes('timeout') || lower.includes('timed out'))
+    return 'Ensure the port is open and reachable from this machine.'
+  if (lower.includes('401') || lower.includes('unauthorized'))
+    return 'Check your gateway auth token.'
+  if (lower.includes('405') || lower.includes('method not allowed'))
+    return 'Enable chatCompletions in your OpenClaw config: openclaw config set gateway.http.endpoints.chatCompletions.enabled true'
+  if (lower.includes('econnrefused') || lower.includes('connection refused') || lower.includes('connect econnrefused'))
+    return 'Verify that the OpenClaw gateway is running on the target host.'
+  return null
+}
+
 export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [step, setStep] = useState(0)
   const [provider, setProvider] = useState<WizardProvider | null>(null)
@@ -722,6 +735,17 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                       text-text text-[14px] font-mono outline-none transition-all duration-200
                       focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
                   />
+                  {provider === 'openclaw' && (
+                    <div className="mt-2 space-y-0.5">
+                      <p className="text-[12px] text-text-3">Works with local (<code className="text-text-2">localhost:18789</code>) or remote OpenClaw instances.</p>
+                      <p className="text-[12px] text-text-3">For remote: use your server&apos;s IP/domain with port (e.g. <code className="text-text-2">http://your-server:60924/v1</code>).</p>
+                      <p className="text-[12px] text-text-3 mt-1">
+                        <a href="/docs/openclaw-setup" target="_blank" rel="noopener noreferrer" className="text-accent-bright hover:underline">
+                          Setup guide &rarr;
+                        </a>
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -767,6 +791,10 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 }`}
               >
                 {checkState === 'checking' ? 'Checking connection...' : checkMessage}
+                {checkState === 'error' && provider === 'openclaw' && (() => {
+                  const hint = getOpenClawErrorHint(checkMessage)
+                  return hint ? <p className="mt-1.5 text-[11px] text-text-3">{hint}</p> : null
+                })()}
               </div>
             )}
 

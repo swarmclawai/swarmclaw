@@ -147,6 +147,10 @@ async function checkOpenClaw(apiKey: string, endpointRaw: string, modelRaw: stri
   const headers: Record<string, string> = {}
   if (apiKey) headers.authorization = `Bearer ${apiKey}`
 
+  // Use text/plain to bypass Express body parsers in Hostinger/proxy setups.
+  // The OpenClaw gateway parses the body as JSON regardless of Content-Type.
+  headers['content-type'] = 'text/plain'
+
   const modelsRes = await fetch(`${normalizedEndpoint}/models`, {
     headers,
     signal: AbortSignal.timeout(10_000),
@@ -171,7 +175,7 @@ async function checkOpenClaw(apiKey: string, endpointRaw: string, modelRaw: stri
     method: 'POST',
     headers: {
       ...headers,
-      'content-type': 'application/json',
+      'content-type': 'text/plain',
     },
     body: JSON.stringify({
       model,

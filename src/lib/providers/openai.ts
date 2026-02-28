@@ -44,6 +44,11 @@ export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPr
     const isHttps = url.protocol === 'https:'
     const transport = isHttps ? https : http
 
+    // OpenClaw endpoints behind Hostinger's proxy use express.json() middleware
+    // which consumes the request body before http-proxy-middleware can forward it.
+    // Sending as text/plain bypasses the body parser while the gateway still parses JSON.
+    const contentType = session.contentType || 'application/json'
+
     const apiReq = transport.request({
       hostname: url.hostname,
       port: url.port || (isHttps ? 443 : 80),
@@ -51,7 +56,7 @@ export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPr
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+        'Content-Type': contentType,
       },
     }, (apiRes) => {
       if (apiRes.statusCode !== 200) {

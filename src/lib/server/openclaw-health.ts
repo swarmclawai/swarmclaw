@@ -153,7 +153,9 @@ export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<O
   const token = normalizeToken(input.token) || resolveCredentialToken(input.credentialId)
   const authProvided = !!token
   const headers: Record<string, string> = {
-    'content-type': 'application/json',
+    // Use text/plain to bypass Express body parsers in Hostinger/proxy setups.
+    // The OpenClaw gateway parses the body as JSON regardless of Content-Type.
+    'content-type': 'text/plain',
   }
   if (token) headers.authorization = `Bearer ${token}`
 
