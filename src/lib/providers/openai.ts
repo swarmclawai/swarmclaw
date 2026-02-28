@@ -64,10 +64,12 @@ export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPr
         apiRes.on('data', (c: Buffer) => errBody += c)
         apiRes.on('end', () => {
           console.error(`[${session.id}] openai error ${apiRes.statusCode}:`, errBody.slice(0, 200))
-          let errMsg = `OpenAI API error (${apiRes.statusCode})`
+          let errMsg = `API error (${apiRes.statusCode})`
           try {
             const parsed = JSON.parse(errBody)
             if (parsed.error?.message) errMsg = parsed.error.message
+            else if (parsed.message) errMsg = parsed.message
+            else if (parsed.detail) errMsg = parsed.detail
           } catch {}
           write(`data: ${JSON.stringify({ t: 'err', text: errMsg })}\n\n`)
           active.delete(session.id)
@@ -99,6 +101,9 @@ export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPr
       })
 
       apiRes.on('end', () => {
+        if (!fullResponse) {
+          console.error(`[${session.id}] openai stream ended with no content (provider: ${session.provider}, endpoint: ${baseUrl})`)
+        }
         active.delete(session.id)
         resolve(fullResponse)
       })
@@ -108,7 +113,7 @@ export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPr
 
     apiReq.on('error', (e) => {
       console.error(`[${session.id}] openai request error:`, e.message)
-      write(`data: ${JSON.stringify({ t: 'err', text: e.message })}\n\n`)
+      write(`data: ${JSON.stringify({ t: 'err', text: `Connection failed: ${e.message}` })}\n\n`)
       active.delete(session.id)
       resolve(fullResponse)
     })

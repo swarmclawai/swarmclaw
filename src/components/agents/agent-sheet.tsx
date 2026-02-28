@@ -286,12 +286,18 @@ export function AgentSheet() {
   const CLI_ONLY_PROVIDERS: Set<ProviderType> = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
   const needsTest = !providerNeedsKey && !CLI_ONLY_PROVIDERS.has(provider)
 
+  const [saving, setSaving] = useState(false)
+
   const handleTestAndSave = async () => {
     if (needsTest) {
       const passed = await handleTestConnection()
       if (!passed) return
+      // Brief pause so the user can see the success state on the button
+      await new Promise((r) => setTimeout(r, 1500))
     }
+    setSaving(true)
     await handleSave()
+    setSaving(false)
   }
 
   const agentOptions = Object.values(agents).filter((p) => !p.isOrchestrator && p.id !== editingId)
@@ -834,11 +840,12 @@ export function AgentSheet() {
         </button>
         <button
           onClick={handleTestAndSave}
-          disabled={!name.trim() || providerNeedsKey || testStatus === 'testing'}
-          className="flex-1 py-3.5 rounded-[14px] border-none bg-[#6366F1] text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110"
+          disabled={!name.trim() || providerNeedsKey || testStatus === 'testing' || testStatus === 'pass' || saving}
+          className={`flex-1 py-3.5 rounded-[14px] border-none text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-60 transition-all hover:brightness-110
+            ${testStatus === 'pass' ? 'bg-emerald-600 shadow-[0_4px_20px_rgba(16,185,129,0.25)]' : 'bg-[#6366F1] shadow-[0_4px_20px_rgba(99,102,241,0.25)]'}`}
           style={{ fontFamily: 'inherit' }}
         >
-          {testStatus === 'testing' ? 'Testing...' : needsTest ? 'Test & Save' : editing ? 'Save' : 'Create'}
+          {testStatus === 'testing' ? 'Testing...' : testStatus === 'pass' ? (saving ? 'Saving...' : 'Connected!') : needsTest ? 'Test & Save' : editing ? 'Save' : 'Create'}
         </button>
       </div>
     </BottomSheet>
