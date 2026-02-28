@@ -32,7 +32,7 @@ SwarmClaw can spawn **Claude Code CLI** processes with full shell access on your
 - **15 Built-in Providers** — Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, plus custom OpenAI-compatible endpoints
 - **OpenClaw Gateway** — Per-agent toggle to connect any agent to a local or remote OpenClaw gateway. Each agent gets its own gateway URL and token — run a swarm of OpenClaws from one dashboard. The `openclaw` CLI ships as a bundled dependency (no separate install needed)
 - **Agent Builder** — Create agents with custom personalities (soul), system prompts, tools, and skills. AI-powered generation from a description
-- **Agent Tools** — Shell, process control for long-running commands, files, edit file, send file, web search, web fetch, CLI delegation (Claude/Codex/OpenCode), Playwright browser automation, and persistent memory
+- **Agent Tools** — Shell, process control for long-running commands, files, edit file, send file, web search, web fetch, CLI delegation (Claude/Codex/OpenCode), Playwright browser automation, persistent memory, and sandboxed code execution (JS/TS via Deno, Python)
 - **Platform Tools** — Agents can manage other agents, tasks, schedules, skills, connectors, sessions, and encrypted secrets via built-in platform tools
 - **Orchestration** — Multi-agent workflows powered by LangGraph with automatic sub-agent routing
 - **Agentic Execution Policy** — Tool-first autonomous action loop with progress updates, evidence-driven answers, and better use of platform tools for long-lived work
@@ -52,6 +52,8 @@ SwarmClaw can spawn **Claude Code CLI** processes with full shell access on your
 - **Plugin System** — Extend agent behavior with JS plugins (hooks: beforeAgentStart, afterAgentComplete, beforeToolExec, afterToolExec, onMessage)
 - **Secrets Vault** — Encrypted storage for API keys and service tokens
 - **Custom Providers** — Add any OpenAI-compatible API as a provider
+- **MCP Servers** — Connect agents to any Model Context Protocol server. Per-agent server selection with tool discovery and per-tool disable toggles
+- **Sandboxed Code Execution** — Agents can write and run JS/TS (Deno) or Python scripts in an isolated sandbox with network access, scoped filesystem, and artifact output
 - **Mobile-First UI** — Responsive glass-themed dark interface, works on phone and desktop
 
 ## Requirements
@@ -257,6 +259,8 @@ Agents can use the following tools when enabled:
 | CLI Delegation | Delegate complex tasks to Claude Code, Codex CLI, or OpenCode CLI |
 | Browser | Playwright-powered web browsing via MCP (navigate, click, type, screenshot, PDF) |
 | Memory | Store and retrieve long-term memories with FTS5 + vector search, file references, image attachments, and linked memory graph traversal |
+| Sandbox | Run JS/TS (Deno) or Python code in an isolated sandbox. Created files are returned as downloadable artifacts |
+| MCP Servers | Connect to external Model Context Protocol servers. Tools from MCP servers are injected as first-class agent tools |
 
 ### Platform Tools
 
