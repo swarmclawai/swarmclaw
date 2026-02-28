@@ -65,8 +65,7 @@ const PROVIDERS: Record<string, BuiltinProviderConfig> = {
     id: 'openclaw',
     name: 'OpenClaw',
     models: ['default'],
-    requiresApiKey: false,
-    optionalApiKey: true,
+    requiresApiKey: true,
     requiresEndpoint: true,
     defaultEndpoint: 'http://localhost:18789/v1',
     handler: {
