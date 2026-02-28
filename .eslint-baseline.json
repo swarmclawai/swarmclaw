@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-02-28T23:29:08.944Z",
-  "totalIssues": 614,
-  "uniqueIssues": 205,
+  "generatedAt": "2026-02-28T23:52:19.992Z",
+  "totalIssues": 617,
+  "uniqueIssues": 206,
   "issues": [
     {
       "filePath": "bin/server-cmd.js",
@@ -16,7 +16,14 @@
       "ruleId": "@typescript-eslint/no-require-imports",
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
-      "count": 3
+      "count": 4
+    },
+    {
+      "filePath": "bin/update-cmd.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 2
     },
     {
       "filePath": "src/app/api/agents/generate/route.ts",

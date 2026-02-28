@@ -112,8 +112,8 @@ export function buildSandboxTools(bctx: ToolBuildContext): StructuredToolInterfa
             stderr,
             artifacts,
           })
-        } catch (err: any) {
-          return JSON.stringify({ error: err.message || String(err) })
+        } catch (err: unknown) {
+          return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
         } finally {
           try { fs.rmSync(sandboxDir, { recursive: true, force: true }) } catch { /* ignore */ }
         }
