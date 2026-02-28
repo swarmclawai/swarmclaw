@@ -35,6 +35,13 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
       {skillList.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-[13px] text-text-3/60">No skills yet</p>
+          <button
+            onClick={() => setSkillSheetOpen(true)}
+            className="mt-3 px-4 py-2 rounded-[10px] bg-transparent text-accent-bright text-[13px] font-600 cursor-pointer border border-accent-bright/20 hover:bg-accent-soft transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            + Add Skill
+          </button>
         </div>
       ) : (
         <div className="space-y-2">

@@ -202,11 +202,13 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   // Load agent context when a full prompt was not already composed by the route layer.
   let agentPlatformAssignScope: 'self' | 'all' = 'self'
   let agentMcpServerIds: string[] | undefined
+  let agentMcpDisabledTools: string[] | undefined
   if (session.agentId) {
     const agents = loadAgents()
     const agent = agents[session.agentId]
     agentPlatformAssignScope = agent?.platformAssignScope || 'self'
     agentMcpServerIds = agent?.mcpServerIds
+    agentMcpDisabledTools = agent?.mcpDisabledTools
     if (!hasProvidedSystemPrompt) {
       if (agent?.soul) stateModifierParts.push(agent.soul)
       if (agent?.systemPrompt) stateModifierParts.push(agent.systemPrompt)
@@ -313,12 +315,14 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       'manage_documents', 'manage_webhooks', 'manage_connectors', 'manage_sessions', 'manage_secrets',
     ]
     const disabled = allToolIds.filter((t) => !enabledSet.has(t))
-    if (disabled.length > 0) {
+    const mcpDisabled = agentMcpDisabledTools ?? []
+    const allDisabled = [...disabled, ...mcpDisabled]
+    if (allDisabled.length > 0) {
       const delegateNote = disabled.includes('orchestrator')
         ? '\n\nIMPORTANT: The `delegate_to_agent` tool requires the `orchestrator` capability to be enabled. You must request access to `orchestrator` before you can delegate work to other agents.'
         : ''
       stateModifierParts.push(
-        `## Disabled Tools\nThe following tools exist but are not enabled for you: ${disabled.join(', ')}.\n` +
+        `## Disabled Tools\nThe following tools exist but are not enabled for you: ${allDisabled.join(', ')}.\n` +
         'If you need one of these to complete a task, use the `request_tool_access` tool to ask the user for permission.' +
         delegateNote,
       )
@@ -336,11 +340,12 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   const stateModifier = stateModifierParts.join('\n\n')
 
-  const { tools, cleanup } = buildSessionTools(session.cwd, session.tools || [], {
+  const { tools, cleanup } = await buildSessionTools(session.cwd, session.tools || [], {
     agentId: session.agentId,
     sessionId: session.id,
     platformAssignScope: agentPlatformAssignScope,
     mcpServerIds: agentMcpServerIds,
+    mcpDisabledTools: agentMcpDisabledTools,
   })
   const agent = createReactAgent({ llm, tools, stateModifier })
   const recursionLimit = getAgentLoopRecursionLimit(runtime)

@@ -82,6 +82,9 @@ export function AgentSheet() {
   const [skills, setSkills] = useState<string[]>([])
   const [skillIds, setSkillIds] = useState<string[]>([])
   const [mcpServerIds, setMcpServerIds] = useState<string[]>([])
+  const [mcpDisabledTools, setMcpDisabledTools] = useState<string[]>([])
+  const [mcpTools, setMcpTools] = useState<Record<string, { name: string; description: string }[]>>({})
+  const [mcpToolsLoading, setMcpToolsLoading] = useState(false)
   const [fallbackCredentialIds, setFallbackCredentialIds] = useState<string[]>([])
   const [platformAssignScope, setPlatformAssignScope] = useState<'self' | 'all'>('self')
   const [capabilities, setCapabilities] = useState<string[]>([])
@@ -96,6 +99,10 @@ export function AgentSheet() {
   // Test connection state
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'pass' | 'fail'>('idle')
   const [testMessage, setTestMessage] = useState('')
+  const [testErrorCode, setTestErrorCode] = useState<string | null>(null)
+  const [testDeviceId, setTestDeviceId] = useState<string | null>(null)
+  const [openclawDeviceId, setOpenclawDeviceId] = useState<string | null>(null)
+  const [configCopied, setConfigCopied] = useState(false)
 
   const soulFileRef = useRef<HTMLInputElement>(null)
   const promptFileRef = useRef<HTMLInputElement>(null)
@@ -155,6 +162,7 @@ export function AgentSheet() {
         setSkills(editing.skills || [])
         setSkillIds(editing.skillIds || [])
         setMcpServerIds(editing.mcpServerIds || [])
+        setMcpDisabledTools(editing.mcpDisabledTools || [])
         setFallbackCredentialIds(editing.fallbackCredentialIds || [])
         setPlatformAssignScope(editing.platformAssignScope || 'self')
         setCapabilities(editing.capabilities || [])
@@ -175,6 +183,7 @@ export function AgentSheet() {
         setTools([])
         setSkills([])
         setSkillIds([])
+        setMcpDisabledTools([])
         setFallbackCredentialIds([])
         setPlatformAssignScope('self')
         setCapabilities([])
@@ -198,6 +207,44 @@ export function AgentSheet() {
     setTestStatus('idle')
     setTestMessage('')
   }, [provider, credentialId, apiEndpoint])
+
+  // Fetch MCP tools when selected servers change
+  useEffect(() => {
+    if (!mcpServerIds.length) {
+      setMcpTools({})
+      return
+    }
+    let cancelled = false
+    setMcpToolsLoading(true)
+    Promise.all(
+      mcpServerIds.map(async (id) => {
+        try {
+          const tools = await api<{ name: string; description: string }[]>('GET', `/mcp-servers/${id}/tools`)
+          return { id, tools: Array.isArray(tools) ? tools : [] }
+        } catch {
+          return { id, tools: [] }
+        }
+      })
+    ).then((results) => {
+      if (cancelled) return
+      const map: Record<string, { name: string; description: string }[]> = {}
+      for (const r of results) map[r.id] = r.tools
+      setMcpTools(map)
+      setMcpToolsLoading(false)
+    })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mcpServerIds.join(',')])
+
+  // Fetch OpenClaw device ID when toggle is enabled
+  useEffect(() => {
+    if (!openclawEnabled) return
+    let cancelled = false
+    api<{ deviceId: string }>('GET', '/setup/openclaw-device').then((res) => {
+      if (!cancelled && res.deviceId) setOpenclawDeviceId(res.deviceId)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [openclawEnabled])
 
   const handleGenerate = async () => {
     if (!aiPrompt.trim()) return
@@ -228,6 +275,12 @@ export function AgentSheet() {
   }
 
   const handleSave = async () => {
+    // For any endpoint, just ensure bare host:port gets a protocol prepended
+    let normalizedEndpoint = apiEndpoint
+    if (normalizedEndpoint) {
+      const url = normalizedEndpoint.trim().replace(/\/+$/, '')
+      normalizedEndpoint = /^(https?|wss?):\/\//i.test(url) ? url : `http://${url}`
+    }
     const data = {
       name: name.trim() || 'Unnamed Agent',
       description,
@@ -236,13 +289,14 @@ export function AgentSheet() {
       provider,
       model,
       credentialId,
-      apiEndpoint,
+      apiEndpoint: normalizedEndpoint,
       isOrchestrator,
       subAgentIds: isOrchestrator ? subAgentIds : [],
       tools,
       skills,
       skillIds,
       mcpServerIds,
+      mcpDisabledTools: mcpDisabledTools.length ? mcpDisabledTools : undefined,
       fallbackCredentialIds,
       platformAssignScope,
       capabilities,
@@ -301,13 +355,15 @@ export function AgentSheet() {
   const handleTestConnection = async (): Promise<boolean> => {
     setTestStatus('testing')
     setTestMessage('')
+    setTestErrorCode(null)
     try {
-      const result = await api<{ ok: boolean; message: string }>('POST', '/setup/check-provider', {
+      const result = await api<{ ok: boolean; message: string; errorCode?: string; deviceId?: string }>('POST', '/setup/check-provider', {
         provider,
         credentialId,
         endpoint: apiEndpoint,
         model,
       })
+      if (result.deviceId) setTestDeviceId(result.deviceId)
       if (result.ok) {
         setTestStatus('pass')
         setTestMessage(result.message)
@@ -315,6 +371,7 @@ export function AgentSheet() {
       } else {
         setTestStatus('fail')
         setTestMessage(result.message)
+        setTestErrorCode(result.errorCode || null)
         return false
       }
     } catch (err: unknown) {
@@ -335,8 +392,10 @@ export function AgentSheet() {
     if (needsTest) {
       const passed = await handleTestConnection()
       if (!passed) return
-      // Brief pause so the user can see the success state on the button
-      await new Promise((r) => setTimeout(r, 1500))
+      if (!openclawEnabled) {
+        // Brief pause so the user can see the success state on the button
+        await new Promise((r) => setTimeout(r, 1500))
+      }
     }
     setSaving(true)
     await handleSave()
@@ -355,15 +414,44 @@ export function AgentSheet() {
 
   return (
     <BottomSheet open={open} onClose={onClose} wide>
-      <div className="mb-10">
-        <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
-          {editing ? 'Edit Agent' : 'New Agent'}
-        </h2>
-        <p className="text-[14px] text-text-3">Define an AI agent or orchestrator</p>
+      <div className="mb-10 flex items-start justify-between">
+        <div>
+          <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
+            {editing ? 'Edit Agent' : 'New Agent'}
+          </h2>
+          <p className="text-[14px] text-text-3">Define an AI agent or orchestrator</p>
+        </div>
+        <div className="flex items-center gap-3 mt-1.5">
+          <label className="text-[11px] font-600 text-text-3 uppercase tracking-[0.08em]">OpenClaw</label>
+          <button
+            type="button"
+            onClick={() => {
+              if (!openclawEnabled) {
+                setOpenclawEnabled(true)
+                setProvider('openclaw')
+                setModel('default')
+                if (!apiEndpoint) setApiEndpoint('http://localhost:18789')
+              } else {
+                setOpenclawEnabled(false)
+                const first = providers[0]?.id || 'claude-cli'
+                setProvider(first)
+                setModel('')
+                setApiEndpoint(null)
+                setCredentialId(null)
+                setTestStatus('idle')
+                setTestMessage('')
+                setTestErrorCode(null)
+              }
+            }}
+            className={`relative w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer border-none ${openclawEnabled ? 'bg-accent-bright' : 'bg-white/[0.12]'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform duration-200 ${openclawEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
       </div>
 
       {/* AI Generation */}
-      {!editing && <AiGenBlock
+      {!editing && !openclawEnabled && <AiGenBlock
         aiPrompt={aiPrompt} setAiPrompt={setAiPrompt}
         generating={generating} generated={generated} genError={genError}
         onGenerate={handleGenerate} appSettings={appSettings}
@@ -380,8 +468,8 @@ export function AgentSheet() {
         <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What does this agent do?" className={inputClass} style={{ fontFamily: 'inherit' }} />
       </div>
 
-      {/* Capabilities */}
-      <div className="mb-8">
+      {/* Capabilities — hidden for OpenClaw (gateway manages its own capabilities) */}
+      {!openclawEnabled && <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
           Capabilities <span className="normal-case tracking-normal font-normal text-text-3">(for agent delegation)</span>
         </label>
@@ -422,7 +510,7 @@ export function AgentSheet() {
           />
         </div>
         <p className="text-[11px] text-text-3/70 mt-1.5">Press Enter or comma to add. Other agents see these when deciding delegation.</p>
-      </div>
+      </div>}
 
       {provider !== 'openclaw' && (
         <div className="mb-8">
@@ -463,35 +551,13 @@ export function AgentSheet() {
         </div>
       )}
 
-      {/* OpenClaw Gateway Toggle */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">OpenClaw Gateway</label>
-          <button
-            type="button"
-            onClick={() => {
-              if (!openclawEnabled) {
-                setOpenclawEnabled(true)
-                setProvider('openclaw')
-                setModel('default')
-                if (!apiEndpoint) setApiEndpoint('http://localhost:18789')
-              } else {
-                setOpenclawEnabled(false)
-                setProvider('claude-cli')
-                setModel('')
-                setApiEndpoint(null)
-                setCredentialId(null)
-              }
-            }}
-            className={`relative w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer border-none ${openclawEnabled ? 'bg-accent-bright' : 'bg-white/[0.12]'}`}
-          >
-            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform duration-200 ${openclawEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
-          </button>
-        </div>
-        {openclawEnabled && (
-          <div className="mt-4 space-y-4">
+      {/* OpenClaw Gateway Fields */}
+      {openclawEnabled && (
+        <div className="mb-8 space-y-5">
+          {/* Connection fields */}
+          <div className="space-y-4">
             <div>
-              <label className="block text-[12px] text-text-3 mb-2">Gateway URL</label>
+              <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Gateway URL</label>
               <input
                 type="text"
                 value={apiEndpoint || ''}
@@ -502,7 +568,7 @@ export function AgentSheet() {
               />
             </div>
             <div>
-              <label className="block text-[12px] text-text-3 mb-2">Gateway Token</label>
+              <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Gateway Token</label>
               {openclawCredentials.length > 0 && !addingKey ? (
                 <div className="flex gap-2">
                   <select value={credentialId || ''} onChange={(e) => {
@@ -514,7 +580,7 @@ export function AgentSheet() {
                       setCredentialId(e.target.value || null)
                     }
                   }} className={`${inputClass} appearance-none cursor-pointer flex-1`} style={{ fontFamily: 'inherit' }}>
-                    <option value="">Select a token...</option>
+                    <option value="">No token (auth disabled)</option>
                     {openclawCredentials.map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
@@ -529,12 +595,12 @@ export function AgentSheet() {
                   </button>
                 </div>
               ) : (
-                <div className="space-y-3 p-4 rounded-[12px] border border-accent-bright/15 bg-accent-soft/20">
+                <div className="space-y-3 p-4 rounded-[12px] border border-accent-bright/15 bg-accent-soft/10">
                   <input
                     type="text"
                     value={newKeyName}
                     onChange={(e) => setNewKeyName(e.target.value)}
-                    placeholder="Token name (optional)"
+                    placeholder="Label (e.g. Local gateway)"
                     className={inputClass}
                     style={{ fontFamily: 'inherit' }}
                   />
@@ -574,10 +640,108 @@ export function AgentSheet() {
                 </div>
               )}
             </div>
-            <p className="text-[11px] text-text-3/70">Enter the URL and token for your local or remote OpenClaw gateway.</p>
           </div>
-        )}
-      </div>
+
+          {/* Insecure connection warning */}
+          {(() => {
+            const url = (apiEndpoint || '').trim().toLowerCase()
+            const isRemote = url && !/localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]/i.test(url)
+            const isSecure = /^(https|wss):\/\//i.test(url)
+            if (isRemote && !isSecure) return (
+              <div className="px-3 py-2.5 rounded-[10px] bg-[#fbbf24]/[0.06] border border-[#fbbf24]/20">
+                <p className="text-[13px] text-[#fbbf24] leading-[1.5]">
+                  Unencrypted connection. Use HTTPS or an SSH tunnel for production.
+                </p>
+              </div>
+            )
+            return null
+          })()}
+
+          {/* Status feedback — single unified block */}
+          {testStatus === 'pass' && (
+            <div className="p-4 rounded-[12px] bg-emerald-500/[0.06] border border-emerald-500/15 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <p className="text-[14px] text-emerald-400 font-600">Connected</p>
+              </div>
+              <p className="text-[13px] text-text-2/80 leading-[1.6]">Gateway is reachable and this device is paired. Tools and models are managed by the OpenClaw instance.</p>
+            </div>
+          )}
+          {testStatus === 'fail' && (
+            <div className="p-4 rounded-[12px] border space-y-3"
+              style={{
+                background: testErrorCode === 'PAIRING_REQUIRED' ? 'rgba(34,197,94,0.04)' : 'rgba(var(--accent-bright-rgb,120,100,255),0.06)',
+                borderColor: testErrorCode === 'PAIRING_REQUIRED' ? 'rgba(34,197,94,0.2)' : 'rgba(var(--accent-bright-rgb,120,100,255),0.15)',
+              }}
+            >
+              {testErrorCode === 'PAIRING_REQUIRED' ? (<>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <p className="text-[14px] text-[#22c55e] font-600">Awaiting Approval</p>
+                </div>
+                <p className="text-[13px] text-text-2/80 leading-[1.6]">
+                  This device is pending approval on your gateway. Go to <span className="text-text-2 font-500">Nodes</span>, approve the device{(testDeviceId || openclawDeviceId) ? <> (<code className="text-[12px] font-mono text-text-2/70">{(testDeviceId || openclawDeviceId)!.slice(0, 12)}...</code>)</> : null}, then click <span className="text-text-2 font-500">Retry Connection</span>.
+                </p>
+                <a
+                  href={(() => { const ep = (apiEndpoint || 'http://localhost:18789').replace(/\/+$/, ''); return /^https?:\/\//i.test(ep) ? ep : `http://${ep}` })()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 mt-2 px-4 py-2 rounded-[10px] bg-white/[0.06] border border-white/[0.1] text-[13px] text-text-2 font-500 hover:bg-white/[0.1] transition-colors"
+                >
+                  Approve in Dashboard →
+                </a>
+              </>) : testErrorCode === 'DEVICE_AUTH_INVALID' ? (<>
+                <p className="text-[14px] text-accent-bright font-600">Device Not Paired</p>
+                <p className="text-[13px] text-text-2/80 leading-[1.6]">
+                  The gateway doesn&apos;t recognize this device. Go to <span className="text-text-2 font-500">Nodes</span>, and add or approve this device{(testDeviceId || openclawDeviceId) ? <> (<code className="text-[12px] font-mono text-text-2/70">{(testDeviceId || openclawDeviceId)!.slice(0, 12)}...</code>)</> : null}.
+                </p>
+                <a
+                  href={(() => { const ep = (apiEndpoint || 'http://localhost:18789').replace(/\/+$/, ''); return /^https?:\/\//i.test(ep) ? ep : `http://${ep}` })()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 mt-2 px-4 py-2 rounded-[10px] bg-white/[0.06] border border-white/[0.1] text-[13px] text-text-2 font-500 hover:bg-white/[0.1] transition-colors"
+                >
+                  Approve in Dashboard →
+                </a>
+              </>) : testErrorCode === 'AUTH_TOKEN_MISSING' ? (<>
+                <p className="text-[14px] text-accent-bright font-600">Token Required</p>
+                <p className="text-[13px] text-text-2/80 leading-[1.6]">
+                  This gateway requires an auth token. Add one above and try again.
+                </p>
+              </>) : testErrorCode === 'AUTH_TOKEN_INVALID' ? (<>
+                <p className="text-[14px] text-accent-bright font-600">Invalid Token</p>
+                <p className="text-[13px] text-text-2/80 leading-[1.6]">
+                  The gateway rejected this token. Check that it matches the one configured on your OpenClaw instance.
+                </p>
+              </>) : (<>
+                <p className="text-[14px] text-accent-bright font-600">Connection Failed</p>
+                <p className="text-[13px] text-text-2/80 leading-[1.6]">
+                  {testMessage || 'Could not reach the gateway. Check the URL, token, and that the gateway is running.'}
+                </p>
+              </>)}
+              {/* Device ID footer — always shown on failure for debugging */}
+              {(testDeviceId || openclawDeviceId) && testErrorCode !== 'AUTH_TOKEN_MISSING' && testErrorCode !== 'AUTH_TOKEN_INVALID' && (
+                <div className="pt-2 border-t border-white/[0.04]">
+                  <p className="text-[12px] text-text-3/70 flex items-center gap-1.5">
+                    Device <code className="font-mono text-text-2/70 select-all">{(testDeviceId || openclawDeviceId)}</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText((testDeviceId || openclawDeviceId)!)
+                        setConfigCopied(true)
+                        setTimeout(() => setConfigCopied(false), 2000)
+                      }}
+                      className="text-[12px] text-text-3/60 hover:text-text-3/80 transition-colors cursor-pointer bg-transparent border-none"
+                    >
+                      {configCopied ? 'copied' : 'copy'}
+                    </button>
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {!openclawEnabled && <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Provider</label>
@@ -763,7 +927,7 @@ export function AgentSheet() {
           </label>
           <input type="text" value={apiEndpoint || ''} onChange={(e) => setApiEndpoint(e.target.value || null)} placeholder={currentProvider.defaultEndpoint || 'http://localhost:11434'} className={`${inputClass} font-mono text-[14px]`} />
           {provider === 'openclaw' && (
-            <p className="text-[11px] text-text-3/60 mt-2">The /v1 endpoint of your remote OpenClaw instance</p>
+            <p className="text-[13px] text-text-3/70 mt-2">The URL of your OpenClaw gateway</p>
           )}
         </div>
       )}
@@ -832,17 +996,15 @@ export function AgentSheet() {
         </div>
       )}
 
-      {/* Native capability provider note */}
-      {hasNativeCapabilities && (
+      {/* Native capability provider note — not shown for OpenClaw (covered in connection status) */}
+      {hasNativeCapabilities && !openclawEnabled && (
         <div className="mb-8 p-4 rounded-[14px] bg-white/[0.02] border border-white/[0.06]">
           <p className="text-[13px] text-text-3">
-            {provider === 'openclaw'
-              ? 'OpenClaw manages tools/platform capabilities in the remote OpenClaw instance — no local tool toggles are applied here.'
-              : provider === 'claude-cli'
-                ? 'Claude CLI uses its own built-in capabilities — no additional local tool/platform configuration is needed.'
-                : provider === 'codex-cli'
-                  ? 'OpenAI Codex CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration needed.'
-                  : 'OpenCode CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration needed.'}
+            {provider === 'claude-cli'
+              ? 'Claude CLI uses its own built-in capabilities — no additional local tool/platform configuration is needed.'
+              : provider === 'codex-cli'
+                ? 'OpenAI Codex CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration needed.'
+                : 'OpenCode CLI uses its own built-in tools (shell, files, etc.) — no additional local tool configuration needed.'}
           </p>
         </div>
       )}
@@ -953,6 +1115,53 @@ export function AgentSheet() {
         </div>
       )}
 
+      {/* MCP Tools — per-tool enable/disable toggles */}
+      {mcpServerIds.length > 0 && Object.keys(mcpTools).length > 0 && (
+        <div className="mb-8">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            MCP Tools
+          </label>
+          <p className="text-[12px] text-text-3/60 mb-3">
+            Toggle individual tools from connected MCP servers.{mcpToolsLoading ? ' Loading…' : ''}
+          </p>
+          <div className="space-y-4">
+            {mcpServerIds.map((serverId) => {
+              const server = (mcpServers as Record<string, any>)[serverId]
+              const serverTools = mcpTools[serverId]
+              if (!server || !serverTools?.length) return null
+              const safeName = server.name.replace(/[^a-zA-Z0-9_]/g, '_')
+              return (
+                <div key={serverId}>
+                  <p className="text-[12px] font-600 text-text-3 mb-2">{server.name}</p>
+                  <div className="space-y-3">
+                    {serverTools.map((t) => {
+                      const fullName = `mcp_${safeName}_${t.name}`
+                      const enabled = !mcpDisabledTools.includes(fullName)
+                      return (
+                        <label key={fullName} className="flex items-center gap-3 cursor-pointer">
+                          <div
+                            onClick={() => setMcpDisabledTools((prev) =>
+                              enabled ? [...prev, fullName] : prev.filter((x) => x !== fullName)
+                            )}
+                            className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
+                              ${enabled ? 'bg-[#6366F1]' : 'bg-white/[0.08]'}`}
+                          >
+                            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+                              ${enabled ? 'left-[22px]' : 'left-0.5'}`} />
+                          </div>
+                          <span className="font-display text-[14px] font-600 text-text-2">{t.name}</span>
+                          <span className="text-[12px] text-text-3 truncate">{t.description}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {provider !== 'openclaw' && (
         <div className="mb-8">
           <label className="flex items-center gap-3 cursor-pointer">
@@ -1004,13 +1213,13 @@ export function AgentSheet() {
         </div>
       )}
 
-      {/* Test connection result */}
-      {testStatus === 'fail' && (
+      {/* Test connection result (hidden for OpenClaw — inline status block handles it) */}
+      {!openclawEnabled && testStatus === 'fail' && (
         <div className="mb-4 p-3 rounded-[12px] bg-red-500/[0.08] border border-red-500/20">
           <p className="text-[13px] text-red-400">{testMessage || 'Connection test failed'}</p>
         </div>
       )}
-      {testStatus === 'pass' && (
+      {!openclawEnabled && testStatus === 'pass' && (
         <div className="mb-4 p-3 rounded-[12px] bg-emerald-500/[0.08] border border-emerald-500/20">
           <p className="text-[13px] text-emerald-400">{testMessage || 'Connected successfully'}</p>
         </div>
@@ -1040,12 +1249,18 @@ export function AgentSheet() {
         </button>
         <button
           onClick={handleTestAndSave}
-          disabled={!name.trim() || providerNeedsKey || testStatus === 'testing' || testStatus === 'pass' || saving}
+          disabled={!name.trim() || providerNeedsKey || testStatus === 'testing' || saving || (!openclawEnabled && testStatus === 'pass')}
           className={`flex-1 py-3.5 rounded-[14px] border-none text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-60 transition-all hover:brightness-110
             ${testStatus === 'pass' ? 'bg-emerald-600 shadow-[0_4px_20px_rgba(16,185,129,0.25)]' : 'bg-[#6366F1] shadow-[0_4px_20px_rgba(99,102,241,0.25)]'}`}
           style={{ fontFamily: 'inherit' }}
         >
-          {testStatus === 'testing' ? 'Testing...' : testStatus === 'pass' ? (saving ? 'Saving...' : 'Connected!') : needsTest ? 'Test & Save' : editing ? 'Save' : 'Create'}
+          {openclawEnabled
+            ? (testStatus === 'testing' ? 'Connecting...'
+              : testStatus === 'pass' ? (saving ? 'Saving...' : 'Save')
+              : testStatus === 'fail' && testErrorCode === 'PAIRING_REQUIRED' ? 'Retry Connection'
+              : testStatus === 'fail' ? 'Retry'
+              : 'Connect')
+            : (testStatus === 'testing' ? 'Testing...' : testStatus === 'pass' ? (saving ? 'Saving...' : 'Connected!') : needsTest ? 'Test & Save' : editing ? 'Save' : 'Create')}
         </button>
       </div>
     </BottomSheet>

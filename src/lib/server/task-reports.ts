@@ -2,7 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import type { BoardTask } from '@/types'
 
-const REPORTS_DIR = path.join(process.cwd(), 'data', 'task-reports')
+import { DATA_DIR } from './data-dir'
+
+const REPORTS_DIR = path.join(DATA_DIR, 'task-reports')
 const MAX_REPORT_BODY = 6_000
 
 const COMMAND_HINT = /\b(npm|pnpm|yarn|bun|node|npx|pytest|vitest|jest|playwright|go test|cargo test|deno test|python|pip|uv|docker|git)\b/i

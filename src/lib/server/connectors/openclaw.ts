@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { DATA_DIR } from '../data-dir'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
 import {
   createGatewayRequestFrame,
@@ -184,7 +185,7 @@ function signDevicePayload(privateKeyPem: string, payload: string): string {
 }
 
 function resolveIdentityPath(connectorId: string): string {
-  return path.join(process.cwd(), 'data', 'openclaw', `${connectorId}-device.json`)
+  return path.join(DATA_DIR, 'openclaw', `${connectorId}-device.json`)
 }
 
 function persistIdentity(filePath: string, identity: DeviceIdentity) {

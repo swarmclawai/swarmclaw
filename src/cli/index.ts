@@ -1125,6 +1125,14 @@ export function buildProgram(): Command {
       })
     })
 
+  program
+    .command('server')
+    .description('Start the SwarmClaw web server')
+    .action(() => {
+      console.log('The server command is handled directly by the swarmclaw binary.')
+      console.log('Run: swarmclaw server --help')
+    })
+
   return program
 }
 

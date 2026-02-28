@@ -631,11 +631,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       return false
     }
     const agent = session.agentId ? loadAgents()[session.agentId] : null
-    const { tools, cleanup } = buildSessionTools(session.cwd, sessionForRun.tools || [], {
+    const { tools, cleanup } = await buildSessionTools(session.cwd, sessionForRun.tools || [], {
       agentId: session.agentId || null,
       sessionId,
       platformAssignScope: agent?.platformAssignScope || 'self',
       mcpServerIds: agent?.mcpServerIds,
+      mcpDisabledTools: agent?.mcpDisabledTools,
     })
     try {
       const selectedTool = tools.find((t: any) => t?.name === toolName) as any

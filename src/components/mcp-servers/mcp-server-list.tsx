@@ -64,6 +64,13 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
       {serverList.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-[13px] text-text-3/60">No MCP servers configured</p>
+          <button
+            onClick={() => { setEditingMcpServerId(null); setMcpServerSheetOpen(true) }}
+            className="mt-3 px-4 py-2 rounded-[10px] bg-transparent text-accent-bright text-[13px] font-600 cursor-pointer border border-accent-bright/20 hover:bg-accent-soft transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            + Add MCP Server
+          </button>
         </div>
       ) : (
         <div className="space-y-2">

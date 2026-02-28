@@ -25,6 +25,13 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
       {pluginList.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-[13px] text-text-3/60">No plugins installed</p>
+          <button
+            onClick={() => { setEditingPluginFilename(null); setPluginSheetOpen(true) }}
+            className="mt-3 px-4 py-2 rounded-[10px] bg-transparent text-accent-bright text-[13px] font-600 cursor-pointer border border-accent-bright/20 hover:bg-accent-soft transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            + Add Plugin
+          </button>
         </div>
       ) : (
         <div className="space-y-2">

@@ -3,8 +3,10 @@ import path from 'path'
 import { createRequire } from 'module'
 import type { Plugin, PluginHooks, PluginMeta } from '@/types'
 
-const PLUGINS_DIR = path.join(process.cwd(), 'data', 'plugins')
-const PLUGINS_CONFIG = path.join(process.cwd(), 'data', 'plugins.json')
+import { DATA_DIR } from './data-dir'
+
+const PLUGINS_DIR = path.join(DATA_DIR, 'plugins')
+const PLUGINS_CONFIG = path.join(DATA_DIR, 'plugins.json')
 
 // OpenClaw plugin format: { name, version, activate(ctx), deactivate() }
 interface OpenClawPlugin {

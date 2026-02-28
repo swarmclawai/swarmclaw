@@ -103,6 +103,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       lastUsage: null,
     }))
 
+    // Force scroll to bottom when user sends a message
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('swarmclaw:scroll-bottom'))
+    }
+
     let fullText = ''
     let toolCallCounter = 0
     const shouldIgnoreTransientError = (msg: string) =>

@@ -13,8 +13,10 @@ import {
   type MemoryLookupLimits,
 } from './memory-graph'
 
-const DB_PATH = path.join(process.cwd(), 'data', 'memory.db')
-const IMAGES_DIR = path.join(process.cwd(), 'data', 'memory-images')
+import { DATA_DIR } from './data-dir'
+
+const DB_PATH = path.join(DATA_DIR, 'memory.db')
+const IMAGES_DIR = path.join(DATA_DIR, 'memory-images')
 
 const MAX_IMAGE_INPUT_BYTES = 10 * 1024 * 1024 // 10MB
 const IMAGE_EXT_WHITELIST = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'])

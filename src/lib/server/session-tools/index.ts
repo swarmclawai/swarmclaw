@@ -18,7 +18,7 @@ import { buildContextTools } from './context-mgmt'
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
 
-export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: ToolContext): SessionToolsResult {
+export async function buildSessionTools(cwd: string, enabledTools: string[], ctx?: ToolContext): Promise<SessionToolsResult> {
   const tools: StructuredToolInterface[] = []
   const cleanupFns: (() => Promise<void>)[] = []
   const runtime = loadRuntimeSettings()
@@ -96,101 +96,38 @@ export function buildSessionTools(cwd: string, enabledTools: string[], ctx?: Too
   )
 
   // ---------------------------------------------------------------------------
-  // MCP server tools — single meta-tool with lazy async connection
+  // MCP server tools — first-class injection (each MCP tool becomes its own LangChain tool)
   // ---------------------------------------------------------------------------
+  const disabledMcpToolNames = new Set<string>(ctx?.mcpDisabledTools ?? [])
+
   if (ctx?.mcpServerIds?.length) {
-    const mcpConnections = new Map<string, { client: any; transport: any }>()
-    let mcpConfigs: Record<string, any> | null = null
+    const mcpConnections: Array<{ client: any; transport: any }> = []
+    const allMcpServers = loadMcpServers()
 
-    const getMcpConfigs = () => {
-      if (!mcpConfigs) {
-        const all = loadMcpServers()
-        mcpConfigs = {}
-        for (const id of ctx.mcpServerIds!) {
-          if (all[id]) mcpConfigs[id] = all[id]
+    for (const serverId of ctx.mcpServerIds) {
+      const config = allMcpServers[serverId]
+      if (!config) continue
+      try {
+        const { connectMcpServer, mcpToolsToLangChain } = await import('../mcp-client')
+        const conn = await connectMcpServer(config)
+        mcpConnections.push(conn)
+        const mcpLcTools = await mcpToolsToLangChain(conn.client, config.name)
+        for (const t of mcpLcTools) {
+          if (!disabledMcpToolNames.has(t.name)) {
+            tools.push(t)
+          }
         }
+      } catch (err: any) {
+        log.warn('session-tools', `Failed to connect MCP server "${config.name}"`, { serverId, error: err.message })
       }
-      return mcpConfigs
     }
-
-    const ensureMcpConnection = async (serverId: string) => {
-      if (mcpConnections.has(serverId)) return mcpConnections.get(serverId)!
-      const configs = getMcpConfigs()
-      const config = configs[serverId]
-      if (!config) throw new Error(`MCP server "${serverId}" not found`)
-      const { connectMcpServer } = await import('../mcp-client')
-      const conn = await connectMcpServer(config)
-      mcpConnections.set(serverId, conn)
-      return conn
-    }
-
-    // List available MCP tools across configured servers
-    tools.push(
-      tool(
-        async ({ server_id }) => {
-          try {
-            const conn = await ensureMcpConnection(server_id)
-            const { tools: mcpTools } = await conn.client.listTools()
-            return JSON.stringify(
-              mcpTools.map((t: any) => ({
-                name: t.name,
-                description: t.description ?? '',
-                inputSchema: t.inputSchema ?? {},
-              }))
-            )
-          } catch (err: any) {
-            return JSON.stringify({ error: err.message })
-          }
-        },
-        {
-          name: 'mcp_list_tools',
-          description:
-            'List tools available on an MCP server. Call this first to discover tool names before calling mcp_call.',
-          schema: z.object({
-            server_id: z.string().describe('The MCP server ID to list tools from'),
-          }),
-        }
-      )
-    )
-
-    // Call an MCP tool on a specific server
-    tools.push(
-      tool(
-        async ({ server_id, tool_name, args }) => {
-          try {
-            const conn = await ensureMcpConnection(server_id)
-            const result = await conn.client.callTool({
-              name: tool_name,
-              arguments: args ?? {},
-            })
-            const parts = (result.content ?? [])
-              .filter((c: any) => c.type === 'text')
-              .map((c: any) => c.text)
-            return parts.join('\n') || '(no output)'
-          } catch (err: any) {
-            return JSON.stringify({ error: err.message })
-          }
-        },
-        {
-          name: 'mcp_call',
-          description:
-            'Call a tool on an MCP server. Use mcp_list_tools first to discover available tool names and their input schemas.',
-          schema: z.object({
-            server_id: z.string().describe('The MCP server ID'),
-            tool_name: z.string().describe('The tool name to call'),
-            args: z.record(z.string(), z.any()).optional().describe('Arguments to pass to the tool'),
-          }),
-        }
-      )
-    )
 
     // Register cleanup for all MCP connections
     cleanupFns.push(async () => {
       const { disconnectMcpServer } = await import('../mcp-client')
-      for (const [, conn] of mcpConnections) {
+      for (const conn of mcpConnections) {
         await disconnectMcpServer(conn.client, conn.transport)
       }
-      mcpConnections.clear()
     })
   }
 

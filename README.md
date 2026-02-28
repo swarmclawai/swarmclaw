@@ -206,7 +206,7 @@ To connect an agent to an OpenClaw gateway:
 2. Toggle **OpenClaw Gateway** ON
 3. Enter the gateway URL (e.g. `http://192.168.1.50:18789` or `https://my-vps:18789`)
 4. Add a gateway token if authentication is enabled on the remote gateway
-5. Click **Test & Save** to verify the connection
+5. Click **Connect** — approve the device in your gateway's dashboard if prompted, then **Retry Connection**
 
 Each agent can point to a **different** OpenClaw gateway — one local, several remote. This is how you manage a **swarm of OpenClaws** from a single dashboard.
 

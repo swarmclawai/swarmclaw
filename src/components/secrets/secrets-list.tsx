@@ -31,6 +31,13 @@ export function SecretsList({ inSidebar }: Props) {
         </div>
         <p className="text-[13px] text-text-3 mb-1 font-600">No secrets yet</p>
         <p className="text-[12px] text-text-3/60">Add API keys & credentials for orchestrators</p>
+        <button
+          onClick={() => { setEditingSecretId(null); setSecretSheetOpen(true) }}
+          className="mt-3 px-4 py-2 rounded-[10px] bg-transparent text-accent-bright text-[13px] font-600 cursor-pointer border border-accent-bright/20 hover:bg-accent-soft transition-all"
+          style={{ fontFamily: 'inherit' }}
+        >
+          + Add Secret
+        </button>
       </div>
     )
   }

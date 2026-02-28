@@ -1,10 +1,37 @@
 {
-  "name": "swarmclaw",
-  "version": "0.2.0",
-  "private": true,
+  "name": "@swarmclawai/swarmclaw",
+  "version": "0.3.0",
+  "description": "Self-hosted AI agent orchestration dashboard — manage LLM providers, orchestrate agent swarms, schedule tasks, and bridge agents to chat platforms.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/swarmclawai/swarmclaw.git"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "llm",
+    "orchestration",
+    "swarm",
+    "dashboard",
+    "self-hosted",
+    "chatbot"
+  ],
+  "engines": {
+    "node": ">=22.6.0"
+  },
   "bin": {
     "swarmclaw": "./bin/swarmclaw.js"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "public/",
+    "next.config.ts",
+    "tsconfig.json",
+    "postcss.config.mjs",
+    "package.json"
+  ],
   "scripts": {
     "setup:easy": "node ./scripts/easy-setup.mjs",
     "quickstart": "node ./scripts/easy-setup.mjs --start",
@@ -38,6 +65,7 @@
     "cheerio": "^1.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "commander": "^13.1.0",
     "cron-parser": "^5.5.0",
     "cronstrue": "^3.12.0",
     "discord.js": "^14.25.1",
@@ -56,6 +84,7 @@
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.1",
+    "ws": "^8.19.0",
     "zod": "^4.3.6",
     "zustand": "^5.0.11"
   },
@@ -66,6 +95,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "shadcn": "^3.8.5",

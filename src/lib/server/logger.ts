@@ -1,7 +1,9 @@
 import fs from 'fs'
 import path from 'path'
 
-const LOG_FILE = path.join(process.cwd(), 'data', 'app.log')
+import { DATA_DIR } from './data-dir'
+
+const LOG_FILE = path.join(DATA_DIR, 'app.log')
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB — rotate when exceeded
 
 function rotate() {

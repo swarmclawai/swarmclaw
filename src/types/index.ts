@@ -229,6 +229,7 @@ export interface Agent {
   skills?: string[]             // e.g. ['frontend-design'] — Claude Code skills to use
   skillIds?: string[]           // IDs of uploaded skills from the Skills manager
   mcpServerIds?: string[]       // IDs of configured MCP servers to inject tools from
+  mcpDisabledTools?: string[]   // MCP tool names disabled for this agent (denylist)
   capabilities?: string[]       // e.g. ['frontend', 'screenshots', 'research', 'devops']
   threadSessionId?: string | null  // persistent chat thread session for agent-centric UI
   platformAssignScope?: 'self' | 'all'  // defaults to 'self'

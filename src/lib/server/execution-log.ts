@@ -44,7 +44,7 @@ export interface LogQueryOpts {
 // Database setup
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = path.join(process.cwd(), 'data')
+import { DATA_DIR } from './data-dir'
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 
 const DB_PATH = path.join(DATA_DIR, 'logs.db')

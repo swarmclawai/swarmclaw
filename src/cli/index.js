@@ -40,6 +40,14 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'clawhub',
+    description: 'Browse and install ClawHub skills',
+    commands: [
+      cmd('search', 'GET', '/clawhub/search', 'Search ClawHub skills catalog'),
+      cmd('install', 'POST', '/clawhub/install', 'Install a skill from ClawHub', { expectsJsonBody: true }),
+    ],
+  },
+  {
     name: 'connectors',
     description: 'Manage chat connectors',
     commands: [
@@ -131,6 +139,21 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'knowledge',
+    description: 'Manage knowledge base entries',
+    commands: [
+      cmd('list', 'GET', '/knowledge', 'List knowledge entries'),
+      cmd('get', 'GET', '/knowledge/:id', 'Get knowledge entry by id'),
+      cmd('create', 'POST', '/knowledge', 'Create knowledge entry', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/knowledge/:id', 'Update knowledge entry', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/knowledge/:id', 'Delete knowledge entry'),
+      cmd('upload', 'POST', '/knowledge/upload', 'Upload document for knowledge extraction', {
+        requestType: 'upload',
+        inputPositional: 'filePath',
+      }),
+    ],
+  },
+  {
     name: 'logs',
     description: 'Read or clear app logs',
     commands: [
@@ -156,6 +179,19 @@ const COMMAND_GROUPS = [
     description: 'Fetch stored memory image assets',
     commands: [
       cmd('get', 'GET', '/memory-images/:filename', 'Download memory image by filename', { responseType: 'binary' }),
+    ],
+  },
+  {
+    name: 'mcp-servers',
+    description: 'Manage MCP server configurations',
+    commands: [
+      cmd('list', 'GET', '/mcp-servers', 'List MCP servers'),
+      cmd('get', 'GET', '/mcp-servers/:id', 'Get MCP server by id'),
+      cmd('create', 'POST', '/mcp-servers', 'Create MCP server', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/mcp-servers/:id', 'Update MCP server', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/mcp-servers/:id', 'Delete MCP server'),
+      cmd('test', 'POST', '/mcp-servers/:id/test', 'Test MCP server connection'),
+      cmd('tools', 'GET', '/mcp-servers/:id/tools', 'List tools available on an MCP server'),
     ],
   },
   {
@@ -268,6 +304,7 @@ const COMMAND_GROUPS = [
       cmd('browser-close', 'DELETE', '/sessions/:id/browser', 'Close browser session'),
       cmd('mailbox', 'GET', '/sessions/:id/mailbox', 'List session mailbox envelopes'),
       cmd('mailbox-action', 'POST', '/sessions/:id/mailbox', 'Send/ack/clear mailbox envelopes', { expectsJsonBody: true }),
+      cmd('retry', 'POST', '/sessions/:id/retry', 'Retry last assistant message'),
       cmd('deploy', 'POST', '/sessions/:id/deploy', 'Deploy current session branch', { expectsJsonBody: true }),
       cmd('devserver', 'POST', '/sessions/:id/devserver', 'Dev server action via JSON body', { expectsJsonBody: true }),
       cmd('devserver-start', 'POST', '/sessions/:id/devserver', 'Start session dev server', {
@@ -380,6 +417,7 @@ const COMMAND_GROUPS = [
         expectsJsonBody: true,
         waitEntityFrom: 'runId',
       }),
+      cmd('history', 'GET', '/webhooks/:id/history', 'Get webhook delivery history'),
     ],
   },
 ]

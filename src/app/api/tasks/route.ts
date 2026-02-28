@@ -30,31 +30,22 @@ export async function GET(req: Request) {
 
 export async function DELETE(req: Request) {
   const { searchParams } = new URL(req.url)
-  const filter = searchParams.get('filter') // 'all' | 'schedule' | null
+  const filter = searchParams.get('filter') // 'all' | 'schedule' | 'done' | null
   const tasks = loadTasks()
-  const kept: Record<string, (typeof tasks)[string]> = {}
   let removed = 0
 
-  for (const [id, task] of Object.entries(tasks)) {
-    const shouldRemove =
-      filter === 'all' ||
-      (filter === 'schedule' && (task as Record<string, unknown>).sourceType === 'schedule') ||
-      (!filter && task.status === 'archived')
-    if (shouldRemove) {
-      removed++
-    } else {
-      kept[id] = task
-    }
-  }
+  const shouldRemove = (task: { status: string; sourceType?: string }) =>
+    filter === 'all' ||
+    (filter === 'schedule' && task.sourceType === 'schedule') ||
+    (filter === 'done' && (task.status === 'completed' || task.status === 'failed')) ||
+    (!filter && task.status === 'archived')
 
-  // Delete removed tasks atomically
   const { deleteTask } = await import('@/lib/server/storage')
   for (const [id, task] of Object.entries(tasks)) {
-    const shouldRemove =
-      filter === 'all' ||
-      (filter === 'schedule' && (task as Record<string, unknown>).sourceType === 'schedule') ||
-      (!filter && task.status === 'archived')
-    if (shouldRemove) deleteTask(id)
+    if (shouldRemove(task as { status: string; sourceType?: string })) {
+      deleteTask(id)
+      removed++
+    }
   }
   return NextResponse.json({ removed, remaining: Object.keys(tasks).length - removed })
 }

@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
-import fs from 'fs'
-import path from 'path'
-import { spawnSync } from 'child_process'
 import { loadCredentials, decryptKey } from '@/lib/server/storage'
+import { getDeviceId, wsConnect } from '@/lib/providers/openclaw'
 
 type SetupProvider =
   | 'openai'
@@ -146,51 +144,27 @@ async function checkOllama(endpointRaw: string): Promise<{ ok: boolean; message:
   }
 }
 
-function findOpenClawBin(): string {
-  const candidates = [
-    path.join(process.cwd(), 'node_modules/.bin/openclaw'),
-    path.join(__dirname, '../../..', 'node_modules/.bin/openclaw'),
-  ]
-  for (const loc of candidates) {
-    if (fs.existsSync(loc)) return loc
-  }
-  return 'openclaw'
+function normalizeOpenClawUrl(raw: string): { httpUrl: string; wsUrl: string } {
+  let url = (raw || 'http://localhost:18789').replace(/\/+$/, '')
+  if (!/^(https?|wss?):\/\//i.test(url)) url = `http://${url}`
+  const httpUrl = url.replace(/^ws:/i, 'http:').replace(/^wss:/i, 'https:')
+  const wsUrl = httpUrl.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:')
+  return { httpUrl, wsUrl }
 }
 
-function checkOpenClaw(apiKey: string, endpointRaw: string): { ok: boolean; message: string; normalizedEndpoint: string } {
-  let normalizedEndpoint = (endpointRaw || 'http://localhost:18789').replace(/\/+$/, '')
-  if (!/^https?:\/\//i.test(normalizedEndpoint)) normalizedEndpoint = `http://${normalizedEndpoint}`
-  const env = { ...process.env }
-  if (normalizedEndpoint) env.OPENCLAW_GATEWAY_URL = normalizedEndpoint
-  if (apiKey) env.OPENCLAW_GATEWAY_TOKEN = apiKey
+async function checkOpenClaw(apiKey: string, endpointRaw: string): Promise<{ ok: boolean; message: string; normalizedEndpoint: string; deviceId?: string; errorCode?: string }> {
+  const { httpUrl: normalizedEndpoint, wsUrl } = normalizeOpenClawUrl(endpointRaw)
+  const token = apiKey || undefined
+  const deviceId = getDeviceId()
 
-  const result = spawnSync(findOpenClawBin(), ['agent', '--agent', 'main', '--message', 'test', '--timeout', '10'], {
-    env,
-    timeout: 15_000,
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+  const result = await wsConnect(wsUrl, token, true, 10_000)
+  // Close the WebSocket immediately — we only care about the handshake result
+  if (result.ws) try { result.ws.close() } catch {}
 
-  if (result.error) {
-    const msg = (result.error as any).code === 'ENOENT'
-      ? 'openclaw CLI not found. Run `npm install` to restore project dependencies.'
-      : `Failed to spawn openclaw CLI: ${result.error.message}`
-    return { ok: false, message: msg, normalizedEndpoint }
+  if (result.ok) {
+    return { ok: true, message: 'Connected to OpenClaw gateway.', normalizedEndpoint, deviceId }
   }
-
-  if (result.status !== 0) {
-    const stderr = (result.stderr || '').trim()
-    const stdout = (result.stdout || '').trim()
-    const detail = stderr || stdout || `openclaw exited with code ${result.status}`
-    return { ok: false, message: detail.slice(0, 300), normalizedEndpoint }
-  }
-
-  const output = (result.stdout || '').trim()
-  return {
-    ok: true,
-    message: output ? `Connected to OpenClaw. Response: ${output.slice(0, 120)}` : 'Connected to OpenClaw gateway.',
-    normalizedEndpoint,
-  }
+  return { ok: false, message: result.message, normalizedEndpoint, deviceId, errorCode: result.errorCode }
 }
 
 export async function POST(req: Request) {
@@ -248,7 +222,7 @@ export async function POST(req: Request) {
         return NextResponse.json(result)
       }
       case 'openclaw': {
-        const result = checkOpenClaw(apiKey, endpoint)
+        const result = await checkOpenClaw(apiKey, endpoint)
         return NextResponse.json(result)
       }
       default:

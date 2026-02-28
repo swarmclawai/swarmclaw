@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { DATA_DIR } from '../data-dir'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
 import { isNoMessage } from './manager'
 
@@ -12,7 +13,7 @@ const matrix: PlatformConnector = {
     if (!homeserverUrl) throw new Error('Missing homeserverUrl in connector config')
 
     // Ensure storage directory exists
-    const storageDir = path.join(process.cwd(), 'data', 'matrix-storage', connector.id)
+    const storageDir = path.join(DATA_DIR, 'matrix-storage', connector.id)
     fs.mkdirSync(storageDir, { recursive: true })
 
     const storage = new SimpleFsStorageProvider(path.join(storageDir, 'bot.json'))

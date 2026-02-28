@@ -86,14 +86,18 @@ export function MessageList({ messages, streaming }: Props) {
         .filter(({ msg }) => msg.text.toLowerCase().includes(searchQuery.toLowerCase()))
     : []
 
+  // Track whether user is at/near bottom so we know whether to auto-scroll on new content
+  const wasAtBottomRef = useRef(true)
+
   const isNearBottom = useCallback((el: HTMLDivElement) => {
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 150
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 200
   }, [])
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
     const nearBottom = isNearBottom(el)
+    wasAtBottomRef.current = nearBottom
     setShowScrollToBottom(!nearBottom)
     if (nearBottom && unreadRef.current > 0) {
       unreadRef.current = 0
@@ -116,6 +120,7 @@ export function MessageList({ messages, streaming }: Props) {
   if (sessionId !== prevSessionIdRef.current) {
     prevSessionIdRef.current = sessionId
     needsSnapRef.current = true
+    wasAtBottomRef.current = true
   }
 
   useEffect(() => {
@@ -126,9 +131,11 @@ export function MessageList({ messages, streaming }: Props) {
       needsSnapRef.current = false
       el.scrollTop = el.scrollHeight
       setShowScrollToBottom(false)
+      wasAtBottomRef.current = true
       return
     }
-    if (isNearBottom(el)) {
+    // Auto-scroll if user was at bottom before new content arrived
+    if (wasAtBottomRef.current) {
       el.scrollTop = el.scrollHeight
     }
     updateScrollState()

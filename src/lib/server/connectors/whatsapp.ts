@@ -13,7 +13,9 @@ import type { PlatformConnector, ConnectorInstance, InboundMessage } from './typ
 import { saveInboundMediaBuffer, mimeFromPath, isImageMime } from './media'
 import { isNoMessage } from './manager'
 
-const AUTH_DIR = path.join(process.cwd(), 'data', 'whatsapp-auth')
+import { DATA_DIR } from '../data-dir'
+
+const AUTH_DIR = path.join(DATA_DIR, 'whatsapp-auth')
 
 /** Normalize a phone number for JID matching — strip leading 0 or + */
 function normalizeNumber(num: string): string {

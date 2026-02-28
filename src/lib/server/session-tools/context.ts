@@ -8,6 +8,7 @@ export interface ToolContext {
   sessionId?: string | null
   platformAssignScope?: 'self' | 'all'
   mcpServerIds?: string[]
+  mcpDisabledTools?: string[]
 }
 
 export interface SessionToolsResult {

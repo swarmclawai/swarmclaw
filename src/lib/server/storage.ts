@@ -4,7 +4,7 @@ import crypto from 'crypto'
 import os from 'os'
 import Database from 'better-sqlite3'
 
-const DATA_DIR = path.join(process.cwd(), 'data')
+import { DATA_DIR } from './data-dir'
 export const UPLOAD_DIR = path.join(os.tmpdir(), 'swarmclaw-uploads')
 
 // Ensure directories exist

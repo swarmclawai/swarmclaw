@@ -76,25 +76,20 @@ export function KnowledgeList() {
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto">
-      {/* Search + Add */}
-      <div className="px-3 py-2 shrink-0 flex gap-2">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search knowledge..."
-          className="flex-1 px-3 py-2 rounded-[10px] border border-white/[0.04] bg-surface text-text
-            text-[12px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
-          style={{ fontFamily: 'inherit' }}
-        />
-        <button
-          onClick={() => openSheet()}
-          className="px-3 py-2 rounded-[10px] bg-[#6366F1] text-white text-[12px] font-600 cursor-pointer border-none shrink-0 hover:brightness-110 transition-all"
-          style={{ fontFamily: 'inherit' }}
-        >
-          + Add
-        </button>
-      </div>
+      {/* Search — only show when there are entries */}
+      {entries.length > 0 && (
+        <div className="px-3 py-2 shrink-0">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search knowledge..."
+            className="w-full px-3 py-2 rounded-[10px] border border-white/[0.04] bg-surface text-text
+              text-[12px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
+            style={{ fontFamily: 'inherit' }}
+          />
+        </div>
+      )}
 
       {/* Tag filters */}
       {uniqueTags.length > 0 && (
@@ -197,6 +192,13 @@ export function KnowledgeList() {
           </div>
           <p className="font-display text-[15px] font-600 text-text-2">No knowledge entries yet</p>
           <p className="text-[13px] text-text-3/50">Add shared knowledge for your agents</p>
+          <button
+            onClick={() => openSheet()}
+            className="mt-1 px-4 py-2 rounded-[10px] bg-transparent text-accent-bright text-[13px] font-600 cursor-pointer border border-accent-bright/20 hover:bg-accent-soft transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            + Add Knowledge
+          </button>
         </div>
       ) : null}
     </div>

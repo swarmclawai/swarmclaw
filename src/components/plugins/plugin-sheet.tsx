@@ -22,6 +22,9 @@ export function PluginSheet() {
   const [urlFilename, setUrlFilename] = useState('')
   const [urlStatus, setUrlStatus] = useState<{ ok: boolean; message: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [search, setSearch] = useState('')
+  const [activeTag, setActiveTag] = useState<string | null>(null)
+  const [sort, setSort] = useState<'name' | 'downloads'>('downloads')
 
   const editing = editingFilename ? plugins[editingFilename] : null
 
@@ -146,45 +149,116 @@ export function PluginSheet() {
               ? <p className="text-[12px] text-text-3/70">Loading marketplace...</p>
               : marketplace.length === 0
                 ? <p className="text-[12px] text-text-3/70">No plugins available</p>
-                : <div className="space-y-2.5">
-                    {marketplace.map((p) => {
-                      const isInstalled = installedFilenames.has(`${p.id}.js`)
-                      return (
-                        <div key={p.id} className="py-3.5 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
-                          <div className="flex items-start gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[14px] font-600 text-text">{p.name}</span>
-                                <span className="text-[10px] font-mono text-text-3/70">v{p.version}</span>
-                                {p.openclaw && <span className="text-[9px] font-600 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">OpenClaw</span>}
-                              </div>
-                              <div className="text-[11px] text-text-3/60 mt-1">{p.description}</div>
-                              <div className="flex items-center gap-2 mt-2">
-                                <span className="text-[10px] text-text-3/70">by {p.author}</span>
-                                <span className="text-[10px] text-text-3/50">&middot;</span>
-                                {p.tags.slice(0, 3).map((t) => (
-                                  <span key={t} className="text-[9px] font-600 text-text-3/50 bg-white/[0.04] px-1.5 py-0.5 rounded-full">{t}</span>
-                                ))}
-                              </div>
-                            </div>
+                : (() => {
+                    const allTags = Array.from(new Set(marketplace.flatMap((p) => p.tags))).sort()
+                    const q = search.toLowerCase()
+                    const filtered = marketplace
+                      .filter((p) => {
+                        if (q && !p.name.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q) && !p.tags.some((t) => t.toLowerCase().includes(q))) return false
+                        if (activeTag && !p.tags.includes(activeTag)) return false
+                        return true
+                      })
+                      .sort((a, b) => sort === 'downloads' ? b.downloads - a.downloads : a.name.localeCompare(b.name))
+
+                    return (
+                      <div className="space-y-3">
+                        {/* Search */}
+                        <input
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                          placeholder="Search plugins..."
+                          className="w-full px-3 py-2.5 rounded-[10px] bg-bg border border-white/[0.06] text-[12px] text-text placeholder:text-text-3/50 outline-none focus:border-accent-bright/30"
+                          style={{ fontFamily: 'inherit' }}
+                        />
+
+                        {/* Tags + Sort */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            onClick={() => setActiveTag(null)}
+                            className={`px-2 py-1 rounded-[6px] text-[10px] font-600 cursor-pointer transition-all border-none ${
+                              !activeTag ? 'bg-accent-soft text-accent-bright' : 'bg-white/[0.03] text-text-3/60 hover:text-text-3'
+                            }`}
+                          >
+                            All
+                          </button>
+                          {allTags.map((t) => (
                             <button
-                              onClick={() => !isInstalled && installFromMarketplace(p)}
-                              disabled={isInstalled || installing === p.id}
-                              className={`shrink-0 py-2 px-4 rounded-[10px] text-[12px] font-600 transition-all cursor-pointer
-                                ${isInstalled
-                                  ? 'bg-white/[0.04] text-text-3/70 cursor-default'
-                                  : installing === p.id
-                                    ? 'bg-accent-soft text-accent-bright animate-pulse'
-                                    : 'bg-accent-soft text-accent-bright hover:bg-accent-soft/80 border border-accent-bright/20'}`}
-                              style={{ fontFamily: 'inherit' }}
+                              key={t}
+                              onClick={() => setActiveTag(activeTag === t ? null : t)}
+                              className={`px-2 py-1 rounded-[6px] text-[10px] font-600 cursor-pointer transition-all border-none ${
+                                activeTag === t ? 'bg-accent-soft text-accent-bright' : 'bg-white/[0.03] text-text-3/60 hover:text-text-3'
+                              }`}
                             >
-                              {isInstalled ? 'Installed' : installing === p.id ? 'Installing...' : 'Install'}
+                              {t}
                             </button>
-                          </div>
+                          ))}
+                          <div className="flex-1" />
+                          <select
+                            value={sort}
+                            onChange={(e) => setSort(e.target.value as 'name' | 'downloads')}
+                            className="px-2 py-1 rounded-[6px] bg-bg border border-white/[0.06] text-[10px] text-text-3 outline-none cursor-pointer appearance-none"
+                            style={{ fontFamily: 'inherit' }}
+                          >
+                            <option value="downloads">Popular</option>
+                            <option value="name">A-Z</option>
+                          </select>
                         </div>
-                      )
-                    })}
-                  </div>
+
+                        {/* Results */}
+                        {filtered.length === 0 ? (
+                          <p className="text-[12px] text-text-3/50 text-center py-4">No plugins match your search</p>
+                        ) : (
+                          <div className="space-y-2.5">
+                            {filtered.map((p) => {
+                              const isInstalled = installedFilenames.has(`${p.id}.js`)
+                              return (
+                                <div key={p.id} className="py-3.5 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
+                                  <div className="flex items-start gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[14px] font-600 text-text">{p.name}</span>
+                                        <span className="text-[10px] font-mono text-text-3/70">v{p.version}</span>
+                                        {p.openclaw && <span className="text-[9px] font-600 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">OpenClaw</span>}
+                                      </div>
+                                      <div className="text-[11px] text-text-3/60 mt-1">{p.description}</div>
+                                      <div className="flex items-center gap-2 mt-2">
+                                        <span className="text-[10px] text-text-3/70">by {p.author}</span>
+                                        <span className="text-[10px] text-text-3/50">&middot;</span>
+                                        {p.tags.slice(0, 3).map((t) => (
+                                          <button
+                                            key={t}
+                                            onClick={() => setActiveTag(activeTag === t ? null : t)}
+                                            className={`text-[9px] font-600 px-1.5 py-0.5 rounded-full cursor-pointer transition-all border-none ${
+                                              activeTag === t ? 'text-accent-bright bg-accent-soft' : 'text-text-3/50 bg-white/[0.04] hover:text-text-3'
+                                            }`}
+                                          >
+                                            {t}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                    <button
+                                      onClick={() => !isInstalled && installFromMarketplace(p)}
+                                      disabled={isInstalled || installing === p.id}
+                                      className={`shrink-0 py-2 px-4 rounded-[10px] text-[12px] font-600 transition-all cursor-pointer
+                                        ${isInstalled
+                                          ? 'bg-white/[0.04] text-text-3/70 cursor-default'
+                                          : installing === p.id
+                                            ? 'bg-accent-soft text-accent-bright animate-pulse'
+                                            : 'bg-accent-soft text-accent-bright hover:bg-accent-soft/80 border border-accent-bright/20'}`}
+                                      style={{ fontFamily: 'inherit' }}
+                                    >
+                                      {isInstalled ? 'Installed' : installing === p.id ? 'Installing...' : 'Install'}
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()
           )}
 
           {tab === 'url' && (
