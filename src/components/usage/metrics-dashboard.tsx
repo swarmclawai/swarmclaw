@@ -18,6 +18,16 @@ interface TimePoint {
   cost: number
 }
 
+interface ProviderHealthEntry {
+  totalRequests: number
+  successCount: number
+  errorCount: number
+  errorRate: number
+  avgLatencyMs: number
+  lastUsed: number
+  models: string[]
+}
+
 interface UsageResponse {
   records: unknown[]
   totalTokens: number
@@ -25,6 +35,7 @@ interface UsageResponse {
   byAgent: Record<string, { tokens: number; cost: number }>
   byProvider: Record<string, { tokens: number; cost: number }>
   timeSeries: TimePoint[]
+  providerHealth?: Record<string, ProviderHealthEntry>
 }
 
 const RANGES: Range[] = ['24h', '7d', '30d']
@@ -60,6 +71,25 @@ function formatBucketLabel(bucket: string, range: Range): string {
     return `${months[monthIdx]} ${parseInt(parts[2], 10)}`
   }
   return bucket
+}
+
+function formatRelativeTime(ts: number): string {
+  if (!ts) return 'Never'
+  const diff = Date.now() - ts
+  const seconds = Math.floor(diff / 1000)
+  if (seconds < 60) return 'Just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+function errorRateColor(rate: number): string {
+  if (rate < 0.05) return 'text-emerald-400'
+  if (rate < 0.2) return 'text-amber-400'
+  return 'text-red-400'
 }
 
 function computeCompletionRate(tasks: Record<string, BoardTask>): number {
@@ -245,6 +275,54 @@ export function MetricsDashboard() {
               )}
             </ChartCard>
           </div>
+
+          {/* Provider Health */}
+          {data?.providerHealth && Object.keys(data.providerHealth).length > 0 && (
+            <div>
+              <h3 className="font-display text-[14px] font-600 text-text-2 mb-3">Provider Health</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.entries(data.providerHealth)
+                  .sort(([, a], [, b]) => b.totalRequests - a.totalRequests)
+                  .map(([name, h]) => (
+                    <div
+                      key={name}
+                      className="bg-surface-2 rounded-[12px] p-4 border border-white/[0.04] flex flex-col gap-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="text-[14px] font-600 text-text">{name}</p>
+                        <span className="text-[11px] text-text-3">{formatRelativeTime(h.lastUsed)}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
+                        <span className="text-text-3">Requests</span>
+                        <span className="text-text font-500 text-right">{h.totalRequests}</span>
+                        <span className="text-text-3">Error Rate</span>
+                        <span className={`font-500 text-right ${errorRateColor(h.errorRate)}`}>
+                          {(h.errorRate * 100).toFixed(1)}%
+                        </span>
+                        {h.avgLatencyMs > 0 && (
+                          <>
+                            <span className="text-text-3">Avg Latency</span>
+                            <span className="text-text font-500 text-right">{Math.round(h.avgLatencyMs)}ms</span>
+                          </>
+                        )}
+                      </div>
+                      {h.models.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {h.models.map((m) => (
+                            <span
+                              key={m}
+                              className="px-2 py-0.5 rounded-[6px] bg-white/[0.06] text-[11px] text-text-3 font-500"
+                            >
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

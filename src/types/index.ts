@@ -375,6 +375,19 @@ export interface Project {
   updatedAt: number
 }
 
+// --- Notifications ---
+
+export interface AppNotification {
+  id: string
+  type: 'info' | 'success' | 'warning' | 'error'
+  title: string
+  message?: string
+  entityType?: string
+  entityId?: string
+  read: boolean
+  createdAt: number
+}
+
 // --- Session Runs ---
 
 export type SessionRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'

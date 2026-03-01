@@ -17,6 +17,7 @@ import { enqueueSessionRun } from './session-run-manager'
 import { WORKSPACE_DIR } from './data-dir'
 import { genId } from '@/lib/id'
 import type { WebhookRetryEntry } from '@/types'
+import { createNotification } from '@/lib/server/create-notification'
 
 const QUEUE_CHECK_INTERVAL = 30_000 // 30 seconds
 const BROWSER_SWEEP_INTERVAL = 60_000 // 60 seconds
@@ -254,6 +255,13 @@ async function runConnectorHealthChecks(now: number) {
       connectors[connector.id] = connector
       saveConnectors(connectors)
       ds.connectorRestartState.delete(connector.id)
+      createNotification({
+        type: 'error',
+        title: `Connector "${connector.name}" failed`,
+        message: `Auto-restart gave up after ${MAX_WAKE_ATTEMPTS} consecutive failures.`,
+        entityType: 'connector',
+        entityId: connector.id,
+      })
       continue
     }
 

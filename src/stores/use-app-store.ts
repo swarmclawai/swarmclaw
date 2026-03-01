@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter, ActivityEntry } from '../types'
+import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter, ActivityEntry, AppNotification } from '../types'
 import { fetchSessions, fetchDirs, fetchProviders, fetchCredentials } from '../lib/sessions'
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
@@ -183,6 +183,14 @@ interface AppState {
   // Activity / Audit Trail
   activityEntries: ActivityEntry[]
   loadActivity: (filters?: { entityType?: string; limit?: number }) => Promise<void>
+
+  // Notifications
+  notifications: AppNotification[]
+  unreadNotificationCount: number
+  loadNotifications: () => Promise<void>
+  markNotificationRead: (id: string) => Promise<void>
+  markAllNotificationsRead: () => Promise<void>
+  clearReadNotifications: () => Promise<void>
 
 }
 
@@ -586,6 +594,55 @@ export const useAppStore = create<AppState>((set, get) => ({
       const qs = params.toString()
       const entries = await api<ActivityEntry[]>('GET', `/activity${qs ? `?${qs}` : ''}`)
       set({ activityEntries: entries })
+    } catch {
+      // ignore
+    }
+  },
+
+  // Notifications
+  notifications: [],
+  unreadNotificationCount: 0,
+  loadNotifications: async () => {
+    try {
+      const notifications = await api<AppNotification[]>('GET', '/notifications')
+      set({
+        notifications,
+        unreadNotificationCount: notifications.filter((n) => !n.read).length,
+      })
+    } catch {
+      // ignore
+    }
+  },
+  markNotificationRead: async (id) => {
+    const notifications = get().notifications.map((n) =>
+      n.id === id ? { ...n, read: true } : n,
+    )
+    set({
+      notifications,
+      unreadNotificationCount: notifications.filter((n) => !n.read).length,
+    })
+    try {
+      await api('PUT', `/notifications/${id}`, { read: true })
+    } catch {
+      // ignore
+    }
+  },
+  markAllNotificationsRead: async () => {
+    const notifications = get().notifications.map((n) => ({ ...n, read: true }))
+    set({ notifications, unreadNotificationCount: 0 })
+    try {
+      await Promise.all(
+        get().notifications.filter((n) => !n.read).map((n) => api('PUT', `/notifications/${n.id}`, { read: true })),
+      )
+    } catch {
+      // ignore
+    }
+  },
+  clearReadNotifications: async () => {
+    const notifications = get().notifications.filter((n) => !n.read)
+    set({ notifications, unreadNotificationCount: notifications.length })
+    try {
+      await api('DELETE', '/notifications')
     } catch {
       // ignore
     }

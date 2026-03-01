@@ -3,6 +3,7 @@
 import type { Schedule } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
+import { cronToHuman } from '@/lib/cron-human'
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'text-emerald-400 bg-emerald-400/[0.08]',
@@ -95,7 +96,7 @@ export function ScheduleCard({ schedule, inSidebar }: Props) {
       <div className="text-[12px] text-text-3/70 mt-1.5 truncate">
         {agent?.name || 'Unknown agent'} &middot; {schedule.scheduleType}
         {!inSidebar && schedule.scheduleType === 'cron' && schedule.cron && (
-          <span className="font-mono text-text-3/50 ml-1">({schedule.cron})</span>
+          <span className="text-text-3/50 ml-1" title={schedule.cron}>({cronToHuman(schedule.cron)})</span>
         )}
         {!inSidebar && schedule.scheduleType === 'interval' && schedule.intervalMs && (
           <span className="text-text-3/50 ml-1">

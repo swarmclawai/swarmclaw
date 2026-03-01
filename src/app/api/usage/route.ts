@@ -78,6 +78,50 @@ export async function GET(req: Request) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([bucket, data]) => ({ bucket, tokens: data.tokens, cost: Math.round(data.cost * 10000) / 10000 }))
 
+  // Provider health stats
+  const healthAccum: Record<string, {
+    totalRequests: number
+    successCount: number
+    errorCount: number
+    lastUsed: number
+    models: Set<string>
+  }> = {}
+
+  for (const r of records) {
+    const prov = r.provider || 'unknown'
+    if (!healthAccum[prov]) {
+      healthAccum[prov] = { totalRequests: 0, successCount: 0, errorCount: 0, lastUsed: 0, models: new Set() }
+    }
+    const h = healthAccum[prov]
+    h.totalRequests += 1
+    // UsageRecord has no error/status field — logged records are successful completions
+    h.successCount += 1
+    if ((r.timestamp || 0) > h.lastUsed) h.lastUsed = r.timestamp || 0
+    if (r.model) h.models.add(r.model)
+  }
+
+  const providerHealth: Record<string, {
+    totalRequests: number
+    successCount: number
+    errorCount: number
+    errorRate: number
+    avgLatencyMs: number
+    lastUsed: number
+    models: string[]
+  }> = {}
+
+  for (const [prov, h] of Object.entries(healthAccum)) {
+    providerHealth[prov] = {
+      totalRequests: h.totalRequests,
+      successCount: h.successCount,
+      errorCount: h.errorCount,
+      errorRate: h.totalRequests > 0 ? h.errorCount / h.totalRequests : 0,
+      avgLatencyMs: 0, // UsageRecord does not track latency
+      lastUsed: h.lastUsed,
+      models: Array.from(h.models),
+    }
+  }
+
   return NextResponse.json({
     records,
     totalTokens,
@@ -85,5 +129,6 @@ export async function GET(req: Request) {
     byAgent,
     byProvider,
     timeSeries,
+    providerHealth,
   })
 }

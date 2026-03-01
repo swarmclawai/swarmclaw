@@ -40,10 +40,12 @@ import { ActivityFeed } from '@/components/activity/activity-feed'
 import { MetricsDashboard } from '@/components/usage/metrics-dashboard'
 import { ProjectList } from '@/components/projects/project-list'
 import { ProjectSheet } from '@/components/projects/project-sheet'
+import { SearchDialog } from '@/components/shared/search-dialog'
 import { NetworkBanner } from './network-banner'
 import { UpdateBanner } from './update-banner'
 import { MobileHeader } from './mobile-header'
 import { DaemonIndicator } from './daemon-indicator'
+import { NotificationCenter } from '@/components/shared/notification-center'
 import { ChatArea } from '@/components/chat/chat-area'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import type { AppView } from '@/types'
@@ -238,6 +240,37 @@ export function AppLayout() {
             </RailTooltip>
           )}
 
+          {/* Search */}
+          {railExpanded ? (
+            <div className="px-3 mb-2">
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('swarmclaw:open-search'))}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-[13px] font-500 cursor-pointer transition-all
+                  bg-transparent text-text-3 hover:text-text hover:bg-white/[0.04] border-none"
+                style={{ fontFamily: 'inherit' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                Search
+                <kbd className="ml-auto px-1.5 py-0.5 rounded-[5px] bg-white/[0.06] border border-white/[0.08] text-[10px] font-mono text-text-3">
+                  ⌘K
+                </kbd>
+              </button>
+            </div>
+          ) : (
+            <RailTooltip label="Search" description="Search across all entities (⌘K)">
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('swarmclaw:open-search'))}
+                className="rail-btn self-center mb-2"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </button>
+            </RailTooltip>
+          )}
+
           {/* Nav items */}
           <div className={`flex flex-col gap-0.5 ${railExpanded ? 'px-3' : 'items-center'}`}>
             <NavItem view="agents" label="Agents" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('agents')}>
@@ -363,6 +396,18 @@ export function AppLayout() {
               </RailTooltip>
             )}
             {railExpanded && <DaemonIndicator />}
+            {railExpanded ? (
+              <div className="flex items-center gap-1 px-3 py-1">
+                <span className="text-[12px] font-500 text-text-3 flex-1">Alerts</span>
+                <NotificationCenter />
+              </div>
+            ) : (
+              <RailTooltip label="Notifications" description="View system notifications">
+                <div className="rail-btn flex items-center justify-center">
+                  <NotificationCenter />
+                </div>
+              </RailTooltip>
+            )}
             {railExpanded ? (
               <button
                 onClick={() => handleNavClick('settings')}
@@ -644,6 +689,7 @@ export function AppLayout() {
         </div>
       </ErrorBoundary>
 
+      <SearchDialog />
       <AgentSheet />
       <ScheduleSheet />
       <MemorySheet />

@@ -130,6 +130,16 @@ const COMMAND_GROUPS = {
       get: { description: 'Download memory image by filename', method: 'GET', path: '/memory-images/:filename', params: ['filename'], binary: true },
     },
   },
+  notifications: {
+    description: 'In-app notification center',
+    commands: {
+      list: { description: 'List notifications (supports --query unreadOnly=true,limit=100)', method: 'GET', path: '/notifications' },
+      create: { description: 'Create notification', method: 'POST', path: '/notifications' },
+      clear: { description: 'Clear read notifications', method: 'DELETE', path: '/notifications' },
+      'mark-read': { description: 'Mark notification as read', method: 'PUT', path: '/notifications/:id', params: ['id'] },
+      delete: { description: 'Delete notification by id', method: 'DELETE', path: '/notifications/:id', params: ['id'] },
+    },
+  },
   orchestrator: {
     description: 'Orchestrator runs and run-state APIs',
     commands: {
@@ -196,6 +206,12 @@ const COMMAND_GROUPS = {
       'models-get': { description: 'Get provider model overrides', method: 'GET', path: '/providers/:id/models', params: ['id'] },
       'models-set': { description: 'Set provider model overrides', method: 'PUT', path: '/providers/:id/models', params: ['id'] },
       'models-reset': { description: 'Delete provider model overrides', method: 'DELETE', path: '/providers/:id/models', params: ['id'] },
+    },
+  },
+  search: {
+    description: 'Global search across app resources',
+    commands: {
+      query: { description: 'Search agents/tasks/sessions/schedules/webhooks/skills (supports --query q=term)', method: 'GET', path: '/search' },
     },
   },
   schedules: {

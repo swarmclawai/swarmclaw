@@ -20,6 +20,7 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 - Always use the access key authentication (generated on first run)
 - Never expose port 3456 without a reverse proxy + TLS
 - Review agent system prompts before giving them shell or browser tools
+- Repeated failed access key attempts are rate-limited to slow brute-force attacks
 
 ## Features
 
@@ -40,6 +41,8 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 - **Session Run Queue** — Per-session queued runs with followup/steer/collect modes, collect coalescing for bursty inputs, and run-state APIs
 - **Chat Iteration Workflow** — Edit-and-resend user turns, fork a new session from any message, bookmark key messages, use contextual follow-up suggestion chips, and auto-continue after tool access grants
 - **Live Chat Telemetry** — Thinking/tool/responding stream phases, live main-loop status badges, connector activity presence, tone indicator, and optional sound notifications
+- **Global Search Palette** — `Cmd/Ctrl+K` search across agents, tasks, sessions, schedules, webhooks, and skills from anywhere in the app
+- **Notification Center** — Real-time in-app notifications for task/schedule/daemon events with unread tracking and quick actions
 - **Preview-Rich Chat UI** — Side preview panel for tool outputs (image/browser/html/code), inline code/PDF previews for attachments, and image lightbox support
 - **Voice Settings** — Per-instance ElevenLabs API key + voice ID for TTS replies, plus configurable speech recognition language for chat input
 - **Chat Connectors** — Bridge agents to Discord, Slack, Telegram, WhatsApp, BlueBubbles (iMessage), Signal, Microsoft Teams, Google Chat, Matrix, and OpenClaw with media-aware inbound handling
@@ -48,6 +51,7 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 - **Context Management** — Auto-compaction of conversation history when approaching context limits, with manual `context_status` and `context_summarize` tools for agents
 - **Memory** — Per-agent and per-session memory with hybrid FTS5 + vector embeddings search, relevance-based memory recall injected into runs, and periodic auto-journaling for durable execution context
 - **Cost Tracking** — Per-message token counting and cost estimation displayed in the chat header
+- **Provider Health Metrics** — Usage dashboard surfaces provider request volume, success rates, models used, and last-used timestamps
 - **Model Failover** — Automatic key rotation on rate limits and auth errors with configurable fallback credentials
 - **Plugin System** — Extend agent behavior with JS plugins (hooks: beforeAgentStart, afterAgentComplete, beforeToolExec, afterToolExec, onMessage)
 - **Secrets Vault** — Encrypted storage for API keys and service tokens
@@ -81,7 +85,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.5.2 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.5.3 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 

@@ -7,6 +7,7 @@ import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
 import { notify } from '@/lib/server/ws-hub'
+import { createNotification } from '@/lib/server/create-notification'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Keep completed queue integrity even if daemon is not running.
@@ -76,6 +77,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   // If task is manually transitioned to a terminal status, disable session heartbeat.
   if (prevStatus !== tasks[id].status && (tasks[id].status === 'completed' || tasks[id].status === 'failed')) {
     disableSessionHeartbeat(tasks[id].sessionId)
+    createNotification({
+      type: tasks[id].status === 'completed' ? 'success' : 'error',
+      title: `Task ${tasks[id].status}: "${tasks[id].title}"`,
+      message: tasks[id].status === 'failed' ? tasks[id].error?.slice(0, 200) : undefined,
+      entityType: 'task',
+      entityId: id,
+    })
   }
 
   // Dependency check: cannot queue a task if any blocker is incomplete

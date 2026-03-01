@@ -2,6 +2,7 @@
 
 import { useAppStore } from '@/stores/use-app-store'
 import { IconButton } from '@/components/shared/icon-button'
+import { NotificationCenter } from '@/components/shared/notification-center'
 
 export function MobileHeader() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
@@ -26,6 +27,7 @@ export function MobileHeader() {
           <span className="font-700">SwarmClaw</span>
         )}
       </h1>
+      <NotificationCenter />
     </header>
   )
 }

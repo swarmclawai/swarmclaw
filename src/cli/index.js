@@ -184,6 +184,17 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'notifications',
+    description: 'Manage in-app notifications',
+    commands: [
+      cmd('list', 'GET', '/notifications', 'List notifications (use --query unreadOnly=true --query limit=100)'),
+      cmd('create', 'POST', '/notifications', 'Create notification', { expectsJsonBody: true }),
+      cmd('clear', 'DELETE', '/notifications', 'Clear read notifications'),
+      cmd('mark-read', 'PUT', '/notifications/:id', 'Mark notification as read'),
+      cmd('delete', 'DELETE', '/notifications/:id', 'Delete notification by id'),
+    ],
+  },
+  {
     name: 'mcp-servers',
     description: 'Manage MCP server configurations',
     commands: [
@@ -291,6 +302,13 @@ const COMMAND_GROUPS = [
       cmd('models', 'GET', '/providers/:id/models', 'Get provider model overrides'),
       cmd('models-set', 'PUT', '/providers/:id/models', 'Set provider model overrides', { expectsJsonBody: true }),
       cmd('models-clear', 'DELETE', '/providers/:id/models', 'Clear provider model overrides'),
+    ],
+  },
+  {
+    name: 'search',
+    description: 'Global search across app resources',
+    commands: [
+      cmd('query', 'GET', '/search', 'Search agents/tasks/sessions/schedules/webhooks/skills (use --query q=term)'),
     ],
   },
   {

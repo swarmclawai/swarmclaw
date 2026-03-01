@@ -51,6 +51,7 @@ const COLLECTIONS = [
   'projects',
   'activity',
   'webhook_retry_queue',
+  'notifications',
 ] as const
 
 for (const table of COLLECTIONS) {
@@ -773,6 +774,32 @@ export function upsertWebhookRetry(id: string, entry: unknown) {
 
 export function deleteWebhookRetry(id: string) {
   deleteCollectionItem('webhook_retry_queue', id)
+}
+
+// --- Notifications ---
+export function loadNotifications(): Record<string, unknown> {
+  return loadCollection('notifications')
+}
+
+export function saveNotification(id: string, data: unknown) {
+  upsertCollectionItem('notifications', id, data)
+}
+
+export function deleteNotification(id: string) {
+  deleteCollectionItem('notifications', id)
+}
+
+export function markNotificationRead(id: string) {
+  const raw = getCollectionRawCache('notifications')
+  const json = raw.get(id)
+  if (!json) return
+  try {
+    const notification = JSON.parse(json) as Record<string, unknown>
+    notification.read = true
+    upsertCollectionItem('notifications', id, notification)
+  } catch {
+    // ignore malformed
+  }
 }
 
 export function getSessionMessages(sessionId: string): Message[] {
