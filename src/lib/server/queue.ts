@@ -501,6 +501,22 @@ export async function processNext() {
         continue
       }
 
+      // Dependency guard: skip tasks whose blockers are not all completed
+      const blockers = Array.isArray(task.blockedBy) ? task.blockedBy as string[] : []
+      if (blockers.length > 0) {
+        const allBlockersDone = blockers.every((bid) => {
+          const blocker = tasks[bid] as BoardTask | undefined
+          return blocker?.status === 'completed'
+        })
+        if (!allBlockersDone) {
+          // Put it back in the queue and skip
+          pushQueueUnique(queue, taskId)
+          saveQueue(queue)
+          console.log(`[queue] Skipping task "${task.title}" (${taskId}) — blocked by incomplete dependencies`)
+          continue
+        }
+      }
+
       const agents = loadAgents()
       const agent = agents[task.agentId]
       if (!agent) {

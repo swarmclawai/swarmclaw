@@ -1,4 +1,4 @@
-import { loadQueue, loadSchedules, loadSessions, saveSessions, loadConnectors } from './storage'
+import { loadQueue, loadSchedules, loadSessions, saveSessions, loadConnectors, saveConnectors, loadWebhookRetryQueue, upsertWebhookRetry, deleteWebhookRetry, loadWebhooks, loadAgents, appendWebhookLog } from './storage'
 import { notify } from './ws-hub'
 import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue, recoverStalledRunningTasks } from './queue'
 import { startScheduler, stopScheduler } from './scheduler'
@@ -13,6 +13,10 @@ import {
 } from './connectors/manager'
 import { startHeartbeatService, stopHeartbeatService, getHeartbeatServiceStatus } from './heartbeat-service'
 import { hasOpenClawAgents, ensureGatewayConnected, disconnectGateway, getGateway } from './openclaw-gateway'
+import { enqueueSessionRun } from './session-run-manager'
+import { WORKSPACE_DIR } from './data-dir'
+import { genId } from '@/lib/id'
+import type { WebhookRetryEntry } from '@/types'
 
 const QUEUE_CHECK_INTERVAL = 30_000 // 30 seconds
 const BROWSER_SWEEP_INTERVAL = 60_000 // 60 seconds
@@ -24,6 +28,7 @@ const STALE_AUTO_DISABLE_MULTIPLIER = 16 // auto-disable after much longer susta
 const STALE_AUTO_DISABLE_MIN_MS = 45 * 60 * 1000 // never auto-disable before 45 minutes
 const CONNECTOR_RESTART_BASE_MS = 30_000
 const CONNECTOR_RESTART_MAX_MS = 15 * 60 * 1000
+const MAX_WAKE_ATTEMPTS = 3
 
 function parseBoolish(value: unknown, fallback: boolean): boolean {
   if (typeof value === 'boolean') return value
@@ -70,16 +75,17 @@ const ds: {
   healthIntervalId: ReturnType<typeof setInterval> | null
   /** Session IDs we've already alerted as stale (alert-once semantics). */
   staleSessionIds: Set<string>
-  connectorRestartState: Map<string, { lastAttemptAt: number; failCount: number }>
+  connectorRestartState: Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>
   manualStopRequested: boolean
   running: boolean
   lastProcessedAt: number | null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 } = (globalThis as any)[gk] ?? ((globalThis as any)[gk] = {
   queueIntervalId: null,
   browserSweepId: null,
   healthIntervalId: null,
   staleSessionIds: new Set<string>(),
-  connectorRestartState: new Map<string, { lastAttemptAt: number; failCount: number }>(),
+  connectorRestartState: new Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>(),
   manualStopRequested: false,
   running: false,
   lastProcessedAt: null,
@@ -87,8 +93,9 @@ const ds: {
 
 // Backfill fields for hot-reloaded daemon state objects from older code versions.
 if (!ds.staleSessionIds) ds.staleSessionIds = new Set<string>()
-if (!ds.connectorRestartState) ds.connectorRestartState = new Map<string, { lastAttemptAt: number; failCount: number }>()
+if (!ds.connectorRestartState) ds.connectorRestartState = new Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>()
 // Migrate from old issueLastAlertAt map if present (HMR across code versions)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 if ((ds as any).issueLastAlertAt) delete (ds as any).issueLastAlertAt
 if (ds.healthIntervalId === undefined) ds.healthIntervalId = null
 if (ds.manualStopRequested === undefined) ds.manualStopRequested = false
@@ -221,8 +228,8 @@ async function sendHealthAlert(text: string) {
 
 async function runConnectorHealthChecks(now: number) {
   const connectors = loadConnectors()
-  for (const connector of Object.values(connectors) as any[]) {
-    if (!connector?.id) continue
+  for (const connector of Object.values(connectors) as Record<string, unknown>[]) {
+    if (!connector?.id || typeof connector.id !== 'string') continue
     if (connector.isEnabled !== true) {
       ds.connectorRestartState.delete(connector.id)
       continue
@@ -234,7 +241,22 @@ async function runConnectorHealthChecks(now: number) {
       continue
     }
 
-    const current = ds.connectorRestartState.get(connector.id) || { lastAttemptAt: 0, failCount: 0 }
+    const current = ds.connectorRestartState.get(connector.id) || { lastAttemptAt: 0, failCount: 0, wakeAttempts: 0 }
+    // Backfill wakeAttempts for state objects created before this field existed
+    if (typeof current.wakeAttempts !== 'number') current.wakeAttempts = 0
+
+    // Cap wake attempts — stop retrying after MAX_WAKE_ATTEMPTS consecutive failures
+    if (current.wakeAttempts >= MAX_WAKE_ATTEMPTS) {
+      console.warn(`[health] Connector "${connector.name}" exceeded ${MAX_WAKE_ATTEMPTS} wake attempts — giving up`)
+      connector.status = 'error'
+      connector.lastError = `Auto-restart gave up after ${MAX_WAKE_ATTEMPTS} consecutive failures`
+      connector.updatedAt = Date.now()
+      connectors[connector.id] = connector
+      saveConnectors(connectors)
+      ds.connectorRestartState.delete(connector.id)
+      continue
+    }
+
     const backoffMs = Math.min(
       CONNECTOR_RESTART_MAX_MS,
       CONNECTOR_RESTART_BASE_MS * (2 ** Math.min(6, current.failCount)),
@@ -247,10 +269,154 @@ async function runConnectorHealthChecks(now: number) {
       await startConnector(connector.id)
       ds.connectorRestartState.delete(connector.id)
       await sendHealthAlert(`Connector "${connector.name}" (${connector.platform}) was down and has been auto-restarted.`)
-    } catch (err: any) {
+    } catch (err: unknown) {
       current.failCount += 1
+      current.wakeAttempts += 1
       ds.connectorRestartState.set(connector.id, current)
-      console.warn(`[health] Connector auto-restart failed for ${connector.name}: ${err?.message || String(err)}`)
+      const message = err instanceof Error ? err.message : String(err)
+      console.warn(`[health] Connector auto-restart failed for ${connector.name} (attempt ${current.wakeAttempts}/${MAX_WAKE_ATTEMPTS}): ${message}`)
+    }
+  }
+}
+
+async function processWebhookRetries() {
+  const retryQueue = loadWebhookRetryQueue()
+  const now = Date.now()
+  const dueEntries: WebhookRetryEntry[] = []
+
+  for (const raw of Object.values(retryQueue)) {
+    const entry = raw as WebhookRetryEntry
+    if (entry.deadLettered) continue
+    if (entry.nextRetryAt > now) continue
+    dueEntries.push(entry)
+  }
+
+  if (dueEntries.length === 0) return
+
+  const webhooks = loadWebhooks()
+  const agents = loadAgents()
+  const sessions = loadSessions()
+
+  for (const entry of dueEntries) {
+    const webhook = webhooks[entry.webhookId] as Record<string, unknown> | undefined
+    if (!webhook) {
+      // Webhook deleted — drop the retry
+      deleteWebhookRetry(entry.id)
+      continue
+    }
+
+    const agentId = typeof webhook.agentId === 'string' ? webhook.agentId : ''
+    const agent = agentId ? (agents[agentId] as Record<string, unknown> | undefined) : null
+    if (!agent) {
+      entry.deadLettered = true
+      upsertWebhookRetry(entry.id, entry)
+      console.warn(`[webhook-retry] Dead-lettered ${entry.id}: agent not found for webhook ${entry.webhookId}`)
+      continue
+    }
+
+    // Find or create a webhook session (same logic as the POST handler)
+    const sessionName = `webhook:${entry.webhookId}`
+    let session = Object.values(sessions).find(
+      (s: unknown) => {
+        const rec = s as Record<string, unknown>
+        return rec.name === sessionName && rec.agentId === agent.id
+      },
+    ) as Record<string, unknown> | undefined
+
+    if (!session) {
+      const sessionId = genId()
+      const ts = Date.now()
+      session = {
+        id: sessionId,
+        name: sessionName,
+        cwd: WORKSPACE_DIR,
+        user: 'system',
+        provider: agent.provider || 'claude-cli',
+        model: agent.model || '',
+        credentialId: agent.credentialId || null,
+        apiEndpoint: agent.apiEndpoint || null,
+        claudeSessionId: null,
+        codexThreadId: null,
+        opencodeSessionId: null,
+        delegateResumeIds: { claudeCode: null, codex: null, opencode: null },
+        messages: [],
+        createdAt: ts,
+        lastActiveAt: ts,
+        sessionType: 'orchestrated',
+        agentId: agent.id,
+        parentSessionId: null,
+        tools: agent.tools || [],
+        heartbeatEnabled: (agent.heartbeatEnabled as boolean | undefined) ?? true,
+        heartbeatIntervalSec: (agent.heartbeatIntervalSec as number | null | undefined) ?? null,
+      }
+      sessions[session.id as string] = session
+      const { saveSessions: save } = await import('./storage')
+      save(sessions)
+    }
+
+    const payloadPreview = (entry.payload || '').slice(0, 12_000)
+    const prompt = [
+      'Webhook event received (retry).',
+      `Webhook ID: ${entry.webhookId}`,
+      `Webhook Name: ${(webhook.name as string) || entry.webhookId}`,
+      `Source: ${(webhook.source as string) || 'custom'}`,
+      `Event: ${entry.event}`,
+      `Retry attempt: ${entry.attempts}`,
+      `Original received at: ${new Date(entry.createdAt).toISOString()}`,
+      '',
+      'Payload:',
+      payloadPreview || '(empty payload)',
+      '',
+      'Handle this event now. If this requires notifying the user, use configured connector tools.',
+    ].join('\n')
+
+    try {
+      const run = enqueueSessionRun({
+        sessionId: session.id as string,
+        message: prompt,
+        source: 'webhook',
+        internal: false,
+        mode: 'followup',
+      })
+
+      appendWebhookLog(genId(8), {
+        id: genId(8),
+        webhookId: entry.webhookId,
+        event: entry.event,
+        payload: (entry.payload || '').slice(0, 2000),
+        status: 'success',
+        sessionId: session.id,
+        runId: run.runId,
+        timestamp: Date.now(),
+      })
+
+      deleteWebhookRetry(entry.id)
+      console.log(`[webhook-retry] Successfully retried ${entry.id} for webhook ${entry.webhookId} (attempt ${entry.attempts})`)
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      entry.attempts += 1
+
+      if (entry.attempts >= entry.maxAttempts) {
+        entry.deadLettered = true
+        upsertWebhookRetry(entry.id, entry)
+        console.warn(`[webhook-retry] Dead-lettered ${entry.id} after ${entry.attempts} attempts: ${errorMsg}`)
+
+        appendWebhookLog(genId(8), {
+          id: genId(8),
+          webhookId: entry.webhookId,
+          event: entry.event,
+          payload: (entry.payload || '').slice(0, 2000),
+          status: 'error',
+          error: `Dead-lettered after ${entry.attempts} attempts: ${errorMsg}`,
+          timestamp: Date.now(),
+        })
+      } else {
+        // Exponential backoff: 30s * 2^attempt + random jitter (0-5000ms)
+        const jitter = Math.floor(Math.random() * 5000)
+        entry.nextRetryAt = Date.now() + (30_000 * Math.pow(2, entry.attempts)) + jitter
+        upsertWebhookRetry(entry.id, entry)
+        console.warn(`[webhook-retry] Retry ${entry.id} failed (attempt ${entry.attempts}/${entry.maxAttempts}), next at ${new Date(entry.nextRetryAt).toISOString()}: ${errorMsg}`)
+      }
     }
   }
 }
@@ -268,10 +434,12 @@ async function runHealthChecks() {
   const currentlyStale = new Set<string>()
   let sessionsDirty = false
 
-  for (const session of Object.values(sessions) as any[]) {
-    if (!session?.id) continue
+  for (const session of Object.values(sessions) as Record<string, unknown>[]) {
+    if (!session?.id || typeof session.id !== 'string') continue
     if (session.heartbeatEnabled !== true) continue
 
+    const sessionId = session.id
+    const sessionLabel = String(session.name || sessionId)
     const intervalSec = parseHeartbeatIntervalSec(session.heartbeatIntervalSec, 120)
     if (intervalSec <= 0) continue
     const staleAfter = Math.max(intervalSec * STALE_MULTIPLIER * 1000, STALE_MIN_MS)
@@ -285,19 +453,19 @@ async function runHealthChecks() {
         session.heartbeatEnabled = false
         session.lastActiveAt = now
         sessionsDirty = true
-        ds.staleSessionIds.delete(session.id)
+        ds.staleSessionIds.delete(sessionId)
         await sendHealthAlert(
-          `Auto-disabled heartbeat for stale session "${session.name || session.id}" after ${Math.round(staleForMs / 60_000)}m of inactivity.`,
+          `Auto-disabled heartbeat for stale session "${sessionLabel}" after ${Math.round(staleForMs / 60_000)}m of inactivity.`,
         )
         continue
       }
 
-      currentlyStale.add(session.id)
+      currentlyStale.add(sessionId)
       // Only alert on transition from healthy → stale (once per stale episode)
-      if (!ds.staleSessionIds.has(session.id)) {
-        ds.staleSessionIds.add(session.id)
+      if (!ds.staleSessionIds.has(sessionId)) {
+        ds.staleSessionIds.add(sessionId)
         await sendHealthAlert(
-          `Session "${session.name || session.id}" heartbeat appears stale (last active ${(Math.round(staleForMs / 1000))}s ago, interval ${intervalSec}s).`,
+          `Session "${sessionLabel}" heartbeat appears stale (last active ${(Math.round(staleForMs / 1000))}s ago, interval ${intervalSec}s).`,
         )
       }
     }
@@ -313,6 +481,13 @@ async function runHealthChecks() {
   if (sessionsDirty) saveSessions(sessions)
 
   await runConnectorHealthChecks(now)
+
+  // Process webhook retry queue
+  try {
+    await processWebhookRetries()
+  } catch (err: unknown) {
+    console.error('[daemon] Webhook retry processing failed:', err instanceof Error ? err.message : String(err))
+  }
 }
 
 function startHealthMonitor() {
@@ -341,13 +516,19 @@ export function getDaemonStatus() {
 
   // Find next scheduled task
   let nextScheduled: number | null = null
-  for (const s of Object.values(schedules) as any[]) {
+  for (const s of Object.values(schedules) as Record<string, unknown>[]) {
     if (s.status === 'active' && s.nextRunAt) {
-      if (!nextScheduled || s.nextRunAt < nextScheduled) {
-        nextScheduled = s.nextRunAt
+      if (!nextScheduled || (s.nextRunAt as number) < nextScheduled) {
+        nextScheduled = s.nextRunAt as number
       }
     }
   }
+
+  // Webhook retry queue stats
+  const retryQueue = loadWebhookRetryQueue()
+  const retryEntries = Object.values(retryQueue) as WebhookRetryEntry[]
+  const pendingRetries = retryEntries.filter(e => !e.deadLettered).length
+  const deadLettered = retryEntries.filter(e => e.deadLettered).length
 
   return {
     running: ds.running,
@@ -363,6 +544,10 @@ export function getDaemonStatus() {
       staleSessions: ds.staleSessionIds.size,
       connectorsInBackoff: ds.connectorRestartState.size,
       checkIntervalSec: Math.trunc(HEALTH_CHECK_INTERVAL / 1000),
+    },
+    webhookRetry: {
+      pendingRetries,
+      deadLettered,
     },
   }
 }

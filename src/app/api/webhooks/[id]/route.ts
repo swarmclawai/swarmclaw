@@ -1,9 +1,10 @@
 import { genId } from '@/lib/id'
 import { NextResponse } from 'next/server'
-import { loadAgents, loadSessions, loadWebhooks, saveSessions, saveWebhooks, appendWebhookLog } from '@/lib/server/storage'
+import { loadAgents, loadSessions, loadWebhooks, saveSessions, saveWebhooks, appendWebhookLog, upsertWebhookRetry } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { enqueueSessionRun } from '@/lib/server/session-run-manager'
 import { mutateItem, deleteItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
+import type { WebhookRetryEntry } from '@/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ops: CollectionOps<any> = { load: loadWebhooks, save: saveWebhooks }
@@ -129,7 +130,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const sessions = loadSessions()
   const sessionName = `webhook:${id}`
-  let session = Object.values(sessions).find((s: any) => s.name === sessionName && s.agentId === agent.id) as any
+  let session = Object.values(sessions).find((s: unknown) => {
+    const rec = s as Record<string, unknown>
+    return rec.name === sessionName && rec.agentId === agent.id
+  }) as Record<string, unknown> | undefined
   if (!session) {
     const sessionId = genId()
     const now = Date.now()
@@ -160,10 +164,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       heartbeatEnabled: agent.heartbeatEnabled ?? true,
       heartbeatIntervalSec: agent.heartbeatIntervalSec ?? null,
     }
-    sessions[session.id] = session
+    sessions[session.id as string] = session
     saveSessions(sessions)
   }
 
+  const sid = session.id as string
   const payloadPreview = (rawBody || '').slice(0, 12_000)
   const prompt = [
     'Webhook event received.',
@@ -179,25 +184,60 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     'Handle this event now. If this requires notifying the user, use configured connector tools.',
   ].join('\n')
 
-  const run = enqueueSessionRun({
-    sessionId: session.id,
-    message: prompt,
-    source: 'webhook',
-    internal: false,
-    mode: 'followup',
-  })
+  try {
+    const run = enqueueSessionRun({
+      sessionId: sid,
+      message: prompt,
+      source: 'webhook',
+      internal: false,
+      mode: 'followup',
+    })
 
-  appendWebhookLog(genId(8), {
-    id: genId(8), webhookId: id, event: incomingEvent,
-    payload: (rawBody || '').slice(0, 2000), status: 'success',
-    sessionId: session.id, runId: run.runId, timestamp: Date.now(),
-  })
+    appendWebhookLog(genId(8), {
+      id: genId(8), webhookId: id, event: incomingEvent,
+      payload: (rawBody || '').slice(0, 2000), status: 'success',
+      sessionId: sid, runId: run.runId, timestamp: Date.now(),
+    })
 
-  return NextResponse.json({
-    ok: true,
-    webhookId: id,
-    event: incomingEvent,
-    sessionId: session.id,
-    runId: run.runId,
-  })
+    return NextResponse.json({
+      ok: true,
+      webhookId: id,
+      event: incomingEvent,
+      sessionId: sid,
+      runId: run.runId,
+    })
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err)
+
+    // Enqueue for retry with exponential backoff
+    const retryId = genId()
+    const now = Date.now()
+    const retryEntry: WebhookRetryEntry = {
+      id: retryId,
+      webhookId: id,
+      event: incomingEvent,
+      payload: (rawBody || '').slice(0, 12_000),
+      attempts: 1,
+      maxAttempts: 3,
+      nextRetryAt: now + 30_000,
+      deadLettered: false,
+      createdAt: now,
+    }
+    upsertWebhookRetry(retryId, retryEntry)
+
+    appendWebhookLog(genId(8), {
+      id: genId(8), webhookId: id, event: incomingEvent,
+      payload: (rawBody || '').slice(0, 2000), status: 'error',
+      error: `Dispatch failed, queued for retry: ${errorMsg}`, timestamp: Date.now(),
+    })
+
+    return NextResponse.json({
+      ok: true,
+      webhookId: id,
+      event: incomingEvent,
+      retryQueued: true,
+      retryId,
+      error: errorMsg,
+    })
+  }
 }

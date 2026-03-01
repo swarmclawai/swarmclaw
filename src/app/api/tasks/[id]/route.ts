@@ -1,6 +1,6 @@
 import { genId } from '@/lib/id'
 import { NextResponse } from 'next/server'
-import { loadTasks, saveTasks } from '@/lib/server/storage'
+import { loadTasks, saveTasks, logActivity } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { disableSessionHeartbeat, enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
@@ -65,6 +65,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   saveTasks(tasks)
+  logActivity({ entityType: 'task', entityId: id, action: 'updated', actor: 'user', summary: `Task updated: "${tasks[id].title}" (${prevStatus} → ${tasks[id].status})` })
   if (prevStatus !== tasks[id].status) {
     pushMainLoopEventToMainSessions({
       type: 'task_status_changed',
@@ -75,6 +76,40 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   // If task is manually transitioned to a terminal status, disable session heartbeat.
   if (prevStatus !== tasks[id].status && (tasks[id].status === 'completed' || tasks[id].status === 'failed')) {
     disableSessionHeartbeat(tasks[id].sessionId)
+  }
+
+  // Dependency check: cannot queue a task if any blocker is incomplete
+  if (tasks[id].status === 'queued') {
+    const blockers = Array.isArray(tasks[id].blockedBy) ? tasks[id].blockedBy : []
+    const incompleteBlocker = blockers.find((bid: string) => tasks[bid] && tasks[bid].status !== 'completed')
+    if (incompleteBlocker) {
+      // Revert status change and reject
+      tasks[id].status = prevStatus
+      tasks[id].updatedAt = Date.now()
+      saveTasks(tasks)
+      return NextResponse.json(
+        { error: 'Cannot queue: blocked by incomplete tasks', blockedBy: incompleteBlocker },
+        { status: 409 },
+      )
+    }
+  }
+
+  // When a task is completed, auto-unblock dependent tasks
+  if (tasks[id].status === 'completed') {
+    const blockedIds = Array.isArray(tasks[id].blocks) ? tasks[id].blocks as string[] : []
+    for (const blockedId of blockedIds) {
+      const blocked = tasks[blockedId]
+      if (!blocked) continue
+      const deps = Array.isArray(blocked.blockedBy) ? blocked.blockedBy as string[] : []
+      const allDone = deps.every((depId: string) => tasks[depId]?.status === 'completed')
+      if (allDone && (blocked.status === 'backlog' || blocked.status === 'todo')) {
+        blocked.status = 'queued'
+        blocked.queuedAt = Date.now()
+        blocked.updatedAt = Date.now()
+        saveTasks(tasks)
+        enqueueTask(blockedId)
+      }
+    }
   }
 
   // If status changed to 'queued', enqueue it
@@ -96,6 +131,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   tasks[id].archivedAt = Date.now()
   tasks[id].updatedAt = Date.now()
   saveTasks(tasks)
+  logActivity({ entityType: 'task', entityId: id, action: 'deleted', actor: 'user', summary: `Task archived: "${tasks[id].title}"` })
   pushMainLoopEventToMainSessions({
     type: 'task_archived',
     text: `Task archived: "${tasks[id].title}" (${id}).`,

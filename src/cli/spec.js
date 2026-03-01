@@ -12,6 +12,12 @@ const COMMAND_GROUPS = {
       purge: { description: 'Permanently delete a trashed agent', method: 'DELETE', path: '/agents/trash' },
     },
   },
+  activity: {
+    description: 'Query activity feed events',
+    commands: {
+      list: { description: 'List activity events (supports --query limit=50,entityType=task,action=updated)', method: 'GET', path: '/activity' },
+    },
+  },
   auth: {
     description: 'Access-key auth checks',
     commands: {

@@ -24,6 +24,13 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'activity',
+    description: 'Query activity feed events',
+    commands: [
+      cmd('list', 'GET', '/activity', 'List activity events (use --query limit=50, --query entityType=task, --query action=updated)'),
+    ],
+  },
+  {
     name: 'auth',
     description: 'Access key auth helpers',
     commands: [

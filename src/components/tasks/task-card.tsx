@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { updateTask, archiveTask } from '@/lib/tasks'
-import type { BoardTask, BoardTaskStatus } from '@/types'
+import type { BoardTask } from '@/types'
 
 function timeAgo(ts: number) {
   const diff = Date.now() - ts
@@ -24,6 +24,14 @@ export function TaskCard({ task }: { task: BoardTask }) {
   const [dragging, setDragging] = useState(false)
 
   const agent = agents[task.agentId]
+
+  const isBlocked = Array.isArray(task.blockedBy) && task.blockedBy.length > 0
+  const isOverdue = task.dueAt && task.dueAt < Date.now() && task.status !== 'completed' && task.status !== 'archived'
+  const borderColor = isBlocked ? 'border-l-rose-500'
+    : task.pendingApproval ? 'border-l-amber-500'
+    : task.status === 'running' ? 'border-l-emerald-500'
+    : task.status === 'failed' ? 'border-l-red-500'
+    : 'border-l-transparent'
 
   const handleQueue = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -64,15 +72,45 @@ export function TaskCard({ task }: { task: BoardTask }) {
         setEditingTaskId(task.id)
         setTaskSheetOpen(true)
       }}
-      className={`p-4 rounded-[14px] border border-white/[0.06] bg-surface hover:bg-surface-2 cursor-grab active:cursor-grabbing
+      className={`p-4 rounded-[14px] border border-white/[0.06] border-l-[3px] ${borderColor} bg-surface hover:bg-surface-2 cursor-grab active:cursor-grabbing
         transition-all group ${dragging ? 'opacity-40 scale-[0.97]' : ''}`}
     >
       <div className="flex items-start gap-3 mb-3">
+        {isBlocked && (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-rose-400 shrink-0 mt-0.5">
+            <title>{`Blocked by ${task.blockedBy?.length} task(s)`}</title>
+            <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        )}
         <h4 className="flex-1 text-[14px] font-600 text-text leading-[1.4] line-clamp-2">{task.title}</h4>
+        {isBlocked && (
+          <span className="px-1.5 py-0.5 rounded-[5px] bg-rose-500/10 text-rose-400 text-[10px] font-600 shrink-0">
+            {task.blockedBy?.length}
+          </span>
+        )}
       </div>
 
       {task.description && (
         <p className="text-[12px] text-text-3 line-clamp-2 mb-3">{task.description}</p>
+      )}
+
+      {/* Tags */}
+      {task.tags && task.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-3">
+          {task.tags.map((tag) => (
+            <span key={tag} className="px-1.5 py-0.5 rounded-[5px] bg-indigo-500/10 text-indigo-400 text-[10px] font-600">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Due date */}
+      {task.dueAt && (
+        <p className={`text-[11px] mb-3 font-600 ${isOverdue ? 'text-red-400' : 'text-text-3/60'}`}>
+          Due {new Date(task.dueAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+          {isOverdue && ' (overdue)'}
+        </p>
       )}
 
       {task.images && task.images.length > 0 && (

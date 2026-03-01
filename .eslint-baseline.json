@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-01T18:04:28.188Z",
-  "totalIssues": 653,
-  "uniqueIssues": 235,
+  "generatedAt": "2026-03-01T18:45:24.313Z",
+  "totalIssues": 639,
+  "uniqueIssues": 231,
   "issues": [
     {
       "filePath": "bin/server-cmd.js",
@@ -292,13 +292,6 @@
       "count": 1
     },
     {
-      "filePath": "src/app/api/usage/route.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_req' is defined but never used.",
-      "count": 1
-    },
-    {
       "filePath": "src/app/api/version/route.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -311,13 +304,6 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 3
-    },
-    {
-      "filePath": "src/app/api/webhooks/[id]/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
     },
     {
       "filePath": "src/app/api/webhooks/route.ts",
@@ -367,6 +353,13 @@
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
       "count": 6
+    },
+    {
+      "filePath": "src/components/activity/activity-feed.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadActivity'. Either include it or remove the dependency array.",
+      "count": 1
     },
     {
       "filePath": "src/components/agents/agent-card.tsx",
@@ -1042,9 +1035,9 @@
     },
     {
       "filePath": "src/components/tasks/task-card.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'BoardTaskStatus' is defined but never used.",
+      "ruleId": "react-hooks/purity",
+      "severity": 2,
+      "message": "Error: Cannot call impure function during render `Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).",
       "count": 1
     },
     {
@@ -1076,20 +1069,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/tasks/task-sheet.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has missing dependencies: 'agentList', 'editing', and 'loadAgents'. Either include them or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/tasks/task-sheet.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
-      "count": 2
-    },
-    {
       "filePath": "src/hooks/use-openclaw-gateway.ts",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
@@ -1105,10 +1084,10 @@
     },
     {
       "filePath": "src/hooks/use-ws.ts",
-      "ruleId": "react-hooks/refs",
-      "severity": 2,
-      "message": "Error: Cannot access refs during render React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).",
-      "count": 2
+      "ruleId": "(eslint)",
+      "severity": 1,
+      "message": "Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps').",
+      "count": 1
     },
     {
       "filePath": "src/lib/providers/anthropic.ts",
@@ -1340,13 +1319,6 @@
       "severity": 1,
       "message": "'ProviderType' is defined but never used.",
       "count": 1
-    },
-    {
-      "filePath": "src/lib/server/daemon-state.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 8
     },
     {
       "filePath": "src/lib/server/embeddings.ts",

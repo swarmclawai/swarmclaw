@@ -35,8 +35,9 @@ import { KnowledgeList } from '@/components/knowledge/knowledge-list'
 import { KnowledgeSheet } from '@/components/knowledge/knowledge-sheet'
 import { PluginList } from '@/components/plugins/plugin-list'
 import { PluginSheet } from '@/components/plugins/plugin-sheet'
-import { UsageList } from '@/components/usage/usage-list'
 import { RunList } from '@/components/runs/run-list'
+import { ActivityFeed } from '@/components/activity/activity-feed'
+import { MetricsDashboard } from '@/components/usage/metrics-dashboard'
 import { ProjectList } from '@/components/projects/project-list'
 import { ProjectSheet } from '@/components/projects/project-sheet'
 import { NetworkBanner } from './network-banner'
@@ -314,6 +315,11 @@ export function AppLayout() {
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
               </svg>
             </NavItem>
+            <NavItem view="activity" label="Activity" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('activity')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="10" />
+              </svg>
+            </NavItem>
             <NavItem view="logs" label="Logs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('logs')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
@@ -463,7 +469,6 @@ export function AppLayout() {
           {activeView === 'webhooks' && <WebhookList inSidebar />}
           {activeView === 'mcp_servers' && <McpServerList />}
           {activeView === 'knowledge' && <KnowledgeList />}
-          {activeView === 'usage' && <UsageList />}
           {activeView === 'runs' && <RunList />}
           {activeView === 'logs' && <LogList />}
         </div>
@@ -562,7 +567,6 @@ export function AppLayout() {
             {activeView === 'knowledge' && <KnowledgeList />}
             {activeView === 'plugins' && <PluginList inSidebar />}
             {activeView === 'projects' && <ProjectList />}
-            {activeView === 'usage' && <UsageList />}
             {activeView === 'runs' && <RunList />}
             {activeView === 'logs' && <LogList />}
           </div>
@@ -596,6 +600,10 @@ export function AppLayout() {
             <TaskBoard />
           ) : activeView === 'memory' ? (
             <MemoryDetail />
+          ) : activeView === 'activity' ? (
+            <ActivityFeed />
+          ) : activeView === 'usage' ? (
+            <MetricsDashboard />
           ) : activeView === 'settings' ? (
             <SettingsPage />
           ) : !sidebarOpen && FULL_WIDTH_VIEWS.has(activeView) ? (
@@ -604,7 +612,7 @@ export function AppLayout() {
                 <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">
                   {activeView === 'mcp_servers' ? 'MCP Servers' : activeView.replace('_', ' ')}
                 </h2>
-                {activeView !== 'usage' && activeView !== 'runs' && activeView !== 'logs' && (
+                {activeView !== 'runs' && activeView !== 'logs' && (
                   <button
                     onClick={openNewSheet}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 text-accent-bright bg-accent-soft hover:bg-[#6366F1]/15 transition-all cursor-pointer"
@@ -627,7 +635,6 @@ export function AppLayout() {
               {activeView === 'knowledge' && <KnowledgeList />}
               {activeView === 'plugins' && <PluginList />}
               {activeView === 'projects' && <ProjectList />}
-              {activeView === 'usage' && <UsageList />}
               {activeView === 'runs' && <RunList />}
               {activeView === 'logs' && <LogList />}
             </div>
@@ -742,16 +749,17 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   knowledge: 'Shared knowledge base accessible by all agents',
   logs: 'Application logs & error tracking',
   plugins: 'Extend agent capabilities with custom plugins',
-  usage: 'Token usage analytics & cost tracking',
+  usage: 'Usage metrics, cost tracking & agent performance',
   runs: 'Live run monitoring & history',
   settings: 'Manage providers, API keys & orchestrator engine',
   projects: 'Group agents, tasks & schedules into projects',
+  activity: 'Audit trail of all entity mutations',
 }
 
 const FULL_WIDTH_VIEWS = new Set<AppView>([
   'schedules', 'secrets', 'providers', 'skills',
   'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'plugins',
-  'usage', 'runs', 'logs', 'settings', 'projects',
+  'usage', 'runs', 'logs', 'settings', 'projects', 'activity',
 ])
 
 const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents'>, { icon: string; title: string; description: string; features: string[] }> = {
@@ -850,6 +858,12 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents'>, { icon: string; titl
     title: 'Projects',
     description: 'Organize your work into projects. Group agents, tasks, and schedules under a common scope.',
     features: ['Create named projects with color badges', 'Assign agents and tasks to projects', 'Filter sidebar views by project', 'Global view when no filter is active'],
+  },
+  activity: {
+    icon: 'clock',
+    title: 'Activity',
+    description: 'Audit trail of all entity mutations across the system.',
+    features: ['Track agent, task, and connector changes', 'Filter by entity type and action', 'Real-time updates via WebSocket', 'Relative timestamps'],
   },
 }
 

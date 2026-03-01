@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadAgents, saveAgents, loadSessions, saveSessions } from '@/lib/server/storage'
+import { loadAgents, saveAgents, loadSessions, saveSessions, logActivity } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { mutateItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
 
@@ -22,6 +22,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return agent
   })
   if (!result) return notFound()
+  logActivity({ entityType: 'agent', entityId: id, action: 'updated', actor: 'user', summary: `Agent updated: "${result.name}"` })
   return NextResponse.json(result)
 }
 
@@ -33,6 +34,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     return agent
   })
   if (!result) return notFound()
+  logActivity({ entityType: 'agent', entityId: id, action: 'deleted', actor: 'user', summary: `Agent trashed: "${result.name}"` })
 
   // Detach sessions from the trashed agent
   const sessions = loadSessions()

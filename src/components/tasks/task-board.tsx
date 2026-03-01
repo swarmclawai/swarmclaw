@@ -18,16 +18,40 @@ export function TaskBoard() {
   const agents = useAppStore((s) => s.agents)
   const showArchived = useAppStore((s) => s.showArchivedTasks)
   const setShowArchived = useAppStore((s) => s.setShowArchivedTasks)
-  const [filterAgentId, setFilterAgentId] = useState<string>('')
+  // URL-based filter state
+  const [filterAgentId, setFilterAgentId] = useState<string>(() => {
+    if (typeof window === 'undefined') return ''
+    return new URLSearchParams(window.location.search).get('agent') || ''
+  })
+  const [filterTag, setFilterTag] = useState<string>(() => {
+    if (typeof window === 'undefined') return ''
+    return new URLSearchParams(window.location.search).get('tag') || ''
+  })
+
+  // Sync filters to URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams()
+    if (filterAgentId) params.set('agent', filterAgentId)
+    if (filterTag) params.set('tag', filterTag)
+    const qs = params.toString()
+    const newUrl = `${window.location.pathname}${qs ? `?${qs}` : ''}`
+    window.history.replaceState(null, '', newUrl)
+  }, [filterAgentId, filterTag])
 
   useEffect(() => { loadTasks(); loadAgents() }, [])
   useWs('tasks', loadTasks, 5000)
+
+  // Collect all unique tags across tasks
+  const allTags = Array.from(new Set(Object.values(tasks).flatMap((t) => t.tags || []))).sort()
 
   const columns: BoardTaskStatus[] = showArchived ? [...ACTIVE_COLUMNS, 'archived'] : ACTIVE_COLUMNS
 
   const tasksByStatus = (status: BoardTaskStatus) =>
     Object.values(tasks)
-      .filter((t) => t.status === status && (!filterAgentId || t.agentId === filterAgentId))
+      .filter((t) => t.status === status
+        && (!filterAgentId || t.agentId === filterAgentId)
+        && (!filterTag || (t.tags && t.tags.includes(filterTag))))
       .sort((a, b) => b.updatedAt - a.updatedAt)
 
   const handleDrop = useCallback(async (taskId: string, newStatus: BoardTaskStatus) => {
@@ -59,6 +83,20 @@ export function TaskBoard() {
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>
+          {allTags.length > 0 && (
+            <select
+              value={filterTag}
+              onChange={(e) => setFilterTag(e.target.value)}
+              className="px-3 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border
+                bg-transparent border-white/[0.06] text-text-3 hover:bg-white/[0.03] appearance-none"
+              style={{ fontFamily: 'inherit', minWidth: 110 }}
+            >
+              <option value="">All Tags</option>
+              {allTags.map((tag) => (
+                <option key={tag} value={tag}>{tag}</option>
+              ))}
+            </select>
+          )}
           <button
             onClick={() => setShowArchived(!showArchived)}
             className={`px-4 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border

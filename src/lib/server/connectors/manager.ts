@@ -53,6 +53,21 @@ const lockKey = '__swarmclaw_connector_locks__' as const
 const locks: Map<string, Promise<void>> =
   g[lockKey] ?? (g[lockKey] = new Map<string, Promise<void>>())
 
+/** Generation counter per connector — used to detect stale lifecycle events after restart */
+const genCounterKey = '__swarmclaw_connector_gen__' as const
+const generationCounter: Map<string, number> =
+  g[genCounterKey] ?? (g[genCounterKey] = new Map<string, number>())
+
+/** Get the current generation number for a connector (0 if never started) */
+export function getConnectorGeneration(connectorId: string): number {
+  return generationCounter.get(connectorId) ?? 0
+}
+
+/** Check whether a given generation is still the current one for a connector */
+export function isCurrentGeneration(connectorId: string, gen: number): boolean {
+  return generationCounter.get(connectorId) === gen
+}
+
 /** Get platform implementation lazily */
 export async function getPlatform(platform: string) {
   switch (platform) {
@@ -725,6 +740,9 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
   }
 
   const platform = await getPlatform(connector.platform)
+
+  // Bump generation counter so stale events from previous instances are ignored
+  generationCounter.set(connectorId, (generationCounter.get(connectorId) ?? 0) + 1)
 
   try {
     const instance = await platform.start(connector, botToken, (msg) => routeMessage(connector, msg))

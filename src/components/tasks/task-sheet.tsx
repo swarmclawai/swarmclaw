@@ -25,6 +25,9 @@ export function TaskSheet() {
   const agents = useAppStore((s) => s.agents)
   const loadAgents = useAppStore((s) => s.loadAgents)
 
+  const appSettings = useAppStore((s) => s.appSettings)
+  const loadSettings = useAppStore((s) => s.loadSettings)
+
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [agentId, setAgentId] = useState('')
@@ -33,6 +36,11 @@ export function TaskSheet() {
   const [uploading, setUploading] = useState(false)
   const [cwd, setCwd] = useState('')
   const [file, setFile] = useState<string | null>(null)
+  const [tags, setTags] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState('')
+  const [blockedBy, setBlockedBy] = useState<string[]>([])
+  const [dueAt, setDueAt] = useState<string>('')
+  const [customFields, setCustomFields] = useState<Record<string, string | number | boolean>>({})
 
   const editing = editingId ? tasks[editingId] : null
   const agentList = Object.values(agents)
@@ -40,6 +48,7 @@ export function TaskSheet() {
   useEffect(() => {
     if (open) {
       loadAgents()
+      loadSettings()
       if (editing) {
         setTitle(editing.title)
         setDescription(editing.description)
@@ -47,6 +56,10 @@ export function TaskSheet() {
         setImages(editing.images || [])
         setCwd(editing.cwd || '')
         setFile(editing.file || null)
+        setTags(editing.tags || [])
+        setBlockedBy(editing.blockedBy || [])
+        setDueAt(editing.dueAt ? new Date(editing.dueAt).toISOString().slice(0, 10) : '')
+        setCustomFields(editing.customFields || {})
       } else {
         setTitle('')
         setDescription('')
@@ -54,8 +67,13 @@ export function TaskSheet() {
         setImages([])
         setCwd('')
         setFile(null)
+        setTags([])
+        setBlockedBy([])
+        setDueAt('')
+        setCustomFields({})
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingId])
 
   // Update default agent when agents load (only if no agent selected yet)
@@ -71,7 +89,12 @@ export function TaskSheet() {
   }
 
   const handleSave = async () => {
-    const payload: Partial<BoardTask> & { title: string; description: string; agentId: string } = { title: title.trim() || 'Untitled Task', description, agentId, images, cwd: cwd || undefined, file: file || undefined }
+    const payload: Partial<BoardTask> & { title: string; description: string; agentId: string } = {
+      title: title.trim() || 'Untitled Task', description, agentId, images,
+      cwd: cwd || undefined, file: file || undefined,
+      tags, blockedBy, dueAt: dueAt ? new Date(dueAt).getTime() : null,
+      customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
+    }
     if (editing) {
       await updateTask(editing.id, payload)
     } else {
@@ -247,6 +270,129 @@ export function TaskSheet() {
           onClear={() => { setCwd(''); setFile(null) }}
         />
       </div>
+
+      {/* Tags */}
+      <div className="mb-8">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
+          Tags <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+        </label>
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {tags.map((tag) => (
+              <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-[8px] bg-indigo-500/10 text-indigo-400 text-[12px] font-600">
+                {tag}
+                <button onClick={() => setTags((prev) => prev.filter((t) => t !== tag))} className="text-indigo-400/60 hover:text-indigo-400 cursor-pointer border-none bg-transparent p-0 text-[14px] leading-none">&times;</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="relative">
+          <input
+            type="text"
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && tagInput.trim()) {
+                e.preventDefault()
+                const t = tagInput.trim().toLowerCase()
+                if (!tags.includes(t)) setTags((prev) => [...prev, t])
+                setTagInput('')
+              }
+            }}
+            placeholder="Type and press Enter to add..."
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+            list="tag-suggestions"
+          />
+          <datalist id="tag-suggestions">
+            {Array.from(new Set(Object.values(tasks).flatMap((t) => t.tags || [])))
+              .filter((t) => !tags.includes(t) && t.includes(tagInput.toLowerCase()))
+              .slice(0, 10)
+              .map((t) => <option key={t} value={t} />)}
+          </datalist>
+        </div>
+      </div>
+
+      {/* Dependencies */}
+      <div className="mb-8">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
+          Blocked By <span className="normal-case tracking-normal font-normal text-text-3">(tasks that must complete first)</span>
+        </label>
+        <select
+          multiple
+          value={blockedBy}
+          onChange={(e) => setBlockedBy(Array.from(e.target.selectedOptions, (o) => o.value))}
+          className="w-full px-4 py-3 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[13px] outline-none min-h-[80px] focus-glow"
+          style={{ fontFamily: 'inherit' }}
+        >
+          {Object.values(tasks)
+            .filter((t) => t.id !== editingId && t.status !== 'archived')
+            .map((t) => <option key={t.id} value={t.id}>{t.title} ({t.status})</option>)}
+        </select>
+        {editing && Array.isArray(editing.blocks) && editing.blocks.length > 0 && (
+          <div className="mt-3">
+            <span className="text-[11px] font-600 text-text-3 uppercase tracking-[0.06em]">Blocks:</span>
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {editing.blocks.map((bid) => {
+                const bt = tasks[bid]
+                return bt ? (
+                  <span key={bid} className="px-2 py-1 rounded-[6px] bg-white/[0.04] text-text-3 text-[11px] font-600">{bt.title}</span>
+                ) : null
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Due Date */}
+      <div className="mb-8">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
+          Due Date <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+        </label>
+        <input
+          type="date"
+          value={dueAt}
+          onChange={(e) => setDueAt(e.target.value)}
+          className={`${inputClass} appearance-none`}
+          style={{ fontFamily: 'inherit', colorScheme: 'dark' }}
+        />
+      </div>
+
+      {/* Custom Fields */}
+      {appSettings.taskCustomFieldDefs && appSettings.taskCustomFieldDefs.length > 0 && (
+        <div className="mb-8">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Custom Fields</label>
+          <div className="space-y-4">
+            {appSettings.taskCustomFieldDefs.map((def) => (
+              <div key={def.key}>
+                <label className="block text-[12px] text-text-3 mb-1.5">{def.label}</label>
+                {def.type === 'select' ? (
+                  <select
+                    value={String(customFields[def.key] ?? '')}
+                    onChange={(e) => setCustomFields((prev) => ({ ...prev, [def.key]: e.target.value }))}
+                    className={inputClass}
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <option value="">—</option>
+                    {def.options?.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    type={def.type === 'number' ? 'number' : 'text'}
+                    value={String(customFields[def.key] ?? '')}
+                    onChange={(e) => setCustomFields((prev) => ({
+                      ...prev,
+                      [def.key]: def.type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value,
+                    }))}
+                    className={inputClass}
+                    style={{ fontFamily: 'inherit' }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {editing?.result && (
         <div className="mb-8">

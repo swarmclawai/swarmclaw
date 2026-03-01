@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadConnectors, saveConnectors } from '@/lib/server/storage'
+import { loadConnectors, saveConnectors, logActivity } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { notFound } from '@/lib/server/collection-helpers'
 
@@ -39,10 +39,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const manager = await import('@/lib/server/connectors/manager')
       if (body.action === 'start') {
         await manager.startConnector(id)
+        logActivity({ entityType: 'connector', entityId: id, action: 'started', actor: 'user', summary: `Connector started: "${connector.name}"` })
       } else if (body.action === 'stop') {
         await manager.stopConnector(id)
+        logActivity({ entityType: 'connector', entityId: id, action: 'stopped', actor: 'user', summary: `Connector stopped: "${connector.name}"` })
       } else {
         await manager.repairConnector(id)
+        logActivity({ entityType: 'connector', entityId: id, action: 'started', actor: 'user', summary: `Connector repaired: "${connector.name}"` })
       }
     } catch (err: unknown) {
       // Re-read to get the error state saved by startConnector

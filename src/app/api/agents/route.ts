@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { loadAgents, saveAgents } from '@/lib/server/storage'
+import { loadAgents, saveAgents, logActivity } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { notify } from '@/lib/server/ws-hub'
 export const dynamic = 'force-dynamic'
@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     updatedAt: now,
   }
   saveAgents(agents)
+  logActivity({ entityType: 'agent', entityId: id, action: 'created', actor: 'user', summary: `Agent created: "${agents[id].name}"` })
   notify('agents')
   return NextResponse.json(agents[id])
 }

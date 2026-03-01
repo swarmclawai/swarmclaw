@@ -49,6 +49,8 @@ const COLLECTIONS = [
   'mcp_servers',
   'webhook_logs',
   'projects',
+  'activity',
+  'webhook_retry_queue',
 ] as const
 
 for (const table of COLLECTIONS) {
@@ -739,6 +741,38 @@ export function loadWebhookLogs(): Record<string, any> {
 
 export function appendWebhookLog(id: string, entry: any) {
   upsertCollectionItem('webhook_logs', id, entry)
+}
+
+// --- Activity / Audit Trail ---
+export function loadActivity(): Record<string, unknown> {
+  return loadCollection('activity')
+}
+
+export function logActivity(entry: {
+  entityType: string
+  entityId: string
+  action: string
+  actor: string
+  actorId?: string
+  summary: string
+  detail?: Record<string, unknown>
+}) {
+  const id = crypto.randomBytes(8).toString('hex')
+  const record = { id, ...entry, timestamp: Date.now() }
+  upsertCollectionItem('activity', id, record)
+}
+
+// --- Webhook Retry Queue ---
+export function loadWebhookRetryQueue(): Record<string, unknown> {
+  return loadCollection('webhook_retry_queue')
+}
+
+export function upsertWebhookRetry(id: string, entry: unknown) {
+  upsertCollectionItem('webhook_retry_queue', id, entry)
+}
+
+export function deleteWebhookRetry(id: string) {
+  deleteCollectionItem('webhook_retry_queue', id)
 }
 
 export function getSessionMessages(sessionId: string): Message[] {

@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter } from '../types'
+import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter, ActivityEntry } from '../types'
 import { fetchSessions, fetchDirs, fetchProviders, fetchCredentials } from '../lib/sessions'
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
@@ -89,6 +89,8 @@ interface AppState {
 
   tasks: Record<string, BoardTask>
   loadTasks: (includeArchived?: boolean) => Promise<void>
+  optimisticUpdateTask: (taskId: string, patch: Partial<BoardTask>) => Promise<boolean>
+  optimisticDeleteTask: (taskId: string) => Promise<boolean>
   showArchivedTasks: boolean
   setShowArchivedTasks: (show: boolean) => void
   taskSheetOpen: boolean
@@ -177,6 +179,10 @@ interface AppState {
   // Fleet sidebar filter (F16)
   fleetFilter: FleetFilter
   setFleetFilter: (filter: FleetFilter) => void
+
+  // Activity / Audit Trail
+  activityEntries: ActivityEntry[]
+  loadActivity: (filters?: { entityType?: string; limit?: number }) => Promise<void>
 
 }
 
@@ -394,6 +400,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       // ignore
     }
   },
+  optimisticUpdateTask: async (taskId, patch) => {
+    const prev = get().tasks[taskId]
+    if (!prev) return false
+    set({ tasks: { ...get().tasks, [taskId]: { ...prev, ...patch, updatedAt: Date.now() } } })
+    try {
+      await api('PUT', `/tasks/${taskId}`, patch)
+      return true
+    } catch {
+      set({ tasks: { ...get().tasks, [taskId]: prev } })
+      return false
+    }
+  },
+  optimisticDeleteTask: async (taskId) => {
+    const prev = get().tasks[taskId]
+    if (!prev) return false
+    const next = { ...get().tasks }
+    delete next[taskId]
+    set({ tasks: next })
+    try {
+      await api('DELETE', `/tasks/${taskId}`)
+      return true
+    } catch {
+      set({ tasks: { ...get().tasks, [taskId]: prev } })
+      return false
+    }
+  },
   showArchivedTasks: false,
   setShowArchivedTasks: (show) => {
     set({ showArchivedTasks: show })
@@ -543,5 +575,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Fleet sidebar filter
   fleetFilter: 'all',
   setFleetFilter: (filter) => set({ fleetFilter: filter }),
+
+  // Activity / Audit Trail
+  activityEntries: [],
+  loadActivity: async (filters) => {
+    try {
+      const params = new URLSearchParams()
+      if (filters?.entityType) params.set('entityType', filters.entityType)
+      if (filters?.limit) params.set('limit', String(filters.limit))
+      const qs = params.toString()
+      const entries = await api<ActivityEntry[]>('GET', `/activity${qs ? `?${qs}` : ''}`)
+      set({ activityEntries: entries })
+    } catch {
+      // ignore
+    }
+  },
 
 }))

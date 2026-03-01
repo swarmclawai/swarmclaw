@@ -14,8 +14,9 @@ export function ExecApprovalCard({ approval }: Props) {
     resolveApproval(approval.id, decision)
   }
 
+  const alreadyResolved = approval.error?.includes('Already resolved') ?? false
   const expired = approval.expiresAtMs < Date.now()
-  const disabled = !!approval.resolving || expired
+  const disabled = !!approval.resolving || expired || alreadyResolved
 
   return (
     <div className="my-2 rounded-[12px] border border-amber-500/20 bg-amber-500/[0.04] p-3.5">
@@ -47,11 +48,13 @@ export function ExecApprovalCard({ approval }: Props) {
         )}
       </div>
 
-      {approval.error && (
+      {approval.error && !alreadyResolved && (
         <p className="text-[12px] text-red-400 mb-2">{approval.error}</p>
       )}
 
-      {expired ? (
+      {alreadyResolved ? (
+        <p className="text-[12px] text-text-3/50 italic">Already resolved by another session</p>
+      ) : expired ? (
         <p className="text-[12px] text-text-3/50 italic">Approval expired</p>
       ) : (
         <div className="flex items-center gap-2">

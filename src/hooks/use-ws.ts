@@ -2,12 +2,14 @@
 
 import { useEffect, useRef } from 'react'
 import { subscribeWs, unsubscribeWs, isWsConnected } from '@/lib/ws-client'
+import { usePageActive } from './use-page-active'
 
 /**
  * Subscribe to a WebSocket topic. Calls `handler` on push events.
  * Falls back to polling at `fallbackMs` when WS is disconnected.
  */
 export function useWs(topic: string, handler: () => void, fallbackMs?: number) {
+  const isActive = usePageActive()
   const handlerRef = useRef(handler)
   handlerRef.current = handler
   const fallbackMsRef = useRef(fallbackMs)
@@ -23,11 +25,20 @@ export function useWs(topic: string, handler: () => void, fallbackMs?: number) {
   }, [topic])
 
   // Fallback polling — separate effect so it doesn't tear down WS subscription
+  // Pauses when tab is hidden; triggers immediate fetch when tab becomes visible again
   useEffect(() => {
     if (!topic) return
 
     let fallbackId: ReturnType<typeof setInterval> | null = null
     const cb = () => handlerRef.current()
+
+    // When page becomes visible again, fire an immediate refresh
+    if (isActive) {
+      cb()
+    }
+
+    // Don't run polling while the tab is hidden
+    if (!isActive) return
 
     const startFallback = () => {
       const ms = fallbackMsRef.current
@@ -62,5 +73,6 @@ export function useWs(topic: string, handler: () => void, fallbackMs?: number) {
       stopFallback()
       clearInterval(checkId)
     }
-  }, [topic])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topic, isActive])
 }

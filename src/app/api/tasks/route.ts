@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { loadTasks, saveTasks, loadSettings } from '@/lib/server/storage'
+import { loadTasks, saveTasks, loadSettings, logActivity } from '@/lib/server/storage'
 import { enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
@@ -88,6 +88,11 @@ export async function POST(req: Request) {
     retryScheduledAt: null,
     deadLetteredAt: null,
     checkpoint: null,
+    blockedBy: Array.isArray(body.blockedBy) ? body.blockedBy.filter((s: unknown) => typeof s === 'string') : [],
+    blocks: Array.isArray(body.blocks) ? body.blocks.filter((s: unknown) => typeof s === 'string') : [],
+    tags: Array.isArray(body.tags) ? body.tags.filter((s: unknown) => typeof s === 'string') : [],
+    dueAt: typeof body.dueAt === 'number' ? body.dueAt : null,
+    customFields: body.customFields && typeof body.customFields === 'object' ? body.customFields : undefined,
   }
 
   if (tasks[id].status === 'completed') {
@@ -106,6 +111,7 @@ export async function POST(req: Request) {
   }
 
   saveTasks(tasks)
+  logActivity({ entityType: 'task', entityId: id, action: 'created', actor: 'user', summary: `Task created: "${tasks[id].title}"` })
   pushMainLoopEventToMainSessions({
     type: 'task_created',
     text: `Task created: "${tasks[id].title}" (${id}) with status ${tasks[id].status}.`,

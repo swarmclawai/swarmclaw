@@ -336,7 +336,35 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human' | 'orchestrated'
-export type AppView = 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'runs' | 'logs' | 'settings' | 'projects'
+export type AppView = 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
+
+// --- Activity / Audit Trail ---
+
+export interface ActivityEntry {
+  id: string
+  entityType: 'agent' | 'task' | 'connector' | 'session' | 'webhook' | 'schedule'
+  entityId: string
+  action: 'created' | 'updated' | 'deleted' | 'started' | 'stopped' | 'queued' | 'completed' | 'failed' | 'approved' | 'rejected'
+  actor: 'user' | 'agent' | 'system' | 'daemon'
+  actorId?: string
+  summary: string
+  detail?: Record<string, unknown>
+  timestamp: number
+}
+
+// --- Webhook Retry Queue ---
+
+export interface WebhookRetryEntry {
+  id: string
+  webhookId: string
+  event: string
+  payload: string
+  attempts: number
+  maxAttempts: number
+  nextRetryAt: number
+  deadLettered: boolean
+  createdAt: number
+}
 
 export interface Project {
   id: string
@@ -461,6 +489,8 @@ export interface AppSettings {
   // Web search provider
   webSearchProvider?: 'duckduckgo' | 'google' | 'bing' | 'searxng' | 'tavily' | 'brave'
   searxngUrl?: string
+  // Task custom field definitions
+  taskCustomFieldDefs?: Array<{ key: string; label: string; type: 'text' | 'number' | 'select'; options?: string[] }>
   // OpenClaw sync settings
   openclawWorkspacePath?: string | null
   openclawAutoSyncMemory?: boolean
@@ -630,6 +660,15 @@ export interface BoardTask {
     args: Record<string, unknown>
     threadId: string
   } | null
+  // Task dependencies (DAG)
+  blockedBy?: string[]
+  blocks?: string[]
+  // Task tags
+  tags?: string[]
+  // Due date
+  dueAt?: number | null
+  // Custom fields
+  customFields?: Record<string, string | number | boolean>
 }
 
 // --- MCP Servers ---

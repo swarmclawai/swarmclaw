@@ -31,11 +31,12 @@ function handleMessage(event: MessageEvent) {
 
 function scheduleReconnect() {
   if (reconnectTimer) return
+  const jitter = Math.random() * 2000
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     if (!accessKey) return
     connect(accessKey)
-  }, reconnectDelay)
+  }, reconnectDelay + jitter)
   reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY)
 }
 
