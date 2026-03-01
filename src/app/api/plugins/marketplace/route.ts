@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic'
+
 
 const REGISTRY_URL = 'https://swarmclaw.ai/registry/plugins.json'
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
 let cache: { data: any; fetchedAt: number } | null = null
 
-export async function GET() {
+export async function GET(_req: Request) {
   const now = Date.now()
 
   if (cache && now - cache.fetchedAt < CACHE_TTL) {

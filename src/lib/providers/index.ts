@@ -246,6 +246,7 @@ export function getProviderList(): ProviderInfo[] {
     .map(({ handler, ...info }) => ({
       ...info,
       models: overrides[info.id] || info.models,
+      defaultModels: info.models,
     }))
   const customs = Object.values(getCustomProviders())
     .filter((c) => c.isEnabled)
@@ -253,6 +254,7 @@ export function getProviderList(): ProviderInfo[] {
       id: c.id as any,
       name: c.name,
       models: c.models,
+      defaultModels: c.models,
       requiresApiKey: c.requiresApiKey,
       requiresEndpoint: false,
       defaultEndpoint: c.baseUrl,

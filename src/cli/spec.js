@@ -7,7 +7,6 @@ const COMMAND_GROUPS = {
       create: { description: 'Create an agent', method: 'POST', path: '/agents' },
       update: { description: 'Update an agent', method: 'PUT', path: '/agents/:id', params: ['id'] },
       delete: { description: 'Delete an agent', method: 'DELETE', path: '/agents/:id', params: ['id'] },
-      generate: { description: 'Generate an agent definition', method: 'POST', path: '/agents/generate' },
     },
   },
   auth: {
@@ -95,13 +94,6 @@ const COMMAND_GROUPS = {
         path: '/tts',
         binary: true,
       },
-    },
-  },
-  generate: {
-    description: 'Structured AI generation helpers',
-    commands: {
-      create: { description: 'Generate object from prompt/type', method: 'POST', path: '/generate' },
-      info: { description: 'Get active generator provider/model', method: 'GET', path: '/generate/info' },
     },
   },
   logs: {

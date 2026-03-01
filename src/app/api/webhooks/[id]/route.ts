@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { NextResponse } from 'next/server'
 import { loadAgents, loadSessions, loadWebhooks, saveSessions, saveWebhooks, appendWebhookLog } from '@/lib/server/storage'
+import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { enqueueSessionRun } from '@/lib/server/session-run-manager'
 
 function normalizeEvents(value: unknown): string[] {
@@ -137,7 +138,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     session = {
       id: sessionId,
       name: sessionName,
-      cwd: process.cwd(),
+      cwd: WORKSPACE_DIR,
       user: 'system',
       provider: agent.provider || 'claude-cli',
       model: agent.model || '',

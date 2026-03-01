@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import type { ToolEvent } from '@/stores/use-chat-store'
+import { useAppStore } from '@/stores/use-app-store'
 
 const TOOL_COLORS: Record<string, string> = {
   execute_command: '#F59E0B',
@@ -15,6 +16,7 @@ const TOOL_COLORS: Record<string, string> = {
   send_file: '#10B981',
   web_search: '#3B82F6',
   web_fetch: '#3B82F6',
+  delegate_to_agent: '#6366F1',
   delegate_to_claude_code: '#6366F1',
   delegate_to_codex_cli: '#0EA5E9',
   delegate_to_opencode_cli: '#14B8A6',
@@ -63,6 +65,7 @@ export const TOOL_LABELS: Record<string, string> = {
   claude_code: 'Claude Code',
   codex_cli: 'Codex CLI',
   opencode_cli: 'OpenCode CLI',
+  delegate_to_agent: 'Agent Delegation',
   delegate_to_claude_code: 'Claude Code',
   delegate_to_codex_cli: 'Codex CLI',
   delegate_to_opencode_cli: 'OpenCode CLI',
@@ -96,6 +99,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   claude_code: 'Enable delegation to Claude Code CLI',
   codex_cli: 'Enable delegation to OpenAI Codex CLI',
   opencode_cli: 'Enable delegation to OpenCode CLI',
+  delegate_to_agent: 'Delegate a task to another agent',
   delegate_to_claude_code: 'Delegate complex coding tasks to Claude Code',
   delegate_to_codex_cli: 'Delegate complex coding tasks to Codex CLI',
   delegate_to_opencode_cli: 'Delegate complex coding tasks to OpenCode CLI',
@@ -181,6 +185,7 @@ function getInputPreview(name: string, input: string): string {
       return ''
     }
     if (name === 'send_file') return parsed.filePath || ''
+    if (name === 'delegate_to_agent') return `${parsed.agentName}: ${(parsed.task || '').slice(0, 80)}`
 
     if (parsed.command) return parsed.command
     if (parsed.filePath) return parsed.filePath
@@ -280,6 +285,24 @@ export function ToolCallBubble({ event }: { event: ToolEvent }) {
 
   const hasMedia = media.images.length > 0 || media.videos.length > 0 || media.pdfs.length > 0 || media.files.length > 0
 
+  // Parse delegation info for clickable agent link
+  const delegationInfo = useMemo(() => {
+    if (event.name !== 'delegate_to_agent') return null
+    try {
+      const parsed = JSON.parse(event.input)
+      return { agentName: parsed.agentName || '', agentId: parsed.agentId || '', task: parsed.task || '' }
+    } catch { return null }
+  }, [event.name, event.input])
+
+  const handleAgentClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (delegationInfo?.agentId) {
+      const store = useAppStore.getState()
+      store.setActiveView('agents')
+      store.setCurrentAgent(delegationInfo.agentId)
+    }
+  }
+
   return (
     <div className="w-full text-left">
       <button
@@ -303,9 +326,24 @@ export function ToolCallBubble({ event }: { event: ToolEvent }) {
           <span className="text-[12px] font-700 uppercase tracking-wider shrink-0" style={{ color }}>
             {label}
           </span>
-          <span className="text-[12px] text-text-2 font-mono truncate flex-1">
-            {inputPreview}
-          </span>
+          {delegationInfo ? (
+            <span className="text-[12px] text-text-2 font-mono truncate flex-1">
+              <span
+                role="link"
+                tabIndex={0}
+                onClick={handleAgentClick}
+                onKeyDown={(e) => e.key === 'Enter' && handleAgentClick(e as any)}
+                className="text-accent-bright hover:underline cursor-pointer font-600"
+              >
+                {delegationInfo.agentName}
+              </span>
+              {delegationInfo.task && <span className="text-text-3">: {delegationInfo.task.slice(0, 80)}</span>}
+            </span>
+          ) : (
+            <span className="text-[12px] text-text-2 font-mono truncate flex-1">
+              {inputPreview}
+            </span>
+          )}
           {hasMedia && !expanded && (
             <span className="text-[10px] text-text-3/50 font-500 shrink-0">
               {media.images.length > 0 && `${media.images.length} image${media.images.length > 1 ? 's' : ''}`}

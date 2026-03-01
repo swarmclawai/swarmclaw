@@ -59,8 +59,19 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
     await loadMcpServers()
   }
 
+  const handleRetest = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    setStatuses((prev) => ({ ...prev, [id]: { ok: false, loading: true } }))
+    try {
+      const res = await api<{ ok: boolean; tools?: string[]; error?: string }>('POST', `/mcp-servers/${id}/test`)
+      setStatuses((prev) => ({ ...prev, [id]: { ok: res.ok, tools: res.tools, error: res.error, loading: false } }))
+    } catch {
+      setStatuses((prev) => ({ ...prev, [id]: { ok: false, error: 'Test failed', loading: false } }))
+    }
+  }
+
   return (
-    <div className={`flex-1 overflow-y-auto ${inSidebar ? 'px-3 pb-4' : 'px-4'}`}>
+    <div className={`flex-1 overflow-y-auto ${inSidebar ? 'px-3 pb-4' : 'px-5 pb-6'}`}>
       {serverList.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-[13px] text-text-3/60">No MCP servers configured</p>
@@ -73,7 +84,7 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
           </button>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className={inSidebar ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'}>
           {serverList.map((server) => (
             <button
               key={server.id}
@@ -96,6 +107,17 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
                   <span className="font-display text-[14px] font-600 text-text truncate">{server.name}</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-2">
+                  {!inSidebar && (
+                    <button
+                      onClick={(e) => handleRetest(e, server.id)}
+                      className="text-text-3/40 hover:text-text-2 transition-colors p-0.5"
+                      title="Re-test connection"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16" />
+                      </svg>
+                    </button>
+                  )}
                   <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${transportColors[server.transport] || 'bg-white/10 text-text-3'}`}>
                     {server.transport}
                   </span>

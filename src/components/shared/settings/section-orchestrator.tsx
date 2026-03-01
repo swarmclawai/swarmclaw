@@ -1,6 +1,7 @@
 'use client'
 
 import { useAppStore } from '@/stores/use-app-store'
+import { ModelCombobox } from '@/components/shared/model-combobox'
 import type { SettingsSectionProps } from './types'
 
 const NON_LANGGRAPH_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
@@ -53,16 +54,14 @@ export function OrchestratorSection({ appSettings, patchSettings, inputClass }: 
         {lgProviderInfo && lgProviderInfo.models.length > 0 && (
           <div className="mb-5">
             <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Model</label>
-            <select
+            <ModelCombobox
+              providerId={lgProviderInfo.id}
               value={appSettings.langGraphModel || lgProviderInfo.models[0]}
-              onChange={(e) => patchSettings({ langGraphModel: e.target.value })}
-              className={`${inputClass} appearance-none cursor-pointer`}
-              style={{ fontFamily: 'inherit' }}
-            >
-              {lgProviderInfo.models.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+              onChange={(m) => patchSettings({ langGraphModel: m })}
+              models={lgProviderInfo.models}
+              defaultModels={lgProviderInfo.defaultModels}
+              className={`${inputClass} cursor-pointer`}
+            />
           </div>
         )}
 

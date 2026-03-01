@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { loadSecrets, saveSecrets, encryptKey } from '@/lib/server/storage'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   // Return secrets WITHOUT the encrypted values (just metadata)
   const secrets = loadSecrets()
   const safe = Object.fromEntries(

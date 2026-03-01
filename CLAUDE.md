@@ -105,10 +105,35 @@ SwarmClaw authenticates to OpenClaw gateways using ed25519 device identity, not 
 - `src/app/api/setup/openclaw-device/route.ts` — GET endpoint exposing device ID
 - `src/components/agents/agent-sheet.tsx` — UI for the pairing flow (~lines 658-740)
 
+### Real-time & Communication Patterns
+
+**Three transport layers serve different consumers:**
+
+| Transport | Port | Consumer | Purpose |
+|-|-|-|-|
+| HTTP REST API | `PORT` (3456) | CLI, external tools, frontend mutations | CRUD operations, all writes go through here |
+| SSE (Server-Sent Events) | `PORT` (3456) | Frontend chat | Streaming LLM responses via `/api/sessions/[id]/chat` |
+| WebSocket push | `PORT + 1` (3457) | Frontend state sync | Notify-on-mutate: pushes topic invalidations so clients re-fetch |
+
+**WebSocket architecture (`ws-hub.ts` / `ws-client.ts` / `use-ws.ts`):**
+- Separate WS server on `PORT + 1`, started from `instrumentation.ts`, stored on `globalThis.__swarmclaw_ws__` (HMR-safe)
+- Auth: `?key=` query param validated against access key
+- Protocol: clients subscribe to topics, server broadcasts `{topic, action, id?}` — no data over WS, just invalidation signals
+- Topics: `daemon`, `sessions`, `tasks`, `runs`, `connectors`, `agents`, `providers`, `schedules`, `logs`, `messages:{sessionId}`, `browser:{sessionId}`
+- `notify(topic)` is called from API route handlers and server modules after writes
+- Frontend `useWs(topic, handler, fallbackMs?)` hook subscribes and falls back to polling when WS is disconnected
+- `fallbackMs` is read from a ref (not an effect dep) to avoid teardown/re-render loops — changing fallback rate does not re-create the WS subscription
+- `connectWs(key)` is called from `page.tsx` after auth; `disconnectWs()` on logout
+
+**CLI (`src/cli/index.ts`, `bin/server-cmd.js`):**
+- CLI talks exclusively to the HTTP REST API — no WebSocket dependency
+- `bin/server-cmd.js` manages the server process: `start`/`stop`/`status`, `--port`, `--ws-port`, `--host`, `--detach`
+- `WS_PORT` env var is passed to the spawned server process
+
 ### Key Patterns
 - **Storage**: All entities stored as JSON blobs in SQLite collections, not normalized tables
 - **Streaming**: SSE (Server-Sent Events) for real-time chat responses
-- **Auth**: Single access key gate (no user accounts)
+- **Auth**: Single access key gate (no user accounts). API uses `X-Access-Key` header or `?key=` param (see `middleware.ts`)
 - **Secrets**: AES-256 encrypted credential vault (`CREDENTIAL_SECRET` env var)
 - **Native deps**: `better-sqlite3` requires native build (python3, make, g++ in Docker)
 - **Standalone build**: `next.config.ts` sets `output: 'standalone'` for self-contained deployment

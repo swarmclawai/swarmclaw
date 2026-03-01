@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { loadCredentials, saveCredentials, encryptKey } from '@/lib/server/storage'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   const creds = loadCredentials()
   const safe: Record<string, any> = {}
   for (const [id, c] of Object.entries(creds) as [string, any][]) {

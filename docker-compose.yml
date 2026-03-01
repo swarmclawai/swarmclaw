@@ -3,6 +3,7 @@ services:
     build: .
     ports:
       - "3456:3456"
+      - "3457:3457"
     volumes:
       - ./data:/app/data
       - ./.env.local:/app/.env.local

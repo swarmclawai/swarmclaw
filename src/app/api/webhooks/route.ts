@@ -1,6 +1,8 @@
 import crypto from 'crypto'
 import { NextResponse } from 'next/server'
 import { loadWebhooks, saveWebhooks } from '@/lib/server/storage'
+export const dynamic = 'force-dynamic'
+
 
 function normalizeEvents(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -10,7 +12,7 @@ function normalizeEvents(value: unknown): string[] {
     .filter(Boolean)
 }
 
-export async function GET() {
+export async function GET(_req: Request) {
   return NextResponse.json(loadWebhooks())
 }
 

@@ -56,7 +56,7 @@ const PROVIDER_DEFAULT_WINDOWS: Record<string, number> = {
   mistral: 128_000,
   xai: 131_072,
   fireworks: 32_768,
-  ollama: 8_192,
+  ollama: 32_768,
   openclaw: 128_000,
 }
 

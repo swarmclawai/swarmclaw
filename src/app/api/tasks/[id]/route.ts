@@ -5,6 +5,7 @@ import { disableSessionHeartbeat, enqueueTask, validateCompletedTasksQueue } fro
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
+import { notify } from '@/lib/server/ws-hub'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Keep completed queue integrity even if daemon is not running.
@@ -80,6 +81,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     enqueueTask(id)
   }
 
+  notify('tasks')
   return NextResponse.json(tasks[id])
 }
 
@@ -98,5 +100,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     text: `Task archived: "${tasks[id].title}" (${id}).`,
   })
 
+  notify('tasks')
   return NextResponse.json(tasks[id])
 }

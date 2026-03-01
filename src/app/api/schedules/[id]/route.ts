@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { loadSchedules, saveSchedules, deleteSchedule } from '@/lib/server/storage'
 import { resolveScheduleName } from '@/lib/schedule-name'
+import { notify } from '@/lib/server/ws-hub'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -16,6 +17,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     taskPrompt: schedules[id].taskPrompt,
   })
   saveSchedules(schedules)
+  notify('schedules')
   return NextResponse.json(schedules[id])
 }
 
@@ -24,5 +26,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const schedules = loadSchedules()
   if (!schedules[id]) return new NextResponse(null, { status: 404 })
   deleteSchedule(id)
+  notify('schedules')
   return NextResponse.json('ok')
 }

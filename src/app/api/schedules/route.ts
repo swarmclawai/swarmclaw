@@ -3,8 +3,11 @@ import crypto from 'crypto'
 import { loadSchedules, saveSchedules } from '@/lib/server/storage'
 import { resolveScheduleName } from '@/lib/schedule-name'
 import { findDuplicateSchedule } from '@/lib/schedule-dedupe'
+import { notify } from '@/lib/server/ws-hub'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   return NextResponse.json(loadSchedules())
 }
 
@@ -43,6 +46,7 @@ export async function POST(req: Request) {
       mutableDuplicate.updatedAt = now
       if (duplicateId) schedules[duplicateId] = duplicate
       saveSchedules(schedules)
+      notify('schedules')
     }
     return NextResponse.json(duplicate)
   }
@@ -74,5 +78,6 @@ export async function POST(req: Request) {
     createdAt: now,
   }
   saveSchedules(schedules)
+  notify('schedules')
   return NextResponse.json(schedules[id])
 }

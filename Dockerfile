@@ -39,5 +39,6 @@ ENV PORT=3456
 ENV HOSTNAME=0.0.0.0
 
 EXPOSE 3456
+EXPOSE 3457
 
 CMD ["node", "server.js"]

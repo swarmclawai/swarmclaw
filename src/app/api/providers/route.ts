@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getProviderList } from '@/lib/providers'
 import { loadProviderConfigs, saveProviderConfigs } from '@/lib/server/storage'
+import { notify } from '@/lib/server/ws-hub'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   return NextResponse.json(getProviderList())
 }
 
@@ -24,5 +27,6 @@ export async function POST(req: Request) {
     updatedAt: Date.now(),
   }
   saveProviderConfigs(configs)
+  notify('providers')
   return NextResponse.json(configs[id])
 }

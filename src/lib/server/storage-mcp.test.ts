@@ -33,8 +33,15 @@ function loadMcpServers(): Record<string, any> {
 }
 
 function saveMcpServers(m: Record<string, any>) {
+  const existingRows = db.prepare(`SELECT id FROM ${TABLE}`).all() as { id: string }[]
+  const nextIds = new Set(Object.keys(m))
+  const toDelete = existingRows.map((r) => r.id).filter((id) => !nextIds.has(id))
   const upsert = db.prepare(`INSERT OR REPLACE INTO ${TABLE} (id, data) VALUES (?, ?)`)
+  const del = db.prepare(`DELETE FROM ${TABLE} WHERE id = ?`)
   const transaction = db.transaction(() => {
+    for (const id of toDelete) {
+      del.run(id)
+    }
     for (const [id, val] of Object.entries(m)) {
       upsert.run(id, JSON.stringify(val))
     }
@@ -75,8 +82,10 @@ describe('MCP server storage', () => {
   })
 
   it('loadMcpServers returns all saved configs', () => {
-    // srv-1 already exists from previous test
-    saveMcpServers({ 'srv-2': { id: 'srv-2', name: 'Second' } })
+    saveMcpServers({
+      'srv-1': { id: 'srv-1', name: 'First' },
+      'srv-2': { id: 'srv-2', name: 'Second' },
+    })
 
     const all = loadMcpServers()
     assert.ok('srv-1' in all)
@@ -100,6 +109,20 @@ describe('MCP server storage', () => {
     // only one row for that id
     const count = (db.prepare(`SELECT COUNT(*) as c FROM ${TABLE} WHERE id = ?`).get('srv-u') as { c: number }).c
     assert.equal(count, 1)
+  })
+
+  it('saveMcpServers removes records omitted from the next save payload', () => {
+    saveMcpServers({
+      'srv-a': { id: 'srv-a', name: 'A' },
+      'srv-b': { id: 'srv-b', name: 'B' },
+    })
+    saveMcpServers({
+      'srv-b': { id: 'srv-b', name: 'B2' },
+    })
+
+    const all = loadMcpServers()
+    assert.equal('srv-a' in all, false)
+    assert.equal(all['srv-b'].name, 'B2')
   })
 
   it('deleteMcpServer removes the record', () => {

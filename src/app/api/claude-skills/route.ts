@@ -2,9 +2,11 @@ import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+export const dynamic = 'force-dynamic'
+
 
 /** GET /api/claude-skills — discover skills from ~/.claude/skills/ */
-export async function GET() {
+export async function GET(_req: Request) {
   const skillsDir = path.join(os.homedir(), '.claude', 'skills')
   const skills: { id: string; name: string; description: string }[] = []
 

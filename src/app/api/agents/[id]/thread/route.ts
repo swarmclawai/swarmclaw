@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { loadAgents, saveAgents, loadSessions, saveSessions } from '@/lib/server/storage'
+import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: agentId } = await params
@@ -36,7 +37,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const session = {
     id: sessionId,
     name: `agent-thread:${agentId}`,
-    cwd: process.cwd(),
+    cwd: WORKSPACE_DIR,
     user: user,
     provider: agent.provider,
     model: agent.model,

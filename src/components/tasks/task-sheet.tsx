@@ -3,9 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { createTask, updateTask, archiveTask, unarchiveTask } from '@/lib/tasks'
-import { api } from '@/lib/api-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
-import { AiGenBlock } from '@/components/shared/ai-gen-block'
 import { DirBrowser } from '@/components/shared/dir-browser'
 import type { BoardTask, TaskComment } from '@/types'
 
@@ -36,46 +34,12 @@ export function TaskSheet() {
   const [cwd, setCwd] = useState('')
   const [file, setFile] = useState<string | null>(null)
 
-  // AI generation state
-  const [aiPrompt, setAiPrompt] = useState('')
-  const [generating, setGenerating] = useState(false)
-  const [generated, setGenerated] = useState(false)
-  const [genError, setGenError] = useState('')
-  const appSettings = useAppStore((s) => s.appSettings)
-  const loadSettings = useAppStore((s) => s.loadSettings)
-
   const editing = editingId ? tasks[editingId] : null
   const orchestrators = Object.values(agents).filter((p) => p.isOrchestrator)
-
-  const handleGenerate = async () => {
-    if (!aiPrompt.trim()) return
-    setGenerating(true)
-    setGenError('')
-    try {
-      const result = await api<{ title?: string; description?: string; error?: string }>('POST', '/generate', { type: 'task', prompt: aiPrompt })
-      if (result.error) {
-        setGenError(result.error)
-      } else if (result.title || result.description) {
-        if (result.title) setTitle(result.title)
-        if (result.description) setDescription(result.description)
-        setGenerated(true)
-      } else {
-        setGenError('AI returned empty response — try again')
-      }
-    } catch (err: unknown) {
-      setGenError(err instanceof Error ? err.message : 'Generation failed')
-    }
-    setGenerating(false)
-  }
 
   useEffect(() => {
     if (open) {
       loadAgents()
-      loadSettings()
-      setAiPrompt('')
-      setGenerating(false)
-      setGenerated(false)
-      setGenError('')
       if (editing) {
         setTitle(editing.title)
         setDescription(editing.description)
@@ -184,14 +148,6 @@ export function TaskSheet() {
           {editing ? `Status: ${editing.status}` : 'Create a task and assign an orchestrator'}
         </p>
       </div>
-
-      {/* AI Generation */}
-      {!editing && <AiGenBlock
-        aiPrompt={aiPrompt} setAiPrompt={setAiPrompt}
-        generating={generating} generated={generated} genError={genError}
-        onGenerate={handleGenerate} appSettings={appSettings}
-        placeholder='Describe the task, e.g. "Audit all pages on example.com for SEO issues and broken links"'
-      />}
 
       <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Title</label>

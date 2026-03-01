@@ -25,3 +25,26 @@ test('validateTaskCompletion accepts screenshot delivery tasks with upload artif
 
   assert.equal(validation.ok, true)
 })
+
+test('validateTaskCompletion accepts concise non-implementation result summaries', () => {
+  const validation = validateTaskCompletion({
+    title: 'Answer greeting',
+    description: 'Respond to a basic hello prompt.',
+    result: 'Hello! How can I help you today?',
+    error: null,
+  } as Partial<BoardTask>)
+
+  assert.equal(validation.ok, true)
+})
+
+test('validateTaskCompletion still enforces stricter minimum for implementation tasks', () => {
+  const validation = validateTaskCompletion({
+    title: 'Fix retry bug',
+    description: 'Implement queue retry fixes and verify.',
+    result: 'Patched queue retry bug.',
+    error: null,
+  } as Partial<BoardTask>)
+
+  assert.equal(validation.ok, false)
+  assert.ok(validation.reasons.some((reason) => reason.includes('Result summary is too short')))
+})

@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { loadSkills, saveSkills } from '@/lib/server/storage'
 import { normalizeSkillPayload } from '@/lib/server/skills-normalize'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   return NextResponse.json(loadSkills())
 }
 

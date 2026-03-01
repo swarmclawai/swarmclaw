@@ -54,7 +54,7 @@ export function ScheduleList({ inSidebar }: Props) {
   return (
     <div className="flex-1 overflow-y-auto">
       {(filtered.length > 3 || search) && (
-        <div className="px-4 py-2.5">
+        <div className={inSidebar ? 'px-4 py-2.5' : 'px-5 py-2.5'}>
           <input
             type="text"
             value={search}
@@ -66,9 +66,12 @@ export function ScheduleList({ inSidebar }: Props) {
           />
         </div>
       )}
-      <div className="flex flex-col gap-1 px-2 pb-4">
+      <div className={inSidebar
+          ? 'flex flex-col gap-1 px-2 pb-4'
+          : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 px-5 pb-6'
+        }>
         {filtered.map((s) => (
-          <ScheduleCard key={s.id} schedule={s} />
+          <ScheduleCard key={s.id} schedule={s} inSidebar={inSidebar} />
         ))}
       </div>
     </div>

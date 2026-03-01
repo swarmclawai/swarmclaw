@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { loadAgents, saveAgents } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import { notify } from '@/lib/server/ws-hub'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   return NextResponse.json(loadAgents())
 }
 
@@ -29,5 +32,6 @@ export async function POST(req: Request) {
     updatedAt: now,
   }
   saveAgents(agents)
+  notify('agents')
   return NextResponse.json(agents[id])
 }

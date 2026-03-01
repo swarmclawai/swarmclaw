@@ -177,16 +177,18 @@ function startServer(opts) {
   }
 
   const port = opts.port || '3456'
+  const wsPort = opts.wsPort || String(Number(port) + 1)
   const host = opts.host || '0.0.0.0'
 
   const env = {
     ...process.env,
     PORT: port,
+    WS_PORT: wsPort,
     HOSTNAME: host,
     DATA_DIR,
   }
 
-  log(`Starting server on ${host}:${port}...`)
+  log(`Starting server on ${host}:${port} (WebSocket: ${wsPort})...`)
   log(`Data directory: ${DATA_DIR}`)
 
   if (opts.detach) {
@@ -268,6 +270,7 @@ function showStatus() {
 
   log(`Home: ${SWARMCLAW_HOME}`)
   log(`Data: ${DATA_DIR}`)
+  log(`WebSocket port: ${process.env.WS_PORT || '(PORT + 1)'}`)
 
   if (fs.existsSync(BUILT_MARKER)) {
     try {
@@ -295,11 +298,12 @@ Commands:
   status         Show server status
 
 Options:
-  --build        Force rebuild before starting
-  -d, --detach   Start server in background
-  --port <port>  Server port (default: 3456)
-  --host <host>  Server host (default: 0.0.0.0)
-  -h, --help     Show this help message
+  --build           Force rebuild before starting
+  -d, --detach      Start server in background
+  --port <port>     Server port (default: 3456)
+  --ws-port <port>  WebSocket port (default: PORT + 1)
+  --host <host>     Server host (default: 0.0.0.0)
+  -h, --help        Show this help message
 `.trim()
   console.log(help)
 }
@@ -310,6 +314,7 @@ function main() {
   let forceBuild = false
   let detach = false
   let port = null
+  let wsPort = null
   let host = null
 
   for (let i = 0; i < args.length; i++) {
@@ -326,6 +331,8 @@ function main() {
       detach = true
     } else if (arg === '--port' && i + 1 < args.length) {
       port = args[++i]
+    } else if (arg === '--ws-port' && i + 1 < args.length) {
+      wsPort = args[++i]
     } else if (arg === '--host' && i + 1 < args.length) {
       host = args[++i]
     } else if (arg === '-h' || arg === '--help') {
@@ -353,7 +360,7 @@ function main() {
     runBuild()
   }
 
-  startServer({ port, host, detach })
+  startServer({ port, wsPort, host, detach })
 }
 
 main()

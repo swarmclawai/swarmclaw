@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api-client'
+import { useWs } from '@/hooks/use-ws'
 
 interface DaemonStatus {
   running: boolean
@@ -21,11 +22,8 @@ export function DaemonIndicator() {
     } catch { /* ignore */ }
   }
 
-  useEffect(() => {
-    fetchStatus()
-    const interval = setInterval(fetchStatus, 30_000)
-    return () => clearInterval(interval)
-  }, [])
+  useEffect(() => { fetchStatus() }, [])
+  useWs('daemon', fetchStatus, 30_000)
 
   const toggle = async () => {
     try {

@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { api } from '@/lib/api-client'
+import { useWs } from '@/hooks/use-ws'
 import { toast } from 'sonner'
 import type { Connector, ConnectorPlatform } from '@/types'
 import { ConnectorPlatformBadge } from '@/components/shared/connector-platform-icon'
@@ -255,35 +256,29 @@ export function ConnectorSheet() {
 
   // Poll for QR code when WhatsApp connector is running or connecting
   const isWaRunning = editing?.platform === 'whatsapp' && (editing?.status === 'running' || waConnecting)
-  useEffect(() => {
-    if (!editing || !isWaRunning) {
-      return
-    }
-    let cancelled = false
-    const poll = async () => {
-      try {
-        const data = await api<any>('GET', `/connectors/${editing.id}`)
-        if (!cancelled) {
-          setQrDataUrl(data.qrDataUrl || null)
-          setWaAuthenticated(data.authenticated ?? false)
-          setWaHasCreds(data.hasCredentials ?? false)
-          // Sync store with the individual endpoint's runtime status
-          if (data.status === 'running' && editing.status !== 'running') {
-            // Store is stale — update it directly
-            const store = useAppStore.getState()
-            const updated = { ...store.connectors }
-            if (updated[editing.id]) {
-              updated[editing.id] = { ...updated[editing.id], status: 'running' as const }
-              useAppStore.setState({ connectors: updated })
-            }
-          }
+  const pollWaStatus = useCallback(async () => {
+    if (!editing) return
+    try {
+      const data = await api<any>('GET', `/connectors/${editing.id}`)
+      setQrDataUrl(data.qrDataUrl || null)
+      setWaAuthenticated(data.authenticated ?? false)
+      setWaHasCreds(data.hasCredentials ?? false)
+      if (data.status === 'running' && editing.status !== 'running') {
+        const store = useAppStore.getState()
+        const updated = { ...store.connectors }
+        if (updated[editing.id]) {
+          updated[editing.id] = { ...updated[editing.id], status: 'running' as const }
+          useAppStore.setState({ connectors: updated })
         }
-      } catch { /* ignore */ }
-    }
-    poll()
-    const interval = setInterval(poll, 2000)
-    return () => { cancelled = true; clearInterval(interval) }
-  }, [editing?.id, isWaRunning])
+      }
+    } catch { /* ignore */ }
+  }, [editing?.id, editing?.status])
+
+  useEffect(() => {
+    if (editing && isWaRunning) pollWaStatus()
+  }, [editing?.id, isWaRunning, pollWaStatus])
+
+  useWs('connectors', pollWaStatus, isWaRunning ? 2000 : undefined)
 
   const handleSave = async () => {
     if (!agentId) return

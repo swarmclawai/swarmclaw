@@ -5,39 +5,10 @@ import { useAppStore } from '@/stores/use-app-store'
 import { createAgent, updateAgent, deleteAgent } from '@/lib/agents'
 import { api } from '@/lib/api-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
-import { AiGenBlock } from '@/components/shared/ai-gen-block'
 import { toast } from 'sonner'
+import { ModelCombobox } from '@/components/shared/model-combobox'
 import type { ProviderType, ClaudeSkill } from '@/types'
-
-const AVAILABLE_TOOLS: { id: string; label: string; description: string }[] = [
-  { id: 'shell', label: 'Shell', description: 'Execute commands in the working directory' },
-  { id: 'files', label: 'Files', description: 'Read, write, list, move, copy, and send files' },
-  { id: 'copy_file', label: 'Copy File', description: 'Copy files within the working directory' },
-  { id: 'move_file', label: 'Move File', description: 'Move/rename files within the working directory' },
-  { id: 'delete_file', label: 'Delete File', description: 'Delete files/directories (disabled by default)' },
-  { id: 'edit_file', label: 'Edit File', description: 'Search-and-replace editing within files' },
-  { id: 'process', label: 'Process', description: 'Monitor and control long-running shell commands' },
-  { id: 'web_search', label: 'Web Search', description: 'Search the web via DuckDuckGo' },
-  { id: 'web_fetch', label: 'Web Fetch', description: 'Fetch and extract text from URLs' },
-  { id: 'claude_code', label: 'Claude Code', description: 'Delegate complex tasks to Claude Code CLI' },
-  { id: 'codex_cli', label: 'Codex CLI', description: 'Delegate complex tasks to OpenAI Codex CLI' },
-  { id: 'opencode_cli', label: 'OpenCode CLI', description: 'Delegate complex tasks to OpenCode CLI' },
-  { id: 'browser', label: 'Browser', description: 'Playwright — browse, scrape, interact with web pages' },
-  { id: 'memory', label: 'Memory', description: 'Store and retrieve long-term memories across sessions' },
-  { id: 'sandbox', label: 'Sandbox', description: 'Run JS/TS/Python code in an isolated Deno sandbox' },
-]
-
-const PLATFORM_TOOLS: { id: string; label: string; description: string }[] = [
-  { id: 'manage_agents', label: 'Agents', description: 'Create, edit, and delete agents' },
-  { id: 'manage_tasks', label: 'Tasks', description: 'Create, edit, and delete tasks' },
-  { id: 'manage_schedules', label: 'Schedules', description: 'Create, edit, and delete schedules' },
-  { id: 'manage_skills', label: 'Skills', description: 'Create, edit, and delete skills' },
-  { id: 'manage_documents', label: 'Documents', description: 'Upload, search, and delete indexed documents' },
-  { id: 'manage_webhooks', label: 'Webhooks', description: 'Register webhooks that trigger agent sessions' },
-  { id: 'manage_connectors', label: 'Connectors', description: 'Create, edit, and delete connectors' },
-  { id: 'manage_sessions', label: 'Sessions', description: 'List sessions, send messages, and spawn session work' },
-  { id: 'manage_secrets', label: 'Secrets', description: 'Store and retrieve encrypted service secrets' },
-]
+import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
 
 const NATIVE_CAPABILITY_PROVIDER_IDS = new Set<ProviderType>(['claude-cli', 'codex-cli', 'opencode-cli', 'openclaw'])
 
@@ -55,9 +26,6 @@ export function AgentSheet() {
   const dynamicSkills = useAppStore((s) => s.skills)
   const mcpServers = useAppStore((s) => s.mcpServers)
   const loadSkills = useAppStore((s) => s.loadSkills)
-  const appSettings = useAppStore((s) => s.appSettings)
-  const loadSettings = useAppStore((s) => s.loadSettings)
-
   const [claudeSkills, setClaudeSkills] = useState<ClaudeSkill[]>([])
   const [claudeSkillsLoading, setClaudeSkillsLoading] = useState(false)
   const loadClaudeSkills = async () => {
@@ -92,6 +60,9 @@ export function AgentSheet() {
   const [capInput, setCapInput] = useState('')
   const [ollamaMode, setOllamaMode] = useState<'local' | 'cloud'>('local')
   const [openclawEnabled, setOpenclawEnabled] = useState(false)
+  const [heartbeatEnabled, setHeartbeatEnabled] = useState(false)
+  const [heartbeatInterval, setHeartbeatInterval] = useState('')
+  const [heartbeatModel, setHeartbeatModel] = useState('')
   const [addingKey, setAddingKey] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyValue, setNewKeyValue] = useState('')
@@ -118,12 +89,6 @@ export function AgentSheet() {
     e.target.value = ''
   }
 
-  // AI generation state
-  const [aiPrompt, setAiPrompt] = useState('')
-  const [generating, setGenerating] = useState(false)
-  const [generated, setGenerated] = useState(false)
-  const [genError, setGenError] = useState('')
-
   const currentProvider = providers.find((p) => p.id === provider)
   const providerCredentials = Object.values(credentials).filter((c) => c.provider === provider)
   const openclawCredentials = Object.values(credentials).filter((c) => c.provider === 'openclaw')
@@ -141,11 +106,6 @@ export function AgentSheet() {
       loadCredentials()
       loadSkills()
       loadClaudeSkills()
-      loadSettings()
-      setAiPrompt('')
-      setGenerating(false)
-      setGenerated(false)
-      setGenError('')
       setTestStatus('idle')
       setTestMessage('')
       if (editing) {
@@ -170,6 +130,9 @@ export function AgentSheet() {
         setCapInput('')
         setOllamaMode(editing.credentialId && editing.provider === 'ollama' ? 'cloud' : 'local')
         setOpenclawEnabled(editing.provider === 'openclaw')
+        setHeartbeatEnabled(editing.heartbeatEnabled || false)
+        setHeartbeatInterval(editing.heartbeatInterval != null ? String(editing.heartbeatInterval) : '')
+        setHeartbeatModel(editing.heartbeatModel || '')
       } else {
         setName('')
         setDescription('')
@@ -191,6 +154,9 @@ export function AgentSheet() {
         setCapInput('')
         setOllamaMode('local')
         setOpenclawEnabled(false)
+        setHeartbeatEnabled(false)
+        setHeartbeatInterval('')
+        setHeartbeatModel('')
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -247,29 +213,6 @@ export function AgentSheet() {
     return () => { cancelled = true }
   }, [openclawEnabled])
 
-  const handleGenerate = async () => {
-    if (!aiPrompt.trim()) return
-    setGenerating(true)
-    setGenError('')
-    try {
-      const result = await api<{ name?: string; description?: string; systemPrompt?: string; isOrchestrator?: boolean; error?: string }>('POST', '/agents/generate', { prompt: aiPrompt })
-      if (result.error) {
-        setGenError(result.error)
-      } else if (result.name || result.systemPrompt) {
-        if (result.name) setName(result.name)
-        if (result.description) setDescription(result.description)
-        if (result.systemPrompt) setSystemPrompt(result.systemPrompt)
-        if (result.isOrchestrator !== undefined) setIsOrchestrator(result.isOrchestrator)
-        setGenerated(true)
-      } else {
-        setGenError('AI returned empty response — try again')
-      }
-    } catch (err: unknown) {
-      setGenError(err instanceof Error ? err.message : 'Generation failed')
-    }
-    setGenerating(false)
-  }
-
   const onClose = () => {
     setOpen(false)
     setEditingId(null)
@@ -301,6 +244,9 @@ export function AgentSheet() {
       fallbackCredentialIds,
       platformAssignScope,
       capabilities,
+      heartbeatEnabled,
+      heartbeatInterval: heartbeatInterval.trim() || null,
+      heartbeatModel: heartbeatModel.trim() || null,
     }
     if (editing) {
       await updateAgent(editing.id, data)
@@ -451,14 +397,6 @@ export function AgentSheet() {
         </div>
       </div>
 
-      {/* AI Generation */}
-      {!editing && !openclawEnabled && <AiGenBlock
-        aiPrompt={aiPrompt} setAiPrompt={setAiPrompt}
-        generating={generating} generated={generated} genError={genError}
-        onGenerate={handleGenerate} appSettings={appSettings}
-        placeholder='Describe the agent you want, e.g. "An SEO keyword researcher that finds low-competition long-tail keywords"'
-      />}
-
       <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Name</label>
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. SEO Researcher" className={inputClass} style={{ fontFamily: 'inherit' }} />
@@ -512,6 +450,47 @@ export function AgentSheet() {
         </div>
         <p className="text-[11px] text-text-3/70 mt-1.5">Press Enter or comma to add. Other agents see these when deciding delegation.</p>
       </div>}
+
+      {/* Heartbeat Configuration */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Heartbeat</label>
+          <button
+            type="button"
+            onClick={() => setHeartbeatEnabled(!heartbeatEnabled)}
+            className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${heartbeatEnabled ? 'bg-accent' : 'bg-white/[0.12]'}`}
+          >
+            <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${heartbeatEnabled ? 'translate-x-[18px]' : ''}`} />
+          </button>
+        </div>
+        {heartbeatEnabled && (
+          <div className="space-y-4 mt-3">
+            <div>
+              <label className="block text-[12px] text-text-3/70 mb-1.5">Interval</label>
+              <input
+                type="text"
+                value={heartbeatInterval}
+                onChange={(e) => setHeartbeatInterval(e.target.value)}
+                placeholder="30s, 5m, 1h (default: 30m)"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+            <div>
+              <label className="block text-[12px] text-text-3/70 mb-1.5">Model override <span className="text-text-3/50">(optional, cheaper model)</span></label>
+              <input
+                type="text"
+                value={heartbeatModel}
+                onChange={(e) => setHeartbeatModel(e.target.value)}
+                placeholder="e.g. gpt-4o-mini"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+          </div>
+        )}
+        <p className="text-[11px] text-text-3/70 mt-1.5">Periodic check-in runs on idle sessions using this agent. Processes pending events and monitors status.</p>
+      </div>
 
       {provider !== 'openclaw' && (
         <div className="mb-8">
@@ -775,11 +754,14 @@ export function AgentSheet() {
       {!openclawEnabled && currentProvider && currentProvider.models.length > 0 && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Model</label>
-          <select value={model} onChange={(e) => setModel(e.target.value)} className={`${inputClass} appearance-none cursor-pointer`} style={{ fontFamily: 'inherit' }}>
-            {currentProvider.models.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
+          <ModelCombobox
+            providerId={currentProvider.id}
+            value={model}
+            onChange={setModel}
+            models={currentProvider.models}
+            defaultModels={currentProvider.defaultModels}
+            className={`${inputClass} cursor-pointer`}
+          />
         </div>
       )}
 

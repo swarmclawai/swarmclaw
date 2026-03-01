@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback, useState, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { useWs } from '@/hooks/use-ws'
 import { useChatStore } from '@/stores/use-chat-store'
 import { fetchMessages, clearMessages, deleteSession, devServer, checkBrowser, stopBrowser } from '@/lib/sessions'
 import { uploadImage } from '@/lib/upload'
@@ -90,33 +91,43 @@ export function ChatArea() {
   const isOrchestrated = session?.sessionType === 'orchestrated'
   const isServerActive = session?.active === true
   const isOngoingMonitored = appSettings.loopMode === 'ongoing' && !!session?.tools?.length
-  useEffect(() => {
-    if (!sessionId || (!isOrchestrated && !isServerActive && !isOngoingMonitored)) return
-    const interval = setInterval(async () => {
-      try {
-        const msgs = await fetchMessages(sessionId)
-        if (msgs.length > messages.length) {
-          const newMsgs = msgs.slice(messages.length)
-          setMessages(msgs)
-          if (ttsEnabled && typeof document !== 'undefined' && document.visibilityState === 'visible') {
-            const latestAssistant = [...newMsgs].reverse().find((m) => {
-              if (m.role !== 'assistant') return false
-              const isHeartbeat = m.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(m.text || '')
-              return !isHeartbeat && !!m.text?.trim()
-            })
-            if (latestAssistant?.text) {
-              void speak(latestAssistant.text)
-            }
+  const shouldPollMessages = !!sessionId && (isOrchestrated || isServerActive || isOngoingMonitored)
+  const messagesLenRef = useRef(messages.length)
+  messagesLenRef.current = messages.length
+  const isServerActiveRef = useRef(isServerActive)
+  isServerActiveRef.current = isServerActive
+  const ttsEnabledRef = useRef(ttsEnabled)
+  ttsEnabledRef.current = ttsEnabled
+
+  const refreshMessages = useCallback(async () => {
+    if (!sessionId) return
+    try {
+      const msgs = await fetchMessages(sessionId)
+      if (msgs.length > messagesLenRef.current) {
+        const newMsgs = msgs.slice(messagesLenRef.current)
+        setMessages(msgs)
+        if (ttsEnabledRef.current && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          const latestAssistant = [...newMsgs].reverse().find((m) => {
+            if (m.role !== 'assistant') return false
+            const isHeartbeat = m.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(m.text || '')
+            return !isHeartbeat && !!m.text?.trim()
+          })
+          if (latestAssistant?.text) {
+            void speak(latestAssistant.text)
           }
         }
-        // Check if session is still active on the server
-        if (isServerActive) {
-          await loadSessions()
-        }
-      } catch (err) { console.error('Failed to refresh messages:', err) }
-    }, 2000)
-    return () => clearInterval(interval)
-  }, [sessionId, isOrchestrated, isServerActive, isOngoingMonitored, messages.length])
+      }
+      if (isServerActiveRef.current) await loadSessions()
+    } catch (err) { console.error('Failed to refresh messages:', err) }
+  }, [sessionId])
+
+  // Subscribe to WS messages for this session — always subscribe when session exists,
+  // only enable fallback polling when actively needed
+  useWs(
+    sessionId ? `messages:${sessionId}` : '',
+    refreshMessages,
+    shouldPollMessages ? 2000 : undefined,
+  )
 
   // When server-active flag drops, stop the streaming indicator
   useEffect(() => {
@@ -136,13 +147,16 @@ export function ChatArea() {
 
   // Poll browser status while session has browser tools
   const hasBrowserTool = session?.tools?.includes('browser')
-  useEffect(() => {
+  const checkBrowserStatus = useCallback(() => {
     if (!sessionId || !hasBrowserTool) return
-    const interval = setInterval(() => {
-      checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch(() => {})
-    }, 5000)
-    return () => clearInterval(interval)
+    checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch(() => {})
   }, [sessionId, hasBrowserTool])
+
+  useWs(
+    hasBrowserTool && sessionId ? `browser:${sessionId}` : '',
+    checkBrowserStatus,
+    hasBrowserTool ? 5000 : undefined,
+  )
 
   const handleStopBrowser = useCallback(async () => {
     if (!sessionId) return

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/api-client'
 import type { Connector } from '@/types'
 import { ConnectorPlatformBadge, getConnectorPlatformLabel } from '@/components/shared/connector-platform-icon'
@@ -24,14 +25,8 @@ export function ConnectorList({ inSidebar: _inSidebar }: { inSidebar?: boolean }
     setLoaded(true)
   }, [loadConnectors, loadAgents])
 
-  useEffect(() => {
-    const bootstrap = setTimeout(() => { void refresh() }, 0)
-    const poll = setInterval(() => { void loadConnectors() }, 15_000)
-    return () => {
-      clearTimeout(bootstrap)
-      clearInterval(poll)
-    }
-  }, [refresh, loadConnectors])
+  useEffect(() => { void refresh() }, [refresh])
+  useWs('connectors', loadConnectors, 15_000)
 
   // Auto-clear error after 5s
   useEffect(() => {

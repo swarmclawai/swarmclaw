@@ -3,10 +3,14 @@ import crypto from 'crypto'
 import os from 'os'
 import path from 'path'
 import { loadSessions, saveSessions, deleteSession, active, loadAgents } from '@/lib/server/storage'
+import { WORKSPACE_DIR } from '@/lib/server/data-dir'
+import { notify } from '@/lib/server/ws-hub'
 import { getSessionRunState } from '@/lib/server/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   const sessions = loadSessions()
   for (const id of Object.keys(sessions)) {
     const run = getSessionRunState(id)
@@ -31,6 +35,7 @@ export async function DELETE(req: Request) {
     }
     deleteSession(id)
   }
+  notify('sessions')
   return NextResponse.json({ deleted: ids.length })
 }
 
@@ -38,7 +43,8 @@ export async function POST(req: Request) {
   const body = await req.json()
   let cwd = (body.cwd || '').trim()
   if (cwd.startsWith('~/')) cwd = path.join(os.homedir(), cwd.slice(2))
-  else if (cwd === '~' || !cwd) cwd = os.homedir()
+  else if (cwd === '~') cwd = os.homedir()
+  else if (!cwd) cwd = WORKSPACE_DIR
 
   const id = body.id || crypto.randomBytes(4).toString('hex')
   const sessions = loadSessions()
@@ -81,5 +87,6 @@ export async function POST(req: Request) {
     heartbeatIntervalSec: body.heartbeatIntervalSec ?? null,
   }
   saveSessions(sessions)
+  notify('sessions')
   return NextResponse.json(sessions[id])
 }

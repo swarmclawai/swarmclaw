@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { loadUsage } from '@/lib/server/storage'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   const usage = loadUsage()
   // Compute summary
   let totalTokens = 0

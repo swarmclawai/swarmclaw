@@ -3,54 +3,16 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
+import { AVAILABLE_TOOLS, PLATFORM_TOOLS, TOOL_LABELS } from '@/lib/tool-definitions'
+import type { ToolDefinition } from '@/lib/tool-definitions'
 import type { Session } from '@/types'
 
-const TOOL_GROUPS: { label: string; tools: Record<string, string> }[] = [
-  {
-    label: 'Tools',
-    tools: {
-      shell: 'Shell',
-      files: 'Files',
-      edit_file: 'Edit File',
-      process: 'Process',
-      web_search: 'Web Search',
-      web_fetch: 'Web Fetch',
-      browser: 'Browser',
-      memory: 'Memory',
-    },
-  },
-  {
-    label: 'Delegation',
-    tools: {
-      claude_code: 'Claude Code',
-      codex_cli: 'Codex CLI',
-      opencode_cli: 'OpenCode CLI',
-    },
-  },
-  {
-    label: 'Platform',
-    tools: {
-      orchestrator: 'Orchestrator',
-      manage_agents: 'Agents',
-      manage_tasks: 'Tasks',
-      manage_schedules: 'Schedules',
-      manage_skills: 'Skills',
-      manage_documents: 'Documents',
-      manage_webhooks: 'Webhooks',
-      manage_connectors: 'Connectors',
-      manage_sessions: 'Sessions',
-      manage_secrets: 'Secrets',
-    },
-  },
+const TOOL_GROUPS: { label: string; tools: ToolDefinition[] }[] = [
+  { label: 'Tools', tools: AVAILABLE_TOOLS },
+  { label: 'Platform', tools: PLATFORM_TOOLS },
 ]
 
-// Flat lookup for display names
-const ALL_TOOLS: Record<string, string> = {}
-for (const g of TOOL_GROUPS) Object.assign(ALL_TOOLS, g.tools)
-
-const TOOL_HINTS: Record<string, string> = {
-  orchestrator: 'Can delegate tasks to other agents',
-}
+const TOTAL_TOOL_COUNT = AVAILABLE_TOOLS.length + PLATFORM_TOOLS.length
 
 interface Props {
   session: Session
@@ -87,7 +49,7 @@ export function ChatToolToggles({ session }: Props) {
   }
 
   const enabledCount = sessionTools.length
-  const totalCount = Object.keys(ALL_TOOLS).length
+  const totalCount = TOTAL_TOOL_COUNT
 
   return (
     <div className="relative" ref={ref}>
@@ -111,12 +73,12 @@ export function ChatToolToggles({ session }: Props) {
           {TOOL_GROUPS.map((group, gi) => (
             <div key={group.label} className={`px-3 pb-1 ${gi === 0 ? 'pt-3' : 'pt-1 border-t border-white/[0.04]'}`}>
               <p className="text-[10px] font-600 text-text-3/60 uppercase tracking-wider mb-2">{group.label}</p>
-              {Object.entries(group.tools).map(([toolId, label]) => {
-                const enabled = sessionTools.includes(toolId)
+              {group.tools.map((tool) => {
+                const enabled = sessionTools.includes(tool.id)
                 return (
-                  <label key={toolId} className="flex items-center gap-2.5 py-1.5 cursor-pointer">
+                  <label key={tool.id} className="flex items-center gap-2.5 py-1.5 cursor-pointer">
                     <div
-                      onClick={() => toggleTool(toolId)}
+                      onClick={() => toggleTool(tool.id)}
                       className={`w-8 h-[18px] rounded-full transition-all duration-200 relative cursor-pointer shrink-0
                         ${enabled ? 'bg-[#6366F1]' : 'bg-white/[0.12]'}`}
                     >
@@ -124,10 +86,7 @@ export function ChatToolToggles({ session }: Props) {
                         ${enabled ? 'left-[16px]' : 'left-[2px]'}`} />
                     </div>
                     <span className={`text-[12px] ${enabled ? 'text-text-2' : 'text-text-3/70'}`}>
-                      {label}
-                      {TOOL_HINTS[toolId] && (
-                        <span className="ml-2 text-[10px] text-text-3/70 font-400">{TOOL_HINTS[toolId]}</span>
-                      )}
+                      {tool.label}
                     </span>
                   </label>
                 )

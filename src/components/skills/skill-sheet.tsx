@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
-import { AiGenBlock } from '@/components/shared/ai-gen-block'
 import { api } from '@/lib/api-client'
 
 export function SkillSheet() {
@@ -24,37 +23,7 @@ export function SkillSheet() {
   const [importError, setImportError] = useState('')
   const [importNotice, setImportNotice] = useState('')
 
-  // AI generation state
-  const [aiPrompt, setAiPrompt] = useState('')
-  const [generating, setGenerating] = useState(false)
-  const [generated, setGenerated] = useState(false)
-  const [genError, setGenError] = useState('')
-  const appSettings = useAppStore((s) => s.appSettings)
-  const loadSettings = useAppStore((s) => s.loadSettings)
-
   const editing = editingId ? skills[editingId] : null
-
-  const handleGenerate = async () => {
-    if (!aiPrompt.trim()) return
-    setGenerating(true)
-    setGenError('')
-    try {
-      const result = await api<{ name?: string; description?: string; content?: string; error?: string }>('POST', '/generate', { type: 'skill', prompt: aiPrompt })
-      if (result.error) {
-        setGenError(result.error)
-      } else if (result.name || result.content) {
-        if (result.name) { setName(result.name); setFilename(`${result.name.toLowerCase().replace(/\s+/g, '-')}.md`) }
-        if (result.description) setDescription(result.description)
-        if (result.content) setContent(result.content)
-        setGenerated(true)
-      } else {
-        setGenError('AI returned empty response — try again')
-      }
-    } catch (err: unknown) {
-      setGenError(err instanceof Error ? err.message : 'Generation failed')
-    }
-    setGenerating(false)
-  }
 
   const handleImportFromUrl = async () => {
     if (!importUrl.trim()) return
@@ -72,7 +41,6 @@ export function SkillSheet() {
       } else {
         setImportNotice('Skill imported from URL.')
       }
-      setGenerated(false)
     } catch (err: unknown) {
       setImportError(err instanceof Error ? err.message : 'Failed to import skill URL')
     } finally {
@@ -82,11 +50,6 @@ export function SkillSheet() {
 
   useEffect(() => {
     if (open) {
-      loadSettings()
-      setAiPrompt('')
-      setGenerating(false)
-      setGenerated(false)
-      setGenError('')
       setImportUrl('')
       setImportingUrl(false)
       setImportError('')
@@ -158,14 +121,6 @@ export function SkillSheet() {
         </h2>
         <p className="text-[14px] text-text-3">Upload or write a reusable instruction set for agents</p>
       </div>
-
-      {/* AI Generation */}
-      {!editing && <AiGenBlock
-        aiPrompt={aiPrompt} setAiPrompt={setAiPrompt}
-        generating={generating} generated={generated} genError={genError}
-        onGenerate={handleGenerate} appSettings={appSettings}
-        placeholder='Describe the skill, e.g. "A frontend design skill for building polished React components with Tailwind"'
-      />}
 
       {/* File upload */}
       {!editing && (

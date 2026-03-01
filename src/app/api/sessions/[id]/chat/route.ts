@@ -14,11 +14,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const message = typeof body.message === 'string' ? body.message : ''
   const imagePath = typeof body.imagePath === 'string' ? body.imagePath : undefined
   const imageUrl = typeof body.imageUrl === 'string' ? body.imageUrl : undefined
+  const attachedFiles = Array.isArray(body.attachedFiles) ? body.attachedFiles.filter((f: unknown) => typeof f === 'string') as string[] : undefined
   const internal = body.internal === true
   const queueMode = normalizeQueueMode(body.queueMode, internal)
 
-  if (!message.trim()) {
-    return NextResponse.json({ error: 'message is required' }, { status: 400 })
+  const hasFiles = !!(imagePath || imageUrl || (attachedFiles && attachedFiles.length > 0))
+  if (!message.trim() && !hasFiles) {
+    return NextResponse.json({ error: 'message or file is required' }, { status: 400 })
   }
 
   const encoder = new TextEncoder()
@@ -39,6 +41,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         message,
         imagePath,
         imageUrl,
+        attachedFiles,
         internal,
         source: internal ? 'heartbeat' : 'chat',
         mode: queueMode,

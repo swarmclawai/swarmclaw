@@ -20,6 +20,7 @@ import { stripMainLoopMetaForPersistence } from './main-agent-loop'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { getMemoryDb } from './memory-db'
 import { routeTaskIntent } from './capability-router'
+import { notify } from './ws-hub'
 import { resolveConcreteToolPolicyBlock, resolveSessionToolPolicy } from './tool-capability-policy'
 import type { MessageToolEvent, SSEEvent } from '@/types'
 import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from './provider-health'
@@ -45,6 +46,7 @@ export interface ExecuteChatTurnInput {
   message: string
   imagePath?: string
   imageUrl?: string
+  attachedFiles?: string[]
   internal?: boolean
   source?: string
   runId?: string
@@ -423,6 +425,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     message,
     imagePath,
     imageUrl,
+    attachedFiles,
     internal = false,
     runId,
     source = 'chat',
@@ -439,9 +442,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const appSettings = loadSettings()
   const toolPolicy = resolveSessionToolPolicy(session.tools, appSettings)
   const isHeartbeatRun = internal && source === 'heartbeat'
+  const isAutoRunNoHistory = isHeartbeatRun || (internal && source === 'main-loop-followup')
   const heartbeatStatus = session.mainLoopState?.status || 'idle'
-  const heartbeatStatusOnly = isHeartbeatRun
-    && (session.name !== '__main__' || heartbeatStatus === 'ok' || heartbeatStatus === 'idle')
+  const mainLoopIdle = session.name === '__main__'
+    && (heartbeatStatus === 'ok' || heartbeatStatus === 'idle')
+    && !(session.mainLoopState?.pendingEvents?.length > 0)
+  const heartbeatStatusOnly = isHeartbeatRun && mainLoopIdle
   const toolsForRun = heartbeatStatusOnly ? [] : toolPolicy.enabledTools
   let sessionForRun = toolsForRun === session.tools
     ? session
@@ -520,6 +526,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       time: Date.now(),
       imagePath: imagePath || undefined,
       imageUrl: imageUrl || undefined,
+      attachedFiles: attachedFiles?.length ? attachedFiles : undefined,
     })
     session.lastActiveAt = Date.now()
     saveSessions(sessions)
@@ -567,15 +574,22 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   try {
     const hasTools = !!sessionForRun.tools?.length && !CLI_PROVIDER_IDS.has(providerType)
+    // Heartbeat runs are self-contained — skip conversation history to avoid
+    // blowing past the context window on long-lived sessions.
+    const heartbeatHistory = isAutoRunNoHistory ? [] : undefined
+
+    console.log(`[chat-execution] provider=${providerType}, hasTools=${hasTools}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, tools=${(sessionForRun.tools || []).length}`)
+
     fullResponse = hasTools
       ? (await streamAgentChat({
           session: sessionForRun,
           message,
           imagePath,
+          attachedFiles,
           apiKey,
           systemPrompt,
           write: (raw) => parseAndEmit(raw),
-          history: getSessionMessages(sessionId),
+          history: heartbeatHistory ?? getSessionMessages(sessionId),
           signal: abortController.signal,
         })).fullText
       : await provider.handler.streamChat({
@@ -586,7 +600,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           systemPrompt,
           write: (raw: string) => parseAndEmit(raw),
           active,
-          loadHistory: getSessionMessages,
+          loadHistory: isAutoRunNoHistory ? () => [] : getSessionMessages,
         })
   } catch (err: any) {
     errorMessage = err?.message || String(err)
@@ -881,6 +895,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
     fresh[sessionId] = current
     saveSessions(fresh)
+    notify(`messages:${sessionId}`)
   }
 
   return {

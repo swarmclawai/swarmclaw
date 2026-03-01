@@ -113,7 +113,7 @@ function buildMessages(session: any, message: string, imagePath: string | undefi
   const msgs: Array<{ role: string; content: any }> = []
 
   if (loadHistory) {
-    const history = loadHistory(session.id)
+    const history = loadHistory(session.id).slice(-40)
     for (const m of history) {
       if (m.role === 'user' && m.imagePath) {
         const blocks = fileToContentBlocks(m.imagePath)

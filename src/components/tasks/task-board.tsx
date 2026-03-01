@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { useWs } from '@/hooks/use-ws'
 import { updateTask } from '@/lib/tasks'
 import { TaskColumn } from './task-column'
 import type { BoardTaskStatus } from '@/types'
@@ -19,12 +20,8 @@ export function TaskBoard() {
   const setShowArchived = useAppStore((s) => s.setShowArchivedTasks)
   const [filterAgentId, setFilterAgentId] = useState<string>('')
 
-  useEffect(() => {
-    loadTasks()
-    loadAgents()
-    const interval = setInterval(loadTasks, 5000)
-    return () => clearInterval(interval)
-  }, [])
+  useEffect(() => { loadTasks(); loadAgents() }, [])
+  useWs('tasks', loadTasks, 5000)
 
   const columns: BoardTaskStatus[] = showArchived ? [...ACTIVE_COLUMNS, 'archived'] : ACTIVE_COLUMNS
 

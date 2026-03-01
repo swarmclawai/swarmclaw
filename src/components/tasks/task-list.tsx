@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/api-client'
 import type { BoardTaskStatus } from '@/types'
 
@@ -23,11 +24,8 @@ export function TaskList({ inSidebar }: { inSidebar?: boolean }) {
   const [search, setSearch] = useState('')
   const [clearing, setClearing] = useState(false)
 
-  useEffect(() => {
-    loadTasks()
-    const interval = setInterval(loadTasks, 5000)
-    return () => clearInterval(interval)
-  }, [])
+  useEffect(() => { loadTasks() }, [])
+  useWs('tasks', loadTasks, 5000)
 
   const sorted = useMemo(() =>
     Object.values(tasks).sort((a, b) => b.updatedAt - a.updatedAt),

@@ -7,6 +7,7 @@ import { createSession, createCredential } from '@/lib/sessions'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { DirBrowser } from '@/components/shared/dir-browser'
 import { TOOL_LABELS, TOOL_DESCRIPTIONS } from '@/components/chat/tool-call-bubble'
+import { ModelCombobox } from '@/components/shared/model-combobox'
 import type { ProviderType, SessionTool } from '@/types'
 
 export function NewSessionSheet() {
@@ -269,16 +270,14 @@ export function NewSessionSheet() {
               <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
                 Model
               </label>
-              <select
+              <ModelCombobox
+                providerId={currentProvider.id}
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className={`${inputClass} appearance-none cursor-pointer`}
-                style={{ fontFamily: 'inherit' }}
-              >
-                {currentProvider.models.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+                onChange={setModel}
+                models={currentProvider.models}
+                defaultModels={currentProvider.defaultModels}
+                className={`${inputClass} cursor-pointer`}
+              />
             </div>
           )}
 

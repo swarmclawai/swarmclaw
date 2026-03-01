@@ -17,7 +17,6 @@ const COMMAND_GROUPS = [
       cmd('create', 'POST', '/agents', 'Create an agent', { expectsJsonBody: true }),
       cmd('update', 'PUT', '/agents/:id', 'Update an agent', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/agents/:id', 'Delete an agent'),
-      cmd('generate', 'POST', '/agents/generate', 'Generate agent definition from prompt', { expectsJsonBody: true }),
       cmd('thread', 'POST', '/agents/:id/thread', 'Get or create agent thread session'),
     ],
   },
@@ -121,14 +120,6 @@ const COMMAND_GROUPS = [
     description: 'Serve and manage local files',
     commands: [
       cmd('serve', 'GET', '/files/serve', 'Serve a local file (use --query path=/abs/path)'),
-    ],
-  },
-  {
-    name: 'generate',
-    description: 'AI generation endpoints',
-    commands: [
-      cmd('run', 'POST', '/generate', 'Generate schedule/task/skill/provider payload', { expectsJsonBody: true }),
-      cmd('info', 'GET', '/generate/info', 'Get generation provider/model info'),
     ],
   },
   {

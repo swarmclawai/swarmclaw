@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { execSync } from 'child_process'
+export const dynamic = 'force-dynamic'
+
 
 let cachedRemote: {
   sha: string
@@ -31,7 +33,7 @@ function getHeadStableTag(): string | null {
   return tags.find((tag) => RELEASE_TAG_RE.test(tag)) || null
 }
 
-export async function GET() {
+export async function GET(_req: Request) {
   try {
     const localSha = run('git rev-parse --short HEAD')
     const localTag = getHeadStableTag()

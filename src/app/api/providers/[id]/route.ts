@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { loadProviderConfigs, saveProviderConfigs } from '@/lib/server/storage'
+import { notify } from '@/lib/server/ws-hub'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -17,6 +18,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!existing) return new NextResponse(null, { status: 404 })
   configs[id] = { ...existing, ...body, id, updatedAt: Date.now() }
   saveProviderConfigs(configs)
+  notify('providers')
   return NextResponse.json(configs[id])
 }
 
@@ -30,5 +32,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   }
   delete configs[id]
   saveProviderConfigs(configs)
+  notify('providers')
   return NextResponse.json({ ok: true })
 }

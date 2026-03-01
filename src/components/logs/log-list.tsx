@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { api } from '@/lib/api-client'
+import { useWs } from '@/hooks/use-ws'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 
@@ -67,12 +68,7 @@ export function LogList() {
     loadAgents()
   }, [fetchLogs])
 
-  // Auto-refresh every 3s
-  useEffect(() => {
-    if (!autoRefresh) return
-    const id = setInterval(fetchLogs, 3000)
-    return () => clearInterval(id)
-  }, [autoRefresh, fetchLogs])
+  useWs('logs', fetchLogs, autoRefresh ? 3000 : undefined)
 
   const clearLogs = async () => {
     try {
@@ -151,7 +147,7 @@ export function LogList() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Controls */}
-      <div className="px-4 py-2 space-y-2 shrink-0">
+      <div className="px-5 py-2 space-y-2 shrink-0">
         {/* Search */}
         <input
           value={search}
@@ -250,12 +246,12 @@ export function LogList() {
       </div>
 
       {/* Total count */}
-      <div className="px-4 py-1 text-[10px] text-text-3/60">
+      <div className="px-5 py-1 text-[10px] text-text-3/60">
         {entries.length} of {total} entries
       </div>
 
       {/* Log entries */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 pb-20">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-8">
         {entries.length === 0 ? (
           <div className="flex items-center justify-center h-32 text-text-3 text-[12px]">
             No log entries

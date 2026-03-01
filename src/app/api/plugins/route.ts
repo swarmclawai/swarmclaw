@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getPluginManager } from '@/lib/server/plugins'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   const manager = getPluginManager()
   return NextResponse.json(manager.listPlugins())
 }

@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { initAudioContext } from '@/lib/tts'
 import { getStoredAccessKey, clearStoredAccessKey, api } from '@/lib/api-client'
+import { connectWs, disconnectWs } from '@/lib/ws-client'
+import { useWs } from '@/hooks/use-ws'
 import { AccessKeyGate } from '@/components/auth/access-key-gate'
 import { UserPicker } from '@/components/auth/user-picker'
 import { SetupWizard } from '@/components/auth/setup-wizard'
@@ -70,13 +72,16 @@ export default function Home() {
 
   useEffect(() => {
     if (!authenticated) return
+    const key = getStoredAccessKey()
+    if (key) connectWs(key)
     syncUserFromServer()
     loadNetworkInfo()
     loadSettings()
     loadSessions()
-    const interval = setInterval(loadSessions, 5000)
-    return () => clearInterval(interval)
+    return () => { disconnectWs() }
   }, [authenticated])
+
+  useWs('sessions', loadSessions, 5000)
 
   // Auto-select default agent's thread on load
   useEffect(() => {
@@ -156,6 +161,7 @@ export default function Home() {
 
   useEffect(() => {
     const handler = () => {
+      disconnectWs()
       setAuthenticated(false)
       setAuthChecked(true)
     }

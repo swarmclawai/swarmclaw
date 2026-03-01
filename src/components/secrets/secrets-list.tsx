@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { api } from '@/lib/api-client'
 
 interface Props {
   inSidebar?: boolean
@@ -17,6 +18,12 @@ export function SecretsList({ inSidebar }: Props) {
   useEffect(() => {
     loadSecrets()
   }, [])
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    await api('DELETE', `/secrets/${id}`)
+    loadSecrets()
+  }
 
   const secretList = Object.values(secrets)
 
@@ -44,7 +51,7 @@ export function SecretsList({ inSidebar }: Props) {
 
   return (
     <div className={`flex-1 overflow-y-auto ${inSidebar ? 'px-3 pb-4' : 'px-5 pb-6'}`}>
-      <div className="space-y-2">
+      <div className={inSidebar ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'}>
         {secretList.map((secret) => {
           const scopeLabel = secret.scope === 'global'
             ? 'All orchestrators'
@@ -68,7 +75,18 @@ export function SecretsList({ inSidebar }: Props) {
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
-                <span className="text-[14px] font-600 text-text truncate">{secret.name}</span>
+                <span className="text-[14px] font-600 text-text truncate flex-1">{secret.name}</span>
+                {!inSidebar && (
+                  <button
+                    onClick={(e) => handleDelete(e, secret.id)}
+                    className="text-text-3/40 hover:text-red-400 transition-colors p-0.5 shrink-0"
+                    title="Delete"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-2 pl-[22px]">
                 <span className="text-[11px] font-mono text-text-3">{secret.service}</span>

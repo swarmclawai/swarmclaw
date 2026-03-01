@@ -7,7 +7,7 @@ import { speak } from '../lib/tts'
 import { getStoredAccessKey } from '../lib/api-client'
 import { useAppStore } from './use-app-store'
 
-interface PendingImage {
+export interface PendingFile {
   file: File
   path: string
   url: string
@@ -44,8 +44,15 @@ interface ChatState {
   ttsEnabled: boolean
   toggleTts: () => void
 
-  pendingImage: PendingImage | null
-  setPendingImage: (img: PendingImage | null) => void
+  // Multi-file attachment support
+  pendingFiles: PendingFile[]
+  addPendingFile: (f: PendingFile) => void
+  removePendingFile: (index: number) => void
+  clearPendingFiles: () => void
+
+  // Legacy single-image compat (reads first pendingFile)
+  pendingImage: PendingFile | null
+  setPendingImage: (img: PendingFile | null) => void
 
   devServer: DevServerStatus | null
   setDevServer: (ds: DevServerStatus | null) => void
@@ -70,21 +77,34 @@ export const useChatStore = create<ChatState>((set, get) => ({
   lastUsage: null,
   ttsEnabled: false,
   toggleTts: () => set((s) => ({ ttsEnabled: !s.ttsEnabled })),
-  pendingImage: null,
-  setPendingImage: (img) => set({ pendingImage: img }),
+
+  pendingFiles: [],
+  addPendingFile: (f) => set((s) => ({ pendingFiles: [...s.pendingFiles, f] })),
+  removePendingFile: (index) => set((s) => ({ pendingFiles: s.pendingFiles.filter((_, i) => i !== index) })),
+  clearPendingFiles: () => set({ pendingFiles: [] }),
+
+  // Legacy compat: pendingImage reads/writes the first pending file
+  get pendingImage() { const files = get().pendingFiles; return files.length ? files[0] : null },
+  setPendingImage: (img) => set({ pendingFiles: img ? [img] : [] }),
+
   devServer: null,
   setDevServer: (ds) => set({ devServer: ds }),
   debugOpen: false,
   setDebugOpen: (open) => set({ debugOpen: open }),
 
   sendMessage: async (text: string) => {
-    if (!text.trim() || get().streaming) return
+    const { pendingFiles } = get()
+    if ((!text.trim() && !pendingFiles.length) || get().streaming) return
     const sessionId = useAppStore.getState().currentSessionId
     if (!sessionId) return
 
-    const { pendingImage } = get()
-    const imagePath = pendingImage?.path
-    const imageUrl = pendingImage?.url
+    // Primary image (backward compat)
+    const imagePath = pendingFiles[0]?.path
+    const imageUrl = pendingFiles[0]?.url
+    // All attached file paths
+    const attachedFiles = pendingFiles.length > 1
+      ? pendingFiles.map((f) => f.path)
+      : undefined
 
     const userMsg: Message = {
       role: 'user',
@@ -92,13 +112,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       time: Date.now(),
       imagePath,
       imageUrl,
+      attachedFiles,
     }
     set((s) => ({
       streaming: true,
       streamingSessionId: sessionId,
       streamText: '',
       messages: [...s.messages, userMsg],
-      pendingImage: null,
+      pendingFiles: [],
       toolEvents: [],
       lastUsage: null,
     }))
@@ -166,7 +187,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else if (event.t === 'done') {
         // done
       }
-    })
+    }, attachedFiles)
 
     if (fullText.trim()) {
       const currentToolEvents = get().toolEvents
@@ -218,9 +239,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ messages: msgs })
       }
       // Re-send the last user message through the normal SSE flow
-      // Temporarily set pendingImage if there was one
       if (imagePath) {
-        set({ pendingImage: { file: new File([], ''), path: imagePath, url: '' } })
+        set({ pendingFiles: [{ file: new File([], ''), path: imagePath, url: '' }] })
       }
       await get().sendMessage(message)
     } catch {

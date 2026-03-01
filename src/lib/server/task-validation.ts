@@ -11,7 +11,8 @@ interface TaskCompletionValidationOptions {
   report?: TaskReportArtifact | null
 }
 
-const MIN_RESULT_CHARS = 40
+const MIN_RESULT_CHARS_IMPLEMENTATION = 40
+const MIN_RESULT_CHARS_GENERIC = 20
 
 const WEAK_RESULT_PATTERNS: RegExp[] = [
   /what can i help you with/i,
@@ -45,12 +46,14 @@ export function validateTaskCompletion(
   const result = normalizeText(task.result)
   const error = normalizeText(task.error)
   const report = options.report || null
+  const implementationTask = IMPLEMENTATION_HINT.test(title) || IMPLEMENTATION_HINT.test(description)
 
   if (error) reasons.push('Task has a non-empty error field.')
 
   if (!result) reasons.push('Result summary is empty.')
   else {
-    if (result.length < MIN_RESULT_CHARS) reasons.push(`Result summary is too short (${result.length} chars).`)
+    const minChars = implementationTask ? MIN_RESULT_CHARS_IMPLEMENTATION : MIN_RESULT_CHARS_GENERIC
+    if (result.length < minChars) reasons.push(`Result summary is too short (${result.length} chars; min ${minChars}).`)
     if (WEAK_RESULT_PATTERNS.some((rx) => rx.test(result))) {
       reasons.push('Result contains placeholder/planning language instead of completion evidence.')
     }
@@ -58,7 +61,6 @@ export function validateTaskCompletion(
 
   // If task description/title suggests implementation work, require concrete evidence in
   // the result summary OR task report.
-  const implementationTask = IMPLEMENTATION_HINT.test(title) || IMPLEMENTATION_HINT.test(description)
   const hasResultEvidence = EXECUTION_EVIDENCE.test(result)
   const hasReportEvidence = report?.evidence.hasEvidence === true
   if (implementationTask && !hasResultEvidence && !hasReportEvidence) {

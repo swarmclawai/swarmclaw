@@ -1,7 +1,10 @@
+import fs from 'fs'
+import path from 'path'
 import { loadAgents, loadSessions, loadSettings } from './storage'
 import { enqueueSessionRun, getSessionRunState } from './session-run-manager'
 import { log } from './logger'
 import { buildMainLoopHeartbeatPrompt, getMainLoopStateForSession, isMainSession } from './main-agent-loop'
+import { WORKSPACE_DIR } from './data-dir'
 
 const HEARTBEAT_TICK_MS = 5_000
 
@@ -117,6 +120,56 @@ export interface HeartbeatConfig {
 }
 
 const DEFAULT_HEARTBEAT_PROMPT = 'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.'
+
+function readHeartbeatFile(session: any): string {
+  try {
+    const filePath = path.join(session.cwd || WORKSPACE_DIR, 'HEARTBEAT.md')
+    if (fs.existsSync(filePath)) {
+      return fs.readFileSync(filePath, 'utf-8').trim()
+    }
+  } catch { /* ignore */ }
+  return ''
+}
+
+function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: string, heartbeatFileContent: string): string {
+  if (!agent) return fallbackPrompt
+
+  // Dynamic goal (agent-set) takes priority over static system prompt
+  const dynamicGoal = agent.heartbeatGoal || ''
+  const dynamicNextAction = agent.heartbeatNextAction || ''
+  const description = agent.description || ''
+  const systemPrompt = agent.systemPrompt || ''
+  const soul = agent.soul || ''
+  const goalSummary = systemPrompt.slice(0, 500)
+  const recentMessages = (session.messages || []).slice(-5)
+  const recentContext = recentMessages
+    .map((m: any) => `[${m.role}]: ${(m.text || '').slice(0, 200)}`)
+    .join('\n')
+
+  return [
+    'AGENT_HEARTBEAT_TICK',
+    `Time: ${new Date().toISOString()}`,
+    `Agent: ${agent.name}`,
+    description ? `Description: ${description}` : '',
+    dynamicGoal
+      ? `Current goal (self-set): ${dynamicGoal}`
+      : goalSummary ? `System prompt (initial goal):\n${goalSummary}` : '',
+    dynamicNextAction ? `Planned next action: ${dynamicNextAction}` : '',
+    soul ? `Persona: ${soul.slice(0, 300)}` : '',
+    heartbeatFileContent ? `\nHEARTBEAT.md contents:\n${heartbeatFileContent.slice(0, 2000)}` : '',
+    recentContext ? `Recent conversation:\n${recentContext}` : '',
+    '',
+    'You are running an autonomous heartbeat tick. Review your goal and recent context.',
+    'If there is meaningful work to do toward your goal, use your tools and take action.',
+    'If nothing needs attention right now, reply exactly HEARTBEAT_OK.',
+    'Do not ask clarifying questions. Take the most reasonable next action.',
+    '',
+    'To update your goal or plan, include this line in your response:',
+    '[AGENT_HEARTBEAT_META]{"goal": "your evolved goal", "status": "progress", "next_action": "what you plan to do next"}',
+    'You can evolve your goal as you learn more. Set status to "progress" while working, "ok" when done, "idle" when waiting.',
+    fallbackPrompt !== DEFAULT_HEARTBEAT_PROMPT ? `\nAdditional instructions: ${fallbackPrompt}` : '',
+  ].filter(Boolean).join('\n')
+}
 
 function resolveInterval(obj: Record<string, any>, currentSec: number): number {
   // Prefer heartbeatInterval (duration string) over heartbeatIntervalSec (raw number)
@@ -288,9 +341,20 @@ async function tickHeartbeats() {
     const runState = getSessionRunState(session.id)
     if (runState.runningRunId) continue
 
-    const heartbeatMessage = isMainSession(session)
-      ? buildMainLoopHeartbeatPrompt(session, cfg.prompt)
-      : cfg.prompt
+    let heartbeatMessage: string
+    if (isMainSession(session)) {
+      heartbeatMessage = buildMainLoopHeartbeatPrompt(session, cfg.prompt)
+    } else {
+      const heartbeatFileContent = readHeartbeatFile(session)
+      const hasGoal = !!(agent?.heartbeatGoal || agent?.description || agent?.systemPrompt || agent?.soul)
+      const hasCustomPrompt = cfg.prompt !== DEFAULT_HEARTBEAT_PROMPT
+      // Skip heartbeat only if there's truly nothing to drive it:
+      // no agent goal, no HEARTBEAT.md content, AND no custom prompt configured
+      if (!hasGoal && !heartbeatFileContent && !hasCustomPrompt) {
+        continue
+      }
+      heartbeatMessage = buildAgentHeartbeatPrompt(session, agent, cfg.prompt, heartbeatFileContent)
+    }
 
     const enqueue = enqueueSessionRun({
       sessionId: session.id,

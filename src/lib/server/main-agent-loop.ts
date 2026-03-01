@@ -1,6 +1,7 @@
 import crypto from 'crypto'
+import { z } from 'zod'
 import type { GoalContract, MessageToolEvent } from '@/types'
-import { loadSessions, saveSessions, loadTasks, saveTasks } from './storage'
+import { loadSessions, saveSessions, loadAgents, saveAgents, loadTasks, saveTasks } from './storage'
 import { log } from './logger'
 import { getMemoryDb } from './memory-db'
 import {
@@ -18,6 +19,7 @@ const MEMORY_NOTE_MIN_INTERVAL_MS = 90 * 60 * 1000
 const DEFAULT_FOLLOWUP_DELAY_SEC = 45
 const MAX_FOLLOWUP_CHAIN = 6
 const META_LINE_RE = /\[MAIN_LOOP_META\]\s*(\{[^\n]*\})/i
+const AGENT_HEARTBEAT_META_RE = /\[AGENT_HEARTBEAT_META\]\s*(\{[^\n]*\})/i
 const SCREENSHOT_GOAL_HINT = /\b(screenshot|screen shot|snapshot|capture)\b/i
 const DELIVERY_GOAL_HINT = /\b(send|deliver|return|share|upload|post|message)\b/i
 const SCHEDULE_GOAL_HINT = /\b(schedule|scheduled|every\s+\w+|interval|cron|recurr)\b/i
@@ -822,10 +824,67 @@ export function pushMainLoopEventToMainSessions(input: PushMainLoopEventInput): 
   return changed
 }
 
+const AgentHeartbeatMetaSchema = z.object({
+  goal: z.string().trim().optional(),
+  status: z.enum(['progress', 'ok', 'idle', 'blocked']).optional(),
+  next_action: z.string().trim().optional(),
+}).passthrough()
+
+type AgentHeartbeatMeta = z.infer<typeof AgentHeartbeatMetaSchema>
+
+function parseAgentHeartbeatMeta(text: string): AgentHeartbeatMeta | null {
+  const raw = (text || '').trim()
+  if (!raw) return null
+  const match = raw.match(AGENT_HEARTBEAT_META_RE)
+  if (!match?.[1]) return null
+  try {
+    const parsed = JSON.parse(match[1])
+    return AgentHeartbeatMetaSchema.parse(parsed)
+  } catch {
+    return null
+  }
+}
+
+function handleAgentHeartbeatResult(session: any, input: HandleMainLoopRunResultInput): null {
+  if (!input.internal || input.source !== 'heartbeat') return null
+  if (!session.agentId) return null
+  const text = input.resultText || ''
+  if (!text.trim()) return null
+
+  const meta = parseAgentHeartbeatMeta(text)
+  if (!meta) return null
+
+  const agents = loadAgents()
+  const agent = agents[session.agentId]
+  if (!agent) return null
+
+  let changed = false
+  if (meta.goal && meta.goal !== agent.heartbeatGoal) {
+    agent.heartbeatGoal = meta.goal
+    changed = true
+    log.info('agent-heartbeat', `Goal updated for agent ${agent.name}: ${meta.goal.slice(0, 120)}`)
+  }
+  if (meta.next_action) {
+    agent.heartbeatNextAction = meta.next_action
+    changed = true
+  }
+  if (meta.status) {
+    agent.heartbeatStatus = meta.status
+    changed = true
+  }
+
+  if (changed) {
+    agents[session.agentId] = agent
+    saveAgents(agents)
+  }
+  return null
+}
+
 export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): MainLoopFollowupRequest | null {
   const sessions = loadSessions()
   const session = sessions[input.sessionId]
-  if (!session || !isMainSession(session)) return null
+  if (!session) return null
+  if (!isMainSession(session)) return handleAgentHeartbeatResult(session, input)
 
   const now = Date.now()
   const state = normalizeState(session.mainLoopState, now)

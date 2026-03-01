@@ -3,6 +3,7 @@ import {
   loadSessions, saveSessions, loadAgents,
   loadCredentials, decryptKey, loadSettings, loadSkills,
 } from './storage'
+import { WORKSPACE_DIR } from './data-dir'
 import { loadRuntimeSettings, getLegacyOrchestratorMaxTurns } from './runtime-settings'
 import { getMemoryDb } from './memory-db'
 import { getProvider } from '../providers'
@@ -23,7 +24,7 @@ export function createOrchestratorSession(
   sessions[sessionId] = {
     id: sessionId,
     name: `[Orch] ${orchestrator.name}: ${task.slice(0, 40)}`,
-    cwd: cwd || process.cwd(),
+    cwd: cwd || WORKSPACE_DIR,
     user: 'system',
     provider: orchestrator.provider,
     model: orchestrator.model,
@@ -63,13 +64,14 @@ export async function executeOrchestrator(
   orchestrator: Agent,
   task: string,
   sessionId: string,
+  taskId?: string,
 ): Promise<string> {
   // Use LangGraph for all non-CLI providers (including OpenAI-compatible custom providers)
   const isCliProvider = orchestrator.provider === 'claude-cli' || orchestrator.provider === 'codex-cli' || orchestrator.provider === 'opencode-cli'
   if (!isCliProvider) {
     console.log(`[orchestrator] Using LangGraph engine for ${orchestrator.name} (${orchestrator.provider})`)
     const { executeLangGraphOrchestrator } = await import('./orchestrator-lg')
-    return executeLangGraphOrchestrator(orchestrator, task, sessionId)
+    return executeLangGraphOrchestrator(orchestrator, task, sessionId, taskId)
   }
 
   // claude-cli fallback (no structured tool calling)
@@ -156,7 +158,10 @@ async function executeOrchestratorLegacy(
       }
     }
 
-    const fullText = await callProvider(orchestrator, systemPrompt, conversationHistory)
+    const windowedHistory = conversationHistory.length > 10
+      ? [conversationHistory[0], ...conversationHistory.slice(-9)]
+      : conversationHistory
+    const fullText = await callProvider(orchestrator, systemPrompt, windowedHistory)
     conversationHistory.push({ role: 'assistant', text: fullText })
 
     // Save to session
@@ -189,6 +194,21 @@ async function executeOrchestratorLegacy(
           role: 'user',
           text: `[Agent ${agent.name} result]:\n${subResult}`,
         })
+        // Save structured delegation message for rich card rendering
+        session.messages.push({
+          role: 'assistant' as const,
+          text: `Delegated to ${agent.name}: ${cmd.delegate.task.slice(0, 100)}`,
+          time: Date.now(),
+          toolEvents: [{
+            name: 'delegate_to_agent',
+            input: JSON.stringify({ agentName: agent.name, agentId: agent.id, task: cmd.delegate.task }),
+            output: subResult.slice(0, 2000),
+          }],
+        })
+        session.lastActiveAt = Date.now()
+        const ds = loadSessions()
+        ds[sessionId] = session
+        saveSessions(ds)
       }
 
       if (cmd.memory_store) {
@@ -248,7 +268,7 @@ async function executeSubTask(
   const childSession = {
     id: childId,
     name: `[Agent] ${agent.name}: ${task.slice(0, 40)}`,
-    cwd: parentSession?.cwd || process.cwd(),
+    cwd: parentSession?.cwd || WORKSPACE_DIR,
     user: 'system',
     provider: agent.provider,
     model: agent.model,
@@ -310,7 +330,7 @@ export async function callProvider(
     model: agent.model,
     credentialId: agent.credentialId,
     apiEndpoint: agent.apiEndpoint,
-    cwd: process.cwd(),
+    cwd: WORKSPACE_DIR,
     tools: agent.tools || [],
     messages: history.map((h) => ({
       role: h.role as 'user' | 'assistant',

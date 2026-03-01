@@ -56,7 +56,7 @@ export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
         await loadSessions()
         setMessages([])
         setCurrentSession(result.sessionId)
-        setActiveView('sessions')
+        setActiveView('agents')
       }
     } catch (err) {
       console.error('Orchestrator run failed:', err)

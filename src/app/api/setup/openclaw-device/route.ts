@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getDeviceId } from '@/lib/providers/openclaw'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   try {
     const deviceId = getDeviceId()
     return NextResponse.json({ deviceId })

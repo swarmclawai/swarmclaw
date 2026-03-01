@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { loadSettings, saveSettings } from '@/lib/server/storage'
+export const dynamic = 'force-dynamic'
+
 
 const MEMORY_DEPTH_MIN = 0
 const MEMORY_DEPTH_MAX = 12
@@ -18,7 +20,7 @@ function parseIntSetting(value: unknown, fallback: number, min: number, max: num
   return Math.max(min, Math.min(max, Math.trunc(parsed)))
 }
 
-export async function GET() {
+export async function GET(_req: Request) {
   return NextResponse.json(loadSettings())
 }
 

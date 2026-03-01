@@ -3,7 +3,9 @@ import {
   loadConnectors, saveConnectors, loadSessions, saveSessions,
   loadAgents, loadCredentials, decryptKey, loadSettings, loadSkills,
 } from '../storage'
+import { WORKSPACE_DIR } from '../data-dir'
 import { streamAgentChat } from '../stream-agent-chat'
+import { notify } from '../ws-hub'
 import { logExecution } from '../execution-log'
 import type { Connector } from '@/types'
 import type { ConnectorInstance, InboundMessage, InboundMedia } from './types'
@@ -124,7 +126,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     session = {
       id,
       name: sessionKey,
-      cwd: process.cwd(),
+      cwd: WORKSPACE_DIR,
       user: 'connector',
       provider: agent.provider === 'claude-cli' ? 'anthropic' : agent.provider,
       model: agent.model,
@@ -203,7 +205,7 @@ The test: would a thoughtful friend feel compelled to type something back? If no
         apiKey,
         systemPrompt,
         write: () => {},  // no SSE needed for connectors
-        history: session.messages,
+        history: session.messages.slice(-20),
       })
       // Use finalResponse for connectors — strips intermediate planning/tool-use text
       fullText = result.finalResponse
@@ -234,7 +236,7 @@ The test: would a thoughtful friend feel compelled to type something back? If no
         }
       },
       active: new Map(),
-      loadHistory: () => session.messages,
+      loadHistory: () => session.messages.slice(-20),
     })
   }
 
@@ -268,6 +270,7 @@ The test: would a thoughtful friend feel compelled to type something back? If no
     const s2 = loadSessions()
     s2[session.id] = session
     saveSessions(s2)
+    notify(`messages:${session.id}`)
   }
 
   return fullText || '(no response)'
@@ -341,6 +344,7 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
     connector.updatedAt = Date.now()
     connectors[connectorId] = connector
     saveConnectors(connectors)
+    notify('connectors')
 
     console.log(`[connector] Started ${connector.platform} connector: ${connector.name}`)
   } catch (err: any) {
@@ -350,6 +354,7 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
     connector.updatedAt = Date.now()
     connectors[connectorId] = connector
     saveConnectors(connectors)
+    notify('connectors')
     throw err
   }
 }
@@ -371,6 +376,7 @@ export async function stopConnector(connectorId: string): Promise<void> {
     connector.updatedAt = Date.now()
     connectors[connectorId] = connector
     saveConnectors(connectors)
+    notify('connectors')
   }
 
   console.log(`[connector] Stopped connector: ${connectorId}`)

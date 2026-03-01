@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { loadConnectors, saveConnectors } from '@/lib/server/storage'
+import { notify } from '@/lib/server/ws-hub'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -46,6 +47,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
     // Re-read the connector after manager modified it
     const fresh = loadConnectors()
+    notify('connectors')
     return NextResponse.json(fresh[id])
   }
 
@@ -59,6 +61,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   connectors[id] = connector
   saveConnectors(connectors)
+  notify('connectors')
   return NextResponse.json(connector)
 }
 
@@ -75,5 +78,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
   delete connectors[id]
   saveConnectors(connectors)
+  notify('connectors')
   return NextResponse.json({ ok: true })
 }

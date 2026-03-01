@@ -3,9 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { createSchedule, updateSchedule, deleteSchedule } from '@/lib/schedules'
-import { api } from '@/lib/api-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
-import { AiGenBlock } from '@/components/shared/ai-gen-block'
 import type { ScheduleType, ScheduleStatus } from '@/types'
 import cronstrue from 'cronstrue'
 
@@ -63,49 +61,12 @@ export function ScheduleSheet() {
   const [status, setStatus] = useState<ScheduleStatus>('active')
   const [customCron, setCustomCron] = useState(false)
 
-  // AI generation state
-  const [aiPrompt, setAiPrompt] = useState('')
-  const [generating, setGenerating] = useState(false)
-  const [generated, setGenerated] = useState(false)
-  const [genError, setGenError] = useState('')
-  const appSettings = useAppStore((s) => s.appSettings)
-  const loadSettings = useAppStore((s) => s.loadSettings)
-
   const editing = editingId ? schedules[editingId] : null
   const agentList = Object.values(agents)
-
-  const handleGenerate = async () => {
-    if (!aiPrompt.trim()) return
-    setGenerating(true)
-    setGenError('')
-    try {
-      const result = await api<{ name?: string; taskPrompt?: string; scheduleType?: ScheduleType; cron?: string; intervalMs?: number; error?: string }>('POST', '/generate', { type: 'schedule', prompt: aiPrompt })
-      if (result.error) {
-        setGenError(result.error)
-      } else if (result.name || result.taskPrompt) {
-        if (result.name) setName(result.name)
-        if (result.taskPrompt) setTaskPrompt(result.taskPrompt)
-        if (result.scheduleType) setScheduleType(result.scheduleType)
-        if (result.cron) { setCron(result.cron); setCustomCron(true) }
-        if (result.intervalMs) setIntervalMs(result.intervalMs)
-        setGenerated(true)
-      } else {
-        setGenError('AI returned empty response — try again')
-      }
-    } catch (err: unknown) {
-      setGenError(err instanceof Error ? err.message : 'Generation failed')
-    }
-    setGenerating(false)
-  }
 
   useEffect(() => {
     if (open) {
       loadAgents()
-      loadSettings()
-      setAiPrompt('')
-      setGenerating(false)
-      setGenerated(false)
-      setGenError('')
       if (editing) {
         setName(editing.name || '')
         setAgentId(editing.agentId)
@@ -174,14 +135,6 @@ export function ScheduleSheet() {
         </h2>
         <p className="text-[14px] text-text-3">Automate agent tasks on a schedule</p>
       </div>
-
-      {/* AI Generation */}
-      {!editing && <AiGenBlock
-        aiPrompt={aiPrompt} setAiPrompt={setAiPrompt}
-        generating={generating} generated={generated} genError={genError}
-        onGenerate={handleGenerate} appSettings={appSettings}
-        placeholder='Describe the schedule, e.g. "Run keyword research every Monday at 9am"'
-      />}
 
       <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Name</label>

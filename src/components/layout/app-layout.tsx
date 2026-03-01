@@ -6,8 +6,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useAppStore } from '@/stores/use-app-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { Avatar } from '@/components/shared/avatar'
-import { SessionList } from '@/components/sessions/session-list'
-import { NewSessionSheet } from '@/components/sessions/new-session-sheet'
 import { SettingsSheet } from '@/components/shared/settings-sheet'
 import { AgentList } from '@/components/agents/agent-list'
 import { AgentChatList } from '@/components/agents/agent-chat-list'
@@ -56,7 +54,6 @@ export function AppLayout() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
-  const setNewSessionOpen = useAppStore((s) => s.setNewSessionOpen)
   const setUser = useAppStore((s) => s.setUser)
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const activeView = useAppStore((s) => s.activeView)
@@ -72,8 +69,10 @@ export function AppLayout() {
   const setMcpServerSheetOpen = useAppStore((s) => s.setMcpServerSheetOpen)
   const setKnowledgeSheetOpen = useAppStore((s) => s.setKnowledgeSheetOpen)
   const setPluginSheetOpen = useAppStore((s) => s.setPluginSheetOpen)
+  const tasks = useAppStore((s) => s.tasks)
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const hasSelectedSession = !!(currentSessionId && sessions[currentSessionId])
+  const pendingApprovalCount = Object.values(tasks).filter((t) => t.pendingApproval).length
 
   const [agentViewMode, setAgentViewMode] = useState<'chat' | 'config'>('chat')
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -118,8 +117,7 @@ export function AppLayout() {
   }
 
   const openNewSheet = () => {
-    if (activeView === 'sessions') setNewSessionOpen(true)
-    else if (activeView === 'agents') setAgentSheetOpen(true)
+    if (activeView === 'agents') setAgentSheetOpen(true)
     else if (activeView === 'schedules') setScheduleSheetOpen(true)
     else if (activeView === 'tasks') setTaskSheetOpen(true)
     else if (activeView === 'secrets') setSecretSheetOpen(true)
@@ -130,6 +128,18 @@ export function AppLayout() {
     else if (activeView === 'mcp_servers') setMcpServerSheetOpen(true)
     else if (activeView === 'knowledge') setKnowledgeSheetOpen(true)
     else if (activeView === 'plugins') setPluginSheetOpen(true)
+  }
+
+  const handleNavClick = (view: AppView) => {
+    if (FULL_WIDTH_VIEWS.has(view)) {
+      setActiveView(view)
+      setSidebarOpen(false)
+    } else if (activeView === view && sidebarOpen) {
+      setSidebarOpen(false)
+    } else {
+      setActiveView(view)
+      setSidebarOpen(true)
+    }
   }
 
   const agents = useAppStore((s) => s.agents)
@@ -230,82 +240,77 @@ export function AppLayout() {
 
           {/* Nav items */}
           <div className={`flex flex-col gap-0.5 ${railExpanded ? 'px-3' : 'items-center'}`}>
-            <NavItem view="agents" label="Agents" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('agents'); setSidebarOpen(true) }}>
+            <NavItem view="agents" label="Agents" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('agents')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
               </svg>
             </NavItem>
-            <NavItem view="sessions" label="History" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('sessions'); setSidebarOpen(true) }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
-              </svg>
-            </NavItem>
-            <NavItem view="schedules" label="Schedules" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('schedules'); setSidebarOpen(true) }}>
+            <NavItem view="schedules" label="Schedules" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('schedules')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
               </svg>
             </NavItem>
-            <NavItem view="memory" label="Memory" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('memory'); setSidebarOpen(true) }}>
+            <NavItem view="memory" label="Memory" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('memory')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
               </svg>
             </NavItem>
-            <NavItem view="tasks" label="Tasks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('tasks'); setSidebarOpen(true) }}>
+            <NavItem view="tasks" label="Tasks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('tasks')} badge={pendingApprovalCount}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 14l2 2 4-4" />
               </svg>
             </NavItem>
-            <NavItem view="secrets" label="Secrets" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('secrets'); setSidebarOpen(true) }}>
+            <NavItem view="secrets" label="Secrets" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('secrets')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
             </NavItem>
-            <NavItem view="providers" label="Providers" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('providers'); setSidebarOpen(true) }}>
+            <NavItem view="providers" label="Providers" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('providers')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
               </svg>
             </NavItem>
-            <NavItem view="skills" label="Skills" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('skills'); setSidebarOpen(true) }}>
+            <NavItem view="skills" label="Skills" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('skills')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
               </svg>
             </NavItem>
-            <NavItem view="connectors" label="Connectors" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('connectors'); setSidebarOpen(true) }}>
+            <NavItem view="connectors" label="Connectors" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('connectors')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" />
               </svg>
             </NavItem>
-            <NavItem view="webhooks" label="Webhooks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('webhooks'); setSidebarOpen(true) }}>
+            <NavItem view="webhooks" label="Webhooks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('webhooks')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M22 12h-4l-3 7L9 5l-3 7H2" />
               </svg>
             </NavItem>
-            <NavItem view="mcp_servers" label="MCP" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('mcp_servers'); setSidebarOpen(true) }}>
+            <NavItem view="mcp_servers" label="MCP" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('mcp_servers')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><line x1="6" y1="6" x2="6.01" y2="6" /><line x1="6" y1="18" x2="6.01" y2="18" />
               </svg>
             </NavItem>
-            <NavItem view="knowledge" label="Knowledge" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('knowledge'); setSidebarOpen(true) }}>
+            <NavItem view="knowledge" label="Knowledge" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('knowledge')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
               </svg>
             </NavItem>
-            <NavItem view="plugins" label="Plugins" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('plugins'); setSidebarOpen(true) }}>
+            <NavItem view="plugins" label="Plugins" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('plugins')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2v4m0 12v4M2 12h4m12 0h4" /><circle cx="12" cy="12" r="4" /><path d="M8 8L5.5 5.5M16 8l2.5-2.5M8 16l-2.5 2.5M16 16l2.5 2.5" />
               </svg>
             </NavItem>
-            <NavItem view="usage" label="Usage" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('usage'); setSidebarOpen(true) }}>
+            <NavItem view="usage" label="Usage" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('usage')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
               </svg>
             </NavItem>
-            <NavItem view="runs" label="Runs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('runs'); setSidebarOpen(true) }}>
+            <NavItem view="runs" label="Runs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('runs')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
               </svg>
             </NavItem>
-            <NavItem view="logs" label="Logs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => { setActiveView('logs'); setSidebarOpen(true) }}>
+            <NavItem view="logs" label="Logs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('logs')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
               </svg>
@@ -400,7 +405,7 @@ export function AppLayout() {
           style={{ animation: 'panel-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)' }}
         >
           <div className="flex items-center px-5 pt-5 pb-3 shrink-0">
-            <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">{activeView === 'sessions' ? 'History' : activeView}</h2>
+            <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">{activeView}</h2>
             {activeView === 'logs' || activeView === 'usage' || activeView === 'runs' ? null : activeView === 'memory' ? (
               <button
                 onClick={() => useAppStore.getState().setMemorySheetOpen(true)}
@@ -422,17 +427,10 @@ export function AppLayout() {
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : 'New'}
+                {activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : 'New'}
               </button>
             )}
           </div>
-          {activeView === 'sessions' && (
-            <>
-              <UpdateBanner />
-              <NetworkBanner />
-              <SessionList inSidebar onSelect={() => {}} />
-            </>
-          )}
           {activeView === 'agents' && (
             <>
               <div className="flex gap-1 px-4 pb-2">
@@ -500,7 +498,7 @@ export function AppLayout() {
             </div>
             {/* View selector tabs */}
             <div className="flex px-4 py-2 gap-1 shrink-0 flex-wrap">
-              {(['agents', 'sessions', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'plugins', 'usage', 'runs', 'logs'] as AppView[]).map((v) => (
+              {(['agents', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'plugins', 'usage', 'runs', 'logs'] as AppView[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setActiveView(v)}
@@ -526,16 +524,9 @@ export function AppLayout() {
                   shadow-[0_2px_12px_rgba(99,102,241,0.15)]"
                 style={{ fontFamily: 'inherit' }}
               >
-                + New {activeView === 'sessions' ? 'Session' : activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : activeView === 'plugins' ? 'Plugin' : 'Entry'}
+                + New {activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : activeView === 'plugins' ? 'Plugin' : 'Entry'}
               </button>
             </div>
-            )}
-            {activeView === 'sessions' && (
-              <>
-                <UpdateBanner />
-                <NetworkBanner />
-                <SessionList inSidebar onSelect={() => setSidebarOpen(false)} />
-              </>
             )}
             {activeView === 'agents' && (
               <>
@@ -596,36 +587,48 @@ export function AppLayout() {
                 </div>
               )}
             </div>
-          ) : activeView === 'sessions' && hasSelectedSession ? (
-            <ChatArea />
-          ) : activeView === 'sessions' ? (
-            <div className="flex-1 flex flex-col">
-              {!isDesktop ? (
-                <SessionList />
-              ) : (
-                <div className="flex-1 flex items-center justify-center px-8">
-                  <div className="text-center max-w-[420px]">
-                    <h2 className="font-display text-[24px] font-700 text-text mb-2 tracking-[-0.02em]">
-                      No Chat Selected
-                    </h2>
-                    <p className="text-[14px] text-text-3">
-                      Choose a session from the sidebar or switch to Agents view.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
           ) : activeView === 'tasks' && isDesktop ? (
             <TaskBoard />
           ) : activeView === 'memory' ? (
             <MemoryDetail />
+          ) : !sidebarOpen && FULL_WIDTH_VIEWS.has(activeView) ? (
+            <div className="flex-1 flex flex-col h-full">
+              <div className="flex items-center px-6 pt-5 pb-3 shrink-0">
+                <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">
+                  {activeView === 'mcp_servers' ? 'MCP Servers' : activeView.replace('_', ' ')}
+                </h2>
+                {activeView !== 'usage' && activeView !== 'runs' && activeView !== 'logs' && (
+                  <button
+                    onClick={openNewSheet}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 text-accent-bright bg-accent-soft hover:bg-[#6366F1]/15 transition-all cursor-pointer"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    {activeView === 'schedules' ? 'Schedule' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : activeView === 'plugins' ? 'Plugin' : 'New'}
+                  </button>
+                )}
+              </div>
+              {activeView === 'schedules' && <ScheduleList />}
+              {activeView === 'secrets' && <SecretsList />}
+              {activeView === 'providers' && <ProviderList />}
+              {activeView === 'skills' && <SkillList />}
+              {activeView === 'connectors' && <ConnectorList />}
+              {activeView === 'webhooks' && <WebhookList />}
+              {activeView === 'mcp_servers' && <McpServerList />}
+              {activeView === 'knowledge' && <KnowledgeList />}
+              {activeView === 'plugins' && <PluginList />}
+              {activeView === 'usage' && <UsageList />}
+              {activeView === 'runs' && <RunList />}
+              {activeView === 'logs' && <LogList />}
+            </div>
           ) : (
             <ViewEmptyState view={activeView} />
           )}
         </div>
       </ErrorBoundary>
 
-      <NewSessionSheet />
       <SettingsSheet />
       <AgentSheet />
       <ScheduleSheet />
@@ -718,7 +721,6 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 }
 
 const VIEW_DESCRIPTIONS: Record<AppView, string> = {
-  sessions: 'Session history & debug view',
   agents: 'Chat with & configure your AI agents',
   schedules: 'Automated task schedules',
   memory: 'Long-term agent memory store',
@@ -736,7 +738,13 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   runs: 'Live session run monitoring & history',
 }
 
-const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'sessions' | 'agents'>, { icon: string; title: string; description: string; features: string[] }> = {
+const FULL_WIDTH_VIEWS = new Set<AppView>([
+  'schedules', 'secrets', 'providers', 'skills',
+  'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'plugins',
+  'usage', 'runs', 'logs',
+])
+
+const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents'>, { icon: string; title: string; description: string; features: string[] }> = {
   schedules: {
     icon: 'clock',
     title: 'Schedules',
@@ -824,8 +832,8 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'sessions' | 'agents'>, { icon:
 }
 
 function ViewEmptyState({ view }: { view: AppView }) {
-  if (view === 'sessions' || view === 'agents') return null
-  const config = VIEW_EMPTY_STATES[view as Exclude<AppView, 'sessions' | 'agents'>]
+  if (view === 'agents') return null
+  const config = VIEW_EMPTY_STATES[view as Exclude<AppView, 'agents'>]
   if (!config) return null
 
   return (
@@ -907,16 +915,17 @@ function ViewEmptyIcon({ type }: { type: string }) {
   }
 }
 
-function NavItem({ view, label, expanded, active, sidebarOpen, onClick, children }: {
+function NavItem({ view, label, expanded, active, sidebarOpen, onClick, badge, children }: {
   view: AppView
   label: string
   expanded: boolean
   active: AppView
   sidebarOpen: boolean
   onClick: () => void
+  badge?: number
   children: React.ReactNode
 }) {
-  const isActive = active === view && sidebarOpen
+  const isActive = active === view && (sidebarOpen || FULL_WIDTH_VIEWS.has(view))
 
   if (expanded) {
     return (
@@ -928,7 +937,14 @@ function NavItem({ view, label, expanded, active, sidebarOpen, onClick, children
             : 'bg-transparent text-text-3 hover:text-text hover:bg-white/[0.04]'}`}
         style={{ fontFamily: 'inherit' }}
       >
-        <span className="shrink-0">{children}</span>
+        <span className="shrink-0 relative">
+          {children}
+          {!!badge && (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] rounded-full bg-amber-500 text-black text-[9px] font-700 flex items-center justify-center px-0.5">
+              {badge}
+            </span>
+          )}
+        </span>
         <span className="truncate">{label}</span>
       </button>
     )
@@ -937,8 +953,13 @@ function NavItem({ view, label, expanded, active, sidebarOpen, onClick, children
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button onClick={onClick} className={`rail-btn ${isActive ? 'active' : ''}`}>
+        <button onClick={onClick} className={`rail-btn ${isActive ? 'active' : ''} relative`}>
           {children}
+          {!!badge && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full bg-amber-500 text-black text-[9px] font-700 flex items-center justify-center px-0.5">
+              {badge}
+            </span>
+          )}
         </button>
       </TooltipTrigger>
       <TooltipContent side="right" sideOffset={8}

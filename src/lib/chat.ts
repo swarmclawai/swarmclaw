@@ -12,8 +12,19 @@ export async function streamChat(
   imagePath?: string,
   imageUrl?: string,
   onEvent?: (event: SSEEvent) => void,
+  optionsOrFiles?: StreamChatOptions | string[],
   options?: StreamChatOptions,
 ): Promise<void> {
+  // Support both (options) and (attachedFiles, options) as 6th arg
+  let attachedFiles: string[] | undefined
+  let opts: StreamChatOptions | undefined
+  if (Array.isArray(optionsOrFiles)) {
+    attachedFiles = optionsOrFiles
+    opts = options
+  } else {
+    opts = optionsOrFiles
+  }
+
   const key = getStoredAccessKey()
   const res = await fetch(`/api/sessions/${sessionId}/chat`, {
     method: 'POST',
@@ -25,8 +36,9 @@ export async function streamChat(
       message,
       imagePath,
       imageUrl,
-      internal: !!options?.internal,
-      queueMode: options?.queueMode,
+      attachedFiles,
+      internal: !!opts?.internal,
+      queueMode: opts?.queueMode,
     }),
   })
 

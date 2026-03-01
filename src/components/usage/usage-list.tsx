@@ -52,9 +52,9 @@ export function UsageList() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-3 pb-20">
+    <div className="flex-1 overflow-y-auto px-5 pb-8">
       {/* Summary */}
-      <div className="grid grid-cols-2 gap-2 mb-4 mt-1">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 mt-1">
         <div className="p-3 rounded-[12px] bg-white/[0.03] border border-white/[0.06]">
           <div className="text-[10px] font-600 text-text-3 uppercase tracking-wider mb-1">Total Cost</div>
           <div className="text-[18px] font-700 text-text tracking-tight">{formatCost(data.totalCost)}</div>
@@ -63,15 +63,23 @@ export function UsageList() {
           <div className="text-[10px] font-600 text-text-3 uppercase tracking-wider mb-1">Total Tokens</div>
           <div className="text-[18px] font-700 text-text tracking-tight">{formatTokens(data.totalTokens)}</div>
         </div>
+        <div className="p-3 rounded-[12px] bg-white/[0.03] border border-white/[0.06]">
+          <div className="text-[10px] font-600 text-text-3 uppercase tracking-wider mb-1">Total Requests</div>
+          <div className="text-[18px] font-700 text-text tracking-tight">{providers.reduce((sum, [, s]) => sum + s.requests, 0)}</div>
+        </div>
+        <div className="p-3 rounded-[12px] bg-white/[0.03] border border-white/[0.06]">
+          <div className="text-[10px] font-600 text-text-3 uppercase tracking-wider mb-1">Providers</div>
+          <div className="text-[18px] font-700 text-text tracking-tight">{providers.length}</div>
+        </div>
       </div>
 
       {/* Provider breakdown */}
       <div className="mb-2">
-        <h3 className="text-[11px] font-600 text-text-3 uppercase tracking-wider px-1 mb-2">By Provider</h3>
+        <h3 className="text-[11px] font-600 text-text-3 uppercase tracking-wider mb-2">By Provider</h3>
         {providers.length === 0 ? (
           <div className="text-center py-6 text-[12px] text-text-3/60">No usage data yet</div>
         ) : (
-          <div className="space-y-1.5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {providers.map(([provider, stats]) => {
               const pct = data.totalCost > 0 ? (stats.cost / data.totalCost) * 100 : 0
               return (

@@ -619,8 +619,8 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
     }
   }
 
-  // delegate_to_agent: requires orchestrator capability to be enabled
-  if (bctx.activeTools.includes('orchestrator') && ctx?.agentId) {
+  // delegate_to_agent: requires "Assign to Other Agents" (platformAssignScope: 'all')
+  if (ctx?.platformAssignScope === 'all' && ctx?.agentId) {
     tools.push(
       tool(
         async ({ agentId: targetAgentId, task: taskPrompt, description: taskDesc, startImmediately }) => {

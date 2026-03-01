@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { loadConnectors, saveConnectors } from '@/lib/server/storage'
+import { notify } from '@/lib/server/ws-hub'
 import type { Connector } from '@/types'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
+
+export async function GET(_req: Request) {
   const connectors = loadConnectors()
   // Merge runtime status from manager
   try {
@@ -42,6 +45,7 @@ export async function POST(req: Request) {
 
   connectors[id] = connector
   saveConnectors(connectors)
+  notify('connectors')
 
   // Auto-start if connector has credentials (or is WhatsApp which uses QR)
   const hasCredentials = connector.platform === 'whatsapp' || connector.platform === 'openclaw' || !!connector.credentialId
@@ -53,6 +57,7 @@ export async function POST(req: Request) {
       connector.status = 'running'
       connectors[id] = connector
       saveConnectors(connectors)
+      notify('connectors')
     } catch { /* auto-start is best-effort */ }
   }
 

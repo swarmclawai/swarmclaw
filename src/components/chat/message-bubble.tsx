@@ -168,6 +168,115 @@ function heartbeatSummary(text: string): string {
   return clean.length > 180 ? `${clean.slice(0, 180)}...` : clean
 }
 
+const IMAGE_ATTACH_RE = /\.(png|jpg|jpeg|gif|webp|svg|bmp|ico)$/i
+const PREVIEWABLE_ATTACH_RE = /\.(html?|svg)$/i
+const FILE_TYPE_COLORS: Record<string, string> = {
+  html: 'text-orange-400', htm: 'text-orange-400', svg: 'text-emerald-400',
+  js: 'text-yellow-400', jsx: 'text-yellow-400', ts: 'text-blue-400', tsx: 'text-blue-400',
+  py: 'text-green-400', json: 'text-amber-300', css: 'text-purple-400', scss: 'text-pink-400',
+  md: 'text-text-2', txt: 'text-text-3', pdf: 'text-red-400',
+}
+
+function parseAttachmentUrl(filePath?: string, fileUrl?: string) {
+  const url = fileUrl || (filePath ? `/api/uploads/${filePath.split('/').pop()}` : '')
+  const rawName = filePath?.split('/').pop() || fileUrl?.split('/').pop() || 'file'
+  const filename = rawName.replace(/^[a-f0-9]+-/, '').split('?')[0]
+  return { url, filename }
+}
+
+function AttachmentChip({ url, filename, isUserMsg }: { url: string; filename: string; isUserMsg?: boolean }) {
+  const isImage = IMAGE_ATTACH_RE.test(filename)
+  if (isImage) {
+    return (
+      <img src={url} alt="Attached" className="max-w-[240px] rounded-[12px] mb-2 border border-white/10"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+    )
+  }
+
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  const colorClass = FILE_TYPE_COLORS[ext] || 'text-text-3'
+  const isPreviewable = PREVIEWABLE_ATTACH_RE.test(filename)
+
+  // Solid bg so chip is readable on both user (purple) and assistant bubbles
+  const chipBg = isUserMsg
+    ? 'bg-[rgba(0,0,0,0.25)] border-white/[0.12]'
+    : 'bg-[rgba(255,255,255,0.04)] border-white/[0.08]'
+  const iconBg = isUserMsg ? 'bg-white/[0.12]' : 'bg-white/[0.05]'
+  const btnBg = isUserMsg
+    ? 'bg-white/[0.12] hover:bg-white/[0.18] text-white/80'
+    : 'bg-white/[0.06] hover:bg-white/[0.10] text-text-3'
+
+  return (
+    <div className={`flex items-center gap-3 px-4 py-2.5 mb-2 rounded-[12px] border ${chipBg}`}>
+      <div className={`flex items-center justify-center w-8 h-8 rounded-[8px] shrink-0 ${iconBg} ${colorClass}`}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+        </svg>
+      </div>
+      <div className="flex flex-col flex-1 min-w-0">
+        <span className={`text-[13px] font-500 truncate ${isUserMsg ? 'text-white' : 'text-text'}`}>{filename}</span>
+        <span className={`text-[11px] uppercase tracking-wide ${isUserMsg ? 'text-white/50' : 'text-text-3/70'}`}>{ext || 'file'}</span>
+      </div>
+      {isPreviewable && (
+        <a href={url} target="_blank" rel="noopener noreferrer"
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-[11px] font-600 no-underline transition-colors shrink-0 ${
+            isUserMsg ? 'bg-white/[0.15] hover:bg-white/[0.22] text-white' : 'bg-accent-soft hover:bg-accent-soft/80 text-accent-bright'
+          }`}
+          title="Preview in new tab">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          Preview
+        </a>
+      )}
+      <a href={url} download={filename}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-[11px] font-600 no-underline transition-colors shrink-0 ${btnBg}`}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        Download
+      </a>
+    </div>
+  )
+}
+
+function renderAttachments(message: Message) {
+  const isUser = message.role === 'user'
+  const seen = new Set<string>()
+  const chips: { url: string; filename: string }[] = []
+
+  // Primary attachment
+  if (message.imagePath || message.imageUrl) {
+    const primary = parseAttachmentUrl(message.imagePath, message.imageUrl)
+    if (primary.url) {
+      seen.add(primary.url)
+      chips.push(primary)
+    }
+  }
+
+  // Additional attached files
+  if (message.attachedFiles?.length) {
+    for (const fp of message.attachedFiles) {
+      const att = parseAttachmentUrl(fp)
+      if (att.url && !seen.has(att.url)) {
+        seen.add(att.url)
+        chips.push(att)
+      }
+    }
+  }
+
+  if (!chips.length) return null
+  return (
+    <div className="flex flex-col">
+      {chips.map((c) => <AttachmentChip key={c.url} url={c.url} filename={c.filename} isUserMsg={isUser} />)}
+    </div>
+  )
+}
+
 interface Props {
   message: Message
   assistantName?: string
@@ -240,48 +349,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
 
       {/* Message bubble */}
       <div className={`max-w-[85%] md:max-w-[72%] ${isUser ? 'bubble-user px-5 py-3.5' : isHeartbeat ? 'bubble-ai px-4 py-3' : 'bubble-ai px-5 py-3.5'}`}>
-        {(message.imagePath || message.imageUrl) && (() => {
-          const url = message.imageUrl || `/api/uploads/${message.imagePath?.split('/').pop()}`
-          const rawName = message.imagePath?.split('/').pop() || message.imageUrl?.split('/').pop() || 'file'
-          const filename = rawName.replace(/^[a-f0-9]+-/, '').split('?')[0]
-          const isImage = /\.(png|jpg|jpeg|gif|webp|svg|bmp|ico)$/i.test(filename)
-          if (isImage) {
-            return (
-              <img src={url} alt="Attached" className="max-w-[240px] rounded-[12px] mb-3 border border-white/10"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
-            )
-          }
-          const isPreviewable = /\.(html?|svg)$/i.test(filename)
-          return (
-            <div className="flex items-center gap-3 px-4 py-3 mb-3 rounded-[12px] border border-white/10 bg-white/[0.03]">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3 shrink-0">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-              <span className="text-[13px] text-text-2 font-500 truncate flex-1">{filename}</span>
-              {isPreviewable && (
-                <a href={url} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-accent-soft hover:bg-accent-soft/80 text-accent-bright text-[11px] font-600 no-underline transition-colors shrink-0"
-                  title="Preview in new tab">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                  Preview
-                </a>
-              )}
-              <a href={url} download={filename}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.06] hover:bg-white/[0.10] text-text-3 text-[11px] font-600 no-underline transition-colors shrink-0">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-                Download
-              </a>
-            </div>
-          )
-        })()}
+        {renderAttachments(message)}
 
         {isHeartbeat ? (
           <div className="flex flex-col gap-2">

@@ -3,15 +3,7 @@
 import { useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
-
-const TOOL_LABELS: Record<string, string> = {
-  shell: 'Shell', files: 'Files', edit_file: 'Edit File', process: 'Process',
-  web_search: 'Web Search', web_fetch: 'Web Fetch', browser: 'Browser', memory: 'Memory',
-  claude_code: 'Claude Code', codex_cli: 'Codex CLI', opencode_cli: 'OpenCode CLI',
-  orchestrator: 'Orchestrator', manage_agents: 'Agents', manage_tasks: 'Tasks', manage_schedules: 'Schedules',
-  manage_skills: 'Skills', manage_documents: 'Documents', manage_webhooks: 'Webhooks',
-  manage_connectors: 'Connectors', manage_sessions: 'Sessions', manage_secrets: 'Secrets',
-}
+import { TOOL_LABELS } from '@/lib/tool-definitions'
 
 interface Props {
   text: string

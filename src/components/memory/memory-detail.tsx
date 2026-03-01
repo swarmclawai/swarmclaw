@@ -76,7 +76,7 @@ export function MemoryDetail() {
 
   const handleNavigateToSession = useCallback(() => {
     if (!entry?.sessionId) return
-    setActiveView('sessions')
+    setActiveView('agents')
     setCurrentSession(entry.sessionId)
   }, [entry])
 

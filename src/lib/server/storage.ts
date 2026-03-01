@@ -4,11 +4,11 @@ import crypto from 'crypto'
 import os from 'os'
 import Database from 'better-sqlite3'
 
-import { DATA_DIR } from './data-dir'
-export const UPLOAD_DIR = path.join(os.tmpdir(), 'swarmclaw-uploads')
+import { DATA_DIR, WORKSPACE_DIR } from './data-dir'
+export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
 // Ensure directories exist
-for (const dir of [DATA_DIR, UPLOAD_DIR]) {
+for (const dir of [DATA_DIR, UPLOAD_DIR, WORKSPACE_DIR]) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
 }
 
@@ -65,8 +65,8 @@ function readCollectionRaw(table: string): Map<string, string> {
 }
 
 function getCollectionRawCache(table: string): Map<string, string> {
-  const cached = collectionCache.get(table)
-  if (cached) return cached
+  // Always reload from SQLite so concurrent Next.js workers/processes
+  // observe each other's writes immediately.
   const loaded = readCollectionRaw(table)
   collectionCache.set(table, loaded)
   return loaded
@@ -87,26 +87,43 @@ function loadCollection(table: string): Record<string, any> {
 
 function saveCollection(table: string, data: Record<string, any>) {
   const current = getCollectionRawCache(table)
+  const next = new Map<string, string>()
   const toUpsert: Array<[string, string]> = []
+  const toDelete: string[] = []
 
   for (const [id, val] of Object.entries(data)) {
     const serialized = JSON.stringify(val)
     if (typeof serialized !== 'string') continue
+    next.set(id, serialized)
     if (current.get(id) !== serialized) {
       toUpsert.push([id, serialized])
     }
-    current.set(id, serialized)
   }
 
-  if (!toUpsert.length) return
+  for (const id of current.keys()) {
+    if (!next.has(id)) toDelete.push(id)
+  }
+
+  if (!toUpsert.length && !toDelete.length) return
 
   const transaction = db.transaction(() => {
+    if (toDelete.length) {
+      const del = db.prepare(`DELETE FROM ${table} WHERE id = ?`)
+      for (const id of toDelete) del.run(id)
+    }
     const upsert = db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`)
     for (const [id, serialized] of toUpsert) {
       upsert.run(id, serialized)
     }
   })
   transaction()
+
+  for (const id of toDelete) {
+    current.delete(id)
+  }
+  for (const [id, serialized] of next.entries()) {
+    current.set(id, serialized)
+  }
 }
 
 function deleteCollectionItem(table: string, id: string) {

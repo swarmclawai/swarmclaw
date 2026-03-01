@@ -1,11 +1,14 @@
 import crypto from 'crypto'
 import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSchedules, saveSchedules, loadSessions, saveSessions, loadSettings } from './storage'
+import { notify } from './ws-hub'
+import { WORKSPACE_DIR } from './data-dir'
 import { createOrchestratorSession, executeOrchestrator } from './orchestrator'
 import { formatValidationFailure, validateTaskCompletion } from './task-validation'
 import { ensureTaskCompletionReport } from './task-reports'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { executeSessionChatTurn } from './chat-execution'
 import { extractTaskResult, formatResultBody } from './task-result'
+import { getCheckpointSaver } from './langgraph-checkpoint'
 import type { Agent, BoardTask, Message } from '@/types'
 
 let processing = false
@@ -119,7 +122,7 @@ async function executeTaskRun(
 ): Promise<string> {
   const prompt = task.description || task.title
   if (agent?.isOrchestrator) {
-    return executeOrchestrator(agent, prompt, sessionId)
+    return executeOrchestrator(agent, prompt, sessionId, task.id)
   }
 
   const run = await executeSessionChatTurn({
@@ -389,7 +392,7 @@ export function validateCompletedTasksQueue() {
     }
   }
 
-  if (tasksDirty) saveTasks(tasks)
+  if (tasksDirty) { saveTasks(tasks); notify('tasks') }
   if (sessionsDirty) saveSessions(sessions)
   if (demoted > 0) {
     console.warn(`[queue] Demoted ${demoted} invalid completed task(s) to failed after validation audit`)
@@ -510,9 +513,12 @@ export async function processNext() {
       task.startedAt = Date.now()
       task.retryScheduledAt = null
       task.deadLetteredAt = null
+      // Clear transient failure fields so validation/error state reflects only this attempt.
+      task.error = null
+      task.validation = null
       task.updatedAt = Date.now()
 
-      const taskCwd = task.cwd || process.cwd()
+      const taskCwd = task.cwd || WORKSPACE_DIR
       let sessionId = ''
       const scheduleTask = task as ScheduleTaskMeta
       const isScheduleTask = scheduleTask.sourceType === 'schedule'
@@ -688,6 +694,8 @@ export async function processNext() {
           }
 
           saveTasks(t2)
+          notify('tasks')
+          notify('runs')
           disableSessionHeartbeat(t2[taskId].sessionId)
         }
         const doneTask = t2[taskId]
@@ -698,6 +706,10 @@ export async function processNext() {
           })
           notifyMainChatScheduleResult(doneTask)
           notifyAgentThreadTaskResult(doneTask)
+          // Clean up LangGraph checkpoints for completed tasks
+          getCheckpointSaver().deleteThread(taskId).catch((e) =>
+            console.warn(`[queue] Failed to clean up checkpoints for task ${taskId}:`, e)
+          )
           console.log(`[queue] Task "${task.title}" completed`)
         } else {
           if (doneTask?.status === 'queued') {
@@ -735,6 +747,8 @@ export async function processNext() {
             })
           }
           saveTasks(t2)
+          notify('tasks')
+          notify('runs')
           disableSessionHeartbeat(t2[taskId].sessionId)
           if (retryState === 'retry') {
             const qRetry = loadQueue()

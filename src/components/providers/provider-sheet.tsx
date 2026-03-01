@@ -5,7 +5,6 @@ import { useAppStore } from '@/stores/use-app-store'
 import { createProviderConfig, updateProviderConfig, deleteProviderConfig } from '@/lib/provider-config'
 import { api } from '@/lib/api-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
-import { AiGenBlock } from '@/components/shared/ai-gen-block'
 import { toast } from 'sonner'
 
 export function ProviderSheet() {
@@ -41,51 +40,15 @@ export function ProviderSheet() {
   const [localLoading, setLocalLoading] = useState(false)
   const [localError, setLocalError] = useState('')
 
-  // AI generation state
-  const [aiPrompt, setAiPrompt] = useState('')
-  const [generating, setGenerating] = useState(false)
-  const [generated, setGenerated] = useState(false)
-  const [genError, setGenError] = useState('')
-  const appSettings = useAppStore((s) => s.appSettings)
-  const loadSettings = useAppStore((s) => s.loadSettings)
-
   // Find editing provider in custom configs OR built-in list
   const editingCustom = editingId ? providerConfigs.find((c) => c.id === editingId) : null
   const editingBuiltin = editingId ? providers.find((p) => p.id === editingId) : null
   const isBuiltin = !!editingBuiltin && !editingCustom
   const editing = editingCustom || editingBuiltin
 
-  const handleGenerate = async () => {
-    if (!aiPrompt.trim()) return
-    setGenerating(true)
-    setGenError('')
-    try {
-      const result = await api<{ name?: string; baseUrl?: string; models?: string; requiresApiKey?: boolean; error?: string }>('POST', '/generate', { type: 'provider', prompt: aiPrompt })
-      if (result.error) {
-        setGenError(result.error)
-      } else if (result.name || result.baseUrl) {
-        if (result.name) setName(result.name)
-        if (result.baseUrl) setBaseUrl(result.baseUrl)
-        if (result.models) setModels(result.models)
-        if (result.requiresApiKey !== undefined) setRequiresApiKey(result.requiresApiKey)
-        setGenerated(true)
-      } else {
-        setGenError('AI returned empty response — try again')
-      }
-    } catch (err: unknown) {
-      setGenError(err instanceof Error ? err.message : 'Generation failed')
-    }
-    setGenerating(false)
-  }
-
   useEffect(() => {
     if (open) {
       loadCredentials()
-      loadSettings()
-      setAiPrompt('')
-      setGenerating(false)
-      setGenerated(false)
-      setGenError('')
       setNewModel('')
       setLocalModels([])
       setLocalError('')
@@ -247,14 +210,6 @@ export function ProviderSheet() {
           {isBuiltin ? 'Manage models and API key for this built-in provider' : 'Add an OpenAI-compatible provider (OpenRouter, Together, Groq, etc.)'}
         </p>
       </div>
-
-      {/* AI Generation — only for new custom providers */}
-      {isNew && <AiGenBlock
-        aiPrompt={aiPrompt} setAiPrompt={setAiPrompt}
-        generating={generating} generated={generated} genError={genError}
-        onGenerate={handleGenerate} appSettings={appSettings}
-        placeholder='Name a provider, e.g. "Groq", "Together AI", "z.ai", "DeepSeek"'
-      />}
 
       {/* Name */}
       <div className="mb-8">

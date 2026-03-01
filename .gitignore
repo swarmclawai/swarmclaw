@@ -47,6 +47,8 @@ yarn-error.log*
 /data/whatsapp-auth/
 /data/openclaw/
 /data/task-reports/*
+/data/uploads/
+/data/workspace/
 /data/.setup_pending
 /data/.sqlite_migrated
 !/data/.gitkeep
@@ -64,6 +66,9 @@ next-env.d.ts
 
 # CI artifacts
 /artifacts/
+
+# local scratch files
+todo.html
 
 # local scratch dir accidentally created by tooling
 /~/

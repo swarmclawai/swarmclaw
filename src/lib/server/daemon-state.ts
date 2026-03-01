@@ -1,4 +1,5 @@
 import { loadQueue, loadSchedules, loadSessions, saveSessions, loadConnectors } from './storage'
+import { notify } from './ws-hub'
 import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue, recoverStalledRunningTasks } from './queue'
 import { startScheduler, stopScheduler } from './scheduler'
 import { sweepOrphanedBrowsers, getActiveBrowserCount } from './session-tools'
@@ -114,6 +115,7 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     return
   }
   ds.running = true
+  notify('daemon')
   console.log(`[daemon] Starting daemon (source=${source}, scheduler + queue processor + heartbeat)`)
 
   validateCompletedTasksQueue()
@@ -135,6 +137,7 @@ export function stopDaemon(options?: { source?: string; manualStop?: boolean }) 
   if (options?.manualStop === true) ds.manualStopRequested = true
   if (!ds.running) return
   ds.running = false
+  notify('daemon')
   console.log(`[daemon] Stopping daemon (source=${source})`)
 
   stopScheduler()

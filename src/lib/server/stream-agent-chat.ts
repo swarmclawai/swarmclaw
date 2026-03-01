@@ -15,6 +15,7 @@ interface StreamAgentChatOpts {
   session: Session
   message: string
   imagePath?: string
+  attachedFiles?: string[]
   apiKey: string | null
   systemPrompt?: string
   write: (data: string) => void
@@ -163,7 +164,7 @@ export interface StreamAgentChatResult {
 }
 
 export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<StreamAgentChatResult> {
-  const { session, message, imagePath, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
+  const { session, message, imagePath, attachedFiles, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
 
   // fallbackCredentialIds is intentionally accepted for compatibility with caller signatures.
   void fallbackCredentialIds
@@ -311,7 +312,6 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     const allToolIds = [
       'shell', 'files', 'edit_file', 'process', 'web_search', 'web_fetch', 'browser', 'memory',
       'claude_code', 'codex_cli', 'opencode_cli',
-      'orchestrator',
       'manage_agents', 'manage_tasks', 'manage_schedules', 'manage_skills',
       'manage_documents', 'manage_webhooks', 'manage_connectors', 'manage_sessions', 'manage_secrets',
     ]
@@ -319,13 +319,9 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     const mcpDisabled = agentMcpDisabledTools ?? []
     const allDisabled = [...disabled, ...mcpDisabled]
     if (allDisabled.length > 0) {
-      const delegateNote = disabled.includes('orchestrator')
-        ? '\n\nIMPORTANT: The `delegate_to_agent` tool requires the `orchestrator` capability to be enabled. You must request access to `orchestrator` before you can delegate work to other agents.'
-        : ''
       stateModifierParts.push(
         `## Disabled Tools\nThe following tools exist but are not enabled for you: ${allDisabled.join(', ')}.\n` +
-        'If you need one of these to complete a task, use the `request_tool_access` tool to ask the user for permission.' +
-        delegateNote,
+        'If you need one of these to complete a task, use the `request_tool_access` tool to ask the user for permission.',
       )
     }
   }
@@ -355,25 +351,82 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|webp|bmp)$/i
   const TEXT_EXTS = /\.(txt|md|csv|json|xml|html|js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|yml|yaml|toml|env|log|sh|sql|css|scss)$/i
 
-  function buildLangChainContent(text: string, filePath?: string): any {
-    if (!filePath || !fs.existsSync(filePath)) return text
-    if (IMAGE_EXTS.test(filePath)) {
-      const data = fs.readFileSync(filePath).toString('base64')
-      const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
-      const mimeType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
-      return [
-        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${data}` } },
-        { type: 'text', text },
-      ]
+  async function buildContentForFile(filePath: string): Promise<{ type: string; [k: string]: any } | string | null> {
+    if (!fs.existsSync(filePath)) {
+      console.log(`[stream-agent-chat] FILE NOT FOUND: ${filePath}`)
+      return null
     }
-    if (TEXT_EXTS.test(filePath) || filePath.endsWith('.pdf')) {
+    const name = filePath.split('/').pop() || 'file'
+    if (IMAGE_EXTS.test(filePath)) {
+      const buf = fs.readFileSync(filePath)
+      if (buf.length === 0) {
+        console.warn(`[stream-agent-chat] Image file is empty: ${filePath}`)
+        return `[Attached image: ${name} — file is empty]`
+      }
+      const data = buf.toString('base64')
+      const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
+      // Detect actual MIME from magic bytes (fall back to extension-based)
+      let mimeType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
+      if (buf[0] === 0xFF && buf[1] === 0xD8) mimeType = 'image/jpeg'
+      else if (buf[0] === 0x89 && buf[1] === 0x50) mimeType = 'image/png'
+      else if (buf[0] === 0x47 && buf[1] === 0x49) mimeType = 'image/gif'
+      else if (buf[0] === 0x52 && buf[1] === 0x49) mimeType = 'image/webp'
+      return { type: 'image_url', image_url: { url: `data:${mimeType};base64,${data}`, detail: 'auto' } }
+    }
+    if (filePath.endsWith('.pdf')) {
+      try {
+        // @ts-ignore — pdf-parse types
+        const pdfParse = (await import(/* webpackIgnore: true */ 'pdf-parse')).default
+        const buf = fs.readFileSync(filePath)
+        const result = await pdfParse(buf)
+        const pdfText = (result.text || '').trim()
+        if (!pdfText) return `[Attached PDF: ${name} — no extractable text]`
+        // Truncate very large PDFs to avoid token limits
+        const maxChars = 100_000
+        const truncated = pdfText.length > maxChars ? pdfText.slice(0, maxChars) + '\n\n[... truncated]' : pdfText
+        return `[Attached PDF: ${name} (${result.numpages} pages)]\n\n${truncated}`
+      } catch {
+        return `[Attached PDF: ${name} — could not extract text]`
+      }
+    }
+    if (TEXT_EXTS.test(filePath)) {
       try {
         const fileContent = fs.readFileSync(filePath, 'utf-8')
-        const name = filePath.split('/').pop() || 'file'
-        return `[Attached file: ${name}]\n\n${fileContent}\n\n${text}`
-      } catch { return text }
+        return `[Attached file: ${name}]\n\n${fileContent}`
+      } catch { return `[Attached file: ${name} — read error]` }
     }
-    return `[Attached file: ${filePath.split('/').pop()}]\n\n${text}`
+    return `[Attached file: ${name}]`
+  }
+
+  async function buildLangChainContent(text: string, filePath?: string, extraFiles?: string[]): Promise<any> {
+    const filePaths: string[] = []
+    if (filePath) filePaths.push(filePath)
+    if (extraFiles?.length) {
+      for (const f of extraFiles) {
+        if (f && !filePaths.includes(f)) filePaths.push(f)
+      }
+    }
+    if (!filePaths.length) return text
+
+    const parts: any[] = []
+    const textParts: string[] = []
+    for (const fp of filePaths) {
+      const content = await buildContentForFile(fp)
+      if (!content) continue
+      if (typeof content === 'string') {
+        textParts.push(content)
+      } else {
+        parts.push(content)
+      }
+    }
+
+    const combinedText = textParts.length
+      ? `${textParts.join('\n\n')}\n\n${text}`
+      : text
+
+    if (parts.length === 0) return combinedText
+    parts.push({ type: 'text', text: combinedText })
+    return parts
   }
 
   // Auto-compaction: prune old history if approaching context window limit
@@ -398,14 +451,15 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   const langchainMessages: Array<HumanMessage | AIMessage> = []
   for (const m of effectiveHistory.slice(-20)) {
     if (m.role === 'user') {
-      langchainMessages.push(new HumanMessage({ content: buildLangChainContent(m.text, m.imagePath) }))
+      langchainMessages.push(new HumanMessage({ content: await buildLangChainContent(m.text, m.imagePath, m.attachedFiles) }))
     } else {
       langchainMessages.push(new AIMessage({ content: m.text }))
     }
   }
 
   // Add current message
-  langchainMessages.push(new HumanMessage({ content: buildLangChainContent(message, imagePath) }))
+  const currentContent = await buildLangChainContent(message, imagePath, attachedFiles)
+  langchainMessages.push(new HumanMessage({ content: currentContent }))
 
   let fullText = ''
   let lastSegment = ''

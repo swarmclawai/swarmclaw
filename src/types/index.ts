@@ -11,6 +11,7 @@ export interface Message {
   time: number
   imagePath?: string
   imageUrl?: string
+  attachedFiles?: string[]
   toolEvents?: MessageToolEvent[]
   kind?: 'chat' | 'heartbeat' | 'system'
   suppressed?: boolean
@@ -22,6 +23,7 @@ export interface ProviderInfo {
   id: ProviderType
   name: string
   models: string[]
+  defaultModels?: string[]
   requiresApiKey: boolean
   optionalApiKey?: boolean
   requiresEndpoint: boolean
@@ -321,7 +323,7 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human' | 'orchestrated'
-export type AppView = 'sessions' | 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'runs' | 'logs'
+export type AppView = 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'runs' | 'logs'
 
 // --- Session Runs ---
 
@@ -587,6 +589,11 @@ export interface BoardTask {
     ok: boolean
     reasons: string[]
     checkedAt: number
+  } | null
+  pendingApproval?: {
+    toolName: string
+    args: Record<string, unknown>
+    threadId: string
   } | null
 }
 

@@ -5,6 +5,7 @@ import { enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
+import { notify } from '@/lib/server/ws-hub'
 
 export async function GET(req: Request) {
   // Keep completed queue integrity even if daemon is not running.
@@ -47,6 +48,7 @@ export async function DELETE(req: Request) {
       removed++
     }
   }
+  notify('tasks')
   return NextResponse.json({ removed, remaining: Object.keys(tasks).length - removed })
 }
 
@@ -111,5 +113,6 @@ export async function POST(req: Request) {
   if (tasks[id].status === 'queued') {
     enqueueTask(id)
   }
+  notify('tasks')
   return NextResponse.json(tasks[id])
 }

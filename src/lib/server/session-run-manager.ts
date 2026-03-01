@@ -31,6 +31,7 @@ interface QueueEntry {
   message: string
   imagePath?: string
   imageUrl?: string
+  attachedFiles?: string[]
   onEvents: Array<(event: SSEEvent) => void>
   signalController: AbortController
   maxRuntimeMs?: number
@@ -236,6 +237,7 @@ async function drainExecution(executionKey: string): Promise<void> {
       message: next.message,
       imagePath: next.imagePath,
       imageUrl: next.imageUrl,
+      attachedFiles: next.attachedFiles,
       internal: next.run.internal,
       source: next.run.source,
       runId: next.run.id,
@@ -333,6 +335,7 @@ export interface EnqueueSessionRunInput {
   message: string
   imagePath?: string
   imageUrl?: string
+  attachedFiles?: string[]
   internal?: boolean
   source?: string
   mode?: SessionQueueMode
@@ -384,7 +387,7 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
 
   const running = state.runningByExecution.get(executionKey)
   const q = queueForExecution(executionKey)
-  if (mode === 'collect' && !input.imagePath && !input.imageUrl) {
+  if (mode === 'collect' && !input.imagePath && !input.imageUrl && !input.attachedFiles?.length) {
     const nowMs = now()
     const candidate = q.at(-1)
     const canCoalesce = !!candidate
@@ -393,6 +396,7 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
       && candidate.run.source === source
       && !candidate.imagePath
       && !candidate.imageUrl
+      && !candidate.attachedFiles?.length
       && (nowMs - candidate.run.queuedAt) <= COLLECT_COALESCE_WINDOW_MS
 
     if (candidate && canCoalesce) {
@@ -444,6 +448,7 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
     message: input.message,
     imagePath: input.imagePath,
     imageUrl: input.imageUrl,
+    attachedFiles: input.attachedFiles,
     onEvents: input.onEvent ? [input.onEvent] : [],
     signalController: new AbortController(),
     maxRuntimeMs: effectiveMaxRuntimeMs > 0 ? effectiveMaxRuntimeMs : undefined,

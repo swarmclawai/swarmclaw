@@ -35,49 +35,20 @@ export function HeartbeatSection({ appSettings, patchSettings, inputClass }: Set
   return (
     <div className="mb-10">
       <h3 className="font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-        Heartbeat
+        Heartbeat Defaults
       </h3>
       <p className="text-[12px] text-text-3 mb-5">
-        Configure ongoing heartbeat checks for long-lived sessions.
+        Global defaults inherited by agents. Enable heartbeat and set interval/model per-agent in the agent editor.
       </p>
       <div className="p-6 rounded-[18px] bg-surface border border-white/[0.06]">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
           <div>
-            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Heartbeat Interval</label>
-            <input
-              type="text"
-              value={appSettings.heartbeatInterval ?? appSettings.heartbeatIntervalSec ?? '30m'}
-              onChange={(e) => {
-                const val = e.target.value.trim()
-                patchSettings({ heartbeatInterval: val || null })
-              }}
-              placeholder="30m"
-              className={inputClass}
-              style={{ fontFamily: 'inherit' }}
-            />
-            <p className="text-[11px] text-text-3/60 mt-2">Duration string (e.g. 30m, 1h) or seconds. Set to 0 to disable.</p>
-          </div>
-          <div>
-            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Heartbeat Prompt</label>
+            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Default Prompt</label>
             <input
               type="text"
               value={appSettings.heartbeatPrompt || ''}
               onChange={(e) => patchSettings({ heartbeatPrompt: e.target.value || null })}
-              placeholder="Leave blank for default"
-              className={inputClass}
-              style={{ fontFamily: 'inherit' }}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-          <div>
-            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Heartbeat Model</label>
-            <input
-              type="text"
-              value={appSettings.heartbeatModel || ''}
-              onChange={(e) => patchSettings({ heartbeatModel: e.target.value || null })}
-              placeholder="Leave blank for session default"
+              placeholder="Leave blank for built-in default"
               className={inputClass}
               style={{ fontFamily: 'inherit' }}
             />
@@ -142,20 +113,17 @@ export function HeartbeatSection({ appSettings, patchSettings, inputClass }: Set
         </div>
 
         <div>
-          <p className="text-[11px] text-text-3/60 mt-2">
-            Internal ping text used for ongoing sessions. Leave blank to use the default.
-          </p>
-          <div className="mt-4 flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5">
             <button
               onClick={handleDisableAllHeartbeats}
               disabled={disablingHeartbeats}
               className="px-3.5 py-2 rounded-[10px] border border-rose-400/25 bg-rose-500/10 text-rose-300 hover:bg-rose-500/16 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed text-[12px] font-600"
               style={{ fontFamily: 'inherit' }}
             >
-              {disablingHeartbeats ? 'Stopping\u2026' : 'Stop All Session Heartbeats'}
+              {disablingHeartbeats ? 'Stopping\u2026' : 'Stop All Heartbeats'}
             </button>
             <span className="text-[11px] text-text-3/70">
-              Disables heartbeat on every session and cancels queued heartbeat runs.
+              Disables heartbeat on every agent and cancels queued runs.
             </span>
           </div>
           {heartbeatBulkNotice && (
