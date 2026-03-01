@@ -22,10 +22,11 @@ interface Props {
   agent: Agent
   isDefault?: boolean
   isRunning?: boolean
+  isSelected?: boolean
   onSetDefault?: (id: string) => void
 }
 
-export function AgentCard({ agent, isDefault, isRunning, onSetDefault }: Props) {
+export function AgentCard({ agent, isDefault, isRunning, isSelected, onSetDefault }: Props) {
   const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const loadSessions = useAppStore((s) => s.loadSessions)
@@ -85,10 +86,13 @@ export function AgentCard({ agent, isDefault, isRunning, onSetDefault }: Props) 
     <>
       <div
         onClick={handleClick}
-        className="group relative py-3.5 px-4 cursor-pointer rounded-[14px]
+        className={`group relative py-3.5 px-4 cursor-pointer rounded-[14px]
           transition-all duration-200 active:scale-[0.98]
-          bg-transparent border border-transparent hover:bg-white/[0.05] hover:border-white/[0.08]"
+          ${isSelected
+            ? 'bg-white/[0.04] border border-white/[0.08]'
+            : 'bg-transparent border border-transparent hover:bg-white/[0.05] hover:border-white/[0.08]'}`}
       >
+        {isSelected && <div className="card-select-indicator" />}
         {/* Three-dot dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

@@ -5,12 +5,30 @@ import type { Message } from '@/types'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
+import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { MessageBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ThinkingIndicator } from './thinking-indicator'
 import { SuggestionsBar } from './suggestions-bar'
 import { ExecApprovalCard } from './exec-approval-card'
 import { useApprovalStore } from '@/stores/use-approval-store'
+
+const INTRO_GREETINGS = [
+  'What can I help you with?',
+  'Ready when you are.',
+  "Let's get started.",
+  'How can I assist you today?',
+  'What are we working on?',
+]
+
+function stableHash(str: string): number {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i)
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
 
 function dateSeparator(ts: number): string {
   const d = new Date(ts)
@@ -316,9 +334,18 @@ export function MessageList({ messages, streaming }: Props) {
       <div
         ref={scrollRef}
         onScroll={updateScrollState}
-        className="h-full overflow-y-auto px-6 md:px-12 lg:px-16 py-6"
+        className="h-full overflow-y-auto px-6 md:px-12 lg:px-16 py-6 fade-up"
       >
         <div className="flex flex-col gap-6">
+          {filteredMessages.length === 0 && !streaming && (
+            <div className="flex flex-col items-center justify-center gap-3 py-20 text-center" style={{ animation: 'fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
+              <AgentAvatar seed={agent?.avatarSeed || null} name={agent?.name || 'Agent'} size={48} />
+              <span className="font-display text-[16px] font-600 text-text-2">{agent?.name || 'Assistant'}</span>
+              <span className="text-[14px] text-text-3/60">
+                {INTRO_GREETINGS[stableHash(agent?.id || session?.id || '') % INTRO_GREETINGS.length]}
+              </span>
+            </div>
+          )}
           {filteredMessages.map((msg, i) => {
             // Find original index in the full messages array for API calls
             const originalIndex = messages.indexOf(msg)

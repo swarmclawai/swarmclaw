@@ -109,6 +109,34 @@
   --sidebar-accent-foreground: #e2e2ec;
   --sidebar-border: rgba(255,255,255,0.04);
   --sidebar-ring: rgba(99,102,241,0.4);
+
+  /* ===== Status Badge System ===== */
+  --status-idle-bg: rgba(255,255,255,0.04);
+  --status-idle-border: rgba(255,255,255,0.06);
+  --status-idle-fg: #8e8ea8;
+  --status-running-bg: rgba(52,211,153,0.08);
+  --status-running-border: rgba(52,211,153,0.15);
+  --status-running-fg: #34D399;
+  --status-error-bg: rgba(244,63,94,0.08);
+  --status-error-border: rgba(244,63,94,0.15);
+  --status-error-fg: #F43F5E;
+  --status-connecting-bg: rgba(251,191,36,0.08);
+  --status-connecting-border: rgba(251,191,36,0.15);
+  --status-connecting-fg: #FBBF24;
+  --status-connected-bg: rgba(56,189,248,0.08);
+  --status-connected-border: rgba(56,189,248,0.15);
+  --status-connected-fg: #38BDF8;
+  --status-disconnected-bg: var(--status-idle-bg);
+  --status-disconnected-border: var(--status-idle-border);
+  --status-disconnected-fg: var(--status-idle-fg);
+  --status-approval-bg: rgba(251,146,60,0.08);
+  --status-approval-border: rgba(251,146,60,0.15);
+  --status-approval-fg: #FB923C;
+
+  /* ===== Command Surface ===== */
+  --command-bg: #0a0a14;
+  --command-border: rgba(255,255,255,0.06);
+  --command-header: rgba(0,0,0,0.3);
 }
 
 @layer base {
@@ -128,10 +156,15 @@ body {
 }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.04); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.1); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+textarea { scrollbar-width: none; }
+textarea::-webkit-scrollbar { width: 0; }
+textarea:hover { scrollbar-width: thin; }
+textarea:hover::-webkit-scrollbar { width: 6px; }
 
 /* Selection */
 ::selection { background: rgba(99,102,241,0.3); }
@@ -204,6 +237,10 @@ body {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* AI avatar mood animations */
@@ -375,6 +412,44 @@ body {
 /* Display font utility */
 .font-display {
   font-family: var(--font-sora), 'Sora', system-ui, sans-serif;
+}
+
+/* ===== Status Badge Classes ===== */
+.status-badge-idle, .status-badge-running, .status-badge-error,
+.status-badge-connecting, .status-badge-connected, .status-badge-disconnected,
+.status-badge-approval {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.125rem 0.5rem; border-radius: 6px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; border: 1px solid;
+}
+.status-badge-idle { background: var(--status-idle-bg); border-color: var(--status-idle-border); color: var(--status-idle-fg); }
+.status-badge-running { background: var(--status-running-bg); border-color: var(--status-running-border); color: var(--status-running-fg); }
+.status-badge-error { background: var(--status-error-bg); border-color: var(--status-error-border); color: var(--status-error-fg); }
+.status-badge-connecting { background: var(--status-connecting-bg); border-color: var(--status-connecting-border); color: var(--status-connecting-fg); }
+.status-badge-connected { background: var(--status-connected-bg); border-color: var(--status-connected-border); color: var(--status-connected-fg); }
+.status-badge-disconnected { background: var(--status-disconnected-bg); border-color: var(--status-disconnected-border); color: var(--status-disconnected-fg); }
+.status-badge-approval { background: var(--status-approval-bg); border-color: var(--status-approval-border); color: var(--status-approval-fg); }
+
+/* ===== Fade-Up Animation ===== */
+.fade-up { animation: fadeUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.fade-up-delay { animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both; }
+
+/* ===== Card Select Indicator ===== */
+.card-select-indicator {
+  position: absolute;
+  left: 0; top: 0.7rem; bottom: 0.7rem;
+  width: 4px;
+  border-radius: 0 9999px 9999px 0;
+  background: linear-gradient(180deg, #818CF8 0%, #6366F1 50%, #4F46E5 100%);
+}
+
+/* ===== Command Surface ===== */
+.command-surface {
+  background: var(--command-bg);
+  border: 1px solid var(--command-border);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 @layer base {

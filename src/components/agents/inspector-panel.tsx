@@ -52,7 +52,7 @@ export function InspectorPanel({ agent }: Props) {
   const agentSchedules = Object.values(schedules).filter((s) => s.agentId === agent.id)
 
   return (
-    <div className="w-[400px] shrink-0 border-l border-white/[0.06] bg-[#0d0f1a] flex flex-col h-full overflow-hidden">
+    <div className="w-[400px] shrink-0 border-l border-white/[0.06] bg-[#0d0f1a] flex flex-col h-full overflow-hidden fade-up-delay">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] shrink-0">
         <h3 className="font-display text-[14px] font-600 text-text truncate">{agent.name}</h3>

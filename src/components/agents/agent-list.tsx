@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { AgentCard } from './agent-card'
@@ -23,9 +23,17 @@ export function AgentList({ inSidebar }: Props) {
   const setShowTrash = useAppStore((s) => s.setShowTrash)
   const fleetFilter = useAppStore((s) => s.fleetFilter)
   const setFleetFilter = useAppStore((s) => s.setFleetFilter)
+  const currentSessionId = useAppStore((s) => s.currentSessionId)
   const approvals = useApprovalStore((s) => s.approvals)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'orchestrator' | 'agent'>('all')
+
+  // FLIP animation refs
+  const flipPositions = useRef<Map<string, number>>(new Map())
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  const currentSession = currentSessionId ? sessions[currentSessionId] : null
+  const selectedAgentId = currentSession?.agentId
 
   const mainSession = useMemo(() =>
     Object.values(sessions).find((s: any) => s.name === '__main__' && s.user === currentUser),
@@ -76,6 +84,26 @@ export function AgentList({ inSidebar }: Props) {
       .sort((a, b) => b.updatedAt - a.updatedAt)
   }, [agents, search, filter, activeProjectFilter, fleetFilter, runningAgentIds, approvalsByAgent])
 
+  // FLIP animation: animate agent cards when order changes
+  useLayoutEffect(() => {
+    const newPositions = new Map<string, number>()
+    for (const [id, el] of cardRefs.current) {
+      const newTop = el.getBoundingClientRect().top
+      newPositions.set(id, newTop)
+      const prevTop = flipPositions.current.get(id)
+      if (prevTop != null) {
+        const delta = prevTop - newTop
+        if (Math.abs(delta) > 1) {
+          el.animate(
+            [{ transform: `translateY(${delta}px)` }, { transform: 'translateY(0)' }],
+            { duration: 300, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }
+          )
+        }
+      }
+    }
+    flipPositions.current = newPositions
+  }, [filtered])
+
   if (showTrash) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -124,7 +152,7 @@ export function AgentList({ inSidebar }: Props) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto fade-up">
       {(filtered.length > 3 || search) && (
         <div className="px-4 py-2.5">
           <input
@@ -183,7 +211,9 @@ export function AgentList({ inSidebar }: Props) {
       </div>
       <div className="flex flex-col gap-1 px-2 pb-4">
         {filtered.map((p) => (
-          <AgentCard key={p.id} agent={p} isDefault={p.id === defaultAgentId} isRunning={runningAgentIds.has(p.id)} onSetDefault={handleSetDefault} />
+          <div key={p.id} ref={(el) => { if (el) cardRefs.current.set(p.id, el); else cardRefs.current.delete(p.id) }}>
+            <AgentCard agent={p} isDefault={p.id === defaultAgentId} isRunning={runningAgentIds.has(p.id)} isSelected={p.id === selectedAgentId} onSetDefault={handleSetDefault} />
+          </div>
         ))}
       </div>
     </div>

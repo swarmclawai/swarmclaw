@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import type { ChatTraceBlock } from '@/types'
 
 interface Props {
@@ -8,8 +7,6 @@ interface Props {
 }
 
 export function TraceBlock({ trace }: Props) {
-  const [collapsed, setCollapsed] = useState(trace.collapsed !== false)
-
   const bgColor = trace.type === 'thinking'
     ? 'bg-purple-500/[0.04] border-purple-500/10'
     : trace.type === 'tool-call'
@@ -29,32 +26,25 @@ export function TraceBlock({ trace }: Props) {
       : '<'
 
   return (
-    <div className={`my-1 rounded-[8px] border ${bgColor} overflow-hidden`}>
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className={`w-full flex items-center gap-2 px-3 py-1.5 text-left cursor-pointer border-none bg-transparent transition-colors hover:bg-white/[0.02] ${labelColor}`}
-        style={{ fontFamily: 'inherit' }}
-      >
-        <span className="font-mono text-[10px] w-4 shrink-0">{collapsed ? '+' : '-'}</span>
+    <details className={`my-1 rounded-[8px] border ${bgColor} overflow-hidden`} open={trace.collapsed === false || undefined}>
+      <summary className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer select-none transition-colors hover:bg-white/[0.02] ${labelColor} [&::-webkit-details-marker]:hidden list-none`}>
         <span className="font-mono text-[10px] shrink-0">{icon}</span>
         <span className="text-[11px] font-600 truncate">
           {trace.label || trace.type.replace('-', ' ')}
         </span>
-      </button>
-      {!collapsed && (
-        <div className="px-3 pb-2">
-          <pre className={`text-[11px] leading-relaxed whitespace-pre-wrap break-words m-0 ${
-            trace.type === 'thinking'
-              ? 'text-text-3/60 italic'
-              : 'text-text-3/70 font-mono'
-          }`}>
-            {trace.content.length > 2000
-              ? trace.content.slice(0, 2000) + '\n... (truncated)'
-              : trace.content}
-          </pre>
-        </div>
-      )}
-    </div>
+      </summary>
+      <div className="px-3 pb-2">
+        <pre className={`text-[11px] leading-relaxed whitespace-pre-wrap break-words m-0 ${
+          trace.type === 'thinking'
+            ? 'text-text-3/60 italic'
+            : 'text-text-3/70 font-mono'
+        }`}>
+          {trace.content.length > 2000
+            ? trace.content.slice(0, 2000) + '\n... (truncated)'
+            : trace.content}
+        </pre>
+      </div>
+    </details>
   )
 }
 

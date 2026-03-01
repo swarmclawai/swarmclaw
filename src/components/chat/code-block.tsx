@@ -56,7 +56,7 @@ export function CodeBlock({ children, className }: Props) {
   }, [getText, language])
 
   return (
-    <div className="relative group/code">
+    <div className="relative group/code command-surface">
       <div className="flex items-center justify-between px-4 py-2 bg-black/30 border-b border-white/[0.03]">
         <span className="text-[10px] font-600 uppercase tracking-[0.08em] text-text-3 font-mono">{language}</span>
         <div className="flex items-center gap-1">

@@ -376,6 +376,15 @@ interface Props {
   onFork?: (index: number) => void
 }
 
+function isStructuredMarkdown(text: string): boolean {
+  if (!text) return false
+  return /```/.test(text)
+    || /^#{1,4}\s/m.test(text)
+    || /^[-*]\s/m.test(text)
+    || /^\d+\.\s/m.test(text)
+    || /\|.*\|.*\|/m.test(text)
+}
+
 export const MessageBubble = memo(function MessageBubble({ message, assistantName, agentAvatarSeed, agentName, isLast, onRetry, messageIndex, onToggleBookmark, onEditResend, onFork }: Props) {
   const isUser = message.role === 'user'
   const isHeartbeat = !isUser && (message.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(message.text || ''))
@@ -388,6 +397,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   const toolEvents = message.toolEvents || []
   const hasToolEvents = !isUser && toolEvents.length > 0
   const visibleToolEvents = toolEventsExpanded ? [...toolEvents].reverse() : toolEvents.slice(-1)
+  const isStructured = !isUser && !isHeartbeat && isStructuredMarkdown(message.text)
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.text).then(() => {
@@ -442,7 +452,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
       )}
 
       {/* Message bubble */}
-      <div className={`max-w-[85%] md:max-w-[72%] ${isUser ? 'bubble-user px-5 py-3.5' : isHeartbeat ? 'bubble-ai px-4 py-3' : 'bubble-ai px-5 py-3.5'}`}>
+      <div className={`${isStructured ? 'max-w-[92%] md:max-w-[85%]' : 'max-w-[85%] md:max-w-[72%]'} ${isUser ? 'bubble-user px-5 py-3.5' : isHeartbeat ? 'bubble-ai px-4 py-3' : 'bubble-ai px-5 py-3.5'}`}>
         {renderAttachments(message)}
 
         {isHeartbeat ? (
