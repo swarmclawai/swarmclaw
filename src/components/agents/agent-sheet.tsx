@@ -10,6 +10,7 @@ import { ModelCombobox } from '@/components/shared/model-combobox'
 import type { ProviderType, ClaudeSkill } from '@/types'
 import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
 import { NATIVE_CAPABILITY_PROVIDER_IDS, NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
+import { AgentAvatar } from './agent-avatar'
 
 const HB_PRESETS = [30, 60, 120, 300, 600, 1800, 3600] as const
 
@@ -97,6 +98,7 @@ export function AgentSheet() {
   const [ollamaMode, setOllamaMode] = useState<'local' | 'cloud'>('local')
   const [openclawEnabled, setOpenclawEnabled] = useState(false)
   const [projectId, setProjectId] = useState<string | undefined>(undefined)
+  const [avatarSeed, setAvatarSeed] = useState('')
   const [thinkingLevel, setThinkingLevel] = useState<'' | 'minimal' | 'low' | 'medium' | 'high'>('')
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(false)
   const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
@@ -171,6 +173,7 @@ export function AgentSheet() {
         setOllamaMode(editing.credentialId && editing.provider === 'ollama' ? 'cloud' : 'local')
         setOpenclawEnabled(editing.provider === 'openclaw')
         setProjectId(editing.projectId)
+        setAvatarSeed(editing.avatarSeed || '')
         setThinkingLevel(editing.thinkingLevel || '')
         setHeartbeatEnabled(editing.heartbeatEnabled || false)
         setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
@@ -198,6 +201,7 @@ export function AgentSheet() {
         setOllamaMode('local')
         setOpenclawEnabled(false)
         setProjectId(undefined)
+        setAvatarSeed('')
         setThinkingLevel('')
         setHeartbeatEnabled(false)
         setHeartbeatIntervalSec('')
@@ -291,6 +295,7 @@ export function AgentSheet() {
       platformAssignScope,
       capabilities,
       projectId: projectId || undefined,
+      avatarSeed: avatarSeed.trim() || undefined,
       thinkingLevel: thinkingLevel || undefined,
       heartbeatEnabled,
       heartbeatInterval: heartbeatIntervalSec ? formatHbDuration(Number(heartbeatIntervalSec)) : null,
@@ -449,6 +454,29 @@ export function AgentSheet() {
       <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Name</label>
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. SEO Researcher" className={inputClass} style={{ fontFamily: 'inherit' }} />
+      </div>
+
+      <div className="mb-8">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Avatar</label>
+        <div className="flex items-center gap-3">
+          <AgentAvatar seed={avatarSeed || null} name={name || 'A'} size={40} />
+          <input
+            type="text"
+            value={avatarSeed}
+            onChange={(e) => setAvatarSeed(e.target.value)}
+            placeholder="Avatar seed (any text)"
+            className={inputClass}
+            style={{ fontFamily: 'inherit', flex: 1 }}
+          />
+          <button
+            type="button"
+            onClick={() => setAvatarSeed(Math.random().toString(36).slice(2, 10))}
+            className="px-3 py-2 rounded-[10px] border border-white/[0.08] bg-transparent text-text-3 text-[12px] font-600 cursor-pointer transition-all hover:bg-white/[0.04] shrink-0"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Randomize
+          </button>
+        </div>
       </div>
 
       <div className="mb-8">
@@ -866,6 +894,8 @@ export function AgentSheet() {
           />
         </div>
       )}
+
+      {/* OpenClaw manages its own models — no selector needed */}
 
       {/* Ollama Mode Toggle */}
       {!openclawEnabled && provider === 'ollama' && (
@@ -1351,3 +1381,4 @@ export function AgentSheet() {
     </BottomSheet>
   )
 }
+

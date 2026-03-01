@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { useChatStore } from '@/stores/use-chat-store'
 import { api } from '@/lib/api-client'
 import { TOOL_LABELS } from '@/lib/tool-definitions'
 
@@ -15,6 +16,7 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const sessions = useAppStore((s) => s.sessions)
   const [granted, setGranted] = useState<Set<string>>(new Set())
+  const continueSentRef = useRef(false)
 
   const toolRequests: { toolId: string; reason: string }[] = []
   const seen = new Set<string>()
@@ -53,7 +55,23 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
     const updated = [...currentTools, toolId]
     await api('PUT', `/sessions/${sid}`, { tools: updated })
     await loadSessions()
-    setGranted((prev) => new Set(prev).add(toolId))
+    const newGranted = new Set(granted).add(toolId)
+    setGranted(newGranted)
+
+    // Auto-continue: once all requested tools are granted, send a follow-up message
+    const allGranted = toolRequests.every(
+      (r) => newGranted.has(r.toolId) || updated.includes(r.toolId),
+    )
+    if (allGranted && !continueSentRef.current) {
+      continueSentRef.current = true
+      // Small delay to let the session update propagate
+      setTimeout(() => {
+        const { streaming, sendMessage } = useChatStore.getState()
+        if (!streaming) {
+          sendMessage('Continue')
+        }
+      }, 300)
+    }
   }
 
   return (

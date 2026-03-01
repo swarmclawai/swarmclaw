@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project } from '../types'
+import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter } from '../types'
 import { fetchSessions, fetchDirs, fetchProviders, fetchCredentials } from '../lib/sessions'
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
@@ -161,6 +161,22 @@ interface AppState {
   setEditingProjectId: (id: string | null) => void
   activeProjectFilter: string | null
   setActiveProjectFilter: (id: string | null) => void
+
+  // Agent trash
+  trashedAgents: Record<string, Agent>
+  loadTrashedAgents: () => Promise<void>
+  showTrash: boolean
+  setShowTrash: (show: boolean) => void
+
+  // Inspector panel
+  inspectorOpen: boolean
+  setInspectorOpen: (open: boolean) => void
+  inspectorTab: 'overview' | 'files' | 'skills' | 'automations' | 'advanced'
+  setInspectorTab: (tab: 'overview' | 'files' | 'skills' | 'automations' | 'advanced') => void
+
+  // Fleet sidebar filter (F16)
+  fleetFilter: FleetFilter
+  setFleetFilter: (filter: FleetFilter) => void
 
 }
 
@@ -504,5 +520,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   setEditingProjectId: (id) => set({ editingProjectId: id }),
   activeProjectFilter: null,
   setActiveProjectFilter: (id) => set({ activeProjectFilter: id }),
+
+  // Agent trash
+  trashedAgents: {},
+  loadTrashedAgents: async () => {
+    try {
+      const trashedAgents = await api<Record<string, Agent>>('GET', '/agents/trash')
+      set({ trashedAgents })
+    } catch {
+      // ignore
+    }
+  },
+  showTrash: false,
+  setShowTrash: (show) => set({ showTrash: show }),
+
+  // Inspector panel
+  inspectorOpen: false,
+  setInspectorOpen: (open) => set({ inspectorOpen: open }),
+  inspectorTab: 'overview',
+  setInspectorTab: (tab) => set({ inspectorTab: tab }),
+
+  // Fleet sidebar filter
+  fleetFilter: 'all',
+  setFleetFilter: (filter) => set({ fleetFilter: filter }),
 
 }))

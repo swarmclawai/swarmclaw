@@ -252,6 +252,10 @@ export interface Agent {
   heartbeatNextAction?: string | null
   thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
   projectId?: string
+  avatarSeed?: string
+  trashedAt?: number
+  openclawSkillMode?: SkillAllowlistMode
+  openclawAllowedSkills?: string[]
   createdAt: number
   updatedAt: number
 }
@@ -657,3 +661,119 @@ export interface ClawHubSkill {
   url: string
   version: string
 }
+
+// --- OpenClaw Execution Approvals ---
+
+export interface PendingExecApproval {
+  id: string
+  agentId: string
+  sessionKey: string
+  command: string
+  cwd?: string
+  host?: string
+  security?: string
+  ask?: string
+  createdAtMs: number
+  expiresAtMs: number
+  resolving?: boolean
+  error?: string
+}
+
+export type ExecApprovalDecision = 'allow-once' | 'allow-always' | 'deny'
+
+// --- OpenClaw Skills ---
+
+export interface OpenClawSkillEntry {
+  name: string
+  description?: string
+  source: 'bundled' | 'managed' | 'personal' | 'workspace'
+  eligible: boolean
+  requirements?: string[]
+  missing?: string[]
+  disabled?: boolean
+  installOptions?: SkillInstallOption[]
+  skillRequirements?: SkillRequirements
+  configChecks?: { key: string; ok: boolean }[]
+  skillKey?: string
+  baseDir?: string
+}
+
+export type SkillAllowlistMode = 'all' | 'none' | 'selected'
+
+// --- Fleet Sidebar Filters (F16) ---
+export type FleetFilter = 'all' | 'running' | 'approvals'
+
+// --- Exec Approval Config (F8) ---
+export interface ExecApprovalConfig {
+  security: 'deny' | 'allowlist' | 'full'
+  askMode: 'off' | 'on-miss' | 'always'
+  patterns: string[]
+}
+
+export interface ExecApprovalSnapshot {
+  path: string
+  exists: boolean
+  hash: string
+  file: ExecApprovalConfig
+}
+
+// --- Permission Presets (F9) ---
+export type PermissionPreset = 'conservative' | 'collaborative' | 'autonomous'
+
+// --- Personality Builder (F10) ---
+export interface PersonalityDraft {
+  identity: { name?: string; creature?: string; vibe?: string; emoji?: string }
+  user: { name?: string; callThem?: string; pronouns?: string; timezone?: string; notes?: string; context?: string }
+  soul: { coreTruths?: string; boundaries?: string; vibe?: string; continuity?: string }
+}
+
+// --- Skill Lifecycle (F11) ---
+export interface SkillInstallOption {
+  kind: 'brew' | 'node' | 'go' | 'uv' | 'download'
+  label: string
+  bins?: string[]
+}
+
+export interface SkillRequirements {
+  bins?: string[]
+  anyBins?: string[][]
+  env?: string[]
+  config?: string[]
+  os?: string[]
+}
+
+// --- Cron Jobs (F12) ---
+export interface GatewayCronJob {
+  id: string
+  name: string
+  agentId: string
+  enabled: boolean
+  schedule: { kind: 'at' | 'every' | 'cron'; value: string; timezone?: string }
+  payload: {
+    kind: 'systemEvent' | 'agentTurn'
+    text?: string
+    message?: string
+    model?: string
+    deliver?: { mode: 'none' | 'announce'; channel?: string }
+  }
+  sessionTarget: 'main' | 'isolated'
+  state?: { nextRun?: string; lastRun?: string; lastStatus?: string }
+}
+
+// --- Rich Chat Traces (F13) ---
+export interface ChatTraceBlock {
+  type: 'thinking' | 'tool-call' | 'tool-result'
+  content: string
+  label?: string
+  collapsed?: boolean
+}
+
+// --- Chat History Sync (F18) ---
+export interface GatewaySessionPreview {
+  sessionKey: string
+  epoch: number
+  messages: Array<{ role: string; content: string; ts: number }>
+}
+
+// --- Gateway Reload Mode (F21) ---
+export type GatewayReloadMode = 'hot' | 'hybrid' | 'full'

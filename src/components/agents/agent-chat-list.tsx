@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { fetchMessages } from '@/lib/sessions'
 import type { Agent, Session } from '@/types'
+import { AgentAvatar } from './agent-avatar'
 
 interface Props {
   inSidebar?: boolean
@@ -130,32 +131,38 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
               style={{ fontFamily: 'inherit' }}
             >
               <div className="flex items-center gap-2.5">
-                {/* Status dot */}
-                <div className={`w-2 h-2 rounded-full shrink-0 ${
-                  isWorking ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.4)]' : 'bg-text-3/20'
-                }`} />
-                <span className="font-display text-[13.5px] font-600 truncate flex-1 tracking-[-0.01em]">
-                  {agent.name}
-                </span>
-                {/* Provider badge */}
-                <span className="text-[10px] text-text-3/60 font-mono shrink-0">
-                  {agent.model ? agent.model.split('/').pop()?.split(':')[0] : agent.provider}
-                </span>
+                {/* Avatar with status dot */}
+                <div className="relative shrink-0">
+                  <AgentAvatar seed={agent.avatarSeed || null} name={agent.name} size={36} />
+                  <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg ${
+                    isWorking ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.4)]' : 'bg-text-3/30'
+                  }`} />
+                </div>
+                <div className="flex flex-col flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-[13.5px] font-600 truncate flex-1 tracking-[-0.01em]">
+                      {agent.name}
+                    </span>
+                    <span className="text-[10px] text-text-3/60 font-mono shrink-0">
+                      {agent.model ? agent.model.split('/').pop()?.split(':')[0] : agent.provider}
+                    </span>
+                  </div>
+                  {isTyping ? (
+                    <div className="text-[12px] text-accent-bright/70 mt-0.5 flex items-center gap-1.5">
+                      <span className="flex gap-0.5">
+                        <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:0ms]" />
+                        <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:150ms]" />
+                        <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:300ms]" />
+                      </span>
+                      Typing...
+                    </div>
+                  ) : preview ? (
+                    <div className="text-[12px] text-text-3/70 mt-0.5 truncate">
+                      {preview}
+                    </div>
+                  ) : null}
+                </div>
               </div>
-              {isTyping ? (
-                <div className="text-[12px] text-accent-bright/70 mt-1 pl-[18px] flex items-center gap-1.5">
-                  <span className="flex gap-0.5">
-                    <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:0ms]" />
-                    <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:150ms]" />
-                    <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:300ms]" />
-                  </span>
-                  Typing...
-                </div>
-              ) : preview ? (
-                <div className="text-[12px] text-text-3/70 mt-1 truncate pl-[18px]">
-                  {preview}
-                </div>
-              ) : null}
             </button>
           )
         })}

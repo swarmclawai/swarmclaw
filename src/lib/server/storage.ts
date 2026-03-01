@@ -486,8 +486,23 @@ export function decryptKey(encrypted: string): string {
 }
 
 // --- Agents ---
-export function loadAgents(): Record<string, any> {
-  return loadCollection('agents')
+export function loadAgents(opts?: { includeTrashed?: boolean }): Record<string, any> {
+  const all = loadCollection('agents')
+  if (opts?.includeTrashed) return all
+  const result: Record<string, any> = {}
+  for (const [id, agent] of Object.entries(all)) {
+    if (!agent.trashedAt) result[id] = agent
+  }
+  return result
+}
+
+export function loadTrashedAgents(): Record<string, any> {
+  const all = loadCollection('agents')
+  const result: Record<string, any> = {}
+  for (const [id, agent] of Object.entries(all)) {
+    if (agent.trashedAt) result[id] = agent
+  }
+  return result
 }
 
 export function saveAgents(p: Record<string, any>) {

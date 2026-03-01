@@ -15,14 +15,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { useApprovalStore } from '@/stores/use-approval-store'
+import { AgentAvatar } from './agent-avatar'
 
 interface Props {
   agent: Agent
   isDefault?: boolean
+  isRunning?: boolean
   onSetDefault?: (id: string) => void
 }
 
-export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
+export function AgentCard({ agent, isDefault, isRunning, onSetDefault }: Props) {
   const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const loadSessions = useAppStore((s) => s.loadSessions)
@@ -34,6 +37,8 @@ export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [taskInput, setTaskInput] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const approvals = useApprovalStore((s) => s.approvals)
+  const pendingApprovalCount = Object.values(approvals).filter((a) => a.agentId === agent.id).length
 
   const handleClick = () => {
     setEditingAgentId(agent.id)
@@ -111,13 +116,22 @@ export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
               onClick={() => setConfirmDelete(true)}
               className="text-red-400 focus:text-red-400"
             >
-              Delete
+              Move to Trash
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
         <div className="flex items-center gap-2.5">
+          <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={28} />
+          {isRunning && (
+            <span className="shrink-0 w-2 h-2 rounded-full bg-emerald-400" style={{ animation: 'pulse 2s ease infinite' }} title="Running" />
+          )}
           <span className="font-display text-[14px] font-600 truncate flex-1 tracking-[-0.01em]">{agent.name}</span>
+          {pendingApprovalCount > 0 && (
+            <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-700">
+              {pendingApprovalCount}
+            </span>
+          )}
           {isDefault && (
             <span className="shrink-0 text-[10px] font-600 uppercase tracking-wider text-accent-bright bg-accent-soft px-2 py-0.5 rounded-[6px]">
               default
@@ -207,9 +221,9 @@ export function AgentCard({ agent, isDefault, onSetDefault }: Props) {
 
       <ConfirmDialog
         open={confirmDelete}
-        title="Delete Agent"
-        message={`Are you sure you want to delete "${agent.name}"? This cannot be undone.`}
-        confirmLabel="Delete"
+        title="Move to Trash"
+        message={`Move "${agent.name}" to trash? You can restore it later from the trash.`}
+        confirmLabel="Move to Trash"
         danger
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(false)}

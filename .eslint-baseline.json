@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-01T16:11:34.989Z",
-  "totalIssues": 638,
-  "uniqueIssues": 223,
+  "generatedAt": "2026-03-01T17:47:15.516Z",
+  "totalIssues": 653,
+  "uniqueIssues": 235,
   "issues": [
     {
       "filePath": "bin/server-cmd.js",
@@ -404,6 +404,13 @@
       "count": 2
     },
     {
+      "filePath": "src/components/agents/agent-files-editor.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
       "filePath": "src/components/agents/agent-list.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
@@ -458,6 +465,55 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 6
+    },
+    {
+      "filePath": "src/components/agents/inspector-panel.tsx",
+      "ruleId": "(eslint)",
+      "severity": 1,
+      "message": "Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps').",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/agents/inspector-panel.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has missing dependencies: 'inspectorTab', 'setInspectorTab', and 'visibleTabs'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/agents/personality-builder.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_agentId' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/agents/personality-builder.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'api' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/agents/personality-builder.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/agents/trash-list.tsx",
+      "ruleId": "(eslint)",
+      "severity": 1,
+      "message": "Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps').",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/agents/trash-list.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadTrashedAgents'. Either include it or remove the dependency array.",
+      "count": 1
     },
     {
       "filePath": "src/components/auth/setup-wizard.tsx",
@@ -534,6 +590,13 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/exec-approval-card.tsx",
+      "ruleId": "react-hooks/purity",
+      "severity": 2,
+      "message": "Error: Cannot call impure function during render `Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).",
       "count": 1
     },
     {
@@ -1027,6 +1090,13 @@
       "count": 2
     },
     {
+      "filePath": "src/hooks/use-openclaw-gateway.ts",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
       "filePath": "src/hooks/use-speech-recognition.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1363,6 +1433,20 @@
       "count": 11
     },
     {
+      "filePath": "src/lib/server/openclaw-gateway.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'buildOpenClawConnectParams' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/openclaw-gateway.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'id' is assigned a value but never used.",
+      "count": 1
+    },
+    {
       "filePath": "src/lib/server/openclaw-health.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1535,7 +1619,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 45
+      "count": 48
     },
     {
       "filePath": "src/lib/server/stream-agent-chat.ts",

@@ -49,7 +49,7 @@ export function buildShellTools(bctx: ToolBuildContext): StructuredToolInterface
         },
         {
           name: 'execute_command',
-          description: 'Execute a shell command in the session working directory. Supports background mode and timeout/yield controls.',
+          description: 'Execute a shell command in the session working directory. This is the PRIMARY tool for running servers, dev servers, installing packages, running scripts, git operations, and any command the user wants to run or test. Use background=true for long-running processes like servers. Supports timeout/yield controls.',
           schema: z.object({
             command: z.string().describe('The shell command to execute'),
             background: z.boolean().optional().describe('If true, start command in background immediately'),

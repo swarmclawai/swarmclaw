@@ -1,13 +1,16 @@
 'use client'
 
 import { AiAvatar } from '@/components/shared/avatar'
+import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { useChatStore } from '@/stores/use-chat-store'
 
 interface Props {
   assistantName?: string
+  agentAvatarSeed?: string
+  agentName?: string
 }
 
-export function ThinkingIndicator({ assistantName }: Props) {
+export function ThinkingIndicator({ assistantName, agentAvatarSeed, agentName }: Props) {
   const streamPhase = useChatStore((s) => s.streamPhase)
   const streamToolName = useChatStore((s) => s.streamToolName)
 
@@ -19,7 +22,7 @@ export function ThinkingIndicator({ assistantName }: Props) {
     <div className="flex flex-col items-start"
       style={{ animation: 'msg-in-left 0.35s cubic-bezier(0.16, 1, 0.3, 1)' }}>
       <div className="flex items-center gap-2.5 mb-2 px-1">
-        <AiAvatar size="sm" mood={streamPhase === 'tool' ? 'tool' : 'thinking'} />
+        {agentName ? <AgentAvatar seed={agentAvatarSeed || null} name={agentName} size={36} /> : <AiAvatar size="sm" mood={streamPhase === 'tool' ? 'tool' : 'thinking'} />}
         <span className="text-[12px] font-600 text-text-3">{assistantName || 'Claude'}</span>
       </div>
       <div className="bubble-ai px-6 py-5">

@@ -143,12 +143,12 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
           type: 'tool_request',
           toolId,
           reason,
-          message: `Tool access request sent to user for "${toolId}". Wait for the user to grant access before trying to use it.`,
+          message: `Tool access request sent to user for "${toolId}". The user will be prompted to grant access — once granted, a follow-up message will arrive and you should immediately proceed with the original task using the newly available tool.`,
         })
       },
       {
         name: 'request_tool_access',
-        description: 'Request access to a tool that is currently disabled. The user will be prompted to grant access. Use this when you need a tool from the disabled tools list.',
+        description: 'Request access to a tool that is currently disabled. The user will be prompted to grant access, and a follow-up "Continue" message will be sent automatically once granted. End your current response after calling this — do NOT tell the user to "let you know" or ask them to confirm; the continuation is automatic.',
         schema: z.object({
           toolId: z.string().describe('The tool ID to request access for (e.g. manage_tasks, shell, claude_code)'),
           reason: z.string().describe('Brief explanation of why you need this tool'),

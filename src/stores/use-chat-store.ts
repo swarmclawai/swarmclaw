@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Message, DevServerStatus, SSEEvent } from '../types'
+import type { Message, DevServerStatus, SSEEvent, ChatTraceBlock } from '../types'
 import { streamChat } from '../lib/chat'
 import { speak } from '../lib/tts'
 import { getStoredAccessKey } from '../lib/api-client'
@@ -83,6 +83,9 @@ interface ChatState {
   sendHeartbeat: (sessionId: string) => Promise<void>
   stopStreaming: () => void
 
+  // Rich trace blocks during streaming (F13)
+  streamTraces: ChatTraceBlock[]
+
   // Voice conversation
   voiceConversationActive: boolean
   onStreamEvent: ((event: { t: string; text?: string }) => void) | null
@@ -125,6 +128,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     setSoundEnabled(next)
     set({ soundEnabled: next })
   },
+  streamTraces: [],
   voiceConversationActive: false,
   onStreamEvent: null,
 

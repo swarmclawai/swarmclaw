@@ -7,6 +7,7 @@ import rehypeHighlight from 'rehype-highlight'
 import type { Message } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { AiAvatar } from '@/components/shared/avatar'
+import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { CodeBlock } from './code-block'
 import { ToolCallBubble } from './tool-call-bubble'
 import { ToolRequestBanner } from './tool-request-banner'
@@ -365,6 +366,8 @@ function renderAttachments(message: Message) {
 interface Props {
   message: Message
   assistantName?: string
+  agentAvatarSeed?: string
+  agentName?: string
   isLast?: boolean
   onRetry?: () => void
   messageIndex?: number
@@ -373,7 +376,7 @@ interface Props {
   onFork?: (index: number) => void
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, assistantName, isLast, onRetry, messageIndex, onToggleBookmark, onEditResend, onFork }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, assistantName, agentAvatarSeed, agentName, isLast, onRetry, messageIndex, onToggleBookmark, onEditResend, onFork }: Props) {
   const isUser = message.role === 'user'
   const isHeartbeat = !isUser && (message.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(message.text || ''))
   const currentUser = useAppStore((s) => s.currentUser)
@@ -400,7 +403,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     >
       {/* Sender label + timestamp */}
       <div className={`flex items-center gap-2.5 mb-2 px-1 ${isUser ? 'flex-row-reverse' : ''}`}>
-        {!isUser && <AiAvatar size="sm" />}
+        {!isUser && (agentName ? <AgentAvatar seed={agentAvatarSeed || null} name={agentName} size={36} /> : <AiAvatar size="sm" />)}
         <span className={`text-[12px] font-600 ${isUser ? 'text-accent-bright/70' : 'text-text-3'}`}>
           {isUser ? (currentUser ? currentUser.charAt(0).toUpperCase() + currentUser.slice(1) : 'You') : (assistantName || 'Claude')}
         </span>

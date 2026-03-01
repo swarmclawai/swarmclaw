@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { AgentCard } from './agent-card'
+import { TrashList } from './trash-list'
+import { useApprovalStore } from '@/stores/use-approval-store'
 
 interface Props {
   inSidebar?: boolean
@@ -17,6 +19,11 @@ export function AgentList({ inSidebar }: Props) {
   const loadSessions = useAppStore((s) => s.loadSessions)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
+  const showTrash = useAppStore((s) => s.showTrash)
+  const setShowTrash = useAppStore((s) => s.setShowTrash)
+  const fleetFilter = useAppStore((s) => s.fleetFilter)
+  const setFleetFilter = useAppStore((s) => s.setFleetFilter)
+  const approvals = useApprovalStore((s) => s.approvals)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'orchestrator' | 'agent'>('all')
 
@@ -36,6 +43,24 @@ export function AgentList({ inSidebar }: Props) {
 
   useEffect(() => { loadAgents() }, [])
 
+  // Compute which agents are "running" (have active sessions)
+  const runningAgentIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const s of Object.values(sessions)) {
+      if (s.agentId && s.active) ids.add(s.agentId)
+    }
+    return ids
+  }, [sessions])
+
+  // Approval counts per agent
+  const approvalsByAgent = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const a of Object.values(approvals)) {
+      counts[a.agentId] = (counts[a.agentId] || 0) + 1
+    }
+    return counts
+  }, [approvals])
+
   const filtered = useMemo(() => {
     return Object.values(agents)
       .filter((p) => {
@@ -43,10 +68,34 @@ export function AgentList({ inSidebar }: Props) {
         if (filter === 'orchestrator' && !p.isOrchestrator) return false
         if (filter === 'agent' && p.isOrchestrator) return false
         if (activeProjectFilter && p.projectId !== activeProjectFilter) return false
+        // Fleet filter
+        if (fleetFilter === 'running' && !runningAgentIds.has(p.id)) return false
+        if (fleetFilter === 'approvals' && !(approvalsByAgent[p.id] > 0)) return false
         return true
       })
       .sort((a, b) => b.updatedAt - a.updatedAt)
-  }, [agents, search, filter, activeProjectFilter])
+  }, [agents, search, filter, activeProjectFilter, fleetFilter, runningAgentIds, approvalsByAgent])
+
+  if (showTrash) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="px-4 py-2.5 flex items-center gap-2">
+          <button
+            onClick={() => setShowTrash(false)}
+            className="px-3 py-1.5 rounded-[8px] text-[12px] font-600 text-text-3 bg-transparent border-none cursor-pointer hover:text-text-2 transition-all flex items-center gap-1.5"
+            style={{ fontFamily: 'inherit' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M19 12H5" /><polyline points="12 19 5 12 12 5" />
+            </svg>
+            Back to Agents
+          </button>
+          <span className="text-[13px] font-600 text-text-2">Trash</span>
+        </div>
+        <TrashList />
+      </div>
+    )
+  }
 
   if (!filtered.length && !search) {
     return (
@@ -89,7 +138,26 @@ export function AgentList({ inSidebar }: Props) {
           />
         </div>
       )}
-      <div className="flex gap-1 px-4 pb-2">
+      {/* Fleet filter: All / Running / Approvals */}
+      <div className="flex gap-1 px-4 pb-1 items-center">
+        {(['all', 'running', 'approvals'] as const).map((f) => {
+          const count = f === 'running' ? runningAgentIds.size
+            : f === 'approvals' ? Object.keys(approvalsByAgent).length
+            : null
+          return (
+            <button
+              key={f}
+              onClick={() => setFleetFilter(f)}
+              className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 capitalize cursor-pointer transition-all
+                ${fleetFilter === f ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
+              style={{ fontFamily: 'inherit' }}
+            >
+              {f}{count ? ` (${count})` : ''}
+            </button>
+          )
+        })}
+      </div>
+      <div className="flex gap-1 px-4 pb-2 items-center">
         {(['all', 'orchestrator', 'agent'] as const).map((f) => (
           <button
             key={f}
@@ -101,10 +169,21 @@ export function AgentList({ inSidebar }: Props) {
             {f}
           </button>
         ))}
+        <div className="flex-1" />
+        <button
+          onClick={() => setShowTrash(true)}
+          aria-label="View trash"
+          className="p-1.5 rounded-[6px] text-text-3/50 hover:text-text-3 bg-transparent border-none cursor-pointer transition-all hover:bg-white/[0.04]"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+        </button>
       </div>
       <div className="flex flex-col gap-1 px-2 pb-4">
         {filtered.map((p) => (
-          <AgentCard key={p.id} agent={p} isDefault={p.id === defaultAgentId} onSetDefault={handleSetDefault} />
+          <AgentCard key={p.id} agent={p} isDefault={p.id === defaultAgentId} isRunning={runningAgentIds.has(p.id)} onSetDefault={handleSetDefault} />
         ))}
       </div>
     </div>

@@ -27,7 +27,7 @@ interface StreamAgentChatOpts {
 
 function buildToolCapabilityLines(enabledTools: string[]): string[] {
   const lines: string[] = []
-  if (enabledTools.includes('shell')) lines.push('- Shell execution is available (`execute_command`). Use it for real checks/build/test steps.')
+  if (enabledTools.includes('shell')) lines.push('- Shell execution is available (`execute_command`). Use it for running servers, installing deps, running scripts, git commands, build/test steps, and any single or chained shell commands. Supports background mode for long-running processes like dev servers.')
   if (enabledTools.includes('process')) lines.push('- Process control is available (`process_tool`) for long-running commands (poll/log/write/kill).')
   if (enabledTools.includes('files') || enabledTools.includes('copy_file') || enabledTools.includes('move_file') || enabledTools.includes('delete_file')) {
     lines.push('- File operations are available (`read_file`, `write_file`, `list_files`, `copy_file`, `move_file`, `send_file`). `delete_file` is destructive and may be disabled unless explicitly enabled.')
@@ -112,10 +112,10 @@ function buildAgenticExecutionPolicy(opts: {
       ? 'When coordinating platform work, inspect existing sessions and avoid duplicating active efforts.'
       : '',
     hasDelegationTool
-      ? `For multi-file coding tasks, deep refactors, or complex test suites, prefer CLI delegation using this order: ${delegationOrder.join(' -> ')}.`
+      ? 'CRITICAL — tool selection: ALWAYS use `execute_command` for running servers, dev servers, HTTP servers, installing dependencies, running scripts, git operations, process management, starting/stopping services, or any command the user wants to "run". Delegation tools (Claude/Codex/OpenCode) CANNOT keep a server running — their session ends and the process dies. `execute_command` with background=true is the ONLY way to run persistent processes.'
       : '',
     hasDelegationTool
-      ? 'For single commands (start/stop servers, install deps, run scripts, git operations, process management), use \`execute_command\` directly — do NOT delegate these. Delegation is for tasks that need deep code understanding across multiple files, not for running one shell command.'
+      ? `Only use CLI delegation (${delegationOrder.join(' -> ')}) for tasks that need deep code understanding across multiple files: large refactors, complex debugging, multi-file code generation, or test suites. Never delegate when the user says "run", "start", "serve", "execute", or "test it locally".`
       : '',
     opts.enabledTools.includes('memory')
       ? 'Memory is active and required for long-horizon work: before major tasks, run memory_tool search/list for relevant prior work; after each meaningful step, store concise reusable notes (what changed, where it lives, constraints, next step). Treat memory as shared context plus your own agent notes, not as user-owned personal profile data.'

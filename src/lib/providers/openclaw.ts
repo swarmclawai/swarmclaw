@@ -345,8 +345,22 @@ export function streamOpenClawChat({ session, message, imagePath, apiKey, write,
             for (const p of payloads) {
               const text = typeof p.text === 'string' ? p.text.trimEnd() : ''
               if (text) {
-                fullResponse += text
-                write(`data: ${JSON.stringify({ t: 'd', text })}\n\n`)
+                // Detect [[trace]], [[tool]], [[tool-result]], [[meta]] prefixes
+                const traceMatch = text.match(/^\[\[(thinking|tool|tool-result|trace|meta)\]\]/)
+                if (traceMatch) {
+                  const traceType = traceMatch[1]
+                  const traceContent = text.slice(traceMatch[0].length)
+                  if (traceType === 'meta') {
+                    write(`data: ${JSON.stringify({ t: 'md', text: traceContent })}\n\n`)
+                  } else {
+                    // Include as text (client-side will parse trace markers)
+                    fullResponse += text
+                    write(`data: ${JSON.stringify({ t: 'd', text })}\n\n`)
+                  }
+                } else {
+                  fullResponse += text
+                  write(`data: ${JSON.stringify({ t: 'd', text })}\n\n`)
+                }
               }
             }
             if (!fullResponse && msg.payload?.summary) {

@@ -12,6 +12,7 @@ import {
   getConnectorStatus,
 } from './connectors/manager'
 import { startHeartbeatService, stopHeartbeatService, getHeartbeatServiceStatus } from './heartbeat-service'
+import { hasOpenClawAgents, ensureGatewayConnected, disconnectGateway, getGateway } from './openclaw-gateway'
 
 const QUEUE_CHECK_INTERVAL = 30_000 // 30 seconds
 const BROWSER_SWEEP_INTERVAL = 60_000 // 60 seconds
@@ -179,6 +180,16 @@ function startQueueProcessor() {
       await processNext()
       ds.lastProcessedAt = Date.now()
     }
+    // OpenClaw gateway lifecycle: lazy connect when openclaw agents exist, disconnect when none remain
+    try {
+      if (hasOpenClawAgents()) {
+        if (!getGateway()?.connected) {
+          await ensureGatewayConnected()
+        }
+      } else if (getGateway()?.connected) {
+        disconnectGateway()
+      }
+    } catch { /* gateway errors are non-fatal */ }
   }, QUEUE_CHECK_INTERVAL)
 }
 

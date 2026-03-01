@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { loadAgents, saveAgents, deleteAgent, loadSessions, saveSessions } from '@/lib/server/storage'
+import { loadAgents, saveAgents, loadSessions, saveSessions } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
-import { mutateItem, deleteItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
+import { mutateItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ops: CollectionOps<any> = { load: loadAgents, save: saveAgents, deleteFn: deleteAgent, topic: 'agents' }
+const ops: CollectionOps<any> = { load: () => loadAgents({ includeTrashed: true }), save: saveAgents, topic: 'agents' }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -27,8 +27,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  if (!deleteItem(ops, id)) return notFound()
+  // Soft delete — set trashedAt instead of removing the record
+  const result = mutateItem(ops, id, (agent) => {
+    agent.trashedAt = Date.now()
+    return agent
+  })
+  if (!result) return notFound()
 
+  // Detach sessions from the trashed agent
   const sessions = loadSessions()
   let detachedSessions = 0
   for (const session of Object.values(sessions) as Array<Record<string, unknown>>) {

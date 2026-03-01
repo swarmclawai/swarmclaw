@@ -16,6 +16,7 @@ import { VoiceOverlay } from './voice-overlay'
 import { useVoiceConversation } from '@/hooks/use-voice-conversation'
 import { ChatInput } from '@/components/input/chat-input'
 import { ChatPreviewPanel } from './chat-preview-panel'
+import { InspectorPanel } from '@/components/agents/inspector-panel'
 import { Dropdown, DropdownItem } from '@/components/shared/dropdown'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { speak } from '@/lib/tts'
@@ -45,6 +46,8 @@ export function ChatArea() {
   const loadAgents = useAppStore((s) => s.loadAgents)
   const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
+  const inspectorOpen = useAppStore((s) => s.inspectorOpen)
+  const currentAgent = session?.agentId ? agents[session.agentId] ?? null : null
 
   const voice = useVoiceConversation()
   const handleVoiceToggle = useCallback(() => {
@@ -427,6 +430,9 @@ export function ChatArea() {
     </div>
     {isDesktop && previewContent && (
       <ChatPreviewPanel content={previewContent} onClose={() => setPreviewContent(null)} />
+    )}
+    {isDesktop && inspectorOpen && currentAgent && (
+      <InspectorPanel agent={currentAgent} />
     )}
     </div>
   )

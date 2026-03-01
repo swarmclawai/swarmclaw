@@ -245,7 +245,7 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
         },
         {
           name: 'delegate_to_claude_code',
-          description: 'Delegate a complex task to Claude Code CLI. Use for tasks that need deep code understanding, multi-file refactoring, or running tests. The task runs in the session working directory.',
+          description: 'Delegate a complex multi-file coding task to Claude Code CLI. ONLY for deep code understanding, multi-file refactoring, or large code generation. NEVER use this to run servers, dev servers, install dependencies, or execute commands — use execute_command for those (this tool\'s session ends and kills any running processes).',
           schema: z.object({
             task: z.string().describe('Detailed description of the task for Claude Code'),
             resume: z.boolean().optional().describe('If true, try to resume the last saved Claude delegation session for this SwarmClaw session'),
@@ -457,7 +457,7 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
         },
         {
           name: 'delegate_to_codex_cli',
-          description: 'Delegate a complex task to Codex CLI. Use for deep coding/refactor tasks and shell-driven implementation work.',
+          description: 'Delegate a complex multi-file coding task to Codex CLI. ONLY for deep code understanding, multi-file refactoring, or large code generation. NEVER use this to run servers, dev servers, install dependencies, or execute commands — use execute_command for those (this tool\'s session ends and kills any running processes).',
           schema: z.object({
             task: z.string().describe('Detailed description of the task for Codex CLI'),
             resume: z.boolean().optional().describe('If true, try to resume the last saved Codex delegation thread for this SwarmClaw session'),
@@ -622,7 +622,7 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
         },
         {
           name: 'delegate_to_opencode_cli',
-          description: 'Delegate a complex task to OpenCode CLI. Use for deep coding/refactor tasks and shell-driven implementation work.',
+          description: 'Delegate a complex multi-file coding task to OpenCode CLI. ONLY for deep code understanding, multi-file refactoring, or large code generation. NEVER use this to run servers, dev servers, install dependencies, or execute commands — use execute_command for those (this tool\'s session ends and kills any running processes).',
           schema: z.object({
             task: z.string().describe('Detailed description of the task for OpenCode CLI'),
             resume: z.boolean().optional().describe('If true, try to resume the last saved OpenCode delegation session for this SwarmClaw session'),

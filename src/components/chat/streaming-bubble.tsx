@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { AiAvatar } from '@/components/shared/avatar'
+import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { CodeBlock } from './code-block'
 import { ToolCallBubble } from './tool-call-bubble'
 import { useChatStore, type ToolEvent } from '@/stores/use-chat-store'
@@ -57,9 +58,11 @@ function ToolEventsSection({ toolEvents }: { toolEvents: ToolEvent[] }) {
 interface Props {
   text: string
   assistantName?: string
+  agentAvatarSeed?: string
+  agentName?: string
 }
 
-export function StreamingBubble({ text, assistantName }: Props) {
+export function StreamingBubble({ text, assistantName, agentAvatarSeed, agentName }: Props) {
   const rendered = useMemo(() => text, [text])
   const toolEvents = useChatStore((s) => s.toolEvents)
   const streamPhase = useChatStore((s) => s.streamPhase)
@@ -71,7 +74,7 @@ export function StreamingBubble({ text, assistantName }: Props) {
       style={{ animation: 'msg-in-left 0.35s cubic-bezier(0.16, 1, 0.3, 1)' }}
     >
       <div className="flex items-center gap-2.5 mb-2 px-1">
-        <AiAvatar size="sm" mood={streamPhase === 'tool' ? 'tool' : 'thinking'} />
+        {agentName ? <AgentAvatar seed={agentAvatarSeed || null} name={agentName} size={36} /> : <AiAvatar size="sm" mood={streamPhase === 'tool' ? 'tool' : 'thinking'} />}
         <span className="text-[12px] font-600 text-text-3">{assistantName || 'Claude'}</span>
         <span className="w-2 h-2 rounded-full bg-accent-bright" style={{ animation: 'pulse 1.5s ease infinite' }} />
         {streamPhase === 'tool' && streamToolName && (

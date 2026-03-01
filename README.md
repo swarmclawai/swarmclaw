@@ -25,7 +25,10 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 
 - **15 Built-in Providers** — Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, plus custom OpenAI-compatible endpoints
 - **OpenClaw Gateway** — Per-agent toggle to connect any agent to a local or remote OpenClaw gateway. Each agent gets its own gateway URL and token — run a swarm of OpenClaws from one dashboard. The `openclaw` CLI ships as a bundled dependency (no separate install needed)
+- **OpenClaw Control Plane** — Built-in gateway connection controls, reload mode switching (hot/hybrid/full), config issue detection/repair, remote history sync, and live execution approval handling
 - **Agent Builder** — Create agents with custom personalities (soul), system prompts, tools, and skills. AI-powered generation from a description
+- **Agent Inspector Panel** — Per-agent side panel for OpenClaw file editing (`SOUL.md`, `IDENTITY.md`, `USER.md`, etc.), guided personality editing, skill install/enable/remove, permission presets, sandbox env allowlist, and cron automations
+- **Agent Fleet Management** — Avatar seeds with generated avatars, running/approval fleet filters, soft-delete agent trash with restore/permanent delete, and approval counters in agent cards
 - **Agent Tools** — Shell, process control for long-running commands, files, edit file, send file, web search, web fetch, CLI delegation (Claude/Codex/OpenCode), Playwright browser automation, persistent memory, and sandboxed code execution (JS/TS via Deno, Python)
 - **Platform Tools** — Agents can manage other agents, tasks, schedules, skills, connectors, sessions, and encrypted secrets via built-in platform tools
 - **Orchestration** — Multi-agent workflows powered by LangGraph with automatic sub-agent routing, checkpointed execution, and rich delegation cards that link to sub-agent chat threads
@@ -35,7 +38,7 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 - **Scheduling** — Cron-based agent scheduling with human-friendly presets
 - **Loop Runtime Controls** — Switch between bounded and ongoing loops with configurable step caps, runtime guards, heartbeat cadence, and timeout budgets
 - **Session Run Queue** — Per-session queued runs with followup/steer/collect modes, collect coalescing for bursty inputs, and run-state APIs
-- **Chat Iteration Workflow** — Edit-and-resend user turns, fork a new session from any message, bookmark key messages, and use contextual follow-up suggestion chips
+- **Chat Iteration Workflow** — Edit-and-resend user turns, fork a new session from any message, bookmark key messages, use contextual follow-up suggestion chips, and auto-continue after tool access grants
 - **Live Chat Telemetry** — Thinking/tool/responding stream phases, live main-loop status badges, connector activity presence, tone indicator, and optional sound notifications
 - **Preview-Rich Chat UI** — Side preview panel for tool outputs (image/browser/html/code), inline code/PDF previews for attachments, and image lightbox support
 - **Voice Settings** — Per-instance ElevenLabs API key + voice ID for TTS replies, plus configurable speech recognition language for chat input
@@ -78,7 +81,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.4.6 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.5.0 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 

@@ -13,6 +13,7 @@ import {
   CONNECTOR_PLATFORM_META,
   getSessionConnector,
 } from '@/components/shared/connector-platform-icon'
+import { AgentAvatar } from '@/components/agents/agent-avatar'
 
 function shortPath(p: string): string {
   return (p || '').replace(/^\/Users\/\w+/, '~')
@@ -66,6 +67,8 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const appSettings = useAppStore((s) => s.appSettings)
   const loadSessions = useAppStore((s) => s.loadSessions)
   const loadAgents = useAppStore((s) => s.loadAgents)
+  const inspectorOpen = useAppStore((s) => s.inspectorOpen)
+  const setInspectorOpen = useAppStore((s) => s.setInspectorOpen)
   const connectors = useAppStore((s) => s.connectors)
   const loadConnectors = useAppStore((s) => s.loadConnectors)
   const providerLabel = PROVIDER_LABELS[session.provider] || session.provider
@@ -81,6 +84,8 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const [mainLoopSaving, setMainLoopSaving] = useState(false)
   const [mainLoopError, setMainLoopError] = useState('')
   const [mainLoopNotice, setMainLoopNotice] = useState('')
+  const [syncingHistory, setSyncingHistory] = useState(false)
+  const [syncResult, setSyncResult] = useState('')
 
   // Find linked task for this session
   const linkedTask = useMemo(() => {
@@ -272,6 +277,43 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     void postMainLoopAction('clear_events')
   }
 
+  const isOpenClawAgent = agent?.provider === 'openclaw'
+  // Derive OpenClaw session key: agent sessions use "agent:<name>:main" convention
+  const openclawSessionKey = isOpenClawAgent && agent
+    ? `agent:${agent.name.toLowerCase().replace(/\s+/g, '-')}:main`
+    : null
+
+  const handleSyncHistory = async () => {
+    if (!openclawSessionKey || syncingHistory) return
+    setSyncingHistory(true)
+    setSyncResult('')
+    try {
+      const preview = await api<{ sessionKey: string; epoch: number; messages: Array<{ role: string; content: string; ts: number }> }>(
+        'GET', `/openclaw/history?sessionKey=${encodeURIComponent(openclawSessionKey)}`,
+      )
+      if (!preview?.messages?.length) {
+        setSyncResult('No new messages found.')
+        return
+      }
+      const result = await api<{ ok: boolean; merged: number }>(
+        'POST', '/openclaw/history',
+        { sessionKey: openclawSessionKey, epoch: preview.epoch, localSessionId: session.id },
+      )
+      setSyncResult(result.merged > 0 ? `Synced ${result.merged} message${result.merged !== 1 ? 's' : ''}.` : 'Already up to date.')
+      if (result.merged > 0) await loadSessions()
+    } catch (err: unknown) {
+      setSyncResult(err instanceof Error ? err.message : 'Sync failed.')
+    } finally {
+      setSyncingHistory(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!syncResult) return
+    const timer = setTimeout(() => setSyncResult(''), 3000)
+    return () => clearTimeout(timer)
+  }, [syncResult])
+
   useEffect(() => {
     if (!hbDropdownOpen) return
     const handler = (e: MouseEvent) => {
@@ -311,6 +353,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5">
+            {agent && <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={24} />}
             <span className="font-display text-[16px] font-600 block truncate tracking-[-0.02em]">{
               session.name === '__main__' ? 'Main Chat'
               : session.name.startsWith('agent-thread:') ? (agent?.name || session.name)
@@ -450,6 +493,14 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
             <IconButton onClick={onStop} variant="danger" aria-label="Stop generation">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
                 <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+            </IconButton>
+          )}
+          {agent && (
+            <IconButton onClick={() => setInspectorOpen(!inspectorOpen)} active={inspectorOpen} aria-label="Toggle inspector panel">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
               </svg>
             </IconButton>
           )}
@@ -628,6 +679,29 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 {agent.name} Memories
               </span>
             </button>
+          )}
+          {isOpenClawAgent && openclawSessionKey && (
+            <>
+              <button
+                onClick={handleSyncHistory}
+                disabled={syncingHistory}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-indigo-500/10 hover:bg-indigo-500/15 transition-colors cursor-pointer border-none disabled:opacity-50"
+                title="Sync chat history from OpenClaw gateway"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-indigo-400">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                  <path d="M16 16h5v5" />
+                </svg>
+                <span className="text-[11px] font-600 text-indigo-400">
+                  {syncingHistory ? 'Syncing...' : 'Sync History'}
+                </span>
+              </button>
+              {syncResult && (
+                <span className="text-[10px] text-emerald-300/90">{syncResult}</span>
+              )}
+            </>
           )}
           {linkedTask && (
             <button

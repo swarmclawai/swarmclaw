@@ -9,6 +9,8 @@ import { MessageBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ThinkingIndicator } from './thinking-indicator'
 import { SuggestionsBar } from './suggestions-bar'
+import { ExecApprovalCard } from './exec-approval-card'
+import { useApprovalStore } from '@/stores/use-approval-store'
 
 function dateSeparator(ts: number): string {
   const d = new Date(ts)
@@ -344,6 +346,8 @@ export function MessageList({ messages, streaming }: Props) {
                   <MessageBubble
                     message={msg}
                     assistantName={assistantName}
+                    agentAvatarSeed={agent?.avatarSeed}
+                    agentName={agent?.name}
                     isLast={isLastAssistant}
                     onRetry={isLastAssistant ? retryLastMessage : undefined}
                     messageIndex={originalIndex >= 0 ? originalIndex : undefined}
@@ -355,8 +359,9 @@ export function MessageList({ messages, streaming }: Props) {
               </div>
             )
           })}
-          {streaming && !displayText && <ThinkingIndicator assistantName={assistantName} />}
-          {streaming && displayText && <StreamingBubble text={displayText} assistantName={assistantName} />}
+          <ApprovalCards agentId={agent?.id} />
+          {streaming && !displayText && <ThinkingIndicator assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentName={agent?.name} />}
+          {streaming && displayText && <StreamingBubble text={displayText} assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentName={agent?.name} />}
           {!streaming && filteredMessages.length > 0 && filteredMessages[filteredMessages.length - 1]?.role === 'assistant' && (
             <SuggestionsBar lastMessage={filteredMessages[filteredMessages.length - 1]} onSend={sendMessage} />
           )}
@@ -381,5 +386,18 @@ export function MessageList({ messages, streaming }: Props) {
         </button>
       )}
     </div>
+  )
+}
+
+function ApprovalCards({ agentId }: { agentId?: string | null }) {
+  const approvals = useApprovalStore((s) => s.approvals)
+  const cards = Object.values(approvals).filter((a) => !agentId || a.agentId === agentId)
+  if (!cards.length) return null
+  return (
+    <>
+      {cards.map((a) => (
+        <ExecApprovalCard key={a.id} approval={a} />
+      ))}
+    </>
   )
 }

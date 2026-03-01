@@ -83,3 +83,17 @@ export function notify(topic: string, action = 'update', id?: string) {
     }
   }
 }
+
+/** Send an event with a data payload to subscribed browser clients. */
+export function notifyWithPayload(topic: string, data: unknown) {
+  const hub = getHub()
+  if (!hub) return
+
+  const payload = JSON.stringify({ topic, action: 'event', data })
+
+  for (const client of hub.clients) {
+    if (client.topics.has(topic) && client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(payload)
+    }
+  }
+}
