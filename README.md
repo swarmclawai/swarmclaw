@@ -17,10 +17,6 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 ![Agent Builder](public/screenshots/agents.png)
 ![Task Board](public/screenshots/tasks.png)
 
-## Security Warning
-
-SwarmClaw can spawn **Claude Code CLI** processes with full shell access on your machine. This means agents can read, write, and execute anything your user account can. **Do not run this on a shared server or expose it to the public internet without understanding the risks.**
-
 - Always use the access key authentication (generated on first run)
 - Never expose port 3456 without a reverse proxy + TLS
 - Review agent system prompts before giving them shell or browser tools
