@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import type { Session } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
@@ -16,6 +16,16 @@ import {
 
 function shortPath(p: string): string {
   return (p || '').replace(/^\/Users\/\w+/, '~')
+}
+
+function formatDuration(sec: number): string {
+  if (sec >= 3600) {
+    const h = Math.floor(sec / 3600)
+    const m = Math.floor((sec % 3600) / 60)
+    return m > 0 ? `${h}h${m}m` : `${h}h`
+  }
+  if (sec >= 60) return `${Math.floor(sec / 60)}m`
+  return `${sec}s`
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -34,9 +44,12 @@ interface Props {
   mobile?: boolean
   browserActive?: boolean
   onStopBrowser?: () => void
+  onVoiceToggle?: () => void
+  voiceActive?: boolean
+  voiceSupported?: boolean
 }
 
-export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, mobile, browserActive, onStopBrowser }: Props) {
+export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, mobile, browserActive, onStopBrowser, onVoiceToggle, voiceActive, voiceSupported }: Props) {
   const ttsEnabled = useChatStore((s) => s.ttsEnabled)
   const toggleTts = useChatStore((s) => s.toggleTts)
   const debugOpen = useChatStore((s) => s.debugOpen)
@@ -49,6 +62,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const appSettings = useAppStore((s) => s.appSettings)
   const loadSessions = useAppStore((s) => s.loadSessions)
+  const loadAgents = useAppStore((s) => s.loadAgents)
   const connectors = useAppStore((s) => s.connectors)
   const loadConnectors = useAppStore((s) => s.loadConnectors)
   const providerLabel = PROVIDER_LABELS[session.provider] || session.provider
@@ -58,6 +72,8 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const modelName = session.model || agent?.model || ''
   const [copied, setCopied] = useState(false)
   const [heartbeatSaving, setHeartbeatSaving] = useState(false)
+  const [hbDropdownOpen, setHbDropdownOpen] = useState(false)
+  const hbDropdownRef = useRef<HTMLDivElement>(null)
   const [mainLoopSaving, setMainLoopSaving] = useState(false)
   const [mainLoopError, setMainLoopError] = useState('')
   const [mainLoopNotice, setMainLoopNotice] = useState('')
@@ -102,11 +118,53 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const heartbeatEnabled = session.heartbeatEnabled !== false
   const heartbeatSupported = (session.tools?.length ?? 0) > 0
   const loopIsOngoing = appSettings.loopMode === 'ongoing'
-  const heartbeatIntervalRaw = session.heartbeatIntervalSec ?? appSettings.heartbeatIntervalSec ?? 120
-  const heartbeatIntervalSec = Number.isFinite(Number(heartbeatIntervalRaw)) ? Math.max(0, Math.trunc(Number(heartbeatIntervalRaw))) : 120
+  const { heartbeatEnabled, heartbeatIntervalSec, heartbeatExplicitOptIn } = useMemo(() => {
+    // Resolve through the same cascade as the backend: settings → agent → session
+    const parseDur = (v: unknown): number | null => {
+      if (v === null || v === undefined) return null
+      if (typeof v === 'number') return Number.isFinite(v) ? Math.max(0, Math.min(86400, Math.trunc(v))) : null
+      if (typeof v !== 'string') return null
+      const t = v.trim().toLowerCase()
+      if (!t) return null
+      const n = Number(t)
+      if (Number.isFinite(n)) return Math.max(0, Math.min(86400, Math.trunc(n)))
+      const m = t.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/)
+      if (!m || (!m[1] && !m[2] && !m[3])) return null
+      const total = (m[1] ? parseInt(m[1]) * 3600 : 0) + (m[2] ? parseInt(m[2]) * 60 : 0) + (m[3] ? parseInt(m[3]) : 0)
+      return Math.max(0, Math.min(86400, total))
+    }
+    const resolveFrom = (obj: Record<string, any>): number | null => {
+      const dur = parseDur(obj.heartbeatInterval)
+      if (dur !== null) return dur
+      const sec = parseDur(obj.heartbeatIntervalSec)
+      if (sec !== null) return sec
+      return null
+    }
+    // Global defaults
+    let sec = resolveFrom(appSettings as Record<string, any>) ?? 1800
+    let enabled = sec > 0
+    let explicitOptIn = false
+    // Agent layer
+    if (agent) {
+      if (agent.heartbeatEnabled === false) enabled = false
+      if (agent.heartbeatEnabled === true) { enabled = true; explicitOptIn = true }
+      sec = resolveFrom(agent as Record<string, any>) ?? sec
+    }
+    // Session layer — only applies for non-agent chats (agent chats save directly to agent)
+    if (!agent) {
+      if (session.heartbeatEnabled === false) enabled = false
+      if (session.heartbeatEnabled === true) { enabled = true; explicitOptIn = true }
+      sec = resolveFrom(session as Record<string, any>) ?? sec
+    }
+    return {
+      heartbeatEnabled: enabled && sec > 0,
+      heartbeatIntervalSec: sec,
+      heartbeatExplicitOptIn: explicitOptIn,
+    }
+  }, [appSettings, agent, session])
+  const heartbeatWillRun = heartbeatEnabled && (loopIsOngoing || heartbeatExplicitOptIn)
   const isMainSession = session.name === '__main__'
   const missionState = session.mainLoopState || {}
   const missionPaused = missionState.paused === true
@@ -119,23 +177,40 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     if (!heartbeatSupported || heartbeatSaving) return
     setHeartbeatSaving(true)
     try {
-      await api('PUT', `/sessions/${session.id}`, { heartbeatEnabled: !heartbeatEnabled })
-      await loadSessions()
+      const next = !heartbeatEnabled
+      if (session.agentId) {
+        await api('PUT', `/agents/${session.agentId}`, { heartbeatEnabled: next })
+        // Clear any stale session-level override so the agent value wins
+        await api('PUT', `/sessions/${session.id}`, { heartbeatEnabled: null })
+        await Promise.all([loadAgents(), loadSessions()])
+      } else {
+        await api('PUT', `/sessions/${session.id}`, { heartbeatEnabled: next })
+        await loadSessions()
+      }
     } finally {
       setHeartbeatSaving(false)
     }
   }
 
-  const handleCycleHeartbeatInterval = async () => {
+  const handleSelectHeartbeatInterval = async (sec: number) => {
     if (!heartbeatSupported || heartbeatSaving) return
-    const presets = [30, 60, 120, 300, 600]
-    const current = heartbeatIntervalSec
-    const idx = presets.indexOf(current)
-    const next = idx === -1 ? 120 : presets[(idx + 1) % presets.length]
+    setHbDropdownOpen(false)
     setHeartbeatSaving(true)
     try {
-      await api('PUT', `/sessions/${session.id}`, { heartbeatIntervalSec: next, heartbeatEnabled: true })
-      await loadSessions()
+      if (session.agentId) {
+        // Save to agent with both formats so the cascade resolves correctly
+        await api('PUT', `/agents/${session.agentId}`, {
+          heartbeatInterval: formatDuration(sec),
+          heartbeatIntervalSec: sec,
+          heartbeatEnabled: true,
+        })
+        // Clear stale session-level overrides
+        await api('PUT', `/sessions/${session.id}`, { heartbeatIntervalSec: null, heartbeatEnabled: null })
+        await Promise.all([loadAgents(), loadSessions()])
+      } else {
+        await api('PUT', `/sessions/${session.id}`, { heartbeatIntervalSec: sec, heartbeatEnabled: true })
+        await loadSessions()
+      }
     } finally {
       setHeartbeatSaving(false)
     }
@@ -192,6 +267,15 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     if (!isMainSession || missionEventsCount <= 0) return
     void postMainLoopAction('clear_events')
   }
+
+  useEffect(() => {
+    if (!hbDropdownOpen) return
+    const handler = (e: MouseEvent) => {
+      if (hbDropdownRef.current && !hbDropdownRef.current.contains(e.target as Node)) setHbDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [hbDropdownOpen])
 
   useEffect(() => {
     if (session.name.startsWith('connector:')) {
@@ -298,7 +382,16 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
             </svg>
           </IconButton>
-          <IconButton onClick={(e) => { e.stopPropagation(); onMenuToggle() }} aria-label="Session menu">
+          {voiceSupported && onVoiceToggle && (
+            <IconButton onClick={onVoiceToggle} active={voiceActive} aria-label="Toggle voice conversation">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" x2="12" y1="19" y2="22" />
+              </svg>
+            </IconButton>
+          )}
+          <IconButton onClick={(e) => { e.stopPropagation(); onMenuToggle() }} aria-label="Chat menu">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <circle cx="12" cy="6" r="1" />
               <circle cx="12" cy="12" r="1" />
@@ -320,25 +413,44 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 onClick={handleToggleHeartbeat}
                 disabled={heartbeatSaving}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] transition-colors cursor-pointer border-none
-                  ${heartbeatEnabled ? 'bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-400' : 'bg-white/[0.04] hover:bg-white/[0.07] text-text-3'}`}
-                title={loopIsOngoing ? 'Toggle heartbeat for this session' : 'Global loop mode is bounded; heartbeats are paused'}
+                  ${heartbeatWillRun ? 'bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-400' : 'bg-white/[0.04] hover:bg-white/[0.07] text-text-3'}`}
+                title={heartbeatWillRun ? 'Toggle heartbeat' : !heartbeatEnabled ? 'Heartbeat disabled — click to enable' : 'Heartbeat enabled but paused (bounded loop mode, no explicit opt-in)'}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${heartbeatEnabled ? 'bg-emerald-400' : 'bg-text-3/40'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${heartbeatWillRun ? 'bg-emerald-400' : 'bg-text-3/40'}`} />
                 <span className="text-[11px] font-600">
-                  HB {heartbeatEnabled ? 'On' : 'Off'}
+                  HB {heartbeatWillRun ? 'On' : 'Off'}
                 </span>
-                {!loopIsOngoing && (
+                {heartbeatEnabled && !loopIsOngoing && !heartbeatExplicitOptIn && (
                   <span className="text-[10px] text-text-3/50">(bounded)</span>
                 )}
               </button>
-              <button
-                onClick={handleCycleHeartbeatInterval}
-                disabled={heartbeatSaving}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-text-3 transition-colors cursor-pointer border-none"
-                title="Cycle heartbeat interval for this session"
-              >
-                <span className="text-[11px] font-600">{heartbeatIntervalSec}s</span>
-              </button>
+              <div className="relative" ref={hbDropdownRef}>
+                <button
+                  onClick={() => setHbDropdownOpen((o) => !o)}
+                  disabled={heartbeatSaving}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-text-3 transition-colors cursor-pointer border-none"
+                  title="Set heartbeat interval"
+                >
+                  <span className="text-[11px] font-600">{formatDuration(heartbeatIntervalSec)}</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-3/50">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+                {hbDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[80px]">
+                    {[30, 60, 120, 300, 600, 1800, 3600].map((sec) => (
+                      <button
+                        key={sec}
+                        onClick={() => handleSelectHeartbeatInterval(sec)}
+                        className={`w-full text-left px-3 py-1.5 text-[11px] font-600 transition-colors cursor-pointer border-none
+                          ${sec === heartbeatIntervalSec ? 'bg-accent-soft text-accent-bright' : 'text-text-3 hover:bg-white/[0.06]'}`}
+                      >
+                        {formatDuration(sec)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           )}
           {isMainSession && (
@@ -467,7 +579,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
             <button
               onClick={onStopBrowser}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#3B82F6]/10 hover:bg-[#F43F5E]/15 transition-colors cursor-pointer group"
-              title="Stop browser session"
+              title="Stop browser"
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-[#3B82F6] group-hover:text-[#F43F5E]">
                 <rect x="3" y="3" width="18" height="14" rx="2" />

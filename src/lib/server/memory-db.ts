@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
-import crypto from 'crypto'
 import fs from 'fs'
+import { genId } from '@/lib/id'
 import type { MemoryEntry, FileReference, MemoryImage, MemoryReference } from '@/types'
 import { getEmbedding, cosineSimilarity, serializeEmbedding, deserializeEmbedding } from './embeddings'
 import { loadSettings } from './storage'
@@ -20,12 +20,12 @@ const IMAGES_DIR = path.join(DATA_DIR, 'memory-images')
 
 const MAX_IMAGE_INPUT_BYTES = 10 * 1024 * 1024 // 10MB
 const IMAGE_EXT_WHITELIST = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'])
-const MAX_FTS_QUERY_TERMS = 6
-const MAX_FTS_TERM_LENGTH = 48
+export const MAX_FTS_QUERY_TERMS = 6
+export const MAX_FTS_TERM_LENGTH = 48
 const MAX_FTS_RESULT_ROWS = 30
 const MAX_MERGED_RESULTS = 50
 
-const MEMORY_FTS_STOP_WORDS = new Set([
+export const MEMORY_FTS_STOP_WORDS = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'how',
   'i', 'if', 'in', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'this',
   'to', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'who', 'with',
@@ -184,7 +184,7 @@ function canonicalText(value: unknown): string {
     .trim()
 }
 
-function buildFtsQuery(input: string): string {
+export function buildFtsQuery(input: string): string {
   const tokens = String(input || '')
     .toLowerCase()
     .match(/[a-z0-9][a-z0-9._:/-]*/g) || []
@@ -546,7 +546,7 @@ function initDb() {
 
   return {
     add(data: Omit<MemoryEntry, 'id' | 'createdAt' | 'updatedAt'>): MemoryEntry {
-      const id = crypto.randomBytes(6).toString('hex')
+      const id = genId(6)
       const now = Date.now()
       const references = normalizeReferences(data.references, data.filePaths)
       const legacyFilePaths = referencesToLegacyFilePaths(references)

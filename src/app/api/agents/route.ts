@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadAgents, saveAgents } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { notify } from '@/lib/server/ws-hub'
@@ -12,7 +12,7 @@ export async function GET(_req: Request) {
 
 export async function POST(req: Request) {
   const body = await req.json()
-  const id = crypto.randomBytes(4).toString('hex')
+  const id = genId()
   const now = Date.now()
   const agents = loadAgents()
   agents[id] = {
@@ -28,6 +28,7 @@ export async function POST(req: Request) {
     subAgentIds: body.subAgentIds || [],
     tools: body.tools || [],
     capabilities: body.capabilities || [],
+    thinkingLevel: body.thinkingLevel || undefined,
     createdAt: now,
     updatedAt: now,
   }

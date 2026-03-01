@@ -43,7 +43,7 @@ async function fileToContentParts(filePath: string): Promise<any[]> {
   return [{ type: 'text', text: `[Attached file: ${name}]` }]
 }
 
-export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPrompt, write, active, loadHistory }: StreamChatOptions): Promise<string> {
+export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPrompt, write, active, loadHistory, onUsage }: StreamChatOptions): Promise<string> {
   return new Promise(async (resolve) => {
     const messages = await buildMessages(session, message, imagePath, systemPrompt, loadHistory)
     const model = session.model || 'gpt-4o'
@@ -52,6 +52,7 @@ export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPr
       model,
       messages,
       stream: true,
+      stream_options: { include_usage: true },
     })
 
     let fullResponse = ''
@@ -135,6 +136,13 @@ export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPr
             if (delta) {
               fullResponse += delta
               write(`data: ${JSON.stringify({ t: 'd', text: delta })}\n\n`)
+            }
+            // Extract usage from the final chunk (stream_options: include_usage)
+            if (parsed.usage && onUsage) {
+              onUsage({
+                inputTokens: parsed.usage.prompt_tokens || 0,
+                outputTokens: parsed.usage.completion_tokens || 0,
+              })
             }
           } catch {}
         }

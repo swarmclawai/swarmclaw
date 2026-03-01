@@ -5,29 +5,9 @@ import path from 'path'
 import * as cheerio from 'cheerio'
 import { UPLOAD_DIR } from '../storage'
 import type { ToolBuildContext } from './context'
-import { safePath, truncate, MAX_OUTPUT } from './context'
-
-// ---------------------------------------------------------------------------
-// DuckDuckGo redirect-URL decoder
-// ---------------------------------------------------------------------------
-
-function decodeDuckDuckGoUrl(rawUrl: string): string {
-  if (!rawUrl) return rawUrl
-  try {
-    const url = rawUrl.startsWith('http')
-      ? new URL(rawUrl)
-      : new URL(rawUrl, 'https://duckduckgo.com')
-    const uddg = url.searchParams.get('uddg')
-    if (uddg) return decodeURIComponent(uddg)
-    return url.toString()
-  } catch {
-    const fromQuery = rawUrl.match(/[?&]uddg=([^&]+)/)?.[1]
-    if (fromQuery) {
-      try { return decodeURIComponent(fromQuery) } catch { /* noop */ }
-    }
-    return rawUrl
-  }
-}
+import { spawnSync } from 'child_process'
+import { safePath, truncate, MAX_OUTPUT, findBinaryOnPath } from './context'
+import { getSearchProvider } from './search-providers'
 
 // ---------------------------------------------------------------------------
 // Global registry of active browser instances for cleanup sweeps
@@ -86,48 +66,10 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         async ({ query, maxResults }) => {
           try {
             const limit = Math.min(maxResults || 5, 10)
-            const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
-            const res = await fetch(url, {
-              headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SwarmClaw/1.0)' },
-              signal: AbortSignal.timeout(15000),
-            })
-            if (!res.ok) {
-              return `Error searching web: HTTP ${res.status} ${res.statusText}`
-            }
-            const html = await res.text()
-            const $ = cheerio.load(html)
-            const results: { title: string; url: string; snippet: string }[] = []
-
-            // Primary parser: DuckDuckGo result cards
-            $('.result').each((_i, el) => {
-              if (results.length >= limit) return false
-              const link = $(el).find('a.result__a').first()
-              const rawHref = link.attr('href') || ''
-              const title = link.text().replace(/\s+/g, ' ').trim()
-              if (!rawHref || !title) return
-              const snippet = $(el).find('.result__snippet').first().text().replace(/\s+/g, ' ').trim()
-              results.push({
-                title,
-                url: decodeDuckDuckGoUrl(rawHref),
-                snippet,
-              })
-            })
-
-            // Fallback parser: any result__a anchors
-            if (results.length === 0) {
-              $('a.result__a').each((_i, el) => {
-                if (results.length >= limit) return false
-                const rawHref = $(el).attr('href') || ''
-                const title = $(el).text().replace(/\s+/g, ' ').trim()
-                if (!rawHref || !title) return
-                results.push({
-                  title,
-                  url: decodeDuckDuckGoUrl(rawHref),
-                  snippet: '',
-                })
-              })
-            }
-
+            const { loadSettings } = await import('../storage')
+            const settings = loadSettings()
+            const provider = await getSearchProvider(settings)
+            const results = await provider.search(query, limit)
             return results.length > 0
               ? JSON.stringify(results, null, 2)
               : 'No results found.'
@@ -137,7 +79,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         },
         {
           name: 'web_search',
-          description: 'Search the web using DuckDuckGo. Returns an array of results with title, url, and snippet.',
+          description: 'Search the web. Returns an array of results with title, url, and snippet.',
           schema: z.object({
             query: z.string().describe('Search query'),
             maxResults: z.number().optional().describe('Maximum results to return (default 5, max 10)'),
@@ -402,6 +344,45 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         },
       ),
     )
+  }
+
+  // ---- openclaw_browser (CLI passthrough) -----------------------------------
+
+  if (bctx.hasTool('browser') || bctx.hasTool('openclaw_browser')) {
+    const openclawPath = findBinaryOnPath('openclaw') || findBinaryOnPath('clawdbot')
+    if (openclawPath) {
+      tools.push(
+        tool(
+          async ({ command, args: cmdArgs }) => {
+            try {
+              const spawnArgs = ['browser', command, '--json']
+              if (cmdArgs) spawnArgs.push(...cmdArgs.split(/\s+/).filter(Boolean))
+              const result = spawnSync(openclawPath, spawnArgs, {
+                encoding: 'utf-8',
+                timeout: 60_000,
+                maxBuffer: MAX_OUTPUT,
+              })
+              const stdout = (result.stdout || '').trim()
+              const stderr = (result.stderr || '').trim()
+              if (result.status !== 0) {
+                return `Error (exit ${result.status}): ${stderr || stdout || 'unknown error'}`
+              }
+              return truncate(stdout || '(no output)', MAX_OUTPUT)
+            } catch (err: any) {
+              return `Error: ${err.message}`
+            }
+          },
+          {
+            name: 'openclaw_browser',
+            description: 'Control a browser through the OpenClaw CLI. Requires openclaw/clawdbot CLI on PATH. Passes through to `openclaw browser <command> --json`.',
+            schema: z.object({
+              command: z.string().describe('Browser command (navigate, screenshot, click, type, evaluate, etc.)'),
+              args: z.string().optional().describe('Additional arguments as a space-separated string'),
+            }),
+          },
+        ),
+      )
+    }
   }
 
   return tools

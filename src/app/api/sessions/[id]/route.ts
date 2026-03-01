@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { loadSessions, saveSessions, deleteSession, active, loadAgents } from '@/lib/server/storage'
+import { notFound } from '@/lib/server/collection-helpers'
 import { enqueueSessionRun } from '@/lib/server/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 
@@ -20,7 +21,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   const updates = await req.json()
   const sessions = loadSessions()
-  if (!sessions[id]) return new NextResponse(null, { status: 404 })
+  if (!sessions[id]) return notFound()
   const hadMessagesBefore = Array.isArray(sessions[id].messages) && sessions[id].messages.length > 0
 
   const agentIdUpdateProvided = updates.agentId !== undefined

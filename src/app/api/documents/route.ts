@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { NextResponse } from 'next/server'
 import { loadDocuments, saveDocuments } from '@/lib/server/storage'
 
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const now = Date.now()
   const docs = loadDocuments()
-  const id = body.id || crypto.randomBytes(6).toString('hex')
+  const id = body.id || genId(6)
   const fileName = body.fileName || body.filename || ''
   const title = body.title || fileName || 'Untitled Document'
   const content = typeof body.content === 'string' ? body.content : ''

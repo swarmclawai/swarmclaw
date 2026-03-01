@@ -129,7 +129,7 @@ export function NewSessionSheet() {
   }
 
   const handleCreate = async () => {
-    const sessionName = name.trim() || 'New Session'
+    const sessionName = name.trim() || 'New Chat'
     const cwd = selectedDir || ''
     const resolvedCredentialId = currentProvider?.requiresApiKey
       ? credentialId
@@ -174,14 +174,14 @@ export function NewSessionSheet() {
     <BottomSheet open={open} onClose={onClose} wide>
       {/* Header */}
       <div className="mb-10">
-        <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">New Session</h2>
-        <p className="text-[14px] text-text-3">Configure your AI session</p>
+        <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">New Chat</h2>
+        <p className="text-[14px] text-text-3">Configure your AI chat</p>
       </div>
 
       {/* Name */}
       <div className="mb-8">
         <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
-          Session Name
+          Chat Name
         </label>
         <input
           type="text"
@@ -373,7 +373,7 @@ export function NewSessionSheet() {
               <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
                 Tools <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
               </label>
-              <p className="text-[12px] text-text-3/60 mb-3">Allow this model to execute commands and access files in the session directory.</p>
+              <p className="text-[12px] text-text-3/60 mb-3">Allow this model to execute commands and access files in the working directory.</p>
               <div className="flex flex-wrap gap-2.5">
                 {([
                   { id: 'shell' as SessionTool, label: 'Shell' },
@@ -469,7 +469,7 @@ export function NewSessionSheet() {
             shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110"
           style={{ fontFamily: 'inherit' }}
         >
-          Create Session
+          Create Chat
         </button>
       </div>
     </BottomSheet>

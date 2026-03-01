@@ -36,7 +36,7 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 - **Loop Runtime Controls** — Switch between bounded and ongoing loops with configurable step caps, runtime guards, heartbeat cadence, and timeout budgets
 - **Session Run Queue** — Per-session queued runs with followup/steer/collect modes, collect coalescing for bursty inputs, and run-state APIs
 - **Voice Settings** — Per-instance ElevenLabs API key + voice ID for TTS replies, plus configurable speech recognition language for chat input
-- **Chat Connectors** — Bridge agents to Discord, Slack, Telegram, and WhatsApp with media-aware inbound handling
+- **Chat Connectors** — Bridge agents to Discord, Slack, Telegram, WhatsApp, BlueBubbles (iMessage), Signal, Microsoft Teams, Google Chat, Matrix, and OpenClaw with media-aware inbound handling
 - **Skills System** — Discover local skills, import skills from URL, and load OpenClaw `SKILL.md` files (frontmatter-compatible)
 - **Execution Logging** — Structured audit trail for triggers, tool calls, file ops, commits, and errors in a dedicated `logs.db`
 - **Context Management** — Auto-compaction of conversation history when approaching context limits, with manual `context_status` and `context_summarize` tools for agents
@@ -229,6 +229,12 @@ Bridge any agent to a chat platform:
 | Slack | @slack/bolt | Bot token + app token (Socket Mode) |
 | Telegram | grammy | Bot token from @BotFather |
 | WhatsApp | baileys | QR code pairing (shown in browser) |
+| BlueBubbles | Custom webhook bridge | Server URL + password/webhook secret |
+| Signal | signal-cli | `signal-cli` binary + linked phone |
+| Microsoft Teams | botbuilder | Bot Framework credentials + webhook ingress |
+| Google Chat | googleapis | Service account + webhook ingress |
+| Matrix | matrix-bot-sdk | Homeserver URL + access token |
+| OpenClaw | gateway protocol | OpenClaw connector credentials |
 
 Connector sessions preserve attachment visibility in chat context:
 - WhatsApp media is decoded and persisted to `/api/uploads/...` when possible
@@ -237,7 +243,12 @@ Connector sessions preserve attachment visibility in chat context:
 
 Agents automatically suppress replies to simple acknowledgments ("ok", "thanks", thumbs-up, etc.) via a `NO_MESSAGE` response — conversations feel natural without a forced reply to every message. This is handled at the connector layer, so agents can return `NO_MESSAGE` as their response content and the platform won't deliver anything to the channel.
 
-For proactive outreach, `connector_message_tool` supports text plus optional `imageUrl` / `fileUrl` / `mediaPath` (local file path) payloads. All four platforms (WhatsApp, Discord, Slack, Telegram) support local file sending via `mediaPath` with auto-detected MIME types.
+For proactive outreach, `connector_message_tool` supports text plus optional `imageUrl` / `fileUrl` / `mediaPath` (local file path) payloads. WhatsApp, Discord, Slack, and Telegram support local file sending via `mediaPath` with auto-detected MIME types.
+
+Connector ingress now also supports optional pairing/allowlist policy:
+- `dmPolicy: allowlist` blocks unknown senders until approved
+- `/pair` flow lets approved admins generate and approve pairing codes
+- `/think` command can set connector thread thinking level (`low`, `medium`, `high`)
 
 ## Agent Tools
 

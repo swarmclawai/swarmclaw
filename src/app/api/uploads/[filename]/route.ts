@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { notFound } from '@/lib/server/collection-helpers'
 import fs from 'fs'
 import path from 'path'
 import { UPLOAD_DIR } from '@/lib/server/storage'
@@ -43,16 +44,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ filenam
   const filePath = path.join(UPLOAD_DIR, safeName)
 
   if (!fs.existsSync(filePath)) {
-    return new NextResponse(null, { status: 404 })
+    return notFound()
   }
 
   const ext = path.extname(safeName).toLowerCase()
   const contentType = MIME_TYPES[ext] || 'application/octet-stream'
   const data = fs.readFileSync(filePath)
 
+  const inline = contentType.startsWith('image/') || contentType.startsWith('video/') || contentType.startsWith('text/') || contentType === 'application/pdf'
   return new NextResponse(data, {
     headers: {
       'Content-Type': contentType,
+      'Content-Disposition': inline ? 'inline' : `attachment; filename="${path.basename(safeName)}"`,
       'Cache-Control': 'public, max-age=86400',
     },
   })

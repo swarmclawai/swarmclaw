@@ -21,6 +21,7 @@ export function TaskList({ inSidebar }: { inSidebar?: boolean }) {
   const agents = useAppStore((s) => s.agents)
   const setEditingTaskId = useAppStore((s) => s.setEditingTaskId)
   const setTaskSheetOpen = useAppStore((s) => s.setTaskSheetOpen)
+  const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
   const [search, setSearch] = useState('')
   const [clearing, setClearing] = useState(false)
 
@@ -28,8 +29,10 @@ export function TaskList({ inSidebar }: { inSidebar?: boolean }) {
   useWs('tasks', loadTasks, 5000)
 
   const sorted = useMemo(() =>
-    Object.values(tasks).sort((a, b) => b.updatedAt - a.updatedAt),
-    [tasks],
+    Object.values(tasks)
+      .filter((t) => !activeProjectFilter || t.projectId === activeProjectFilter)
+      .sort((a, b) => b.updatedAt - a.updatedAt),
+    [tasks, activeProjectFilter],
   )
 
   const filtered = useMemo(() => {

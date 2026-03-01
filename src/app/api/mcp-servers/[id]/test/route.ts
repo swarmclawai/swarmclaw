@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { loadMcpServers } from '@/lib/server/storage'
+import { notFound } from '@/lib/server/collection-helpers'
 import { connectMcpServer, mcpToolsToLangChain, disconnectMcpServer } from '@/lib/server/mcp-client'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const servers = loadMcpServers()
   const server = servers[id]
-  if (!server) return new NextResponse(null, { status: 404 })
+  if (!server) return notFound()
 
   try {
     const { client, transport } = await connectMcpServer(server)

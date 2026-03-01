@@ -244,6 +244,10 @@ export interface Agent {
   heartbeatShowOk?: boolean | null
   heartbeatShowAlerts?: boolean | null
   heartbeatTarget?: 'last' | 'none' | string | null
+  heartbeatGoal?: string | null
+  heartbeatNextAction?: string | null
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
+  projectId?: string
   createdAt: number
   updatedAt: number
 }
@@ -263,6 +267,7 @@ export interface Schedule {
   id: string
   name: string
   agentId: string
+  projectId?: string
   taskPrompt: string
   scheduleType: ScheduleType
   cron?: string
@@ -323,7 +328,16 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human' | 'orchestrated'
-export type AppView = 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'runs' | 'logs'
+export type AppView = 'agents' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'runs' | 'logs' | 'settings' | 'projects'
+
+export interface Project {
+  id: string
+  name: string
+  description: string
+  color?: string
+  createdAt: number
+  updatedAt: number
+}
 
 // --- Session Runs ---
 
@@ -434,6 +448,15 @@ export interface AppSettings {
   maxLinkedMemoriesExpanded?: number
   memoryMaxDepth?: number
   memoryMaxPerLookup?: number
+  // Voice conversation
+  voiceAutoSendDelaySec?: number
+  // Web search provider
+  webSearchProvider?: 'duckduckgo' | 'google' | 'bing' | 'searxng' | 'tavily' | 'brave'
+  searxngUrl?: string
+  // OpenClaw sync settings
+  openclawWorkspacePath?: string | null
+  openclawAutoSyncMemory?: boolean
+  openclawAutoSyncSchedules?: boolean
 }
 
 // --- Orchestrator Secrets ---
@@ -483,6 +506,7 @@ export interface Skill {
   name: string
   filename: string
   content: string
+  projectId?: string
   description?: string
   sourceUrl?: string
   sourceFormat?: 'openclaw' | 'plain'
@@ -492,7 +516,7 @@ export interface Skill {
 
 // --- Connectors (Chat Platform Bridges) ---
 
-export type ConnectorPlatform = 'discord' | 'telegram' | 'slack' | 'whatsapp' | 'openclaw' | 'signal' | 'teams' | 'googlechat' | 'matrix'
+export type ConnectorPlatform = 'discord' | 'telegram' | 'slack' | 'whatsapp' | 'openclaw' | 'bluebubbles' | 'signal' | 'teams' | 'googlechat' | 'matrix'
 export type ConnectorStatus = 'stopped' | 'running' | 'error'
 
 export interface Connector {
@@ -546,6 +570,7 @@ export interface BoardTask {
   description: string
   status: BoardTaskStatus
   agentId: string
+  projectId?: string
   goalContract?: GoalContract | null
   cwd?: string | null
   file?: string | null

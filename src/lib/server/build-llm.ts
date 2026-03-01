@@ -3,10 +3,10 @@ import { ChatOpenAI } from '@langchain/openai'
 import { loadCredentials, decryptKey, loadAgents, loadSettings } from './storage'
 import { getProviderList } from '../providers'
 import { normalizeOpenClawEndpoint } from '../openclaw-endpoint'
+import { NON_LANGGRAPH_PROVIDER_IDS } from '../provider-sets'
 
 const OLLAMA_CLOUD_URL = 'https://ollama.com/v1'
 const OLLAMA_LOCAL_URL = 'http://localhost:11434/v1'
-const NON_LANGGRAPH_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
 
 /**
  * Build a LangChain chat model from provider config.
@@ -18,8 +18,9 @@ export function buildChatModel(opts: {
   model: string
   apiKey: string | null
   apiEndpoint?: string | null
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
 }) {
-  const { provider, model, apiKey, apiEndpoint } = opts
+  const { provider, model, apiKey, apiEndpoint, thinkingLevel } = opts
   const providers = getProviderList()
   const providerInfo = providers.find((p) => p.id === provider)
   const endpointRaw = apiEndpoint || providerInfo?.defaultEndpoint || null
@@ -28,11 +29,18 @@ export function buildChatModel(opts: {
     : endpointRaw
 
   if (provider === 'anthropic') {
-    return new ChatAnthropic({
+    const anthropicOpts: Record<string, unknown> = {
       model: model || 'claude-sonnet-4-6',
       anthropicApiKey: apiKey || undefined,
       maxTokens: 8192,
-    })
+    }
+    if (thinkingLevel) {
+      const budgetMap = { minimal: 1024, low: 4096, medium: 8192, high: 16384 }
+      anthropicOpts.thinking = { type: 'enabled', budget_tokens: budgetMap[thinkingLevel] }
+      // Extended thinking requires higher maxTokens (budget + output)
+      anthropicOpts.maxTokens = budgetMap[thinkingLevel] + 8192
+    }
+    return new ChatAnthropic(anthropicOpts as ConstructorParameters<typeof ChatAnthropic>[0])
   }
 
   if (provider === 'ollama') {
@@ -48,6 +56,11 @@ export function buildChatModel(opts: {
 
   // All other providers — OpenAI-compatible with their registered endpoint
   const config: any = { model: model || 'gpt-4o', apiKey: apiKey || undefined }
+  // Map thinking level to reasoning_effort for OpenAI o-series models
+  if (thinkingLevel && provider === 'openai' && /^o\d/.test(model || '')) {
+    const effortMap = { minimal: 'low', low: 'low', medium: 'medium', high: 'high' }
+    config.modelKwargs = { reasoning_effort: effortMap[thinkingLevel] }
+  }
   if (endpoint) {
     config.configuration = { baseURL: endpoint }
     // OpenClaw endpoints behind Hostinger's proxy use express.json() middleware

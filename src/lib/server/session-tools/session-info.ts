@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadSessions, saveSessions, loadAgents } from '../storage'
 import type { ToolBuildContext } from './context'
 
@@ -165,7 +165,7 @@ export function buildSessionInfoTools(bctx: ToolBuildContext): StructuredToolInt
               const sourceSession = ctx?.sessionId ? sessions[ctx.sessionId] : null
               const ownerUser = sourceSession?.user || 'system'
 
-              const id = crypto.randomBytes(4).toString('hex')
+              const id = genId()
               const now = Date.now()
               const entry = {
                 id,

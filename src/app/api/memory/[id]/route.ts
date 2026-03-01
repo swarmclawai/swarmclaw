@@ -1,6 +1,7 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import fs from 'fs'
 import { NextResponse } from 'next/server'
+import { notFound } from '@/lib/server/collection-helpers'
 import { getMemoryDb, getMemoryLookupLimits, storeMemoryImageAsset, storeMemoryImageFromDataUrl } from '@/lib/server/memory-db'
 import { resolveLookupRequest } from '@/lib/server/memory-graph'
 import type { MemoryImage } from '@/types'
@@ -42,7 +43,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   if (limits.maxDepth <= 0) {
     const entry = db.get(id)
-    if (!entry) return new NextResponse(null, { status: 404 })
+    if (!entry) return notFound()
     if (envelope) {
       return NextResponse.json({
         entries: [entry],
@@ -55,7 +56,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const result = db.getWithLinked(id, limits.maxDepth, limits.maxPerLookup, limits.maxLinkedExpansion)
-  if (!result) return new NextResponse(null, { status: 404 })
+  if (!result) return notFound()
   if (envelope) return NextResponse.json(result)
   return NextResponse.json(result.entries)
 }
@@ -78,7 +79,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const updated = linkAction === 'link'
       ? db.link(id, targetIds, true)
       : db.unlink(id, targetIds, true)
-    if (!updated) return new NextResponse(null, { status: 404 })
+    if (!updated) return notFound()
     return NextResponse.json(updated)
   }
 
@@ -90,7 +91,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     image = null
   } else if (inputImageDataUrl) {
     try {
-      image = await storeMemoryImageFromDataUrl(inputImageDataUrl, `${id}-${crypto.randomBytes(2).toString('hex')}`)
+      image = await storeMemoryImageFromDataUrl(inputImageDataUrl, `${id}-${genId(2)}`)
     } catch (err) {
       return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid image data URL' }, { status: 400 })
     }
@@ -99,7 +100,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: `Image file not found: ${inputImagePath}` }, { status: 400 })
     }
     try {
-      image = await storeMemoryImageAsset(inputImagePath, `${id}-${crypto.randomBytes(2).toString('hex')}`)
+      image = await storeMemoryImageAsset(inputImagePath, `${id}-${genId(2)}`)
     } catch (err) {
       return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to store memory image' }, { status: 400 })
     }
@@ -114,7 +115,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         ? String((image as { path: string }).path)
         : (typeof body.imagePath === 'string' ? body.imagePath : undefined),
   })
-  if (!entry) return new NextResponse(null, { status: 404 })
+  if (!entry) return notFound()
   return NextResponse.json(entry)
 }
 
@@ -122,5 +123,5 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id } = await params
   const db = getMemoryDb()
   db.delete(id)
-  return NextResponse.json('ok')
+  return NextResponse.json({ ok: true })
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { UPLOAD_DIR } from '@/lib/server/storage'
 
 const TEXT_EXTS = new Set([
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
 
   // Save file to uploads
   if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true })
-  const safeName = crypto.randomBytes(4).toString('hex') + '-' + filename.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const safeName = genId() + '-' + filename.replace(/[^a-zA-Z0-9._-]/g, '_')
   const filePath = path.join(UPLOAD_DIR, safeName)
   fs.writeFileSync(filePath, buf)
 

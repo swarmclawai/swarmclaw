@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { NextResponse } from 'next/server'
 import { loadSkills, saveSkills } from '@/lib/server/storage'
 import { normalizeSkillPayload } from '@/lib/server/skills-normalize'
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     })
 
     const skills = loadSkills()
-    const id = crypto.randomBytes(4).toString('hex')
+    const id = genId()
     skills[id] = {
       id,
       name: normalized.name,

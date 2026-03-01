@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { notFound } from '@/lib/server/collection-helpers'
 import { getMemoryDb } from '@/lib/server/memory-db'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -6,7 +7,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const db = getMemoryDb()
   const entry = db.get(id)
   if (!entry || entry.category !== 'knowledge') {
-    return new NextResponse(null, { status: 404 })
+    return notFound()
   }
   return NextResponse.json(entry)
 }
@@ -16,7 +17,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const db = getMemoryDb()
   const existing = db.get(id)
   if (!existing || existing.category !== 'knowledge') {
-    return new NextResponse(null, { status: 404 })
+    return notFound()
   }
 
   const body = await req.json().catch(() => null)
@@ -44,7 +45,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   const updated = db.update(id, updates)
   if (!updated) {
-    return new NextResponse(null, { status: 404 })
+    return notFound()
   }
   return NextResponse.json(updated)
 }
@@ -54,7 +55,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const db = getMemoryDb()
   const existing = db.get(id)
   if (!existing || existing.category !== 'knowledge') {
-    return new NextResponse(null, { status: 404 })
+    return notFound()
   }
   db.delete(id)
   return NextResponse.json({ deleted: id })

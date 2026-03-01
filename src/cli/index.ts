@@ -928,7 +928,7 @@ export function buildProgram(): Command {
   connectors
     .command('create')
     .description('Create connector')
-    .requiredOption('--platform <platform>', 'Connector platform (discord|telegram|slack|whatsapp|openclaw)')
+    .requiredOption('--platform <platform>', 'Connector platform (discord|telegram|slack|whatsapp|openclaw|bluebubbles|signal|teams|googlechat|matrix)')
     .requiredOption('--agent-id <agentId>', 'Agent id')
     .option('--name <name>', 'Connector name')
     .option('--credential-id <credentialId>', 'Credential id')

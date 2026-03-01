@@ -1,6 +1,7 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { NextResponse } from 'next/server'
 import { loadTasks, saveTasks } from '@/lib/server/storage'
+import { notFound } from '@/lib/server/collection-helpers'
 import { disableSessionHeartbeat, enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
@@ -13,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params
   const tasks = loadTasks()
-  if (!tasks[id]) return new NextResponse(null, { status: 404 })
+  if (!tasks[id]) return notFound()
   return NextResponse.json(tasks[id])
 }
 
@@ -21,7 +22,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   const body = await req.json()
   const tasks = loadTasks()
-  if (!tasks[id]) return new NextResponse(null, { status: 404 })
+  if (!tasks[id]) return notFound()
 
   const prevStatus = tasks[id].status
 
@@ -55,7 +56,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       tasks[id].error = formatValidationFailure(validation.reasons).slice(0, 500)
       if (!tasks[id].comments) tasks[id].comments = []
       tasks[id].comments.push({
-        id: crypto.randomBytes(4).toString('hex'),
+        id: genId(),
         author: 'System',
         text: `Completion validation failed.\n\n${validation.reasons.map((r) => `- ${r}`).join('\n')}`,
         createdAt: Date.now(),
@@ -88,7 +89,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const tasks = loadTasks()
-  if (!tasks[id]) return new NextResponse(null, { status: 404 })
+  if (!tasks[id]) return notFound()
 
   // Soft delete: move to archived status instead of hard delete
   tasks[id].status = 'archived'

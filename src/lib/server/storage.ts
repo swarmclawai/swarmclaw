@@ -43,6 +43,7 @@ const COLLECTIONS = [
   'model_overrides',
   'mcp_servers',
   'webhook_logs',
+  'projects',
 ] as const
 
 for (const table of COLLECTIONS) {
@@ -575,6 +576,17 @@ export function loadModelOverrides(): Record<string, string[]> {
 export function saveModelOverrides(m: Record<string, string[]>) {
   saveCollection('model_overrides', m)
 }
+
+// --- Projects ---
+export function loadProjects(): Record<string, any> {
+  return loadCollection('projects')
+}
+
+export function saveProjects(s: Record<string, any>) {
+  saveCollection('projects', s)
+}
+
+export function deleteProject(id: string) { deleteCollectionItem('projects', id) }
 
 // --- Skills ---
 export function loadSkills(): Record<string, any> {

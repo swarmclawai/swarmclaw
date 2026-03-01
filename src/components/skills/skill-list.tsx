@@ -29,6 +29,7 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
   const loadSkills = useAppStore((s) => s.loadSkills)
   const setSkillSheetOpen = useAppStore((s) => s.setSkillSheetOpen)
   const setEditingSkillId = useAppStore((s) => s.setEditingSkillId)
+  const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
   const [clawHubOpen, setClawHubOpen] = useState(false)
 
   // Embedded ClawHub state (full-width only)
@@ -46,7 +47,7 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
     loadSkills()
   }, [])
 
-  const skillList = Object.values(skills)
+  const skillList = Object.values(skills).filter((s) => !activeProjectFilter || s.projectId === activeProjectFilter)
 
   const handleEdit = (id: string) => {
     setEditingSkillId(id)

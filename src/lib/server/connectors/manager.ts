@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import {
   loadConnectors, saveConnectors, loadSessions, saveSessions,
   loadAgents, loadCredentials, decryptKey, loadSettings, loadSkills,
@@ -9,6 +9,17 @@ import { notify } from '../ws-hub'
 import { logExecution } from '../execution-log'
 import type { Connector } from '@/types'
 import type { ConnectorInstance, InboundMessage, InboundMedia } from './types'
+import {
+  addAllowedSender,
+  approvePairingCode,
+  createOrTouchPairingRequest,
+  isSenderAllowed,
+  listPendingPairingRequests,
+  listStoredAllowedSenders,
+  parseAllowFromCsv,
+  parsePairingPolicy,
+  type PairingPolicy,
+} from './pairing'
 
 /** Sentinel value agents return when no outbound reply should be sent */
 export const NO_MESSAGE_SENTINEL = 'NO_MESSAGE'
@@ -43,6 +54,7 @@ export async function getPlatform(platform: string) {
     case 'slack':    return (await import('./slack')).default
     case 'whatsapp': return (await import('./whatsapp')).default
     case 'openclaw': return (await import('./openclaw')).default
+    case 'bluebubbles': return (await import('./bluebubbles')).default
     case 'signal':    return (await import('./signal')).default
     case 'teams':     return (await import('./teams')).default
     case 'googlechat': return (await import('./googlechat')).default
@@ -78,6 +90,310 @@ export function formatInboundUserText(msg: InboundMessage): string {
   return lines.join('\n').trim()
 }
 
+type ConnectorCommandName = 'help' | 'status' | 'new' | 'reset' | 'compact' | 'think' | 'pair'
+
+interface ParsedConnectorCommand {
+  name: ConnectorCommandName
+  args: string
+}
+
+function parseConnectorCommand(text: string): ParsedConnectorCommand | null {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('/')) return null
+  const [head, ...rest] = trimmed.split(/\s+/)
+  const name = head.slice(1).toLowerCase()
+  const args = rest.join(' ').trim()
+  switch (name) {
+    case 'help':
+    case 'status':
+    case 'new':
+    case 'reset':
+    case 'compact':
+    case 'think':
+    case 'pair':
+      return { name, args } as ParsedConnectorCommand
+    default:
+      return null
+  }
+}
+
+function pushSessionMessage(session: any, role: 'user' | 'assistant', text: string): void {
+  if (!text.trim()) return
+  if (!Array.isArray(session.messages)) session.messages = []
+  session.messages.push({ role, text: text.trim(), time: Date.now() })
+  session.lastActiveAt = Date.now()
+}
+
+function persistSession(session: any): void {
+  const sessions = loadSessions()
+  sessions[session.id] = session
+  saveSessions(sessions)
+  notify(`messages:${session.id}`)
+}
+
+function summarizeForCompaction(messages: Array<{ role?: string; text?: string }>): string {
+  const preview = messages
+    .slice(-8)
+    .map((m, i) => {
+      const role = (m.role || 'unknown').toUpperCase()
+      const body = (m.text || '').replace(/\s+/g, ' ').trim()
+      const clipped = body.length > 180 ? `${body.slice(0, 177)}...` : body
+      return `${i + 1}. [${role}] ${clipped || '(no text)'}`
+    })
+  if (!preview.length) return 'No earlier messages to summarize.'
+  return preview.join('\n')
+}
+
+function resolvePairingAccess(connector: Connector, msg: InboundMessage): {
+  policy: PairingPolicy
+  configAllowFrom: string[]
+  isAllowed: boolean
+  hasAnyApprover: boolean
+} {
+  const policy = parsePairingPolicy(connector.config?.dmPolicy, 'open')
+  const configAllowFrom = parseAllowFromCsv(connector.config?.allowFrom)
+  const stored = listStoredAllowedSenders(connector.id)
+  const isAllowed = isSenderAllowed({
+    connectorId: connector.id,
+    senderId: msg.senderId,
+    configAllowFrom,
+  })
+  return {
+    policy,
+    configAllowFrom,
+    isAllowed,
+    hasAnyApprover: (configAllowFrom.length + stored.length) > 0,
+  }
+}
+
+async function handlePairCommand(params: {
+  connector: Connector
+  msg: InboundMessage
+  args: string
+}): Promise<string> {
+  const { connector, msg, args } = params
+  const access = resolvePairingAccess(connector, msg)
+  const parts = args.split(/\s+/).map((item) => item.trim()).filter(Boolean)
+  const subcommand = (parts[0] || 'status').toLowerCase()
+
+  if (subcommand === 'request') {
+    const request = createOrTouchPairingRequest({
+      connectorId: connector.id,
+      senderId: msg.senderId,
+      senderName: msg.senderName,
+      channelId: msg.channelId,
+    })
+    return request.created
+      ? `Pairing request created. Share this code with an approved user: ${request.code}`
+      : `Pairing request is already pending. Your code is: ${request.code}`
+  }
+
+  if (subcommand === 'list') {
+    if (access.hasAnyApprover && !access.isAllowed) {
+      return 'Pairing list is restricted to approved senders.'
+    }
+    const pending = listPendingPairingRequests(connector.id)
+    if (!pending.length) return 'No pending pairing requests.'
+    const lines = pending.slice(0, 20).map((entry) => {
+      const ageMin = Math.max(1, Math.round((Date.now() - entry.updatedAt) / 60_000))
+      const sender = entry.senderName ? `${entry.senderName} (${entry.senderId})` : entry.senderId
+      return `- ${entry.code} -> ${sender} (${ageMin}m ago)`
+    })
+    return `Pending pairing requests (${pending.length}):\n${lines.join('\n')}`
+  }
+
+  if (subcommand === 'approve') {
+    const code = (parts[1] || '').trim()
+    if (!code) return 'Usage: /pair approve <code>'
+    if (access.hasAnyApprover && !access.isAllowed) {
+      return 'Pairing approvals are restricted to approved senders.'
+    }
+    const approved = approvePairingCode(connector.id, code)
+    if (!approved.ok) return approved.reason || 'Pairing approval failed.'
+    const sender = approved.senderName ? `${approved.senderName} (${approved.senderId})` : approved.senderId
+    return `Pairing approved: ${sender}`
+  }
+
+  if (subcommand === 'allow') {
+    const senderId = (parts[1] || '').trim()
+    if (!senderId) return 'Usage: /pair allow <senderId>'
+    if (access.hasAnyApprover && !access.isAllowed) {
+      return 'Allowlist updates are restricted to approved senders.'
+    }
+    const result = addAllowedSender(connector.id, senderId)
+    if (!result.normalized) return 'Could not parse senderId.'
+    return result.added
+      ? `Allowed sender: ${result.normalized}`
+      : `Sender is already allowed: ${result.normalized}`
+  }
+
+  const pending = listPendingPairingRequests(connector.id)
+  const stored = listStoredAllowedSenders(connector.id)
+  const policyLine = `Policy: ${access.policy}`
+  const approvedLine = `You are ${access.isAllowed ? 'approved' : 'not approved'} as ${msg.senderId}`
+  return [
+    'Pairing controls:',
+    policyLine,
+    approvedLine,
+    `- Stored approvals: ${stored.length}`,
+    `- Pending requests: ${pending.length}`,
+    '- Commands: /pair request, /pair list, /pair approve <code>, /pair allow <senderId>',
+  ].join('\n')
+}
+
+function enforceInboundAccessPolicy(connector: Connector, msg: InboundMessage): string | null {
+  if (msg.isGroup) return null
+  const { policy, configAllowFrom, isAllowed } = resolvePairingAccess(connector, msg)
+  const storedAllowFrom = listStoredAllowedSenders(connector.id)
+  if (policy === 'open') return null
+
+  if (policy === 'disabled') return NO_MESSAGE_SENTINEL
+  if (isAllowed) return null
+
+  if (policy === 'allowlist') {
+    if (!configAllowFrom.length && !storedAllowFrom.length) {
+      return 'This connector is set to allowlist mode, but no allowFrom entries are configured.'
+    }
+    return 'You are not authorized for this connector. Ask an approved user to add your sender ID via /pair allow <senderId>.'
+  }
+
+  if (policy === 'pairing') {
+    const request = createOrTouchPairingRequest({
+      connectorId: connector.id,
+      senderId: msg.senderId,
+      senderName: msg.senderName,
+      channelId: msg.channelId,
+    })
+    return [
+      'Pairing is required before this connector will respond.',
+      `Your pairing code: ${request.code}`,
+      'Ask an approved sender to run /pair approve <code>.',
+      'Tip: if this is first-time setup with no approvals yet, run /pair approve <code> from this chat to bootstrap.',
+    ].join('\n')
+  }
+
+  return null
+}
+
+async function handleConnectorCommand(params: {
+  command: ParsedConnectorCommand
+  connector: Connector
+  session: any
+  msg: InboundMessage
+  agentName: string
+}): Promise<string> {
+  const { command, connector, session, msg, agentName } = params
+  const inboundText = formatInboundUserText(msg)
+
+  if (command.name === 'help') {
+    const text = [
+      'Connector commands:',
+      '/status — Show active session status',
+      '/new or /reset — Clear this connector conversation thread',
+      '/compact [keepLastN] — Summarize older history and keep recent messages (default 10)',
+      '/think <minimal|low|medium|high> — Set connector thread reasoning guidance',
+      '/pair — Pairing/access controls (status, request, list, approve, allow)',
+      '/help — Show this list',
+    ].join('\n')
+    pushSessionMessage(session, 'user', inboundText)
+    pushSessionMessage(session, 'assistant', text)
+    persistSession(session)
+    return text
+  }
+
+  if (command.name === 'status') {
+    const all = Array.isArray(session.messages) ? session.messages : []
+    const userCount = all.filter((m: any) => m?.role === 'user').length
+    const assistantCount = all.filter((m: any) => m?.role === 'assistant').length
+    const toolsCount = Array.isArray(session.tools) ? session.tools.length : 0
+    const statusText = [
+      `Status for ${connector.platform} / ${connector.name}:`,
+      `- Agent: ${agentName}`,
+      `- Session: ${session.id}`,
+      `- Model: ${session.provider}/${session.model}`,
+      `- Messages: ${all.length} (${userCount} user, ${assistantCount} assistant)`,
+      `- Tools enabled: ${toolsCount}`,
+      `- Channel: ${msg.channelName || msg.channelId}`,
+      `- Last active: ${new Date(session.lastActiveAt || session.createdAt || Date.now()).toLocaleString()}`,
+    ].join('\n')
+    pushSessionMessage(session, 'user', inboundText)
+    pushSessionMessage(session, 'assistant', statusText)
+    persistSession(session)
+    return statusText
+  }
+
+  if (command.name === 'new' || command.name === 'reset') {
+    const cleared = Array.isArray(session.messages) ? session.messages.length : 0
+    session.messages = []
+    session.claudeSessionId = null
+    session.codexThreadId = null
+    session.opencodeSessionId = null
+    session.delegateResumeIds = { claudeCode: null, codex: null, opencode: null }
+    session.lastActiveAt = Date.now()
+    persistSession(session)
+    return `Reset complete for ${connector.platform} channel thread. Cleared ${cleared} message(s).`
+  }
+
+  if (command.name === 'compact') {
+    const keepParsed = Number.parseInt(command.args, 10)
+    const keepLastN = Number.isFinite(keepParsed) ? Math.max(4, Math.min(50, keepParsed)) : 10
+    const history = Array.isArray(session.messages) ? session.messages : []
+    if (history.length <= keepLastN) {
+      const text = `Nothing to compact. Current history has ${history.length} message(s), keepLastN=${keepLastN}.`
+      pushSessionMessage(session, 'user', inboundText)
+      pushSessionMessage(session, 'assistant', text)
+      persistSession(session)
+      return text
+    }
+    const oldMessages = history.slice(0, -keepLastN)
+    const recentMessages = history.slice(-keepLastN)
+    const summary = summarizeForCompaction(oldMessages)
+    const summaryMessage = {
+      role: 'assistant' as const,
+      text: `[Context summary: compacted ${oldMessages.length} message(s)]\n${summary}`,
+      time: Date.now(),
+      kind: 'system' as const,
+    }
+    session.messages = [summaryMessage, ...recentMessages]
+    session.lastActiveAt = Date.now()
+    const text = `Compacted ${oldMessages.length} message(s). Kept ${recentMessages.length} recent message(s) plus a summary.`
+    pushSessionMessage(session, 'assistant', text)
+    persistSession(session)
+    return text
+  }
+
+  if (command.name === 'think') {
+    const requested = command.args.trim().toLowerCase()
+    const allowed = new Set(['minimal', 'low', 'medium', 'high'])
+    if (!requested) {
+      const current = typeof session.connectorThinkLevel === 'string' && allowed.has(session.connectorThinkLevel)
+        ? session.connectorThinkLevel
+        : 'medium'
+      const text = `Current /think level: ${current}. Usage: /think <minimal|low|medium|high>.`
+      pushSessionMessage(session, 'user', inboundText)
+      pushSessionMessage(session, 'assistant', text)
+      persistSession(session)
+      return text
+    }
+    if (!allowed.has(requested)) {
+      const text = 'Invalid /think level. Use one of: minimal, low, medium, high.'
+      pushSessionMessage(session, 'user', inboundText)
+      pushSessionMessage(session, 'assistant', text)
+      persistSession(session)
+      return text
+    }
+    session.connectorThinkLevel = requested
+    session.lastActiveAt = Date.now()
+    const text = `Set /think level to ${requested} for this connector thread.`
+    pushSessionMessage(session, 'user', inboundText)
+    pushSessionMessage(session, 'assistant', text)
+    persistSession(session)
+    return text
+  }
+
+  return 'Unknown command.'
+}
+
 /** Route an inbound message through the assigned agent and return the response */
 async function routeMessage(connector: Connector, msg: InboundMessage): Promise<string> {
   if (msg?.channelId) {
@@ -85,7 +401,8 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   }
 
   const agents = loadAgents()
-  const agent = agents[connector.agentId]
+  const effectiveAgentId = msg.agentIdOverride || connector.agentId
+  const agent = agents[effectiveAgentId]
   if (!agent) return '[Error] Connector agent not found.'
 
   // Log connector trigger
@@ -122,7 +439,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   const sessions = loadSessions()
   let session = Object.values(sessions).find((s: any) => s.name === sessionKey)
   if (!session) {
-    const id = crypto.randomBytes(4).toString('hex')
+    const id = genId()
     session = {
       id,
       name: sessionKey,
@@ -151,6 +468,59 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     saveSessions(sessions)
   }
 
+  const parsedCommand = parseConnectorCommand(msg.text || '')
+  if (parsedCommand?.name === 'pair') {
+    const commandResult = await handlePairCommand({
+      connector,
+      msg,
+      args: parsedCommand.args,
+    })
+    logExecution(session.id, 'decision', 'Connector pair command handled', {
+      agentId: agent.id,
+      detail: {
+        platform: msg.platform,
+        channelId: msg.channelId,
+        command: 'pair',
+        args: parsedCommand.args || null,
+      },
+    })
+    return commandResult
+  }
+
+  const accessPolicyResult = enforceInboundAccessPolicy(connector, msg)
+  if (accessPolicyResult) {
+    logExecution(session.id, 'decision', 'Connector inbound blocked by access policy', {
+      agentId: agent.id,
+      detail: {
+        platform: msg.platform,
+        channelId: msg.channelId,
+        senderId: msg.senderId,
+        policy: parsePairingPolicy(connector.config?.dmPolicy, 'open'),
+      },
+    })
+    return accessPolicyResult
+  }
+
+  if (parsedCommand) {
+    const commandResult = await handleConnectorCommand({
+      command: parsedCommand,
+      connector,
+      session,
+      msg,
+      agentName: agent.name,
+    })
+    logExecution(session.id, 'decision', `Connector command handled: /${parsedCommand.name}`, {
+      agentId: agent.id,
+      detail: {
+        platform: msg.platform,
+        channelId: msg.channelId,
+        command: parsedCommand.name,
+        args: parsedCommand.args || null,
+      },
+    })
+    return commandResult
+  }
+
   // Build system prompt: [userPrompt] \n\n [soul] \n\n [systemPrompt]
   const settings = loadSettings()
   const promptParts: string[] = []
@@ -163,6 +533,12 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
       const skill = allSkills[skillId]
       if (skill?.content) promptParts.push(`## Skill: ${skill.name}\n${skill.content}`)
     }
+  }
+  const thinkLevel = typeof session.connectorThinkLevel === 'string'
+    ? session.connectorThinkLevel.trim().toLowerCase()
+    : ''
+  if (thinkLevel) {
+    promptParts.push(`Connector thinking guidance: ${thinkLevel}. Keep responses concise and useful for chat.`)
   }
   // Add connector context
   promptParts.push(`\nYou are receiving messages via ${msg.platform}. The user "${msg.senderName}" is messaging from channel "${msg.channelName || msg.channelId}". Respond naturally and conversationally.
@@ -326,6 +702,9 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
   if (!botToken && connector.config.botToken) {
     botToken = connector.config.botToken
   }
+  if (!botToken && connector.platform === 'bluebubbles' && connector.config.password) {
+    botToken = connector.config.password
+  }
 
   if (!botToken && connector.platform !== 'whatsapp' && connector.platform !== 'openclaw' && connector.platform !== 'signal') {
     throw new Error('No bot token configured')
@@ -475,6 +854,11 @@ export function listRunningConnectors(platform?: string): Array<{
       if (outboundJid) configuredTargets.push(outboundJid)
       const allowed = connector.config?.allowedJids?.split(',').map((s) => s.trim()).filter(Boolean) || []
       configuredTargets.push(...allowed)
+    } else if (connector.platform === 'bluebubbles') {
+      const outbound = connector.config?.outboundTarget?.trim()
+      if (outbound) configuredTargets.push(outbound)
+      const allowed = connector.config?.allowFrom?.split(',').map((s) => s.trim()).filter(Boolean) || []
+      configuredTargets.push(...allowed)
     }
     out.push({
       id,
@@ -492,6 +876,11 @@ export function listRunningConnectors(platform?: string): Array<{
 /** Get the most recent inbound channel id seen for a connector */
 export function getConnectorRecentChannelId(connectorId: string): string | null {
   return lastInboundChannelByConnector.get(connectorId) || null
+}
+
+/** Get a running connector instance (internal use for rich messaging). */
+export function getRunningInstance(connectorId: string): ConnectorInstance | undefined {
+  return running.get(connectorId)
 }
 
 /**

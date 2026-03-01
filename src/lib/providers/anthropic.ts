@@ -23,10 +23,12 @@ function fileToContentBlocks(filePath: string): any[] {
   return [{ type: 'text', text: `[Attached file: ${filePath.split('/').pop()}]` }]
 }
 
-export function streamAnthropicChat({ session, message, imagePath, apiKey, systemPrompt, write, active, loadHistory }: StreamChatOptions): Promise<string> {
+export function streamAnthropicChat({ session, message, imagePath, apiKey, systemPrompt, write, active, loadHistory, onUsage }: StreamChatOptions): Promise<string> {
   return new Promise((resolve) => {
     const messages = buildMessages(session, message, imagePath, loadHistory)
     const model = session.model || 'claude-sonnet-4-6'
+    let usageInput = 0
+    let usageOutput = 0
 
     const body: Record<string, unknown> = {
       model,
@@ -86,11 +88,22 @@ export function streamAnthropicChat({ session, message, imagePath, apiKey, syste
               fullResponse += parsed.delta.text
               write(`data: ${JSON.stringify({ t: 'd', text: parsed.delta.text })}\n\n`)
             }
+            // message_start carries input token count
+            if (parsed.type === 'message_start' && parsed.message?.usage) {
+              usageInput = parsed.message.usage.input_tokens || 0
+            }
+            // message_delta carries output token count
+            if (parsed.type === 'message_delta' && parsed.usage) {
+              usageOutput = parsed.usage.output_tokens || 0
+            }
           } catch {}
         }
       })
 
       apiRes.on('end', () => {
+        if (onUsage && (usageInput > 0 || usageOutput > 0)) {
+          onUsage({ inputTokens: usageInput, outputTokens: usageOutput })
+        }
         active.delete(session.id)
         resolve(fullResponse)
       })

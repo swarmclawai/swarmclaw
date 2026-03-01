@@ -1,8 +1,12 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { NextResponse } from 'next/server'
 import { loadAgents, loadSessions, loadWebhooks, saveSessions, saveWebhooks, appendWebhookLog } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { enqueueSessionRun } from '@/lib/server/session-run-manager'
+import { mutateItem, deleteItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ops: CollectionOps<any> = { load: loadWebhooks, save: saveWebhooks }
 
 function normalizeEvents(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -22,36 +26,30 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params
   const webhooks = loadWebhooks()
   const webhook = webhooks[id]
-  if (!webhook) return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
+  if (!webhook) return notFound('Webhook not found')
   return NextResponse.json(webhook)
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json().catch(() => ({}))
-  const webhooks = loadWebhooks()
-  const webhook = webhooks[id]
-  if (!webhook) return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
-
-  if (body.name !== undefined) webhook.name = body.name
-  if (body.source !== undefined) webhook.source = body.source
-  if (body.events !== undefined) webhook.events = normalizeEvents(body.events)
-  if (body.agentId !== undefined) webhook.agentId = body.agentId
-  if (body.secret !== undefined) webhook.secret = body.secret
-  if (body.isEnabled !== undefined) webhook.isEnabled = !!body.isEnabled
-  webhook.updatedAt = Date.now()
-
-  webhooks[id] = webhook
-  saveWebhooks(webhooks)
-  return NextResponse.json(webhook)
+  const result = mutateItem(ops, id, (webhook) => {
+    if (body.name !== undefined) webhook.name = body.name
+    if (body.source !== undefined) webhook.source = body.source
+    if (body.events !== undefined) webhook.events = normalizeEvents(body.events)
+    if (body.agentId !== undefined) webhook.agentId = body.agentId
+    if (body.secret !== undefined) webhook.secret = body.secret
+    if (body.isEnabled !== undefined) webhook.isEnabled = !!body.isEnabled
+    webhook.updatedAt = Date.now()
+    return webhook
+  })
+  if (!result) return notFound('Webhook not found')
+  return NextResponse.json(result)
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const webhooks = loadWebhooks()
-  if (!webhooks[id]) return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
-  delete webhooks[id]
-  saveWebhooks(webhooks)
+  if (!deleteItem(ops, id)) return notFound('Webhook not found')
   return NextResponse.json({ ok: true })
 }
 
@@ -59,10 +57,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params
   const webhooks = loadWebhooks()
   const webhook = webhooks[id]
-  if (!webhook) return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
+  if (!webhook) return notFound('Webhook not found')
   if (webhook.isEnabled === false) {
-    appendWebhookLog(crypto.randomBytes(8).toString('hex'), {
-      id: crypto.randomBytes(8).toString('hex'), webhookId: id, event: 'unknown',
+    appendWebhookLog(genId(8), {
+      id: genId(8), webhookId: id, event: 'unknown',
       payload: '', status: 'error', error: 'Webhook is disabled', timestamp: Date.now(),
     })
     return NextResponse.json({ error: 'Webhook is disabled' }, { status: 409 })
@@ -73,8 +71,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const url = new URL(req.url)
     const provided = req.headers.get('x-webhook-secret') || url.searchParams.get('secret') || ''
     if (provided !== secret) {
-      appendWebhookLog(crypto.randomBytes(8).toString('hex'), {
-        id: crypto.randomBytes(8).toString('hex'), webhookId: id, event: 'unknown',
+      appendWebhookLog(genId(8), {
+        id: genId(8), webhookId: id, event: 'unknown',
         payload: '', status: 'error', error: 'Invalid webhook secret', timestamp: Date.now(),
       })
       return NextResponse.json({ error: 'Invalid webhook secret' }, { status: 401 })
@@ -122,8 +120,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const agents = loadAgents()
   const agent = webhook.agentId ? agents[webhook.agentId] : null
   if (!agent) {
-    appendWebhookLog(crypto.randomBytes(8).toString('hex'), {
-      id: crypto.randomBytes(8).toString('hex'), webhookId: id, event: incomingEvent,
+    appendWebhookLog(genId(8), {
+      id: genId(8), webhookId: id, event: incomingEvent,
       payload: (rawBody || '').slice(0, 2000), status: 'error', error: 'Webhook agent is not configured or missing', timestamp: Date.now(),
     })
     return NextResponse.json({ error: 'Webhook agent is not configured or missing' }, { status: 400 })
@@ -133,7 +131,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const sessionName = `webhook:${id}`
   let session = Object.values(sessions).find((s: any) => s.name === sessionName && s.agentId === agent.id) as any
   if (!session) {
-    const sessionId = crypto.randomBytes(4).toString('hex')
+    const sessionId = genId()
     const now = Date.now()
     session = {
       id: sessionId,
@@ -189,8 +187,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     mode: 'followup',
   })
 
-  appendWebhookLog(crypto.randomBytes(8).toString('hex'), {
-    id: crypto.randomBytes(8).toString('hex'), webhookId: id, event: incomingEvent,
+  appendWebhookLog(genId(8), {
+    id: genId(8), webhookId: id, event: incomingEvent,
     payload: (rawBody || '').slice(0, 2000), status: 'success',
     sessionId: session.id, runId: run.runId, timestamp: Date.now(),
   })

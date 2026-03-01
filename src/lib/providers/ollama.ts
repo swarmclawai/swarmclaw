@@ -6,7 +6,7 @@ import type { StreamChatOptions } from './index'
 const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|webp|bmp)$/i
 const TEXT_EXTS = /\.(txt|md|csv|json|xml|html|js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|yml|yaml|toml|env|log|sh|sql|css|scss)$/i
 
-export function streamOllamaChat({ session, message, imagePath, apiKey, write, active, loadHistory }: StreamChatOptions): Promise<string> {
+export function streamOllamaChat({ session, message, imagePath, apiKey, write, active, loadHistory, onUsage }: StreamChatOptions): Promise<string> {
   return new Promise((resolve) => {
     const messages = buildMessages(session, message, imagePath, loadHistory)
     const model = session.model || 'llama3'
@@ -68,6 +68,14 @@ export function streamOllamaChat({ session, message, imagePath, apiKey, write, a
             if (content) {
               fullResponse += content
               write(`data: ${JSON.stringify({ t: 'd', text: content })}\n\n`)
+            }
+            // Final chunk (done: true) carries token counts
+            if (parsed.done && onUsage) {
+              const input = parsed.prompt_eval_count || 0
+              const output = parsed.eval_count || 0
+              if (input > 0 || output > 0) {
+                onUsage({ inputTokens: input, outputTokens: output })
+              }
             }
           } catch {}
         }

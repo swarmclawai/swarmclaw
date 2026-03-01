@@ -168,11 +168,20 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   // fallbackCredentialIds is intentionally accepted for compatibility with caller signatures.
   void fallbackCredentialIds
+
+  // Resolve agent's thinking level for provider-native params
+  let agentThinkingLevel: 'minimal' | 'low' | 'medium' | 'high' | undefined
+  if (session.agentId) {
+    const agentsForThinking = loadAgents()
+    agentThinkingLevel = agentsForThinking[session.agentId]?.thinkingLevel
+  }
+
   const llm = buildChatModel({
     provider: session.provider,
     model: session.model,
     apiKey,
     apiEndpoint: session.apiEndpoint,
+    thinkingLevel: agentThinkingLevel,
   })
 
   // Build stateModifier
@@ -226,6 +235,17 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   if (!hasProvidedSystemPrompt) {
     stateModifierParts.push('You are a capable AI assistant with tool access. Be execution-oriented and outcome-focused.')
+  }
+
+  // Thinking level guidance (applies to all providers via system prompt)
+  if (agentThinkingLevel) {
+    const thinkingGuidance: Record<string, string> = {
+      minimal: 'Be direct and concise. Skip extended analysis.',
+      low: 'Keep reasoning brief. Focus on key conclusions.',
+      medium: 'Provide moderate depth of analysis and reasoning.',
+      high: 'Think deeply and thoroughly. Show detailed reasoning.',
+    }
+    stateModifierParts.push(`## Reasoning Depth\n${thinkingGuidance[agentThinkingLevel]}`)
   }
 
   if ((session.tools || []).includes('memory') && session.agentId) {
@@ -611,6 +631,15 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   // Plugin hooks: afterAgentComplete
   await pluginMgr.runHook('afterAgentComplete', { session, response: fullText })
+
+  // OpenClaw auto-sync: push memory if enabled
+  try {
+    const { loadSyncConfig, pushMemoryToOpenClaw } = await import('./openclaw-sync')
+    const syncConfig = loadSyncConfig()
+    if (syncConfig.autoSyncMemory) {
+      pushMemoryToOpenClaw(session.agentId || undefined)
+    }
+  } catch { /* OpenClaw sync not available — ignore */ }
 
   // Clean up browser and other session resources
   await cleanup()

@@ -9,7 +9,7 @@ import type { InboundMessage, InboundMedia } from './types.ts'
 // 1. Connector module resolution (getPlatform)
 // ---------------------------------------------------------------------------
 describe('getPlatform — connector module resolution', () => {
-  const newPlatforms = ['matrix', 'googlechat', 'teams', 'signal'] as const
+  const newPlatforms = ['matrix', 'googlechat', 'teams', 'signal', 'bluebubbles'] as const
 
   for (const name of newPlatforms) {
     it(`returns a valid module for "${name}"`, async () => {

@@ -12,13 +12,15 @@ import { ChatHeader } from './chat-header'
 import { DevServerBar } from './dev-server-bar'
 import { MessageList } from './message-list'
 import { SessionDebugPanel } from './session-debug-panel'
+import { VoiceOverlay } from './voice-overlay'
+import { useVoiceConversation } from '@/hooks/use-voice-conversation'
 import { ChatInput } from '@/components/input/chat-input'
 import { Dropdown, DropdownItem } from '@/components/shared/dropdown'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { speak } from '@/lib/tts'
 
 const PROMPT_SUGGESTIONS = [
-  { text: 'List all my sessions and agents', icon: 'book', gradient: 'from-[#6366F1]/10 to-[#818CF8]/5' },
+  { text: 'What can you help me with?', icon: 'book', gradient: 'from-[#6366F1]/10 to-[#818CF8]/5' },
   { text: 'Help me set up a new connector', icon: 'link', gradient: 'from-[#EC4899]/10 to-[#F472B6]/5' },
   { text: 'Create a new agent for me', icon: 'bot', gradient: 'from-[#34D399]/10 to-[#6EE7B7]/5' },
   { text: 'Schedule a recurring task', icon: 'check', gradient: 'from-[#F59E0B]/10 to-[#FBBF24]/5' },
@@ -42,6 +44,12 @@ export function ChatArea() {
   const loadAgents = useAppStore((s) => s.loadAgents)
   const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
+
+  const voice = useVoiceConversation()
+  const handleVoiceToggle = useCallback(() => {
+    if (voice.active) voice.stop()
+    else voice.start()
+  }, [voice])
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -251,6 +259,9 @@ export function ChatArea() {
           onBack={handleBack}
           browserActive={browserActive}
           onStopBrowser={handleStopBrowser}
+          voiceActive={voice.active}
+          voiceSupported={voice.supported}
+          onVoiceToggle={handleVoiceToggle}
         />
       )}
       {!isDesktop && (
@@ -262,6 +273,9 @@ export function ChatArea() {
           mobile
           browserActive={browserActive}
           onStopBrowser={handleStopBrowser}
+          voiceActive={voice.active}
+          voiceSupported={voice.supported}
+          onVoiceToggle={handleVoiceToggle}
         />
       )}
       <DevServerBar status={devServerStatus} onStop={handleStopDevServer} />
@@ -320,6 +334,15 @@ export function ChatArea() {
         <MessageList messages={messages} streaming={streamingForThisSession} />
       )}
 
+      {voice.active && (
+        <VoiceOverlay
+          state={voice.state}
+          interimText={voice.interimText}
+          transcript={voice.transcript}
+          onStop={voice.stop}
+        />
+      )}
+
       <SessionDebugPanel
         messages={messages}
         open={debugOpen}
@@ -348,7 +371,7 @@ export function ChatArea() {
         )}
         {!isMainChat && (
           <DropdownItem danger onClick={() => { setMenuOpen(false); setConfirmDelete(true) }}>
-            Delete Session
+            Delete Chat
           </DropdownItem>
         )}
       </Dropdown>
@@ -356,7 +379,7 @@ export function ChatArea() {
       <ConfirmDialog
         open={confirmClear}
         title="Clear History"
-        message="This will delete all messages in this session. This cannot be undone."
+        message="This will delete all messages in this chat. This cannot be undone."
         confirmLabel="Clear"
         danger
         onConfirm={handleClear}
@@ -364,7 +387,7 @@ export function ChatArea() {
       />
       <ConfirmDialog
         open={confirmDelete}
-        title="Delete Session"
+        title="Delete Chat"
         message={`Delete "${session.name}"? This cannot be undone.`}
         confirmLabel="Delete"
         danger

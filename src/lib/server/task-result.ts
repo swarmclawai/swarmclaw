@@ -43,6 +43,7 @@ function classifyArtifact(filename: string): Artifact['type'] {
 interface MessageLike {
   role?: string
   text?: string
+  time?: number
   imageUrl?: string
   imagePath?: string
   toolEvents?: Array<{ name?: string; output?: string }>
@@ -50,6 +51,10 @@ interface MessageLike {
 
 interface SessionLike {
   messages?: MessageLike[]
+}
+
+interface ExtractTaskResultOptions {
+  sinceTime?: number | null
 }
 
 // ---------------------------------------------------------------------------
@@ -64,9 +69,13 @@ interface SessionLike {
 export function extractTaskResult(
   session: SessionLike | null | undefined,
   rawResultText: string | null | undefined,
+  options?: ExtractTaskResultOptions,
 ): TaskResult {
   const seen = new Set<string>()
   const artifacts: Artifact[] = []
+  const sinceTime = typeof options?.sinceTime === 'number' && Number.isFinite(options.sinceTime)
+    ? options.sinceTime
+    : null
 
   function addUrl(raw: string) {
     const url = stripSandbox(raw)
@@ -79,6 +88,11 @@ export function extractTaskResult(
   // Walk session messages to collect all artifact URLs
   if (Array.isArray(session?.messages)) {
     for (const msg of session.messages) {
+      if (sinceTime !== null) {
+        const msgTime = typeof msg.time === 'number' && Number.isFinite(msg.time) ? msg.time : null
+        if (msgTime === null || msgTime < sinceTime) continue
+      }
+
       // Explicit image fields
       if (msg.imageUrl) addUrl(msg.imageUrl)
       if (msg.imagePath) {

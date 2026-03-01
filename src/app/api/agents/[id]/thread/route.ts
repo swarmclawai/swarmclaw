@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadAgents, saveAgents, loadSessions, saveSessions } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 
@@ -32,7 +32,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   // Create a new thread session
-  const sessionId = `agent-thread-${agentId}-${crypto.randomBytes(4).toString('hex')}`
+  const sessionId = `agent-thread-${agentId}-${genId()}`
   const now = Date.now()
   const session = {
     id: sessionId,

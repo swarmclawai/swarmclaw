@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadAgents, loadTasks, saveTasks } from '@/lib/server/storage'
 import { enqueueTask } from '@/lib/server/queue'
 
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   }
 
   // Create a board task and enqueue it
-  const taskId = crypto.randomBytes(4).toString('hex')
+  const taskId = genId()
   const now = Date.now()
   const tasks = loadTasks()
   tasks[taskId] = {

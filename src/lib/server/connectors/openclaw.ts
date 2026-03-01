@@ -827,6 +827,13 @@ const openclaw: PlatformConnector = {
       if (identity.deviceToken === normalized) return
       identity = { ...identity, deviceToken: normalized }
       persistIdentity(identityPath, identity)
+      // Cross-sync device token for provider identity resolution
+      if (normalized) {
+        try {
+          const { setSharedDeviceToken } = require('../openclaw-sync')
+          setSharedDeviceToken(normalized)
+        } catch { /* openclaw-sync not available */ }
+      }
     }
 
     function clearStaleTokenIfNeeded(reason?: string) {
@@ -928,6 +935,23 @@ const openclaw: PlatformConnector = {
       source: 'event' | 'history',
     ) {
       if (!matchesSessionKey(configuredSessionFilter, inbound.channelId)) return
+
+      // Multi-agent routing: match sessionKey against agentRouting config
+      const agentRouting = connector.config.agentRouting
+      if (agentRouting) {
+        try {
+          const routingMap: Record<string, string> = typeof agentRouting === 'string'
+            ? JSON.parse(agentRouting)
+            : agentRouting as unknown as Record<string, string>
+          for (const [pattern, agentId] of Object.entries(routingMap)) {
+            if (matchesSessionKey(pattern, inbound.channelId)) {
+              inbound.agentIdOverride = agentId
+              break
+            }
+          }
+        } catch { /* ignore malformed routing config */ }
+      }
+
       if (!rememberSeenEntry(seenInbound, dedupeKey, MAX_SEEN_CHAT_EVENTS)) return
 
       const now = Date.now()
@@ -1119,6 +1143,46 @@ const openclaw: PlatformConnector = {
       async sendMessage(channelId, text, options) {
         if (!connected) throw new Error('openclaw connector is not connected')
         await sendChat(channelId || defaultSessionKey, text, options)
+      },
+      async sendReaction(channelId, messageId, emoji) {
+        if (!connected) throw new Error('openclaw connector is not connected')
+        try {
+          await rpcRequest('chat.react', { sessionKey: channelId || defaultSessionKey, messageId, emoji })
+        } catch (err: unknown) {
+          const msg = getErrorMessage(err)
+          if (msg.toLowerCase().includes('unknown method')) return // graceful degrade
+          throw err
+        }
+      },
+      async editMessage(channelId, messageId, newText) {
+        if (!connected) throw new Error('openclaw connector is not connected')
+        try {
+          await rpcRequest('chat.edit', { sessionKey: channelId || defaultSessionKey, messageId, text: newText })
+        } catch (err: unknown) {
+          const msg = getErrorMessage(err)
+          if (msg.toLowerCase().includes('unknown method')) return
+          throw err
+        }
+      },
+      async deleteMessage(channelId, messageId) {
+        if (!connected) throw new Error('openclaw connector is not connected')
+        try {
+          await rpcRequest('chat.delete', { sessionKey: channelId || defaultSessionKey, messageId })
+        } catch (err: unknown) {
+          const msg = getErrorMessage(err)
+          if (msg.toLowerCase().includes('unknown method')) return
+          throw err
+        }
+      },
+      async pinMessage(channelId, messageId) {
+        if (!connected) throw new Error('openclaw connector is not connected')
+        try {
+          await rpcRequest('chat.pin', { sessionKey: channelId || defaultSessionKey, messageId })
+        } catch (err: unknown) {
+          const msg = getErrorMessage(err)
+          if (msg.toLowerCase().includes('unknown method')) return
+          throw err
+        }
       },
       async stop() {
         stopped = true

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { getMemoryDb, getMemoryLookupLimits, storeMemoryImageAsset } from '../memory-db'
 import { loadSettings } from '../storage'
 import type { ToolBuildContext } from './context'
@@ -81,7 +81,7 @@ export function buildMemoryTools(bctx: ToolBuildContext): StructuredToolInterfac
                   return `Error: image file not found: ${imagePath}`
                 }
                 try {
-                  storedImage = await storeMemoryImageAsset(imagePath, crypto.randomBytes(6).toString('hex'))
+                  storedImage = await storeMemoryImageAsset(imagePath, genId(6))
                 } catch {
                   return `Error: failed to process image at ${imagePath}`
                 }

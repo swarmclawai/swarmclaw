@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import {
   loadSessions, saveSessions, loadAgents,
   loadCredentials, decryptKey, loadSettings, loadSkills,
@@ -20,7 +20,7 @@ export function createOrchestratorSession(
   cwd?: string,
 ): string {
   const sessions = loadSessions()
-  const sessionId = crypto.randomBytes(4).toString('hex')
+  const sessionId = genId()
   sessions[sessionId] = {
     id: sessionId,
     name: `[Orch] ${orchestrator.name}: ${task.slice(0, 40)}`,
@@ -264,7 +264,7 @@ async function executeSubTask(
   // Look up parent session cwd to inherit
   const sessions = loadSessions()
   const parentSession = sessions[parentSessionId]
-  const childId = crypto.randomBytes(4).toString('hex')
+  const childId = genId()
   const childSession = {
     id: childId,
     name: `[Agent] ${agent.name}: ${task.slice(0, 40)}`,
@@ -325,7 +325,7 @@ export async function callProvider(
 
   // Build a mock session for the provider
   const mockSession = {
-    id: 'orch-' + crypto.randomBytes(2).toString('hex'),
+    id: 'orch-' + genId(2),
     provider: agent.provider,
     model: agent.model,
     credentialId: agent.credentialId,

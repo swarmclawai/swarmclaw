@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { getProviderList } from '@/lib/providers'
 import { loadProviderConfigs, saveProviderConfigs } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
@@ -13,7 +13,7 @@ export async function GET(_req: Request) {
 export async function POST(req: Request) {
   const body = await req.json()
   const configs = loadProviderConfigs()
-  const id = body.id || `custom-${crypto.randomBytes(4).toString('hex')}`
+  const id = body.id || `custom-${genId()}`
   configs[id] = {
     id,
     name: body.name || 'Custom Provider',

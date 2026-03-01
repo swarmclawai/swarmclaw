@@ -15,6 +15,7 @@ import { buildSessionInfoTools } from './session-info'
 import { buildConnectorTools } from './connector'
 import { buildContextTools } from './context-mgmt'
 import { buildSandboxTools } from './sandbox'
+import { buildOpenClawNodeTools } from './openclaw-nodes'
 
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
@@ -95,6 +96,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
     ...buildConnectorTools(bctx),
     ...buildContextTools(bctx),
     ...buildSandboxTools(bctx),
+    ...buildOpenClawNodeTools(bctx),
   )
 
   // ---------------------------------------------------------------------------

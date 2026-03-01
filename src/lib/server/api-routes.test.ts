@@ -346,17 +346,16 @@ describe('MCP Server API contract', () => {
       assert.match(src, /export\s+async\s+function\s+DELETE/)
     })
 
-    it('MCP POST route assigns an id via crypto.randomBytes', () => {
+    it('MCP POST route assigns an id via genId helper', () => {
       const src = readRoute('mcp-servers', 'route.ts')
-      assert.match(src, /crypto\.randomBytes/)
+      assert.match(src, /const\s+id\s*=\s*genId\(/)
     })
 
-    it('MCP PUT route preserves id and sets updatedAt', () => {
+    it('MCP PUT route preserves id and sets updatedAt via mutateItem', () => {
       const src = readRoute('mcp-servers', '[id]', 'route.ts')
+      assert.match(src, /mutateItem\(/)
       assert.match(src, /updatedAt:\s*Date\.now\(\)/)
-      // Verify id is pinned (spread then override)
-      assert.match(src, /\.\.\.servers\[id\]/)
-      assert.match(src, /\bid\b,/)
+      assert.match(src, /\.\.\.server,\s*\.\.\.body,\s*id,/)
     })
   })
 })

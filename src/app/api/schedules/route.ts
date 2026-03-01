@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadSchedules, saveSchedules } from '@/lib/server/storage'
 import { resolveScheduleName } from '@/lib/schedule-name'
 import { findDuplicateSchedule } from '@/lib/schedule-dedupe'
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     return NextResponse.json(duplicate)
   }
 
-  const id = crypto.randomBytes(4).toString('hex')
+  const id = genId()
 
   let nextRunAt: number | undefined
   if (scheduleType === 'once' && body.runAt) {

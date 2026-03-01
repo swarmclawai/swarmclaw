@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import fs from 'fs'
 import { NextResponse } from 'next/server'
 import { getMemoryDb, getMemoryLookupLimits, storeMemoryImageAsset, storeMemoryImageFromDataUrl } from '@/lib/server/memory-db'
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
   }
 
   const db = getMemoryDb()
-  const draftId = crypto.randomBytes(6).toString('hex')
+  const draftId = genId(6)
 
   let image = body.image
   const inputImagePath = typeof body.imagePath === 'string' ? body.imagePath.trim() : ''

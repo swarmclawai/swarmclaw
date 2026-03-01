@@ -104,8 +104,12 @@ export function ConnectorList({ inSidebar: _inSidebar }: { inSidebar?: boolean }
         const agent = agents[c.agentId]
         const isRunning = c.status === 'running'
         const isToggling = toggling === c.id
-        // Can only toggle if connector has credentials (or is WhatsApp which uses QR)
-        const hasCredentials = c.platform === 'whatsapp' || !!c.credentialId
+        // Can only toggle if connector has credentials (or uses non-token auth modes).
+        const hasCredentials = c.platform === 'whatsapp'
+          || c.platform === 'openclaw'
+          || c.platform === 'signal'
+          || (c.platform === 'bluebubbles' && (!!c.credentialId || !!c.config?.password))
+          || !!c.credentialId
         return (
           <div
             key={c.id}

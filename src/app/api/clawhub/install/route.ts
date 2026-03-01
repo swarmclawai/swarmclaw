@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadSkills, saveSkills } from '@/lib/server/storage'
 import { fetchSkillContent } from '@/lib/server/clawhub-client'
 
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   }
 
   const skills = loadSkills()
-  const id = crypto.randomBytes(4).toString('hex')
+  const id = genId()
   skills[id] = {
     id,
     name,

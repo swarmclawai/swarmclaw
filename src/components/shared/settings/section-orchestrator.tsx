@@ -2,9 +2,8 @@
 
 import { useAppStore } from '@/stores/use-app-store'
 import { ModelCombobox } from '@/components/shared/model-combobox'
+import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 import type { SettingsSectionProps } from './types'
-
-const NON_LANGGRAPH_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
 
 export function OrchestratorSection({ appSettings, patchSettings, inputClass }: SettingsSectionProps) {
   const providers = useAppStore((s) => s.providers)

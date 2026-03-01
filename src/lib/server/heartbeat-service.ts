@@ -158,6 +158,7 @@ function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: str
     soul ? `Persona: ${soul.slice(0, 300)}` : '',
     heartbeatFileContent ? `\nHEARTBEAT.md contents:\n${heartbeatFileContent.slice(0, 2000)}` : '',
     recentContext ? `Recent conversation:\n${recentContext}` : '',
+    fallbackPrompt !== DEFAULT_HEARTBEAT_PROMPT ? `\nAgent instructions:\n${fallbackPrompt}` : '',
     '',
     'You are running an autonomous heartbeat tick. Review your goal and recent context.',
     'If there is meaningful work to do toward your goal, use your tools and take action.',
@@ -167,7 +168,6 @@ function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: str
     'To update your goal or plan, include this line in your response:',
     '[AGENT_HEARTBEAT_META]{"goal": "your evolved goal", "status": "progress", "next_action": "what you plan to do next"}',
     'You can evolve your goal as you learn more. Set status to "progress" while working, "ok" when done, "idle" when waiting.',
-    fallbackPrompt !== DEFAULT_HEARTBEAT_PROMPT ? `\nAdditional instructions: ${fallbackPrompt}` : '',
   ].filter(Boolean).join('\n')
 }
 

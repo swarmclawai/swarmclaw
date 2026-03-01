@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadSkills, saveSkills } from '@/lib/server/storage'
 import { normalizeSkillPayload } from '@/lib/server/skills-normalize'
 export const dynamic = 'force-dynamic'
@@ -12,7 +12,7 @@ export async function GET(_req: Request) {
 export async function POST(req: Request) {
   const body = await req.json()
   const skills = loadSkills()
-  const id = crypto.randomBytes(4).toString('hex')
+  const id = genId()
   const normalized = normalizeSkillPayload(body)
   skills[id] = {
     id,

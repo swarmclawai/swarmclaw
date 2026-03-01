@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
-import crypto from 'crypto'
 import Database from 'better-sqlite3'
+import { genId } from '@/lib/id'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,7 +94,7 @@ export function logExecution(
     detail?: Record<string, unknown>
   },
 ): string {
-  const id = crypto.randomBytes(8).toString('hex')
+  const id = genId(8)
   const ts = Date.now()
   try {
     insertStmt().run(
@@ -133,7 +133,7 @@ export function logExecutionBatch(
   const tx = db.transaction(() => {
     for (const e of entries) {
       stmt.run(
-        crypto.randomBytes(8).toString('hex'),
+        genId(8),
         e.sessionId,
         e.runId ?? null,
         e.agentId ?? null,

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { loadModelOverrides, saveModelOverrides } from '@/lib/server/storage'
+import { notFound } from '@/lib/server/collection-helpers'
 import { getProviderList } from '@/lib/providers'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -7,7 +8,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const overrides = loadModelOverrides()
   const providers = getProviderList()
   const provider = providers.find((p) => p.id === id)
-  if (!provider) return new NextResponse(null, { status: 404 })
+  if (!provider) return notFound()
   return NextResponse.json({ models: provider.models, hasOverride: !!overrides[id] })
 }
 

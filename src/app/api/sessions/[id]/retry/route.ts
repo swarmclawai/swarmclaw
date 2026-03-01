@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { loadSessions, saveSessions } from '@/lib/server/storage'
+import { notFound } from '@/lib/server/collection-helpers'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessions = loadSessions()
   const session = sessions[id]
-  if (!session) return new NextResponse(null, { status: 404 })
+  if (!session) return notFound()
 
   const msgs = session.messages
   // Pop trailing assistant messages to find the last user message

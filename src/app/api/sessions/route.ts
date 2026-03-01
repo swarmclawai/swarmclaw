@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import os from 'os'
 import path from 'path'
 import { loadSessions, saveSessions, deleteSession, active, loadAgents } from '@/lib/server/storage'
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
   else if (cwd === '~') cwd = os.homedir()
   else if (!cwd) cwd = WORKSPACE_DIR
 
-  const id = body.id || crypto.randomBytes(4).toString('hex')
+  const id = body.id || genId()
   const sessions = loadSessions()
   const agent = body.agentId ? loadAgents()[body.agentId] : null
   const requestedTools = Array.isArray(body.tools) ? body.tools : null

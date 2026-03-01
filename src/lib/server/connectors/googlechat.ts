@@ -1,7 +1,8 @@
-import type { PlatformConnector, ConnectorInstance } from './types'
+import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
+import { isNoMessage } from './manager'
 
 const googlechat: PlatformConnector = {
-  async start(connector, botToken, _onMessage): Promise<ConnectorInstance> {
+  async start(connector, botToken, onMessage): Promise<ConnectorInstance> {
     const pkg = 'googleapis'
     const { google } = await import(/* webpackIgnore: true */ pkg)
 
@@ -25,17 +26,54 @@ const googlechat: PlatformConnector = {
       ? connector.config.spaceIds.split(',').map((s: string) => s.trim()).filter(Boolean)
       : null
 
-    // Google Chat requires a webhook or Pub/Sub for real-time inbound messages.
-    // This connector supports outbound messaging. For inbound messages, configure
-    // a webhook endpoint at /api/connectors/[id]/webhook that POSTs events here.
-    // Polling is not supported by the Google Chat API for bot messages.
+    const handlerKey = `__swarmclaw_googlechat_handler_${connector.id}__`
     let stopped = false
 
     console.log(`[googlechat] Bot authenticated via service account`)
     if (allowedSpaces) {
       console.log(`[googlechat] Filtering to spaces: ${allowedSpaces.join(', ')}`)
     }
-    console.log(`[googlechat] Note: Inbound messages require a webhook or Pub/Sub subscription. This connector supports outbound sends.`)
+    console.log(`[googlechat] Inbound webhook endpoint: /api/connectors/${connector.id}/webhook`)
+
+    function cleanInboundText(raw: unknown): string {
+      const txt = typeof raw === 'string' ? raw : ''
+      // Google Chat mentions often look like <users/123456789>
+      return txt.replace(/<users\/[^>]+>/g, '').trim()
+    }
+
+    async function processWebhookEvent(event: any): Promise<Record<string, unknown>> {
+      if (stopped) throw new Error('Connector is stopped')
+
+      const msg = event?.message
+      if (!msg) return {}
+
+      const spaceName: string = msg?.space?.name || event?.space?.name || ''
+      if (allowedSpaces && !allowedSpaces.some((s) => spaceName.includes(s))) {
+        return {}
+      }
+
+      const rawText = msg?.argumentText || msg?.text || ''
+      const text = cleanInboundText(rawText)
+      if (!text) return {}
+
+      const sender = msg?.sender || event?.user || {}
+      const senderName = sender?.displayName || sender?.name || 'Google Chat User'
+      const senderId = sender?.name || ''
+      const inbound: InboundMessage = {
+        platform: 'googlechat',
+        channelId: spaceName || (msg?.thread?.name || 'space:unknown'),
+        channelName: msg?.space?.displayName || spaceName || 'Google Chat',
+        senderId,
+        senderName,
+        text,
+      }
+
+      const response = await onMessage(inbound)
+      if (!response || isNoMessage(response)) return {}
+      return { text: response }
+    }
+
+    ;(globalThis as any)[handlerKey] = processWebhookEvent
 
     return {
       connector,
@@ -57,6 +95,7 @@ const googlechat: PlatformConnector = {
       },
       async stop() {
         stopped = true
+        delete (globalThis as any)[handlerKey]
         console.log(`[googlechat] Bot disconnected`)
       },
     }

@@ -89,7 +89,7 @@ export function SessionList({ inSidebar, onSelect }: Props) {
             <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" fill="currentColor" />
           </svg>
         </div>
-        <p className="font-display text-[15px] font-600 text-text-2">No sessions yet</p>
+        <p className="font-display text-[15px] font-600 text-text-2">No chats yet</p>
         <p className="text-[13px] text-text-3/50">Create one to start chatting</p>
         {!inSidebar && (
           <button
@@ -99,7 +99,7 @@ export function SessionList({ inSidebar, onSelect }: Props) {
               shadow-[0_4px_16px_rgba(99,102,241,0.2)]"
             style={{ fontFamily: 'inherit' }}
           >
-            + New Session
+            + New Chat
           </button>
         )}
       </div>
@@ -124,12 +124,12 @@ export function SessionList({ inSidebar, onSelect }: Props) {
         {filtered.length > 0 && (
           <button
             onClick={async () => {
-              if (!window.confirm(`Delete ${filtered.length} session${filtered.length === 1 ? '' : 's'}?`)) return
+              if (!window.confirm(`Delete ${filtered.length} chat${filtered.length === 1 ? '' : 's'}?`)) return
               await clearSessions(filtered.map((s) => s.id))
             }}
             className="ml-auto p-1.5 rounded-[8px] text-text-3/70 hover:text-red-400 hover:bg-red-400/[0.06]
               cursor-pointer transition-all bg-transparent border-none"
-            title="Clear all sessions"
+            title="Clear all chats"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
@@ -154,7 +154,7 @@ export function SessionList({ inSidebar, onSelect }: Props) {
         <select
           value={sortMode}
           onChange={(e) => setSortMode(e.target.value as SortMode)}
-          aria-label="Sort sessions"
+          aria-label="Sort chats"
           className="px-2 py-2 rounded-[12px] border border-white/[0.04] bg-surface text-text
             text-[11px] outline-none cursor-pointer"
           style={{ fontFamily: 'inherit' }}
@@ -176,7 +176,7 @@ export function SessionList({ inSidebar, onSelect }: Props) {
               />
               <button
                 onClick={(e) => { e.stopPropagation(); togglePinSession(s.id) }}
-                aria-label={s.pinned ? 'Unpin session' : 'Pin session'}
+                aria-label={s.pinned ? 'Unpin chat' : 'Pin chat'}
                 className={`absolute top-2 right-2 p-1 rounded-[6px] border-none cursor-pointer transition-all
                   ${s.pinned
                     ? 'text-amber-400 bg-amber-400/10 opacity-100'
@@ -193,7 +193,7 @@ export function SessionList({ inSidebar, onSelect }: Props) {
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-3 p-8 text-center">
           <p className="text-[13px] text-text-3/50">
-            No {typeFilter === 'orchestrated' ? 'AI' : typeFilter === 'active' ? 'active' : typeFilter} sessions{search ? ` matching "${search}"` : ''}
+            No {typeFilter === 'orchestrated' ? 'AI' : typeFilter === 'active' ? 'active' : typeFilter} chats{search ? ` matching "${search}"` : ''}
           </p>
         </div>
       )}

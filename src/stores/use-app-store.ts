@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta } from '../types'
+import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project } from '../types'
 import { fetchSessions, fetchDirs, fetchProviders, fetchCredentials } from '../lib/sessions'
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
@@ -150,6 +150,16 @@ interface AppState {
   setPluginSheetOpen: (open: boolean) => void
   editingPluginFilename: string | null
   setEditingPluginFilename: (filename: string | null) => void
+
+  // Projects
+  projects: Record<string, Project>
+  loadProjects: () => Promise<void>
+  projectSheetOpen: boolean
+  setProjectSheetOpen: (open: boolean) => void
+  editingProjectId: string | null
+  setEditingProjectId: (id: string | null) => void
+  activeProjectFilter: string | null
+  setActiveProjectFilter: (id: string | null) => void
 
 }
 
@@ -464,5 +474,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPluginSheetOpen: (open) => set({ pluginSheetOpen: open }),
   editingPluginFilename: null,
   setEditingPluginFilename: (filename) => set({ editingPluginFilename: filename }),
+
+  // Projects
+  projects: {},
+  loadProjects: async () => {
+    try {
+      const projects = await api<Record<string, Project>>('GET', '/projects')
+      set({ projects })
+    } catch {
+      // ignore
+    }
+  },
+  projectSheetOpen: false,
+  setProjectSheetOpen: (open) => set({ projectSheetOpen: open }),
+  editingProjectId: null,
+  setEditingProjectId: (id) => set({ editingProjectId: id }),
+  activeProjectFilter: null,
+  setActiveProjectFilter: (id) => set({ activeProjectFilter: id }),
 
 }))

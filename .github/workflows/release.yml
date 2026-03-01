@@ -25,6 +25,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: npm ci
@@ -37,6 +38,11 @@ jobs:
 
       - name: Build
         run: npm run build:ci
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Set image name
         id: image
@@ -78,6 +84,8 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           append_body: |
+            ## Install
+            - `npm install -g @swarmclawai/swarmclaw@${{ github.ref_name }}`
             ## Docker
             - `docker pull ${{ steps.image.outputs.name }}:${{ github.ref_name }}`
             - `docker pull ${{ steps.image.outputs.name }}:latest`

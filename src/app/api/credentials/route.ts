@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadCredentials, saveCredentials, encryptKey } from '@/lib/server/storage'
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   if (!provider || !apiKey) {
     return NextResponse.json({ error: 'provider and apiKey are required' }, { status: 400 })
   }
-  const id = 'cred_' + crypto.randomBytes(6).toString('hex')
+  const id = 'cred_' + genId(6)
   const creds = loadCredentials()
   creds[id] = {
     id,

@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useAppStore } from '@/stores/use-app-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { Avatar } from '@/components/shared/avatar'
-import { SettingsSheet } from '@/components/shared/settings-sheet'
+import { SettingsPage } from '@/components/shared/settings/settings-page'
 import { AgentList } from '@/components/agents/agent-list'
 import { AgentChatList } from '@/components/agents/agent-chat-list'
 import { AgentSheet } from '@/components/agents/agent-sheet'
@@ -37,6 +37,8 @@ import { PluginList } from '@/components/plugins/plugin-list'
 import { PluginSheet } from '@/components/plugins/plugin-sheet'
 import { UsageList } from '@/components/usage/usage-list'
 import { RunList } from '@/components/runs/run-list'
+import { ProjectList } from '@/components/projects/project-list'
+import { ProjectSheet } from '@/components/projects/project-sheet'
 import { NetworkBanner } from './network-banner'
 import { UpdateBanner } from './update-banner'
 import { MobileHeader } from './mobile-header'
@@ -53,7 +55,6 @@ export function AppLayout() {
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
-  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const setUser = useAppStore((s) => s.setUser)
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const activeView = useAppStore((s) => s.activeView)
@@ -69,6 +70,7 @@ export function AppLayout() {
   const setMcpServerSheetOpen = useAppStore((s) => s.setMcpServerSheetOpen)
   const setKnowledgeSheetOpen = useAppStore((s) => s.setKnowledgeSheetOpen)
   const setPluginSheetOpen = useAppStore((s) => s.setPluginSheetOpen)
+  const setProjectSheetOpen = useAppStore((s) => s.setProjectSheetOpen)
   const tasks = useAppStore((s) => s.tasks)
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const hasSelectedSession = !!(currentSessionId && sessions[currentSessionId])
@@ -128,6 +130,7 @@ export function AppLayout() {
     else if (activeView === 'mcp_servers') setMcpServerSheetOpen(true)
     else if (activeView === 'knowledge') setKnowledgeSheetOpen(true)
     else if (activeView === 'plugins') setPluginSheetOpen(true)
+    else if (activeView === 'projects') setProjectSheetOpen(true)
   }
 
   const handleNavClick = (view: AppView) => {
@@ -145,15 +148,11 @@ export function AppLayout() {
   const agents = useAppStore((s) => s.agents)
   const currentAgentId = useAppStore((s) => s.currentAgentId)
   const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
-  const mainSession = Object.values(sessions).find((s) => s.name === '__main__' && s.user === currentUser)
-
   const goToMainChat = async () => {
     // Navigate to default agent's chat thread
     const defaultAgent = agents['default'] || Object.values(agents)[0]
     if (defaultAgent) {
       await setCurrentAgent(defaultAgent.id)
-    } else if (mainSession) {
-      setCurrentSession(mainSession.id)
     }
     setActiveView('agents')
     setSidebarOpen(false)
@@ -243,6 +242,11 @@ export function AppLayout() {
             <NavItem view="agents" label="Agents" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('agents')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+              </svg>
+            </NavItem>
+            <NavItem view="projects" label="Projects" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('projects')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7-7H4a2 2 0 0 0-2 2v17Z" /><path d="M14 2v7h7" />
               </svg>
             </NavItem>
             <NavItem view="schedules" label="Schedules" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('schedules')}>
@@ -355,7 +359,7 @@ export function AppLayout() {
             {railExpanded && <DaemonIndicator />}
             {railExpanded ? (
               <button
-                onClick={() => setSettingsOpen(true)}
+                onClick={() => handleNavClick('settings')}
                 className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-[13px] font-500 cursor-pointer transition-all
                   bg-transparent text-text-3 hover:text-text hover:bg-white/[0.04] border-none"
                 style={{ fontFamily: 'inherit' }}
@@ -368,7 +372,7 @@ export function AppLayout() {
               </button>
             ) : (
               <RailTooltip label="Settings" description="API keys, providers & app config">
-                <button onClick={() => setSettingsOpen(true)} className="rail-btn">
+                <button onClick={() => handleNavClick('settings')} className="rail-btn">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <circle cx="12" cy="12" r="3" />
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -486,7 +490,7 @@ export function AppLayout() {
                   <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
                 </svg>
               </a>
-              <button onClick={() => setSettingsOpen(true)} className="rail-btn">
+              <button onClick={() => handleNavClick('settings')} className="rail-btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -512,7 +516,7 @@ export function AppLayout() {
                 </button>
               ))}
             </div>
-            {activeView !== 'logs' && activeView !== 'usage' && activeView !== 'runs' && (
+            {activeView !== 'logs' && activeView !== 'usage' && activeView !== 'runs' && activeView !== 'settings' && (
             <div className="px-4 py-2.5 shrink-0">
               <button
                 onClick={() => {
@@ -524,7 +528,7 @@ export function AppLayout() {
                   shadow-[0_2px_12px_rgba(99,102,241,0.15)]"
                 style={{ fontFamily: 'inherit' }}
               >
-                + New {activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : activeView === 'plugins' ? 'Plugin' : 'Entry'}
+                + New {activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : activeView === 'plugins' ? 'Plugin' : activeView === 'projects' ? 'Project' : 'Entry'}
               </button>
             </div>
             )}
@@ -557,6 +561,7 @@ export function AppLayout() {
             {activeView === 'mcp_servers' && <McpServerList />}
             {activeView === 'knowledge' && <KnowledgeList />}
             {activeView === 'plugins' && <PluginList inSidebar />}
+            {activeView === 'projects' && <ProjectList />}
             {activeView === 'usage' && <UsageList />}
             {activeView === 'runs' && <RunList />}
             {activeView === 'logs' && <LogList />}
@@ -591,6 +596,8 @@ export function AppLayout() {
             <TaskBoard />
           ) : activeView === 'memory' ? (
             <MemoryDetail />
+          ) : activeView === 'settings' ? (
+            <SettingsPage />
           ) : !sidebarOpen && FULL_WIDTH_VIEWS.has(activeView) ? (
             <div className="flex-1 flex flex-col h-full">
               <div className="flex items-center px-6 pt-5 pb-3 shrink-0">
@@ -606,7 +613,7 @@ export function AppLayout() {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                       <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
-                    {activeView === 'schedules' ? 'Schedule' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : activeView === 'plugins' ? 'Plugin' : 'New'}
+                    {activeView === 'schedules' ? 'Schedule' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : activeView === 'plugins' ? 'Plugin' : activeView === 'projects' ? 'Project' : 'New'}
                   </button>
                 )}
               </div>
@@ -619,6 +626,7 @@ export function AppLayout() {
               {activeView === 'mcp_servers' && <McpServerList />}
               {activeView === 'knowledge' && <KnowledgeList />}
               {activeView === 'plugins' && <PluginList />}
+              {activeView === 'projects' && <ProjectList />}
               {activeView === 'usage' && <UsageList />}
               {activeView === 'runs' && <RunList />}
               {activeView === 'logs' && <LogList />}
@@ -629,7 +637,6 @@ export function AppLayout() {
         </div>
       </ErrorBoundary>
 
-      <SettingsSheet />
       <AgentSheet />
       <ScheduleSheet />
       <MemorySheet />
@@ -642,6 +649,7 @@ export function AppLayout() {
       <McpServerSheet />
       <KnowledgeSheet />
       <PluginSheet />
+      <ProjectSheet />
 
       <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
         <DialogContent className="sm:max-w-[380px] bg-raised border-white/[0.08]">
@@ -735,13 +743,15 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   logs: 'Application logs & error tracking',
   plugins: 'Extend agent capabilities with custom plugins',
   usage: 'Token usage analytics & cost tracking',
-  runs: 'Live session run monitoring & history',
+  runs: 'Live run monitoring & history',
+  settings: 'Manage providers, API keys & orchestrator engine',
+  projects: 'Group agents, tasks & schedules into projects',
 }
 
 const FULL_WIDTH_VIEWS = new Set<AppView>([
   'schedules', 'secrets', 'providers', 'skills',
   'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'plugins',
-  'usage', 'runs', 'logs',
+  'usage', 'runs', 'logs', 'settings', 'projects',
 ])
 
 const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents'>, { icon: string; title: string; description: string; features: string[] }> = {
@@ -754,14 +764,14 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents'>, { icon: string; titl
   memory: {
     icon: 'database',
     title: 'Memory',
-    description: 'Long-term memory store for AI agents. Orchestrators can store and retrieve knowledge across sessions.',
-    features: ['Agents store findings and learnings automatically', 'Full-text search across all stored memories', 'Organized by categories and agents', 'Persists across sessions for continuity'],
+    description: 'Long-term memory store for AI agents. Orchestrators can store and retrieve knowledge across conversations.',
+    features: ['Agents store findings and learnings automatically', 'Full-text search across all stored memories', 'Organized by categories and agents', 'Persists across conversations for continuity'],
   },
   tasks: {
     icon: 'clipboard',
     title: 'Task Board',
     description: 'A Trello-style board for managing orchestrator jobs. Create tasks, assign them to orchestrators, and track progress.',
-    features: ['Kanban columns: Backlog, Queued, Running, Completed, Failed', 'Assign tasks to specific orchestrator agents', 'Sequential queue ensures orchestrators don\'t conflict', 'View results and session logs for completed tasks'],
+    features: ['Kanban columns: Backlog, Queued, Running, Completed, Failed', 'Assign tasks to specific orchestrator agents', 'Sequential queue ensures orchestrators don\'t conflict', 'View results and logs for completed tasks'],
   },
   secrets: {
     icon: 'lock',
@@ -785,7 +795,7 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents'>, { icon: string; titl
     icon: 'link',
     title: 'Connectors',
     description: 'Bridge chat platforms to your AI agents. Receive messages from Discord, Telegram, Slack, or WhatsApp and route them to agents.',
-    features: ['Connect Discord, Telegram, Slack, or WhatsApp bots', 'Route incoming messages to any agent', 'Each platform channel gets its own session', 'Start and stop connectors from the UI'],
+    features: ['Connect Discord, Telegram, Slack, or WhatsApp bots', 'Route incoming messages to any agent', 'Each platform channel gets its own chat thread', 'Start and stop connectors from the UI'],
   },
   webhooks: {
     icon: 'webhook',
@@ -796,7 +806,7 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents'>, { icon: string; titl
   mcp_servers: {
     icon: 'server',
     title: 'MCP Servers',
-    description: 'Connect agents to external MCP (Model Context Protocol) servers, injecting their tools into chat sessions.',
+    description: 'Connect agents to external MCP (Model Context Protocol) servers, injecting their tools into agent chats.',
     features: ['Configure stdio, SSE, or streamable HTTP transports', 'Test connections and discover available tools', 'Assign MCP servers to specific agents', 'Tools appear alongside built-in tools in chat'],
   },
   knowledge: {
@@ -820,14 +830,26 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents'>, { icon: string; titl
   usage: {
     icon: 'bar-chart',
     title: 'Usage',
-    description: 'Track token usage and costs across all providers and sessions.',
-    features: ['Per-provider cost breakdown', 'Token usage over time', 'Session-level cost tracking', 'Export usage data'],
+    description: 'Track token usage and costs across all providers and agents.',
+    features: ['Per-provider cost breakdown', 'Token usage over time', 'Per-agent cost tracking', 'Export usage data'],
   },
   runs: {
     icon: 'activity',
     title: 'Runs',
-    description: 'View the session run queue and execution history.',
+    description: 'View the run queue and execution history.',
     features: ['Monitor queued and running tasks', 'View run results and errors', 'Cancel pending runs', 'Automatic retry tracking'],
+  },
+  settings: {
+    icon: 'settings',
+    title: 'Settings',
+    description: 'Manage providers, API keys & orchestrator engine.',
+    features: ['Configure LLM providers', 'Manage API credentials', 'Tune orchestrator settings', 'Set up voice & embedding'],
+  },
+  projects: {
+    icon: 'folder',
+    title: 'Projects',
+    description: 'Organize your work into projects. Group agents, tasks, and schedules under a common scope.',
+    features: ['Create named projects with color badges', 'Assign agents and tasks to projects', 'Filter sidebar views by project', 'Global view when no filter is active'],
   },
 }
 
@@ -1016,7 +1038,7 @@ function DesktopEmptyState({ userName }: { userName: string | null }) {
           <span className="text-text-2">What would you like to do?</span>
         </h1>
         <p className="text-[15px] text-text-3 mb-12">
-          Create a new session to start chatting
+          Create a new chat to start chatting
         </p>
         <button
           onClick={() => setNewSessionOpen(true)}
@@ -1029,7 +1051,7 @@ function DesktopEmptyState({ userName }: { userName: string | null }) {
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          New Session
+          New Chat
         </button>
       </div>
     </div>

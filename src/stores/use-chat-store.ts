@@ -64,6 +64,10 @@ interface ChatState {
   retryLastMessage: () => Promise<void>
   sendHeartbeat: (sessionId: string) => Promise<void>
   stopStreaming: () => void
+
+  // Voice conversation
+  voiceConversationActive: boolean
+  onStreamEvent: ((event: { t: string; text?: string }) => void) | null
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -77,6 +81,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   lastUsage: null,
   ttsEnabled: false,
   toggleTts: () => set((s) => ({ ttsEnabled: !s.ttsEnabled })),
+  voiceConversationActive: false,
+  onStreamEvent: null,
 
   pendingFiles: [],
   addPendingFile: (f) => set((s) => ({ pendingFiles: [...s.pendingFiles, f] })),
@@ -135,6 +141,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       /cancelled by steer mode|stopped by user/i.test(msg || '')
 
     await streamChat(sessionId, text, imagePath, imageUrl, (event: SSEEvent) => {
+      // Forward events to voice conversation handler if active
+      get().onStreamEvent?.(event)
       if (event.t === 'd') {
         fullText += event.text || ''
         set({ streamText: fullText })
@@ -209,7 +217,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         streamingSessionId: null,
         streamText: '',
       }))
-      if (get().ttsEnabled) speak(fullText)
+      if (get().ttsEnabled && !get().voiceConversationActive) speak(fullText)
     } else {
       set({ streaming: false, streamingSessionId: null, streamText: '' })
     }

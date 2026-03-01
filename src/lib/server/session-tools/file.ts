@@ -44,10 +44,15 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
   if (canWriteFiles) {
     tools.push(
       tool(
-        async ({ filePath, content }) => {
+        async ({ filePath, content, encoding }) => {
           try {
             const resolved = safePath(bctx.cwd, filePath)
             fs.mkdirSync(path.dirname(resolved), { recursive: true })
+            if (encoding === 'base64') {
+              const buf = Buffer.from(content, 'base64')
+              fs.writeFileSync(resolved, buf)
+              return `File written: ${filePath} (${buf.length} bytes, binary)`
+            }
             fs.writeFileSync(resolved, content, 'utf-8')
             return `File written: ${filePath} (${content.length} bytes)`
           } catch (err: any) {
@@ -56,10 +61,11 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
         },
         {
           name: 'write_file',
-          description: 'Write content to a file in the session working directory. Creates directories if needed.',
+          description: 'Write content to a file in the session working directory. Creates directories if needed. For PDFs and styled reports, use the create_document tool instead. For other binary files (Excel, images, zip, etc.), set encoding to "base64" and pass base64-encoded content.',
           schema: z.object({
             filePath: z.string().describe('Relative path to the file'),
-            content: z.string().describe('The content to write'),
+            content: z.string().describe('The content to write. For binary files, this must be a base64-encoded string.'),
+            encoding: z.enum(['utf-8', 'base64']).optional().describe('Encoding of the content. Use "base64" for binary files like PDF, Excel, images, zip archives. Defaults to "utf-8" for plain text.'),
           }),
         },
       ),
@@ -223,6 +229,173 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
           description: 'Send a file to the user so they can view or download it in the chat. Works with images, videos, PDFs, documents, and any other file type. The file will appear inline for images/videos, or as a download link for other types.',
           schema: z.object({
             filePath: z.string().describe('Path to the file (relative to working directory, or absolute)'),
+          }),
+        },
+      ),
+    )
+  }
+
+  if (canSendFiles || canWriteFiles) {
+    // create_document: markdown → pdf / html / png / jpg
+    tools.push(
+      tool(
+        async ({ content, title, filename, format }) => {
+          try {
+            const fmt = format || 'pdf'
+            const { marked } = await import('marked')
+            const html = await marked.parse(content)
+            const safeTitle = (title || 'Document').replace(/</g, '&lt;')
+            const fullHtml = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${safeTitle}</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1a1a1a;line-height:1.6}
+h1{font-size:28px;border-bottom:2px solid #e5e7eb;padding-bottom:8px}
+h2{font-size:22px;margin-top:32px}
+h3{font-size:18px;margin-top:24px}
+pre{background:#f3f4f6;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px}
+code{background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:13px}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #d1d5db;padding:8px 12px;text-align:left}
+th{background:#f9fafb;font-weight:600}
+blockquote{border-left:4px solid #d1d5db;margin:16px 0;padding:8px 16px;color:#4b5563}
+img{max-width:100%}
+</style></head><body>${html}</body></html>`
+
+            const defaultBase = (title || 'document').replace(/[^a-zA-Z0-9_-]/g, '_')
+
+            if (fmt === 'html') {
+              const outName = filename || `${defaultBase}.html`
+              const resolved = safePath(bctx.cwd, outName)
+              fs.mkdirSync(path.dirname(resolved), { recursive: true })
+              fs.writeFileSync(resolved, fullHtml, 'utf-8')
+              return `HTML document created: ${outName} (${fullHtml.length} bytes)`
+            }
+
+            const { chromium } = await import('playwright')
+            const browser = await chromium.launch({ headless: true })
+            try {
+              const page = await browser.newPage()
+              await page.setContent(fullHtml, { waitUntil: 'networkidle' })
+
+              if (fmt === 'pdf') {
+                const outName = filename || `${defaultBase}.pdf`
+                const resolved = safePath(bctx.cwd, outName)
+                fs.mkdirSync(path.dirname(resolved), { recursive: true })
+                await page.pdf({ path: resolved, format: 'A4', margin: { top: '40px', bottom: '40px', left: '40px', right: '40px' }, printBackground: true })
+                return `PDF created: ${outName}`
+              }
+
+              // png or jpg screenshot
+              const ext = fmt === 'jpg' ? 'jpeg' : 'png'
+              const outName = filename || `${defaultBase}.${fmt}`
+              const resolved = safePath(bctx.cwd, outName)
+              fs.mkdirSync(path.dirname(resolved), { recursive: true })
+              await page.screenshot({ path: resolved, type: ext, fullPage: true })
+              const size = fs.statSync(resolved).size
+              return `Image created: ${outName} (${(size / 1024).toFixed(1)} KB)`
+            } finally {
+              await browser.close()
+            }
+          } catch (err: any) {
+            return `Error creating document: ${err.message}`
+          }
+        },
+        {
+          name: 'create_document',
+          description: 'Create a document from markdown content. Renders markdown with professional styling and outputs as PDF, HTML, or image. Use this instead of write_file for PDFs, reports, styled pages, or document screenshots. After creating, use send_file to deliver it to the user.',
+          schema: z.object({
+            content: z.string().describe('Markdown content for the document'),
+            title: z.string().optional().describe('Document title (shown in header and used for default filename)'),
+            filename: z.string().optional().describe('Output filename (defaults to title-based name with appropriate extension)'),
+            format: z.enum(['pdf', 'html', 'png', 'jpg']).optional().describe('Output format. "pdf" (default) for print-ready documents, "html" for web pages, "png"/"jpg" for images.'),
+          }),
+        },
+      ),
+    )
+
+    // create_spreadsheet: JSON data → xlsx or csv
+    tools.push(
+      tool(
+        async ({ data, headers, sheetName, filename, format }) => {
+          try {
+            const fmt = format || 'xlsx'
+            let rows: Record<string, unknown>[]
+            try {
+              rows = JSON.parse(data)
+              if (!Array.isArray(rows)) return 'Error: data must be a JSON array of objects'
+            } catch {
+              return 'Error: data is not valid JSON. Pass a JSON array of objects, e.g. [{"name":"Alice","age":30}]'
+            }
+
+            if (!rows.length) return 'Error: data array is empty'
+
+            // Resolve column headers: explicit headers, or keys from first row
+            const cols = headers?.length
+              ? headers
+              : Object.keys(rows[0] && typeof rows[0] === 'object' ? rows[0] : {})
+            if (!cols.length) return 'Error: could not determine column headers. Pass headers or use objects with keys.'
+
+            const defaultBase = (sheetName || 'spreadsheet').replace(/[^a-zA-Z0-9_-]/g, '_')
+
+            if (fmt === 'csv') {
+              const escapeCsv = (val: unknown): string => {
+                const s = val == null ? '' : String(val)
+                return s.includes(',') || s.includes('"') || s.includes('\n')
+                  ? `"${s.replace(/"/g, '""')}"`
+                  : s
+              }
+              const lines = [cols.map(escapeCsv).join(',')]
+              for (const row of rows) {
+                const r = Array.isArray(row) ? row : cols.map((c) => (row as Record<string, unknown>)[c])
+                lines.push(r.map(escapeCsv).join(','))
+              }
+              const outName = filename || `${defaultBase}.csv`
+              const resolved = safePath(bctx.cwd, outName)
+              fs.mkdirSync(path.dirname(resolved), { recursive: true })
+              fs.writeFileSync(resolved, lines.join('\n'), 'utf-8')
+              return `CSV created: ${outName} (${rows.length} rows, ${cols.length} columns)`
+            }
+
+            // xlsx via exceljs
+            const ExcelJS = await import('exceljs')
+            const workbook = new ExcelJS.default.Workbook()
+            const sheet = workbook.addWorksheet(sheetName || 'Sheet1')
+
+            sheet.columns = cols.map((c) => ({ header: c, key: c, width: Math.max(12, c.length + 4) }))
+            // Style header row
+            sheet.getRow(1).font = { bold: true }
+            sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } }
+
+            for (const row of rows) {
+              if (Array.isArray(row)) {
+                const obj: Record<string, unknown> = {}
+                cols.forEach((c, i) => { obj[c] = row[i] })
+                sheet.addRow(obj)
+              } else {
+                sheet.addRow(row)
+              }
+            }
+
+            const outName = filename || `${defaultBase}.xlsx`
+            const resolved = safePath(bctx.cwd, outName)
+            fs.mkdirSync(path.dirname(resolved), { recursive: true })
+            await workbook.xlsx.writeFile(resolved)
+            const size = fs.statSync(resolved).size
+            return `Excel spreadsheet created: ${outName} (${rows.length} rows, ${cols.length} columns, ${(size / 1024).toFixed(1)} KB)`
+          } catch (err: any) {
+            return `Error creating spreadsheet: ${err.message}`
+          }
+        },
+        {
+          name: 'create_spreadsheet',
+          description: 'Create an Excel (.xlsx) or CSV file from structured data. Pass data as a JSON array of objects. Use this for tables, reports, data exports, and any tabular data the user requests. After creating, use send_file to deliver it to the user.',
+          schema: z.object({
+            data: z.string().describe('JSON array of objects, e.g. [{"name":"Alice","score":95},{"name":"Bob","score":87}]'),
+            headers: z.array(z.string()).optional().describe('Column headers in display order. If omitted, keys from the first object are used.'),
+            sheetName: z.string().optional().describe('Worksheet name (default "Sheet1")'),
+            filename: z.string().optional().describe('Output filename (defaults to sheetName-based name with extension)'),
+            format: z.enum(['xlsx', 'csv']).optional().describe('Output format: "xlsx" (default) for Excel, "csv" for plain CSV.'),
           }),
         },
       ),

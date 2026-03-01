@@ -147,6 +147,7 @@ export async function handleSignalEvent(
     senderId: sender,
     senderName: envelope.sourceName || sender,
     text,
+    isGroup: !!groupId,
   }
 
   try {

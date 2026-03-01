@@ -9,8 +9,42 @@ import { toast } from 'sonner'
 import { ModelCombobox } from '@/components/shared/model-combobox'
 import type { ProviderType, ClaudeSkill } from '@/types'
 import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
+import { NATIVE_CAPABILITY_PROVIDER_IDS, NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 
-const NATIVE_CAPABILITY_PROVIDER_IDS = new Set<ProviderType>(['claude-cli', 'codex-cli', 'opencode-cli', 'openclaw'])
+const HB_PRESETS = [30, 60, 120, 300, 600, 1800, 3600] as const
+
+function formatHbDuration(sec: number): string {
+  if (sec >= 3600) {
+    const h = Math.floor(sec / 3600)
+    const m = Math.floor((sec % 3600) / 60)
+    return m > 0 ? `${h}h${m}m` : `${h}h`
+  }
+  if (sec >= 60) return `${Math.floor(sec / 60)}m`
+  return `${sec}s`
+}
+
+/** Parse a stored heartbeatInterval string or heartbeatIntervalSec number to a select-friendly string of seconds */
+function parseDurationToSec(interval: string | number | null | undefined, intervalSec: number | null | undefined): string {
+  if (intervalSec != null && Number.isFinite(intervalSec) && intervalSec > 0) {
+    // Snap to nearest preset if close, otherwise use raw value
+    const closest = HB_PRESETS.find((p) => p === Math.round(intervalSec))
+    if (closest) return String(closest)
+  }
+  if (typeof interval === 'number' && Number.isFinite(interval) && interval > 0) {
+    return String(Math.round(interval))
+  }
+  if (interval != null && typeof interval === 'string' && interval.trim()) {
+    const t = interval.trim().toLowerCase()
+    const n = Number(t)
+    if (Number.isFinite(n) && n > 0) return String(Math.round(n))
+    const m = t.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/)
+    if (m && (m[1] || m[2] || m[3])) {
+      const total = (m[1] ? parseInt(m[1]) * 3600 : 0) + (m[2] ? parseInt(m[2]) * 60 : 0) + (m[3] ? parseInt(m[3]) : 0)
+      if (total > 0) return String(total)
+    }
+  }
+  return '' // default
+}
 
 export function AgentSheet() {
   const open = useAppStore((s) => s.agentSheetOpen)
@@ -19,6 +53,8 @@ export function AgentSheet() {
   const setEditingId = useAppStore((s) => s.setEditingAgentId)
   const agents = useAppStore((s) => s.agents)
   const loadAgents = useAppStore((s) => s.loadAgents)
+  const projects = useAppStore((s) => s.projects)
+  const loadProjects = useAppStore((s) => s.loadProjects)
   const providers = useAppStore((s) => s.providers)
   const loadProviders = useAppStore((s) => s.loadProviders)
   const credentials = useAppStore((s) => s.credentials)
@@ -60,9 +96,12 @@ export function AgentSheet() {
   const [capInput, setCapInput] = useState('')
   const [ollamaMode, setOllamaMode] = useState<'local' | 'cloud'>('local')
   const [openclawEnabled, setOpenclawEnabled] = useState(false)
+  const [projectId, setProjectId] = useState<string | undefined>(undefined)
+  const [thinkingLevel, setThinkingLevel] = useState<'' | 'minimal' | 'low' | 'medium' | 'high'>('')
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(false)
-  const [heartbeatInterval, setHeartbeatInterval] = useState('')
+  const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
   const [heartbeatModel, setHeartbeatModel] = useState('')
+  const [heartbeatPrompt, setHeartbeatPrompt] = useState('')
   const [addingKey, setAddingKey] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyValue, setNewKeyValue] = useState('')
@@ -105,6 +144,7 @@ export function AgentSheet() {
       loadProviders()
       loadCredentials()
       loadSkills()
+      loadProjects()
       loadClaudeSkills()
       setTestStatus('idle')
       setTestMessage('')
@@ -130,9 +170,12 @@ export function AgentSheet() {
         setCapInput('')
         setOllamaMode(editing.credentialId && editing.provider === 'ollama' ? 'cloud' : 'local')
         setOpenclawEnabled(editing.provider === 'openclaw')
+        setProjectId(editing.projectId)
+        setThinkingLevel(editing.thinkingLevel || '')
         setHeartbeatEnabled(editing.heartbeatEnabled || false)
-        setHeartbeatInterval(editing.heartbeatInterval != null ? String(editing.heartbeatInterval) : '')
+        setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
         setHeartbeatModel(editing.heartbeatModel || '')
+        setHeartbeatPrompt(editing.heartbeatPrompt || '')
       } else {
         setName('')
         setDescription('')
@@ -154,9 +197,12 @@ export function AgentSheet() {
         setCapInput('')
         setOllamaMode('local')
         setOpenclawEnabled(false)
+        setProjectId(undefined)
+        setThinkingLevel('')
         setHeartbeatEnabled(false)
-        setHeartbeatInterval('')
+        setHeartbeatIntervalSec('')
         setHeartbeatModel('')
+        setHeartbeatPrompt('')
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,9 +290,13 @@ export function AgentSheet() {
       fallbackCredentialIds,
       platformAssignScope,
       capabilities,
+      projectId: projectId || undefined,
+      thinkingLevel: thinkingLevel || undefined,
       heartbeatEnabled,
-      heartbeatInterval: heartbeatInterval.trim() || null,
+      heartbeatInterval: heartbeatIntervalSec ? formatHbDuration(Number(heartbeatIntervalSec)) : null,
+      heartbeatIntervalSec: heartbeatIntervalSec ? Number(heartbeatIntervalSec) : null,
       heartbeatModel: heartbeatModel.trim() || null,
+      heartbeatPrompt: heartbeatPrompt.trim() || null,
     }
     if (editing) {
       await updateAgent(editing.id, data)
@@ -330,8 +380,7 @@ export function AgentSheet() {
 
   // Whether this provider needs a connection test before saving.
   // Only CLI providers (no remote connection) skip the test.
-  const CLI_ONLY_PROVIDERS: Set<ProviderType> = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
-  const needsTest = !providerNeedsKey && !CLI_ONLY_PROVIDERS.has(provider)
+  const needsTest = !providerNeedsKey && !NON_LANGGRAPH_PROVIDER_IDS.has(provider)
 
   const [saving, setSaving] = useState(false)
 
@@ -451,6 +500,46 @@ export function AgentSheet() {
         <p className="text-[11px] text-text-3/70 mt-1.5">Press Enter or comma to add. Other agents see these when deciding delegation.</p>
       </div>}
 
+      {/* Project */}
+      {Object.keys(projects).length > 0 && (
+        <div className="mb-8">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            Project <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+          </label>
+          <select
+            value={projectId || ''}
+            onChange={(e) => setProjectId(e.target.value || undefined)}
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          >
+            <option value="">None</option>
+            {Object.values(projects).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Thinking Level */}
+      <div className="mb-8">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Thinking Level <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+        </label>
+        <select
+          value={thinkingLevel}
+          onChange={(e) => setThinkingLevel(e.target.value as typeof thinkingLevel)}
+          className={inputClass}
+          style={{ fontFamily: 'inherit' }}
+        >
+          <option value="">None (default)</option>
+          <option value="minimal">Minimal — Direct and concise</option>
+          <option value="low">Low — Brief reasoning</option>
+          <option value="medium">Medium — Moderate analysis</option>
+          <option value="high">High — Deep, thorough reasoning</option>
+        </select>
+        <p className="text-[11px] text-text-3/70 mt-1.5">Controls reasoning depth. Anthropic models use extended thinking; OpenAI o-series uses reasoning_effort. Others get system prompt guidance.</p>
+      </div>
+
       {/* Heartbeat Configuration */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
@@ -467,14 +556,16 @@ export function AgentSheet() {
           <div className="space-y-4 mt-3">
             <div>
               <label className="block text-[12px] text-text-3/70 mb-1.5">Interval</label>
-              <input
-                type="text"
-                value={heartbeatInterval}
-                onChange={(e) => setHeartbeatInterval(e.target.value)}
-                placeholder="30s, 5m, 1h (default: 30m)"
+              <select
+                value={heartbeatIntervalSec}
+                onChange={(e) => setHeartbeatIntervalSec(e.target.value)}
                 className={inputClass}
-                style={{ fontFamily: 'inherit' }}
-              />
+              >
+                <option value="">Default (30m)</option>
+                {HB_PRESETS.map((sec) => (
+                  <option key={sec} value={String(sec)}>{formatHbDuration(sec)}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-[12px] text-text-3/70 mb-1.5">Model override <span className="text-text-3/50">(optional, cheaper model)</span></label>
@@ -484,6 +575,17 @@ export function AgentSheet() {
                 onChange={(e) => setHeartbeatModel(e.target.value)}
                 placeholder="e.g. gpt-4o-mini"
                 className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+            <div>
+              <label className="block text-[12px] text-text-3/70 mb-1.5">Instructions <span className="text-text-3/50">(what to do each tick)</span></label>
+              <textarea
+                value={heartbeatPrompt}
+                onChange={(e) => setHeartbeatPrompt(e.target.value)}
+                placeholder="Describe what this agent should do during heartbeat ticks..."
+                rows={4}
+                className={`${inputClass} resize-y min-h-[100px]`}
                 style={{ fontFamily: 'inherit' }}
               />
             </div>

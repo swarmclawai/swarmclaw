@@ -13,6 +13,11 @@ export interface ProviderHandler {
   streamChat: (opts: StreamChatOptions) => Promise<string>
 }
 
+export interface StreamChatUsage {
+  inputTokens: number
+  outputTokens: number
+}
+
 export interface StreamChatOptions {
   session: any
   message: string
@@ -22,6 +27,7 @@ export interface StreamChatOptions {
   write: (data: string) => void
   active: Map<string, any>
   loadHistory: (sessionId: string) => any[]
+  onUsage?: (usage: StreamChatUsage) => void
 }
 
 interface BuiltinProviderConfig extends ProviderInfo {

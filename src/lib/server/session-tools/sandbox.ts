@@ -160,5 +160,38 @@ export function buildSandboxTools(bctx: ToolBuildContext): StructuredToolInterfa
     ),
   )
 
+  // ---- openclaw_sandbox (CLI passthrough) -----------------------------------
+
+  const openclawSandboxPath = findBinaryOnPath('openclaw') || findBinaryOnPath('clawdbot')
+  if (openclawSandboxPath) {
+    tools.push(
+      tool(
+        async ({ code, explain }) => {
+          try {
+            const args = explain ? ['sandbox', 'explain', code] : ['sandbox', 'run', code]
+            const result = spawnSync(openclawSandboxPath, args, {
+              encoding: 'utf-8',
+              timeout: 60_000,
+              maxBuffer: MAX_OUTPUT,
+            })
+            const stdout = truncate((result.stdout || '').trim(), MAX_OUTPUT)
+            const stderr = truncate((result.stderr || '').trim(), MAX_OUTPUT)
+            return JSON.stringify({ exitCode: result.status ?? 0, stdout, stderr })
+          } catch (err: any) {
+            return JSON.stringify({ error: err.message })
+          }
+        },
+        {
+          name: 'openclaw_sandbox',
+          description: 'Execute or explain code through the OpenClaw CLI sandbox. CLI passthrough to `openclaw sandbox run|explain <code>`. Requires openclaw/clawdbot CLI on PATH.',
+          schema: z.object({
+            code: z.string().describe('Code to run or explain'),
+            explain: z.boolean().optional().describe('If true, explain the code instead of running it'),
+          }),
+        },
+      ),
+    )
+  }
+
   return tools
 }

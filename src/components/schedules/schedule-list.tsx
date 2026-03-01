@@ -12,6 +12,7 @@ export function ScheduleList({ inSidebar }: Props) {
   const schedules = useAppStore((s) => s.schedules)
   const loadSchedules = useAppStore((s) => s.loadSchedules)
   const setScheduleSheetOpen = useAppStore((s) => s.setScheduleSheetOpen)
+  const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
   const [search, setSearch] = useState('')
 
   useEffect(() => { loadSchedules() }, [])
@@ -20,10 +21,11 @@ export function ScheduleList({ inSidebar }: Props) {
     return Object.values(schedules)
       .filter((s) => {
         if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false
+        if (activeProjectFilter && s.projectId !== activeProjectFilter) return false
         return true
       })
       .sort((a, b) => b.createdAt - a.createdAt)
-  }, [schedules, search])
+  }, [schedules, search, activeProjectFilter])
 
   if (!filtered.length && !search) {
     return (

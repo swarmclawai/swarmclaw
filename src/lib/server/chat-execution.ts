@@ -9,9 +9,11 @@ import {
   loadSkills,
   loadSettings,
   loadUsage,
+  appendUsage,
   active,
 } from './storage'
 import { getProvider } from '@/lib/providers'
+import { estimateCost } from './cost'
 import { log } from './logger'
 import { logExecution } from './execution-log'
 import { streamAgentChat } from './stream-agent-chat'
@@ -22,10 +24,9 @@ import { getMemoryDb } from './memory-db'
 import { routeTaskIntent } from './capability-router'
 import { notify } from './ws-hub'
 import { resolveConcreteToolPolicyBlock, resolveSessionToolPolicy } from './tool-capability-policy'
-import type { MessageToolEvent, SSEEvent } from '@/types'
+import type { MessageToolEvent, SSEEvent, UsageRecord } from '@/types'
 import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from './provider-health'
-
-const CLI_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
+import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'
 
 interface SessionWithTools {
@@ -572,8 +573,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     kill: () => abortController.abort(),
   })
 
+  // Capture provider-reported usage for the direct (non-tools) path.
+  // Uses a mutable object because TS can't track callback mutations on plain variables.
+  const directUsage = { inputTokens: 0, outputTokens: 0, received: false }
+  const hasTools = !!sessionForRun.tools?.length && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
+
   try {
-    const hasTools = !!sessionForRun.tools?.length && !CLI_PROVIDER_IDS.has(providerType)
     // Heartbeat runs are self-contained — skip conversation history to avoid
     // blowing past the context window on long-lived sessions.
     const heartbeatHistory = isAutoRunNoHistory ? [] : undefined
@@ -601,6 +606,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           write: (raw: string) => parseAndEmit(raw),
           active,
           loadHistory: isAutoRunNoHistory ? () => [] : getSessionMessages,
+          onUsage: (u) => { directUsage.inputTokens = u.inputTokens; directUsage.outputTokens = u.outputTokens; directUsage.received = true },
         })
   } catch (err: any) {
     errorMessage = err?.message || String(err)
@@ -620,6 +626,34 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   if (!errorMessage) {
     markProviderSuccess(providerType)
+  }
+
+  // Record usage for the direct (non-tools) streamChat path.
+  // streamAgentChat already calls appendUsage internally for the tools path.
+  if (!hasTools && fullResponse && !errorMessage) {
+    const inputTokens = directUsage.received ? directUsage.inputTokens : Math.ceil(message.length / 4)
+    const outputTokens = directUsage.received ? directUsage.outputTokens : Math.ceil(fullResponse.length / 4)
+    const totalTokens = inputTokens + outputTokens
+    if (totalTokens > 0) {
+      const cost = estimateCost(sessionForRun.model, inputTokens, outputTokens)
+      const history = getSessionMessages(sessionId)
+      const usageRecord: UsageRecord = {
+        sessionId,
+        messageIndex: history.length,
+        model: sessionForRun.model,
+        provider: providerType,
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        estimatedCost: cost,
+        timestamp: Date.now(),
+      }
+      appendUsage(sessionId, usageRecord)
+      emit({
+        t: 'md',
+        text: JSON.stringify({ usage: { inputTokens, outputTokens, totalTokens, estimatedCost: cost } }),
+      })
+    }
   }
 
   const requestedToolNames = (!internal && source === 'chat')

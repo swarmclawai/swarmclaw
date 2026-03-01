@@ -21,9 +21,11 @@ export interface InboundMessage {
   senderId: string         // platform-specific user ID
   senderName: string       // display name
   text: string
+  isGroup?: boolean
   imageUrl?: string
   media?: InboundMedia[]
   replyToMessageId?: string
+  agentIdOverride?: string
 }
 
 /** A running connector instance */
@@ -50,6 +52,14 @@ export interface ConnectorInstance {
   authenticated?: boolean
   /** Whether the connector has existing saved credentials (WhatsApp only) */
   hasCredentials?: boolean
+  /** Rich messaging: send a reaction emoji to a message */
+  sendReaction?: (channelId: string, messageId: string, emoji: string) => Promise<void>
+  /** Rich messaging: edit a previously sent message */
+  editMessage?: (channelId: string, messageId: string, newText: string) => Promise<void>
+  /** Rich messaging: delete a message */
+  deleteMessage?: (channelId: string, messageId: string) => Promise<void>
+  /** Rich messaging: pin a message */
+  pinMessage?: (channelId: string, messageId: string) => Promise<void>
 }
 
 /** Platform-specific connector implementation */

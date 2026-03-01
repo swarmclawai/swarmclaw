@@ -104,39 +104,8 @@ function rowToEntry(row: Record<string, unknown>): MemoryEntry {
   }
 }
 
-// ---- Knowledge helpers (mirrors memory-db.ts exported functions) ----
-
-const MEMORY_FTS_STOP_WORDS = new Set([
-  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'how',
-  'i', 'if', 'in', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'this',
-  'to', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'who', 'with',
-  'you', 'your',
-])
-const MAX_FTS_QUERY_TERMS = 6
-const MAX_FTS_TERM_LENGTH = 48
-
-function buildFtsQuery(input: string): string {
-  const tokens = String(input || '')
-    .toLowerCase()
-    .match(/[a-z0-9][a-z0-9._:/-]*/g) || []
-  if (!tokens.length) return ''
-  const unique: string[] = []
-  const seen = new Set<string>()
-  for (const token of tokens) {
-    const term = token.slice(0, MAX_FTS_TERM_LENGTH)
-    if (term.length < 3) continue
-    if (MEMORY_FTS_STOP_WORDS.has(term)) continue
-    if (seen.has(term)) continue
-    seen.add(term)
-    unique.push(term)
-    if (unique.length >= MAX_FTS_QUERY_TERMS) break
-  }
-  if (unique.length === 1) {
-    return unique[0].length >= 5 ? `"${unique[0].replace(/"/g, '')}"` : ''
-  }
-  const selected = unique.slice(0, Math.min(4, MAX_FTS_QUERY_TERMS))
-  return selected.map((term) => `"${term.replace(/"/g, '')}"`).join(' AND ')
-}
+// ---- Knowledge helpers (re-exported from memory-db.ts) ----
+import { buildFtsQuery } from './memory-db'
 
 function addRawMemory(data: {
   agentId?: string | null

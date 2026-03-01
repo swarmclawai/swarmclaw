@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadSessions, saveSessions } from './storage'
 
 export type MailboxStatus = 'new' | 'ack'
@@ -58,7 +58,7 @@ export function sendMailboxEnvelope(input: {
     ? Math.max(0, Math.min(7 * 24 * 3600, Math.trunc(input.ttlSec)))
     : null
   const envelope: MailboxEnvelope = {
-    id: crypto.randomBytes(6).toString('hex'),
+    id: genId(6),
     type: (input.type || 'message').trim() || 'message',
     payload: String(input.payload || ''),
     fromSessionId: input.fromSessionId || null,

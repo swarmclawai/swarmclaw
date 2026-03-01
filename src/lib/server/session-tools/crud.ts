@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
 import path from 'path'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { spawnSync } from 'child_process'
 import * as cheerio from 'cheerio'
 import {
@@ -342,7 +342,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   })
                 }
               }
-              const newId = crypto.randomBytes(4).toString('hex')
+              const newId = genId()
               const entry = {
                 id: newId,
                 ...parsed,
@@ -565,7 +565,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
               const content = trimDocumentContent(extracted.text)
               if (!content) return 'Error: extracted document text is empty.'
 
-              const docId = crypto.randomBytes(6).toString('hex')
+              const docId = genId(6)
               const now = Date.now()
               const parsedMetadata = metadata && typeof metadata === 'string'
                 ? (() => {

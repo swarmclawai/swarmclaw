@@ -9,6 +9,8 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isWebhookTrigger = request.method === 'POST'
     && /^\/api\/webhooks\/[^/]+\/?$/.test(pathname)
+  const isConnectorWebhook = request.method === 'POST'
+    && /^\/api\/connectors\/[^/]+\/webhook\/?$/.test(pathname)
 
   // Only protect API routes (not auth, uploads served as static assets, or inbound webhooks)
   if (
@@ -16,6 +18,7 @@ export function proxy(request: NextRequest) {
     || pathname === '/api/auth'
     || pathname.startsWith('/api/uploads/')
     || isWebhookTrigger
+    || isConnectorWebhook
   ) {
     return NextResponse.next()
   }

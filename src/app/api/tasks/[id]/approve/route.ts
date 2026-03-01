@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { loadTasks, saveTasks, loadAgents } from '@/lib/server/storage'
+import { notFound } from '@/lib/server/collection-helpers'
 import { notify } from '@/lib/server/ws-hub'
 import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
 
@@ -10,7 +11,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const tasks = loadTasks()
   const task = tasks[id]
-  if (!task) return new NextResponse(null, { status: 404 })
+  if (!task) return notFound()
   if (!task.pendingApproval) {
     return NextResponse.json({ error: 'No pending approval on this task' }, { status: 400 })
   }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
+import { notFound } from '@/lib/server/collection-helpers'
 import { loadSchedules, saveSchedules, loadAgents, loadTasks, saveTasks } from '@/lib/server/storage'
 import { enqueueTask } from '@/lib/server/queue'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
@@ -14,7 +15,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params
   const schedules = loadSchedules()
   const schedule = schedules[id]
-  if (!schedule) return new NextResponse(null, { status: 404 })
+  if (!schedule) return notFound()
 
   const agents = loadAgents()
   const agent = agents[schedule.agentId]
@@ -64,7 +65,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     existingTask.validation = null
     prev.runNumber = schedule.runNumber
   } else {
-    taskId = crypto.randomBytes(4).toString('hex')
+    taskId = genId()
     tasks[taskId] = {
       id: taskId,
       title: `[Sched] ${schedule.name} (run #${schedule.runNumber})`,

@@ -21,6 +21,14 @@ const MIME_MAP: Record<string, string> = {
   '.jsx': 'text/plain',
   '.py': 'text/plain',
   '.sh': 'text/plain',
+  '.pdf': 'application/pdf',
+  '.csv': 'text/csv',
+  '.xml': 'application/xml',
+  '.zip': 'application/zip',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 }
 
 const MAX_SIZE = 10 * 1024 * 1024 // 10MB

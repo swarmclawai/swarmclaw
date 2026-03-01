@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 
 const MAX_LOG_CHARS = 200_000
@@ -99,7 +99,7 @@ function getShellCommand(command: string): { shell: string; args: string[] } {
 }
 
 export async function startManagedProcess(opts: StartProcessOptions): Promise<StartProcessResult> {
-  const id = crypto.randomBytes(8).toString('hex')
+  const id = genId(8)
   const timeoutMs = Math.max(1000, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   const yieldMs = Math.max(250, opts.yieldMs ?? DEFAULT_BACKGROUND_YIELD_MS)
   const startedAt = now()

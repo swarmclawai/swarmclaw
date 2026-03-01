@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadSchedules, saveSchedules, loadAgents, loadTasks, saveTasks } from './storage'
 import { enqueueTask } from './queue'
 import { CronExpressionParser } from 'cron-parser'
@@ -157,7 +157,7 @@ async function tick() {
       prev.runNumber = schedule.runNumber
     } else {
       // Create a new linked task (first run or previous task still in-flight)
-      taskId = crypto.randomBytes(4).toString('hex')
+      taskId = genId()
       tasks[taskId] = {
         id: taskId,
         title: `[Sched] ${schedule.name} (run #${schedule.runNumber})`,

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { spawn, spawnSync } from 'child_process'
 import { loadAgents, loadTasks, upsertTask } from '../storage'
 import { log } from '../logger'
@@ -640,7 +640,7 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
             }
             if (!target) return `Error: Agent "${targetAgentId}" not found. Use the agent directory in your system prompt to find valid agent IDs.`
 
-            const taskId = crypto.randomBytes(4).toString('hex')
+            const taskId = genId()
             const now = Date.now()
             const newTask = {
               id: taskId,
@@ -653,7 +653,7 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
               createdAt: now,
               updatedAt: now,
               comments: [{
-                id: crypto.randomBytes(4).toString('hex'),
+                id: genId(),
                 author: agents[ctx.agentId!]?.name || 'Agent',
                 agentId: ctx.agentId!,
                 text: `Delegated from ${agents[ctx.agentId!]?.name || ctx.agentId}`,

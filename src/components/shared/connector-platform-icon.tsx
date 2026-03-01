@@ -2,6 +2,7 @@ import type { Connector, ConnectorPlatform, Session } from '@/types'
 import { cn } from '@/lib/utils'
 import { BsMicrosoftTeams } from 'react-icons/bs'
 import {
+  SiApple,
   SiDiscord,
   SiGooglechat,
   SiMatrix,
@@ -17,6 +18,7 @@ export const CONNECTOR_PLATFORM_META: Record<ConnectorPlatform, { label: string;
   slack: { label: 'Slack', color: '#4A154B' },
   whatsapp: { label: 'WhatsApp', color: '#25D366' },
   openclaw: { label: 'OpenClaw', color: '#F97316' },
+  bluebubbles: { label: 'BlueBubbles', color: '#2E89FF' },
   signal: { label: 'Signal', color: '#3A76F0' },
   teams: { label: 'Teams', color: '#6264A7' },
   googlechat: { label: 'Google Chat', color: '#00AC47' },
@@ -62,6 +64,8 @@ export function ConnectorPlatformIcon({
       return <SiSlack size={size} className={className} />
     case 'whatsapp':
       return <SiWhatsapp size={size} className={className} />
+    case 'bluebubbles':
+      return <SiApple size={size} className={className} />
     case 'signal':
       return <SiSignal size={size} className={className} />
     case 'googlechat':

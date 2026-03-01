@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { NextResponse } from 'next/server'
 import { loadWebhooks, saveWebhooks } from '@/lib/server/storage'
 export const dynamic = 'force-dynamic'
@@ -19,7 +19,7 @@ export async function GET(_req: Request) {
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const webhooks = loadWebhooks()
-  const id = crypto.randomBytes(4).toString('hex')
+  const id = genId()
   const now = Date.now()
 
   webhooks[id] = {

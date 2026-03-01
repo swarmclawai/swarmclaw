@@ -63,6 +63,17 @@ function tryLoadIdentityFile(filePath: string): DeviceIdentity | null {
 }
 
 function loadOrCreateDeviceIdentity(): DeviceIdentity {
+  // 0. Check shared device token for cross-synced identity
+  try {
+    const { getSharedDeviceToken } = require('../server/openclaw-sync')
+    const sharedToken = getSharedDeviceToken()
+    if (sharedToken) {
+      // Shared token exists — the connector has already paired.
+      // Still need the keypair, so continue to identity resolution below.
+      // The token will be used during WS connect.
+    }
+  } catch { /* openclaw-sync not available */ }
+
   // 1. Prefer the openclaw CLI's identity — it's likely already paired with the gateway
   const cliIdentityPath = path.join(resolveCliStateDir(), 'identity', 'device.json')
   const cliIdentity = tryLoadIdentityFile(cliIdentityPath)

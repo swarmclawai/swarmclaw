@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadTasks, saveTasks, loadSettings } from '@/lib/server/storage'
 import { enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
@@ -54,7 +54,7 @@ export async function DELETE(req: Request) {
 
 export async function POST(req: Request) {
   const body = await req.json()
-  const id = crypto.randomBytes(4).toString('hex')
+  const id = genId()
   const now = Date.now()
   const tasks = loadTasks()
   const settings = loadSettings()

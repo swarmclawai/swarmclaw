@@ -55,6 +55,7 @@ const COMMAND_GROUPS = [
       cmd('create', 'POST', '/connectors', 'Create connector', { expectsJsonBody: true }),
       cmd('update', 'PUT', '/connectors/:id', 'Update connector', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/connectors/:id', 'Delete connector'),
+      cmd('webhook', 'POST', '/connectors/:id/webhook', 'Trigger connector webhook ingress', { expectsJsonBody: true }),
       cmd('start', 'PUT', '/connectors/:id', 'Start connector', {
         expectsJsonBody: true,
         defaultBody: { action: 'start' },
@@ -203,10 +204,30 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'openclaw',
+    description: 'OpenClaw discovery and sync',
+    commands: [
+      cmd('discover', 'GET', '/openclaw/discover', 'Discover OpenClaw gateways'),
+      cmd('directory', 'GET', '/openclaw/directory', 'List directory entries from running OpenClaw connectors'),
+      cmd('sync', 'POST', '/openclaw/sync', 'Run OpenClaw sync action', { expectsJsonBody: true }),
+    ],
+  },
+  {
     name: 'preview-server',
     description: 'Manage preview dev servers',
     commands: [
       cmd('manage', 'POST', '/preview-server', 'Start/stop/status/detect preview server', { expectsJsonBody: true }),
+    ],
+  },
+  {
+    name: 'projects',
+    description: 'Manage projects',
+    commands: [
+      cmd('list', 'GET', '/projects', 'List projects'),
+      cmd('get', 'GET', '/projects/:id', 'Get project by id'),
+      cmd('create', 'POST', '/projects', 'Create project', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/projects/:id', 'Update project', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/projects/:id', 'Delete project'),
     ],
   },
   {
@@ -360,6 +381,11 @@ const COMMAND_GROUPS = [
     description: 'Text-to-speech endpoint',
     commands: [
       cmd('speak', 'POST', '/tts', 'Generate TTS audio', {
+        expectsJsonBody: true,
+        responseType: 'binary',
+        bodyFlagMap: { text: 'text' },
+      }),
+      cmd('stream', 'POST', '/tts/stream', 'Generate streaming TTS audio', {
         expectsJsonBody: true,
         responseType: 'binary',
         bodyFlagMap: { text: 'text' },

@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { loadConnectors, saveConnectors } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
+import { notFound } from '@/lib/server/collection-helpers'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const connectors = loadConnectors()
   const connector = connectors[id]
-  if (!connector) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!connector) return notFound()
 
   // Merge runtime status and QR code
   try {
@@ -26,7 +27,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const body = await req.json()
   const connectors = loadConnectors()
   const connector = connectors[id]
-  if (!connector) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!connector) return notFound()
 
   // Handle start/stop/repair actions — these modify connector state internally,
   // so re-read from storage after to avoid overwriting with stale data
@@ -68,12 +69,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const connectors = loadConnectors()
-  if (!connectors[id]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!connectors[id]) return notFound()
 
   // Stop if running
   try {
     const { stopConnector } = await import('@/lib/server/connectors/manager')
     await stopConnector(id)
+  } catch { /* ignore */ }
+
+  // Clear persisted pairing state when connector is deleted.
+  try {
+    const { clearConnectorPairingState } = await import('@/lib/server/connectors/pairing')
+    clearConnectorPairingState(id)
   } catch { /* ignore */ }
 
   delete connectors[id]

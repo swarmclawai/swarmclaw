@@ -26,7 +26,7 @@ export function HeartbeatSection({ appSettings, patchSettings, inputClass }: Set
         `Stopped heartbeat on ${result.updatedSessions} session(s); cancelled ${result.cancelledQueued} queued run(s), aborted ${result.abortedRunning} running run(s).`,
       )
     } catch (err: any) {
-      setHeartbeatBulkNotice(err?.message || 'Failed to disable heartbeat for all sessions.')
+      setHeartbeatBulkNotice(err?.message || 'Failed to disable heartbeat for all agents.')
     } finally {
       setDisablingHeartbeats(false)
     }

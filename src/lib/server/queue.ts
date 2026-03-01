@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSchedules, saveSchedules, loadSessions, saveSessions, loadSettings } from './storage'
 import { notify } from './ws-hub'
 import { WORKSPACE_DIR } from './data-dir'
@@ -155,7 +155,11 @@ function notifyMainChatScheduleResult(task: BoardTask): void {
   const fallbackText = runSession ? latestAssistantText(runSession) : ''
 
   // Zod-validated structured extraction: one pass to get summary + all artifacts
-  const taskResult = extractTaskResult(runSession, task.result || fallbackText || null)
+  const taskResult = extractTaskResult(
+    runSession,
+    task.result || fallbackText || null,
+    { sinceTime: typeof task.startedAt === 'number' ? task.startedAt : null },
+  )
   const resultBody = formatResultBody(taskResult)
 
   const statusLabel = task.status === 'completed' ? 'completed' : 'failed'
@@ -224,7 +228,11 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
   const runSessionId = typeof task.sessionId === 'string' ? task.sessionId : ''
   const runSession = runSessionId ? sessions[runSessionId] : null
   const fallbackText = runSession ? latestAssistantText(runSession) : ''
-  const taskResult = extractTaskResult(runSession, task.result || fallbackText || null)
+  const taskResult = extractTaskResult(
+    runSession,
+    task.result || fallbackText || null,
+    { sinceTime: typeof task.startedAt === 'number' ? task.startedAt : null },
+  )
   const resultBody = formatResultBody(taskResult)
 
   const statusLabel = task.status === 'completed' ? 'completed' : 'failed'
@@ -374,7 +382,7 @@ export function validateCompletedTasksQueue() {
     task.updatedAt = now
     if (!task.comments) task.comments = []
     task.comments.push({
-      id: crypto.randomBytes(4).toString('hex'),
+      id: genId(),
       author: 'System',
       text: `Task auto-failed completed-queue validation.\n\n${validation.reasons.map((r) => `- ${r}`).join('\n')}`,
       createdAt: now,
@@ -413,7 +421,7 @@ function scheduleRetryOrDeadLetter(task: BoardTask, reason: string): 'retry' | '
     task.error = `Retry scheduled after failure: ${reason}`.slice(0, 500)
     if (!task.comments) task.comments = []
     task.comments.push({
-      id: crypto.randomBytes(4).toString('hex'),
+      id: genId(),
       author: 'System',
       text: `Attempt ${task.attempts}/${task.maxAttempts} failed. Retrying in ${delaySec}s.\n\nReason: ${reason}`,
       createdAt: now,
@@ -428,7 +436,7 @@ function scheduleRetryOrDeadLetter(task: BoardTask, reason: string): 'retry' | '
   task.error = `Dead-lettered after ${task.attempts}/${task.maxAttempts} attempts: ${reason}`.slice(0, 500)
   if (!task.comments) task.comments = []
   task.comments.push({
-    id: crypto.randomBytes(4).toString('hex'),
+    id: genId(),
     author: 'System',
     text: `Task moved to dead-letter after ${task.attempts}/${task.maxAttempts} attempts.\n\nReason: ${reason}`,
     createdAt: now,
@@ -610,7 +618,11 @@ export async function processNext() {
           applyTaskPolicyDefaults(t2[taskId])
           // Structured extraction: Zod-validated result with typed artifacts
           const runSessions = loadSessions()
-          const taskResult = extractTaskResult(runSessions[sessionId], result || null)
+          const taskResult = extractTaskResult(
+            runSessions[sessionId],
+            result || null,
+            { sinceTime: typeof t2[taskId].startedAt === 'number' ? t2[taskId].startedAt : null },
+          )
           const enrichedResult = formatResultBody(taskResult)
           t2[taskId].result = enrichedResult.slice(0, 4000) || null
           t2[taskId].updatedAt = Date.now()
@@ -636,7 +648,7 @@ export async function processNext() {
               updatedAt: now,
             }
             t2[taskId].comments!.push({
-              id: crypto.randomBytes(4).toString('hex'),
+              id: genId(),
               author: agent.name,
               agentId: agent.id,
               text: `Task completed.\n\n${result?.slice(0, 1000) || 'No summary provided.'}`,
@@ -647,7 +659,7 @@ export async function processNext() {
             const retryState = scheduleRetryOrDeadLetter(t2[taskId], failureReason)
             t2[taskId].completedAt = retryState === 'dead_lettered' ? null : t2[taskId].completedAt
             t2[taskId].comments!.push({
-              id: crypto.randomBytes(4).toString('hex'),
+              id: genId(),
               author: agent.name,
               agentId: agent.id,
               text: `Task failed validation and was not marked completed.\n\n${validation.reasons.map((r) => `- ${r}`).join('\n')}`,
@@ -739,7 +751,7 @@ export async function processNext() {
           const isRepeatError = lastComment?.agentId === agent.id && lastComment?.text.startsWith('Task failed')
           if (!isRepeatError) {
             t2[taskId].comments!.push({
-              id: crypto.randomBytes(4).toString('hex'),
+              id: genId(),
               author: agent.name,
               agentId: agent.id,
               text: 'Task failed — see error details above.',

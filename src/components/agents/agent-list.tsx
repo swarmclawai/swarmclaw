@@ -16,6 +16,7 @@ export function AgentList({ inSidebar }: Props) {
   const currentUser = useAppStore((s) => s.currentUser)
   const loadSessions = useAppStore((s) => s.loadSessions)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
+  const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'orchestrator' | 'agent'>('all')
 
@@ -41,10 +42,11 @@ export function AgentList({ inSidebar }: Props) {
         if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false
         if (filter === 'orchestrator' && !p.isOrchestrator) return false
         if (filter === 'agent' && p.isOrchestrator) return false
+        if (activeProjectFilter && p.projectId !== activeProjectFilter) return false
         return true
       })
       .sort((a, b) => b.updatedAt - a.updatedAt)
-  }, [agents, search, filter])
+  }, [agents, search, filter, activeProjectFilter])
 
   if (!filtered.length && !search) {
     return (

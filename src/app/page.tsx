@@ -10,6 +10,7 @@ import { AccessKeyGate } from '@/components/auth/access-key-gate'
 import { UserPicker } from '@/components/auth/user-picker'
 import { SetupWizard } from '@/components/auth/setup-wizard'
 import { AppLayout } from '@/components/layout/app-layout'
+import { useViewRouter } from '@/hooks/use-view-router'
 
 export default function Home() {
   const currentUser = useAppStore((s) => s.currentUser)
@@ -17,7 +18,6 @@ export default function Home() {
   const hydrated = useAppStore((s) => s._hydrated)
   const hydrate = useAppStore((s) => s.hydrate)
   const loadNetworkInfo = useAppStore((s) => s.loadNetworkInfo)
-  const sessions = useAppStore((s) => s.sessions)
   const loadSessions = useAppStore((s) => s.loadSessions)
   const loadSettings = useAppStore((s) => s.loadSettings)
 
@@ -107,29 +107,6 @@ export default function Home() {
     return () => { cancelled = true }
   }, [authenticated, currentUser])
 
-  // Keep __main__ session for backward compat — create if missing
-  useEffect(() => {
-    if (!authenticated || !currentUser) return
-    const sessionList = Object.values(sessions)
-    const mainSession = sessionList.find((s: any) => s.name === '__main__' && s.user === currentUser)
-    if (mainSession) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const mainId = `main-${currentUser}`
-        await api<any>('POST', '/sessions', {
-          id: mainId,
-          name: '__main__',
-          user: currentUser,
-          agentId: 'default',
-          heartbeatEnabled: true,
-        })
-        if (!cancelled) await loadSessions()
-      } catch { /* ignore */ }
-    })()
-    return () => { cancelled = true }
-  }, [authenticated, currentUser, sessions, loadSessions])
-
   // Check if first-run setup is needed
   useEffect(() => {
     if (!authenticated || !currentUser) return
@@ -168,6 +145,8 @@ export default function Home() {
     window.addEventListener('sc_auth_required', handler)
     return () => window.removeEventListener('sc_auth_required', handler)
   }, [])
+
+  useViewRouter()
 
   if (!hydrated || !authChecked) return null
   if (!authenticated) return <AccessKeyGate onAuthenticated={() => setAuthenticated(true)} />

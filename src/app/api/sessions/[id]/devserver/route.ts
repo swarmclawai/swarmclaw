@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import { loadSessions, devServers, localIP } from '@/lib/server/storage'
+import { notFound } from '@/lib/server/collection-helpers'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessions = loadSessions()
   const session = sessions[id]
-  if (!session) return new NextResponse(null, { status: 404 })
+  if (!session) return notFound()
 
   const { action } = await req.json()
 

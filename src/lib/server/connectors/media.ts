@@ -1,6 +1,6 @@
-import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
+import { genId } from '@/lib/id'
 import { UPLOAD_DIR } from '../storage'
 import type { InboundMedia, InboundMediaType } from './types'
 
@@ -94,7 +94,7 @@ export function saveInboundMediaBuffer(params: {
 
   const ext = extFromName(params.fileName) || extFromMime(params.mimeType) || '.bin'
   const base = safeBaseName(params.fileName)
-  const unique = crypto.randomBytes(4).toString('hex')
+  const unique = genId()
   const filename = `${params.connectorId}-${Date.now()}-${base}-${unique}${ext}`
   const localPath = path.join(UPLOAD_DIR, filename)
   fs.writeFileSync(localPath, params.buffer)

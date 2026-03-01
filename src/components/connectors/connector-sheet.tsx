@@ -114,12 +114,34 @@ const PLATFORMS: {
     tokenHelp: 'Required when your OpenClaw gateway is auth-protected',
     configFields: [
       { key: 'wsUrl', label: 'WebSocket URL', placeholder: 'ws://localhost:18789', help: 'OpenClaw gateway WebSocket endpoint (root URL, not /ws)' },
-      { key: 'sessionKey', label: 'Session Key Filter', placeholder: 'main', help: 'Optional. If set, only inbound events for this OpenClaw session are processed.' },
+      { key: 'sessionKey', label: 'Chat Key Filter', placeholder: 'main', help: 'Optional. If set, only inbound events for this OpenClaw session are processed.' },
       { key: 'nodeId', label: 'Client Label', placeholder: 'swarmclaw', help: 'Optional display label shown in OpenClaw presence metadata.' },
       { key: 'role', label: 'Gateway Role', placeholder: 'operator', help: 'Optional role claim for connect handshake. Default is operator.' },
       { key: 'scopes', label: 'Scopes (CSV)', placeholder: 'operator.read,operator.write', help: 'Optional comma-separated scopes for OpenClaw connect.' },
       { key: 'tickWatchdog', label: 'Tick Watchdog', placeholder: 'true', help: 'Set false to disable stale-tick reconnect watchdog.' },
       { key: 'tickIntervalMs', label: 'Tick Interval Override (ms)', placeholder: '30000', help: 'Optional watchdog interval override when policy tick is unavailable.' },
+    ],
+  },
+  {
+    id: 'bluebubbles',
+    label: 'BlueBubbles',
+    color: '#2E89FF',
+    setupSteps: [
+      'Run BlueBubbles server on your macOS host and enable the REST API',
+      'Copy the BlueBubbles server password',
+      'After saving the connector, point BlueBubbles webhook to /api/connectors/<connector-id>/webhook',
+      'Optionally set dmPolicy=pairing to require explicit sender approval for new DMs',
+    ],
+    tokenLabel: 'BlueBubbles Password',
+    tokenHelp: 'Server password used for /api/v1/ping and /api/v1/message/text',
+    configFields: [
+      { key: 'serverUrl', label: 'Server URL', placeholder: 'http://127.0.0.1:1234', help: 'BlueBubbles server URL (no trailing /api path needed)' },
+      { key: 'chatIds', label: 'Allowed Chat IDs', placeholder: 'iMessage;-;+15551234567', help: 'Optional comma-separated chat IDs/guid fragments. Leave empty for all chats.' },
+      { key: 'dmPolicy', label: 'DM Policy', placeholder: 'open | allowlist | pairing | disabled', help: 'Access policy for direct-message senders. Default: open.' },
+      { key: 'allowFrom', label: 'Allowed Sender IDs', placeholder: '+15551234567,test@example.com', help: 'Optional comma-separated sender IDs for allowlist/pairing mode.' },
+      { key: 'outboundTarget', label: 'Default Outbound Target', placeholder: 'iMessage;-;+15551234567', help: 'Used when proactive sends omit "to".' },
+      { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)' },
+      { key: 'timeoutMs', label: 'Request Timeout (ms)', placeholder: '10000', help: 'Optional BlueBubbles API timeout in milliseconds.' },
     ],
   },
   {
@@ -146,13 +168,14 @@ const PLATFORMS: {
     setupSteps: [
       'Create a Google Cloud project and enable the Google Chat API',
       'Create a service account and download the JSON key file',
-      'In Google Chat Admin, configure the bot with your app URL',
+      'In Google Chat Admin, configure event delivery to /api/connectors/<connector-id>/webhook',
       'Paste the full service account JSON as the bot token',
     ],
     tokenLabel: 'Service Account JSON',
     tokenHelp: 'Paste the full service account JSON key file contents',
     configFields: [
       { key: 'spaceIds', label: 'Space IDs', placeholder: 'spaces/AAAA123', help: 'Comma-separated Google Chat space IDs' },
+      { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)' },
     ],
   },
   {
@@ -163,13 +186,14 @@ const PLATFORMS: {
       'Register a bot in the Azure Bot Framework portal',
       'Note the Microsoft App ID and generate an App Secret',
       'Set up a public HTTPS endpoint for webhook delivery',
-      'Configure the messaging endpoint in Azure to your notify URL',
+      'After saving the connector, point Azure to /api/connectors/<connector-id>/webhook',
     ],
     tokenLabel: 'App Secret',
     tokenHelp: 'Microsoft App Secret from Azure Bot registration',
     configFields: [
       { key: 'appId', label: 'Microsoft App ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', help: 'Azure Bot Framework App ID' },
-      { key: 'notifyUrl', label: 'Notify URL', placeholder: 'https://your-server.com/api/teams/webhook', help: 'Public HTTPS endpoint for receiving messages' },
+      { key: 'notifyUrl', label: 'Notify URL', placeholder: 'https://your-server.com/api/connectors/<id>/webhook', help: 'Public HTTPS endpoint for receiving messages (informational)' },
+      { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)' },
     ],
   },
   {
@@ -366,7 +390,7 @@ export function ConnectorSheet() {
                 <div>
                   <div className={`text-[14px] font-600 ${platform === p.id ? 'text-text' : 'text-text-2'}`}>{p.label}</div>
                   <div className="text-[11px] text-text-3 mt-0.5">
-                    {p.id === 'whatsapp' ? 'QR code pairing' : p.id === 'openclaw' ? 'WebSocket gateway' : p.id === 'signal' ? 'signal-cli binary' : p.id === 'matrix' ? 'Access token' : p.id === 'googlechat' ? 'Service account' : p.id === 'teams' ? 'Bot Framework' : 'Bot token'}
+                    {p.id === 'whatsapp' ? 'QR code pairing' : p.id === 'openclaw' ? 'WebSocket gateway' : p.id === 'bluebubbles' ? 'iMessage bridge' : p.id === 'signal' ? 'signal-cli binary' : p.id === 'matrix' ? 'Access token' : p.id === 'googlechat' ? 'Service account' : p.id === 'teams' ? 'Bot Framework' : 'Bot token'}
                   </div>
                 </div>
               </button>
@@ -552,7 +576,7 @@ export function ConnectorSheet() {
 
       {/* Platform-specific config */}
       {platformConfig.configFields.map((field) => {
-        const isTagField = field.key === 'allowedJids' || field.key === 'channelIds' || field.key === 'chatIds'
+        const isTagField = field.key === 'allowedJids' || field.key === 'channelIds' || field.key === 'chatIds' || field.key === 'allowFrom'
         if (isTagField) {
           const tags = (config[field.key] || '').split(',').map((s) => s.trim()).filter(Boolean)
           return (
@@ -732,7 +756,7 @@ export function ConnectorSheet() {
           </div>
           <p className="text-[11px] text-text-3">
             {waHasCreds
-              ? 'Reconnecting with saved session, this should only take a moment'
+              ? 'Reconnecting with saved credentials, this should only take a moment'
               : 'Connecting to WhatsApp, QR code will appear shortly'}
           </p>
           {waHasCreds && (

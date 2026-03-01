@@ -22,11 +22,11 @@ const teams: PlatformConnector = {
     const conversationReferences = new Map<string, any>()
     let stopped = false
 
-    // Process incoming activities — called from the webhook endpoint
-    // POST /api/connectors/[id]/webhook should pipe req/res through this
-    const processActivity = async (req: any, res: any) => {
+    // Process incoming activities — called from the webhook endpoint.
+    // We use processActivityDirect so this works from Next.js route handlers.
+    const processActivity = async (activity: any) => {
       if (stopped) return
-      await adapter.processActivity(req, res, async (context: any) => {
+      await adapter.processActivityDirect(activity, async (context: any) => {
         if (context.activity.type !== 'message') return
         if (!context.activity.text) return
 
@@ -57,7 +57,7 @@ const teams: PlatformConnector = {
       })
     }
 
-    // Store processActivity on globalThis so the webhook route can access it
+    // Store processActivity on globalThis so the webhook route can access it.
     const handlerKey = `__swarmclaw_teams_handler_${connector.id}__`
     ;(globalThis as any)[handlerKey] = processActivity
 

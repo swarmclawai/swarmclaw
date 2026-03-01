@@ -59,6 +59,10 @@ export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInter
                 if (outbound) channelId = outbound
               }
               if (!channelId) {
+                const outbound = connector.config?.outboundTarget?.trim()
+                if (outbound) channelId = outbound
+              }
+              if (!channelId) {
                 const recentChannelId = getConnectorRecentChannelId(selected.id)
                 if (recentChannelId) channelId = recentChannelId
               }
@@ -67,7 +71,11 @@ export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInter
                 if (allowed.length) channelId = allowed[0]
               }
               if (!channelId) {
-                return `Error: no target recipient configured. Provide "to", or set connector config "outboundJid"/"allowedJids".`
+                const allowed = connector.config?.allowFrom?.split(',').map((s: string) => s.trim()).filter(Boolean) || []
+                if (allowed.length) channelId = allowed[0]
+              }
+              if (!channelId) {
+                return `Error: no target recipient configured. Provide "to", or set connector config "outboundJid"/"allowedJids"/"outboundTarget"/"allowFrom".`
               }
               if (connector.platform === 'whatsapp') {
                 channelId = normalizeWhatsAppTarget(channelId)
@@ -93,6 +101,45 @@ export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInter
               })
             }
 
+            if (action === 'message_react' || action === 'message_edit' || action === 'message_pin' || action === 'message_delete') {
+              if (!connectorId) return 'Error: connectorId is required for rich messaging actions.'
+              const { getRunningInstance } = await import('../connectors/manager')
+              const inst = getRunningInstance(connectorId)
+              if (!inst) return `Error: connector "${connectorId}" is not running.`
+
+              const targetChannel = to?.trim() || ''
+              const targetMessageId = message?.trim() || ''
+              if (!targetMessageId) return 'Error: message parameter (used as messageId) is required for rich messaging actions.'
+
+              try {
+                if (action === 'message_react') {
+                  if (!inst.sendReaction) return 'Error: this connector does not support reactions.'
+                  const emoji = caption?.trim() || '👍'
+                  await inst.sendReaction(targetChannel, targetMessageId, emoji)
+                  return JSON.stringify({ status: 'reacted', connectorId, messageId: targetMessageId, emoji })
+                }
+                if (action === 'message_edit') {
+                  if (!inst.editMessage) return 'Error: this connector does not support message editing.'
+                  const newText = caption?.trim() || ''
+                  if (!newText) return 'Error: caption (new text) is required for message_edit.'
+                  await inst.editMessage(targetChannel, targetMessageId, newText)
+                  return JSON.stringify({ status: 'edited', connectorId, messageId: targetMessageId })
+                }
+                if (action === 'message_delete') {
+                  if (!inst.deleteMessage) return 'Error: this connector does not support message deletion.'
+                  await inst.deleteMessage(targetChannel, targetMessageId)
+                  return JSON.stringify({ status: 'deleted', connectorId, messageId: targetMessageId })
+                }
+                if (action === 'message_pin') {
+                  if (!inst.pinMessage) return 'Error: this connector does not support message pinning.'
+                  await inst.pinMessage(targetChannel, targetMessageId)
+                  return JSON.stringify({ status: 'pinned', connectorId, messageId: targetMessageId })
+                }
+              } catch (err: any) {
+                return `Error: ${err.message || String(err)}`
+              }
+            }
+
             return 'Unknown action. Use list_running, list_targets, or send.'
           } catch (err: any) {
             return `Error: ${err.message || String(err)}`
@@ -100,11 +147,11 @@ export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInter
         },
         {
           name: 'connector_message_tool',
-          description: 'Send proactive outbound messages through running connectors (for example WhatsApp status updates). Supports listing running connectors/targets and sending text plus optional media (URLs or local file paths).',
+          description: 'Send proactive outbound messages and perform rich messaging actions through running connectors. Supports listing running connectors/targets, sending text/media, and rich messaging (react, edit, delete, pin). For rich actions: connectorId + message (as messageId) required; caption carries emoji for react or new text for edit.',
           schema: z.object({
-            action: z.enum(['list_running', 'list_targets', 'send']).describe('connector messaging action'),
+            action: z.enum(['list_running', 'list_targets', 'send', 'message_react', 'message_edit', 'message_delete', 'message_pin']).describe('connector messaging action'),
             connectorId: z.string().optional().describe('Optional connector id. Defaults to the first running connector (or first for selected platform).'),
-            platform: z.string().optional().describe('Optional platform filter (whatsapp, telegram, slack, discord).'),
+            platform: z.string().optional().describe('Optional platform filter (whatsapp, telegram, slack, discord, bluebubbles, etc.).'),
             to: z.string().optional().describe('Target channel id / recipient. For WhatsApp, phone number or full JID.'),
             message: z.string().optional().describe('Message text to send (required for send action).'),
             imageUrl: z.string().optional().describe('Optional public image URL to attach/send where platform supports media.'),

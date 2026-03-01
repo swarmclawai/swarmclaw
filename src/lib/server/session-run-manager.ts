@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import type { SSEEvent } from '@/types'
 import { active, loadSessions } from './storage'
 import { executeSessionChatTurn, type ExecuteChatTurnResult } from './chat-execution'
@@ -420,7 +420,7 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
     }
   }
 
-  const runId = crypto.randomBytes(8).toString('hex')
+  const runId = genId(8)
   const run: SessionRunRecord = {
     id: runId,
     sessionId: input.sessionId,

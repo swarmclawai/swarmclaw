@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { loadConnectors, saveConnectors } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import type { Connector } from '@/types'
@@ -27,7 +27,7 @@ export async function GET(_req: Request) {
 export async function POST(req: Request) {
   const body = await req.json()
   const connectors = loadConnectors()
-  const id = crypto.randomBytes(4).toString('hex')
+  const id = genId()
 
   const connector: Connector = {
     id,
@@ -48,7 +48,10 @@ export async function POST(req: Request) {
   notify('connectors')
 
   // Auto-start if connector has credentials (or is WhatsApp which uses QR)
-  const hasCredentials = connector.platform === 'whatsapp' || connector.platform === 'openclaw' || !!connector.credentialId
+  const hasCredentials = connector.platform === 'whatsapp'
+    || connector.platform === 'openclaw'
+    || (connector.platform === 'bluebubbles' && (!!connector.credentialId || !!connector.config.password))
+    || !!connector.credentialId
   if (hasCredentials && body.autoStart !== false) {
     try {
       const { startConnector } = await import('@/lib/server/connectors/manager')

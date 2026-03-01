@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
 import { z } from 'zod'
 import type { GoalContract, MessageToolEvent } from '@/types'
 import { loadSessions, saveSessions, loadAgents, saveAgents, loadTasks, saveTasks } from './storage'
@@ -151,7 +151,7 @@ function appendTimeline(
   const recent = state.timeline.at(-1)
   if (recent && recent.source === source && recent.note === normalizedNote && now - recent.at < 45_000) return
   state.timeline.push({
-    id: `tl_${crypto.randomBytes(4).toString('hex')}`,
+    id: `tl_${genId()}`,
     at: now,
     source,
     note: normalizedNote,
@@ -226,7 +226,7 @@ function normalizeState(raw: any, now = Date.now()): MainLoopState {
         const text = toOneLine(typeof e?.text === 'string' ? e.text : '')
         if (!text) return null
         return {
-          id: typeof e?.id === 'string' && e.id.trim() ? e.id.trim() : `evt_${crypto.randomBytes(3).toString('hex')}`,
+          id: typeof e?.id === 'string' && e.id.trim() ? e.id.trim() : `evt_${genId(3)}`,
           type: typeof e?.type === 'string' && e.type.trim() ? e.type.trim() : 'event',
           text,
           createdAt: typeof e?.createdAt === 'number' ? e.createdAt : now,
@@ -246,7 +246,7 @@ function normalizeState(raw: any, now = Date.now()): MainLoopState {
           ? entry.status
           : undefined
         return {
-          id: typeof entry?.id === 'string' && entry.id.trim() ? entry.id.trim() : `tl_${crypto.randomBytes(3).toString('hex')}`,
+          id: typeof entry?.id === 'string' && entry.id.trim() ? entry.id.trim() : `tl_${genId(3)}`,
           at: typeof entry?.at === 'number' ? entry.at : now,
           source: typeof entry?.source === 'string' && entry.source.trim() ? entry.source.trim() : 'event',
           note,
@@ -303,7 +303,7 @@ function appendEvent(state: MainLoopState, type: string, text: string, now = Dat
     return false
   }
   state.pendingEvents.push({
-    id: `evt_${crypto.randomBytes(4).toString('hex')}`,
+    id: `evt_${genId()}`,
     type,
     text: normalizedText,
     createdAt: now,
@@ -517,7 +517,7 @@ function upsertMissionTask(session: any, state: MainLoopState, now: number): str
   ].filter(Boolean).join('\n')
 
   if (!task) {
-    const id = crypto.randomBytes(4).toString('hex')
+    const id = genId()
     task = {
       id,
       title,

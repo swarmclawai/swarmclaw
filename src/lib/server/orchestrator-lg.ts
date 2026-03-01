@@ -11,10 +11,9 @@ import { buildChatModel } from './build-llm'
 import { getCheckpointSaver } from './langgraph-checkpoint'
 import { notify } from './ws-hub'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
-import crypto from 'crypto'
+import { genId } from '@/lib/id'
+import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 import type { Agent, TaskComment, MessageToolEvent } from '@/types'
-
-const NON_LANGGRAPH_PROVIDER_IDS = new Set(['claude-cli', 'codex-cli', 'opencode-cli'])
 
 function resolveCredential(credentialId: string | null | undefined): string | null {
   if (!credentialId) return null
@@ -92,12 +91,11 @@ function saveMessage(sessionId: string, role: 'user' | 'assistant', text: string
 async function executeSubTaskViaCli(agent: Agent, task: string, parentSessionId: string): Promise<string> {
   // Dynamic import to avoid circular deps
   const { callProvider } = await import('./orchestrator')
-  const crypto = await import('crypto')
   const { loadSessions: ls, saveSessions: ss } = await import('./storage')
 
   const sessions = ls()
   const parentSession = sessions[parentSessionId]
-  const childId = crypto.randomBytes(4).toString('hex')
+  const childId = genId()
   sessions[childId] = {
     id: childId,
     name: `[Agent] ${agent.name}: ${task.slice(0, 40)}`,
@@ -273,7 +271,7 @@ export async function executeLangGraphOrchestrator(
       if (!t) return `Task "${taskId}" not found.`
       if (!t.comments) t.comments = []
       const c: TaskComment = {
-        id: crypto.randomBytes(4).toString('hex'),
+        id: genId(),
         author: orchestrator.name,
         agentId: orchestrator.id,
         text: comment,
@@ -298,7 +296,7 @@ export async function executeLangGraphOrchestrator(
   const createTaskTool = tool(
     async ({ title, description: desc }) => {
       const tasks = loadTasks()
-      const id = crypto.randomBytes(4).toString('hex')
+      const id = genId()
       tasks[id] = {
         id,
         title,
@@ -532,6 +530,29 @@ export async function executeLangGraphOrchestrator(
         const toolCalls = lastMsg?.tool_calls || lastMsg?.additional_kwargs?.tool_calls || []
         const pendingCall = toolCalls[0]
         if (pendingCall) {
+          // Try OpenClaw approval bridge first when agent uses openclaw provider
+          try {
+            if (orchestrator.provider === 'openclaw') {
+              const { forwardApprovalToOpenClaw } = await import('./openclaw-approvals')
+              const toolName = pendingCall.name || pendingCall.function?.name || 'unknown'
+              const toolArgs = pendingCall.args || (pendingCall.function?.arguments ? JSON.parse(pendingCall.function.arguments) : {})
+              const decision = await forwardApprovalToOpenClaw({ toolName, args: toolArgs })
+              if (decision) {
+                if (decision.approved) {
+                  // OpenClaw approved — resume the graph instead of pausing
+                  console.log(`[orchestrator-lg] OpenClaw approved tool "${toolName}" — resuming graph`)
+                  // Don't set pendingApproval, let the loop continue
+                } else {
+                  console.log(`[orchestrator-lg] OpenClaw rejected tool "${toolName}": ${decision.reason || 'no reason'}`)
+                  // Fall through to SwarmClaw's pendingApproval UI
+                }
+              }
+              // If decision is null (socket unavailable), fall through to SwarmClaw UI
+            }
+          } catch {
+            // OpenClaw approval bridge not available — fall through
+          }
+
           const tasks = loadTasks()
           const t = tasks[taskId]
           if (t) {
@@ -668,7 +689,7 @@ export async function resumeLangGraphOrchestrator(
       if (!t) return `Task "${taskId}" not found.`
       if (!t.comments) t.comments = []
       t.comments.push({
-        id: crypto.randomBytes(4).toString('hex'),
+        id: genId(),
         author: orchestrator.name,
         agentId: orchestrator.id,
         text: comment,
@@ -688,7 +709,7 @@ export async function resumeLangGraphOrchestrator(
   const createTaskTool = tool(
     async ({ title, description: desc }) => {
       const tasks = loadTasks()
-      const id = crypto.randomBytes(4).toString('hex')
+      const id = genId()
       tasks[id] = {
         id, title, description: desc, status: 'backlog',
         agentId: orchestrator.id, sessionId: null, result: null, error: null,
