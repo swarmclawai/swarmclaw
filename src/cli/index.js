@@ -199,6 +199,7 @@ const COMMAND_GROUPS = [
         expectsJsonBody: true,
         waitEntityFrom: 'taskId',
       }),
+      cmd('graph', 'GET', '/orchestrator/graph', 'Get orchestrator graph structure'),
     ],
   },
   {
@@ -351,6 +352,7 @@ const COMMAND_GROUPS = [
       cmd('update', 'PUT', '/tasks/:id', 'Update task', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/tasks/:id', 'Delete task'),
       cmd('purge', 'DELETE', '/tasks', 'Bulk delete tasks', { expectsJsonBody: true }),
+      cmd('approve', 'POST', '/tasks/:id/approve', 'Approve or reject a pending tool execution', { expectsJsonBody: true }),
     ],
   },
   {

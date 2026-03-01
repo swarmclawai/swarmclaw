@@ -127,6 +127,7 @@ const COMMAND_GROUPS = {
       run: { description: 'Run orchestrator task now', method: 'POST', path: '/orchestrator/run', waitable: true },
       runs: { description: 'List queued/running/completed runs', method: 'GET', path: '/runs' },
       'run-get': { description: 'Get run by id', method: 'GET', path: '/runs/:id', params: ['id'] },
+      graph: { description: 'Get orchestrator graph structure', method: 'GET', path: '/orchestrator/graph' },
     },
   },
   plugins: {
@@ -243,6 +244,7 @@ const COMMAND_GROUPS = {
       update: { description: 'Update task', method: 'PUT', path: '/tasks/:id', params: ['id'] },
       delete: { description: 'Archive task', method: 'DELETE', path: '/tasks/:id', params: ['id'] },
       archive: { description: 'Archive task', method: 'DELETE', path: '/tasks/:id', params: ['id'] },
+      approve: { description: 'Approve or reject a pending tool execution', method: 'POST', path: '/tasks/:id/approve', params: ['id'] },
     },
   },
   webhooks: {
