@@ -58,6 +58,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     if (connector.platform === 'teams') {
       const handlerKey = `__swarmclaw_teams_handler_${connector.id}__`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic globalThis handler registered at runtime by connector
       const handler = (globalThis as any)[handlerKey]
       if (typeof handler !== 'function') {
         return NextResponse.json({ error: 'Teams connector is not running or not ready' }, { status: 409 })
@@ -68,6 +69,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     if (connector.platform === 'googlechat') {
       const handlerKey = `__swarmclaw_googlechat_handler_${connector.id}__`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic globalThis handler registered at runtime by connector
       const handler = (globalThis as any)[handlerKey]
       if (typeof handler !== 'function') {
         return NextResponse.json({ error: 'Google Chat connector is not running or not ready' }, { status: 409 })
@@ -81,6 +83,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     if (connector.platform === 'bluebubbles') {
       const handlerKey = `__swarmclaw_bluebubbles_handler_${connector.id}__`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic globalThis handler registered at runtime by connector
       const handler = (globalThis as any)[handlerKey]
       if (typeof handler !== 'function') {
         return NextResponse.json({ error: 'BlueBubbles connector is not running or not ready' }, { status: 409 })
@@ -93,7 +96,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     return NextResponse.json({ error: `Platform "${connector.platform}" does not support connector webhook ingress.` }, { status: 400 })
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Webhook processing failed' }, { status: 500 })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Webhook processing failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

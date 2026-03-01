@@ -131,8 +131,8 @@ describe('MCP tool block type wiring', () => {
       'utf-8',
     )
     assert.ok(src.includes('mcpServerIds'), 'index.ts should reference mcpServerIds')
-    assert.ok(src.includes('mcp_list_tools'), 'index.ts should define mcp_list_tools tool')
-    assert.ok(src.includes('mcp_call'), 'index.ts should define mcp_call tool')
+    assert.ok(src.includes('connectMcpServer'), 'index.ts should connect configured MCP servers')
+    assert.ok(src.includes('mcpToolsToLangChain'), 'index.ts should inject MCP tools dynamically')
   })
 })
 

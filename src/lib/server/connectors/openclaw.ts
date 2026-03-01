@@ -830,6 +830,7 @@ const openclaw: PlatformConnector = {
       // Cross-sync device token for provider identity resolution
       if (normalized) {
         try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { setSharedDeviceToken } = require('../openclaw-sync')
           setSharedDeviceToken(normalized)
         } catch { /* openclaw-sync not available */ }

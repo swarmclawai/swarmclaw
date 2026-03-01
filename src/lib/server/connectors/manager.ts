@@ -33,18 +33,25 @@ export function isNoMessage(text: string): boolean {
  *  Stored on globalThis to survive HMR reloads in dev mode —
  *  prevents duplicate sockets fighting for the same WhatsApp session. */
 const globalKey = '__swarmclaw_running_connectors__' as const
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const g = globalThis as any
 const running: Map<string, ConnectorInstance> =
-  (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = new Map<string, ConnectorInstance>())
+  g[globalKey] ?? (g[globalKey] = new Map<string, ConnectorInstance>())
 
 /** Most recent inbound channel per connector (used for proactive replies/default outbound target) */
 const lastInboundKey = '__swarmclaw_connector_last_inbound__' as const
 const lastInboundChannelByConnector: Map<string, string> =
-  (globalThis as any)[lastInboundKey] ?? ((globalThis as any)[lastInboundKey] = new Map<string, string>())
+  g[lastInboundKey] ?? (g[lastInboundKey] = new Map<string, string>())
+
+/** Last inbound message timestamp per connector (for presence indicators) */
+const lastInboundTimeKey = '__swarmclaw_connector_last_inbound_time__' as const
+const lastInboundTimeByConnector: Map<string, number> =
+  g[lastInboundTimeKey] ?? (g[lastInboundTimeKey] = new Map<string, number>())
 
 /** Per-connector lock to prevent concurrent start/stop operations */
 const lockKey = '__swarmclaw_connector_locks__' as const
 const locks: Map<string, Promise<void>> =
-  (globalThis as any)[lockKey] ?? ((globalThis as any)[lockKey] = new Map<string, Promise<void>>())
+  g[lockKey] ?? (g[lockKey] = new Map<string, Promise<void>>())
 
 /** Get platform implementation lazily */
 export async function getPlatform(platform: string) {
@@ -117,14 +124,16 @@ function parseConnectorCommand(text: string): ParsedConnectorCommand | null {
   }
 }
 
-function pushSessionMessage(session: any, role: 'user' | 'assistant', text: string): void {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pushSessionMessage(session: Record<string, any>, role: 'user' | 'assistant', text: string): void {
   if (!text.trim()) return
   if (!Array.isArray(session.messages)) session.messages = []
   session.messages.push({ role, text: text.trim(), time: Date.now() })
   session.lastActiveAt = Date.now()
 }
 
-function persistSession(session: any): void {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function persistSession(session: Record<string, any>): void {
   const sessions = loadSessions()
   sessions[session.id] = session
   saveSessions(sessions)
@@ -278,7 +287,8 @@ function enforceInboundAccessPolicy(connector: Connector, msg: InboundMessage): 
 async function handleConnectorCommand(params: {
   command: ParsedConnectorCommand
   connector: Connector
-  session: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  session: Record<string, any>
   msg: InboundMessage
   agentName: string
 }): Promise<string> {
@@ -303,8 +313,8 @@ async function handleConnectorCommand(params: {
 
   if (command.name === 'status') {
     const all = Array.isArray(session.messages) ? session.messages : []
-    const userCount = all.filter((m: any) => m?.role === 'user').length
-    const assistantCount = all.filter((m: any) => m?.role === 'assistant').length
+    const userCount = all.filter((m: { role?: string }) => m?.role === 'user').length
+    const assistantCount = all.filter((m: { role?: string }) => m?.role === 'assistant').length
     const toolsCount = Array.isArray(session.tools) ? session.tools.length : 0
     const statusText = [
       `Status for ${connector.platform} / ${connector.name}:`,
@@ -399,6 +409,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   if (msg?.channelId) {
     lastInboundChannelByConnector.set(connector.id, msg.channelId)
   }
+  lastInboundTimeByConnector.set(connector.id, Date.now())
 
   const agents = loadAgents()
   const effectiveAgentId = msg.agentIdOverride || connector.agentId
@@ -408,6 +419,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   // Log connector trigger
   const triggerSessionKey = `connector:${connector.id}:${msg.channelId}`
   const allSessions = loadSessions()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const existingSession = Object.values(allSessions).find((s: any) => s.name === triggerSessionKey)
   if (existingSession) {
     logExecution(existingSession.id, 'trigger', `${msg.platform} message from ${msg.senderName}`, {
@@ -437,6 +449,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   // Find or create a session keyed by platform + channel
   const sessionKey = `connector:${connector.id}:${msg.channelId}`
   const sessions = loadSessions()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let session = Object.values(sessions).find((s: any) => s.name === sessionKey)
   if (!session) {
     const id = genId()
@@ -586,9 +599,10 @@ The test: would a thoughtful friend feel compelled to type something back? If no
       // Use finalResponse for connectors — strips intermediate planning/tool-use text
       fullText = result.finalResponse
       console.log(`[connector] streamAgentChat returned ${result.fullText.length} chars total, ${fullText.length} chars final`)
-    } catch (err: any) {
-      console.error(`[connector] streamAgentChat error:`, err.message || err)
-      return `[Error] ${err.message}`
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[connector] streamAgentChat error:`, message)
+      return `[Error] ${message}`
     }
   } else {
     // Use the provider directly
@@ -726,10 +740,10 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
     notify('connectors')
 
     console.log(`[connector] Started ${connector.platform} connector: ${connector.name}`)
-  } catch (err: any) {
+  } catch (err: unknown) {
     connector.status = 'error'
     connector.isEnabled = false
-    connector.lastError = err.message
+    connector.lastError = err instanceof Error ? err.message : String(err)
     connector.updatedAt = Date.now()
     connectors[connectorId] = connector
     saveConnectors(connectors)
@@ -818,8 +832,8 @@ export async function autoStartConnectors(): Promise<void> {
       try {
         console.log(`[connector] Auto-starting ${connector.platform} connector: ${connector.name}`)
         await startConnector(connector.id)
-      } catch (err: any) {
-        console.error(`[connector] Failed to auto-start ${connector.name}:`, err.message)
+      } catch (err: unknown) {
+        console.error(`[connector] Failed to auto-start ${connector.name}:`, err instanceof Error ? err.message : err)
       }
     }
   }
@@ -876,6 +890,14 @@ export function listRunningConnectors(platform?: string): Array<{
 /** Get the most recent inbound channel id seen for a connector */
 export function getConnectorRecentChannelId(connectorId: string): string | null {
   return lastInboundChannelByConnector.get(connectorId) || null
+}
+
+/** Get presence info for a connector */
+export function getConnectorPresence(connectorId: string): { lastMessageAt: number | null; channelId: string | null } {
+  return {
+    lastMessageAt: lastInboundTimeByConnector.get(connectorId) ?? null,
+    channelId: lastInboundChannelByConnector.get(connectorId) ?? null,
+  }
 }
 
 /** Get a running connector instance (internal use for rich messaging). */

@@ -44,7 +44,7 @@ export function TaskBoard() {
       <div className="flex items-center justify-between px-8 pt-6 pb-4 shrink-0">
         <div>
           <h1 className="font-display text-[28px] font-800 tracking-[-0.03em]">Task Board</h1>
-          <p className="text-[13px] text-text-3 mt-1">Create tasks and assign orchestrators to run them sequentially</p>
+          <p className="text-[13px] text-text-3 mt-1">Create tasks and assign agents to run them</p>
         </div>
         <div className="flex items-center gap-3">
           <select

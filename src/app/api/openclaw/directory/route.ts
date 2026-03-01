@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const { listRunningConnectors, getRunningInstance } = await import('@/lib/server/connectors/manager')
+    const { listRunningConnectors } = await import('@/lib/server/connectors/manager')
     const openclawConnectors = listRunningConnectors('openclaw')
 
     if (!openclawConnectors.length) {
@@ -20,7 +20,8 @@ export async function GET() {
       })),
       note: 'Directory listing requires OpenClaw gateway directory.list RPC support.',
     })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Directory listing failed' }, { status: 500 })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Directory listing failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

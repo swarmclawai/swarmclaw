@@ -34,11 +34,22 @@ export function Avatar({ user, size = 'md' }: Props) {
   )
 }
 
-export function AiAvatar({ size = 'md' }: { size?: 'sm' | 'md' }) {
+export type AiMood = 'idle' | 'thinking' | 'tool' | 'error' | 'success'
+
+const moodAnimClass: Record<AiMood, string> = {
+  idle: '',
+  thinking: 'ai-mood-pulse',
+  tool: 'ai-mood-glow',
+  error: 'ai-mood-shake',
+  success: 'ai-mood-bounce',
+}
+
+export function AiAvatar({ size = 'md', mood }: { size?: 'sm' | 'md'; mood?: AiMood }) {
   const s = size === 'sm' ? 'w-6 h-6' : 'w-8 h-8'
   const iconSize = size === 'sm' ? 12 : 16
+  const animCls = mood ? moodAnimClass[mood] : ''
   return (
-    <div className={`${s} rounded-[8px] bg-accent-soft flex items-center justify-center shrink-0`}>
+    <div className={`${s} rounded-[8px] bg-accent-soft flex items-center justify-center shrink-0 ${animCls}`}>
       <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" className="text-accent-bright">
         <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"
           fill="currentColor" />

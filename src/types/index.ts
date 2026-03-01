@@ -15,6 +15,8 @@ export interface Message {
   toolEvents?: MessageToolEvent[]
   kind?: 'chat' | 'heartbeat' | 'system'
   suppressed?: boolean
+  bookmarked?: boolean
+  suggestions?: string[]
 }
 
 export type ProviderType = 'claude-cli' | 'codex-cli' | 'opencode-cli' | 'openai' | 'ollama' | 'anthropic' | 'openclaw' | 'google' | 'deepseek' | 'groq' | 'together' | 'mistral' | 'xai' | 'fireworks'
@@ -61,6 +63,7 @@ export interface Session {
   createdAt: number
   lastActiveAt: number
   active?: boolean
+  mainSession?: boolean
   sessionType?: SessionType
   agentId?: string | null
   parentSessionId?: string | null
@@ -109,6 +112,7 @@ export interface Session {
   file?: string | null
   queuedCount?: number
   currentRunId?: string | null
+  conversationTone?: string
 }
 
 export type Sessions = Record<string, Session>
@@ -178,7 +182,7 @@ export interface MarketplacePlugin {
 }
 
 export interface SSEEvent {
-  t: 'd' | 'md' | 'r' | 'done' | 'err' | 'tool_call' | 'tool_result'
+  t: 'd' | 'md' | 'r' | 'done' | 'err' | 'tool_call' | 'tool_result' | 'status'
   text?: string
   toolName?: string
   toolInput?: string
@@ -535,6 +539,8 @@ export interface Connector {
   authenticated?: boolean
   /** WhatsApp has stored credentials from previous pairing (runtime only) */
   hasCredentials?: boolean
+  /** Connector presence info (runtime only) */
+  presence?: { lastMessageAt?: number | null; channelId?: string | null }
   createdAt: number
   updatedAt: number
 }

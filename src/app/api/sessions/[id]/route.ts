@@ -3,6 +3,7 @@ import { loadSessions, saveSessions, deleteSession, active, loadAgents } from '@
 import { notFound } from '@/lib/server/collection-helpers'
 import { enqueueSessionRun } from '@/lib/server/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import { ensureMainSessionFlag, isProtectedMainSession } from '@/lib/server/main-session'
 
 function buildSessionAwakeningPrompt(user: string | null | undefined): string {
   const displayName = typeof user === 'string' && user.trim() ? user.trim() : 'there'
@@ -22,6 +23,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const updates = await req.json()
   const sessions = loadSessions()
   if (!sessions[id]) return notFound()
+  const wasProtectedMain = isProtectedMainSession(sessions[id])
   const hadMessagesBefore = Array.isArray(sessions[id].messages) && sessions[id].messages.length > 0
 
   const agentIdUpdateProvided = updates.agentId !== undefined
@@ -33,7 +35,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   const linkedAgent = nextAgentId ? loadAgents()[nextAgentId] : null
 
-  if (updates.name !== undefined) sessions[id].name = updates.name
+  if (updates.name !== undefined) {
+    const nextName = typeof updates.name === 'string' ? updates.name.trim() : String(updates.name || '')
+    if (wasProtectedMain && nextName !== '__main__') {
+      return new NextResponse('Cannot rename main chat session', { status: 400 })
+    }
+    sessions[id].name = updates.name
+  }
   if (updates.cwd !== undefined) sessions[id].cwd = updates.cwd
   if (updates.provider !== undefined) sessions[id].provider = updates.provider
   else if (agentIdUpdateProvided && linkedAgent?.provider) sessions[id].provider = linkedAgent.provider
@@ -62,8 +70,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (updates.heartbeatIntervalSec !== undefined) sessions[id].heartbeatIntervalSec = updates.heartbeatIntervalSec
   if (updates.pinned !== undefined) sessions[id].pinned = !!updates.pinned
   if (!Array.isArray(sessions[id].messages)) sessions[id].messages = []
+  ensureMainSessionFlag(sessions[id])
 
-  const shouldKickoffAwakening = sessions[id].name === '__main__'
+  const shouldKickoffAwakening = isProtectedMainSession(sessions[id])
     && agentIdUpdateProvided
     && !!sessions[id].agentId
     && !hadMessagesBefore
@@ -92,7 +101,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessions = loadSessions()
-  if (sessions[id]?.name === '__main__') {
+  if (isProtectedMainSession(sessions[id])) {
     return new NextResponse('Cannot delete main chat session', { status: 403 })
   }
   if (active.has(id)) {

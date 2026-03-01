@@ -5,6 +5,8 @@ import os from 'os'
 import Database from 'better-sqlite3'
 
 import { DATA_DIR, WORKSPACE_DIR } from './data-dir'
+import type { Message } from '@/types'
+import { ensureMainSessionFlag } from './main-session'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
 // Ensure directories exist
@@ -13,9 +15,12 @@ for (const dir of [DATA_DIR, UPLOAD_DIR, WORKSPACE_DIR]) {
 }
 
 // --- SQLite Database ---
-const DB_PATH = path.join(DATA_DIR, 'swarmclaw.db')
+const IS_BUILD_BOOTSTRAP = process.env.SWARMCLAW_BUILD_MODE === '1'
+const DB_PATH = IS_BUILD_BOOTSTRAP ? ':memory:' : path.join(DATA_DIR, 'swarmclaw.db')
 const db = new Database(DB_PATH)
-db.pragma('journal_mode = WAL')
+if (!IS_BUILD_BOOTSTRAP) {
+  db.pragma('journal_mode = WAL')
+}
 db.pragma('foreign_keys = ON')
 
 const collectionCacheKey = '__swarmclaw_storage_collection_cache__' as const
@@ -243,10 +248,12 @@ function migrateFromJson() {
   console.log('[storage] Migration complete. JSON files preserved as backup.')
 }
 
-migrateFromJson()
+if (!IS_BUILD_BOOTSTRAP) {
+  migrateFromJson()
+}
 
 // Seed default agent if agents table is empty
-{
+if (!IS_BUILD_BOOTSTRAP) {
   const defaultStarterTools = [
     'memory',
     'files',
@@ -305,6 +312,7 @@ Be concise and helpful. When users ask how to do something, guide them to the sp
       soul: '',
       isOrchestrator: false,
       tools: defaultStarterTools,
+      heartbeatEnabled: true,
       platformAssignScope: 'all',
       skillIds: [],
       subAgentIds: [],
@@ -341,10 +349,12 @@ function loadEnv() {
     })
   }
 }
-loadEnv()
+if (!IS_BUILD_BOOTSTRAP) {
+  loadEnv()
+}
 
 // Auto-generate CREDENTIAL_SECRET if missing
-if (!process.env.CREDENTIAL_SECRET) {
+if (!IS_BUILD_BOOTSTRAP && !process.env.CREDENTIAL_SECRET) {
   const secret = crypto.randomBytes(32).toString('hex')
   const envPath = path.join(process.cwd(), '.env.local')
   fs.appendFileSync(envPath, `\nCREDENTIAL_SECRET=${secret}\n`)
@@ -354,7 +364,7 @@ if (!process.env.CREDENTIAL_SECRET) {
 
 // Auto-generate ACCESS_KEY if missing (used for simple auth)
 const SETUP_FLAG = path.join(DATA_DIR, '.setup_pending')
-if (!process.env.ACCESS_KEY) {
+if (!IS_BUILD_BOOTSTRAP && !process.env.ACCESS_KEY) {
   const key = crypto.randomBytes(16).toString('hex')
   const envPath = path.join(process.cwd(), '.env.local')
   fs.appendFileSync(envPath, `\nACCESS_KEY=${key}\n`)
@@ -384,7 +394,31 @@ export function markSetupComplete(): void {
 
 // --- Sessions ---
 export function loadSessions(): Record<string, any> {
-  return loadCollection('sessions')
+  const sessions = loadCollection('sessions')
+  const agents = loadCollection('agents')
+  let changed = false
+
+  for (const [id, session] of Object.entries(sessions)) {
+    if (!session || typeof session !== 'object') continue
+
+    if (typeof session.id !== 'string' || !session.id.trim()) {
+      session.id = id
+      changed = true
+    }
+
+    const beforeMainFlag = session.mainSession === true
+    ensureMainSessionFlag(session)
+    if (!beforeMainFlag && session.mainSession === true) changed = true
+
+    const agentId = typeof session.agentId === 'string' ? session.agentId.trim() : ''
+    if (agentId && !Object.prototype.hasOwnProperty.call(agents, agentId)) {
+      session.agentId = null
+      changed = true
+    }
+  }
+
+  if (changed) saveCollection('sessions', sessions)
+  return sessions
 }
 
 export function saveSessions(s: Record<string, any>) {
@@ -527,12 +561,14 @@ export async function getSecret(key: string): Promise<{
   if (!needle) return null
 
   const secrets = loadSecrets()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const matches = Object.values(secrets).find((secret: any) => {
     if (!secret || typeof secret !== 'object') return false
     const id = typeof secret.id === 'string' ? secret.id.toLowerCase() : ''
     const name = typeof secret.name === 'string' ? secret.name.toLowerCase() : ''
     const service = typeof secret.service === 'string' ? secret.service.toLowerCase() : ''
     return id === needle || name === needle || service === needle
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }) as any | undefined
 
   if (!matches) return null
@@ -690,7 +726,7 @@ export function appendWebhookLog(id: string, entry: any) {
   upsertCollectionItem('webhook_logs', id, entry)
 }
 
-export function getSessionMessages(sessionId: string): any[] {
+export function getSessionMessages(sessionId: string): Message[] {
   const stmt = db.prepare('SELECT data FROM sessions WHERE id = ?')
   const row = stmt.get(sessionId) as { data: string } | undefined
   if (!row) return []

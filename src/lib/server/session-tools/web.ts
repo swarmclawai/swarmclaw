@@ -73,8 +73,8 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             return results.length > 0
               ? JSON.stringify(results, null, 2)
               : 'No results found.'
-          } catch (err: any) {
-            return `Error searching web: ${err.message}`
+          } catch (err: unknown) {
+            return `Error searching web: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -111,8 +111,8 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
               .replace(/\s+/g, ' ')
               .trim()
             return truncate(text, MAX_OUTPUT)
-          } catch (err: any) {
-            return `Error fetching URL: ${err.message}`
+          } catch (err: unknown) {
+            return `Error fetching URL: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -316,8 +316,8 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
               ? params.saveTo.trim()
               : undefined
             return await callMcpTool(mcpTool, args, { saveTo })
-          } catch (err: any) {
-            return `Error: ${err.message}`
+          } catch (err: unknown) {
+            return `Error: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -368,8 +368,8 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
                 return `Error (exit ${result.status}): ${stderr || stdout || 'unknown error'}`
               }
               return truncate(stdout || '(no output)', MAX_OUTPUT)
-            } catch (err: any) {
-              return `Error: ${err.message}`
+            } catch (err: unknown) {
+              return `Error: ${err instanceof Error ? err.message : String(err)}`
             }
           },
           {

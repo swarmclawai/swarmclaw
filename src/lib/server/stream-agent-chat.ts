@@ -10,6 +10,7 @@ import { loadRuntimeSettings, getAgentLoopRecursionLimit } from './runtime-setti
 import { getMemoryDb } from './memory-db'
 import { logExecution } from './execution-log'
 import type { Session, Message, UsageRecord } from '@/types'
+import { extractSuggestions } from './suggestions'
 
 interface StreamAgentChatOpts {
   session: Session
@@ -111,10 +112,10 @@ function buildAgenticExecutionPolicy(opts: {
       ? 'When coordinating platform work, inspect existing sessions and avoid duplicating active efforts.'
       : '',
     hasDelegationTool
-      ? `For substantial coding/build/refactor/test requests, prefer CLI delegation first using this order: ${delegationOrder.join(' -> ')}.`
+      ? `For multi-file coding tasks, deep refactors, or complex test suites, prefer CLI delegation using this order: ${delegationOrder.join(' -> ')}.`
       : '',
     hasDelegationTool
-      ? 'Use direct shell/file tool loops yourself mainly for small edits, quick verification, or when delegation tools are unavailable/failing.'
+      ? 'For single commands (start/stop servers, install deps, run scripts, git operations, process management), use \`execute_command\` directly — do NOT delegate these. Delegation is for tasks that need deep code understanding across multiple files, not for running one shell command.'
       : '',
     opts.enabledTools.includes('memory')
       ? 'Memory is active and required for long-horizon work: before major tasks, run memory_tool search/list for relevant prior work; after each meaningful step, store concise reusable notes (what changed, where it lives, constraints, next step). Treat memory as shared context plus your own agent notes, not as user-owned personal profile data.'
@@ -345,6 +346,16 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       )
     }
   }
+
+  stateModifierParts.push(
+    [
+      '## Follow-up Suggestions',
+      'At the end of every response, include a <suggestions> block with exactly 3 short',
+      'follow-up prompts the user might want to send next, as a JSON array. Keep each under 60 chars.',
+      'Make them contextual to what you just said. Example:',
+      '<suggestions>["Set up a Discord connector", "Create a research agent", "Show the task board"]</suggestions>',
+    ].join('\n'),
+  )
 
   stateModifierParts.push(
     buildAgenticExecutionPolicy({
@@ -606,6 +617,13 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     if (signal) signal.removeEventListener('abort', abortFromSignal)
   }
 
+  // Extract LLM-generated suggestions from the response and strip the tag
+  const extracted = extractSuggestions(fullText)
+  fullText = extracted.clean
+  if (extracted.suggestions) {
+    write(`data: ${JSON.stringify({ t: 'md', text: JSON.stringify({ suggestions: extracted.suggestions }) })}\n\n`)
+  }
+
   // Track cost
   const totalTokens = totalInputTokens + totalOutputTokens
   if (totalTokens > 0) {
@@ -647,8 +665,10 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   // If tools were called, finalResponse is the text from the last LLM turn only.
   // Fall back to fullText if the last segment is empty (e.g. agent ended on a tool call
   // with no summary text).
+  // Strip suggestions tag from lastSegment too (connector delivery)
+  const cleanLastSegment = extractSuggestions(lastSegment).clean
   const finalResponse = hasToolCalls
-    ? (lastSegment.trim() || fullText)
+    ? (cleanLastSegment.trim() || fullText)
     : fullText
 
   return { fullText, finalResponse }

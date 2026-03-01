@@ -177,8 +177,8 @@ export function buildSandboxTools(bctx: ToolBuildContext): StructuredToolInterfa
             const stdout = truncate((result.stdout || '').trim(), MAX_OUTPUT)
             const stderr = truncate((result.stderr || '').trim(), MAX_OUTPUT)
             return JSON.stringify({ exitCode: result.status ?? 0, stdout, stderr })
-          } catch (err: any) {
-            return JSON.stringify({ error: err.message })
+          } catch (err: unknown) {
+            return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
           }
         },
         {

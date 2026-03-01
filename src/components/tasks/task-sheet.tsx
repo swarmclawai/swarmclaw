@@ -35,7 +35,7 @@ export function TaskSheet() {
   const [file, setFile] = useState<string | null>(null)
 
   const editing = editingId ? tasks[editingId] : null
-  const orchestrators = Object.values(agents).filter((p) => p.isOrchestrator)
+  const agentList = Object.values(agents)
 
   useEffect(() => {
     if (open) {
@@ -50,7 +50,7 @@ export function TaskSheet() {
       } else {
         setTitle('')
         setDescription('')
-        setAgentId(orchestrators[0]?.id || '')
+        setAgentId(agentList[0]?.id || '')
         setImages([])
         setCwd('')
         setFile(null)
@@ -58,12 +58,12 @@ export function TaskSheet() {
     }
   }, [open, editingId])
 
-  // Update default agent when orchestrators load (only if no agent selected yet)
+  // Update default agent when agents load (only if no agent selected yet)
   useEffect(() => {
-    if (open && !editing && !agentId && orchestrators.length) {
-      setAgentId(orchestrators[0].id)
+    if (open && !editing && !agentId && agentList.length) {
+      setAgentId(agentList[0].id)
     }
-  }, [open, editing, agentId, orchestrators.length, agents])
+  }, [open, editing, agentId, agentList.length, agents])
 
   const onClose = () => {
     setOpen(false)
@@ -145,7 +145,7 @@ export function TaskSheet() {
           {editing ? 'Edit Task' : 'New Task'}
         </h2>
         <p className="text-[14px] text-text-3">
-          {editing ? `Status: ${editing.status}` : 'Create a task and assign an orchestrator'}
+          {editing ? `Status: ${editing.status}` : 'Create a task and assign an agent'}
         </p>
       </div>
 
@@ -166,7 +166,7 @@ export function TaskSheet() {
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Detailed task instructions for the orchestrator..."
+          placeholder="Detailed task instructions for the agent..."
           rows={4}
           className={`${inputClass} resize-y min-h-[100px]`}
           style={{ fontFamily: 'inherit' }}
@@ -206,10 +206,10 @@ export function TaskSheet() {
       </div>
 
       <div className="mb-8">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Orchestrator</label>
-        {orchestrators.length > 0 ? (
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Agent</label>
+        {agentList.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {orchestrators.map((p) => (
+            {agentList.map((p) => (
               <button
                 key={p.id}
                 onClick={() => setAgentId(p.id)}
@@ -224,7 +224,7 @@ export function TaskSheet() {
             ))}
           </div>
         ) : (
-          <p className="text-[13px] text-text-3">No orchestrator agents configured. Create one in Agents first.</p>
+          <p className="text-[13px] text-text-3">No agents configured. Create one in Agents first.</p>
         )}
       </div>
 

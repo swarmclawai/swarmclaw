@@ -9,6 +9,7 @@ import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { executeSessionChatTurn } from './chat-execution'
 import { extractTaskResult, formatResultBody } from './task-result'
 import { getCheckpointSaver } from './langgraph-checkpoint'
+import { isProtectedMainSession } from './main-session'
 import type { Agent, BoardTask, Message } from '@/types'
 
 let processing = false
@@ -82,7 +83,7 @@ function pushQueueUnique(queue: string[], id: string): void {
 }
 
 function isMainSession(session: SessionLike | null | undefined): boolean {
-  return session?.name === '__main__'
+  return isProtectedMainSession(session)
 }
 
 function resolveTaskOwnerUser(task: ScheduleTaskMeta, sessions: Record<string, SessionLike>): string | null {

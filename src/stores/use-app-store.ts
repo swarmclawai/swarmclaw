@@ -22,6 +22,7 @@ interface AppState {
   clearSessions: (ids: string[]) => Promise<void>
   togglePinSession: (id: string) => void
   updateSessionInStore: (session: Session) => void
+  forkSession: (sessionId: string, messageIndex: number) => Promise<string | null>
 
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
@@ -211,6 +212,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   updateSessionInStore: (session) => {
     set({ sessions: { ...get().sessions, [session.id]: session } })
+  },
+  forkSession: async (sessionId, messageIndex) => {
+    try {
+      const forked = await api<Session>('POST', `/sessions/${sessionId}/fork`, { messageIndex })
+      if (!forked?.id) return null
+      await get().loadSessions()
+      set({ currentSessionId: forked.id })
+      return forked.id
+    } catch (err: unknown) {
+      console.error('Fork failed:', err instanceof Error ? err.message : String(err))
+      return null
+    }
   },
 
   sidebarOpen: false,

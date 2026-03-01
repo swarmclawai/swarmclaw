@@ -31,7 +31,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!deleteItem(ops, id)) return notFound()
 
   // Clear projectId from referencing entities
-  const clearProjectId = (load: () => Record<string, any>, save: (d: Record<string, any>) => void, topic: string) => {
+  const clearProjectId = (load: () => Record<string, Record<string, unknown>>, save: (d: Record<string, Record<string, unknown>>) => void, topic: string) => {
     const items = load()
     let changed = false
     for (const item of Object.values(items)) {

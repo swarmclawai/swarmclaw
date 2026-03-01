@@ -55,7 +55,8 @@ export async function GET() {
 
     const results = await Promise.all(probes)
     return NextResponse.json({ gateways: results })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Discovery failed' }, { status: 500 })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Discovery failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

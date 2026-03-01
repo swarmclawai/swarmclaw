@@ -135,14 +135,14 @@ export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInter
                   await inst.pinMessage(targetChannel, targetMessageId)
                   return JSON.stringify({ status: 'pinned', connectorId, messageId: targetMessageId })
                 }
-              } catch (err: any) {
-                return `Error: ${err.message || String(err)}`
+              } catch (err: unknown) {
+                return `Error: ${err instanceof Error ? err.message : String(err)}`
               }
             }
 
             return 'Unknown action. Use list_running, list_targets, or send.'
-          } catch (err: any) {
-            return `Error: ${err.message || String(err)}`
+          } catch (err: unknown) {
+            return `Error: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {

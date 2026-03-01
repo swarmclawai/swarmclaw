@@ -35,6 +35,9 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 - **Scheduling** — Cron-based agent scheduling with human-friendly presets
 - **Loop Runtime Controls** — Switch between bounded and ongoing loops with configurable step caps, runtime guards, heartbeat cadence, and timeout budgets
 - **Session Run Queue** — Per-session queued runs with followup/steer/collect modes, collect coalescing for bursty inputs, and run-state APIs
+- **Chat Iteration Workflow** — Edit-and-resend user turns, fork a new session from any message, bookmark key messages, and use contextual follow-up suggestion chips
+- **Live Chat Telemetry** — Thinking/tool/responding stream phases, live main-loop status badges, connector activity presence, tone indicator, and optional sound notifications
+- **Preview-Rich Chat UI** — Side preview panel for tool outputs (image/browser/html/code), inline code/PDF previews for attachments, and image lightbox support
 - **Voice Settings** — Per-instance ElevenLabs API key + voice ID for TTS replies, plus configurable speech recognition language for chat input
 - **Chat Connectors** — Bridge agents to Discord, Slack, Telegram, WhatsApp, BlueBubbles (iMessage), Signal, Microsoft Teams, Google Chat, Matrix, and OpenClaw with media-aware inbound handling
 - **Skills System** — Discover local skills, import skills from URL, and load OpenClaw `SKILL.md` files (frontmatter-compatible)
@@ -53,7 +56,7 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 
 ## Requirements
 
-- **Node.js** 20+
+- **Node.js** 22.6+
 - **npm** 10+
 - **Claude Code CLI** (optional, for `claude-cli` provider) — [Install](https://docs.anthropic.com/en/docs/claude-code/overview)
 - **OpenAI Codex CLI** (optional, for `codex-cli` provider) — [Install](https://github.com/openai/codex)
@@ -75,7 +78,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.1.0 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.4.6 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 

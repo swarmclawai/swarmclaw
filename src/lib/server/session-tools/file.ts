@@ -26,8 +26,8 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
             const resolved = safePath(bctx.cwd, filePath)
             const content = fs.readFileSync(resolved, 'utf-8')
             return truncate(content, MAX_FILE)
-          } catch (err: any) {
-            return `Error reading file: ${err.message}`
+          } catch (err: unknown) {
+            return `Error reading file: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -55,8 +55,8 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
             }
             fs.writeFileSync(resolved, content, 'utf-8')
             return `File written: ${filePath} (${content.length} bytes)`
-          } catch (err: any) {
-            return `Error writing file: ${err.message}`
+          } catch (err: unknown) {
+            return `Error writing file: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -80,8 +80,8 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
             const resolved = safePath(bctx.cwd, dirPath || '.')
             const tree = listDirRecursive(resolved, 0, 3)
             return tree.length ? tree.join('\n') : '(empty directory)'
-          } catch (err: any) {
-            return `Error listing files: ${err.message}`
+          } catch (err: unknown) {
+            return `Error listing files: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -109,8 +109,8 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
             fs.mkdirSync(path.dirname(destination), { recursive: true })
             fs.copyFileSync(source, destination)
             return `File copied: ${sourcePath} -> ${destinationPath}`
-          } catch (err: any) {
-            return `Error copying file: ${err.message}`
+          } catch (err: unknown) {
+            return `Error copying file: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -141,8 +141,8 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
             if (fs.existsSync(destination) && overwrite) fs.unlinkSync(destination)
             fs.renameSync(source, destination)
             return `File moved: ${sourcePath} -> ${destinationPath}`
-          } catch (err: any) {
-            return `Error moving file: ${err.message}`
+          } catch (err: unknown) {
+            return `Error moving file: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -175,8 +175,8 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
             }
             fs.rmSync(resolved, { recursive: !!recursive, force: !!force })
             return `Deleted: ${filePath}`
-          } catch (err: any) {
-            return `Error deleting file: ${err.message}`
+          } catch (err: unknown) {
+            return `Error deleting file: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -220,8 +220,8 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
             } else {
               return `[Download ${basename}](/api/uploads/${filename})`
             }
-          } catch (err: any) {
-            return `Error sending file: ${err.message}`
+          } catch (err: unknown) {
+            return `Error sending file: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -297,8 +297,8 @@ img{max-width:100%}
             } finally {
               await browser.close()
             }
-          } catch (err: any) {
-            return `Error creating document: ${err.message}`
+          } catch (err: unknown) {
+            return `Error creating document: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -383,8 +383,8 @@ img{max-width:100%}
             await workbook.xlsx.writeFile(resolved)
             const size = fs.statSync(resolved).size
             return `Excel spreadsheet created: ${outName} (${rows.length} rows, ${cols.length} columns, ${(size / 1024).toFixed(1)} KB)`
-          } catch (err: any) {
-            return `Error creating spreadsheet: ${err.message}`
+          } catch (err: unknown) {
+            return `Error creating spreadsheet: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -416,8 +416,8 @@ img{max-width:100%}
             const updated = content.replace(oldText, newText)
             fs.writeFileSync(resolved, updated, 'utf-8')
             return `Successfully edited ${filePath}`
-          } catch (err: any) {
-            return `Error editing file: ${err.message}`
+          } catch (err: unknown) {
+            return `Error editing file: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {

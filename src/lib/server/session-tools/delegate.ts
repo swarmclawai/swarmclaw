@@ -199,6 +199,21 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
                   return
                 }
 
+                // If resume failed because the session no longer exists, clear the stale ID
+                // and return a targeted error so the agent retries without resume
+                if (resumeIdToUse && /No conversation found/i.test(stdout + stderr)) {
+                  persistDelegateResumeId('claudeCode', null)
+                  log.warn('session-tools', 'delegate_to_claude_code stale resume ID cleared', {
+                    sessionId: ctx?.sessionId || null,
+                    staleResumeId: resumeIdToUse,
+                  })
+                  finish(
+                    `Error: The previous Claude Code session (${resumeIdToUse}) has expired and was cleared. ` +
+                    'Retry the task with resume=false to start a fresh session.',
+                  )
+                  return
+                }
+
                 const successText = assistantText.trim() || stdout.trim() || stderr.trim()
                 if (code === 0 && successText) {
                   const out = discoveredSessionId
@@ -648,6 +663,7 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
               description: taskDesc || taskPrompt,
               status: 'todo',
               agentId: resolvedId,
+              cwd,
               sourceType: 'delegation' as const,
               delegatedByAgentId: ctx.agentId!,
               createdAt: now,

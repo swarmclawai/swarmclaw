@@ -170,6 +170,8 @@ function heartbeatSummary(text: string): string {
 
 const IMAGE_ATTACH_RE = /\.(png|jpg|jpeg|gif|webp|svg|bmp|ico)$/i
 const PREVIEWABLE_ATTACH_RE = /\.(html?|svg)$/i
+const CODE_ATTACH_RE = /\.(js|jsx|ts|tsx|css|json|md|txt|py|sh|rb|go|rs|c|cpp|h|java|yaml|yml|toml|xml|sql|graphql)$/i
+const PDF_ATTACH_RE = /\.pdf$/i
 const FILE_TYPE_COLORS: Record<string, string> = {
   html: 'text-orange-400', htm: 'text-orange-400', svg: 'text-emerald-400',
   js: 'text-yellow-400', jsx: 'text-yellow-400', ts: 'text-blue-400', tsx: 'text-blue-400',
@@ -186,10 +188,49 @@ function parseAttachmentUrl(filePath?: string, fileUrl?: string) {
 
 function AttachmentChip({ url, filename, isUserMsg }: { url: string; filename: string; isUserMsg?: boolean }) {
   const isImage = IMAGE_ATTACH_RE.test(filename)
+  const isCode = CODE_ATTACH_RE.test(filename)
+  const isPdf = PDF_ATTACH_RE.test(filename)
+  const [lightbox, setLightbox] = useState(false)
+  const [codePreview, setCodePreview] = useState<string | null>(null)
+  const [codeExpanded, setCodeExpanded] = useState(false)
+
   if (isImage) {
     return (
-      <img src={url} alt="Attached" className="max-w-[240px] rounded-[12px] mb-2 border border-white/10"
-        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+      <>
+        <img
+          src={url} alt="Attached"
+          loading="lazy"
+          className="max-w-[240px] rounded-[12px] mb-2 border border-white/10 cursor-pointer hover:border-white/25 transition-colors"
+          onClick={() => setLightbox(true)}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+        />
+        {lightbox && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm cursor-pointer"
+            onClick={() => setLightbox(false)}
+          >
+            <img src={url} alt="Preview" className="max-w-[90vw] max-h-[90vh] rounded-[12px] shadow-2xl" />
+          </div>
+        )}
+      </>
+    )
+  }
+
+  if (isPdf) {
+    return (
+      <div className="mb-2 rounded-[12px] border border-white/[0.08] bg-[rgba(255,255,255,0.02)] overflow-hidden" style={{ maxWidth: 480 }}>
+        <div className="flex items-center gap-3 px-4 py-2.5">
+          <div className="flex items-center justify-center w-8 h-8 rounded-[8px] shrink-0 bg-red-500/10 text-red-400">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+          </div>
+          <span className="text-[13px] font-500 truncate flex-1">{filename}</span>
+          <a href={url} download={filename} className="text-[11px] font-600 text-text-3 hover:text-text-2 no-underline">Download</a>
+        </div>
+        <iframe src={url} loading="lazy" className="w-full h-[300px] border-t border-white/[0.06]" title={filename} />
+      </div>
     )
   }
 
@@ -197,7 +238,6 @@ function AttachmentChip({ url, filename, isUserMsg }: { url: string; filename: s
   const colorClass = FILE_TYPE_COLORS[ext] || 'text-text-3'
   const isPreviewable = PREVIEWABLE_ATTACH_RE.test(filename)
 
-  // Solid bg so chip is readable on both user (purple) and assistant bubbles
   const chipBg = isUserMsg
     ? 'bg-[rgba(0,0,0,0.25)] border-white/[0.12]'
     : 'bg-[rgba(255,255,255,0.04)] border-white/[0.08]'
@@ -206,40 +246,85 @@ function AttachmentChip({ url, filename, isUserMsg }: { url: string; filename: s
     ? 'bg-white/[0.12] hover:bg-white/[0.18] text-white/80'
     : 'bg-white/[0.06] hover:bg-white/[0.10] text-text-3'
 
+  const handleCodePreview = async () => {
+    if (codePreview !== null) { setCodeExpanded(!codeExpanded); return }
+    try {
+      const serveUrl = `/api/files/serve?path=${encodeURIComponent(url.replace('/api/uploads/', ''))}`
+      const res = await fetch(url.startsWith('/api/files/') ? url : serveUrl)
+      if (!res.ok) return
+      const text = await res.text()
+      setCodePreview(text)
+      setCodeExpanded(true)
+    } catch {
+      // ignore
+    }
+  }
+
   return (
-    <div className={`flex items-center gap-3 px-4 py-2.5 mb-2 rounded-[12px] border ${chipBg}`}>
-      <div className={`flex items-center justify-center w-8 h-8 rounded-[8px] shrink-0 ${iconBg} ${colorClass}`}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-        </svg>
-      </div>
-      <div className="flex flex-col flex-1 min-w-0">
-        <span className={`text-[13px] font-500 truncate ${isUserMsg ? 'text-white' : 'text-text'}`}>{filename}</span>
-        <span className={`text-[11px] uppercase tracking-wide ${isUserMsg ? 'text-white/50' : 'text-text-3/70'}`}>{ext || 'file'}</span>
-      </div>
-      {isPreviewable && (
-        <a href={url} target="_blank" rel="noopener noreferrer"
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-[11px] font-600 no-underline transition-colors shrink-0 ${
-            isUserMsg ? 'bg-white/[0.15] hover:bg-white/[0.22] text-white' : 'bg-accent-soft hover:bg-accent-soft/80 text-accent-bright'
-          }`}
-          title="Preview in new tab">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-            <circle cx="12" cy="12" r="3" />
+    <div className="mb-2">
+      <div className={`flex items-center gap-3 px-4 py-2.5 rounded-[12px] border ${chipBg}`}>
+        <div className={`flex items-center justify-center w-8 h-8 rounded-[8px] shrink-0 ${iconBg} ${colorClass}`}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
           </svg>
-          Preview
+        </div>
+        <div className="flex flex-col flex-1 min-w-0">
+          <span className={`text-[13px] font-500 truncate ${isUserMsg ? 'text-white' : 'text-text'}`}>{filename}</span>
+          <span className={`text-[11px] uppercase tracking-wide ${isUserMsg ? 'text-white/50' : 'text-text-3/70'}`}>{ext || 'file'}</span>
+        </div>
+        {isCode && (
+          <button
+            onClick={handleCodePreview}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-[11px] font-600 no-underline transition-colors shrink-0 border-none cursor-pointer ${
+              isUserMsg ? 'bg-white/[0.15] hover:bg-white/[0.22] text-white' : 'bg-accent-soft hover:bg-accent-soft/80 text-accent-bright'
+            }`}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+            </svg>
+            {codeExpanded ? 'Hide' : 'Preview'}
+          </button>
+        )}
+        {isPreviewable && (
+          <a href={url} target="_blank" rel="noopener noreferrer"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-[11px] font-600 no-underline transition-colors shrink-0 ${
+              isUserMsg ? 'bg-white/[0.15] hover:bg-white/[0.22] text-white' : 'bg-accent-soft hover:bg-accent-soft/80 text-accent-bright'
+            }`}
+            title="Preview in new tab">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            Preview
+          </a>
+        )}
+        <a href={url} download={filename}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-[11px] font-600 no-underline transition-colors shrink-0 ${btnBg}`}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Download
         </a>
+      </div>
+      {isCode && codeExpanded && codePreview !== null && (
+        <div className="mt-1 rounded-[10px] border border-white/[0.06] overflow-hidden" style={{ animation: 'fade-in 0.2s ease' }}>
+          <CodeBlock className={`language-${ext}`}>
+            {codePreview.split('\n').slice(0, codeExpanded ? undefined : 10).join('\n')}
+          </CodeBlock>
+          {codePreview.split('\n').length > 10 && (
+            <button
+              onClick={() => setCodeExpanded((v) => !v)}
+              className="w-full px-3 py-1.5 text-[10px] text-text-3 hover:text-text-2 bg-white/[0.02] hover:bg-white/[0.04] border-none border-t border-white/[0.06] cursor-pointer transition-colors"
+            >
+              {codePreview.split('\n').length > 10 ? `Show all ${codePreview.split('\n').length} lines` : 'Show less'}
+            </button>
+          )}
+        </div>
       )}
-      <a href={url} download={filename}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-[11px] font-600 no-underline transition-colors shrink-0 ${btnBg}`}>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
-        Download
-      </a>
     </div>
   )
 }
@@ -282,15 +367,21 @@ interface Props {
   assistantName?: string
   isLast?: boolean
   onRetry?: () => void
+  messageIndex?: number
+  onToggleBookmark?: (index: number) => void
+  onEditResend?: (index: number, newText: string) => void
+  onFork?: (index: number) => void
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, assistantName, isLast, onRetry }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, assistantName, isLast, onRetry, messageIndex, onToggleBookmark, onEditResend, onFork }: Props) {
   const isUser = message.role === 'user'
   const isHeartbeat = !isUser && (message.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(message.text || ''))
   const currentUser = useAppStore((s) => s.currentUser)
   const [copied, setCopied] = useState(false)
   const [heartbeatExpanded, setHeartbeatExpanded] = useState(false)
   const [toolEventsExpanded, setToolEventsExpanded] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState('')
   const toolEvents = message.toolEvents || []
   const hasToolEvents = !isUser && toolEvents.length > 0
   const visibleToolEvents = toolEventsExpanded ? [...toolEvents].reverse() : toolEvents.slice(-1)
@@ -414,12 +505,12 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                   const isVideo = /\.(mp4|webm|mov|avi)$/i.test(src)
                   if (isVideo) {
                     return (
-                      <video src={src} controls className="max-w-full rounded-[10px] border border-white/10 my-2" />
+                      <video src={src} controls preload="none" className="max-w-full rounded-[10px] border border-white/10 my-2" />
                     )
                   }
                   return (
                     <a href={src} download target="_blank" rel="noopener noreferrer" className="block my-2">
-                      <img src={src} alt={alt || 'File'} className="max-w-full rounded-[10px] border border-white/10 hover:border-white/25 transition-colors cursor-pointer" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                      <img src={src} alt={alt || 'File'} loading="lazy" className="max-w-full rounded-[10px] border border-white/10 hover:border-white/25 transition-colors cursor-pointer" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                     </a>
                   )
                 },
@@ -518,6 +609,16 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
         toolOutputs={toolEvents.map((e) => e.output || '').filter(Boolean)}
       />}
 
+      {/* Bookmark indicator */}
+      {message.bookmarked && (
+        <div className={`flex items-center gap-1 mt-1 px-1 ${isUser ? 'justify-end' : ''}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B" stroke="#F59E0B" strokeWidth="2" className="shrink-0">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+          </svg>
+          <span className="text-[10px] text-[#F59E0B]/70 font-600">Bookmarked</span>
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className={`flex items-center gap-1 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${isUser ? 'justify-end' : ''}`}>
         <button
@@ -533,6 +634,53 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           </svg>
           {copied ? 'Copied' : 'Copy'}
         </button>
+        {typeof messageIndex === 'number' && onToggleBookmark && (
+          <button
+            onClick={() => onToggleBookmark(messageIndex)}
+            aria-label={message.bookmarked ? 'Remove bookmark' : 'Bookmark message'}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
+              text-[11px] font-500 cursor-pointer hover:bg-white/[0.04] transition-all"
+            style={{ fontFamily: 'inherit', color: message.bookmarked ? '#F59E0B' : undefined }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill={message.bookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            {message.bookmarked ? 'Unbookmark' : 'Bookmark'}
+          </button>
+        )}
+        {isUser && typeof messageIndex === 'number' && onEditResend && (
+          <button
+            onClick={() => { setEditText(message.text); setEditing(true) }}
+            aria-label="Edit and resend"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
+              text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            Edit
+          </button>
+        )}
+        {typeof messageIndex === 'number' && onFork && (
+          <button
+            onClick={() => onFork(messageIndex)}
+            aria-label="Fork conversation from here"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
+              text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="12" cy="18" r="3" />
+              <circle cx="6" cy="6" r="3" />
+              <circle cx="18" cy="6" r="3" />
+              <path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9" />
+              <path d="M12 12v3" />
+            </svg>
+            Fork
+          </button>
+        )}
         {!isUser && isLast && onRetry && (
           <button
             onClick={onRetry}
@@ -549,6 +697,37 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           </button>
         )}
       </div>
+
+      {/* Inline edit mode */}
+      {editing && (
+        <div className={`max-w-[85%] md:max-w-[72%] mt-2 ${isUser ? 'self-end' : ''}`} style={{ animation: 'fade-in 0.2s ease' }}>
+          <textarea
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            className="w-full min-h-[80px] p-3 rounded-[12px] bg-surface border border-white/[0.08] text-text text-[14px] resize-y outline-none focus:border-accent-bright/30"
+            style={{ fontFamily: 'inherit' }}
+          />
+          <div className="flex gap-2 mt-2 justify-end">
+            <button
+              onClick={() => setEditing(false)}
+              className="px-3 py-1.5 rounded-[8px] text-[11px] font-600 text-text-3 bg-white/[0.04] hover:bg-white/[0.07] border-none cursor-pointer transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (editText.trim() && typeof messageIndex === 'number' && onEditResend) {
+                  onEditResend(messageIndex, editText.trim())
+                  setEditing(false)
+                }
+              }}
+              className="px-3 py-1.5 rounded-[8px] text-[11px] font-600 text-white bg-accent-bright hover:bg-accent-bright/80 border-none cursor-pointer transition-colors"
+            >
+              Save & Resend
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 })

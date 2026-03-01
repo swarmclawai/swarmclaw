@@ -15,6 +15,7 @@ import { SessionDebugPanel } from './session-debug-panel'
 import { VoiceOverlay } from './voice-overlay'
 import { useVoiceConversation } from '@/hooks/use-voice-conversation'
 import { ChatInput } from '@/components/input/chat-input'
+import { ChatPreviewPanel } from './chat-preview-panel'
 import { Dropdown, DropdownItem } from '@/components/shared/dropdown'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { speak } from '@/lib/tts'
@@ -37,7 +38,7 @@ export function ChatArea() {
   const removeSessionFromStore = useAppStore((s) => s.removeSession)
   const loadSessions = useAppStore((s) => s.loadSessions)
   const appSettings = useAppStore((s) => s.appSettings)
-  const { messages, setMessages, streaming, streamingSessionId, sendMessage, stopStreaming, devServer: devServerStatus, setDevServer, debugOpen, setDebugOpen, ttsEnabled } = useChatStore()
+  const { messages, setMessages, streaming, streamingSessionId, sendMessage, stopStreaming, devServer: devServerStatus, setDevServer, debugOpen, setDebugOpen, ttsEnabled, previewContent, setPreviewContent } = useChatStore()
   const isDesktop = useMediaQuery('(min-width: 768px)')
 
   const agents = useAppStore((s) => s.agents)
@@ -243,8 +244,9 @@ export function ChatArea() {
   const isEmpty = !messages.length && !streamingForThisSession
 
   return (
+    <div className="flex-1 flex h-full min-h-0 min-w-0">
     <div
-      className="flex-1 flex flex-col h-full min-h-0 relative"
+      className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative"
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -422,6 +424,10 @@ export function ChatArea() {
           </div>
         </div>
       )}
+    </div>
+    {isDesktop && previewContent && (
+      <ChatPreviewPanel content={previewContent} onClose={() => setPreviewContent(null)} />
+    )}
     </div>
   )
 }

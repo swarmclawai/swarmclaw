@@ -32,6 +32,7 @@ export function SettingsPage() {
     loadSettings()
     loadSecrets()
     loadAgents()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const credList = Object.values(credentials)

@@ -274,6 +274,7 @@ const bluebubbles: PlatformConnector = {
     }
 
     const handlerKey = `__swarmclaw_bluebubbles_handler_${connector.id}__`
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(globalThis as any)[handlerKey] = processWebhookEvent
 
     const pingUrl = resolveRequestUrl(serverUrl, '/api/v1/ping', password)
@@ -299,6 +300,7 @@ const bluebubbles: PlatformConnector = {
       },
       async stop() {
         stopped = true
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any)[handlerKey]
         console.log(`[bluebubbles] Connector stopped`)
       },
@@ -341,8 +343,9 @@ async function sendBlueBubblesText(params: {
   }
 
   try {
-    const body = await res.json() as any
-    const id = body?.data?.guid || body?.guid || body?.data?.id || body?.id
+    const body = await res.json() as Record<string, unknown>
+    const data = body?.data && typeof body.data === 'object' ? body.data as Record<string, unknown> : null
+    const id = data?.guid || body?.guid || data?.id || body?.id
     return { messageId: typeof id === 'string' ? id : undefined }
   } catch (err) {
     // BlueBubbles may return empty body on success in some setups.

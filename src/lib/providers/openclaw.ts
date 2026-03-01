@@ -65,6 +65,7 @@ function tryLoadIdentityFile(filePath: string): DeviceIdentity | null {
 function loadOrCreateDeviceIdentity(): DeviceIdentity {
   // 0. Check shared device token for cross-synced identity
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getSharedDeviceToken } = require('../server/openclaw-sync')
     const sharedToken = getSharedDeviceToken()
     if (sharedToken) {

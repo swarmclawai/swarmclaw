@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import bluebubbles from './bluebubbles.ts'
+import type { Connector } from '@/types'
+import type { InboundMessage } from './types'
 
 type FetchCall = {
   url: string
@@ -10,7 +12,7 @@ type FetchCall = {
 type MockResponse = {
   ok: boolean
   status: number
-  json: () => Promise<any>
+  json: () => Promise<unknown>
   text: () => Promise<string>
 }
 
@@ -37,6 +39,7 @@ function textResponse(status: number, text: string): MockResponse {
 const originalFetch = globalThis.fetch
 
 test.afterEach(() => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(globalThis as any).fetch = originalFetch
 })
 
@@ -47,14 +50,15 @@ test('bluebubbles connector processes inbound webhook payloads and sends replies
     jsonResponse(200, { data: { guid: 'msg-1' } }), // send reply
   ]
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(globalThis as any).fetch = async (url: string, init?: RequestInit) => {
     calls.push({ url: String(url), init })
     const next = queue.shift()
     assert.ok(next, 'unexpected fetch call')
-    return next as any
+    return next
   }
 
-  const received: any[] = []
+  const received: InboundMessage[] = []
   const connector = {
     id: 'bb-1',
     name: 'BlueBubbles Test',
@@ -68,7 +72,7 @@ test('bluebubbles connector processes inbound webhook payloads and sends replies
     status: 'running',
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  } as any
+  } as unknown as Connector
 
   const instance = await bluebubbles.start(connector, 'pw-test', async (msg) => {
     received.push(msg)
@@ -76,8 +80,10 @@ test('bluebubbles connector processes inbound webhook payloads and sends replies
   })
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (globalThis as any).__swarmclaw_bluebubbles_handler_bb_1__
     assert.equal(typeof handler, 'undefined', 'sanity: wrong handler key should be undefined')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const validHandler = (globalThis as any)[`__swarmclaw_bluebubbles_handler_${connector.id}__`]
     assert.equal(typeof validHandler, 'function')
 
@@ -116,11 +122,12 @@ test('bluebubbles connector supports array-wrapped webhook payload and NO_MESSAG
     jsonResponse(200, { ok: true }), // ping
   ]
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(globalThis as any).fetch = async (url: string, init?: RequestInit) => {
     calls.push({ url: String(url), init })
     const next = queue.shift()
     assert.ok(next, 'unexpected fetch call')
-    return next as any
+    return next
   }
 
   const connector = {
@@ -136,11 +143,12 @@ test('bluebubbles connector supports array-wrapped webhook payload and NO_MESSAG
     status: 'running',
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  } as any
+  } as unknown as Connector
 
   const instance = await bluebubbles.start(connector, 'pw-test', async () => 'NO_MESSAGE')
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (globalThis as any)[`__swarmclaw_bluebubbles_handler_${connector.id}__`]
     assert.equal(typeof handler, 'function')
 
@@ -171,11 +179,12 @@ test('bluebubbles sendMessage posts to message/text endpoint', async () => {
     textResponse(200, ''), // send
   ]
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(globalThis as any).fetch = async (url: string, init?: RequestInit) => {
     calls.push({ url: String(url), init })
     const next = queue.shift()
     assert.ok(next, 'unexpected fetch call')
-    return next as any
+    return next
   }
 
   const connector = {
@@ -191,7 +200,7 @@ test('bluebubbles sendMessage posts to message/text endpoint', async () => {
     status: 'running',
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  } as any
+  } as unknown as Connector
 
   const instance = await bluebubbles.start(connector, 'pw-test', async () => 'ok')
 

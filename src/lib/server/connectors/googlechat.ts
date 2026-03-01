@@ -7,7 +7,7 @@ const googlechat: PlatformConnector = {
     const { google } = await import(/* webpackIgnore: true */ pkg)
 
     // Parse service account credentials from botToken
-    let credentials: any
+    let credentials: Record<string, unknown>
     try {
       credentials = JSON.parse(botToken)
     } catch {
@@ -41,28 +41,30 @@ const googlechat: PlatformConnector = {
       return txt.replace(/<users\/[^>]+>/g, '').trim()
     }
 
-    async function processWebhookEvent(event: any): Promise<Record<string, unknown>> {
+    async function processWebhookEvent(event: Record<string, unknown>): Promise<Record<string, unknown>> {
       if (stopped) throw new Error('Connector is stopped')
 
-      const msg = event?.message
+      const msg = event?.message as Record<string, unknown> | undefined
       if (!msg) return {}
 
-      const spaceName: string = msg?.space?.name || event?.space?.name || ''
+      const msgSpace = msg?.space as Record<string, unknown> | undefined
+      const eventSpace = event?.space as Record<string, unknown> | undefined
+      const spaceName: string = (msgSpace?.name as string) || (eventSpace?.name as string) || ''
       if (allowedSpaces && !allowedSpaces.some((s) => spaceName.includes(s))) {
         return {}
       }
 
-      const rawText = msg?.argumentText || msg?.text || ''
+      const rawText = (msg?.argumentText as string) || (msg?.text as string) || ''
       const text = cleanInboundText(rawText)
       if (!text) return {}
 
-      const sender = msg?.sender || event?.user || {}
-      const senderName = sender?.displayName || sender?.name || 'Google Chat User'
-      const senderId = sender?.name || ''
+      const sender = (msg?.sender || event?.user || {}) as Record<string, unknown>
+      const senderName = (sender?.displayName as string) || (sender?.name as string) || 'Google Chat User'
+      const senderId = (sender?.name as string) || ''
       const inbound: InboundMessage = {
         platform: 'googlechat',
-        channelId: spaceName || (msg?.thread?.name || 'space:unknown'),
-        channelName: msg?.space?.displayName || spaceName || 'Google Chat',
+        channelId: spaceName || ((msg?.thread as Record<string, unknown>)?.name as string) || 'space:unknown',
+        channelName: (msgSpace?.displayName as string) || spaceName || 'Google Chat',
         senderId,
         senderName,
         text,
@@ -73,6 +75,7 @@ const googlechat: PlatformConnector = {
       return { text: response }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(globalThis as any)[handlerKey] = processWebhookEvent
 
     return {
@@ -95,6 +98,7 @@ const googlechat: PlatformConnector = {
       },
       async stop() {
         stopped = true
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any)[handlerKey]
         console.log(`[googlechat] Bot disconnected`)
       },

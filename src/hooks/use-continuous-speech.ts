@@ -4,6 +4,42 @@ import { useCallback, useRef, useState } from 'react'
 
 export type ContinuousSpeechState = 'idle' | 'listening' | 'cooldown' | 'waitingForResponse'
 
+interface SpeechRecognitionResult {
+  isFinal: boolean
+  [index: number]: { transcript: string }
+}
+
+interface SpeechRecognitionResultList {
+  readonly length: number
+  [index: number]: SpeechRecognitionResult
+}
+
+interface SpeechRecognitionEvent {
+  resultIndex: number
+  results: SpeechRecognitionResultList
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean
+  interimResults: boolean
+  maxAlternatives: number
+  lang: string
+  onresult: ((e: SpeechRecognitionEvent) => void) | null
+  onerror: ((e: SpeechRecognitionErrorEvent) => void) | null
+  onend: (() => void) | null
+  start(): void
+  stop(): void
+}
+
+interface WindowWithSpeechRecognition {
+  SpeechRecognition?: new () => SpeechRecognitionInstance
+  webkitSpeechRecognition?: new () => SpeechRecognitionInstance
+}
+
 interface UseContinuousSpeechOptions {
   lang?: string
   silenceDelayMs?: number
@@ -16,7 +52,7 @@ export function useContinuousSpeech(options: UseContinuousSpeechOptions) {
   const [transcript, setTranscript] = useState('')
   const [interimText, setInterimText] = useState('')
 
-  const recogRef = useRef<any>(null)
+  const recogRef = useRef<SpeechRecognitionInstance | null>(null)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeRef = useRef(false)
   const accumulatedRef = useRef('')
@@ -29,7 +65,8 @@ export function useContinuousSpeech(options: UseContinuousSpeechOptions) {
   }
 
   const startRecognition = useCallback(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    const w = window as unknown as WindowWithSpeechRecognition
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition
     if (!SR) return
 
     if (recogRef.current) {
@@ -42,7 +79,7 @@ export function useContinuousSpeech(options: UseContinuousSpeechOptions) {
     recog.maxAlternatives = 1
     recog.lang = lang || navigator.language || 'en-US'
 
-    recog.onresult = (e: any) => {
+    recog.onresult = (e: SpeechRecognitionEvent) => {
       clearSilenceTimer()
       let interim = ''
       let final = ''
@@ -77,7 +114,7 @@ export function useContinuousSpeech(options: UseContinuousSpeechOptions) {
       }
     }
 
-    recog.onerror = (e: any) => {
+    recog.onerror = (e: SpeechRecognitionErrorEvent) => {
       // 'no-speech' is normal during silence; 'aborted' when stopping intentionally
       if (e.error === 'no-speech' || e.error === 'aborted') return
       console.warn('[continuous-speech] error:', e.error)
@@ -138,7 +175,7 @@ export function useContinuousSpeech(options: UseContinuousSpeechOptions) {
   }, [startRecognition])
 
   const supported = typeof window !== 'undefined' &&
-    !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+    !!((window as unknown as WindowWithSpeechRecognition).SpeechRecognition || (window as unknown as WindowWithSpeechRecognition).webkitSpeechRecognition)
 
   return { state, transcript, interimText, start, stop, pause, resume, supported }
 }

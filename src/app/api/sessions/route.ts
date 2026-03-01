@@ -7,6 +7,7 @@ import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { notify } from '@/lib/server/ws-hub'
 import { getSessionRunState } from '@/lib/server/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import { ensureMainSessionFlag, isProtectedMainSession } from '@/lib/server/main-session'
 export const dynamic = 'force-dynamic'
 
 
@@ -27,16 +28,18 @@ export async function DELETE(req: Request) {
     return new NextResponse('Missing ids', { status: 400 })
   }
   const sessions = loadSessions()
+  let deleted = 0
   for (const id of ids) {
-    if (sessions[id]?.name === '__main__') continue
+    if (isProtectedMainSession(sessions[id])) continue
     if (active.has(id)) {
       try { active.get(id).kill() } catch {}
       active.delete(id)
     }
     deleteSession(id)
+    deleted += 1
   }
   notify('sessions')
-  return NextResponse.json({ deleted: ids.length })
+  return NextResponse.json({ deleted, requested: ids.length })
 }
 
 export async function POST(req: Request) {
@@ -86,6 +89,7 @@ export async function POST(req: Request) {
     heartbeatEnabled: body.heartbeatEnabled ?? null,
     heartbeatIntervalSec: body.heartbeatIntervalSec ?? null,
   }
+  ensureMainSessionFlag(sessions[id])
   saveSessions(sessions)
   notify('sessions')
   return NextResponse.json(sessions[id])

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadAgents, saveAgents, deleteAgent } from '@/lib/server/storage'
+import { loadAgents, saveAgents, deleteAgent, loadSessions, saveSessions } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { mutateItem, deleteItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
 
@@ -28,5 +28,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   if (!deleteItem(ops, id)) return notFound()
-  return NextResponse.json({ ok: true })
+
+  const sessions = loadSessions()
+  let detachedSessions = 0
+  for (const session of Object.values(sessions) as Array<Record<string, unknown>>) {
+    if (!session || session.agentId !== id) continue
+    session.agentId = null
+    detachedSessions += 1
+  }
+  if (detachedSessions > 0) {
+    saveSessions(sessions)
+  }
+
+  return NextResponse.json({ ok: true, detachedSessions })
 }

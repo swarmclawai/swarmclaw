@@ -343,11 +343,25 @@ function resolveApiKeyForSession(session: SessionWithCredentials, provider: Prov
 
 function classifyHeartbeatResponse(text: string, ackMaxChars: number): 'suppress' | 'strip' | 'keep' {
   const trimmed = text.trim()
-  if (trimmed === 'HEARTBEAT_OK') return 'suppress'
-  const stripped = trimmed.replace(/HEARTBEAT_OK/gi, '').trim()
+  if (trimmed === 'HEARTBEAT_OK' || trimmed === 'NO_MESSAGE') return 'suppress'
+  const stripped = trimmed.replace(/HEARTBEAT_OK/gi, '').replace(/NO_MESSAGE/gi, '').trim()
   if (!stripped) return 'suppress'
   if (stripped.length <= ackMaxChars) return 'suppress'
   return stripped.length < trimmed.length ? 'strip' : 'keep'
+}
+
+function estimateConversationTone(text: string): string {
+  const t = text || ''
+  // Technical: code blocks, function signatures, technical terms
+  if (/```/.test(t) || /\b(function|const|let|var|import|export|class|interface|async|await|return)\b/.test(t)) return 'technical'
+  if (/\b(error|bug|debug|stack trace|exception|null|undefined|TypeError)\b/i.test(t)) return 'technical'
+  // Empathetic: emotional/supportive language
+  if (/\b(understand|feel|sorry|empathize|appreciate|grateful|tough|difficult|challenging)\b/i.test(t)) return 'empathetic'
+  // Formal: academic/business language
+  if (/\b(furthermore|regarding|consequently|therefore|henceforth|pursuant|accordingly|notwithstanding)\b/i.test(t)) return 'formal'
+  // Casual: contractions, exclamations, informal language
+  if (/\b(gonna|wanna|gotta|yeah|hey|awesome|cool|lol|btw|tbh)\b/i.test(t) || /!{2,}/.test(t)) return 'casual'
+  return 'neutral'
 }
 
 const AUTO_MEMORY_MIN_INTERVAL_MS = 45 * 60 * 1000
@@ -816,6 +830,26 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const finalText = (fullResponse || '').trim() || (!internal && errorMessage ? `Error: ${errorMessage}` : '')
   const textForPersistence = stripMainLoopMetaForPersistence(finalText, internal)
 
+  // Emit status SSE event from [MAIN_LOOP_META] if present
+  if (internal && finalText) {
+    const metaMatch = finalText.match(/\[MAIN_LOOP_META\]\s*(\{[^\n]*\})/i)
+    if (metaMatch) {
+      try {
+        const meta = JSON.parse(metaMatch[1])
+        const statusPayload: Record<string, string | undefined> = {}
+        if (meta.goal) statusPayload.goal = String(meta.goal)
+        if (meta.status) statusPayload.status = String(meta.status)
+        if (meta.summary) statusPayload.summary = String(meta.summary)
+        if (meta.next_action) statusPayload.nextAction = String(meta.next_action)
+        if (Object.keys(statusPayload).length > 0) {
+          emit({ t: 'status', text: JSON.stringify(statusPayload) })
+        }
+      } catch {
+        // ignore malformed meta JSON
+      }
+    }
+  }
+
   // HEARTBEAT_OK suppression
   const heartbeatConfig = input.heartbeatConfig
   let heartbeatClassification: 'suppress' | 'strip' | 'keep' | null = null
@@ -874,6 +908,14 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         kind: persistedKind,
       })
       changed = true
+
+      // Conversation tone detection
+      if (!internal) {
+        const tone = estimateConversationTone(persistedText)
+        if (tone !== current.conversationTone) {
+          current.conversationTone = tone
+        }
+      }
 
       // Target routing for non-suppressed heartbeat alerts
       if (isHeartbeatRun && heartbeatConfig?.target && heartbeatConfig.target !== 'none' && heartbeatConfig.showAlerts !== false) {

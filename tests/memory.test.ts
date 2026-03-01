@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, beforeEach, afterEach } from 'node:test'
+import assert from 'node:assert/strict'
 import fs from 'fs'
 import path from 'path'
 import {
@@ -40,26 +41,26 @@ describe('Memory System', () => {
 
   describe('normalizeLinkedMemoryIds', () => {
     it('filters out empty strings and self-references', () => {
-      expect(normalizeLinkedMemoryIds(['a', '', 'b', '  ', 'a', 'c'], 'self')).toEqual(['a', 'b', 'c'])
+      assert.deepEqual(normalizeLinkedMemoryIds(['a', '', 'b', '  ', 'a', 'c'], 'self'), ['a', 'b', 'c'])
     })
 
     it('returns empty array for non-array input', () => {
-      expect(normalizeLinkedMemoryIds(null)).toEqual([])
-      expect(normalizeLinkedMemoryIds(undefined)).toEqual([])
-      expect(normalizeLinkedMemoryIds('not-an-array')).toEqual([])
+      assert.deepEqual(normalizeLinkedMemoryIds(null), [])
+      assert.deepEqual(normalizeLinkedMemoryIds(undefined), [])
+      assert.deepEqual(normalizeLinkedMemoryIds('not-an-array'), [])
     })
 
     it('deduplicates ids', () => {
-      expect(normalizeLinkedMemoryIds(['a', 'b', 'a', 'a', 'c'], undefined)).toEqual(['a', 'b', 'c'])
+      assert.deepEqual(normalizeLinkedMemoryIds(['a', 'b', 'a', 'a', 'c'], undefined), ['a', 'b', 'c'])
     })
   })
 
   describe('normalizeMemoryLookupLimits', () => {
     it('returns defaults for empty settings', () => {
       const limits = normalizeMemoryLookupLimits({})
-      expect(limits.maxDepth).toBe(3)
-      expect(limits.maxPerLookup).toBe(20)
-      expect(limits.maxLinkedExpansion).toBe(60)
+      assert.equal(limits.maxDepth, 3)
+      assert.equal(limits.maxPerLookup, 20)
+      assert.equal(limits.maxLinkedExpansion, 60)
     })
 
     it('clamps values to valid ranges', () => {
@@ -68,9 +69,9 @@ describe('Memory System', () => {
         maxMemoriesPerLookup: 1000,
         maxLinkedMemoriesExpanded: 5000,
       })
-      expect(limits.maxDepth).toBe(12) // max
-      expect(limits.maxPerLookup).toBe(200) // max
-      expect(limits.maxLinkedExpansion).toBe(1000) // max
+      assert.equal(limits.maxDepth, 12) // max
+      assert.equal(limits.maxPerLookup, 200) // max
+      assert.equal(limits.maxLinkedExpansion, 1000) // max
     })
 
     it('clamps zeros to minimums', () => {
@@ -79,9 +80,9 @@ describe('Memory System', () => {
         maxMemoriesPerLookup: 0,
         maxLinkedMemoriesExpanded: 0,
       })
-      expect(limits.maxDepth).toBe(0)
-      expect(limits.maxPerLookup).toBe(1) // min
-      expect(limits.maxLinkedExpansion).toBe(0)
+      assert.equal(limits.maxDepth, 0)
+      assert.equal(limits.maxPerLookup, 1) // min
+      assert.equal(limits.maxLinkedExpansion, 0)
     })
 
     it('uses legacy setting names as fallback', () => {
@@ -89,8 +90,8 @@ describe('Memory System', () => {
         memoryMaxDepth: 5,
         memoryMaxPerLookup: 50,
       })
-      expect(limits.maxDepth).toBe(5)
-      expect(limits.maxPerLookup).toBe(50)
+      assert.equal(limits.maxDepth, 5)
+      assert.equal(limits.maxPerLookup, 50)
     })
   })
 
@@ -103,21 +104,21 @@ describe('Memory System', () => {
 
     it('uses defaults when request is empty', () => {
       const result = resolveLookupRequest(defaults, {})
-      expect(result).toEqual(defaults)
+      assert.deepEqual(result, defaults)
     })
 
     it('overrides with request values', () => {
       const result = resolveLookupRequest(defaults, { depth: 2, limit: 10, linkedLimit: 30 })
-      expect(result.maxDepth).toBe(2)
-      expect(result.maxPerLookup).toBe(10)
-      expect(result.maxLinkedExpansion).toBe(30)
+      assert.equal(result.maxDepth, 2)
+      assert.equal(result.maxPerLookup, 10)
+      assert.equal(result.maxLinkedExpansion, 30)
     })
 
     it('caps at defaults maxima', () => {
       const result = resolveLookupRequest(defaults, { depth: 100, limit: 1000, linkedLimit: 5000 })
-      expect(result.maxDepth).toBe(3) // capped at default
-      expect(result.maxPerLookup).toBe(20) // capped at default
-      expect(result.maxLinkedExpansion).toBe(60) // capped at default
+      assert.equal(result.maxDepth, 3) // capped at default
+      assert.equal(result.maxPerLookup, 20) // capped at default
+      assert.equal(result.maxLinkedExpansion, 60) // capped at default
     })
   })
 
@@ -131,9 +132,9 @@ describe('Memory System', () => {
 
     it('returns empty for empty seeds', () => {
       const result = traverseLinkedMemoryGraph([], { maxDepth: 3, maxPerLookup: 20, maxLinkedExpansion: 60 }, fetchByIds)
-      expect(result.entries).toEqual([])
-      expect(result.truncated).toBe(false)
-      expect(result.expandedLinkedCount).toBe(0)
+      assert.deepEqual(result.entries, [])
+      assert.equal(result.truncated, false)
+      assert.equal(result.expandedLinkedCount, 0)
     })
 
     it('traverses linked nodes by depth', () => {
@@ -141,11 +142,11 @@ describe('Memory System', () => {
       const seeds = [{ id: 'a', linkedMemoryIds: ['b', 'c'] }]
       const result = traverseLinkedMemoryGraph(seeds, { maxDepth: 2, maxPerLookup: 20, maxLinkedExpansion: 60 }, fetchByIds)
       const ids = result.entries.map((n) => n.id)
-      expect(ids).toContain('a')
-      expect(ids).toContain('b')
-      expect(ids).toContain('c')
-      expect(ids).toContain('d') // depth 2
-      expect(result.expandedLinkedCount).toBe(3) // b, c, d
+      assert.ok(ids.includes('a'))
+      assert.ok(ids.includes('b'))
+      assert.ok(ids.includes('c'))
+      assert.ok(ids.includes('d')) // depth 2
+      assert.equal(result.expandedLinkedCount, 3) // b, c, d
     })
 
     it('respects maxDepth', () => {
@@ -157,23 +158,23 @@ describe('Memory System', () => {
       const seeds = [{ id: 'a', linkedMemoryIds: ['b'] }]
       const result = traverseLinkedMemoryGraph(seeds, { maxDepth: 1, maxPerLookup: 20, maxLinkedExpansion: 60 }, limitedFetch)
       const ids = result.entries.map((n) => n.id)
-      expect(ids).toContain('a')
-      expect(ids).toContain('b')
-      expect(ids).not.toContain('c') // depth 1 stops before c
+      assert.ok(ids.includes('a'))
+      assert.ok(ids.includes('b'))
+      assert.ok(!ids.includes('c')) // depth 1 stops before c
     })
 
     it('respects maxPerLookup', () => {
       const seeds = [{ id: 'a', linkedMemoryIds: ['b', 'c', 'd', 'e'] }]
       const result = traverseLinkedMemoryGraph(seeds, { maxDepth: 3, maxPerLookup: 3, maxLinkedExpansion: 60 }, fetchByIds)
-      expect(result.entries.length).toBe(3)
-      expect(result.truncated).toBe(true)
+      assert.equal(result.entries.length, 3)
+      assert.equal(result.truncated, true)
     })
 
     it('respects maxLinkedExpansion', () => {
       const seeds = [{ id: 'a', linkedMemoryIds: ['b', 'c', 'd', 'e', 'f'] }]
       const result = traverseLinkedMemoryGraph(seeds, { maxDepth: 3, maxPerLookup: 20, maxLinkedExpansion: 2 }, fetchByIds)
-      expect(result.expandedLinkedCount).toBe(2)
-      expect(result.truncated).toBe(true)
+      assert.equal(result.expandedLinkedCount, 2)
+      assert.equal(result.truncated, true)
     })
 
     it('handles circular links gracefully', () => {
@@ -184,8 +185,8 @@ describe('Memory System', () => {
       }
       const seeds = [{ id: 'a', linkedMemoryIds: ['b'] }]
       const result = traverseLinkedMemoryGraph(seeds, { maxDepth: 10, maxPerLookup: 100, maxLinkedExpansion: 100 }, circularFetch)
-      expect(result.entries.length).toBe(2) // just a and b
-      expect(result.truncated).toBe(false)
+      assert.equal(result.entries.length, 2) // just a and b
+      assert.equal(result.truncated, false)
     })
   })
 })
@@ -210,8 +211,8 @@ describe('Memory Database', () => {
       ]
       // This would be tested via the actual memory-db.ts normalizeReferences helper
       // For now, verify the structure is expected
-      expect(legacyPaths[0].path).toBe('/src/lib/x.ts')
-      expect(legacyPaths[0].kind).toBe('file')
+      assert.equal(legacyPaths[0].path, '/src/lib/x.ts')
+      assert.equal(legacyPaths[0].kind, 'file')
     })
   })
 

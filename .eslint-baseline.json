@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-01T13:23:16.638Z",
-  "totalIssues": 667,
-  "uniqueIssues": 230,
+  "generatedAt": "2026-03-01T16:11:34.989Z",
+  "totalIssues": 638,
+  "uniqueIssues": 223,
   "issues": [
     {
       "filePath": "bin/server-cmd.js",
@@ -48,13 +48,6 @@
     },
     {
       "filePath": "src/app/api/clawhub/install/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/api/connectors/[id]/route.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
@@ -349,13 +342,6 @@
     },
     {
       "filePath": "src/app/page.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
-    },
-    {
-      "filePath": "src/app/page.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
       "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
@@ -530,6 +516,13 @@
       "count": 3
     },
     {
+      "filePath": "src/components/chat/chat-preview-panel.tsx",
+      "ruleId": "@next/next/no-img-element",
+      "severity": 1,
+      "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+      "count": 1
+    },
+    {
       "filePath": "src/components/chat/chat-tool-toggles.tsx",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -548,14 +541,7 @@
       "ruleId": "@next/next/no-img-element",
       "severity": 1,
       "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
-      "count": 2
-    },
-    {
-      "filePath": "src/components/chat/message-list.tsx",
-      "ruleId": "react-hooks/refs",
-      "severity": 2,
-      "message": "Error: Cannot access refs during render React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).",
-      "count": 2
+      "count": 3
     },
     {
       "filePath": "src/components/chat/session-debug-panel.tsx",
@@ -576,13 +562,6 @@
       "ruleId": "@next/next/no-img-element",
       "severity": 1,
       "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/chat/tool-call-bubble.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
       "count": 1
     },
     {
@@ -1030,14 +1009,14 @@
       "filePath": "src/components/tasks/task-sheet.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "React Hook useEffect has a missing dependency: 'orchestrators'. Either include it or remove the dependency array.",
+      "message": "React Hook useEffect has a missing dependency: 'agentList'. Either include it or remove the dependency array.",
       "count": 1
     },
     {
       "filePath": "src/components/tasks/task-sheet.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "React Hook useEffect has missing dependencies: 'editing', 'loadAgents', and 'orchestrators'. Either include them or remove the dependency array.",
+      "message": "React Hook useEffect has missing dependencies: 'agentList', 'editing', and 'loadAgents'. Either include them or remove the dependency array.",
       "count": 1
     },
     {
@@ -1195,27 +1174,6 @@
       "count": 5
     },
     {
-      "filePath": "src/lib/server/connectors/googlechat.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_onMessage' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/connectors/googlechat.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/connectors/manager.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 11
-    },
-    {
       "filePath": "src/lib/server/connectors/matrix.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1269,7 +1227,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 8
+      "count": 7
     },
     {
       "filePath": "src/lib/server/connectors/telegram.ts",
@@ -1354,6 +1312,13 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 16
+    },
+    {
+      "filePath": "src/lib/server/main-session.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
     },
     {
       "filePath": "src/lib/server/mcp-client.test.ts",
@@ -1468,13 +1433,6 @@
       "count": 1
     },
     {
-      "filePath": "src/lib/server/session-tools/connector.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
       "filePath": "src/lib/server/session-tools/context-mgmt.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1524,13 +1482,6 @@
       "count": 1
     },
     {
-      "filePath": "src/lib/server/session-tools/file.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 8
-    },
-    {
       "filePath": "src/lib/server/session-tools/index.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1563,7 +1514,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 9
+      "count": 6
     },
     {
       "filePath": "src/lib/server/session-tools/web.ts",
@@ -1584,7 +1535,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 46
+      "count": 45
     },
     {
       "filePath": "src/lib/server/stream-agent-chat.ts",

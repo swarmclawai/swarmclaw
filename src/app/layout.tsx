@@ -1,26 +1,7 @@
 import type { Metadata, Viewport } from "next"
-import { Sora, DM_Sans, JetBrains_Mono } from "next/font/google"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import "./globals.css"
-
-const sora = Sora({
-  variable: "--font-sora",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-})
-
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-})
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
-})
 
 export const metadata: Metadata = {
   title: "SwarmClaw",
@@ -34,6 +15,10 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 }
 
+// Avoid static prerendering for the app shell. This prevents flaky
+// Turbopack prerender failures seen in detached fresh-install builds.
+export const dynamic = "force-dynamic"
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -41,7 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${sora.variable} ${dmSans.variable} ${jetbrainsMono.variable} antialiased`} cz-shortcut-listen="true">
+      <body className="antialiased" cz-shortcut-listen="true">
         <TooltipProvider>
           {children}
           <Toaster />

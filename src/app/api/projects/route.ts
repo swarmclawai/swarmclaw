@@ -4,7 +4,7 @@ import { loadProjects, saveProjects } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 export const dynamic = 'force-dynamic'
 
-export async function GET(_req: Request) {
+export async function GET() {
   return NextResponse.json(loadProjects())
 }
 

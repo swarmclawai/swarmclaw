@@ -13,6 +13,13 @@ export interface WebSearchProvider {
   search(query: string, maxResults: number): Promise<SearchResult[]>
 }
 
+interface RawSearchResult {
+  title?: string
+  url?: string
+  content?: string
+  description?: string
+}
+
 const UA = 'Mozilla/5.0 (compatible; SwarmClaw/1.0)'
 
 // ---------------------------------------------------------------------------
@@ -162,8 +169,8 @@ class SearXNGProvider implements WebSearchProvider {
     })
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
     const data = await res.json()
-    const rawResults = Array.isArray(data.results) ? data.results : []
-    return rawResults.slice(0, maxResults).map((r: any) => ({
+    const rawResults: RawSearchResult[] = Array.isArray(data.results) ? data.results : []
+    return rawResults.slice(0, maxResults).map((r) => ({
       title: r.title || '',
       url: r.url || '',
       snippet: r.content || '',
@@ -194,8 +201,8 @@ class TavilyProvider implements WebSearchProvider {
     })
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
     const data = await res.json()
-    const rawResults = Array.isArray(data.results) ? data.results : []
-    return rawResults.slice(0, maxResults).map((r: any) => ({
+    const rawResults: RawSearchResult[] = Array.isArray(data.results) ? data.results : []
+    return rawResults.slice(0, maxResults).map((r) => ({
       title: r.title || '',
       url: r.url || '',
       snippet: r.content || '',
@@ -227,8 +234,8 @@ class BraveProvider implements WebSearchProvider {
     )
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
     const data = await res.json()
-    const rawResults = Array.isArray(data.web?.results) ? data.web.results : []
-    return rawResults.slice(0, maxResults).map((r: any) => ({
+    const rawResults: RawSearchResult[] = Array.isArray(data.web?.results) ? data.web.results : []
+    return rawResults.slice(0, maxResults).map((r) => ({
       title: r.title || '',
       url: r.url || '',
       snippet: r.description || '',

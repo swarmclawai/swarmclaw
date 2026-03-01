@@ -14,6 +14,7 @@ export function ProjectList() {
   const setActiveProjectFilter = useAppStore((s) => s.setActiveProjectFilter)
   const [search, setSearch] = useState('')
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadProjects() }, [])
 
   const filtered = useMemo(() => {

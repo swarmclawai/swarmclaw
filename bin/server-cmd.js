@@ -17,14 +17,15 @@ const PID_FILE = path.join(SWARMCLAW_HOME, 'server.pid')
 const LOG_FILE = path.join(SWARMCLAW_HOME, 'server.log')
 const DATA_DIR = path.join(SWARMCLAW_HOME, 'data')
 
-// Files/directories to symlink from the npm package into SWARMCLAW_HOME
-const SYMLINKS = [
+// Files/directories to copy from the npm package into SWARMCLAW_HOME
+const BUILD_COPY_ENTRIES = [
   'src',
   'public',
   'next.config.ts',
   'tsconfig.json',
   'postcss.config.mjs',
   'package.json',
+  'package-lock.json',
 ]
 
 // ---------------------------------------------------------------------------
@@ -61,16 +62,13 @@ function isProcessRunning(pid) {
   }
 }
 
-function symlink(src, dest) {
-  // Remove existing symlink/file if present
-  try {
-    const stat = fs.lstatSync(dest)
-    if (stat.isSymbolicLink() || stat.isFile()) {
-      fs.unlinkSync(dest)
-    }
-  } catch {
-    // doesn't exist
-  }
+function copyPath(src, dest, { dereference = true } = {}) {
+  fs.rmSync(dest, { recursive: true, force: true })
+  fs.cpSync(src, dest, { recursive: true, dereference })
+}
+
+function symlinkPath(src, dest) {
+  fs.rmSync(dest, { recursive: true, force: true })
   fs.symlinkSync(src, dest)
 }
 
@@ -89,8 +87,9 @@ function runBuild() {
   ensureDir(SWARMCLAW_HOME)
   ensureDir(DATA_DIR)
 
-  // Create symlinks from PKG_ROOT into SWARMCLAW_HOME
-  for (const entry of SYMLINKS) {
+  // Copy source/config into SWARMCLAW_HOME. Turbopack build currently rejects
+  // app source symlinks that point outside the workspace root.
+  for (const entry of BUILD_COPY_ENTRIES) {
     const src = path.join(PKG_ROOT, entry)
     const dest = path.join(SWARMCLAW_HOME, entry)
 
@@ -99,23 +98,33 @@ function runBuild() {
       continue
     }
 
-    symlink(src, dest)
+    copyPath(src, dest)
   }
 
-  // Symlink node_modules
+  // Reuse package dependencies via symlink to avoid multi-GB duplication in
+  // SWARMCLAW_HOME. Build runs with webpack mode for symlink compatibility.
   const nmSrc = path.join(PKG_ROOT, 'node_modules')
   const nmDest = path.join(SWARMCLAW_HOME, 'node_modules')
   if (fs.existsSync(nmSrc)) {
-    symlink(nmSrc, nmDest)
+    symlinkPath(nmSrc, nmDest)
   } else {
     // If node_modules doesn't exist at PKG_ROOT, install
     log('Installing dependencies...')
-    execSync('npm install --omit=dev', { cwd: SWARMCLAW_HOME, stdio: 'inherit' })
+    execSync('npm install', { cwd: SWARMCLAW_HOME, stdio: 'inherit' })
   }
 
   // Run Next.js build
   log('Building Next.js application (this may take a minute)...')
-  execSync('npx next build', { cwd: SWARMCLAW_HOME, stdio: 'inherit' })
+  // Use webpack for production build reliability in packaged/fresh-install
+  // environments (Turbopack has intermittently failed during prerender).
+  execSync('npx next build --webpack', {
+    cwd: SWARMCLAW_HOME,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      SWARMCLAW_BUILD_MODE: '1',
+    },
+  })
 
   // Write built marker
   fs.writeFileSync(BUILT_MARKER, JSON.stringify({ builtAt: new Date().toISOString(), version: getVersion() }))

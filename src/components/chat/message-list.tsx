@@ -1,12 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
+import { api } from '@/lib/api-client'
 import { MessageBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ThinkingIndicator } from './thinking-indicator'
+import { SuggestionsBar } from './suggestions-bar'
 
 function dateSeparator(ts: number): string {
   const d = new Date(ts)
@@ -26,14 +28,19 @@ interface Props {
 export function MessageList({ messages, streaming }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
-  const needsSnapRef = useRef(true)
+  const snapUntilRef = useRef(0)
   const prevSessionIdRef = useRef<string | null>(null)
-  const streamText = useChatStore((s) => s.streamText)
+  const displayText = useChatStore((s) => s.displayText)
+  const setMessages = useChatStore((s) => s.setMessages)
   const retryLastMessage = useChatStore((s) => s.retryLastMessage)
+  const editAndResend = useChatStore((s) => s.editAndResend)
+  const sendMessage = useChatStore((s) => s.sendMessage)
+  const forkSession = useAppStore((s) => s.forkSession)
   const session = useAppStore((s) => {
     const id = s.currentSessionId
     return id ? s.sessions[id] : null
   })
+  const sessionId = session?.id ?? null
   const agents = useAppStore((s) => s.agents)
   const agent = session?.agentId ? agents[session.agentId] : null
   const appSettings = useAppStore((s) => s.appSettings)
@@ -49,6 +56,37 @@ export function MessageList({ messages, streaming }: Props) {
   const [unreadCount, setUnreadCount] = useState(0)
   const prevMsgCountRef = useRef(messages.length)
 
+  // Bookmark filter
+  const [bookmarkFilter, setBookmarkFilter] = useState(false)
+
+  const toggleBookmark = useCallback(async (index: number) => {
+    if (!sessionId) return
+    const msg = messages[index]
+    if (!msg) return
+    const next = !msg.bookmarked
+    try {
+      await api('PUT', `/sessions/${sessionId}/messages`, { messageIndex: index, bookmarked: next })
+      const updated = [...messages]
+      updated[index] = { ...updated[index], bookmarked: next }
+      setMessages(updated)
+    } catch (err: unknown) {
+      console.error('Failed to toggle bookmark:', err instanceof Error ? err.message : String(err))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, messages])
+
+  const handleEditResend = useCallback(async (index: number, newText: string) => {
+    if (!sessionId || !editAndResend) return
+    await editAndResend(index, newText)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  const handleFork = useCallback(async (index: number) => {
+    if (!sessionId || !forkSession) return
+    await forkSession(sessionId, index)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
   // In-thread search
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -56,9 +94,9 @@ export function MessageList({ messages, streaming }: Props) {
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const isHeartbeatMessage = (msg: Message) =>
-    msg.role === 'assistant' && (msg.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(msg.text || ''))
+    msg.role === 'assistant' && (msg.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(msg.text || '') || /^\s*NO_MESSAGE\b/i.test(msg.text || ''))
   const isHeartbeatOk = (msg: Message) =>
-    msg.suppressed === true || (msg.kind === 'heartbeat' && /^\s*HEARTBEAT_OK\b/i.test(msg.text || ''))
+    msg.suppressed === true || (msg.kind === 'heartbeat' && (/^\s*HEARTBEAT_OK\b/i.test(msg.text || '') || /^\s*NO_MESSAGE\b/i.test(msg.text || '')))
 
   const displayedMessages: Message[] = []
   for (const msg of messages) {
@@ -79,9 +117,14 @@ export function MessageList({ messages, streaming }: Props) {
     }
   }
 
+  // Apply bookmark filter
+  const filteredMessages = bookmarkFilter
+    ? displayedMessages.filter((msg) => msg.bookmarked)
+    : displayedMessages
+
   // Search matches
   const searchMatches = searchQuery.trim()
-    ? displayedMessages
+    ? filteredMessages
         .map((msg, i) => ({ msg, i }))
         .filter(({ msg }) => msg.text.toLowerCase().includes(searchQuery.toLowerCase()))
     : []
@@ -99,6 +142,10 @@ export function MessageList({ messages, streaming }: Props) {
     const nearBottom = isNearBottom(el)
     wasAtBottomRef.current = nearBottom
     setShowScrollToBottom(!nearBottom)
+    // Cancel snap window if user manually scrolls away
+    if (!nearBottom && Date.now() < snapUntilRef.current) {
+      snapUntilRef.current = 0
+    }
     if (nearBottom && unreadRef.current > 0) {
       unreadRef.current = 0
       setUnreadCount(0)
@@ -115,31 +162,52 @@ export function MessageList({ messages, streaming }: Props) {
     }
   }, [messages.length, isNearBottom])
 
-  // Detect session switch during render (no extra useEffect, no dep-array mismatch)
-  const sessionId = session?.id ?? null
-  if (sessionId !== prevSessionIdRef.current) {
-    prevSessionIdRef.current = sessionId
-    needsSnapRef.current = true
-    wasAtBottomRef.current = true
-  }
+  // Detect session switch — set snap window and reset scroll state.
+  // Must fire before the scroll positioning layoutEffect below.
+  useLayoutEffect(() => {
+    if (sessionId !== prevSessionIdRef.current) {
+      prevSessionIdRef.current = sessionId
+      wasAtBottomRef.current = true
+      snapUntilRef.current = Date.now() + 2000
+    }
+  }, [sessionId])
 
+  // Position scroll before paint — no setState here to avoid cascading renders.
+  // The onScroll handler and the state-update effect below handle UI state.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el || messages.length === 0) return
+
+    const snapping = Date.now() < snapUntilRef.current
+
+    if (snapping || wasAtBottomRef.current) {
+      el.scrollTop = el.scrollHeight
+      wasAtBottomRef.current = true
+    }
+  }, [messages.length, displayText])
+
+  // Update scroll-related UI state after render (separate from layoutEffect to avoid cascading)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || messages.length === 0) return
+    updateScrollState()
+  }, [messages.length, displayText, updateScrollState])
+
+  // Re-snap when content resizes during snap window (lazy images increasing scrollHeight)
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    if (needsSnapRef.current && messages.length > 0) {
-      // First render after session switch — snap instantly, no visible scroll
-      needsSnapRef.current = false
-      el.scrollTop = el.scrollHeight
-      setShowScrollToBottom(false)
-      wasAtBottomRef.current = true
-      return
-    }
-    // Auto-scroll if user was at bottom before new content arrived
-    if (wasAtBottomRef.current) {
-      el.scrollTop = el.scrollHeight
-    }
-    updateScrollState()
-  }, [messages.length, streamText, isNearBottom, updateScrollState])
+    const content = el.firstElementChild as HTMLElement | null
+    if (!content) return
+
+    const observer = new ResizeObserver(() => {
+      if (Date.now() < snapUntilRef.current || wasAtBottomRef.current) {
+        el.scrollTop = el.scrollHeight
+      }
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [sessionId])
 
   const handleScrollToBottom = useCallback(() => {
     const el = scrollRef.current
@@ -179,7 +247,7 @@ export function MessageList({ messages, streaming }: Props) {
   }, [searchOpen])
 
   return (
-    <div className="relative flex-1 min-h-0">
+    <div className="relative flex-1 min-h-0 min-w-0">
       {/* In-thread search bar */}
       {searchOpen && (
         <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-2 px-6 md:px-12 lg:px-16 py-2 bg-surface/95 backdrop-blur-sm border-b border-white/[0.06]">
@@ -225,6 +293,15 @@ export function MessageList({ messages, streaming }: Props) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6" /></svg>
           </button>
           <button
+            onClick={() => setBookmarkFilter((v) => !v)}
+            aria-label={bookmarkFilter ? 'Show all messages' : 'Show bookmarked only'}
+            className={`p-1 rounded-[6px] hover:bg-white/[0.04] cursor-pointer border-none bg-transparent transition-colors ${bookmarkFilter ? 'text-[#F59E0B]' : 'text-text-3 hover:text-text-2'}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill={bookmarkFilter ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
+          <button
             onClick={() => { setSearchOpen(false); setSearchQuery(''); setSearchIdx(0) }}
             aria-label="Close search"
             className="p-1 rounded-[6px] text-text-3 hover:text-text-2 hover:bg-white/[0.04] cursor-pointer border-none bg-transparent transition-colors"
@@ -240,14 +317,16 @@ export function MessageList({ messages, streaming }: Props) {
         className="h-full overflow-y-auto px-6 md:px-12 lg:px-16 py-6"
       >
         <div className="flex flex-col gap-6">
-          {displayedMessages.map((msg, i) => {
+          {filteredMessages.map((msg, i) => {
+            // Find original index in the full messages array for API calls
+            const originalIndex = messages.indexOf(msg)
             const isLastAssistant = msg.role === 'assistant' && !streaming
-              && displayedMessages.slice(i + 1).every((m) => m.role !== 'assistant')
+              && filteredMessages.slice(i + 1).every((m) => m.role !== 'assistant')
             const isSearchMatch = searchQuery && searchMatches.some((m) => m.i === i)
             const isCurrentMatch = searchQuery && searchMatches[searchIdx]?.i === i
 
             // Date separator
-            const prevMsg = i > 0 ? displayedMessages[i - 1] : null
+            const prevMsg = i > 0 ? filteredMessages[i - 1] : null
             const showDateSep = msg.time && (!prevMsg?.time || new Date(msg.time).toDateString() !== new Date(prevMsg.time).toDateString())
 
             return (
@@ -267,13 +346,20 @@ export function MessageList({ messages, streaming }: Props) {
                     assistantName={assistantName}
                     isLast={isLastAssistant}
                     onRetry={isLastAssistant ? retryLastMessage : undefined}
+                    messageIndex={originalIndex >= 0 ? originalIndex : undefined}
+                    onToggleBookmark={toggleBookmark}
+                    onEditResend={handleEditResend}
+                    onFork={handleFork}
                   />
                 </div>
               </div>
             )
           })}
-          {streaming && !streamText && <ThinkingIndicator assistantName={assistantName} />}
-          {streaming && streamText && <StreamingBubble text={streamText} assistantName={assistantName} />}
+          {streaming && !displayText && <ThinkingIndicator assistantName={assistantName} />}
+          {streaming && displayText && <StreamingBubble text={displayText} assistantName={assistantName} />}
+          {!streaming && filteredMessages.length > 0 && filteredMessages[filteredMessages.length - 1]?.role === 'assistant' && (
+            <SuggestionsBar lastMessage={filteredMessages[filteredMessages.length - 1]} onSend={sendMessage} />
+          )}
         </div>
       </div>
       {showScrollToBottom && (

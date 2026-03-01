@@ -252,12 +252,12 @@ export function pushSchedulesToOpenClaw(): { written: number } {
   const cronDir = path.join(config.workspacePath, 'cron')
   ensureDir(cronDir)
 
-  const schedules = loadSchedules()
+  const schedules = loadSchedules() as Record<string, Schedule>
   const cronSchedules = Object.values(schedules).filter(
-    (s: any) => s.scheduleType === 'cron' && s.status === 'active',
+    (s) => s.scheduleType === 'cron' && s.status === 'active',
   )
 
-  const jobs = cronSchedules.map((s: any) => ({
+  const jobs = cronSchedules.map((s) => ({
     name: s.name,
     cron: s.cron,
     agentId: s.agentId,
@@ -277,8 +277,8 @@ export function pullSchedulesFromOpenClaw(): { imported: number } {
   const raw = JSON.parse(fs.readFileSync(jobsPath, 'utf8'))
   if (!Array.isArray(raw)) return { imported: 0 }
 
-  const schedules = loadSchedules()
-  const existingNames = new Set(Object.values(schedules).map((s: any) => `${s.name}|${s.cron}`))
+  const schedules = loadSchedules() as Record<string, Schedule>
+  const existingNames = new Set(Object.values(schedules).map((s) => `${s.name}|${s.cron}`))
   let imported = 0
 
   for (const job of raw) {
@@ -307,11 +307,12 @@ export function pullSchedulesFromOpenClaw(): { imported: number } {
 
 // --- Secret/Credential Sync (Feature 7) ---
 
-export function pullCredentialsFromOpenClaw(): { imported: number } {
+export async function pullCredentialsFromOpenClaw(): Promise<{ imported: number }> {
   const config = loadSyncConfig()
   const modelsPath = path.join(config.workspacePath, 'agents', 'main', 'agent', 'models.json')
   if (!fs.existsSync(modelsPath)) return { imported: 0 }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let raw: any
   try {
     raw = JSON.parse(fs.readFileSync(modelsPath, 'utf8'))
@@ -319,9 +320,9 @@ export function pullCredentialsFromOpenClaw(): { imported: number } {
     return { imported: 0 }
   }
 
-  const { loadCredentials: loadCreds, saveCredentials } = require('./storage')
+  const { loadCredentials: loadCreds, saveCredentials } = await import('./storage')
   const creds = loadCreds()
-  const existingProviders = new Set(Object.values(creds).map((c: any) => c.provider))
+  const existingProviders = new Set(Object.values(creds).map((c: Record<string, unknown>) => c.provider))
   let imported = 0
 
   // Extract API keys from models.json entries
@@ -352,7 +353,7 @@ export function pushCredentialsToOpenClaw(): { written: boolean } {
   const creds = loadCredentials()
 
   const profiles: Record<string, string> = {}
-  for (const cred of Object.values(creds) as any[]) {
+  for (const cred of Object.values(creds) as Array<Record<string, string>>) {
     if (!cred.encryptedKey || !cred.provider) continue
     try {
       profiles[cred.provider] = decryptKey(cred.encryptedKey)
@@ -483,7 +484,7 @@ export async function runSync(params: {
           results.push({ type, action: 'pull', result: pullSchedulesFromOpenClaw() })
           break
         case 'credentials':
-          results.push({ type, action: 'pull', result: pullCredentialsFromOpenClaw() })
+          results.push({ type, action: 'pull', result: await pullCredentialsFromOpenClaw() })
           break
         case 'plugins':
           results.push({ type, action: 'pull', result: syncPluginsFromOpenClaw() })

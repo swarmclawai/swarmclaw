@@ -28,8 +28,8 @@ export function buildOpenClawNodeTools(bctx: ToolBuildContext): StructuredToolIn
             connectorId: openclawConnectors[0].id,
             note: 'This feature requires the OpenClaw gateway to support nodes.* RPCs.',
           })
-        } catch (err: any) {
-          return JSON.stringify({ error: err.message })
+        } catch (err: unknown) {
+          return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
         }
       },
       {
@@ -59,8 +59,8 @@ export function buildOpenClawNodeTools(bctx: ToolBuildContext): StructuredToolIn
             params: params || null,
             connectorId: openclawConnectors[0].id,
           })
-        } catch (err: any) {
-          return JSON.stringify({ error: err.message })
+        } catch (err: unknown) {
+          return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
         }
       },
       {
@@ -93,8 +93,8 @@ export function buildOpenClawNodeTools(bctx: ToolBuildContext): StructuredToolIn
             message,
             connectorId: openclawConnectors[0].id,
           })
-        } catch (err: any) {
-          return JSON.stringify({ error: err.message })
+        } catch (err: unknown) {
+          return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
         }
       },
       {

@@ -4,14 +4,13 @@ import type { GoalContract, MessageToolEvent } from '@/types'
 import { loadSessions, saveSessions, loadAgents, saveAgents, loadTasks, saveTasks } from './storage'
 import { log } from './logger'
 import { getMemoryDb } from './memory-db'
+import { isProtectedMainSession } from './main-session'
 import {
   mergeGoalContracts,
   parseGoalContractFromText,
   parseMainLoopPlan,
   parseMainLoopReview,
 } from './autonomy-contract'
-
-const MAIN_SESSION_NAME = '__main__'
 const MAX_PENDING_EVENTS = 40
 const MAX_TIMELINE_EVENTS = 80
 const EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -669,7 +668,7 @@ function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: bool
 }
 
 export function isMainSession(session: any): boolean {
-  return session?.name === MAIN_SESSION_NAME
+  return isProtectedMainSession(session)
 }
 
 export function buildMainLoopHeartbeatPrompt(session: any, fallbackPrompt: string): string {

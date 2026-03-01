@@ -52,9 +52,12 @@ interface Props {
 export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, mobile, browserActive, onStopBrowser, onVoiceToggle, voiceActive, voiceSupported }: Props) {
   const ttsEnabled = useChatStore((s) => s.ttsEnabled)
   const toggleTts = useChatStore((s) => s.toggleTts)
+  const soundEnabled = useChatStore((s) => s.soundEnabled)
+  const toggleSound = useChatStore((s) => s.toggleSound)
   const debugOpen = useChatStore((s) => s.debugOpen)
   const setDebugOpen = useChatStore((s) => s.setDebugOpen)
   const lastUsage = useChatStore((s) => s.lastUsage)
+  const agentStatus = useChatStore((s) => s.agentStatus)
   const agents = useAppStore((s) => s.agents)
   const tasks = useAppStore((s) => s.tasks)
   const setActiveView = useAppStore((s) => s.setActiveView)
@@ -69,6 +72,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const agent = session.agentId ? agents[session.agentId] : null
   const connector = getSessionConnector(session, connectors)
   const connectorMeta = connector ? CONNECTOR_PLATFORM_META[connector.platform] : null
+  const connectorPresence = connector?.presence
   const modelName = session.model || agent?.model || ''
   const [copied, setCopied] = useState(false)
   const [heartbeatSaving, setHeartbeatSaving] = useState(false)
@@ -135,7 +139,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       const total = (m[1] ? parseInt(m[1]) * 3600 : 0) + (m[2] ? parseInt(m[2]) * 60 : 0) + (m[3] ? parseInt(m[3]) : 0)
       return Math.max(0, Math.min(86400, total))
     }
-    const resolveFrom = (obj: Record<string, any>): number | null => {
+    const resolveFrom = (obj: { heartbeatInterval?: string | number | null; heartbeatIntervalSec?: number | null }): number | null => {
       const dur = parseDur(obj.heartbeatInterval)
       if (dur !== null) return dur
       const sec = parseDur(obj.heartbeatIntervalSec)
@@ -143,20 +147,20 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       return null
     }
     // Global defaults
-    let sec = resolveFrom(appSettings as Record<string, any>) ?? 1800
+    let sec = resolveFrom(appSettings) ?? 1800
     let enabled = sec > 0
     let explicitOptIn = false
     // Agent layer
     if (agent) {
       if (agent.heartbeatEnabled === false) enabled = false
       if (agent.heartbeatEnabled === true) { enabled = true; explicitOptIn = true }
-      sec = resolveFrom(agent as Record<string, any>) ?? sec
+      sec = resolveFrom(agent) ?? sec
     }
     // Session layer — only applies for non-agent chats (agent chats save directly to agent)
     if (!agent) {
       if (session.heartbeatEnabled === false) enabled = false
       if (session.heartbeatEnabled === true) { enabled = true; explicitOptIn = true }
-      sec = resolveFrom(session as Record<string, any>) ?? sec
+      sec = resolveFrom(session) ?? sec
     }
     return {
       heartbeatEnabled: enabled && sec > 0,
@@ -326,6 +330,27 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 {connectorMeta.label}
               </span>
             )}
+            {connector && connectorPresence && (() => {
+              const lastAt = connectorPresence.lastMessageAt
+              if (!lastAt) return (
+                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] text-text-3/50">
+                  <span className="w-1.5 h-1.5 rounded-full bg-text-3/40" />
+                  Inactive
+                </span>
+              )
+              const ago = Date.now() - lastAt
+              const isActive = ago < 5 * 60_000
+              const isRecent = ago < 30 * 60_000
+              const label = isActive ? 'Active' : isRecent ? `${Math.floor(ago / 60_000)}m ago` : 'Inactive'
+              const dotColor = isActive ? 'bg-emerald-400' : isRecent ? 'bg-amber-400' : 'bg-text-3/40'
+              const textColor = isActive ? 'text-emerald-400' : isRecent ? 'text-amber-300' : 'text-text-3/50'
+              return (
+                <span className={`shrink-0 inline-flex items-center gap-1 text-[10px] ${textColor}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                  {label}
+                </span>
+              )
+            })()}
             {session.provider && session.provider !== 'claude-cli' && (
               <span className="shrink-0 px-2.5 py-0.5 rounded-[7px] bg-accent-soft text-accent-bright text-[10px] font-700 uppercase tracking-wider">
                 {providerLabel}
@@ -351,6 +376,21 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <>
                 <span className="text-[11px] text-text-3/60">·</span>
                 <span className="text-[11px] text-text-3/50 font-mono truncate shrink-0">{modelName}</span>
+                {session.conversationTone && session.conversationTone !== 'neutral' && (() => {
+                  const toneColors: Record<string, string> = {
+                    formal: 'bg-[#3B82F6]',
+                    casual: 'bg-emerald-400',
+                    empathetic: 'bg-purple-400',
+                    technical: 'bg-[#F59E0B]',
+                  }
+                  const color = toneColors[session.conversationTone] || ''
+                  return color ? (
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${color}`}
+                      title={`Tone: ${session.conversationTone}`}
+                    />
+                  ) : null
+                })()}
               </>
             )}
             {lastUsage && !streaming && (
@@ -360,6 +400,50 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               </>
             )}
           </div>
+          {(() => {
+            const liveStatus = agentStatus || (missionState.status ? {
+              goal: missionState.goal ?? undefined,
+              status: missionState.status ?? undefined,
+              summary: missionState.summary ?? undefined,
+              nextAction: missionState.nextAction ?? undefined,
+            } : null)
+            if (!liveStatus) return null
+            const statusColors: Record<string, string> = {
+              idle: 'bg-text-3/40',
+              progress: 'bg-[#3B82F6]',
+              blocked: 'bg-amber-400',
+              ok: 'bg-emerald-400',
+            }
+            const dotColor = statusColors[liveStatus.status || ''] || 'bg-text-3/40'
+            return (
+              <div className="flex items-center gap-2 mt-0.5">
+                {liveStatus.goal && (
+                  <span className="text-[10px] text-text-3/60 font-mono truncate max-w-[240px]" title={liveStatus.goal}>
+                    {liveStatus.goal}
+                  </span>
+                )}
+                {liveStatus.status && (
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[5px] text-[9px] font-700 uppercase tracking-wider ${
+                    liveStatus.status === 'blocked' ? 'bg-amber-400/15 text-amber-300'
+                    : liveStatus.status === 'ok' ? 'bg-emerald-400/15 text-emerald-400'
+                    : liveStatus.status === 'progress' ? 'bg-[#3B82F6]/15 text-[#60A5FA]'
+                    : 'bg-white/[0.04] text-text-3/60'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                    {liveStatus.status}
+                  </span>
+                )}
+                {liveStatus.nextAction && (
+                  <>
+                    <span className="text-[10px] text-text-3/40">→</span>
+                    <span className="text-[10px] text-text-3/50 font-mono truncate max-w-[200px]" title={liveStatus.nextAction}>
+                      {liveStatus.nextAction}
+                    </span>
+                  </>
+                )}
+              </div>
+            )
+          })()}
         </div>
         <div className="flex gap-1.5">
           {streaming && (
@@ -374,6 +458,12 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <path d="M12 20V10" />
               <path d="M18 20V4" />
               <path d="M6 20v-4" />
+            </svg>
+          </IconButton>
+          <IconButton onClick={toggleSound} active={soundEnabled} aria-label="Toggle sound notifications">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M18 8A6 6 0 0 1 18 16" />
+              <path d="M13 2L8 7H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h4l5 5V2z" />
             </svg>
           </IconButton>
           <IconButton onClick={toggleTts} active={ttsEnabled} aria-label="Toggle text-to-speech">

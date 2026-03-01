@@ -9,14 +9,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const connector = connectors[id]
   if (!connector) return notFound()
 
-  // Merge runtime status and QR code
+  // Merge runtime status, QR code, and presence
   try {
-    const { getConnectorStatus, getConnectorQR, isConnectorAuthenticated, hasConnectorCredentials } = await import('@/lib/server/connectors/manager')
+    const { getConnectorStatus, getConnectorQR, isConnectorAuthenticated, hasConnectorCredentials, getConnectorPresence } = await import('@/lib/server/connectors/manager')
     connector.status = getConnectorStatus(id)
     const qr = getConnectorQR(id)
     if (qr) connector.qrDataUrl = qr
     connector.authenticated = isConnectorAuthenticated(id)
     connector.hasCredentials = hasConnectorCredentials(id)
+    if (connector.status === 'running') {
+      connector.presence = getConnectorPresence(id)
+    }
   } catch { /* ignore */ }
 
   return NextResponse.json(connector)
@@ -41,10 +44,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       } else {
         await manager.repairConnector(id)
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Re-read to get the error state saved by startConnector
       const fresh = loadConnectors()
-      return NextResponse.json(fresh[id] || { error: err.message }, { status: 500 })
+      return NextResponse.json(fresh[id] || { error: err instanceof Error ? err.message : String(err) }, { status: 500 })
     }
     // Re-read the connector after manager modified it
     const fresh = loadConnectors()
