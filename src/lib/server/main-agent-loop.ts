@@ -728,7 +728,7 @@ export function stripMainLoopMetaForPersistence(text: string, internal: boolean)
   if (!text) return ''
   return text
     .split('\n')
-    .filter((line) => !line.includes('[MAIN_LOOP_META]') && !line.includes('[MAIN_LOOP_PLAN]') && !line.includes('[MAIN_LOOP_REVIEW]'))
+    .filter((line) => !line.includes('[MAIN_LOOP_META]') && !line.includes('[MAIN_LOOP_PLAN]') && !line.includes('[MAIN_LOOP_REVIEW]') && !line.includes('[AGENT_HEARTBEAT_META]'))
     .join('\n')
     .trim()
 }

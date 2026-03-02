@@ -7,6 +7,7 @@ import { uploadImage } from '@/lib/upload'
 import { useAutoResize } from '@/hooks/use-auto-resize'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { FilePreview } from '@/components/shared/file-preview'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 interface Props {
   streaming: boolean
@@ -91,8 +92,8 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
     try {
       const result = await uploadImage(file)
       addPendingFile({ file, path: result.path, url: result.url })
-    } catch {
-      // ignore upload errors
+    } catch (err: unknown) {
+      console.error('File upload failed:', err instanceof Error ? err.message : String(err))
     }
   }, [addPendingFile])
 
@@ -225,6 +226,31 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
                 </svg>
               </button>
             )}
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => { useChatStore.getState().clearContext() }}
+                  disabled={streaming}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-[10px] border-none bg-transparent
+                    text-text-3 text-[13px] cursor-pointer hover:text-amber-400 hover:bg-amber-400/10 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <line x1="2" y1="12" x2="22" y2="12" />
+                    <polyline points="8 8 4 12 8 16" />
+                    <polyline points="16 8 20 12 16 16" />
+                  </svg>
+                  <span className="hidden sm:inline">New context</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8}
+                className="bg-raised border border-white/[0.08] text-text shadow-[0_8px_32px_rgba(0,0,0,0.5)] rounded-[10px] px-3.5 py-2.5 max-w-[220px]">
+                <div className="font-display text-[12px] font-600 mb-0.5">New context window</div>
+                <div className="text-[11px] text-text-3 leading-[1.4]">Adds a marker — messages above it won&apos;t be sent to the AI. Nothing is deleted.</div>
+              </TooltipContent>
+            </Tooltip>
 
             <div className="flex-1" />
 

@@ -30,11 +30,13 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 - **Agent Builder** — Create agents with custom personalities (soul), system prompts, tools, and skills. AI-powered generation from a description
 - **Agent Inspector Panel** — Per-agent side panel for OpenClaw file editing (`SOUL.md`, `IDENTITY.md`, `USER.md`, etc.), guided personality editing, skill install/enable/remove, permission presets, sandbox env allowlist, and cron automations
 - **Agent Fleet Management** — Avatar seeds with generated avatars, running/approval fleet filters, soft-delete agent trash with restore/permanent delete, and approval counters in agent cards
-- **Agent Tools** — Shell, process control for long-running commands, files, edit file, send file, web search, web fetch, CLI delegation (Claude/Codex/OpenCode), Playwright browser automation, persistent memory, and sandboxed code execution (JS/TS via Deno, Python)
+- **Agent Tools** — Shell, process control for long-running commands, files, edit file, send file, web search, web fetch, CLI delegation (Claude/Codex/OpenCode), Playwright browser automation, sub-agent spawning, canvas presentation, direct HTTP requests, git operations, persistent memory, and sandboxed code execution (JS/TS via Deno, Python)
 - **Platform Tools** — Agents can manage other agents, tasks, schedules, skills, connectors, sessions, and encrypted secrets via built-in platform tools
 - **Orchestration** — Multi-agent workflows powered by LangGraph with automatic sub-agent routing, checkpointed execution, and rich delegation cards that link to sub-agent chat threads
 - **Agentic Execution Policy** — Tool-first autonomous action loop with progress updates, evidence-driven answers, and better use of platform tools for long-lived work
+- **Runtime Date/Time Grounding** — Session, orchestrator, chatroom, and connector prompts include authoritative current timestamp context to reduce stale-date behavior
 - **Task Board** — Queue and track agent tasks with status, comments, results, and archiving. Strict capability policy pauses tasks for human approval before tool execution
+- **Task Metrics API** — Built-in analytics endpoint for WIP, cycle times, throughput velocity, completion/failure by agent, and priority distribution
 - **Background Daemon** — Auto-processes queued tasks and scheduled jobs with a 30s heartbeat plus recurring health monitoring
 - **Scheduling** — Cron-based agent scheduling with human-friendly presets
 - **Loop Runtime Controls** — Switch between bounded and ongoing loops with configurable step caps, runtime guards, heartbeat cadence, and timeout budgets
@@ -86,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.6.0 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.6.1 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -279,7 +281,11 @@ Agents can use the following tools when enabled:
 | Web Search | Search the web via DuckDuckGo HTML scraping |
 | Web Fetch | Fetch and extract text content from URLs (uses cheerio) |
 | CLI Delegation | Delegate complex tasks to Claude Code, Codex CLI, or OpenCode CLI |
+| Spawn Subagent | Delegate a sub-task to another agent and capture its response in the current run |
 | Browser | Playwright-powered web browsing via MCP (navigate, click, type, screenshot, PDF) |
+| Canvas | Present/hide/snapshot live HTML content in a session canvas panel |
+| HTTP Request | Make direct API calls with method, headers, body, redirect control, and timeout |
+| Git | Run structured git subcommands (`status`, `diff`, `log`, `add`, `commit`, `push`, etc.) with repo safety checks |
 | Memory | Store and retrieve long-term memories with FTS5 + vector search, file references, image attachments, and linked memory graph traversal |
 | Sandbox | Run JS/TS (Deno) or Python code in an isolated sandbox. Created files are returned as downloadable artifacts |
 | MCP Servers | Connect to external Model Context Protocol servers. Tools from MCP servers are injected as first-class agent tools |
@@ -318,6 +324,13 @@ Token usage and estimated costs are tracked per message for API-based providers 
 - **API endpoint:** `GET /api/usage` — returns usage summary by session and provider
 - **Data:** Stored in `data/swarmclaw.db` (usage table)
 - Cost estimates use published model pricing (updated manually in `src/lib/server/cost.ts`)
+
+## Task Metrics
+
+Task analytics are available via API for dashboarding and release-readiness checks:
+
+- **API endpoint:** `GET /api/tasks/metrics?range=24h|7d|30d`
+- **Returns:** status totals, WIP count, completion velocity buckets, avg/p50/p90 cycle time, completion/failure by agent, and priority counts
 
 ## Background Daemon
 

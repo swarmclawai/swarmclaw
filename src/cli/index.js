@@ -80,6 +80,14 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'canvas',
+    description: 'Read/update per-session canvas content',
+    commands: [
+      cmd('get', 'GET', '/canvas/:sessionId', 'Get current canvas content for a session'),
+      cmd('set', 'POST', '/canvas/:sessionId', 'Set/clear canvas content for a session', { expectsJsonBody: true }),
+    ],
+  },
+  {
     name: 'connectors',
     description: 'Manage chat connectors',
     commands: [
@@ -154,6 +162,7 @@ const COMMAND_GROUPS = [
     description: 'Serve and manage local files',
     commands: [
       cmd('serve', 'GET', '/files/serve', 'Serve a local file (use --query path=/abs/path)'),
+      cmd('open', 'POST', '/files/open', 'Open a local file path via the host default app/browser', { expectsJsonBody: true }),
     ],
   },
   {
@@ -381,6 +390,8 @@ const COMMAND_GROUPS = [
       }),
       cmd('messages', 'GET', '/sessions/:id/messages', 'Get session messages'),
       cmd('messages-update', 'PUT', '/sessions/:id/messages', 'Update session message metadata (e.g. bookmark)', { expectsJsonBody: true }),
+      cmd('messages-send', 'POST', '/sessions/:id/messages', 'Append a user/system message to a session', { expectsJsonBody: true }),
+      cmd('messages-delete', 'DELETE', '/sessions/:id/messages', 'Delete a message from a session', { expectsJsonBody: true }),
       cmd('fork', 'POST', '/sessions/:id/fork', 'Fork session from a specific message index', { expectsJsonBody: true }),
       cmd('edit-resend', 'POST', '/sessions/:id/edit-resend', 'Edit and resend from a specific message index', { expectsJsonBody: true }),
       cmd('main-loop', 'GET', '/sessions/:id/main-loop', 'Get main mission loop state'),
@@ -455,6 +466,7 @@ const COMMAND_GROUPS = [
       cmd('delete', 'DELETE', '/tasks/:id', 'Delete task'),
       cmd('purge', 'DELETE', '/tasks', 'Bulk delete tasks', { expectsJsonBody: true }),
       cmd('approve', 'POST', '/tasks/:id/approve', 'Approve or reject a pending tool execution', { expectsJsonBody: true }),
+      cmd('metrics', 'GET', '/tasks/metrics', 'Get task board metrics (supports --query range=24h|7d|30d)'),
     ],
   },
   {

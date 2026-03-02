@@ -177,7 +177,7 @@ export function ChatroomView() {
           </svg>
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-[14px] font-600 text-text truncate">{chatroom.name}</h3>
+          <h3 className="text-[14px] font-700 text-text truncate">{chatroom.name}</h3>
           <p className="text-[11px] text-text-3 truncate">
             {memberAgents.length} agent{memberAgents.length !== 1 ? 's' : ''}
             {chatroom.description ? ` · ${chatroom.description}` : ''}
@@ -192,7 +192,7 @@ export function ChatroomView() {
                   onClick={() => navigateToAgent(agent.id)}
                   className="relative transition-all duration-200 hover:scale-110 hover:z-10 hover:-translate-y-0.5 cursor-pointer bg-transparent border-none p-0"
                 >
-                  <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={22} className="ring-1 ring-bg" status={streamingAgents.has(agent.id) ? 'busy' : 'online'} />
+                  <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={22} status={streamingAgents.has(agent.id) ? 'busy' : 'online'} />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={6}>
@@ -201,7 +201,7 @@ export function ChatroomView() {
             </Tooltip>
           ))}
           {memberAgents.length > 5 && (
-            <div className="w-[22px] h-[22px] rounded-full bg-white/[0.08] flex items-center justify-center text-[9px] text-text-3 ring-1 ring-bg">
+            <div className="w-[22px] h-[22px] rounded-full bg-white/[0.08] flex items-center justify-center text-[9px] text-text-3">
               +{memberAgents.length - 5}
             </div>
           )}

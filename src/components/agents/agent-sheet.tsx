@@ -14,8 +14,9 @@ import { AgentAvatar } from './agent-avatar'
 import { AgentPickerList } from '@/components/shared/agent-picker-list'
 import { randomSoul } from '@/lib/soul-suggestions'
 import { SectionLabel } from '@/components/shared/section-label'
+import { SoulLibraryPicker } from './soul-library-picker'
 
-const HB_PRESETS = [30, 60, 120, 300, 600, 1800, 3600] as const
+const HB_PRESETS = [1800, 3600, 7200, 21600, 43200] as const
 
 function formatHbDuration(sec: number): string {
   if (sec >= 3600) {
@@ -63,6 +64,7 @@ export function AgentSheet() {
   const loadProviders = useAppStore((s) => s.loadProviders)
   const credentials = useAppStore((s) => s.credentials)
   const loadCredentials = useAppStore((s) => s.loadCredentials)
+  const appSettings = useAppStore((s) => s.appSettings)
   const dynamicSkills = useAppStore((s) => s.skills)
   const mcpServers = useAppStore((s) => s.mcpServers)
   const loadSkills = useAppStore((s) => s.loadSkills)
@@ -80,6 +82,8 @@ export function AgentSheet() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [soul, setSoul] = useState('')
+  const [soulInitial, setSoulInitial] = useState('')
+  const [soulSaveState, setSoulSaveState] = useState<'idle' | 'saved'>('idle')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [provider, setProvider] = useState<ProviderType>('claude-cli')
   const [model, setModel] = useState('')
@@ -95,7 +99,6 @@ export function AgentSheet() {
   const [mcpTools, setMcpTools] = useState<Record<string, { name: string; description: string }[]>>({})
   const [mcpToolsLoading, setMcpToolsLoading] = useState(false)
   const [fallbackCredentialIds, setFallbackCredentialIds] = useState<string[]>([])
-  // platformAssignScope is derived from isOrchestrator — no separate state needed
   const [capabilities, setCapabilities] = useState<string[]>([])
   const [capInput, setCapInput] = useState('')
   const [ollamaMode, setOllamaMode] = useState<'local' | 'cloud'>('local')
@@ -103,6 +106,7 @@ export function AgentSheet() {
   const [projectId, setProjectId] = useState<string | undefined>(undefined)
   const [avatarSeed, setAvatarSeed] = useState('')
   const [thinkingLevel, setThinkingLevel] = useState<'' | 'minimal' | 'low' | 'medium' | 'high'>('')
+  const [voiceId, setVoiceId] = useState('')
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(false)
   const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
   const [heartbeatModel, setHeartbeatModel] = useState('')
@@ -121,6 +125,7 @@ export function AgentSheet() {
   const [configCopied, setConfigCopied] = useState(false)
 
   const soulFileRef = useRef<HTMLInputElement>(null)
+  const [soulLibraryOpen, setSoulLibraryOpen] = useState(false)
   const promptFileRef = useRef<HTMLInputElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
 
@@ -157,6 +162,8 @@ export function AgentSheet() {
         setName(editing.name)
         setDescription(editing.description)
         setSoul(editing.soul || '')
+        setSoulInitial(editing.soul || '')
+        setSoulSaveState('idle')
         setSystemPrompt(editing.systemPrompt)
         setProvider(editing.provider)
         setModel(editing.model)
@@ -178,6 +185,7 @@ export function AgentSheet() {
         setProjectId(editing.projectId)
         setAvatarSeed(editing.avatarSeed || crypto.randomUUID().slice(0, 8))
         setThinkingLevel(editing.thinkingLevel || '')
+        setVoiceId(editing.elevenLabsVoiceId || '')
         setHeartbeatEnabled(editing.heartbeatEnabled || false)
         setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
         setHeartbeatModel(editing.heartbeatModel || '')
@@ -185,7 +193,10 @@ export function AgentSheet() {
       } else {
         setName('')
         setDescription('')
-        setSoul(randomSoul())
+        const newSoul = randomSoul()
+        setSoul(newSoul)
+        setSoulInitial(newSoul)
+        setSoulSaveState('idle')
         setSystemPrompt('')
         setProvider('claude-cli')
         setModel('')
@@ -205,6 +216,7 @@ export function AgentSheet() {
         setProjectId(undefined)
         setAvatarSeed('')
         setThinkingLevel('')
+        setVoiceId('')
         setHeartbeatEnabled(false)
         setHeartbeatIntervalSec('')
         setHeartbeatModel('')
@@ -299,6 +311,7 @@ export function AgentSheet() {
       projectId: projectId || undefined,
       avatarSeed: avatarSeed.trim() || undefined,
       thinkingLevel: thinkingLevel || undefined,
+      elevenLabsVoiceId: voiceId.trim() || null,
       heartbeatEnabled,
       heartbeatInterval: heartbeatIntervalSec ? formatHbDuration(Number(heartbeatIntervalSec)) : null,
       heartbeatIntervalSec: heartbeatIntervalSec ? Number(heartbeatIntervalSec) : null,
@@ -313,6 +326,9 @@ export function AgentSheet() {
       toast.success('Agent created')
     }
     await loadAgents()
+    setSoulInitial(soul)
+    setSoulSaveState('saved')
+    setTimeout(() => setSoulSaveState('idle'), 1500)
     onClose()
   }
 
@@ -419,6 +435,7 @@ export function AgentSheet() {
   const inputClass = "w-full px-4 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[15px] outline-none transition-all duration-200 placeholder:text-text-3/50 focus-glow"
 
   return (
+    <>
     <BottomSheet open={open} onClose={onClose} wide>
       <div className="mb-10 flex items-start justify-between">
         <div>
@@ -577,6 +594,24 @@ export function AgentSheet() {
         <p className="text-[11px] text-text-3/70 mt-1.5">Controls reasoning depth. Anthropic models use extended thinking; OpenAI o-series uses reasoning_effort. Others get system prompt guidance.</p>
       </div>
 
+      {/* ElevenLabs Voice ID */}
+      {appSettings.elevenLabsEnabled && (
+        <div className="mb-8">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            ElevenLabs Voice ID <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={voiceId}
+            onChange={(e) => setVoiceId(e.target.value)}
+            placeholder="Leave blank for global default"
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          />
+          <p className="text-[11px] text-text-3/70 mt-1.5">Override the default voice for this agent. Leave blank to use the global default.</p>
+        </div>
+      )}
+
       {/* Heartbeat Configuration */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
@@ -633,8 +668,20 @@ export function AgentSheet() {
 
       {provider !== 'openclaw' && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
             Soul / Personality <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+            {soul !== soulInitial && soulSaveState === 'idle' && (
+              <span className="inline-flex items-center gap-1 normal-case tracking-normal text-[10px] text-amber-400 font-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                Unsaved
+              </span>
+            )}
+            {soulSaveState === 'saved' && (
+              <span className="inline-flex items-center gap-1 normal-case tracking-normal text-[10px] text-emerald-400 font-600">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+                Saved
+              </span>
+            )}
           </label>
           <div className="flex items-center gap-2 mb-3">
             <p className="text-[12px] text-text-3/60">Define the agent&apos;s voice, tone, and personality. Injected before the system prompt.</p>
@@ -651,6 +698,14 @@ export function AgentSheet() {
                 <circle cx="15" cy="15" r="1" fill="currentColor" />
               </svg>
               Shuffle
+            </button>
+            <button
+              type="button"
+              onClick={() => setSoulLibraryOpen(true)}
+              className="shrink-0 px-2 py-1 rounded-[8px] border border-accent-bright/20 bg-accent-soft text-[11px] text-accent-bright hover:brightness-110 cursor-pointer transition-colors"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Browse Library
             </button>
             <button onClick={() => soulFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
             <input ref={soulFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSoul)} className="hidden" />
@@ -1372,6 +1427,13 @@ export function AgentSheet() {
         </button>
       </div>
     </BottomSheet>
+
+    <SoulLibraryPicker
+      open={soulLibraryOpen}
+      onClose={() => setSoulLibraryOpen(false)}
+      onSelect={(s) => setSoul(s)}
+    />
+    </>
   )
 }
 

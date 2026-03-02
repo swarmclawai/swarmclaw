@@ -48,7 +48,7 @@ interface UseContinuousSpeechOptions {
 
 export function useContinuousSpeech(options: UseContinuousSpeechOptions) {
   const { lang, silenceDelayMs = 800, onUtterance } = options
-  const [state, setState] = useState<ContinuousSpeechState>('idle')
+  const [state, _setState] = useState<ContinuousSpeechState>('idle')
   const [transcript, setTranscript] = useState('')
   const [interimText, setInterimText] = useState('')
 
@@ -56,6 +56,12 @@ export function useContinuousSpeech(options: UseContinuousSpeechOptions) {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeRef = useRef(false)
   const accumulatedRef = useRef('')
+  const stateRef = useRef<ContinuousSpeechState>('idle')
+
+  const setState = useCallback((next: ContinuousSpeechState) => {
+    stateRef.current = next
+    _setState(next)
+  }, [])
 
   const clearSilenceTimer = () => {
     if (silenceTimerRef.current) {
@@ -122,7 +128,7 @@ export function useContinuousSpeech(options: UseContinuousSpeechOptions) {
 
     recog.onend = () => {
       // Auto-restart if still active (browser may stop recognition periodically)
-      if (activeRef.current && state !== 'waitingForResponse') {
+      if (activeRef.current && stateRef.current !== 'waitingForResponse') {
         try { recog.start() } catch { /* noop */ }
       }
     }
@@ -156,7 +162,7 @@ export function useContinuousSpeech(options: UseContinuousSpeechOptions) {
     setTranscript('')
     setInterimText('')
     accumulatedRef.current = ''
-  }, [])
+  }, [setState])
 
   const pause = useCallback(() => {
     clearSilenceTimer()
@@ -172,7 +178,7 @@ export function useContinuousSpeech(options: UseContinuousSpeechOptions) {
     setInterimText('')
     setState('listening')
     startRecognition()
-  }, [startRecognition])
+  }, [startRecognition, setState])
 
   const supported = typeof window !== 'undefined' &&
     !!((window as unknown as WindowWithSpeechRecognition).SpeechRecognition || (window as unknown as WindowWithSpeechRecognition).webkitSpeechRecognition)

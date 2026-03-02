@@ -76,10 +76,57 @@ export function ConnectorPlatformIcon({
       return <BsMicrosoftTeams size={size} className={className} />
     case 'openclaw':
       return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-          <path d="M4 17l2-5 2 5" /><path d="M12 17l2-5 2 5" /><path d="M20 17l-2-5-2 5" />
-          <path d="M2 7l4-4 3 3" /><path d="M22 7l-4-4-3 3" />
-          <line x1="12" y1="3" x2="12" y2="8" />
+        <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden className={className}>
+          {/* OpenClaw pixel lobster mark */}
+          <g fill="#3a0a0d">
+            <rect x="1" y="5" width="1" height="3" />
+            <rect x="2" y="4" width="1" height="1" />
+            <rect x="2" y="8" width="1" height="1" />
+            <rect x="3" y="3" width="1" height="1" />
+            <rect x="3" y="9" width="1" height="1" />
+            <rect x="4" y="2" width="1" height="1" />
+            <rect x="4" y="10" width="1" height="1" />
+            <rect x="5" y="2" width="6" height="1" />
+            <rect x="11" y="2" width="1" height="1" />
+            <rect x="12" y="3" width="1" height="1" />
+            <rect x="12" y="9" width="1" height="1" />
+            <rect x="13" y="4" width="1" height="1" />
+            <rect x="13" y="8" width="1" height="1" />
+            <rect x="14" y="5" width="1" height="3" />
+            <rect x="5" y="11" width="6" height="1" />
+            <rect x="4" y="12" width="1" height="1" />
+            <rect x="11" y="12" width="1" height="1" />
+            <rect x="3" y="13" width="1" height="1" />
+            <rect x="12" y="13" width="1" height="1" />
+            <rect x="5" y="14" width="6" height="1" />
+          </g>
+          <g fill="#ff4f40">
+            <rect x="5" y="3" width="6" height="1" />
+            <rect x="4" y="4" width="8" height="1" />
+            <rect x="3" y="5" width="10" height="1" />
+            <rect x="3" y="6" width="10" height="1" />
+            <rect x="3" y="7" width="10" height="1" />
+            <rect x="4" y="8" width="8" height="1" />
+            <rect x="5" y="9" width="6" height="1" />
+            <rect x="5" y="12" width="6" height="1" />
+            <rect x="6" y="13" width="4" height="1" />
+          </g>
+          <g fill="#ff775f">
+            <rect x="1" y="6" width="2" height="1" />
+            <rect x="2" y="5" width="1" height="1" />
+            <rect x="2" y="7" width="1" height="1" />
+            <rect x="13" y="6" width="2" height="1" />
+            <rect x="13" y="5" width="1" height="1" />
+            <rect x="13" y="7" width="1" height="1" />
+          </g>
+          <g fill="#081016">
+            <rect x="6" y="5" width="1" height="1" />
+            <rect x="9" y="5" width="1" height="1" />
+          </g>
+          <g fill="#f5fbff">
+            <rect x="6" y="4" width="1" height="1" />
+            <rect x="9" y="4" width="1" height="1" />
+          </g>
         </svg>
       )
     default:

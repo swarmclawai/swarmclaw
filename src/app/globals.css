@@ -269,6 +269,11 @@ textarea:hover::-webkit-scrollbar { width: 6px; }
   to { opacity: 0; transform: translateY(-8px) scale(0.95); }
 }
 
+@keyframes delegation-handoff-in {
+  0% { opacity: 0; transform: translateX(16px) scale(0.95); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+
 @keyframes avatar-moment-pulse {
   0% { transform: scale(1); }
   30% { transform: scale(1.15); }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { PersonalityDraft } from '@/types'
 import { api } from '@/lib/api-client'
 import {
@@ -21,22 +21,33 @@ const labelClass = 'block text-[11px] font-600 uppercase tracking-wider text-tex
 
 export function PersonalityBuilder({ agentId: _agentId, fileType, content, onSave }: Props) {
   const [draft, setDraft] = useState<Record<string, string>>({})
+  const [initialDraft, setInitialDraft] = useState<Record<string, string>>({})
+  const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle')
 
   useEffect(() => {
+    let parsed: Record<string, string> = {}
     if (fileType === 'IDENTITY.md') {
-      const parsed = parseIdentityMd(content)
-      setDraft({ name: parsed.name || '', creature: parsed.creature || '', vibe: parsed.vibe || '', emoji: parsed.emoji || '' })
+      const p = parseIdentityMd(content)
+      parsed = { name: p.name || '', creature: p.creature || '', vibe: p.vibe || '', emoji: p.emoji || '' }
     } else if (fileType === 'USER.md') {
-      const parsed = parseUserMd(content)
-      setDraft({ name: parsed.name || '', callThem: parsed.callThem || '', pronouns: parsed.pronouns || '', timezone: parsed.timezone || '', notes: parsed.notes || '', context: parsed.context || '' })
+      const p = parseUserMd(content)
+      parsed = { name: p.name || '', callThem: p.callThem || '', pronouns: p.pronouns || '', timezone: p.timezone || '', notes: p.notes || '', context: p.context || '' }
     } else if (fileType === 'SOUL.md') {
-      const parsed = parseSoulMd(content)
-      setDraft({ coreTruths: parsed.coreTruths || '', boundaries: parsed.boundaries || '', vibe: parsed.vibe || '', continuity: parsed.continuity || '' })
+      const p = parseSoulMd(content)
+      parsed = { coreTruths: p.coreTruths || '', boundaries: p.boundaries || '', vibe: p.vibe || '', continuity: p.continuity || '' }
     }
+    setDraft(parsed)
+    setInitialDraft(parsed)
+    setSaveState('idle')
   }, [content, fileType])
+
+  const isDirty = useMemo(() => {
+    return Object.keys(draft).some((k) => draft[k] !== (initialDraft[k] ?? ''))
+  }, [draft, initialDraft])
 
   const update = (key: string, value: string) => {
     setDraft((prev) => ({ ...prev, [key]: value }))
+    setSaveState('idle')
   }
 
   const handleSave = () => {
@@ -49,6 +60,9 @@ export function PersonalityBuilder({ agentId: _agentId, fileType, content, onSav
       serialized = serializeSoulMd(draft as PersonalityDraft['soul'])
     }
     onSave(serialized)
+    setInitialDraft({ ...draft })
+    setSaveState('saved')
+    setTimeout(() => setSaveState('idle'), 1500)
   }
 
   const fields = fileType === 'IDENTITY.md'
@@ -99,13 +113,27 @@ export function PersonalityBuilder({ agentId: _agentId, fileType, content, onSav
           )}
         </div>
       ))}
-      <button
-        onClick={handleSave}
-        className="self-start px-4 py-1.5 rounded-[8px] border-none bg-accent-bright text-white text-[12px] font-600 cursor-pointer transition-all hover:brightness-110"
-        style={{ fontFamily: 'inherit' }}
-      >
-        Apply to Raw Editor
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          className="self-start px-4 py-1.5 rounded-[8px] border-none bg-accent-bright text-white text-[12px] font-600 cursor-pointer transition-all hover:brightness-110 focus-visible:ring-1 focus-visible:ring-accent-bright/50"
+          style={{ fontFamily: 'inherit' }}
+        >
+          Apply to Raw Editor
+        </button>
+        {isDirty && saveState === 'idle' && (
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-400 font-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            Unsaved
+          </span>
+        )}
+        {saveState === 'saved' && (
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400 font-600">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+            Saved
+          </span>
+        )}
+      </div>
     </div>
   )
 }

@@ -10,8 +10,9 @@ export async function POST(req: Request) {
     return new NextResponse('No ElevenLabs API key. Set one in Settings > Voice.', { status: 500 })
   }
 
-  const { text } = await req.json()
-  const apiRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE}`, {
+  const { text, voiceId } = await req.json()
+  const voice = voiceId || ELEVENLABS_VOICE
+  const apiRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
     method: 'POST',
     headers: {
       'xi-api-key': ELEVENLABS_KEY,

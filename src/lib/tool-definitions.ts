@@ -22,6 +22,8 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
   { id: 'sandbox', label: 'Sandbox', description: 'Run JS/TS/Python code in an isolated Deno sandbox' },
   { id: 'create_document', label: 'Create Document', description: 'Render markdown to PDF, HTML, or image' },
   { id: 'create_spreadsheet', label: 'Create Spreadsheet', description: 'Create Excel or CSV files from structured data' },
+  { id: 'http_request', label: 'HTTP Request', description: 'Make HTTP API calls (GET, POST, PUT, DELETE, etc.)' },
+  { id: 'git', label: 'Git', description: 'Run structured git operations (status, commit, push, diff, etc.)' },
 ]
 
 export const PLATFORM_TOOLS: ToolDefinition[] = [

@@ -164,8 +164,8 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
           />
           <span className="font-display text-[14px] font-600 truncate flex-1 tracking-[-0.01em]">{agent.name}</span>
           {pendingApprovalCount > 0 && (
-            <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-700">
-              {pendingApprovalCount}
+            <span className="shrink-0 text-[9px] font-600 uppercase tracking-wider px-2 py-0.5 rounded-[6px] text-amber-400 bg-amber-400/[0.08] border border-amber-400/15">
+              {pendingApprovalCount} {pendingApprovalCount === 1 ? 'approval' : 'approvals'}
             </span>
           )}
           {isDefault && (
@@ -178,7 +178,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
               onClick={handleRunClick}
               disabled={running}
               className="shrink-0 text-[10px] font-600 uppercase tracking-wider px-2.5 py-1 rounded-[6px] cursor-pointer
-                transition-all border-none bg-accent-bright/20 text-[#818CF8] hover:bg-accent-bright/30 disabled:opacity-40"
+                transition-all border-none bg-accent-bright/20 text-accent-bright hover:bg-accent-bright/30 disabled:opacity-40"
               style={{ fontFamily: 'inherit' }}
             >
               {running ? '...' : 'Run'}

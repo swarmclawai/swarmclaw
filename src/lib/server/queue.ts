@@ -13,13 +13,13 @@ import { isProtectedMainSession } from './main-session'
 import type { Agent, BoardTask, Message } from '@/types'
 
 // HMR-safe: pin processing flag to globalThis so hot reloads don't reset it
-const _queueState = ((globalThis as Record<string, unknown>).__swarmclaw_queue__ ??= { processing: false }) as { processing: boolean }
+const _queueState = ((globalThis as Record<string, unknown>).__swarmclaw_queue__ ??= { processing: false, pendingKick: false }) as { processing: boolean; pendingKick: boolean }
 
 interface SessionMessageLike {
   role?: string
   text?: string
   time?: number
-  kind?: 'chat' | 'heartbeat' | 'system'
+  kind?: 'chat' | 'heartbeat' | 'system' | 'context-clear'
   toolEvents?: Array<{ name?: string; output?: string }>
 }
 
@@ -280,18 +280,43 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
     changed = true
   }
 
-  // 2. If delegated, push to delegating agent's thread
+  // 2. If delegated, push to delegating agent's thread AND active chat sessions
   const delegatedBy = (task as unknown as Record<string, unknown>).delegatedByAgentId
   if (typeof delegatedBy === 'string' && delegatedBy !== task.agentId) {
     const delegator = agents[delegatedBy]
+    const agentName = agent?.name || task.agentId
+    const delegationBody = buildResultBlock(`Delegated task ${statusLabel}: **${taskLink}** (by ${agentName})`)
+
+    // Push to delegating agent's thread
     if (delegator?.threadSessionId && sessions[delegator.threadSessionId]) {
       const thread = sessions[delegator.threadSessionId]
       if (!Array.isArray(thread.messages)) thread.messages = []
-      const agentName = agent?.name || task.agentId
-      const body = buildResultBlock(`Delegated task ${statusLabel}: **${taskLink}** (by ${agentName})`)
-      thread.messages.push(buildMsg(body))
+      thread.messages.push(buildMsg(delegationBody))
       thread.lastActiveAt = now
       changed = true
+    }
+
+    // Push to delegating agent's active user-facing chat sessions
+    // so the result is visible in the chat the user is looking at
+    if (delegator) {
+      for (const session of Object.values(sessions)) {
+        if (!session || session.agentId !== delegatedBy) continue
+        // Skip thread sessions and orchestrated/subagent sessions
+        if (session.id === delegator.threadSessionId) continue
+        if (session.sessionType === 'orchestrated') continue
+        // Only push to recently-active sessions (within last 30 minutes)
+        const lastActive = typeof session.lastActiveAt === 'number' ? session.lastActiveAt : 0
+        if (now - lastActive > 30 * 60_000) continue
+        if (!Array.isArray(session.messages)) session.messages = []
+        // Avoid duplicate push
+        const lastMsg = session.messages.at(-1)
+        if (lastMsg?.text === delegationBody && typeof lastMsg?.time === 'number' && now - lastMsg.time < 30_000) continue
+        session.messages.push(buildMsg(delegationBody))
+        session.lastActiveAt = now
+        changed = true
+        // Notify the specific session's message topic for real-time UI update
+        notify(`messages:${session.id}`)
+      }
     }
   }
 
@@ -331,6 +356,10 @@ export function enqueueTask(taskId: string) {
     text: `Task queued: "${task.title}" (${task.id})`,
   })
 
+  // If processNext is already running, mark a pending kick so it re-enters after finishing
+  if (_queueState.processing) {
+    _queueState.pendingKick = true
+  }
   // Delay before kicking worker so UI shows the queued state
   setTimeout(() => processNext(), 2000)
 }
@@ -619,10 +648,21 @@ export async function processNext() {
       // Save initial assistant message so user sees context when opening the session
       const sessions = loadSessions()
       if (sessions[sessionId]) {
+        const isDelegation = (task as unknown as Record<string, unknown>).sourceType === 'delegation'
+        let initialText: string
+        if (isDelegation) {
+          const delegatorId = (task as unknown as Record<string, unknown>).delegatedByAgentId as string | undefined
+          const delegator = delegatorId ? agents[delegatorId] : null
+          const prefix = `[delegation-source:${delegatorId || ''}:${delegator?.name || 'Agent'}:${delegator?.avatarSeed || ''}]`
+          initialText = `${prefix}\nDelegated by **${delegator?.name || 'another agent'}** | [${task.title}](#task:${task.id})\n\n${task.description || ''}\n\nWorking directory: \`${taskCwd}\`\n\nI'll begin working on this now.`
+        } else {
+          initialText = `Starting task: **${task.title}**\n\n${task.description || ''}\n\nWorking directory: \`${taskCwd}\`\n\nI'll begin working on this now.`
+        }
         sessions[sessionId].messages.push({
           role: 'assistant',
-          text: `Starting task: **${task.title}**\n\n${task.description || ''}\n\nWorking directory: \`${taskCwd}\`\n\nI'll begin working on this now.`,
+          text: initialText,
           time: Date.now(),
+          ...(isDelegation ? { kind: 'system' as const } : {}),
         })
         saveSessions(sessions)
       }
@@ -807,6 +847,11 @@ export async function processNext() {
     }
   } finally {
     _queueState.processing = false
+    // If tasks were enqueued while we were processing, kick another round
+    if (_queueState.pendingKick) {
+      _queueState.pendingKick = false
+      setTimeout(() => processNext(), 500)
+    }
   }
 }
 

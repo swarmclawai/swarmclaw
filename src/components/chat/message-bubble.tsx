@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useState, useCallback } from 'react'
+import { memo, useState, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -9,12 +9,27 @@ import { useAppStore } from '@/stores/use-app-store'
 import { AiAvatar } from '@/components/shared/avatar'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { CodeBlock } from './code-block'
-import { ToolCallBubble } from './tool-call-bubble'
+import { ToolCallBubble, extractMedia } from './tool-call-bubble'
 import { ToolRequestBanner } from './tool-request-banner'
 import { AttachmentChip, parseAttachmentUrl } from '@/components/shared/attachment-chip'
 import { isStructuredMarkdown } from './markdown-utils'
 import { FilePathChip, FILE_PATH_RE, DIR_PATH_RE } from './file-path-chip'
 import { TransferAgentPicker } from './transfer-agent-picker'
+import { DelegationBanner, DelegationSourceBanner, TaskCompletionCard, parseTaskCompletion } from './delegation-banner'
+import { ConnectorPlatformIcon, CONNECTOR_PLATFORM_META } from '@/components/shared/connector-platform-icon'
+
+/** Parse delegation-source metadata prefix from system messages */
+const DELEGATION_SOURCE_RE = /^\[delegation-source:([^:]*):([^:]*):([^\]]*)\]/
+function parseDelegationSource(text: string): { delegatorId: string; delegatorName: string; delegatorAvatarSeed: string; rest: string } | null {
+  const m = text.match(DELEGATION_SOURCE_RE)
+  if (!m) return null
+  return { delegatorId: m[1], delegatorName: m[2], delegatorAvatarSeed: m[3], rest: text.slice(m[0].length).replace(/^\n/, '') }
+}
+
+/** Try to parse JSON safely, returning null on failure */
+function tryParseJson(s: string): Record<string, unknown> | null {
+  try { return JSON.parse(s) } catch { return null }
+}
 
 function fmtTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -33,9 +48,26 @@ function relativeTime(ts: number): string {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+interface HeartbeatMeta {
+  goal?: string
+  status?: string
+  next_action?: string
+}
+
+function parseHeartbeatMeta(text: string): HeartbeatMeta | null {
+  const match = text.match(/\[AGENT_HEARTBEAT_META\]\s*(\{[^\n]*\})/i)
+  if (!match?.[1]) return null
+  try {
+    const parsed = JSON.parse(match[1])
+    if (typeof parsed === 'object' && parsed !== null) return parsed as HeartbeatMeta
+  } catch { /* ignore */ }
+  return null
+}
+
 function heartbeatSummary(text: string): string {
   const clean = (text || '')
     .replace(/\bHEARTBEAT_OK\b/gi, '')
+    .replace(/\[AGENT_HEARTBEAT_META\]\s*\{[^\n]*\}/gi, '')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
@@ -49,6 +81,13 @@ function heartbeatSummary(text: string): string {
     .trim()
   if (!clean) return 'No new status update.'
   return clean.length > 180 ? `${clean.slice(0, 180)}...` : clean
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  progress: '#F59E0B',
+  ok: '#22C55E',
+  idle: '#6B7280',
+  blocked: '#EF4444',
 }
 
 // AttachmentChip, parseAttachmentUrl, regex constants, and FILE_TYPE_COLORS
@@ -117,6 +156,55 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   const visibleToolEvents = toolEventsExpanded ? [...toolEvents].reverse() : toolEvents.slice(-1)
   const isStructured = !isUser && !isHeartbeat && isStructuredMarkdown(message.text)
 
+  // When collapsed, collect media from hidden tool events so files are always visible
+  const hiddenMedia = useMemo(() => {
+    if (toolEventsExpanded || toolEvents.length <= 1) return null
+    // Collect URLs from the visible (last) tool event to avoid showing duplicates
+    const lastOutput = toolEvents[toolEvents.length - 1]?.output || ''
+    const visibleMedia = extractMedia(lastOutput)
+    const seen = new Set<string>([
+      ...visibleMedia.images,
+      ...visibleMedia.videos,
+      ...visibleMedia.pdfs.map((p) => p.url),
+      ...visibleMedia.files.map((f) => f.url),
+    ])
+    const images: string[] = []
+    const videos: string[] = []
+    const pdfs: { name: string; url: string }[] = []
+    const files: { name: string; url: string }[] = []
+    for (const ev of toolEvents.slice(0, -1)) {
+      if (!ev.output) continue
+      const m = extractMedia(ev.output)
+      for (const url of m.images) { if (!seen.has(url)) { seen.add(url); images.push(url) } }
+      for (const url of m.videos) { if (!seen.has(url)) { seen.add(url); videos.push(url) } }
+      for (const p of m.pdfs) { if (!seen.has(p.url)) { seen.add(p.url); pdfs.push(p) } }
+      for (const f of m.files) { if (!seen.has(f.url)) { seen.add(f.url); files.push(f) } }
+    }
+    if (!images.length && !videos.length && !pdfs.length && !files.length) return null
+    return { images, videos, pdfs, files }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message.toolEvents, toolEventsExpanded])
+
+  // Collect all media URLs already rendered via tool events to avoid duplicates in markdown
+  const toolEventMediaUrls = useMemo(() => {
+    if (!toolEvents.length) return null
+    const urls = new Set<string>()
+    for (const ev of toolEvents) {
+      if (!ev.output) continue
+      const m = extractMedia(ev.output)
+      for (const url of m.images) urls.add(url)
+      for (const url of m.videos) urls.add(url)
+    }
+    return urls.size > 0 ? urls : null
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message.toolEvents])
+
+  // Detect delegation-source system messages
+  const delegationSource = !isUser && message.kind === 'system' ? parseDelegationSource(message.text || '') : null
+  // Detect task completion system messages (delegated or direct)
+  const taskCompletion = !isUser && message.kind === 'system' ? parseTaskCompletion(message.text || '') : null
+  const displayText = delegationSource ? delegationSource.rest : message.text
+
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.text).then(() => {
       setCopied(true)
@@ -140,8 +228,15 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
       )}
       {/* Sender label + timestamp */}
       <div className={`flex items-center gap-2.5 mb-2 px-1 ${isUser ? 'flex-row-reverse' : ''}`}>
-        <span className={`text-[12px] font-600 ${isUser ? 'text-accent-bright/70' : 'text-text-3'}`}>
-          {isUser ? (currentUser ? currentUser.charAt(0).toUpperCase() + currentUser.slice(1) : 'You') : (assistantName || 'Claude')}
+        <span className={`text-[12px] font-600 flex items-center gap-1.5 ${isUser ? 'text-accent-bright/70' : 'text-text-3'}`}>
+          {message.source && (
+            <ConnectorPlatformIcon platform={message.source.platform} size={12} />
+          )}
+          {isUser
+            ? (message.source?.senderName
+                ? `${message.source.senderName} via ${CONNECTOR_PLATFORM_META[message.source.platform]?.label || message.source.platform}`
+                : (currentUser ? currentUser.charAt(0).toUpperCase() + currentUser.slice(1) : 'You'))
+            : (assistantName || 'Claude')}
         </span>
         <span className="text-[11px] text-text-3/70 font-mono" title={message.time ? new Date(message.time).toLocaleString() : ''}>
           {message.time ? relativeTime(message.time) : ''}
@@ -161,23 +256,183 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
             </button>
           )}
           <div className={`${toolEventsExpanded ? 'max-h-[320px] overflow-y-auto pr-1 flex flex-col gap-2' : 'flex flex-col gap-2'}`}>
-            {visibleToolEvents.map((event, i) => (
-              <ToolCallBubble
-                key={`${message.time}-tool-${toolEventsExpanded ? `all-${i}` : `latest-${toolEvents.length - 1}`}`}
-                event={{
-                  id: `${message.time}-${toolEventsExpanded ? i : toolEvents.length - 1}`,
-                  name: event.name,
-                  input: event.input,
-                  output: event.output,
-                  status: event.error ? 'error' : 'done',
-                }}
-              />
-            ))}
+            {visibleToolEvents.map((event, i) => {
+              const key = `${message.time}-tool-${toolEventsExpanded ? `all-${i}` : `latest-${toolEvents.length - 1}`}`
+
+              if (event.name === 'delegate_to_agent') {
+                const inp = tryParseJson(event.input || '{}')
+                const out = tryParseJson(event.output || '{}')
+                return (
+                  <DelegationBanner
+                    key={key}
+                    agentName={out?.agentName as string || inp?.agentName as string || inp?.agentId as string || 'Agent'}
+                    agentAvatarSeed={(out?.agentAvatarSeed as string) || null}
+                    taskPreview={(inp?.task as string || '').slice(0, 100)}
+                    taskId={(out?.taskId as string) || null}
+                    status="delegating"
+                  />
+                )
+              }
+
+              if (event.name === 'check_delegation_status') {
+                const out = tryParseJson(event.output || '{}')
+                const rawStatus = out?.status as string || ''
+                const mapped = rawStatus === 'completed' ? 'completed' as const
+                  : rawStatus === 'failed' ? 'failed' as const
+                  : 'checking' as const
+                return (
+                  <DelegationBanner
+                    key={key}
+                    agentName={out?.agentName as string || 'Agent'}
+                    agentAvatarSeed={(out?.agentAvatarSeed as string) || null}
+                    taskPreview={(out?.title as string || '').slice(0, 100)}
+                    taskId={(out?.taskId as string) || null}
+                    status={mapped}
+                  />
+                )
+              }
+
+              return (
+                <ToolCallBubble
+                  key={key}
+                  event={{
+                    id: `${message.time}-${toolEventsExpanded ? i : toolEvents.length - 1}`,
+                    name: event.name,
+                    input: event.input,
+                    output: event.output,
+                    status: event.error ? 'error' : 'done',
+                  }}
+                />
+              )
+            })}
           </div>
         </div>
       )}
 
-      {/* Message bubble */}
+      {/* Media from hidden tool calls (shown when collapsed so files are never buried) */}
+      {hiddenMedia && (
+        <div className="max-w-[85%] md:max-w-[72%] flex flex-col gap-2 mb-2">
+          {hiddenMedia.images.map((src, i) => (
+            <div key={`himg-${i}`} className="relative group/img">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
+                alt={`Screenshot ${i + 1}`}
+                loading="lazy"
+                className="max-w-[400px] rounded-[10px] border border-white/10 cursor-pointer hover:border-white/25 transition-all"
+                onClick={() => {
+                  import('@/stores/use-chat-store').then(({ useChatStore }) =>
+                    useChatStore.getState().setPreviewContent({ type: 'image', url: src, title: `Screenshot ${i + 1}` })
+                  )
+                }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+              <a
+                href={src}
+                download
+                onClick={(e) => e.stopPropagation()}
+                className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-[8px] p-1.5 hover:bg-black/80 opacity-0 group-hover/img:opacity-100 transition-opacity"
+                title="Download"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </a>
+            </div>
+          ))}
+          {hiddenMedia.videos.map((src, i) => (
+            <video key={`hvid-${i}`} src={src} controls playsInline preload="none" className="max-w-full rounded-[10px] border border-white/10" />
+          ))}
+          {hiddenMedia.pdfs.map((file, i) => (
+            <div key={`hpdf-${i}`} className="rounded-[10px] border border-white/10 overflow-hidden">
+              <iframe src={file.url} loading="lazy" className="w-full h-[400px] bg-white" title={file.name} />
+              <a
+                href={file.url}
+                download
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-2 px-3 py-2 bg-surface/80 border-t border-white/10 text-[12px] text-text-2 hover:text-text no-underline transition-colors"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {file.name}
+              </a>
+            </div>
+          ))}
+          {hiddenMedia.files.map((file, i) => (
+            <a
+              key={`hfile-${i}`}
+              href={file.url}
+              download
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/10 bg-surface/60 hover:bg-surface-2 transition-colors text-[13px] text-text-2 hover:text-text no-underline"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              {file.name}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="ml-auto opacity-50">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* Thinking block (collapsible, shown for assistant messages with persisted thinking) */}
+      {!isUser && message.thinking && (
+        <div className="max-w-[85%] md:max-w-[72%] mb-2">
+          <details className="group rounded-[12px] border border-purple-500/15 bg-purple-500/[0.04]">
+            <summary className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-purple-400/60 shrink-0 transition-transform group-open:rotate-90">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              <span className="text-[11px] font-600 text-purple-400/70 uppercase tracking-[0.05em]">Thinking</span>
+              <span className="text-[10px] text-text-3/40 font-mono">{Math.ceil(message.thinking.length / 4)} tokens</span>
+            </summary>
+            <div className="px-3.5 pb-3 pt-1 max-h-[300px] overflow-y-auto">
+              <div className="text-[13px] leading-[1.6] text-text-3/70 whitespace-pre-wrap break-words">
+                {message.thinking}
+              </div>
+            </div>
+          </details>
+        </div>
+      )}
+
+      {/* Delegation source banner (receiving agent's chat) */}
+      {delegationSource && (() => {
+        const taskLinkMatch = delegationSource.rest.match(/\[([^\]]+)\]\(#task:([^)]+)\)/)
+        const dsTaskTitle = taskLinkMatch?.[1] || ''
+        const dsTaskId = taskLinkMatch?.[2] || null
+        const descLines = delegationSource.rest.split('\n\n').slice(1).filter((l) => !l.startsWith('Working directory:') && !l.startsWith("I'll begin"))
+        const dsDescription = descLines.join(' ').trim().slice(0, 200)
+        return (
+          <div className="max-w-[85%] md:max-w-[72%] mb-2">
+            <DelegationSourceBanner
+              delegatorName={delegationSource.delegatorName}
+              delegatorAvatarSeed={delegationSource.delegatorAvatarSeed || null}
+              taskTitle={dsTaskTitle}
+              taskId={dsTaskId}
+              description={dsDescription}
+            />
+          </div>
+        )
+      })()}
+
+      {/* Task completion card (replaces bubble for task result system messages) */}
+      {taskCompletion ? (
+        <div className="max-w-[85%] md:max-w-[72%]">
+          <TaskCompletionCard info={{ ...taskCompletion, imageUrl: message.imageUrl }} />
+        </div>
+      ) : (
+      /* Message bubble */
       <div className={`${isStructured ? 'max-w-[92%] md:max-w-[85%]' : 'max-w-[85%] md:max-w-[72%]'} ${isUser ? 'bubble-user px-5 py-3.5' : isHeartbeat ? 'bubble-ai px-4 py-3' : 'bubble-ai px-5 py-3.5'}`}>
         {renderAttachments(message)}
 
@@ -190,12 +445,43 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  {(() => {
+                    const meta = parseHeartbeatMeta(message.text)
+                    const statusColor = meta?.status ? (STATUS_COLORS[meta.status] || '#6B7280') : '#22C55E'
+                    return <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusColor }} />
+                  })()}
                   <span className="text-[11px] uppercase tracking-[0.08em] text-text-2 font-600">Heartbeat</span>
+                  {(() => {
+                    const meta = parseHeartbeatMeta(message.text)
+                    if (!meta?.status) return null
+                    const color = STATUS_COLORS[meta.status] || '#6B7280'
+                    return <span className="text-[10px] font-500 px-1.5 py-0.5 rounded-[4px]" style={{ color, background: `${color}18` }}>{meta.status}</span>
+                  })()}
                 </div>
                 <span className="text-[11px] text-text-3">{heartbeatExpanded ? 'Collapse' : 'Expand'}</span>
               </div>
-              <p className="text-[13px] text-text-2/90 leading-[1.5] mt-1.5">{heartbeatSummary(message.text)}</p>
+              {(() => {
+                const meta = parseHeartbeatMeta(message.text)
+                if (meta && (meta.goal || meta.next_action)) {
+                  return (
+                    <div className="mt-2 flex flex-col gap-1">
+                      {meta.goal && (
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-[10px] uppercase tracking-[0.06em] text-text-3 font-600 shrink-0">Goal</span>
+                          <span className="text-[12px] text-text-2/90 truncate">{meta.goal}</span>
+                        </div>
+                      )}
+                      {meta.next_action && (
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-[10px] uppercase tracking-[0.06em] text-text-3 font-600 shrink-0">Next</span>
+                          <span className="text-[12px] text-text-2/90 truncate">{meta.next_action}</span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+                return <p className="text-[13px] text-text-2/90 leading-[1.5] mt-1.5">{heartbeatSummary(message.text)}</p>
+              })()}
             </button>
             {heartbeatExpanded && (
               <div className="msg-content text-[14px] leading-[1.7] text-text break-words px-3 py-2 rounded-[10px] border border-white/[0.08] bg-black/20">
@@ -213,7 +499,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                     },
                   }}
                 >
-                  {message.text}
+                  {message.text.replace(/\[AGENT_HEARTBEAT_META\]\s*\{[^\n]*\}/gi, '').trim()}
                 </ReactMarkdown>
               </div>
             )}
@@ -241,6 +527,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                 },
                 img({ src, alt }) {
                   if (!src || typeof src !== 'string') return null
+                  // Skip images already rendered via tool events
+                  if (toolEventMediaUrls?.has(src)) return null
                   const isVideo = /\.(mp4|webm|mov|avi)$/i.test(src)
                   if (isVideo) {
                     return (
@@ -264,6 +552,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                         onClick={async () => {
                           const store = useAppStore.getState()
                           await store.loadTasks(true)
+                          store.setTaskSheetViewOnly(true)
                           store.setEditingTaskId(taskMatch[1])
                           store.setTaskSheetOpen(true)
                         }}
@@ -336,11 +625,12 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                 },
               }}
             >
-              {message.text}
+              {displayText}
             </ReactMarkdown>
           </div>
         )}
       </div>
+      )}
 
       {/* Tool access request banners */}
       {!isUser && <ToolRequestBanner
@@ -351,10 +641,10 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
       {/* Bookmark indicator */}
       {message.bookmarked && (
         <div className={`flex items-center gap-1 mt-1 px-1 ${isUser ? 'justify-end' : ''}`}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B" stroke="#F59E0B" strokeWidth="2" className="shrink-0">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" className="shrink-0 text-amber-400">
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
-          <span className="text-[10px] text-[#F59E0B]/70 font-600">Bookmarked</span>
+          <span className="text-[10px] text-amber-400/70 font-600">Bookmarked</span>
         </div>
       )}
 
@@ -377,9 +667,9 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           <button
             onClick={() => onToggleBookmark(messageIndex)}
             aria-label={message.bookmarked ? 'Remove bookmark' : 'Bookmark message'}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
-              text-[11px] font-500 cursor-pointer hover:bg-white/[0.04] transition-all"
-            style={{ fontFamily: 'inherit', color: message.bookmarked ? '#F59E0B' : undefined }}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
+              text-[11px] font-500 cursor-pointer hover:bg-white/[0.04] transition-all ${message.bookmarked ? 'text-amber-400' : ''}`}
+            style={{ fontFamily: 'inherit' }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill={message.bookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />

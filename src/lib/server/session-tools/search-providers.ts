@@ -260,16 +260,24 @@ export async function getSearchProvider(settings: Partial<AppSettings>): Promise
       return new SearXNGProvider(url)
     }
     case 'tavily': {
-      const { getSecret } = await import('../storage')
-      const secret = await getSecret('tavily')
-      if (!secret?.value) throw new Error('Tavily requires an API key. Add a secret named "tavily" in Secrets.')
-      return new TavilyProvider(secret.value)
+      let apiKey = settings.tavilyApiKey
+      if (!apiKey) {
+        const { getSecret } = await import('../storage')
+        const secret = await getSecret('tavily')
+        apiKey = secret?.value ?? null
+      }
+      if (!apiKey) throw new Error('Tavily requires an API key. Set one in Settings > Web Search.')
+      return new TavilyProvider(apiKey)
     }
     case 'brave': {
-      const { getSecret } = await import('../storage')
-      const secret = await getSecret('brave')
-      if (!secret?.value) throw new Error('Brave Search requires an API key. Add a secret named "brave" in Secrets.')
-      return new BraveProvider(secret.value)
+      let apiKey = settings.braveApiKey
+      if (!apiKey) {
+        const { getSecret } = await import('../storage')
+        const secret = await getSecret('brave')
+        apiKey = secret?.value ?? null
+      }
+      if (!apiKey) throw new Error('Brave Search requires an API key. Set one in Settings > Web Search.')
+      return new BraveProvider(apiKey)
     }
     default:
       return new DuckDuckGoProvider()

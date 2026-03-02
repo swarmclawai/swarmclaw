@@ -354,7 +354,7 @@ export function HomeView() {
                   >
                     <div className="relative">
                       <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={36} />
-                      <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#1a1a2e] ${
+                      <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-surface ${
                         isTyping ? 'bg-accent-bright animate-pulse'
                           : isOnline ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.4)]'
                           : 'bg-text-3/30'

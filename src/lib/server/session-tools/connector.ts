@@ -1,7 +1,20 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
-import { loadConnectors, loadSettings } from '../storage'
+import path from 'path'
+import fs from 'fs'
+import { loadConnectors, loadSettings, UPLOAD_DIR } from '../storage'
 import type { ToolBuildContext } from './context'
+
+/** Resolve /api/uploads/filename URLs to actual disk paths */
+function resolveUploadUrl(url: string | undefined): { mediaPath: string; mimeType?: string } | null {
+  if (!url) return null
+  const match = url.match(/^\/api\/uploads\/([^?#]+)/)
+  if (!match) return null
+  const safeName = match[1].replace(/[^a-zA-Z0-9._-]/g, '')
+  const filePath = path.join(UPLOAD_DIR, safeName)
+  if (!fs.existsSync(filePath)) return null
+  return { mediaPath: filePath }
+}
 
 export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInterface[] {
   const tools: StructuredToolInterface[] = []
@@ -32,6 +45,29 @@ export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInter
               return JSON.stringify(running)
             }
 
+            if (action === 'start') {
+              if (!connectorId) {
+                // If no ID given, list available connectors to start
+                const allConnectors = loadConnectors()
+                const stopped = Object.values(allConnectors)
+                  .filter((c) => !platform || c.platform === platform)
+                  .filter((c) => !running.find((r) => r.id === c.id))
+                  .map((c) => ({ id: c.id, name: c.name, platform: c.platform }))
+                if (!stopped.length) return 'All connectors are already running.'
+                return `Error: connectorId is required. Stopped connectors available to start: ${JSON.stringify(stopped)}`
+              }
+              const { startConnector: doStart } = await import('../connectors/manager')
+              await doStart(connectorId)
+              return JSON.stringify({ status: 'started', connectorId })
+            }
+
+            if (action === 'stop') {
+              if (!connectorId) return 'Error: connectorId is required for stop action.'
+              const { stopConnector: doStop } = await import('../connectors/manager')
+              await doStop(connectorId)
+              return JSON.stringify({ status: 'stopped', connectorId })
+            }
+
             if (action === 'send') {
               const settings = loadSettings()
               if (settings.safetyRequireApprovalForOutbound === true && approved !== true) {
@@ -41,7 +77,15 @@ export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInter
               const hasMedia = !!imageUrl?.trim() || !!fileUrl?.trim()
               if (!hasText && !hasMedia) return 'Error: message or media URL is required for send action.'
               if (!running.length) {
-                return `Error: no running connectors${platform ? ` for platform "${platform}"` : ''}.`
+                // Check for configured-but-not-running connectors to give actionable feedback
+                const allConnectors = loadConnectors()
+                const configured = Object.values(allConnectors)
+                  .filter((c) => !platform || c.platform === platform)
+                  .map((c) => ({ id: c.id, name: c.name, platform: c.platform, agentId: c.agentId || null }))
+                if (configured.length) {
+                  return `Error: no running connectors${platform ? ` for platform "${platform}"` : ''}, but ${configured.length} configured connector(s) found: ${JSON.stringify(configured)}. These connectors exist but are not currently started. Ask the user if they'd like you to start one (use action "start" with the connectorId), then retry the send.`
+                }
+                return `Error: no running connectors${platform ? ` for platform "${platform}"` : ''}. No connectors are configured for this platform either — the user needs to set one up in the Connectors panel first.`
               }
 
               const selected = connectorId
@@ -75,19 +119,49 @@ export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInter
                 if (allowed.length) channelId = allowed[0]
               }
               if (!channelId) {
-                return `Error: no target recipient configured. Provide "to", or set connector config "outboundJid"/"allowedJids"/"outboundTarget"/"allowFrom".`
+                // Collect any known numbers/targets from config to help the agent suggest them
+                const knownTargets: string[] = []
+                const jids = connector.config?.allowedJids?.split(',').map((s: string) => s.trim()).filter(Boolean) || []
+                const from = connector.config?.allowFrom?.split(',').map((s: string) => s.trim()).filter(Boolean) || []
+                const outJid = connector.config?.outboundJid?.trim()
+                const outTarget = connector.config?.outboundTarget?.trim()
+                if (outJid) knownTargets.push(outJid)
+                if (outTarget) knownTargets.push(outTarget)
+                knownTargets.push(...jids, ...from)
+                const unique = [...new Set(knownTargets)]
+                if (unique.length) {
+                  return `Error: no default outbound target is set, but the connector has ${unique.length} configured number(s)/target(s): ${JSON.stringify(unique)}. Ask the user which one to send to, then re-call with the "to" parameter set to their choice.`
+                }
+                return `Error: no target recipient configured and no known contacts on this connector. Ask the user for the recipient number/ID, then re-call with the "to" parameter. They can also configure "allowedJids" or "outboundJid" in the connector settings.`
               }
               if (connector.platform === 'whatsapp') {
                 channelId = normalizeWhatsAppTarget(channelId)
+              }
+
+              // Resolve /api/uploads/ URLs to actual disk paths so connectors can read the files
+              let resolvedMediaPath = mediaPath?.trim() || undefined
+              let resolvedImageUrl = imageUrl?.trim() || undefined
+              let resolvedFileUrl = fileUrl?.trim() || undefined
+              if (!resolvedMediaPath) {
+                const fromImage = resolveUploadUrl(resolvedImageUrl)
+                if (fromImage) {
+                  resolvedMediaPath = fromImage.mediaPath
+                  resolvedImageUrl = undefined
+                }
+                const fromFile = resolveUploadUrl(resolvedFileUrl)
+                if (fromFile) {
+                  resolvedMediaPath = fromFile.mediaPath
+                  resolvedFileUrl = undefined
+                }
               }
 
               const sent = await sendConnectorMessage({
                 connectorId: selected.id,
                 channelId,
                 text: message?.trim() || '',
-                imageUrl: imageUrl?.trim() || undefined,
-                fileUrl: fileUrl?.trim() || undefined,
-                mediaPath: mediaPath?.trim() || undefined,
+                imageUrl: resolvedImageUrl,
+                fileUrl: resolvedFileUrl,
+                mediaPath: resolvedMediaPath,
                 mimeType: mimeType?.trim() || undefined,
                 fileName: fileName?.trim() || undefined,
                 caption: caption?.trim() || undefined,
@@ -140,16 +214,16 @@ export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInter
               }
             }
 
-            return 'Unknown action. Use list_running, list_targets, or send.'
+            return 'Unknown action. Use list_running, list_targets, start, stop, or send.'
           } catch (err: unknown) {
             return `Error: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
           name: 'connector_message_tool',
-          description: 'Send proactive outbound messages and perform rich messaging actions through running connectors. Supports listing running connectors/targets, sending text/media, and rich messaging (react, edit, delete, pin). For rich actions: connectorId + message (as messageId) required; caption carries emoji for react or new text for edit.',
+          description: 'Manage and send messages through chat platform connectors (WhatsApp, Telegram, Slack, Discord, etc.). Use "start"/"stop" to manage connector lifecycle, "list_running"/"list_targets" to discover available connectors and recipients, "send" to deliver messages, and rich actions (react, edit, delete, pin) for message management. When a send fails because no connector is running, check if one is configured and offer to start it. When no target is set, list available configured numbers and ask the user which to send to.',
           schema: z.object({
-            action: z.enum(['list_running', 'list_targets', 'send', 'message_react', 'message_edit', 'message_delete', 'message_pin']).describe('connector messaging action'),
+            action: z.enum(['list_running', 'list_targets', 'start', 'stop', 'send', 'message_react', 'message_edit', 'message_delete', 'message_pin']).describe('connector messaging action'),
             connectorId: z.string().optional().describe('Optional connector id. Defaults to the first running connector (or first for selected platform).'),
             platform: z.string().optional().describe('Optional platform filter (whatsapp, telegram, slack, discord, bluebubbles, etc.).'),
             to: z.string().optional().describe('Target channel id / recipient. For WhatsApp, phone number or full JID.'),

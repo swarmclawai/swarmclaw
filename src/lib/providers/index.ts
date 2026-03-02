@@ -22,6 +22,7 @@ export interface StreamChatOptions {
   session: any
   message: string
   imagePath?: string
+  imageUrl?: string
   apiKey?: string | null
   systemPrompt?: string
   write: (data: string) => void

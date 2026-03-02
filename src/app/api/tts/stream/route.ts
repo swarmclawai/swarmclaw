@@ -9,13 +9,14 @@ export async function POST(req: Request) {
     return new Response('No ElevenLabs API key. Set one in Settings > Voice.', { status: 500 })
   }
 
-  const { text } = await req.json()
+  const { text, voiceId } = await req.json()
   if (!text?.trim()) {
     return new Response('No text provided', { status: 400 })
   }
 
+  const voice = voiceId || ELEVENLABS_VOICE
   const apiRes = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE}/stream`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${voice}/stream`,
     {
       method: 'POST',
       headers: {

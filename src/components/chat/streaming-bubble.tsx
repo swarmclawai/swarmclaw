@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { AiAvatar } from '@/components/shared/avatar'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
-import { ToolCallBubble } from './tool-call-bubble'
+import { ToolCallBubble, extractMedia } from './tool-call-bubble'
 import { ActivityMoment, isNotableTool } from './activity-moment'
 import { useChatStore, type ToolEvent } from '@/stores/use-chat-store'
 import { isStructuredMarkdown } from './markdown-utils'
@@ -12,6 +12,26 @@ function ToolEventsSection({ toolEvents }: { toolEvents: ToolEvent[] }) {
   const [expanded, setExpanded] = useState(false)
   const shouldCollapse = toolEvents.length > 2
   const latestTool = toolEvents[toolEvents.length - 1]
+
+  // When collapsed, collect deduplicated media from all tool events so files remain visible
+  const collapsedMedia = useMemo(() => {
+    if (!shouldCollapse || expanded) return null
+    const seen = new Set<string>()
+    const images: string[] = []
+    const videos: string[] = []
+    const pdfs: { name: string; url: string }[] = []
+    const files: { name: string; url: string }[] = []
+    for (const ev of toolEvents) {
+      if (!ev.output) continue
+      const m = extractMedia(ev.output)
+      for (const url of m.images) { if (!seen.has(url)) { seen.add(url); images.push(url) } }
+      for (const url of m.videos) { if (!seen.has(url)) { seen.add(url); videos.push(url) } }
+      for (const p of m.pdfs) { if (!seen.has(p.url)) { seen.add(p.url); pdfs.push(p) } }
+      for (const f of m.files) { if (!seen.has(f.url)) { seen.add(f.url); files.push(f) } }
+    }
+    if (!images.length && !videos.length && !pdfs.length && !files.length) return null
+    return { images, videos, pdfs, files }
+  }, [toolEvents, shouldCollapse, expanded])
 
   if (shouldCollapse && !expanded) {
     return (
@@ -31,6 +51,33 @@ function ToolEventsSection({ toolEvents }: { toolEvents: ToolEvent[] }) {
             latest: {latestTool?.name || 'unknown'}
           </span>
         </button>
+        {collapsedMedia && (
+          <>
+            {collapsedMedia.images.map((src, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={`ci-${i}`} src={src} alt={`Screenshot ${i + 1}`} loading="lazy"
+                className="max-w-[400px] rounded-[10px] border border-white/10"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+            ))}
+            {collapsedMedia.videos.map((src, i) => (
+              <video key={`cv-${i}`} src={src} controls playsInline preload="none" className="max-w-full rounded-[10px] border border-white/10" />
+            ))}
+            {collapsedMedia.pdfs.map((file, i) => (
+              <div key={`cp-${i}`} className="rounded-[10px] border border-white/10 overflow-hidden">
+                <iframe src={file.url} loading="lazy" className="w-full h-[400px] bg-white" title={file.name} />
+              </div>
+            ))}
+            {collapsedMedia.files.map((file, i) => (
+              <a key={`cf-${i}`} href={file.url} download className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/10 bg-surface/60 text-[13px] text-text-2 no-underline">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                {file.name}
+              </a>
+            ))}
+          </>
+        )}
       </div>
     )
   }
@@ -64,6 +111,7 @@ export function StreamingBubble({ text, assistantName, agentAvatarSeed, agentNam
   const toolEvents = useChatStore((s) => s.toolEvents)
   const streamPhase = useChatStore((s) => s.streamPhase)
   const streamToolName = useChatStore((s) => s.streamToolName)
+  const thinkingText = useChatStore((s) => s.thinkingText)
   const wide = useMemo(() => isStructuredMarkdown(text), [text])
 
   // Track which activity moments have been dismissed
@@ -106,6 +154,25 @@ export function StreamingBubble({ text, assistantName, agentAvatarSeed, agentNam
           <span className="text-[10px] text-text-3/50 font-mono">Using {streamToolName}...</span>
         )}
       </div>
+
+      {/* Collapsed thinking section (shown when text has started but thinking exists) */}
+      {text && thinkingText && (
+        <div className="max-w-[85%] md:max-w-[72%] mb-2">
+          <details className="group rounded-[12px] border border-purple-500/15 bg-purple-500/[0.04]">
+            <summary className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-purple-400/60 shrink-0 transition-transform group-open:rotate-90">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              <span className="text-[11px] font-600 text-purple-400/70 uppercase tracking-[0.05em]">Thinking</span>
+            </summary>
+            <div className="px-3.5 pb-3 pt-1 max-h-[300px] overflow-y-auto">
+              <div className="text-[13px] leading-[1.6] text-text-3/70 whitespace-pre-wrap break-words">
+                {thinkingText}
+              </div>
+            </div>
+          </details>
+        </div>
+      )}
 
       {/* Tool call events (collapsible when > 2) */}
       {toolEvents.length > 0 && (

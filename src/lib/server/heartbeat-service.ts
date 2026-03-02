@@ -163,7 +163,13 @@ function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: str
   const goalSummary = systemPrompt.slice(0, 500)
   const recentMessages = (session.messages || []).slice(-5)
   const recentContext = recentMessages
-    .map((m: any) => `[${m.role}]: ${(m.text || '').slice(0, 200)}`)
+    .map((m: any) => {
+      const text = (m.text || '').slice(0, 200)
+      const tools = Array.isArray(m.toolEvents) && m.toolEvents.length > 0
+        ? ` [tools used: ${m.toolEvents.map((t: { name: string }) => t.name).join(', ')}]`
+        : ''
+      return `[${m.role}]: ${text}${tools}`
+    })
     .join('\n')
 
   // Don't inject effectively-empty HEARTBEAT.md content
@@ -187,6 +193,7 @@ function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: str
     'You are running an autonomous heartbeat tick. Review your goal and recent context.',
     'If there is meaningful work to do toward your goal, use your tools and take action.',
     'If nothing needs attention right now, reply exactly HEARTBEAT_OK.',
+    'IMPORTANT: Do NOT repeat actions you already performed in recent context. If you already searched for something or completed a task (shown above), report your findings or reply HEARTBEAT_OK — do not search or act again unless there is a NEW reason to do so.',
     'Do not ask clarifying questions. Take the most reasonable next action.',
     '',
     'To update your goal or plan, include this line in your response:',

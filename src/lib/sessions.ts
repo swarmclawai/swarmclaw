@@ -34,6 +34,16 @@ export const deleteSession = (id: string) =>
 export const fetchMessages = (id: string) =>
   api<Message[]>('GET', `/sessions/${id}/messages`)
 
+export interface PaginatedMessages {
+  messages: Message[]
+  total: number
+  hasMore: boolean
+  startIndex: number
+}
+
+export const fetchMessagesPaginated = (id: string, limit: number = 100) =>
+  api<PaginatedMessages>('GET', `/sessions/${id}/messages?limit=${limit}`)
+
 export const clearMessages = (id: string) =>
   api<string>('POST', `/sessions/${id}/clear`)
 

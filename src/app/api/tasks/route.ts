@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { loadTasks, saveTasks, loadSettings, logActivity } from '@/lib/server/storage'
+import { loadTasks, saveTasks, loadSettings, loadAgents, logActivity } from '@/lib/server/storage'
 import { enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
 import { notify } from '@/lib/server/ws-hub'
+import { computeTaskFingerprint, findDuplicateTask } from '@/lib/task-dedupe'
+import { resolveTaskAgentFromDescription } from '@/lib/server/task-mention'
 
 export async function GET(req: Request) {
   // Keep completed queue integrity even if daemon is not running.
@@ -64,12 +66,17 @@ export async function POST(req: Request) {
   const retryBackoffSec = Number.isFinite(Number(body.retryBackoffSec))
     ? Math.max(1, Math.min(3600, Math.trunc(Number(body.retryBackoffSec))))
     : Math.max(1, Math.min(3600, Math.trunc(Number(settings.taskRetryBackoffSec ?? 30))))
+  // Resolve @mentions in description to auto-assign agent
+  const resolvedAgentId = body.description
+    ? resolveTaskAgentFromDescription(body.description, body.agentId || '', loadAgents())
+    : (body.agentId || '')
+
   tasks[id] = {
     id,
     title: body.title || 'Untitled Task',
     description: body.description || '',
     status: body.status || 'backlog',
-    agentId: body.agentId || '',
+    agentId: resolvedAgentId,
     projectId: typeof body.projectId === 'string' && body.projectId ? body.projectId : null,
     goalContract: body.goalContract || null,
     cwd: typeof body.cwd === 'string' ? body.cwd : null,
@@ -94,6 +101,14 @@ export async function POST(req: Request) {
     tags: Array.isArray(body.tags) ? body.tags.filter((s: unknown) => typeof s === 'string') : [],
     dueAt: typeof body.dueAt === 'number' ? body.dueAt : null,
     customFields: body.customFields && typeof body.customFields === 'object' ? body.customFields : undefined,
+    priority: ['low', 'medium', 'high', 'critical'].includes(body.priority) ? body.priority : undefined,
+    fingerprint: computeTaskFingerprint(body.title || 'Untitled Task', body.agentId || ''),
+  }
+
+  // Dedup: if a non-terminal task with same fingerprint exists, return it
+  const dupe = findDuplicateTask(tasks, { fingerprint: tasks[id].fingerprint! })
+  if (dupe && dupe.id !== id) {
+    return NextResponse.json({ ...dupe, deduplicated: true })
   }
 
   if (tasks[id].status === 'completed') {

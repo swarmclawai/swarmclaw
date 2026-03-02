@@ -40,6 +40,13 @@ const COMMAND_GROUPS = {
       pin: { description: 'Toggle pin on a chatroom message', method: 'POST', path: '/chatrooms/:id/pins', params: ['id'] },
     },
   },
+  canvas: {
+    description: 'Session canvas content',
+    commands: {
+      get: { description: 'Get current canvas content for a session', method: 'GET', path: '/canvas/:sessionId', params: ['sessionId'] },
+      set: { description: 'Set/clear canvas content for a session', method: 'POST', path: '/canvas/:sessionId', params: ['sessionId'] },
+    },
+  },
   connectors: {
     description: 'Manage chat connectors',
     commands: {
@@ -118,6 +125,13 @@ const COMMAND_GROUPS = {
         path: '/tts',
         binary: true,
       },
+    },
+  },
+  files: {
+    description: 'Serve/open local files',
+    commands: {
+      serve: { description: 'Serve a local file (supports --query path=/some/file)', method: 'GET', path: '/files/serve' },
+      open: { description: 'Open a local file path via host default app/browser', method: 'POST', path: '/files/open' },
     },
   },
   logs: {
@@ -262,6 +276,8 @@ const COMMAND_GROUPS = {
       'heartbeat-disable-all': { description: 'Disable all session heartbeats and cancel queued heartbeat runs', method: 'POST', path: '/sessions/heartbeat' },
       messages: { description: 'Get session message history', method: 'GET', path: '/sessions/:id/messages', params: ['id'] },
       'messages-update': { description: 'Update session message metadata (e.g. bookmark)', method: 'PUT', path: '/sessions/:id/messages', params: ['id'] },
+      'messages-send': { description: 'Append a user/system message to a session', method: 'POST', path: '/sessions/:id/messages', params: ['id'] },
+      'messages-delete': { description: 'Delete a message from a session', method: 'DELETE', path: '/sessions/:id/messages', params: ['id'] },
       fork: { description: 'Fork session from a specific message index', method: 'POST', path: '/sessions/:id/fork', params: ['id'] },
       'edit-resend': { description: 'Edit and resend from a specific message index', method: 'POST', path: '/sessions/:id/edit-resend', params: ['id'] },
       'main-loop': { description: 'Get main mission loop state for a session', method: 'GET', path: '/sessions/:id/main-loop', params: ['id'] },
@@ -323,6 +339,7 @@ const COMMAND_GROUPS = {
       delete: { description: 'Archive task', method: 'DELETE', path: '/tasks/:id', params: ['id'] },
       archive: { description: 'Archive task', method: 'DELETE', path: '/tasks/:id', params: ['id'] },
       approve: { description: 'Approve or reject a pending tool execution', method: 'POST', path: '/tasks/:id/approve', params: ['id'] },
+      metrics: { description: 'Get task board metrics (supports --query range=24h|7d|30d)', method: 'GET', path: '/tasks/metrics' },
     },
   },
   webhooks: {

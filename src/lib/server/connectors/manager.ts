@@ -2,14 +2,27 @@ import { genId } from '@/lib/id'
 import {
   loadConnectors, saveConnectors, loadSessions, saveSessions,
   loadAgents, loadCredentials, decryptKey, loadSettings, loadSkills,
+  loadChatrooms, saveChatrooms,
 } from '../storage'
 import { WORKSPACE_DIR } from '../data-dir'
+import { UPLOAD_DIR } from '../storage'
+import fs from 'fs'
+import path from 'path'
 import { streamAgentChat } from '../stream-agent-chat'
 import { notify } from '../ws-hub'
 import { logExecution } from '../execution-log'
 import { enqueueSystemEvent } from '../system-events'
 import { requestHeartbeatNow } from '../heartbeat-wake'
-import type { Connector } from '@/types'
+import { buildCurrentDateTimePromptContext } from '../prompt-runtime-context'
+import {
+  parseMentions,
+  buildChatroomSystemPrompt,
+  buildSyntheticSession,
+  buildAgentSystemPromptForChatroom,
+  buildHistoryForAgent,
+  resolveApiKey as resolveApiKeyHelper,
+} from '../chatroom-helpers'
+import type { Connector, MessageSource, Chatroom, ChatroomMessage } from '@/types'
 import type { ConnectorInstance, InboundMessage, InboundMedia } from './types'
 import {
   addAllowedSender,
@@ -22,6 +35,30 @@ import {
   parsePairingPolicy,
   type PairingPolicy,
 } from './pairing'
+
+/**
+ * Extract embedded media references from agent response text.
+ * Parses markdown image/link patterns like ![alt](/api/uploads/filename)
+ * and resolves them to actual file paths on disk.
+ */
+function extractEmbeddedMedia(text: string): { cleanText: string; files: Array<{ path: string; alt: string }> } {
+  const files: Array<{ path: string; alt: string }> = []
+  // Match markdown images: ![alt](/api/uploads/filename)
+  const imgRegex = /!\[([^\]]*)\]\(\/api\/uploads\/([^)]+)\)/g
+  let match: RegExpExecArray | null
+  while ((match = imgRegex.exec(text)) !== null) {
+    const [, alt, filename] = match
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '')
+    const filePath = path.join(UPLOAD_DIR, safeName)
+    if (fs.existsSync(filePath)) {
+      files.push({ path: filePath, alt: alt || '' })
+    }
+  }
+  if (files.length === 0) return { cleanText: text, files }
+  // Strip the image markdown from text — the files will be sent as separate media
+  const cleanText = text.replace(imgRegex, '').replace(/\n{3,}/g, '\n\n').trim()
+  return { cleanText, files }
+}
 
 /** Sentinel value agents return when no outbound reply should be sent */
 export const NO_MESSAGE_SENTINEL = 'NO_MESSAGE'
@@ -421,6 +458,132 @@ async function handleConnectorCommand(params: {
   return 'Unknown command.'
 }
 
+/** Route an inbound message to a chatroom — process mentioned agents and return concatenated responses */
+async function routeMessageToChatroom(connector: Connector, msg: InboundMessage): Promise<string> {
+  const chatroomId = connector.chatroomId
+  if (!chatroomId) return '[Error] No chatroom configured.'
+
+  const chatrooms = loadChatrooms()
+  const chatroom = chatrooms[chatroomId] as Chatroom | undefined
+  if (!chatroom) return '[Error] Chatroom not found.'
+
+  const agents = loadAgents()
+  const source: MessageSource = {
+    platform: connector.platform,
+    connectorId: connector.id,
+    connectorName: connector.name,
+    senderName: msg.senderName,
+  }
+
+  // Parse mentions from the message text
+  let mentions = parseMentions(msg.text || '', agents, chatroom.agentIds)
+  // Auto-address: if enabled and no explicit mentions, address all agents
+  if (chatroom.autoAddress && mentions.length === 0) {
+    mentions = [...chatroom.agentIds]
+  }
+
+  // Create and persist the user message in the chatroom
+  const userMessage: ChatroomMessage = {
+    id: genId(),
+    senderId: 'user',
+    senderName: msg.senderName || 'User',
+    role: 'user',
+    text: msg.text || '',
+    mentions,
+    reactions: [],
+    time: Date.now(),
+    source,
+  }
+  chatroom.messages.push(userMessage)
+  chatroom.updatedAt = Date.now()
+  chatrooms[chatroomId] = chatroom
+  saveChatrooms(chatrooms)
+  notify('chatrooms')
+  notify(`chatroom:${chatroomId}`)
+
+  // Process mentioned agents sequentially and collect responses
+  const responses: string[] = []
+  for (const agentId of mentions) {
+    const agent = agents[agentId]
+    if (!agent) continue
+
+    const apiKey = resolveApiKeyHelper(agent.credentialId)
+    const freshChatrooms = loadChatrooms()
+    const freshChatroom = freshChatrooms[chatroomId] as Chatroom
+
+    const syntheticSession = buildSyntheticSession(agent, chatroomId)
+    const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent)
+    const chatroomContext = buildChatroomSystemPrompt(freshChatroom, agents, agent.id)
+    const fullSystemPrompt = [agentSystemPrompt, chatroomContext].filter(Boolean).join('\n\n')
+    const history = buildHistoryForAgent(freshChatroom, agent.id)
+
+    try {
+      const result = await streamAgentChat({
+        session: syntheticSession,
+        message: msg.text || '',
+        apiKey,
+        systemPrompt: fullSystemPrompt,
+        write: () => {},
+        history,
+      })
+
+      const responseText = result.finalResponse || result.fullText
+      if (responseText.trim() && !isNoMessage(responseText)) {
+        // Persist agent response to chatroom
+        const agentSource: MessageSource = {
+          platform: connector.platform,
+          connectorId: connector.id,
+          connectorName: connector.name,
+        }
+        const agentMessage: ChatroomMessage = {
+          id: genId(),
+          senderId: agent.id,
+          senderName: agent.name,
+          role: 'assistant',
+          text: responseText,
+          mentions: parseMentions(responseText, agents, freshChatroom.agentIds),
+          reactions: [],
+          time: Date.now(),
+          source: agentSource,
+        }
+        const latestChatrooms = loadChatrooms()
+        const latestChatroom = latestChatrooms[chatroomId] as Chatroom
+        latestChatroom.messages.push(agentMessage)
+        latestChatroom.updatedAt = Date.now()
+        latestChatrooms[chatroomId] = latestChatroom
+        saveChatrooms(latestChatrooms)
+        notify(`chatroom:${chatroomId}`)
+
+        responses.push(`[${agent.name}] ${responseText}`)
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      console.error(`[connector] Chatroom agent ${agent.name} error:`, errMsg)
+    }
+  }
+
+  if (responses.length === 0) return NO_MESSAGE_SENTINEL
+
+  const joined = responses.join('\n\n')
+  // Extract embedded media from agent responses and send them via connector
+  const extracted = extractEmbeddedMedia(joined)
+  if (extracted.files.length > 0) {
+    const inst = running.get(connector.id)
+    if (inst?.sendMessage) {
+      for (const file of extracted.files) {
+        try {
+          await inst.sendMessage(msg.channelId, '', { mediaPath: file.path, caption: file.alt || undefined })
+          console.log(`[connector] Sent chatroom media to ${msg.platform}: ${path.basename(file.path)}`)
+        } catch (err: unknown) {
+          console.error(`[connector] Failed to send chatroom media ${path.basename(file.path)}:`, err instanceof Error ? err.message : String(err))
+        }
+      }
+    }
+    return extracted.cleanText || '(no response)'
+  }
+  return joined
+}
+
 /** Route an inbound message through the assigned agent and return the response */
 async function routeMessage(connector: Connector, msg: InboundMessage): Promise<string> {
   if (msg?.channelId) {
@@ -428,8 +591,14 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   }
   lastInboundTimeByConnector.set(connector.id, Date.now())
 
+  // Route to chatroom if configured
+  if (connector.chatroomId) {
+    return routeMessageToChatroom(connector, msg)
+  }
+
   const agents = loadAgents()
   const effectiveAgentId = msg.agentIdOverride || connector.agentId
+  if (!effectiveAgentId) return '[Error] Connector has no agent configured.'
   const agent = agents[effectiveAgentId]
   if (!agent) return '[Error] Connector agent not found.'
 
@@ -472,11 +641,16 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     }
   }
 
-  // Find or create a session keyed by platform + channel
+  // Find a session for this connector message.
+  // Prefer the agent's thread session (visible in the agent chat UI) so connector
+  // messages appear inline alongside web UI messages.
+  // Fall back to a connector-keyed session if the agent has no thread session.
   const sessionKey = `connector:${connector.id}:${msg.channelId}`
   const sessions = loadSessions()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let session = Object.values(sessions).find((s: any) => s.name === sessionKey)
+  let session = (agent.threadSessionId && sessions[agent.threadSessionId])
+    ? sessions[agent.threadSessionId]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    : Object.values(sessions).find((s: any) => s.name === sessionKey)
   if (!session) {
     const id = genId()
     session = {
@@ -564,6 +738,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   const settings = loadSettings()
   const promptParts: string[] = []
   if (settings.userPrompt) promptParts.push(settings.userPrompt)
+  promptParts.push(buildCurrentDateTimePromptContext())
   if (agent.soul) promptParts.push(agent.soul)
   if (agent.systemPrompt) promptParts.push(agent.systemPrompt)
   if (agent.skillIds?.length) {
@@ -594,12 +769,22 @@ The test: would a thoughtful friend feel compelled to type something back? If no
   const firstImageUrl = msg.imageUrl || (firstImage?.url) || undefined
   const firstImagePath = firstImage?.localPath || undefined
   const inboundText = formatInboundUserText(msg)
+  // Store the raw user text for display (source.senderName handles attribution).
+  // The formatted text with [SenderName] prefix is only used for LLM history context.
+  const rawText = (msg.text || '').trim()
+  const messageSource: MessageSource = {
+    platform: connector.platform,
+    connectorId: connector.id,
+    connectorName: connector.name,
+    senderName: msg.senderName,
+  }
   session.messages.push({
     role: 'user',
-    text: inboundText,
+    text: rawText || inboundText,
     time: Date.now(),
     imageUrl: firstImageUrl,
     imagePath: firstImagePath,
+    source: messageSource,
   })
   session.lastActiveAt = Date.now()
   const s1 = loadSessions()
@@ -679,14 +864,37 @@ The test: would a thoughtful friend feel compelled to type something back? If no
     },
   })
 
-  // Save assistant response to session
+  // Save assistant response to session (full text with image markdown for web UI rendering)
+  const assistantSource: MessageSource = {
+    platform: connector.platform,
+    connectorId: connector.id,
+    connectorName: connector.name,
+  }
   if (fullText.trim()) {
-    session.messages.push({ role: 'assistant', text: fullText.trim(), time: Date.now() })
+    session.messages.push({ role: 'assistant', text: fullText.trim(), time: Date.now(), source: assistantSource })
     session.lastActiveAt = Date.now()
     const s2 = loadSessions()
     s2[session.id] = session
     saveSessions(s2)
     notify(`messages:${session.id}`)
+  }
+
+  // Extract embedded media (screenshots, uploaded files) and send them as separate
+  // media messages via the connector, then return the cleaned text
+  const extracted = extractEmbeddedMedia(fullText)
+  if (extracted.files.length > 0) {
+    const inst = running.get(connector.id)
+    if (inst?.sendMessage) {
+      for (const file of extracted.files) {
+        try {
+          await inst.sendMessage(msg.channelId, '', { mediaPath: file.path, caption: file.alt || undefined })
+          console.log(`[connector] Sent media to ${msg.platform}: ${path.basename(file.path)}`)
+        } catch (err: unknown) {
+          console.error(`[connector] Failed to send media ${path.basename(file.path)}:`, err instanceof Error ? err.message : String(err))
+        }
+      }
+    }
+    return extracted.cleanText || '(no response)'
   }
 
   return fullText || '(no response)'
@@ -873,6 +1081,7 @@ export function listRunningConnectors(platform?: string): Array<{
   id: string
   name: string
   platform: string
+  agentId: string | null
   supportsSend: boolean
   configuredTargets: string[]
   recentChannelId: string | null
@@ -882,6 +1091,7 @@ export function listRunningConnectors(platform?: string): Array<{
     id: string
     name: string
     platform: string
+    agentId: string | null
     supportsSend: boolean
     configuredTargets: string[]
     recentChannelId: string | null
@@ -907,6 +1117,7 @@ export function listRunningConnectors(platform?: string): Array<{
       id,
       name: connector.name,
       platform: connector.platform,
+      agentId: connector.agentId || null,
       supportsSend: typeof instance.sendMessage === 'function',
       configuredTargets: Array.from(new Set(configuredTargets)),
       recentChannelId: lastInboundChannelByConnector.get(id) || null,

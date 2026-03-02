@@ -634,6 +634,69 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
     }
   }
 
+  // check_delegation_status: lets agents check on tasks they delegated
+  if (ctx?.platformAssignScope === 'all' && ctx?.agentId) {
+    tools.push(
+      tool(
+        async ({ taskId }) => {
+          try {
+            const tasks = loadTasks()
+            const task = tasks[taskId] as Record<string, unknown> | undefined
+            if (!task) return `Error: Task "${taskId}" not found.`
+
+            const status = task.status as string || 'unknown'
+            const result = typeof task.result === 'string' ? task.result : null
+            const error = typeof task.error === 'string' ? task.error : null
+            const agentId = task.agentId as string || ''
+            const agents = loadAgents()
+            const agent = agents[agentId]
+            const startedAt = typeof task.startedAt === 'number' ? task.startedAt : null
+            const completedAt = typeof task.completedAt === 'number' ? task.completedAt : null
+
+            const info: Record<string, unknown> = {
+              taskId,
+              status,
+              agentId,
+              agentName: agent?.name || agentId,
+              agentAvatarSeed: agent?.avatarSeed || null,
+              title: task.title || '',
+            }
+
+            if (startedAt) info.startedAt = new Date(startedAt).toISOString()
+            if (completedAt) info.completedAt = new Date(completedAt).toISOString()
+            if (startedAt && !completedAt && status === 'running') {
+              info.runningForSeconds = Math.round((Date.now() - startedAt) / 1000)
+            }
+            if (result) info.result = result.slice(0, 4000)
+            if (error) info.error = error.slice(0, 1000)
+
+            // Include latest comments for context
+            const comments = Array.isArray(task.comments) ? task.comments as Array<{ text: string; author: string; createdAt: number }> : []
+            if (comments.length > 0) {
+              const latest = comments.slice(-3).map((c) => ({
+                author: c.author,
+                text: (c.text || '').slice(0, 500),
+                time: new Date(c.createdAt).toISOString(),
+              }))
+              info.latestComments = latest
+            }
+
+            return JSON.stringify(info)
+          } catch (err: unknown) {
+            return `Error checking task: ${err instanceof Error ? err.message : String(err)}`
+          }
+        },
+        {
+          name: 'check_delegation_status',
+          description: 'Check the status and result of a delegated task. Use this after delegate_to_agent to monitor progress. Returns status (todo/queued/running/completed/failed), result if completed, and latest comments.',
+          schema: z.object({
+            taskId: z.string().describe('The task ID returned by delegate_to_agent'),
+          }),
+        },
+      ),
+    )
+  }
+
   // delegate_to_agent: requires "Assign to Other Agents" (platformAssignScope: 'all')
   if (ctx?.platformAssignScope === 'all' && ctx?.agentId) {
     tools.push(
@@ -698,9 +761,10 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
               taskId,
               agentId: resolvedId,
               agentName: target.name,
+              agentAvatarSeed: target.avatarSeed || null,
               message: startImmediately
-                ? `Task delegated to ${target.name} and queued for immediate execution. Task ID: ${taskId}.`
-                : `Task delegated to ${target.name}. Task ID: ${taskId}. Status: todo. Ask the user if they want to start it now — call again with startImmediately: true to queue it.`,
+                ? `Task delegated to ${target.name} and queued for immediate execution. Task ID: ${taskId}. Use check_delegation_status to monitor progress.`
+                : `Task delegated to ${target.name}. Task ID: ${taskId}. Status: todo (not auto-started). Use delegate_to_agent with startImmediately: true to queue it.`,
             })
           } catch (err: unknown) {
             return `Error delegating task: ${err instanceof Error ? err.message : String(err)}`
@@ -708,12 +772,12 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
         },
         {
           name: 'delegate_to_agent',
-          description: 'Delegate a task to another agent. Creates a task on the task board. By default the task goes to "todo" status. Set startImmediately=true to queue it for execution right away. Ask the user to confirm before starting immediately.',
+          description: 'Delegate a task to another agent. Creates a task on the task board and queues it for immediate execution by default. Set startImmediately=false if you want the task to go to "todo" status instead.',
           schema: z.object({
             agentId: z.string().describe('ID or name of the target agent to delegate to'),
             task: z.string().describe('What the target agent should do'),
             description: z.string().optional().describe('Optional longer description of the task'),
-            startImmediately: z.boolean().optional().default(false).describe('If true, queue the task for immediate execution instead of putting it in todo'),
+            startImmediately: z.boolean().optional().default(true).describe('If true (default), queue the task for immediate execution. Set false to put in todo for manual start.'),
           }),
         },
       ),

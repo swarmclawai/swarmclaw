@@ -38,10 +38,14 @@ export async function runDailyConsolidation(): Promise<{
 
       if (candidates.length < 5) continue
 
+      // Sort by reinforcement count descending so most-reinforced memories are prioritized in digest
+      candidates.sort((a, b) => (b.reinforcementCount || 0) - (a.reinforcementCount || 0))
+
       // Build summarization prompt
       const memoryLines = candidates.slice(0, 30).map((m) => {
+        const rc = m.reinforcementCount || 0
         const content = (m.content || '').slice(0, 300)
-        return `- [${m.category}] ${m.title}: ${content}`
+        return `- [${m.category}]${rc > 0 ? ` (reinforced x${rc})` : ''} ${m.title}: ${content}`
       })
 
       const prompt = [
@@ -65,7 +69,8 @@ export async function runDailyConsolidation(): Promise<{
 
       if (!digestContent.trim()) continue
 
-      const linkedMemoryIds = candidates.slice(0, 10).map((m) => m.id)
+      const digestCandidates = candidates.slice(0, 30)
+      const linkedMemoryIds = digestCandidates.slice(0, 10).map((m) => m.id)
       memDb.add({
         agentId,
         sessionId: null,
@@ -74,6 +79,14 @@ export async function runDailyConsolidation(): Promise<{
         content: digestContent.trim(),
         linkedMemoryIds,
       })
+
+      // Reset reinforcement counts on entries folded into the digest to prevent double-counting
+      for (const m of digestCandidates) {
+        if (m.reinforcementCount && m.reinforcementCount > 0) {
+          memDb.update(m.id, { reinforcementCount: 0 })
+        }
+      }
+
       digestsCreated++
     } catch (err: unknown) {
       errors.push(`Agent ${agentId}: ${err instanceof Error ? err.message : String(err)}`)

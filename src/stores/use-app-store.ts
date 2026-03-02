@@ -98,6 +98,8 @@ interface AppState {
   setTaskSheetOpen: (open: boolean) => void
   editingTaskId: string | null
   setEditingTaskId: (id: string | null) => void
+  taskSheetViewOnly: boolean
+  setTaskSheetViewOnly: (v: boolean) => void
 
   // Provider configs (custom providers)
   providerConfigs: ProviderConfig[]
@@ -460,9 +462,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().loadTasks(show)
   },
   taskSheetOpen: false,
-  setTaskSheetOpen: (open) => set({ taskSheetOpen: open }),
+  setTaskSheetOpen: (open) => set({ taskSheetOpen: open, ...(open ? {} : { taskSheetViewOnly: false }) }),
   editingTaskId: null,
   setEditingTaskId: (id) => set({ editingTaskId: id }),
+  taskSheetViewOnly: false,
+  setTaskSheetViewOnly: (v) => set({ taskSheetViewOnly: v }),
 
   // Provider configs (custom providers)
   providerConfigs: [],

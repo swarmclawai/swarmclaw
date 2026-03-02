@@ -13,11 +13,13 @@ export interface Message {
   imageUrl?: string
   attachedFiles?: string[]
   toolEvents?: MessageToolEvent[]
-  kind?: 'chat' | 'heartbeat' | 'system'
+  thinking?: string
+  kind?: 'chat' | 'heartbeat' | 'system' | 'context-clear'
   suppressed?: boolean
   bookmarked?: boolean
   suggestions?: string[]
   replyToId?: string
+  source?: MessageSource
 }
 
 export type ProviderType = 'claude-cli' | 'codex-cli' | 'opencode-cli' | 'openai' | 'ollama' | 'anthropic' | 'openclaw' | 'google' | 'deepseek' | 'groq' | 'together' | 'mistral' | 'xai' | 'fireworks'
@@ -114,6 +116,7 @@ export interface Session {
   queuedCount?: number
   currentRunId?: string | null
   conversationTone?: string
+  canvasContent?: string | null
 }
 
 export type Sessions = Record<string, Session>
@@ -128,6 +131,10 @@ export type SessionTool =
   | 'web_fetch'
   | 'edit_file'
   | 'process'
+  | 'spawn_subagent'
+  | 'canvas'
+  | 'http_request'
+  | 'git'
 
 // --- Cost Tracking ---
 
@@ -254,6 +261,7 @@ export interface Agent {
   heartbeatGoal?: string | null
   heartbeatNextAction?: string | null
   thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
+  elevenLabsVoiceId?: string | null
   projectId?: string
   avatarSeed?: string
   pinned?: boolean
@@ -339,6 +347,10 @@ export interface MemoryEntry {
   linkedMemoryIds?: string[]
   pinned?: boolean
   sharedWith?: string[]
+  accessCount?: number
+  lastAccessedAt?: number
+  contentHash?: string
+  reinforcementCount?: number
   createdAt: number
   updatedAt: number
 }
@@ -367,6 +379,7 @@ export interface ChatroomMessage {
   attachedFiles?: string[]
   imagePath?: string
   replyToId?: string
+  source?: MessageSource
 }
 
 export interface Chatroom {
@@ -503,9 +516,12 @@ export interface AppSettings {
   claudeCodeTimeoutSec?: number
   cliProcessTimeoutSec?: number
   userAvatarSeed?: string
+  elevenLabsEnabled?: boolean
   elevenLabsApiKey?: string | null
   elevenLabsVoiceId?: string | null
   speechRecognitionLang?: string | null
+  tavilyApiKey?: string | null
+  braveApiKey?: string | null
   heartbeatPrompt?: string | null
   heartbeatIntervalSec?: number | null
   heartbeatInterval?: string | number | null
@@ -545,6 +561,8 @@ export interface AppSettings {
   maxLinkedMemoriesExpanded?: number
   memoryMaxDepth?: number
   memoryMaxPerLookup?: number
+  // Chat UX
+  suggestionsEnabled?: boolean
   // Voice conversation
   voiceAutoSendDelaySec?: number
   // Default agent for main chat on startup
@@ -624,11 +642,19 @@ export interface Skill {
 export type ConnectorPlatform = 'discord' | 'telegram' | 'slack' | 'whatsapp' | 'openclaw' | 'bluebubbles' | 'signal' | 'teams' | 'googlechat' | 'matrix'
 export type ConnectorStatus = 'stopped' | 'running' | 'error'
 
+export interface MessageSource {
+  platform: ConnectorPlatform
+  connectorId: string
+  connectorName: string
+  senderName?: string
+}
+
 export interface Connector {
   id: string
   name: string
   platform: ConnectorPlatform
-  agentId: string               // which agent handles incoming messages
+  agentId?: string | null        // which agent handles incoming messages (optional if using chatroomId)
+  chatroomId?: string | null     // route to a chatroom instead of a single agent
   credentialId?: string | null    // bot token stored as encrypted credential
   config: Record<string, string>  // platform-specific settings
   isEnabled: boolean
@@ -736,6 +762,10 @@ export interface BoardTask {
   dueAt?: number | null
   // Custom fields
   customFields?: Record<string, string | number | boolean>
+  // Priority
+  priority?: 'low' | 'medium' | 'high' | 'critical'
+  // Dedup fingerprint
+  fingerprint?: string
 }
 
 // --- MCP Servers ---

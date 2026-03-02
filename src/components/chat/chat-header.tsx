@@ -14,7 +14,9 @@ import {
   getSessionConnector,
 } from '@/components/shared/connector-platform-icon'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { ModelCombobox } from '@/components/shared/model-combobox'
 import { toast } from 'sonner'
+import type { ProviderType } from '@/types'
 
 function shortPath(p: string): string {
   return (p || '').replace(/^\/Users\/\w+/, '~')
@@ -49,9 +51,11 @@ interface Props {
   onVoiceToggle?: () => void
   voiceActive?: boolean
   voiceSupported?: boolean
+  heartbeatHistoryOpen?: boolean
+  onToggleHeartbeatHistory?: () => void
 }
 
-export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, mobile, browserActive, onStopBrowser, onVoiceToggle, voiceActive, voiceSupported }: Props) {
+export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, mobile, browserActive, onStopBrowser, onVoiceToggle, voiceActive, voiceSupported, heartbeatHistoryOpen, onToggleHeartbeatHistory }: Props) {
   const ttsEnabled = useChatStore((s) => s.ttsEnabled)
   const toggleTts = useChatStore((s) => s.toggleTts)
   const soundEnabled = useChatStore((s) => s.soundEnabled)
@@ -72,12 +76,15 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const setInspectorOpen = useAppStore((s) => s.setInspectorOpen)
   const connectors = useAppStore((s) => s.connectors)
   const loadConnectors = useAppStore((s) => s.loadConnectors)
-  const providerLabel = PROVIDER_LABELS[session.provider] || session.provider
   const agent = session.agentId ? agents[session.agentId] : null
   const connector = getSessionConnector(session, connectors)
   const connectorMeta = connector ? CONNECTOR_PLATFORM_META[connector.platform] : null
   const connectorPresence = connector?.presence
+  const providers = useAppStore((s) => s.providers)
+  const loadProviders = useAppStore((s) => s.loadProviders)
   const modelName = session.model || agent?.model || ''
+  const [modelSwitcherOpen, setModelSwitcherOpen] = useState(false)
+  const modelSwitcherRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
   const [heartbeatSaving, setHeartbeatSaving] = useState(false)
   const [hbDropdownOpen, setHbDropdownOpen] = useState(false)
@@ -87,6 +94,12 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const [mainLoopNotice, setMainLoopNotice] = useState('')
   const [syncingHistory, setSyncingHistory] = useState(false)
   const [syncResult, setSyncResult] = useState('')
+  const [renaming, setRenaming] = useState(false)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [renameSaving, setRenameSaving] = useState(false)
+  const [renameError, setRenameError] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  const renameContainerRef = useRef<HTMLSpanElement>(null)
 
   // Find linked task for this session
   const linkedTask = useMemo(() => {
@@ -126,6 +139,19 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     navigator.clipboard.writeText(resumeHandle.command)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleDismissResumeHandle = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await api('PUT', `/sessions/${session.id}`, {
+        claudeSessionId: null,
+        codexThreadId: null,
+        opencodeSessionId: null,
+        delegateResumeIds: { claudeCode: null, codex: null, opencode: null },
+      })
+      await loadSessions()
+    } catch { /* best-effort */ }
   }
 
   const heartbeatSupported = (session.tools?.length ?? 0) > 0
@@ -316,6 +342,54 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     return () => clearTimeout(timer)
   }, [syncResult])
 
+  const startRename = () => {
+    if (!agent) return
+    setRenameDraft(agent.name)
+    setRenameError('')
+    setRenaming(true)
+    requestAnimationFrame(() => {
+      renameInputRef.current?.focus()
+      renameInputRef.current?.select()
+    })
+  }
+
+  const cancelRename = () => {
+    setRenaming(false)
+    setRenameDraft('')
+    setRenameError('')
+  }
+
+  const commitRename = async () => {
+    if (!agent || renameSaving) return
+    const trimmed = renameDraft.trim()
+    if (!trimmed || trimmed === agent.name) {
+      cancelRename()
+      return
+    }
+    setRenameSaving(true)
+    setRenameError('')
+    try {
+      await api('PUT', `/agents/${agent.id}`, { name: trimmed })
+      await loadAgents()
+      setRenaming(false)
+    } catch (err: unknown) {
+      setRenameError(err instanceof Error ? err.message : 'Rename failed')
+    } finally {
+      setRenameSaving(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!renaming) return
+    const handler = (e: PointerEvent) => {
+      if (renameContainerRef.current && !renameContainerRef.current.contains(e.target as Node)) {
+        cancelRename()
+      }
+    }
+    document.addEventListener('pointerdown', handler, true)
+    return () => document.removeEventListener('pointerdown', handler, true)
+  }, [renaming])
+
   useEffect(() => {
     if (!hbDropdownOpen) return
     const handler = (e: MouseEvent) => {
@@ -326,6 +400,28 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   }, [hbDropdownOpen])
 
   useEffect(() => {
+    if (!modelSwitcherOpen) return
+    const handler = (e: MouseEvent) => {
+      if (modelSwitcherRef.current && !modelSwitcherRef.current.contains(e.target as Node)) setModelSwitcherOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [modelSwitcherOpen])
+
+  const handleModelSwitch = async (nextProvider: ProviderType, nextModel: string) => {
+    setModelSwitcherOpen(false)
+    try {
+      await api('PUT', `/sessions/${session.id}`, { provider: nextProvider, model: nextModel })
+      await loadSessions()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to switch model')
+    }
+  }
+
+  const currentProviderInfo = providers.find((p) => p.id === session.provider)
+  const currentModels = currentProviderInfo?.models || []
+
+  useEffect(() => {
     if (session.name.startsWith('connector:')) {
       void loadConnectors()
     }
@@ -334,6 +430,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   useEffect(() => {
     setMainLoopError('')
     setMainLoopNotice('')
+    setModelSwitcherOpen(false)
   }, [session.id])
 
   useEffect(() => {
@@ -342,53 +439,122 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     return () => clearTimeout(timer)
   }, [mainLoopNotice])
 
+  // Context bar shows for tools, mission controls, memories, task links, resume handles, browser
+  const hasToolToggles = ((agent?.tools?.length ?? 0) > 0) || ((session.tools?.length ?? 0) > 0)
+  const hasMemoryLink = !!(agent && session.tools?.includes('memory'))
+  const hasContextBar = !!(hasToolToggles || isMainSession || hasMemoryLink || linkedTask || resumeHandle || (isOpenClawAgent && openclawSessionKey) || browserActive)
+
   return (
-    <header className="relative z-20 flex flex-col border-b border-white/[0.04] bg-bg/80 backdrop-blur-md shrink-0"
-      style={mobile ? { paddingTop: 'max(12px, env(safe-area-inset-top))' } : undefined}>
-      <div className="flex items-center gap-3 px-5 py-3 min-h-[56px]">
+    <header
+      className="relative z-20 border-b border-white/[0.06] shrink-0"
+      style={{
+        background: 'linear-gradient(180deg, rgba(var(--rgb-bg, 15,15,26), 0.95) 0%, rgba(var(--rgb-bg, 15,15,26), 0.88) 100%)',
+        backdropFilter: 'blur(20px) saturate(1.4)',
+        WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
+        ...(mobile ? { paddingTop: 'max(12px, env(safe-area-inset-top))' } : {}),
+      }}
+    >
+      {/* Main row */}
+      <div className="flex items-center gap-2 px-3.5 py-1.5 min-h-[48px]">
+        {/* Back button */}
         {onBack && (
-          <IconButton onClick={onBack} aria-label="Go back">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <IconButton onClick={onBack} aria-label="Go back" size="sm">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </IconButton>
         )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2.5">
-            {agent && <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={24} />}
-            <span className="font-display text-[16px] font-600 block truncate tracking-[-0.02em]">{
-              session.name === '__main__' ? 'Main Chat'
-              : session.name.startsWith('agent-thread:') ? (agent?.name || session.name)
-              : session.name
-            }</span>
+
+        {/* Avatar */}
+        {agent && (
+          <div className="relative shrink-0">
+            {streaming && (
+              <div
+                className="absolute -inset-[3px] rounded-full opacity-40"
+                style={{
+                  background: 'conic-gradient(from 0deg, var(--color-accent-bright), transparent 120deg, transparent 240deg, var(--color-accent-bright))',
+                  animation: 'spin 2.5s linear infinite',
+                  filter: 'blur(3px)',
+                }}
+              />
+            )}
+            <div
+              className="relative rounded-full"
+              style={{
+                padding: 2,
+                background: streaming
+                  ? 'conic-gradient(from 0deg, var(--color-accent-bright), transparent 120deg, transparent 240deg, var(--color-accent-bright))'
+                  : 'linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03))',
+                animation: streaming ? 'spin 2.5s linear infinite' : undefined,
+              }}
+            >
+              <div className="rounded-full bg-bg">
+                <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={hasContextBar ? 44 : 34} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Identity + metadata — fills center */}
+        <div className="flex-1 min-w-0 flex items-center gap-3">
+          {/* Name + inline badges */}
+          <div className="flex items-center gap-2 min-w-0 shrink">
+            {renaming && agent ? (
+              <span ref={renameContainerRef} className="inline-flex items-center gap-2">
+                <input
+                  ref={renameInputRef}
+                  value={renameDraft}
+                  onChange={(e) => setRenameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void commitRename()
+                    if (e.key === 'Escape') cancelRename()
+                  }}
+                  disabled={renameSaving}
+                  className="font-display text-[15px] font-700 tracking-[-0.02em] bg-transparent border-b border-accent-bright/40 outline-none text-text px-0 py-0 w-[180px]"
+                  style={{ fontFamily: 'inherit' }}
+                />
+                {renameSaving && <span className="w-3 h-3 rounded-full border-2 border-text-3/30 border-t-accent-bright animate-spin shrink-0" />}
+                {renameError && <span className="text-[10px] text-red-400 shrink-0">{renameError}</span>}
+              </span>
+            ) : (
+              <span
+                className={`font-display text-[15px] font-700 truncate tracking-[-0.02em] text-text${agent ? ' cursor-pointer hover:text-accent-bright transition-colors duration-200' : ''}`}
+                onClick={agent ? startRename : undefined}
+                title={agent ? 'Click to rename' : undefined}
+              >{
+                session.name === '__main__' ? 'Main Chat'
+                : session.name.startsWith('agent-thread:') ? (agent?.name || session.name)
+                : session.name
+              }</span>
+            )}
             {connector && connectorMeta && (
               <span
-                className="shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[7px] border text-[10px] font-700 uppercase tracking-wider"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[5px] border text-[9px] font-700 uppercase tracking-wider shrink-0"
                 style={{
                   color: connectorMeta.color,
-                  backgroundColor: `${connectorMeta.color}1A`,
-                  borderColor: `${connectorMeta.color}33`,
+                  backgroundColor: `${connectorMeta.color}10`,
+                  borderColor: `${connectorMeta.color}20`,
                 }}
                 title={`${connector.name} connector`}
               >
-                <ConnectorPlatformIcon platform={connector.platform} size={11} />
+                <ConnectorPlatformIcon platform={connector.platform} size={10} />
                 {connectorMeta.label}
               </span>
             )}
             {connector && connectorPresence && (() => {
               const lastAt = connectorPresence.lastMessageAt
               if (!lastAt) return (
-                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] text-text-3/50">
-                  <span className="w-1.5 h-1.5 rounded-full bg-text-3/40" />
-                  Inactive
+                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] text-text-3/40">
+                  <span className="w-1.5 h-1.5 rounded-full bg-text-3/30" />
+                  Idle
                 </span>
               )
               const ago = Date.now() - lastAt
               const isActive = ago < 5 * 60_000
               const isRecent = ago < 30 * 60_000
-              const label = isActive ? 'Active' : isRecent ? `${Math.floor(ago / 60_000)}m ago` : 'Inactive'
-              const dotColor = isActive ? 'bg-emerald-400' : isRecent ? 'bg-amber-400' : 'bg-text-3/40'
-              const textColor = isActive ? 'text-emerald-400' : isRecent ? 'text-amber-300' : 'text-text-3/50'
+              const label = isActive ? 'Active' : isRecent ? `${Math.floor(ago / 60_000)}m ago` : 'Idle'
+              const dotColor = isActive ? 'bg-emerald-400' : isRecent ? 'bg-amber-400' : 'bg-text-3/30'
+              const textColor = isActive ? 'text-emerald-400' : isRecent ? 'text-amber-300' : 'text-text-3/40'
               return (
                 <span className={`shrink-0 inline-flex items-center gap-1 text-[10px] ${textColor}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
@@ -396,290 +562,305 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 </span>
               )
             })()}
-            {session.provider && session.provider !== 'claude-cli' && (
-              <span className="shrink-0 px-2.5 py-0.5 rounded-[7px] bg-accent-soft text-accent-bright text-[10px] font-700 uppercase tracking-wider">
-                {providerLabel}
-              </span>
-            )}
             {agent?.isOrchestrator && (
-              <span className="shrink-0 px-2.5 py-0.5 rounded-[7px] bg-[#F59E0B]/10 text-[#F59E0B] text-[10px] font-700 uppercase tracking-wider">
-                Orchestrator
-              </span>
+              <span className="px-1.5 py-0.5 rounded-[5px] bg-amber-500/10 text-amber-500 text-[9px] font-700 uppercase tracking-wider shrink-0">Orch</span>
             )}
-            {session.tools?.length ? (
-              <span className="shrink-0 px-2.5 py-0.5 rounded-[7px] bg-emerald-500/10 text-emerald-400 text-[10px] font-700 uppercase tracking-wider">
-                Tools
-              </span>
-            ) : null}
             {streaming && (
               <span className="shrink-0 w-2 h-2 rounded-full bg-accent-bright" style={{ animation: 'pulse 1.5s ease infinite' }} />
             )}
           </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[11px] text-text-3/60 font-mono block truncate">{shortPath(session.cwd)}</span>
+
+          {/* Metadata tray: model · usage · path · status */}
+          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+            <span className="text-text-3/10 text-[10px] select-none shrink-0">/</span>
             {modelName && (
-              <>
-                <span className="text-[11px] text-text-3/60">·</span>
-                <span className="text-[11px] text-text-3/50 font-mono truncate shrink-0">{modelName}</span>
-                {session.conversationTone && session.conversationTone !== 'neutral' && (() => {
-                  const toneColors: Record<string, string> = {
-                    formal: 'bg-[#3B82F6]',
-                    casual: 'bg-emerald-400',
-                    empathetic: 'bg-purple-400',
-                    technical: 'bg-[#F59E0B]',
-                  }
-                  const color = toneColors[session.conversationTone] || ''
-                  return color ? (
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${color}`}
-                      title={`Tone: ${session.conversationTone}`}
+              <div className="relative shrink-0" ref={modelSwitcherRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (streaming) return
+                    setModelSwitcherOpen((o) => { if (!o) void loadProviders(); return !o })
+                  }}
+                  disabled={streaming}
+                  className="inline-flex items-center gap-1 text-[11px] text-text-3/45 font-mono shrink-0 cursor-pointer bg-transparent border-none px-1 py-0.5 rounded-[5px] hover:bg-white/[0.04] hover:text-text-3/70 transition-colors disabled:cursor-default disabled:hover:text-text-3/45"
+                  title="Switch model"
+                >
+                  {modelName}
+                  <svg width="7" height="7" viewBox="0 0 16 16" fill="none" className="shrink-0 opacity-30">
+                    <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </button>
+                {modelSwitcherOpen && (
+                  <div className="absolute z-50 top-full left-0 mt-2 w-[280px] rounded-[12px] border border-white/[0.08] bg-surface backdrop-blur-md shadow-xl p-3">
+                    <div className="text-[10px] font-600 text-text-3/50 uppercase tracking-wider mb-2">Provider</div>
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {providers.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => { if (p.id !== session.provider) void handleModelSwitch(p.id, p.models[0] || '') }}
+                          className={`px-2.5 py-1 rounded-[7px] text-[11px] font-600 border-none cursor-pointer transition-colors
+                            ${p.id === session.provider ? 'bg-accent-bright/15 text-accent-bright' : 'bg-white/[0.04] text-text-3 hover:bg-white/[0.08]'}`}
+                        >
+                          {PROVIDER_LABELS[p.id] || p.id}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="text-[10px] font-600 text-text-3/50 uppercase tracking-wider mb-2">Model</div>
+                    <ModelCombobox
+                      providerId={session.provider}
+                      value={modelName}
+                      onChange={(m) => void handleModelSwitch(session.provider, m)}
+                      models={currentModels}
+                      defaultModels={currentProviderInfo?.defaultModels}
+                      className="px-2.5 py-1.5 rounded-[7px] text-[12px] font-mono bg-white/[0.04] hover:bg-white/[0.06] transition-colors"
                     />
-                  ) : null
-                })()}
-              </>
+                  </div>
+                )}
+              </div>
             )}
             {lastUsage && !streaming && (
               <>
-                <span className="text-[11px] text-text-3/60">·</span>
+                <span className="text-text-3/10 text-[10px] select-none shrink-0">·</span>
                 <UsageBadge {...lastUsage} />
               </>
             )}
-          </div>
-          {(() => {
-            const liveStatus = agentStatus || (missionState.status ? {
-              goal: missionState.goal ?? undefined,
-              status: missionState.status ?? undefined,
-              summary: missionState.summary ?? undefined,
-              nextAction: missionState.nextAction ?? undefined,
-            } : null)
-            if (!liveStatus) return null
-            const statusColors: Record<string, string> = {
-              idle: 'bg-text-3/40',
-              progress: 'bg-[#3B82F6]',
-              blocked: 'bg-amber-400',
-              ok: 'bg-emerald-400',
-            }
-            const dotColor = statusColors[liveStatus.status || ''] || 'bg-text-3/40'
-            return (
-              <div className="flex items-center gap-2 mt-0.5">
-                {liveStatus.goal && (
-                  <span className="text-[10px] text-text-3/60 font-mono truncate max-w-[240px]" title={liveStatus.goal}>
-                    {liveStatus.goal}
-                  </span>
-                )}
-                {liveStatus.status && (
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[5px] text-[9px] font-700 uppercase tracking-wider ${
-                    liveStatus.status === 'blocked' ? 'bg-amber-400/15 text-amber-300'
-                    : liveStatus.status === 'ok' ? 'bg-emerald-400/15 text-emerald-400'
-                    : liveStatus.status === 'progress' ? 'bg-[#3B82F6]/15 text-[#60A5FA]'
-                    : 'bg-white/[0.04] text-text-3/60'
-                  }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-                    {liveStatus.status}
-                  </span>
-                )}
-                {liveStatus.nextAction && (
-                  <>
-                    <span className="text-[10px] text-text-3/40">→</span>
-                    <span className="text-[10px] text-text-3/50 font-mono truncate max-w-[200px]" title={liveStatus.nextAction}>
-                      {liveStatus.nextAction}
+            <button
+              type="button"
+              onClick={() => { api('POST', '/files/open', { path: session.cwd }).catch(() => {}) }}
+              className="inline-flex items-center shrink-0 bg-transparent border-none p-0.5 rounded-[4px] cursor-pointer text-text-3/20 hover:text-text-3/50 hover:bg-white/[0.04] transition-colors"
+              title={shortPath(session.cwd)}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+            {/* Live agent status */}
+            {(() => {
+              const liveStatus = agentStatus || (missionState.status ? {
+                goal: missionState.goal ?? undefined,
+                status: missionState.status ?? undefined,
+                summary: missionState.summary ?? undefined,
+                nextAction: missionState.nextAction ?? undefined,
+              } : null)
+              if (!liveStatus) return null
+              const statusColors: Record<string, string> = {
+                idle: 'bg-text-3/40', progress: 'bg-blue-500', blocked: 'bg-amber-400', ok: 'bg-emerald-400',
+              }
+              const dotColor = statusColors[liveStatus.status || ''] || 'bg-text-3/40'
+              return (
+                <>
+                  <span className="text-text-3/10 text-[10px] select-none shrink-0">·</span>
+                  {liveStatus.status && (
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] text-[9px] font-700 uppercase tracking-wider ${
+                      liveStatus.status === 'blocked' ? 'bg-amber-400/12 text-amber-300'
+                      : liveStatus.status === 'ok' ? 'bg-emerald-400/12 text-emerald-400'
+                      : liveStatus.status === 'progress' ? 'bg-blue-500/12 text-blue-400'
+                      : 'bg-white/[0.03] text-text-3/50'
+                    }`}>
+                      <span className={`w-1 h-1 rounded-full ${dotColor}`} />
+                      {liveStatus.status}
                     </span>
-                  </>
-                )}
-              </div>
-            )
-          })()}
+                  )}
+                  {liveStatus.goal && (
+                    <span className="text-[10px] text-text-3/40 font-mono truncate max-w-[180px]" title={liveStatus.goal}>
+                      {liveStatus.goal}
+                    </span>
+                  )}
+                  {liveStatus.nextAction && (
+                    <>
+                      <span className="text-[9px] text-text-3/20 shrink-0">→</span>
+                      <span className="text-[10px] text-text-3/35 font-mono truncate max-w-[140px]" title={liveStatus.nextAction}>
+                        {liveStatus.nextAction}
+                      </span>
+                    </>
+                  )}
+                </>
+              )
+            })()}
+          </div>
         </div>
-        <div className="flex gap-1.5">
+
+        {/* Heartbeat compound control */}
+        {heartbeatSupported && (
+          <div className="flex items-center rounded-[8px] shrink-0" style={{ background: 'rgba(255,255,255,0.025)' }}>
+            <button
+              onClick={handleToggleHeartbeat}
+              disabled={heartbeatSaving}
+              className={`flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 transition-colors cursor-pointer border-none text-[11px] font-600
+                ${heartbeatWillRun ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-text-3/60 hover:bg-white/[0.04]'}`}
+              title={heartbeatWillRun ? 'Disable heartbeat' : 'Enable heartbeat'}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full transition-colors ${heartbeatWillRun ? 'bg-emerald-400' : 'bg-text-3/30'}`} />
+              HB
+              {heartbeatEnabled && !loopIsOngoing && !heartbeatExplicitOptIn && (
+                <span className="text-[9px] text-text-3/40">(bounded)</span>
+              )}
+            </button>
+            <div className="relative" ref={hbDropdownRef}>
+              <button
+                onClick={() => setHbDropdownOpen((o) => !o)}
+                disabled={heartbeatSaving}
+                className="flex items-center gap-0.5 pl-1 pr-2 py-1 text-text-3/50 hover:text-text-3/70 hover:bg-white/[0.04] transition-colors cursor-pointer border-none"
+                title="Set heartbeat interval"
+              >
+                <span className="text-[11px] font-600">{formatDuration(heartbeatIntervalSec)}</span>
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="opacity-40">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {hbDropdownOpen && (
+                <div className="absolute top-full right-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[80px]">
+                  {[1800, 3600, 7200, 21600, 43200].map((sec) => (
+                    <button
+                      key={sec}
+                      onClick={() => handleSelectHeartbeatInterval(sec)}
+                      className={`w-full text-left px-3 py-1.5 text-[11px] font-600 transition-colors cursor-pointer border-none
+                        ${sec === heartbeatIntervalSec ? 'bg-accent-soft text-accent-bright' : 'text-text-3 hover:bg-white/[0.06]'}`}
+                    >
+                      {formatDuration(sec)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex items-center shrink-0">
           {streaming && (
-            <IconButton onClick={onStop} variant="danger" aria-label="Stop generation">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="6" width="12" height="12" rx="2" />
-              </svg>
-            </IconButton>
+            <>
+              <IconButton onClick={onStop} variant="danger" tooltip="Stop" aria-label="Stop generation" size="sm">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              </IconButton>
+              <div className="w-px h-3.5 bg-white/[0.06] mx-0.5" />
+            </>
           )}
-          {agent && (
-            <IconButton onClick={() => setInspectorOpen(!inspectorOpen)} active={inspectorOpen} aria-label="Toggle inspector panel">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </IconButton>
-          )}
-          <IconButton onClick={() => setDebugOpen(!debugOpen)} active={debugOpen} aria-label="Toggle debug panel">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M12 20V10" />
-              <path d="M18 20V4" />
-              <path d="M6 20v-4" />
+          <IconButton onClick={toggleSound} active={soundEnabled} tooltip="Notifications" aria-label="Toggle sound" size="sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
             </svg>
           </IconButton>
-          <IconButton onClick={toggleSound} active={soundEnabled} aria-label="Toggle sound notifications">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M18 8A6 6 0 0 1 18 16" />
-              <path d="M13 2L8 7H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h4l5 5V2z" />
-            </svg>
-          </IconButton>
-          <IconButton onClick={toggleTts} active={ttsEnabled} aria-label="Toggle text-to-speech">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <IconButton onClick={toggleTts} active={ttsEnabled} tooltip="Read aloud" aria-label="Toggle TTS" size="sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
               <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
             </svg>
           </IconButton>
           {voiceSupported && onVoiceToggle && (
-            <IconButton onClick={onVoiceToggle} active={voiceActive} aria-label="Toggle voice conversation">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <IconButton onClick={onVoiceToggle} active={voiceActive} tooltip="Voice mode" aria-label="Toggle voice" size="sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                 <line x1="12" x2="12" y1="19" y2="22" />
               </svg>
             </IconButton>
           )}
-          <IconButton onClick={(e) => { e.stopPropagation(); onMenuToggle() }} aria-label="Chat menu">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <circle cx="12" cy="6" r="1" />
-              <circle cx="12" cy="12" r="1" />
-              <circle cx="12" cy="18" r="1" />
+          {agent?.heartbeatEnabled && onToggleHeartbeatHistory && (
+            <IconButton onClick={onToggleHeartbeatHistory} active={heartbeatHistoryOpen} tooltip="Heartbeat history" aria-label="Toggle heartbeat history" size="sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill={heartbeatHistoryOpen ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+              </svg>
+            </IconButton>
+          )}
+          <div className="w-px h-3.5 bg-white/[0.06] mx-0.5" />
+          <IconButton onClick={() => setDebugOpen(!debugOpen)} active={debugOpen} tooltip="Debug" aria-label="Toggle debug panel" size="sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M12 20V10" /><path d="M18 20V4" /><path d="M6 20v-4" />
             </svg>
           </IconButton>
+          {(!agent || mobile) && (
+            <IconButton onClick={(e) => { e.stopPropagation(); onMenuToggle() }} tooltip="Menu" aria-label="Chat menu" size="sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <circle cx="12" cy="6" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="18" r="1" />
+              </svg>
+            </IconButton>
+          )}
+          {agent && (
+            <IconButton onClick={() => setInspectorOpen(!inspectorOpen)} active={inspectorOpen} tooltip="Settings" aria-label="Toggle inspector" size="sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </IconButton>
+          )}
         </div>
       </div>
 
-      {/* Sub-bar: tools toggle + agent memories + task link + CLI session ID + browser */}
-      {(agent || linkedTask || resumeHandle || browserActive || session.tools?.length || isMainSession) && (
-        <div className="flex items-center gap-3 px-5 pb-2.5 -mt-1">
-          {(((agent?.tools?.length ?? 0) > 0) || ((session.tools?.length ?? 0) > 0)) && (
-            <ChatToolToggles session={session} />
-          )}
-          {heartbeatSupported && (
-            <>
-              <button
-                onClick={handleToggleHeartbeat}
-                disabled={heartbeatSaving}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] transition-colors cursor-pointer border-none
-                  ${heartbeatWillRun ? 'bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-400' : 'bg-white/[0.04] hover:bg-white/[0.07] text-text-3'}`}
-                title={heartbeatWillRun ? 'Toggle heartbeat' : !heartbeatEnabled ? 'Heartbeat disabled — click to enable' : 'Heartbeat enabled but paused (bounded loop mode, no explicit opt-in)'}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${heartbeatWillRun ? 'bg-emerald-400' : 'bg-text-3/40'}`} />
-                <span className="text-[11px] font-600">
-                  HB {heartbeatWillRun ? 'On' : 'Off'}
-                </span>
-                {heartbeatEnabled && !loopIsOngoing && !heartbeatExplicitOptIn && (
-                  <span className="text-[10px] text-text-3/50">(bounded)</span>
-                )}
-              </button>
-              <div className="relative" ref={hbDropdownRef}>
-                <button
-                  onClick={() => setHbDropdownOpen((o) => !o)}
-                  disabled={heartbeatSaving}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-text-3 transition-colors cursor-pointer border-none"
-                  title="Set heartbeat interval"
-                >
-                  <span className="text-[11px] font-600">{formatDuration(heartbeatIntervalSec)}</span>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-3/50">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
-                {hbDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[80px]">
-                    {[30, 60, 120, 300, 600, 1800, 3600].map((sec) => (
-                      <button
-                        key={sec}
-                        onClick={() => handleSelectHeartbeatInterval(sec)}
-                        className={`w-full text-left px-3 py-1.5 text-[11px] font-600 transition-colors cursor-pointer border-none
-                          ${sec === heartbeatIntervalSec ? 'bg-accent-soft text-accent-bright' : 'text-text-3 hover:bg-white/[0.06]'}`}
-                      >
-                        {formatDuration(sec)}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
+      {/* Context bar: tools, mission controls, links */}
+      {hasContextBar && (
+        <div className="flex items-center gap-1.5 px-3.5 pb-1.5 overflow-x-auto scrollbar-none">
+          {hasToolToggles && <ChatToolToggles session={session} />}
+          {hasToolToggles && (hasMemoryLink || isMainSession || linkedTask || resumeHandle || isOpenClawAgent || browserActive) && (
+            <div className="w-px h-4 bg-white/[0.05] shrink-0" />
           )}
           {isMainSession && (
             <>
               <button
                 onClick={handleToggleMissionPause}
                 disabled={mainLoopSaving}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] transition-colors cursor-pointer border-none
-                  ${missionPaused ? 'bg-amber-500/12 hover:bg-amber-500/20 text-amber-300' : 'bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-400'}`}
-                title={missionPaused ? 'Resume autonomous mission loop' : 'Pause autonomous mission loop'}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-[7px] transition-colors cursor-pointer border-none text-[10px] font-600
+                  ${missionPaused ? 'bg-amber-500/10 hover:bg-amber-500/18 text-amber-300' : 'bg-emerald-500/8 hover:bg-emerald-500/12 text-emerald-400'}`}
+                title={missionPaused ? 'Resume mission' : 'Pause mission'}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${missionPaused ? 'bg-amber-300' : 'bg-emerald-400'}`} />
-                <span className="text-[11px] font-600">
-                  Mission {missionPaused ? 'Paused' : 'Live'}
-                </span>
+                {missionPaused ? 'Paused' : 'Live'}
               </button>
               <button
                 onClick={handleToggleMissionMode}
                 disabled={mainLoopSaving}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] transition-colors cursor-pointer border-none
-                  ${missionMode === 'autonomous'
-                    ? 'bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200'
-                    : 'bg-white/[0.04] hover:bg-white/[0.07] text-text-3'
-                  }`}
-                title="Toggle mission autonomy mode"
+                className={`flex items-center gap-1 px-2 py-1 rounded-[7px] transition-colors cursor-pointer border-none text-[10px] font-600
+                  ${missionMode === 'autonomous' ? 'bg-indigo-500/12 hover:bg-indigo-500/20 text-indigo-300' : 'bg-white/[0.03] hover:bg-white/[0.06] text-text-3/60'}`}
+                title="Toggle autonomy mode"
               >
-                <span className="text-[11px] font-600">
-                  Mode {missionMode === 'autonomous' ? 'Auto' : 'Assist'}
-                </span>
+                {missionMode === 'autonomous' ? 'Auto' : 'Assist'}
               </button>
               <button
                 onClick={handleNudgeMission}
                 disabled={mainLoopSaving || missionPaused}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#3B82F6]/10 hover:bg-[#3B82F6]/18 text-[#60A5FA] transition-colors cursor-pointer border-none disabled:opacity-60"
-                title="Run one immediate main-loop mission tick"
+                className="px-2 py-1 rounded-[7px] bg-blue-500/8 hover:bg-blue-500/15 text-blue-400 transition-colors cursor-pointer border-none disabled:opacity-50 text-[10px] font-600"
+                title="Run one tick"
               >
-                <span className="text-[11px] font-600">Nudge</span>
+                Nudge
               </button>
               <button
                 onClick={handleSetMissionGoal}
                 disabled={mainLoopSaving}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-fuchsia-500/10 hover:bg-fuchsia-500/18 text-fuchsia-300 transition-colors cursor-pointer border-none"
-                title="Set an explicit mission goal"
+                className="px-2 py-1 rounded-[7px] bg-fuchsia-500/8 hover:bg-fuchsia-500/15 text-fuchsia-300 transition-colors cursor-pointer border-none text-[10px] font-600"
+                title="Set mission goal"
               >
-                <span className="text-[11px] font-600">Set Goal</span>
+                Goal
               </button>
               {missionEventsCount > 0 && (
                 <button
                   onClick={handleClearMissionEvents}
                   disabled={mainLoopSaving}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-text-3 transition-colors cursor-pointer border-none"
-                  title="Clear pending mission events"
+                  className="px-2 py-1 rounded-[7px] bg-white/[0.03] hover:bg-white/[0.06] text-text-3/60 transition-colors cursor-pointer border-none text-[10px] font-600"
+                  title="Clear pending events"
                 >
-                  <span className="text-[11px] font-600">Events {missionEventsCount}</span>
+                  Events {missionEventsCount}
                 </button>
               )}
-              <span className="text-[10px] text-text-3/50 uppercase tracking-wider">
-                {`State ${missionStatus}${missionMomentum !== null ? ` · ${missionMomentum}` : ''}`}
+              <span className="text-[9px] text-text-3/40 uppercase tracking-wider shrink-0">
+                {missionStatus}{missionMomentum !== null ? ` · ${missionMomentum}` : ''}
               </span>
-              {mainLoopError && (
-                <span className="text-[10px] text-red-300/90 truncate max-w-[280px]" title={mainLoopError}>
-                  {mainLoopError}
-                </span>
-              )}
-              {mainLoopNotice && (
-                <span className="text-[10px] text-emerald-300/90 truncate max-w-[220px]" title={mainLoopNotice}>
-                  {mainLoopNotice}
-                </span>
-              )}
+              {mainLoopError && <span className="text-[9px] text-red-300/80 truncate max-w-[240px]" title={mainLoopError}>{mainLoopError}</span>}
+              {mainLoopNotice && <span className="text-[9px] text-emerald-300/80 truncate max-w-[200px]" title={mainLoopNotice}>{mainLoopNotice}</span>}
             </>
           )}
-          {agent && session.tools?.includes('memory') && (
+          {hasMemoryLink && (
             <button
-              onClick={() => {
-                setMemoryAgentFilter(session.agentId!)
-                setActiveView('memory')
-                setSidebarOpen(true)
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-accent-soft/50 hover:bg-accent-soft transition-colors cursor-pointer"
+              onClick={() => { setMemoryAgentFilter(session.agentId!); setActiveView('memory'); setSidebarOpen(true) }}
+              className="flex items-center gap-1 px-2 py-1 rounded-[7px] bg-accent-soft/40 hover:bg-accent-soft/70 transition-colors cursor-pointer text-[10px] font-600 text-accent-bright/55 hover:text-accent-bright/80 shrink-0"
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-accent-bright/60">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
               </svg>
-              <span className="text-[11px] font-600 text-accent-bright/60">
-                {agent.name} Memories
-              </span>
+              Memories
             </button>
           )}
           {isOpenClawAgent && openclawSessionKey && (
@@ -687,78 +868,66 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <button
                 onClick={handleSyncHistory}
                 disabled={syncingHistory}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-indigo-500/10 hover:bg-indigo-500/15 transition-colors cursor-pointer border-none disabled:opacity-50"
-                title="Sync chat history from OpenClaw gateway"
+                className="flex items-center gap-1 px-2 py-1 rounded-[7px] bg-indigo-500/8 hover:bg-indigo-500/12 transition-colors cursor-pointer border-none disabled:opacity-50 text-[10px] font-600 text-indigo-400 shrink-0"
+                title="Sync from gateway"
               >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-indigo-400">
-                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                  <path d="M16 16h5v5" />
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 16h5v5" />
                 </svg>
-                <span className="text-[11px] font-600 text-indigo-400">
-                  {syncingHistory ? 'Syncing...' : 'Sync History'}
-                </span>
+                {syncingHistory ? 'Syncing...' : 'Sync'}
               </button>
-              {syncResult && (
-                <span className="text-[10px] text-emerald-300/90">{syncResult}</span>
-              )}
+              {syncResult && <span className="text-[9px] text-emerald-300/80 shrink-0">{syncResult}</span>}
             </>
           )}
           {linkedTask && (
             <button
               onClick={() => setActiveView('tasks')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#F59E0B]/10 hover:bg-[#F59E0B]/15 transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1 rounded-[7px] bg-amber-500/8 hover:bg-amber-500/12 transition-colors cursor-pointer text-[10px] font-600 text-amber-500 shrink-0"
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round">
-                <path d="M9 11l3 3L22 4" />
-                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
               </svg>
-              <span className="text-[11px] font-600 text-[#F59E0B] truncate max-w-[200px]">
-                Task: {linkedTask.title}
-              </span>
+              <span className="truncate max-w-[160px]">{linkedTask.title}</span>
             </button>
           )}
           {resumeHandle && (
-            <button
-              onClick={handleCopySessionId}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] transition-colors cursor-pointer group"
-              title="Copy resume handle/command to clipboard"
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/50">
-                <path d="M4 17l6 0l0 -6" />
-                <path d="M20 7l-6 0l0 6" />
-                <path d="M4 17l10 -10" />
-              </svg>
-              <span className="text-[11px] font-mono text-text-3/50 group-hover:text-text-3/70 truncate max-w-[220px]">
-                {copied ? 'Copied!' : `${resumeHandle.label}: ${resumeHandle.id}`}
-              </span>
-              {!copied && (
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/60 shrink-0">
-                  <rect x="9" y="9" width="13" height="13" rx="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            <div className="flex items-center rounded-[7px] bg-white/[0.03] group/resume shrink-0">
+              <button
+                onClick={handleCopySessionId}
+                className="flex items-center gap-1 px-2 py-1 rounded-l-[7px] hover:bg-white/[0.06] transition-colors cursor-pointer"
+                title="Copy resume command"
+              >
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/40 shrink-0">
+                  <path d="M4 17l6 0l0 -6" /><path d="M20 7l-6 0l0 6" /><path d="M4 17l10 -10" />
                 </svg>
-              )}
-            </button>
+                <span className="text-[10px] font-mono text-text-3/40 group-hover/resume:text-text-3/60 truncate max-w-[180px]">
+                  {copied ? 'Copied!' : `${resumeHandle.label}: ${resumeHandle.id}`}
+                </span>
+              </button>
+              <button
+                onClick={handleDismissResumeHandle}
+                className="px-1 py-1 rounded-r-[7px] hover:bg-white/[0.06] transition-colors cursor-pointer opacity-0 group-hover/resume:opacity-100"
+                title="Dismiss"
+              >
+                <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3/40 hover:text-text-3">
+                  <path d="M4 4l8 8M12 4l-8 8" />
+                </svg>
+              </button>
+            </div>
           )}
           {browserActive && (
             <button
               onClick={onStopBrowser}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#3B82F6]/10 hover:bg-[#F43F5E]/15 transition-colors cursor-pointer group"
+              className="flex items-center gap-1 px-2 py-1 rounded-[7px] bg-accent-bright/8 hover:bg-red-500/12 transition-colors cursor-pointer group text-[10px] font-600 shrink-0"
               title="Stop browser"
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-[#3B82F6] group-hover:text-[#F43F5E]">
-                <rect x="3" y="3" width="18" height="14" rx="2" />
-                <path d="M3 9h18" />
-                <circle cx="7" cy="6" r="0.5" fill="currentColor" />
-                <circle cx="10" cy="6" r="0.5" fill="currentColor" />
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-accent-bright group-hover:text-red-400">
+                <rect x="3" y="3" width="18" height="14" rx="2" /><path d="M3 9h18" />
               </svg>
-              <span className="text-[11px] font-600 text-[#3B82F6] group-hover:text-[#F43F5E]">
-                Browser Active
-              </span>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-3/60 group-hover:text-[#F43F5E] shrink-0">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
+              <span className="text-accent-bright group-hover:text-red-400">Browser</span>
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-text-3/40 group-hover:text-red-400">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           )}

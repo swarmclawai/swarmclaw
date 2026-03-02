@@ -7,9 +7,8 @@
 import { spawn } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
 
-const UPLOAD_DIR = process.env.SWARMCLAW_UPLOAD_DIR || path.join(os.tmpdir(), 'swarmclaw-uploads')
+const UPLOAD_DIR = process.env.SWARMCLAW_UPLOAD_DIR || path.join(process.env.DATA_DIR || path.join(process.cwd(), 'data'), 'uploads')
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 
 const child = spawn('npx', ['@playwright/mcp@latest'], {
@@ -47,7 +46,7 @@ child.stdout.on('data', (chunk) => {
             fs.writeFileSync(path.join(UPLOAD_DIR, filename), Buffer.from(block.data, 'base64'))
             newContent.push({
               type: 'text',
-              text: `Screenshot saved. Show it to the user with this markdown: ![Screenshot](/api/uploads/${filename})`,
+              text: `Screenshot saved to /api/uploads/${filename} — it is already displayed inline above (do not repeat it with markdown).`,
             })
             newContent.push(block) // keep image so Claude can see it
           } else {

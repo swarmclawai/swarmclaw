@@ -24,10 +24,19 @@ import { getMemoryDb } from './memory-db'
 import { routeTaskIntent } from './capability-router'
 import { notify } from './ws-hub'
 import { resolveConcreteToolPolicyBlock, resolveSessionToolPolicy } from './tool-capability-policy'
-import type { MessageToolEvent, SSEEvent, UsageRecord } from '@/types'
+import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
+import type { Message, MessageToolEvent, SSEEvent, UsageRecord } from '@/types'
 import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from './provider-health'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'
+
+/** Slice history from the most recent context-clear marker forward */
+function applyContextClearBoundary(messages: Message[]): Message[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].kind === 'context-clear') return messages.slice(i + 1)
+  }
+  return messages
+}
 
 interface SessionWithTools {
   tools?: string[] | null
@@ -307,11 +316,11 @@ function buildAgentSystemPrompt(session: any): string | undefined {
   if (!session.agentId) return undefined
   const agents = loadAgents()
   const agent = agents[session.agentId]
-  if (!agent?.systemPrompt && !agent?.soul) return undefined
 
   const settings = loadSettings()
   const parts: string[] = []
   if (settings.userPrompt) parts.push(settings.userPrompt)
+  parts.push(buildCurrentDateTimePromptContext())
   if (agent.soul) parts.push(agent.soul)
   if (agent.systemPrompt) parts.push(agent.systemPrompt)
   if (agent.skillIds?.length) {
@@ -321,6 +330,7 @@ function buildAgentSystemPrompt(session: any): string | undefined {
       if (skill?.content) parts.push(`## Skill: ${skill.name}\n${skill.content}`)
     }
   }
+  if (!parts.length) return undefined
   return parts.join('\n\n')
 }
 
@@ -354,13 +364,13 @@ function stripMarkupForHeartbeat(text: string): string {
 const HEARTBEAT_OK_RE = /HEARTBEAT_OK[^\w]{0,4}$/
 const NO_MESSAGE_RE = /NO_MESSAGE[^\w]{0,4}$/
 
-function classifyHeartbeatResponse(text: string, ackMaxChars: number): 'suppress' | 'strip' | 'keep' {
+function classifyHeartbeatResponse(text: string, ackMaxChars: number, hadToolCalls: boolean): 'suppress' | 'strip' | 'keep' {
   const cleaned = stripMarkupForHeartbeat(text)
   if (cleaned === 'HEARTBEAT_OK' || cleaned === 'NO_MESSAGE') return 'suppress'
   if (HEARTBEAT_OK_RE.test(cleaned) || NO_MESSAGE_RE.test(cleaned)) return 'suppress'
   const stripped = cleaned.replace(/HEARTBEAT_OK/gi, '').replace(/NO_MESSAGE/gi, '').trim()
   if (!stripped) return 'suppress'
-  if (stripped.length <= ackMaxChars) return 'suppress'
+  if (!hadToolCalls && stripped.length <= ackMaxChars) return 'suppress'
   return stripped.length < cleaned.length ? 'strip' : 'keep'
 }
 
@@ -566,6 +576,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const toolEvents: MessageToolEvent[] = []
   const streamErrors: string[] = []
 
+  let thinkingText = ''
   const emit = (ev: SSEEvent) => {
     if (ev.t === 'err' && typeof ev.text === 'string') {
       const trimmed = ev.text.trim()
@@ -573,6 +584,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         streamErrors.push(trimmed)
         if (streamErrors.length > 8) streamErrors.shift()
       }
+    }
+    if (ev.t === 'thinking' && ev.text) {
+      thinkingText += ev.text
     }
     collectToolEvent(ev, toolEvents)
     onEvent?.(ev)
@@ -608,9 +622,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const hasTools = !!sessionForRun.tools?.length && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
 
   try {
-    // Heartbeat runs are self-contained — skip conversation history to avoid
-    // blowing past the context window on long-lived sessions.
-    const heartbeatHistory = isAutoRunNoHistory ? [] : undefined
+    // Heartbeat runs get a small tail of recent messages so the agent can see
+    // prior findings and avoid repeating the same searches. Full history is
+    // skipped to avoid blowing the context window on long-lived sessions.
+    const heartbeatHistory = isAutoRunNoHistory
+      ? getSessionMessages(sessionId).slice(-6)
+      : undefined
 
     console.log(`[chat-execution] provider=${providerType}, hasTools=${hasTools}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, tools=${(sessionForRun.tools || []).length}`)
 
@@ -623,7 +640,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           apiKey,
           systemPrompt,
           write: (raw) => parseAndEmit(raw),
-          history: heartbeatHistory ?? getSessionMessages(sessionId),
+          history: heartbeatHistory ?? applyContextClearBoundary(getSessionMessages(sessionId)),
           signal: abortController.signal,
         })).fullText
       : await provider.handler.streamChat({
@@ -634,7 +651,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           systemPrompt,
           write: (raw: string) => parseAndEmit(raw),
           active,
-          loadHistory: isAutoRunNoHistory ? () => [] : getSessionMessages,
+          loadHistory: isAutoRunNoHistory ? () => getSessionMessages(sessionId).slice(-6) : (sid: string) => applyContextClearBoundary(getSessionMessages(sid)),
           onUsage: (u) => { directUsage.inputTokens = u.inputTokens; directUsage.outputTokens = u.outputTokens; directUsage.received = true },
         })
   } catch (err: any) {
@@ -723,7 +740,13 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       const toolOutput = await selectedTool.invoke(args)
       const outputText = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
       emit({ t: 'tool_result', toolName, toolOutput: outputText })
-      if (outputText?.trim()) fullResponse = outputText.trim()
+      // Don't overwrite fullResponse with raw tool output — it's already captured
+      // in toolEvents. Only set a brief notice when the LLM produced no text,
+      // so the message bubble isn't empty.
+      if (!fullResponse.trim() && outputText?.trim()) {
+        const label = toolName.replace(/_/g, ' ')
+        fullResponse = `Used **${label}** — see tool output above for details.`
+      }
       calledNames.add(toolName)
       return true
     } catch (forceErr: any) {
@@ -869,7 +892,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const heartbeatConfig = input.heartbeatConfig
   let heartbeatClassification: 'suppress' | 'strip' | 'keep' | null = null
   if (isHeartbeatRun && textForPersistence.length > 0) {
-    heartbeatClassification = classifyHeartbeatResponse(textForPersistence, heartbeatConfig?.ackMaxChars ?? 300)
+    heartbeatClassification = classifyHeartbeatResponse(textForPersistence, heartbeatConfig?.ackMaxChars ?? 300, toolEvents.length > 0)
   }
 
   // Emit WS notification for every heartbeat completion so UI can show pulse
@@ -924,6 +947,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         role: 'assistant',
         text: persistedText,
         time: Date.now(),
+        thinking: thinkingText || undefined,
         toolEvents: toolEvents.length ? toolEvents : undefined,
         kind: persistedKind,
       })
@@ -959,6 +983,22 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           }
           if (channelId) {
             sendConnectorMessage({ connectorId, channelId, text: persistedText }).catch(() => {})
+          }
+        } catch {
+          // Best effort — connector manager may not be loaded
+        }
+      }
+
+      // Auto-discover connectors linked to this agent when no explicit target is set
+      if (isHeartbeatRun && !heartbeatConfig?.target && heartbeatConfig?.showAlerts !== false && session.agentId) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { listRunningConnectors: listRunning, sendConnectorMessage: sendMsg } = require('./connectors/manager')
+          const agentConnectors = listRunning().filter((c: { agentId: string | null; recentChannelId: string | null; supportsSend: boolean }) =>
+            c.agentId === session.agentId && c.recentChannelId && c.supportsSend
+          )
+          for (const conn of agentConnectors) {
+            sendMsg({ connectorId: conn.id, channelId: conn.recentChannelId, text: persistedText }).catch(() => {})
           }
         } catch {
           // Best effort — connector manager may not be loaded

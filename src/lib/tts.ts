@@ -10,7 +10,7 @@ export function initAudioContext() {
   ensureContext()
 }
 
-export async function speak(text: string) {
+export async function speak(text: string, voiceId?: string | null) {
   if (currentSource) {
     try { currentSource.stop() } catch { /* noop */ }
     currentSource = null
@@ -21,7 +21,7 @@ export async function speak(text: string) {
   const res = await fetch('/api/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: text.slice(0, 2000) }),
+    body: JSON.stringify({ text: text.slice(0, 2000), ...(voiceId ? { voiceId } : {}) }),
   })
   if (!res.ok) return
 

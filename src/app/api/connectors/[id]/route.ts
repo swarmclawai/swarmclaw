@@ -61,6 +61,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   // Regular update
   if (body.name !== undefined) connector.name = body.name
   if (body.agentId !== undefined) connector.agentId = body.agentId
+  if (body.chatroomId !== undefined) connector.chatroomId = body.chatroomId
   if (body.credentialId !== undefined) connector.credentialId = body.credentialId
   if (body.config !== undefined) connector.config = body.config
   if (body.isEnabled !== undefined) connector.isEnabled = body.isEnabled

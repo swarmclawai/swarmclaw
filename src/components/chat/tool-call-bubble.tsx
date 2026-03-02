@@ -20,6 +20,7 @@ const TOOL_COLORS: Record<string, string> = {
   web_search: '#3B82F6',
   web_fetch: '#3B82F6',
   delegate_to_agent: '#6366F1',
+  check_delegation_status: '#6366F1',
   delegate_to_claude_code: '#6366F1',
   delegate_to_codex_cli: '#0EA5E9',
   delegate_to_opencode_cli: '#14B8A6',
@@ -71,6 +72,7 @@ export const TOOL_LABELS: Record<string, string> = {
   codex_cli: 'Codex CLI',
   opencode_cli: 'OpenCode CLI',
   delegate_to_agent: 'Agent Delegation',
+  check_delegation_status: 'Check Delegation',
   delegate_to_claude_code: 'Claude Code',
   delegate_to_codex_cli: 'Codex CLI',
   delegate_to_opencode_cli: 'OpenCode CLI',
@@ -107,6 +109,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   codex_cli: 'Enable delegation to OpenAI Codex CLI',
   opencode_cli: 'Enable delegation to OpenCode CLI',
   delegate_to_agent: 'Delegate a task to another agent',
+  check_delegation_status: 'Check the status of a delegated task',
   delegate_to_claude_code: 'Delegate complex coding tasks to Claude Code',
   delegate_to_codex_cli: 'Delegate complex coding tasks to Codex CLI',
   delegate_to_opencode_cli: 'Delegate complex coding tasks to OpenCode CLI',
@@ -164,6 +167,45 @@ function formatJson(raw: string): string {
   }
 }
 
+/** Relative time label like "2h ago", "5m ago" */
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`
+  return `${Math.round(diff / 86_400_000)}d ago`
+}
+
+/** Format search_history_tool output into human-readable text */
+function formatSearchHistoryOutput(raw: string): string | null {
+  try {
+    const parsed = JSON.parse(raw)
+    const matches = parsed?.matches
+    if (!Array.isArray(matches) || matches.length === 0) {
+      return parsed?.query ? `No matches found for "${parsed.query}"` : null
+    }
+    const header = `Found ${matches.length} match${matches.length === 1 ? '' : 'es'}${parsed.query ? ` for "${parsed.query}"` : ''}`
+    const lines = matches.slice(0, 10).map((m: Record<string, unknown>, i: number) => {
+      const role = String(m.role || 'unknown')
+      const kind = m.kind ? ` (${m.kind})` : ''
+      const time = typeof m.time === 'number' ? ` · ${relativeTime(m.time)}` : ''
+      const text = String(m.text || '').replace(/\s+/g, ' ').trim().slice(0, 200)
+      return `${i + 1}. [${role}]${kind}${time}\n   ${text}${String(m.text || '').length > 200 ? '...' : ''}`
+    })
+    return `${header}\n\n${lines.join('\n\n')}`
+  } catch {
+    return null
+  }
+}
+
+/** Try to produce a human-readable output for known tool types */
+function formatToolOutput(toolName: string, raw: string): string {
+  if (toolName === 'search_history_tool') {
+    return formatSearchHistoryOutput(raw) || formatJson(raw)
+  }
+  return formatJson(raw)
+}
+
 /** Extract a human-readable preview from tool input */
 function getInputPreview(name: string, input: string): string {
   try {
@@ -218,7 +260,7 @@ function getInputPreview(name: string, input: string): string {
 }
 
 /** Extract embedded images, videos, PDFs, and file links from tool output */
-function extractMedia(output: string): { images: string[]; videos: string[]; pdfs: { name: string; url: string }[]; files: { name: string; url: string }[]; cleanText: string } {
+export function extractMedia(output: string): { images: string[]; videos: string[]; pdfs: { name: string; url: string }[]; files: { name: string; url: string }[]; cleanText: string } {
   const images: string[] = []
   const videos: string[] = []
   const pdfs: { name: string; url: string }[] = []
@@ -341,8 +383,8 @@ export function ToolCallBubble({ event }: { event: ToolEvent }) {
 
   const formattedCleanOutput = useMemo(() => {
     if (!media.cleanText) return ''
-    return formatJson(media.cleanText)
-  }, [media.cleanText])
+    return formatToolOutput(event.name, media.cleanText)
+  }, [event.name, media.cleanText])
 
   const hasMedia = media.images.length > 0 || media.videos.length > 0 || media.pdfs.length > 0 || media.files.length > 0
 

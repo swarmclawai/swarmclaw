@@ -43,9 +43,9 @@ async function fileToContentParts(filePath: string): Promise<any[]> {
   return [{ type: 'text', text: `[Attached file: ${name}]` }]
 }
 
-export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPrompt, write, active, loadHistory, onUsage }: StreamChatOptions): Promise<string> {
+export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey, systemPrompt, write, active, loadHistory, onUsage }: StreamChatOptions): Promise<string> {
   return new Promise(async (resolve) => {
-    const messages = await buildMessages(session, message, imagePath, systemPrompt, loadHistory)
+    const messages = await buildMessages(session, message, imagePath, systemPrompt, loadHistory, imageUrl)
     const model = session.model || 'gpt-4o'
 
     const payload = JSON.stringify({
@@ -163,7 +163,11 @@ export function streamOpenAiChat({ session, message, imagePath, apiKey, systemPr
   })
 }
 
-async function buildMessages(session: any, message: string, imagePath: string | undefined, systemPrompt: string | undefined, loadHistory: (id: string) => any[]) {
+function urlToImagePart(url: string): { type: string; image_url: { url: string; detail: string } } {
+  return { type: 'image_url', image_url: { url, detail: 'auto' } }
+}
+
+async function buildMessages(session: any, message: string, imagePath: string | undefined, systemPrompt: string | undefined, loadHistory: (id: string) => any[], imageUrl?: string) {
   const msgs: Array<{ role: string; content: any }> = []
 
   if (systemPrompt) {
@@ -173,8 +177,9 @@ async function buildMessages(session: any, message: string, imagePath: string | 
   if (loadHistory) {
     const history = loadHistory(session.id).slice(-40)
     for (const m of history) {
-      if (m.role === 'user' && m.imagePath) {
-        const parts = await fileToContentParts(m.imagePath)
+      if (m.role === 'user' && (m.imagePath || m.imageUrl)) {
+        const parts = m.imagePath ? await fileToContentParts(m.imagePath) : []
+        if (m.imageUrl) parts.push(urlToImagePart(m.imageUrl))
         msgs.push({ role: 'user', content: [...parts, { type: 'text', text: m.text }] })
       } else {
         msgs.push({ role: m.role, content: m.text })
@@ -183,8 +188,9 @@ async function buildMessages(session: any, message: string, imagePath: string | 
   }
 
   // Current message with optional attachment
-  if (imagePath) {
-    const parts = await fileToContentParts(imagePath)
+  if (imagePath || imageUrl) {
+    const parts = imagePath ? await fileToContentParts(imagePath) : []
+    if (imageUrl) parts.push(urlToImagePart(imageUrl))
     msgs.push({ role: 'user', content: [...parts, { type: 'text', text: message }] })
   } else {
     msgs.push({ role: 'user', content: message })

@@ -34,6 +34,14 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
   const agent = agents[task.agentId]
   const project = task.projectId ? projects[task.projectId] : null
 
+  const priorityConfig = {
+    critical: { label: 'Critical', cls: 'bg-red-500/10 text-red-400' },
+    high: { label: 'High', cls: 'bg-orange-500/10 text-orange-400' },
+    medium: { label: 'Med', cls: 'bg-amber-500/10 text-amber-400' },
+    low: { label: 'Low', cls: 'bg-sky-500/10 text-sky-400' },
+  } as const
+  const prio = task.priority && priorityConfig[task.priority]
+
   const isBlocked = Array.isArray(task.blockedBy) && task.blockedBy.length > 0
   const isOverdue = task.dueAt && task.dueAt < Date.now() && task.status !== 'completed' && task.status !== 'archived'
   const borderColor = isBlocked ? 'border-l-rose-500'
@@ -86,7 +94,7 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
           setTaskSheetOpen(true)
         }
       }}
-      className={`p-4 rounded-[14px] border border-l-[3px] ${borderColor} bg-surface hover:bg-surface-2 transition-all group
+      className={`py-3 px-4 rounded-[14px] border border-l-[3px] ${borderColor} bg-surface hover:bg-surface-2 transition-all group
         ${selectionMode ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'}
         ${dragging ? 'opacity-40 scale-[0.97]' : ''}
         ${selected ? 'border-accent-bright/40 bg-accent-bright/[0.04] ring-1 ring-accent-bright/20' : 'border-white/[0.06]'}`}
@@ -114,6 +122,11 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
           </svg>
         )}
         <h4 className="flex-1 text-[14px] font-600 text-text leading-[1.4] line-clamp-2">{task.title}</h4>
+        {prio && (
+          <span className={`px-1.5 py-0.5 rounded-[5px] text-[10px] font-600 shrink-0 ${prio.cls}`}>
+            {prio.label}
+          </span>
+        )}
         {isBlocked && (
           <span className="px-1.5 py-0.5 rounded-[5px] bg-rose-500/10 text-rose-400 text-[10px] font-600 shrink-0">
             {task.blockedBy?.length}

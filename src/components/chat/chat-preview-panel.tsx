@@ -46,13 +46,12 @@ export function ChatPreviewPanel({ content, onClose }: Props) {
 
   return (
     <div
-      className="flex flex-col border-l border-white/[0.06] bg-bg shrink-0"
+      className="relative flex flex-col border-l border-white/[0.06] bg-bg shrink-0"
       style={{ width, minWidth: 300, maxWidth: '50%', animation: 'fade-in 0.25s ease' }}
     >
       {/* Resize handle */}
       <div
         className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent-bright/20 transition-colors z-10"
-        style={{ position: 'relative', width: 4, minWidth: 4 }}
         onMouseDown={handleMouseDown}
       />
 

@@ -60,6 +60,7 @@ export function buildMemoryTools(bctx: ToolBuildContext): StructuredToolInterfac
 
             const formatEntry = (m: any) => {
               let line = `[${m.id}] (${m.agentId ? `agent:${m.agentId}` : 'shared'}) ${m.category}/${m.title}: ${m.content}`
+              if (m.reinforcementCount) line += ` (reinforced ×${m.reinforcementCount})`
               if (m.references?.length) {
                 line += `\n  refs: ${m.references.map((r: any) => {
                   const core = r.path || r.title || r.type

@@ -9,6 +9,7 @@ import { getPluginManager } from './plugins'
 import { loadRuntimeSettings, getAgentLoopRecursionLimit } from './runtime-settings'
 import { getMemoryDb } from './memory-db'
 import { logExecution } from './execution-log'
+import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import type { Session, Message, UsageRecord } from '@/types'
 import { extractSuggestions } from './suggestions'
 
@@ -227,6 +228,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     stateModifierParts.push(systemPrompt!.trim())
   } else {
     if (settings.userPrompt) stateModifierParts.push(settings.userPrompt)
+    stateModifierParts.push(buildCurrentDateTimePromptContext())
   }
 
   // Load agent context when a full prompt was not already composed by the route layer.
@@ -400,15 +402,17 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     }
   }
 
-  stateModifierParts.push(
-    [
-      '## Follow-up Suggestions',
-      'At the end of every response, include a <suggestions> block with exactly 3 short',
-      'follow-up prompts the user might want to send next, as a JSON array. Keep each under 60 chars.',
-      'Make them contextual to what you just said. Example:',
-      '<suggestions>["Set up a Discord connector", "Create a research agent", "Show the task board"]</suggestions>',
-    ].join('\n'),
-  )
+  if (settings.suggestionsEnabled !== false) {
+    stateModifierParts.push(
+      [
+        '## Follow-up Suggestions',
+        'At the end of every response, include a <suggestions> block with exactly 3 short',
+        'follow-up prompts the user might want to send next, as a JSON array. Keep each under 60 chars.',
+        'Make them contextual to what you just said. Example:',
+        '<suggestions>["Set up a Discord connector", "Create a research agent", "Show the task board"]</suggestions>',
+      ].join('\n'),
+    )
+  }
 
   stateModifierParts.push(
     buildAgenticExecutionPolicy({
@@ -548,8 +552,18 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     // Context manager failure — continue with full history
   }
 
+  // Apply context-clear boundary: slice from most recent context-clear marker
+  let contextStart = 0
+  for (let i = effectiveHistory.length - 1; i >= 0; i--) {
+    if (effectiveHistory[i].kind === 'context-clear') {
+      contextStart = i + 1
+      break
+    }
+  }
+  const postClearHistory = effectiveHistory.slice(contextStart)
+
   const langchainMessages: Array<HumanMessage | AIMessage> = []
-  for (const m of effectiveHistory.slice(-20)) {
+  for (const m of postClearHistory.slice(-20)) {
     if (m.role === 'user') {
       langchainMessages.push(new HumanMessage({ content: await buildLangChainContent(m.text, m.imagePath, m.attachedFiles) }))
     } else {
@@ -567,6 +581,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   let totalInputTokens = 0
   let totalOutputTokens = 0
   let lastToolInput: unknown = null
+  let accumulatedThinking = ''
 
   // Plugin hooks: beforeAgentStart
   const pluginMgr = getPluginManager()
@@ -603,9 +618,11 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
             for (const block of chunk.content) {
               // Anthropic extended thinking blocks
               if (block.type === 'thinking' && block.thinking) {
+                accumulatedThinking += block.thinking
                 write(`data: ${JSON.stringify({ t: 'thinking', text: block.thinking })}\n\n`)
               // OpenClaw [[thinking]] prefix convention
               } else if (typeof block.text === 'string' && block.text.startsWith('[[thinking]]')) {
+                accumulatedThinking += block.text.slice(12)
                 write(`data: ${JSON.stringify({ t: 'thinking', text: block.text.slice(12) })}\n\n`)
               } else if (block.text) {
                 fullText += block.text
@@ -728,6 +745,11 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   fullText = extracted.clean
   if (extracted.suggestions) {
     write(`data: ${JSON.stringify({ t: 'md', text: JSON.stringify({ suggestions: extracted.suggestions }) })}\n\n`)
+  }
+
+  // Emit full thinking text as metadata so the client can persist it
+  if (accumulatedThinking) {
+    write(`data: ${JSON.stringify({ t: 'md', text: JSON.stringify({ thinking: accumulatedThinking }) })}\n\n`)
   }
 
   // Track cost

@@ -26,8 +26,8 @@ export function WebSearchSection({ appSettings, patchSettings, inputClass }: Set
             <option value="google">Google (scraping, no key required)</option>
             <option value="bing">Bing (scraping, no key required)</option>
             <option value="searxng">SearXNG (self-hosted, no key required)</option>
-            <option value="tavily">Tavily (requires API key in Secrets)</option>
-            <option value="brave">Brave Search (requires API key in Secrets)</option>
+            <option value="tavily">Tavily (API key required)</option>
+            <option value="brave">Brave Search (API key required)</option>
           </select>
         </div>
 
@@ -45,10 +45,34 @@ export function WebSearchSection({ appSettings, patchSettings, inputClass }: Set
           </div>
         )}
 
-        {(provider === 'tavily' || provider === 'brave') && (
-          <p className="text-[11px] text-text-3/70">
-            Add a secret named &quot;{provider}&quot; or &quot;{provider}_api_key&quot; in the Secrets section below.
-          </p>
+        {provider === 'tavily' && (
+          <div>
+            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Tavily API Key</label>
+            <input
+              type="password"
+              value={appSettings.tavilyApiKey || ''}
+              onChange={(e) => patchSettings({ tavilyApiKey: e.target.value || null })}
+              placeholder="tvly-..."
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+            <p className="text-[11px] text-text-3/60 mt-2">Get your API key from <a href="https://tavily.com" target="_blank" rel="noopener noreferrer" className="text-accent-bright hover:underline">tavily.com</a></p>
+          </div>
+        )}
+
+        {provider === 'brave' && (
+          <div>
+            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Brave Search API Key</label>
+            <input
+              type="password"
+              value={appSettings.braveApiKey || ''}
+              onChange={(e) => patchSettings({ braveApiKey: e.target.value || null })}
+              placeholder="BSA..."
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+            <p className="text-[11px] text-text-3/60 mt-2">Get your API key from <a href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer" className="text-accent-bright hover:underline">brave.com/search/api</a></p>
+          </div>
         )}
       </div>
     </div>

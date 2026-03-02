@@ -6,6 +6,7 @@ import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { ConnectorPlatformIcon, CONNECTOR_PLATFORM_META } from '@/components/shared/connector-platform-icon'
 import { MessageBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ThinkingIndicator } from './thinking-indicator'
@@ -14,6 +15,7 @@ import { ExecApprovalCard } from './exec-approval-card'
 import { HeartbeatMoment, ActivityMoment, isNotableTool } from './activity-moment'
 import { useApprovalStore } from '@/stores/use-approval-store'
 import { useWs } from '@/hooks/use-ws'
+import { GatewayDisconnectOverlay, useGatewayStatus } from '@/components/settings/gateway-disconnect-overlay'
 
 const INTRO_GREETINGS = [
   'What can I help you with?',
@@ -57,6 +59,10 @@ export function MessageList({ messages, streaming }: Props) {
   const retryLastMessage = useChatStore((s) => s.retryLastMessage)
   const editAndResend = useChatStore((s) => s.editAndResend)
   const sendMessage = useChatStore((s) => s.sendMessage)
+  const hasMoreMessages = useChatStore((s) => s.hasMoreMessages)
+  const loadingMore = useChatStore((s) => s.loadingMore)
+  const totalMessages = useChatStore((s) => s.totalMessages)
+  const loadMoreMessages = useChatStore((s) => s.loadMoreMessages)
   const forkSession = useAppStore((s) => s.forkSession)
   const session = useAppStore((s) => {
     const id = s.currentSessionId
@@ -72,6 +78,11 @@ export function MessageList({ messages, streaming }: Props) {
 
   const showOk = appSettings.heartbeatShowOk ?? false
   const showAlerts = appSettings.heartbeatShowAlerts ?? true
+
+  // Gateway disconnect overlay for openclaw agents
+  const isOpenClaw = agent?.provider === 'openclaw'
+  const gatewayStatus = useGatewayStatus()
+  const showGatewayOverlay = isOpenClaw && gatewayStatus === 'disconnected'
 
   // Moment overlay for last assistant message (heartbeat or tool events)
   type MomentType = { kind: 'heartbeat' } | { kind: 'tool'; name: string; input: string }
@@ -107,6 +118,10 @@ export function MessageList({ messages, streaming }: Props) {
 
   // Bookmark filter
   const [bookmarkFilter, setBookmarkFilter] = useState(false)
+
+  // Connector source filter
+  const [connectorFilter, setConnectorFilter] = useState<string | null>(null)
+  const [connectorFilterCollapsed, setConnectorFilterCollapsed] = useState(false)
 
   const toggleBookmark = useCallback(async (index: number) => {
     if (!sessionId) return
@@ -166,10 +181,24 @@ export function MessageList({ messages, streaming }: Props) {
     }
   }
 
-  // Apply bookmark filter
-  const filteredMessages = bookmarkFilter
+  // Collect unique connector sources for filter UI
+  const connectorSources = new Map<string, { platform: string; connectorName: string }>()
+  for (const msg of displayedMessages) {
+    if (msg.source?.connectorId && !connectorSources.has(msg.source.connectorId)) {
+      connectorSources.set(msg.source.connectorId, {
+        platform: msg.source.platform,
+        connectorName: msg.source.connectorName,
+      })
+    }
+  }
+
+  // Apply bookmark + connector filter
+  let filteredMessages = bookmarkFilter
     ? displayedMessages.filter((msg) => msg.bookmarked)
     : displayedMessages
+  if (connectorFilter) {
+    filteredMessages = filteredMessages.filter((msg) => msg.source?.connectorId === connectorFilter)
+  }
 
   // Search matches
   const searchMatches = searchQuery.trim()
@@ -274,6 +303,23 @@ export function MessageList({ messages, streaming }: Props) {
     return () => window.removeEventListener('swarmclaw:scroll-bottom', handler)
   }, [handleScrollToBottom])
 
+  // Scroll to a specific message by index (used by search)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = (e: Event) => {
+      const idx = (e as CustomEvent).detail?.index
+      if (typeof idx !== 'number') return
+      const el = scrollRef.current?.querySelector(`[data-message-index="${idx}"]`) as HTMLElement | null
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.classList.add('bg-accent-bright/10')
+        setTimeout(() => el.classList.remove('bg-accent-bright/10'), 2000)
+      }
+    }
+    window.addEventListener('swarmclaw:scroll-to-message', handler)
+    return () => window.removeEventListener('swarmclaw:scroll-to-message', handler)
+  }, [])
+
   // Ctrl+F search toggle
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -296,7 +342,7 @@ export function MessageList({ messages, streaming }: Props) {
   }, [searchOpen])
 
   return (
-    <div className="relative flex-1 min-h-0 min-w-0">
+    <div className="relative flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
       {/* In-thread search bar */}
       {searchOpen && (
         <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-2 px-6 md:px-12 lg:px-16 py-2 bg-surface/95 backdrop-blur-sm border-b border-white/[0.06]">
@@ -310,6 +356,7 @@ export function MessageList({ messages, streaming }: Props) {
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setSearchIdx(0) }}
             placeholder="Search in conversation..."
+            aria-label="Search messages"
             className="flex-1 bg-transparent text-text text-[13px] outline-none placeholder:text-text-3/50"
             style={{ fontFamily: 'inherit' }}
             onKeyDown={(e) => {
@@ -344,7 +391,7 @@ export function MessageList({ messages, streaming }: Props) {
           <button
             onClick={() => setBookmarkFilter((v) => !v)}
             aria-label={bookmarkFilter ? 'Show all messages' : 'Show bookmarked only'}
-            className={`p-1 rounded-[6px] hover:bg-white/[0.04] cursor-pointer border-none bg-transparent transition-colors ${bookmarkFilter ? 'text-[#F59E0B]' : 'text-text-3 hover:text-text-2'}`}
+            className={`p-1 rounded-[6px] hover:bg-white/[0.04] cursor-pointer border-none bg-transparent transition-colors ${bookmarkFilter ? 'text-amber-500' : 'text-text-3 hover:text-text-2'}`}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill={bookmarkFilter ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -360,14 +407,104 @@ export function MessageList({ messages, streaming }: Props) {
         </div>
       )}
 
+      {/* Connector source filter — shown when connector messages exist */}
+      {connectorSources.size > 0 && (
+        <div className="flex items-center gap-1.5 px-6 md:px-12 lg:px-16 py-1.5 border-b border-white/[0.04]">
+          <button
+            onClick={() => setConnectorFilterCollapsed((c) => !c)}
+            className="flex items-center gap-1 text-[10px] text-text-3/50 uppercase tracking-wider font-600 mr-1 bg-transparent border-none cursor-pointer hover:text-text-3/70 transition-colors p-0"
+            title={connectorFilterCollapsed ? 'Expand source filter' : 'Collapse source filter'}
+          >
+            <svg
+              width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+              className="transition-transform duration-200"
+              style={{ transform: connectorFilterCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+            Source
+            {connectorFilterCollapsed && connectorFilter && (
+              <span className="text-accent-bright/70 normal-case tracking-normal">
+                ({connectorSources.get(connectorFilter)?.connectorName || connectorFilter})
+              </span>
+            )}
+          </button>
+          {!connectorFilterCollapsed && (
+            <>
+              <button
+                onClick={() => setConnectorFilter(null)}
+                className={`px-2 py-1 rounded-[6px] text-[11px] font-600 cursor-pointer border-none transition-all ${
+                  !connectorFilter ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2 hover:bg-white/[0.04]'
+                }`}
+                style={{ fontFamily: 'inherit' }}
+              >
+                All
+              </button>
+              {Array.from(connectorSources.entries()).map(([cid, info]) => {
+                const active = connectorFilter === cid
+                const meta = CONNECTOR_PLATFORM_META[info.platform as keyof typeof CONNECTOR_PLATFORM_META]
+                return (
+                  <button
+                    key={cid}
+                    onClick={() => setConnectorFilter(active ? null : cid)}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-[6px] text-[11px] font-600 cursor-pointer border-none transition-all ${
+                      active ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2 hover:bg-white/[0.04]'
+                    }`}
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <ConnectorPlatformIcon platform={info.platform as keyof typeof CONNECTOR_PLATFORM_META} size={12} />
+                    {info.connectorName || meta?.label || info.platform}
+                  </button>
+                )
+              })}
+            </>
+          )}
+        </div>
+      )}
+
       <div
         ref={scrollRef}
         onScroll={updateScrollState}
-        className="h-full overflow-y-auto px-6 md:px-12 lg:px-16 py-6 fade-up"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 md:px-12 lg:px-16 pt-6 pb-10 fade-up"
       >
         <div className="flex flex-col gap-6 relative">
           {/* Chat spine — vertical line for assistant messages */}
           <div className="absolute left-[15px] top-0 bottom-0 w-px bg-white/[0.06] pointer-events-none" />
+          {hasMoreMessages && (
+            <div className="flex justify-center py-3">
+              <button
+                onClick={async () => {
+                  const el = scrollRef.current
+                  const prevHeight = el?.scrollHeight ?? 0
+                  await loadMoreMessages()
+                  // Preserve scroll position after prepending
+                  if (el) {
+                    requestAnimationFrame(() => {
+                      el.scrollTop += el.scrollHeight - prevHeight
+                    })
+                  }
+                }}
+                disabled={loadingMore}
+                className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/[0.08] bg-surface/80 text-text-3 text-[12px] font-600 hover:bg-surface-2 hover:text-text-2 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <>
+                    <span className="w-3 h-3 rounded-full border-2 border-text-3/30 border-t-text-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                      <path d="M12 19V5" />
+                      <path d="m5 12 7-7 7 7" />
+                    </svg>
+                    Load earlier messages
+                    <span className="text-text-3/50">({totalMessages - messages.length} more)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
           {filteredMessages.length === 0 && !streaming && (
             <div className="flex flex-col items-center justify-center gap-3 py-20 text-center" style={{ animation: 'fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
               <AgentAvatar seed={agent?.avatarSeed || null} name={agent?.name || 'Agent'} size={48} />
@@ -378,6 +515,41 @@ export function MessageList({ messages, streaming }: Props) {
             </div>
           )}
           {filteredMessages.map((msg, i) => {
+            // Context-clear divider — render a visual separator instead of a bubble
+            if (msg.kind === 'context-clear') {
+              const originalIndex = messages.indexOf(msg)
+              return (
+                <div key={`ctx-clear-${msg.time}-${i}`} className="group/ctx flex items-center gap-4 py-3">
+                  <div className="flex-1 h-px bg-amber-400/20" />
+                  <span className="flex items-center gap-1.5 text-[10px] font-600 text-amber-400/60 uppercase tracking-[0.1em]">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                      <polyline points="8 8 4 12 8 16" />
+                      <polyline points="16 8 20 12 16 16" />
+                    </svg>
+                    New context
+                    {msg.time ? ` · ${new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                  </span>
+                  {sessionId && originalIndex >= 0 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await api('DELETE', `/sessions/${sessionId}/messages`, { messageIndex: originalIndex })
+                          setMessages(messages.filter((_: Message, idx: number) => idx !== originalIndex))
+                        } catch { /* best-effort */ }
+                      }}
+                      className="opacity-0 group-hover/ctx:opacity-100 text-[10px] font-600 text-amber-400/60 hover:text-amber-400 bg-transparent border-none cursor-pointer transition-all px-1.5 py-0.5 rounded-[4px] hover:bg-amber-400/10"
+                      title="Undo — restore full context"
+                    >
+                      Undo
+                    </button>
+                  )}
+                  <div className="flex-1 h-px bg-amber-400/20" />
+                </div>
+              )
+            }
+
             // Find original index in the full messages array for API calls
             const originalIndex = messages.indexOf(msg)
             const isLastAssistant = msg.role === 'assistant' && !streaming
@@ -407,7 +579,7 @@ export function MessageList({ messages, streaming }: Props) {
             }
 
             return (
-              <div key={`${msg.time}-${i}`}>
+              <div key={`${msg.time}-${i}`} data-message-index={i}>
                 {showDateSep && (
                   <div className="flex items-center gap-4 py-2 mb-2">
                     <div className="flex-1 h-px bg-white/[0.06]" />
@@ -438,11 +610,12 @@ export function MessageList({ messages, streaming }: Props) {
           <ApprovalCards agentId={agent?.id} />
           {streaming && !displayText && <ThinkingIndicator assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentName={agent?.name} />}
           {streaming && displayText && <StreamingBubble text={displayText} assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentName={agent?.name} />}
-          {!streaming && filteredMessages.length > 0 && filteredMessages[filteredMessages.length - 1]?.role === 'assistant' && (
+          {appSettings.suggestionsEnabled !== false && !streaming && filteredMessages.length > 0 && filteredMessages[filteredMessages.length - 1]?.role === 'assistant' && (
             <SuggestionsBar lastMessage={filteredMessages[filteredMessages.length - 1]} onSend={sendMessage} />
           )}
         </div>
       </div>
+      {showGatewayOverlay && <GatewayDisconnectOverlay />}
       {showScrollToBottom && (
         <button
           onClick={handleScrollToBottom}

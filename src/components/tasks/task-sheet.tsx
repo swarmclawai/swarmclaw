@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useAppStore } from '@/stores/use-app-store'
 import { createTask, updateTask, archiveTask, unarchiveTask } from '@/lib/tasks'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
@@ -10,6 +12,7 @@ import { SheetFooter } from '@/components/shared/sheet-footer'
 import { inputClass } from '@/components/shared/form-styles'
 import type { BoardTask, TaskComment } from '@/types'
 import { SectionLabel } from '@/components/shared/section-label'
+import { AgentAvatar } from '@/components/agents/agent-avatar'
 
 function fmtTime(ts: number) {
   const d = new Date(ts)
@@ -33,6 +36,9 @@ export function TaskSheet() {
   const loadProjects = useAppStore((s) => s.loadProjects)
   const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
 
+  const viewOnly = useAppStore((s) => s.taskSheetViewOnly)
+  const setViewOnly = useAppStore((s) => s.setTaskSheetViewOnly)
+
   const appSettings = useAppStore((s) => s.appSettings)
   const loadSettings = useAppStore((s) => s.loadSettings)
 
@@ -50,6 +56,7 @@ export function TaskSheet() {
   const [blockedBy, setBlockedBy] = useState<string[]>([])
   const [dueAt, setDueAt] = useState<string>('')
   const [customFields, setCustomFields] = useState<Record<string, string | number | boolean>>({})
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical' | ''>('')
 
   const editing = editingId ? tasks[editingId] : null
   const agentList = Object.values(agents).sort((a, b) => a.name.localeCompare(b.name))
@@ -71,6 +78,7 @@ export function TaskSheet() {
         setBlockedBy(editing.blockedBy || [])
         setDueAt(editing.dueAt ? new Date(editing.dueAt).toISOString().slice(0, 10) : '')
         setCustomFields(editing.customFields || {})
+        setPriority(editing.priority || '')
       } else {
         setTitle('')
         setDescription('')
@@ -83,6 +91,7 @@ export function TaskSheet() {
         setBlockedBy([])
         setDueAt('')
         setCustomFields({})
+        setPriority('')
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -108,6 +117,7 @@ export function TaskSheet() {
       cwd: cwd || undefined, file: file || undefined,
       tags, blockedBy, dueAt: dueAt ? new Date(dueAt).getTime() : null,
       customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
+      priority: priority || undefined,
     } as Partial<BoardTask> & { title: string; description: string; agentId: string }
     if (editing) {
       await updateTask(editing.id, payload)
@@ -130,7 +140,9 @@ export function TaskSheet() {
       })
       const data = await res.json()
       if (data.url) setImages((prev) => [...prev, data.url])
-    } catch { /* ignore */ }
+    } catch (err: unknown) {
+      console.error('Image upload failed:', err instanceof Error ? err.message : String(err))
+    }
     setUploading(false)
     e.target.value = ''
   }
@@ -173,9 +185,296 @@ export function TaskSheet() {
     setCommentText('')
   }
 
+  const PRIORITY_STYLES: Record<string, string> = {
+    low: 'bg-sky-500/10 border-sky-500/20 text-sky-400',
+    medium: 'bg-amber-500/10 border-amber-500/20 text-amber-400',
+    high: 'bg-orange-500/10 border-orange-500/20 text-orange-400',
+    critical: 'bg-red-500/10 border-red-500/20 text-red-400',
+  }
+  const STATUS_STYLES: Record<string, string> = {
+    backlog: 'bg-white/[0.06] text-text-3',
+    queued: 'bg-amber-500/10 text-amber-400',
+    'in-progress': 'bg-sky-500/10 text-sky-400',
+    completed: 'bg-emerald-500/10 text-emerald-400',
+    failed: 'bg-red-500/10 text-red-400',
+    archived: 'bg-white/[0.04] text-text-3/60',
+  }
+
+  const taskAgent = editing ? agents[editing.agentId] : null
+  const taskProject = editing?.projectId ? projects[editing.projectId] : null
+
+  /* ───── View-only mode ───── */
+  if (viewOnly && editing) {
+    return (
+      <BottomSheet open={open} onClose={onClose}>
+        {/* Header: title + badges + timestamps */}
+        <div className="mb-8">
+          <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-3">
+            {editing.title}
+          </h2>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className={`px-2.5 py-1 rounded-[8px] text-[12px] font-600 border border-transparent ${STATUS_STYLES[editing.status] || 'bg-white/[0.06] text-text-3'}`}>
+              {editing.status}
+            </span>
+            {editing.priority && (
+              <span className={`px-2.5 py-1 rounded-[8px] text-[12px] font-600 border ${PRIORITY_STYLES[editing.priority] || ''}`}>
+                {editing.priority}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-text-3">
+            <span>Created {fmtTime(editing.createdAt)}</span>
+            {editing.startedAt && <span>Started {fmtTime(editing.startedAt)}</span>}
+            {editing.completedAt && <span>Completed {fmtTime(editing.completedAt)}</span>}
+          </div>
+        </div>
+
+        {/* Description */}
+        {editing.description && (
+          <div className="mb-8">
+            <SectionLabel>Description</SectionLabel>
+            <div className="msg-content text-[14px] leading-[1.7] text-text-2 break-words p-4 rounded-[14px] border border-white/[0.06] bg-surface">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{editing.description}</ReactMarkdown>
+            </div>
+          </div>
+        )}
+
+        {/* Agent */}
+        {taskAgent && (
+          <div className="mb-8">
+            <SectionLabel>Agent</SectionLabel>
+            <div className="flex items-center gap-2.5 px-4 py-3 rounded-[14px] border border-white/[0.06] bg-surface">
+              <AgentAvatar seed={taskAgent.avatarSeed || null} name={taskAgent.name} size={24} />
+              <span className="text-[14px] font-600 text-text">{taskAgent.name}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Project */}
+        {taskProject && (
+          <div className="mb-8">
+            <SectionLabel>Project</SectionLabel>
+            <span className="inline-flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface text-[13px] font-600 text-text-2">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: taskProject.color || '#6366F1' }} />
+              {taskProject.name}
+            </span>
+          </div>
+        )}
+
+        {/* Directory / File */}
+        {(editing.cwd || editing.file) && (
+          <div className="mb-8">
+            <SectionLabel>{editing.file ? 'File' : 'Directory'}</SectionLabel>
+            <code className="block px-4 py-3 rounded-[14px] border border-white/[0.06] bg-surface text-[13px] text-text-2 font-mono break-all">
+              {editing.file || editing.cwd}
+            </code>
+          </div>
+        )}
+
+        {/* Tags */}
+        {editing.tags && editing.tags.length > 0 && (
+          <div className="mb-8">
+            <SectionLabel>Tags</SectionLabel>
+            <div className="flex flex-wrap gap-1.5">
+              {editing.tags.map((tag) => (
+                <span key={tag} className="px-2.5 py-1 rounded-[8px] bg-indigo-500/10 text-indigo-400 text-[12px] font-600">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Blocked By */}
+        {editing.blockedBy && editing.blockedBy.length > 0 && (
+          <div className="mb-8">
+            <SectionLabel>Blocked By</SectionLabel>
+            <div className="flex flex-wrap gap-1.5">
+              {editing.blockedBy.map((bid) => {
+                const bt = tasks[bid]
+                return (
+                  <span key={bid} className="px-2.5 py-1 rounded-[8px] bg-white/[0.04] text-text-3 text-[12px] font-600">
+                    {bt ? bt.title : bid}
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Blocks */}
+        {editing.blocks && editing.blocks.length > 0 && (
+          <div className="mb-8">
+            <SectionLabel>Blocks</SectionLabel>
+            <div className="flex flex-wrap gap-1.5">
+              {editing.blocks.map((bid) => {
+                const bt = tasks[bid]
+                return bt ? (
+                  <span key={bid} className="px-2.5 py-1 rounded-[8px] bg-white/[0.04] text-text-3 text-[12px] font-600">{bt.title}</span>
+                ) : null
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Due Date */}
+        {editing.dueAt && (
+          <div className="mb-8">
+            <SectionLabel>Due Date</SectionLabel>
+            <span className="text-[14px] text-text-2">{new Date(editing.dueAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+          </div>
+        )}
+
+        {/* Custom Fields */}
+        {editing.customFields && Object.keys(editing.customFields).length > 0 && (
+          <div className="mb-8">
+            <SectionLabel>Custom Fields</SectionLabel>
+            <div className="space-y-2">
+              {Object.entries(editing.customFields).map(([key, val]) => {
+                const def = appSettings.taskCustomFieldDefs?.find((d) => d.key === key)
+                return (
+                  <div key={key} className="flex items-baseline gap-2">
+                    <span className="text-[12px] font-600 text-text-3">{def?.label || key}:</span>
+                    <span className="text-[13px] text-text-2">{String(val)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Images (thumbnails only, no remove/upload) */}
+        {editing.images && editing.images.length > 0 && (
+          <div className="mb-8">
+            <SectionLabel>Images</SectionLabel>
+            <div className="flex gap-2 flex-wrap">
+              {editing.images.map((url, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={i} src={url} alt="" className="w-20 h-20 rounded-[10px] object-cover border border-white/[0.08]" />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Result */}
+        {editing.result && (
+          <div className="mb-8">
+            <SectionLabel>Result</SectionLabel>
+            <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface text-[13px] text-text-2 whitespace-pre-wrap max-h-[200px] overflow-y-auto">
+              {editing.result}
+            </div>
+          </div>
+        )}
+
+        {/* CLI Sessions */}
+        {(editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId || editing.cliResumeId) && (
+          <div className="mb-8">
+            <SectionLabel>CLI Sessions</SectionLabel>
+            <div className="flex flex-wrap gap-2">
+              {editing.claudeResumeId && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
+                  <span className="text-[11px] font-600 text-amber-400">Claude</span>
+                  <code className="text-[11px] text-text-3 font-mono">{editing.claudeResumeId}</code>
+                </div>
+              )}
+              {editing.codexResumeId && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
+                  <span className="text-[11px] font-600 text-emerald-400">Codex</span>
+                  <code className="text-[11px] text-text-3 font-mono">{editing.codexResumeId}</code>
+                </div>
+              )}
+              {editing.opencodeResumeId && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
+                  <span className="text-[11px] font-600 text-sky-400">OpenCode</span>
+                  <code className="text-[11px] text-text-3 font-mono">{editing.opencodeResumeId}</code>
+                </div>
+              )}
+              {!(editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId) && editing.cliResumeId && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
+                  <span className="text-[11px] font-600 text-text-2">{editing.cliProvider || 'CLI'}</span>
+                  <code className="text-[11px] text-text-3 font-mono">{editing.cliResumeId}</code>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {editing.error && (
+          <div className="mb-8">
+            <label className="block font-display text-[12px] font-600 text-red-400 uppercase tracking-[0.08em] mb-3">Error</label>
+            <div className="p-4 rounded-[14px] border border-red-500/10 bg-red-500/[0.03] text-[13px] text-red-400/80 whitespace-pre-wrap">
+              {editing.error}
+            </div>
+          </div>
+        )}
+
+        {/* Comments (with input — adding comments from view mode is useful) */}
+        <div className="mb-8">
+          <SectionLabel>Comments {editing.comments?.length ? `(${editing.comments.length})` : ''}</SectionLabel>
+
+          {editing.comments && editing.comments.length > 0 && (
+            <div className="space-y-3 mb-4 max-h-[300px] overflow-y-auto">
+              {editing.comments.map((c) => (
+                <div key={c.id} className="p-3.5 rounded-[12px] border border-white/[0.06] bg-surface">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className={`text-[12px] font-600 ${c.agentId ? 'text-accent-bright' : 'text-text-2'}`}>
+                      {c.author}
+                    </span>
+                    <span className="text-[10px] text-text-3/50 font-mono">{fmtTime(c.createdAt)}</span>
+                  </div>
+                  <p className="text-[13px] text-text-2 leading-[1.5] whitespace-pre-wrap">{c.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder="Add a comment..."
+              className={`${inputClass} flex-1`}
+              style={{ fontFamily: 'inherit' }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddComment() } }}
+            />
+            <button
+              onClick={handleAddComment}
+              disabled={!commentText.trim()}
+              className="px-4 py-3 rounded-[14px] border-none bg-accent-soft text-accent-bright text-[13px] font-600 cursor-pointer disabled:opacity-30 hover:brightness-110 transition-all shrink-0"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Post
+            </button>
+          </div>
+        </div>
+
+        {/* Footer: Edit + Close */}
+        <div className="flex gap-3 pt-2 border-t border-white/[0.04]">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Close
+          </button>
+          <button
+            onClick={() => setViewOnly(false)}
+            className="flex-1 py-3.5 rounded-[14px] border-none bg-accent-bright text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] transition-all shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Edit
+          </button>
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  /* ───── Edit / Create mode ───── */
   return (
     <BottomSheet open={open} onClose={onClose}>
-      <div className="mb-10">
+      <div className="mb-8">
         <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
           {editing ? 'Edit Task' : 'New Task'}
         </h2>
@@ -201,11 +500,36 @@ export function TaskSheet() {
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Detailed task instructions for the agent..."
+          placeholder="Detailed task instructions... Use @AgentName to auto-assign"
           rows={4}
           className={`${inputClass} resize-y min-h-[100px]`}
           style={{ fontFamily: 'inherit' }}
         />
+      </div>
+
+      {/* Priority */}
+      <div className="mb-8">
+        <SectionLabel>Priority <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span></SectionLabel>
+        <div className="flex flex-wrap gap-2">
+          {([['', 'None', 'bg-surface border-white/[0.06] text-text-2'],
+            ['low', 'Low', 'bg-sky-500/10 border-sky-500/20 text-sky-400'],
+            ['medium', 'Medium', 'bg-amber-500/10 border-amber-500/20 text-amber-400'],
+            ['high', 'High', 'bg-orange-500/10 border-orange-500/20 text-orange-400'],
+            ['critical', 'Critical', 'bg-red-500/10 border-red-500/20 text-red-400'],
+          ] as const).map(([val, label, cls]) => (
+            <button
+              key={val}
+              onClick={() => setPriority(val as typeof priority)}
+              className={`px-4 py-3 rounded-[12px] text-[14px] font-600 cursor-pointer transition-all border
+                ${priority === val
+                  ? `${cls} ring-1 ring-current`
+                  : 'bg-surface border-white/[0.06] text-text-2 hover:bg-surface-2'}`}
+              style={{ fontFamily: 'inherit' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Images */}
@@ -341,6 +665,7 @@ export function TaskSheet() {
         <SectionLabel>Blocked By <span className="normal-case tracking-normal font-normal text-text-3">(tasks that must complete first)</span></SectionLabel>
         <select
           multiple
+          aria-label="Assign agents"
           value={blockedBy}
           onChange={(e) => setBlockedBy(Array.from(e.target.selectedOptions, (o) => o.value))}
           className="w-full px-4 py-3 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[13px] outline-none min-h-[80px] focus-glow"

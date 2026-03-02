@@ -1,5 +1,9 @@
 'use client'
 
+import { useState } from 'react'
+import { api } from '@/lib/api-client'
+import { useAppStore } from '@/stores/use-app-store'
+import toast from 'react-hot-toast'
 import type { SettingsSectionProps } from './types'
 
 interface EmbeddingSectionProps extends SettingsSectionProps {
@@ -7,6 +11,12 @@ interface EmbeddingSectionProps extends SettingsSectionProps {
 }
 
 export function EmbeddingSection({ appSettings, patchSettings, inputClass, credList }: EmbeddingSectionProps) {
+  const loadCredentials = useAppStore((s) => s.loadCredentials)
+  const [addingKey, setAddingKey] = useState(false)
+  const [newKeyName, setNewKeyName] = useState('')
+  const [newKeyValue, setNewKeyValue] = useState('')
+  const [savingKey, setSavingKey] = useState(false)
+
   return (
     <div className="mb-10">
       <h3 className="font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
@@ -60,20 +70,45 @@ export function EmbeddingSection({ appSettings, patchSettings, inputClass, credL
             </div>
             <div>
               <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">API Key</label>
-              {credList.filter((c) => c.provider === 'openai').length > 0 ? (
-                <select
-                  value={appSettings.embeddingCredentialId || ''}
-                  onChange={(e) => patchSettings({ embeddingCredentialId: e.target.value || null })}
-                  className={`${inputClass} appearance-none cursor-pointer`}
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  <option value="">Select a key...</option>
-                  {credList.filter((c) => c.provider === 'openai').map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+              {credList.filter((c) => c.provider === 'openai').length > 0 && !addingKey ? (
+                <div className="flex gap-2 items-center">
+                  <select
+                    value={appSettings.embeddingCredentialId || ''}
+                    onChange={(e) => patchSettings({ embeddingCredentialId: e.target.value || null })}
+                    className={`${inputClass} appearance-none cursor-pointer flex-1`}
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <option value="">Select a key...</option>
+                    {credList.filter((c) => c.provider === 'openai').map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => setAddingKey(true)} className="text-accent-bright text-[11px] font-600 cursor-pointer bg-transparent border-none hover:brightness-110 transition-all" style={{ fontFamily: 'inherit' }}>+ New</button>
+                </div>
               ) : (
-                <p className="text-[12px] text-text-3/60">No OpenAI API keys configured.</p>
+                <div className="space-y-2">
+                  <input type="text" value={newKeyName} onChange={e => setNewKeyName(e.target.value)} placeholder="Key name (optional)" className={inputClass} style={{ fontFamily: 'inherit' }} />
+                  <input type="password" value={newKeyValue} onChange={e => setNewKeyValue(e.target.value)} placeholder="sk-..." className={inputClass} style={{ fontFamily: 'inherit' }} />
+                  <div className="flex gap-2">
+                    <button type="button" disabled={savingKey || !newKeyValue.trim()} onClick={async () => {
+                      setSavingKey(true)
+                      try {
+                        const cred = await api<{ id: string }>('POST', '/credentials', { provider: 'openai', name: newKeyName.trim() || 'OpenAI key', apiKey: newKeyValue.trim() })
+                        await loadCredentials()
+                        patchSettings({ embeddingCredentialId: cred.id })
+                        setAddingKey(false)
+                        setNewKeyName('')
+                        setNewKeyValue('')
+                      } catch (err: unknown) { toast.error(`Failed to save: ${err instanceof Error ? err.message : String(err)}`) }
+                      finally { setSavingKey(false) }
+                    }} className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40" style={{ fontFamily: 'inherit' }}>
+                      {savingKey ? 'Saving...' : 'Save Key'}
+                    </button>
+                    {credList.filter(c => c.provider === 'openai').length > 0 && (
+                      <button type="button" onClick={() => { setAddingKey(false); setNewKeyName(''); setNewKeyValue('') }} className="px-4 py-1.5 rounded-[8px] bg-surface-2 text-text-2 text-[12px] font-600 cursor-pointer border-none hover:bg-surface-3 transition-all" style={{ fontFamily: 'inherit' }}>Cancel</button>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </>

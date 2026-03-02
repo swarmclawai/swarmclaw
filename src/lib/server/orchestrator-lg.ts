@@ -11,6 +11,7 @@ import { buildChatModel } from './build-llm'
 import { getCheckpointSaver } from './langgraph-checkpoint'
 import { notify } from './ws-hub'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
+import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import { genId } from '@/lib/id'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 import type { Agent, TaskComment, MessageToolEvent } from '@/types'
@@ -351,6 +352,7 @@ export async function executeLangGraphOrchestrator(
   const settings = loadSettings()
   const promptParts: string[] = []
   if (settings.userPrompt) promptParts.push(settings.userPrompt)
+  promptParts.push(buildCurrentDateTimePromptContext())
   if (orchestrator.soul) promptParts.push(orchestrator.soul)
   if (orchestrator.systemPrompt) promptParts.push(orchestrator.systemPrompt)
   // Inject dynamic skills

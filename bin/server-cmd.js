@@ -21,6 +21,7 @@ const DATA_DIR = path.join(SWARMCLAW_HOME, 'data')
 const BUILD_COPY_ENTRIES = [
   'src',
   'public',
+  'scripts',
   'next.config.ts',
   'tsconfig.json',
   'postcss.config.mjs',

@@ -49,13 +49,34 @@ export function FilePathChip({ filePath }: { filePath: string }) {
     ? serverState.framework.charAt(0).toUpperCase() + serverState.framework.slice(1)
     : null
 
+  const isDir = !PREVIEWABLE_EXT.test(filePath) && !filePath.includes('.')
+
+  const handleReveal = () => {
+    api('POST', '/files/open', { path: filePath }).catch(() => { /* best-effort */ })
+  }
+
   return (
     <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-[8px] bg-white/[0.06] border border-white/[0.08] font-mono text-[13px]">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3/50 shrink-0">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
+        {isDir ? (
+          <><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></>
+        ) : (
+          <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></>
+        )}
       </svg>
       <span className="text-sky-400">{filePath}</span>
+      <button
+        onClick={handleReveal}
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-white/[0.06] hover:bg-white/[0.10] text-[10px] font-600 text-text-3 hover:text-text-2 border-none transition-colors cursor-pointer"
+        title={isDir ? 'Open folder' : 'Reveal in file manager'}
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+          <polyline points="15 3 21 3 21 9" />
+          <line x1="10" y1="14" x2="21" y2="3" />
+        </svg>
+        {isDir ? 'Open' : 'Reveal'}
+      </button>
       {canPreview && !serverState.running && (
         <a
           href={serveUrl}

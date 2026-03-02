@@ -96,12 +96,12 @@ export function SearchDialog() {
 
   // Reset on open
   useEffect(() => {
-    if (open) {
-      setQuery('')
-      setResults([])
-      setSelectedIdx(0)
-      setTimeout(() => inputRef.current?.focus(), 50)
-    }
+    if (!open) return
+    setQuery('')
+    setResults([])
+    setSelectedIdx(0)
+    const timer = setTimeout(() => inputRef.current?.focus(), 50)
+    return () => clearTimeout(timer)
   }, [open])
 
   // Debounced search
@@ -152,6 +152,12 @@ export function SearchDialog() {
       case 'message':
         setCurrentSession(result.id)
         setActiveView('agents')
+        // Scroll to the matched message after the chat renders
+        if (result.messageIndex != null) {
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('swarmclaw:scroll-to-message', { detail: { index: result.messageIndex } }))
+          }, 300)
+        }
         break
       case 'schedule':
         setEditingScheduleId(result.id)
@@ -194,7 +200,7 @@ export function SearchDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
         showCloseButton={false}
-        className="sm:max-w-[520px] p-0 bg-[#1a1a2e]/95 backdrop-blur-xl border-white/[0.08] shadow-[0_24px_80px_rgba(0,0,0,0.6)] rounded-[16px] overflow-hidden gap-0"
+        className="sm:max-w-[520px] p-0 bg-surface/95 backdrop-blur-xl border-white/[0.08] shadow-[0_24px_80px_rgba(0,0,0,0.6)] rounded-[16px] overflow-hidden gap-0"
         onKeyDown={handleKeyDown}
       >
         <DialogTitle className="sr-only">Search</DialogTitle>
@@ -208,6 +214,7 @@ export function SearchDialog() {
             value={query}
             onChange={(e) => handleQueryChange(e.target.value)}
             placeholder="Search agents, tasks, schedules..."
+            aria-label="Search"
             className="flex-1 bg-transparent border-none outline-none text-[14px] text-text placeholder:text-text-3/60 font-[inherit]"
             autoFocus
           />
@@ -235,10 +242,10 @@ export function SearchDialog() {
           )}
           {results.map((result, idx) => (
             <button
-              key={`${result.type}-${result.id}`}
+              key={result.type === 'message' ? `${result.type}-${result.id}-${result.messageIndex}` : `${result.type}-${result.id}`}
               onClick={() => navigateTo(result)}
               onMouseEnter={() => setSelectedIdx(idx)}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer transition-colors border-none bg-transparent
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer transition-colors border-none bg-transparent focus-visible:ring-1 focus-visible:ring-accent-bright/50 focus-visible:ring-inset
                 ${idx === selectedIdx ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'}`}
               style={{ fontFamily: 'inherit' }}
             >
@@ -246,7 +253,7 @@ export function SearchDialog() {
               <div className={`w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0
                 ${idx === selectedIdx ? 'bg-accent-bright/20' : 'bg-white/[0.04]'}`}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-                  className={idx === selectedIdx ? 'text-[#818CF8]' : 'text-text-3'}>
+                  className={idx === selectedIdx ? 'text-accent-bright' : 'text-text-3'}>
                   <path d={TYPE_ICONS[result.type]} />
                   {TYPE_EXTRA_PATHS[result.type] && <path d={TYPE_EXTRA_PATHS[result.type]} />}
                 </svg>

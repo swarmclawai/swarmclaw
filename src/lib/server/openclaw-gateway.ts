@@ -160,8 +160,8 @@ export class OpenClawGateway {
       this.doConnect().catch(() => {})
     }, this.reconnectDelay)
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, maxDelay)
-    if (this.consecutiveFailures % 5 === 0) {
-      console.log(`[openclaw-gateway] ${this.consecutiveFailures} consecutive failures, next retry in ${Math.round(this.reconnectDelay / 1000)}s`)
+    if (this.consecutiveFailures === 1 || this.consecutiveFailures % 5 === 0) {
+      console.log(`[openclaw-gateway] ${this.consecutiveFailures} consecutive failure${this.consecutiveFailures > 1 ? 's' : ''}, next retry in ${Math.round(this.reconnectDelay / 1000)}s`)
     }
   }
 

@@ -20,6 +20,8 @@ import {
 } from '../storage'
 import { resolveScheduleName } from '@/lib/schedule-name'
 import { findDuplicateSchedule, type ScheduleLike } from '@/lib/schedule-dedupe'
+import { computeTaskFingerprint, findDuplicateTask } from '@/lib/task-dedupe'
+import { resolveTaskAgentFromDescription } from '@/lib/server/task-mention'
 import type { ToolBuildContext } from './context'
 import { safePath, findBinaryOnPath } from './context'
 
@@ -115,6 +117,7 @@ const RESOURCE_DEFAULTS: Record<string, (parsed: any) => any> = {
     queuedAt: null,
     startedAt: null,
     completedAt: null,
+    priority: ['low', 'medium', 'high', 'critical'].includes(p.priority) ? p.priority : undefined,
     ...p,
   }),
   manage_schedules: (p) => {
@@ -340,6 +343,24 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                     ...duplicate,
                     deduplicated: true,
                   })
+                }
+              }
+              // @mention agent resolution for tasks
+              if (toolKey === 'manage_tasks' && parsed.description) {
+                const agents = loadAgents()
+                parsed.agentId = resolveTaskAgentFromDescription(
+                  parsed.description,
+                  parsed.agentId || ctx?.agentId || '',
+                  agents,
+                )
+              }
+              // Task dedup
+              if (toolKey === 'manage_tasks') {
+                const fp = computeTaskFingerprint(parsed.title || 'Untitled Task', parsed.agentId || ctx?.agentId || '')
+                parsed.fingerprint = fp
+                const dupe = findDuplicateTask(all as Record<string, import('@/types').BoardTask>, { fingerprint: fp })
+                if (dupe) {
+                  return JSON.stringify({ ...dupe, deduplicated: true })
                 }
               }
               const newId = genId()

@@ -32,8 +32,10 @@ export function useWs(topic: string, handler: () => void, fallbackMs?: number) {
     let fallbackId: ReturnType<typeof setInterval> | null = null
     const cb = () => handlerRef.current()
 
-    // When page becomes visible again, fire an immediate refresh
-    if (isActive) {
+    // When page becomes visible again, fire an immediate refresh —
+    // but only for topics that use fallback polling (i.e. data-fetch topics).
+    // Event-only topics (like heartbeat pulses) should never fire from this effect.
+    if (isActive && fallbackMsRef.current && fallbackMsRef.current > 0) {
       cb()
     }
 

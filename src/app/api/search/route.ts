@@ -59,22 +59,24 @@ function searchMessages(
   const MAX_MSG_RESULTS = 10
   for (const [sessionId, session] of Object.entries(sessions)) {
     if (results.length >= MAX_MSG_RESULTS) break
-    const messages = session.messages as Array<{ role: string; text: string; time?: number }> | undefined
-    if (!messages?.length) continue
+    if (!Array.isArray(session.messages) || !session.messages.length) continue
+    const messages = session.messages as Array<Record<string, unknown>>
     const agentId = session.agentId as string | undefined
     const agentName = agentId && agents[agentId] ? (agents[agentId].name as string) : undefined
     const sessionName = (session.name as string) || 'Untitled'
     for (let i = 0; i < messages.length; i++) {
       if (results.length >= MAX_MSG_RESULTS) break
       const msg = messages[i]
-      if (!msg?.text) continue
-      const idx = msg.text.toLowerCase().indexOf(needle)
+      const text = typeof msg?.text === 'string' ? msg.text : ''
+      if (!text) continue
+      const idx = text.toLowerCase().indexOf(needle)
       if (idx === -1) continue
       // Build snippet with context around match
       const start = Math.max(0, idx - 30)
-      const end = Math.min(msg.text.length, idx + needle.length + 50)
-      const snippet = (start > 0 ? '...' : '') + msg.text.slice(start, end).replace(/\n/g, ' ') + (end < msg.text.length ? '...' : '')
-      const timeAgo = msg.time ? formatTimeAgo(msg.time) : ''
+      const end = Math.min(text.length, idx + needle.length + 50)
+      const snippet = (start > 0 ? '...' : '') + text.slice(start, end).replace(/\n/g, ' ') + (end < text.length ? '...' : '')
+      const msgTime = typeof msg.time === 'number' ? msg.time : 0
+      const timeAgo = msgTime ? formatTimeAgo(msgTime) : ''
       results.push({
         type: 'message',
         id: sessionId,

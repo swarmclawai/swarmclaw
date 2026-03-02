@@ -23,9 +23,9 @@ function fileToContentBlocks(filePath: string): any[] {
   return [{ type: 'text', text: `[Attached file: ${filePath.split('/').pop()}]` }]
 }
 
-export function streamAnthropicChat({ session, message, imagePath, apiKey, systemPrompt, write, active, loadHistory, onUsage }: StreamChatOptions): Promise<string> {
+export function streamAnthropicChat({ session, message, imagePath, imageUrl, apiKey, systemPrompt, write, active, loadHistory, onUsage }: StreamChatOptions): Promise<string> {
   return new Promise((resolve) => {
-    const messages = buildMessages(session, message, imagePath, loadHistory)
+    const messages = buildMessages(session, message, imagePath, loadHistory, imageUrl)
     const model = session.model || 'claude-sonnet-4-6'
     let usageInput = 0
     let usageOutput = 0
@@ -122,14 +122,19 @@ export function streamAnthropicChat({ session, message, imagePath, apiKey, syste
   })
 }
 
-function buildMessages(session: any, message: string, imagePath: string | undefined, loadHistory: (id: string) => any[]) {
+function urlToImageBlock(url: string): { type: string; source: { type: string; url: string } } {
+  return { type: 'image', source: { type: 'url', url } }
+}
+
+function buildMessages(session: any, message: string, imagePath: string | undefined, loadHistory: (id: string) => any[], imageUrl?: string) {
   const msgs: Array<{ role: string; content: any }> = []
 
   if (loadHistory) {
     const history = loadHistory(session.id).slice(-40)
     for (const m of history) {
-      if (m.role === 'user' && m.imagePath) {
-        const blocks = fileToContentBlocks(m.imagePath)
+      if (m.role === 'user' && (m.imagePath || m.imageUrl)) {
+        const blocks = m.imagePath ? fileToContentBlocks(m.imagePath) : []
+        if (m.imageUrl) blocks.push(urlToImageBlock(m.imageUrl))
         msgs.push({ role: 'user', content: [...blocks, { type: 'text', text: m.text }] })
       } else {
         msgs.push({ role: m.role, content: m.text })
@@ -138,8 +143,9 @@ function buildMessages(session: any, message: string, imagePath: string | undefi
   }
 
   // Current message with optional attachment
-  if (imagePath) {
-    const blocks = fileToContentBlocks(imagePath)
+  if (imagePath || imageUrl) {
+    const blocks = imagePath ? fileToContentBlocks(imagePath) : []
+    if (imageUrl) blocks.push(urlToImageBlock(imageUrl))
     msgs.push({ role: 'user', content: [...blocks, { type: 'text', text: message }] })
   } else {
     msgs.push({ role: 'user', content: message })

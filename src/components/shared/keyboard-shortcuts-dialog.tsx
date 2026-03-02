@@ -77,7 +77,7 @@ export function KeyboardShortcutsDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
         showCloseButton={false}
-        className="sm:max-w-[420px] p-0 bg-[#1a1a2e]/95 backdrop-blur-xl border-white/[0.08] shadow-[0_24px_80px_rgba(0,0,0,0.6)] rounded-[16px] overflow-hidden gap-0"
+        className="sm:max-w-[420px] p-0 bg-surface/95 backdrop-blur-xl border-white/[0.08] shadow-[0_24px_80px_rgba(0,0,0,0.6)] rounded-[16px] overflow-hidden gap-0"
       >
         <DialogTitle className="sr-only">Keyboard shortcuts</DialogTitle>
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">

@@ -25,6 +25,24 @@ export function UserPreferencesSection({ appSettings, patchSettings, inputClass 
         style={{ fontFamily: 'inherit' }}
       />
 
+      {/* Suggested replies toggle */}
+      <div className="mt-6 flex items-center justify-between">
+        <div>
+          <label className="text-[12px] font-600 text-text-2 block">Suggested Replies</label>
+          <p className="text-[11px] text-text-3/60 mt-0.5">
+            Show follow-up suggestions after each agent response.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => patchSettings({ suggestionsEnabled: appSettings.suggestionsEnabled === false })}
+          className={`relative w-9 h-5 rounded-full transition-colors ${appSettings.suggestionsEnabled !== false ? 'bg-accent-bright' : 'bg-white/[0.10]'}`}
+          style={{ fontFamily: 'inherit' }}
+        >
+          <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${appSettings.suggestionsEnabled !== false ? 'translate-x-4' : ''}`} />
+        </button>
+      </div>
+
       {/* Default agent */}
       <div className="mt-6">
         <label className="text-[12px] font-600 text-text-2 block mb-1.5">Default Agent</label>

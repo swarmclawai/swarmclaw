@@ -10,6 +10,58 @@ import { safePath, truncate, MAX_OUTPUT, findBinaryOnPath } from './context'
 import { getSearchProvider } from './search-providers'
 
 // ---------------------------------------------------------------------------
+// Search result compression — summarize verbose results before injecting into context
+// ---------------------------------------------------------------------------
+
+async function compressSearchResults(
+  results: Array<{ title?: string; url?: string; snippet?: string }>,
+  query: string,
+  bctx: ToolBuildContext,
+): Promise<string | null> {
+  const session = bctx.resolveCurrentSession?.()
+  if (!session?.provider || !session?.model) return null
+
+  const { getProvider } = await import('@/lib/providers')
+  const { loadCredentials, decryptKey } = await import('../storage')
+  const providerEntry = getProvider(session.provider)
+  if (!providerEntry?.handler?.streamChat) return null
+
+  // Resolve API key
+  let apiKey: string | undefined
+  if (session.credentialId) {
+    const creds = loadCredentials()
+    const cred = creds[session.credentialId]
+    if (cred) apiKey = decryptKey(cred)
+  }
+
+  const systemPrompt = 'You are a search result summarizer. Condense search results into a concise reference. Keep key facts, URLs, and data points. Remove filler and redundancy. Output plain text, not JSON.'
+  const message = `Query: "${query}"\n\nResults:\n${JSON.stringify(results, null, 1)}\n\nSummarize these results concisely.`
+
+  let compressed = ''
+  await providerEntry.handler.streamChat({
+    session: { ...session, messages: [] },
+    message,
+    apiKey,
+    systemPrompt,
+    write: (raw: string) => {
+      // Extract text data from SSE lines
+      const lines = raw.split('\n').filter(Boolean)
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        try {
+          const ev = JSON.parse(line.slice(6))
+          if (ev.t === 'd' && ev.text) compressed += ev.text
+        } catch { /* skip */ }
+      }
+    },
+    active: new Map(),
+    loadHistory: () => [],
+  })
+
+  return compressed.trim() || null
+}
+
+// ---------------------------------------------------------------------------
 // Global registry of active browser instances for cleanup sweeps
 // ---------------------------------------------------------------------------
 
@@ -70,9 +122,18 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             const settings = loadSettings()
             const provider = await getSearchProvider(settings)
             const results = await provider.search(query, limit)
-            return results.length > 0
-              ? JSON.stringify(results, null, 2)
-              : 'No results found.'
+            if (results.length === 0) return 'No results found.'
+            const raw = JSON.stringify(results, null, 2)
+            // Compress search results if they exceed 2000 chars
+            if (raw.length > 2000) {
+              try {
+                const compressed = await compressSearchResults(results, query, bctx)
+                if (compressed) return compressed
+              } catch {
+                // Compression failed — fall through to raw results
+              }
+            }
+            return raw
           } catch (err: unknown) {
             return `Error searching web: ${err instanceof Error ? err.message : String(err)}`
           }
@@ -284,6 +345,49 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       return JSON.stringify(result)
     }
 
+    // Best-effort cookie/consent banner dismissal after navigation
+    const dismissCookieBanners = async (
+      mcpCall: (toolName: string, args: Record<string, unknown>) => Promise<string>,
+    ) => {
+      // Wait briefly for consent overlays to appear
+      await new Promise((r) => setTimeout(r, 1500))
+      const js = `
+        (() => {
+          const sel = [
+            // Common "Reject" / "Reject all" / "Decline" buttons
+            'button[id*="reject" i]', 'button[class*="reject" i]',
+            'a[id*="reject" i]', 'a[class*="reject" i]',
+            '[data-testid*="reject" i]', '[data-action="reject"]',
+            // OneTrust
+            '#onetrust-reject-all-handler',
+            // Cookiebot
+            '#CybotCookiebotDialogBodyButtonDecline',
+            // Didomi
+            '#didomi-notice-disagree-button',
+            // Quantcast / IAB TCF
+            '.qc-cmp2-summary-buttons button:first-child',
+            'button.sp_choice_type_12',
+            // Generic patterns
+            'button[aria-label*="reject" i]', 'button[aria-label*="decline" i]',
+            'button[aria-label*="deny" i]', 'button[aria-label*="refuse" i]',
+          ];
+          for (const s of sel) {
+            const el = document.querySelector(s);
+            if (el && el.offsetParent !== null) { el.click(); return 'dismissed:' + s; }
+          }
+          // Fallback: find buttons by visible text
+          const btns = [...document.querySelectorAll('button, a[role="button"], [class*="cookie"] button, [class*="consent"] button, [id*="cookie"] button')];
+          const rejectRe = /^(reject|reject all|decline|deny|refuse|no,? thanks|only necessary|necessary only)$/i;
+          for (const b of btns) {
+            const txt = (b.textContent || '').trim();
+            if (rejectRe.test(txt) && b.offsetParent !== null) { b.click(); return 'dismissed:text=' + txt; }
+          }
+          return 'none';
+        })()
+      `
+      await mcpCall('browser_evaluate', { expression: js })
+    }
+
     // Action-to-MCP tool mapping
     const MCP_TOOL_MAP: Record<string, string> = {
       navigate: 'browser_navigate',
@@ -315,7 +419,14 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             const saveTo = typeof params.saveTo === 'string' && params.saveTo.trim()
               ? params.saveTo.trim()
               : undefined
-            return await callMcpTool(mcpTool, args, { saveTo })
+            const result = await callMcpTool(mcpTool, args, { saveTo })
+
+            // After navigation, attempt to dismiss cookie consent banners
+            if (action === 'navigate') {
+              try { await dismissCookieBanners(callMcpTool) } catch { /* best-effort */ }
+            }
+
+            return result
           } catch (err: unknown) {
             return `Error: ${err instanceof Error ? err.message : String(err)}`
           }

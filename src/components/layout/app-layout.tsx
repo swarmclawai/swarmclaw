@@ -55,6 +55,7 @@ import { MobileHeader } from './mobile-header'
 import { DaemonIndicator } from './daemon-indicator'
 import { NotificationCenter } from '@/components/shared/notification-center'
 import { ChatArea } from '@/components/chat/chat-area'
+import { CanvasPanel } from '@/components/canvas/canvas-panel'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { api } from '@/lib/api-client'
 import type { AppView } from '@/types'
@@ -91,6 +92,7 @@ export function AppLayout() {
   const appSettings = useAppStore((s) => s.appSettings)
   const [agentViewMode, setAgentViewMode] = useState<'chat' | 'config'>('chat')
   const [profileSheetOpen, setProfileSheetOpen] = useState(false)
+  const [canvasDismissedFor, setCanvasDismissedFor] = useState<string | null>(null)
 
   const handleShortcutKey = useCallback((e: KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey
@@ -191,6 +193,10 @@ export function AppLayout() {
     ? appSettings.defaultAgentId
     : Object.values(agents)[0]?.id || null
   const isMainChat = activeView === 'agents' && currentAgentId === defaultAgentId
+
+  const currentSession = currentSessionId ? sessions[currentSessionId] : null
+  const hasCanvas = !!(currentSession?.canvasContent && canvasDismissedFor !== currentSessionId)
+  const canvasAgentName = currentSession?.agentId && agents[currentSession.agentId] ? agents[currentSession.agentId].name : undefined
 
   const goToMainChat = async () => {
     if (defaultAgentId) {
@@ -680,12 +686,23 @@ export function AppLayout() {
 
       {/* Main content */}
       <ErrorBoundary>
-        <div className="flex-1 flex flex-col h-full min-w-0 bg-bg">
+        <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 bg-bg">
           {!isDesktop && <MobileHeader />}
           {activeView === 'home' ? (
             <HomeView />
           ) : activeView === 'agents' && hasSelectedSession ? (
-            <ChatArea />
+            <div className="flex-1 flex h-full min-h-0 min-w-0">
+              <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+                <ChatArea />
+              </div>
+              {hasCanvas && currentSessionId && (
+                <CanvasPanel
+                  sessionId={currentSessionId}
+                  agentName={canvasAgentName}
+                  onClose={() => setCanvasDismissedFor(currentSessionId)}
+                />
+              )}
+            </div>
           ) : activeView === 'agents' ? (
             <div className="flex-1 flex flex-col">
               {!isDesktop ? (

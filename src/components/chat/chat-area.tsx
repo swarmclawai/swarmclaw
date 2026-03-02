@@ -4,7 +4,7 @@ import { useEffect, useCallback, useState, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
 import { useChatStore } from '@/stores/use-chat-store'
-import { fetchMessages, clearMessages, deleteSession, devServer, checkBrowser, stopBrowser } from '@/lib/sessions'
+import { fetchMessages, fetchMessagesPaginated, clearMessages, deleteSession, devServer, checkBrowser, stopBrowser } from '@/lib/sessions'
 import { uploadImage } from '@/lib/upload'
 import { deleteAgent } from '@/lib/agents'
 import { useMediaQuery } from '@/hooks/use-media-query'
@@ -17,6 +17,7 @@ import { useVoiceConversation } from '@/hooks/use-voice-conversation'
 import { ChatInput } from '@/components/input/chat-input'
 import { ChatPreviewPanel } from './chat-preview-panel'
 import { InspectorPanel } from '@/components/agents/inspector-panel'
+import { HeartbeatHistoryPanel } from './heartbeat-history-panel'
 import { Dropdown, DropdownItem } from '@/components/shared/dropdown'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { speak } from '@/lib/tts'
@@ -47,6 +48,8 @@ export function ChatArea() {
   const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const inspectorOpen = useAppStore((s) => s.inspectorOpen)
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen)
+  const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const currentAgent = session?.agentId ? agents[session.agentId] ?? null : null
 
   const voice = useVoiceConversation()
@@ -60,6 +63,8 @@ export function ChatArea() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmDeleteAgent, setConfirmDeleteAgent] = useState(false)
   const [browserActive, setBrowserActive] = useState(false)
+  const [heartbeatHistoryOpen, setHeartbeatHistoryOpen] = useState(false)
+  const [messagesLoading, setMessagesLoading] = useState(true)
   const [isDragging, setIsDragging] = useState(false)
   const dragCounter = useRef(0)
   const setPendingImage = useChatStore((s) => s.setPendingImage)
@@ -69,13 +74,19 @@ export function ChatArea() {
     const chatState = useChatStore.getState()
     const preserveLocalStream = chatState.streaming && chatState.streamingSessionId === sessionId
     // Clear stale state from the previous session, but keep active local stream state for this session.
+    setMessagesLoading(true)
     setMessages([])
     if (!preserveLocalStream) {
       useChatStore.setState({ streaming: false, streamingSessionId: null, streamText: '', toolEvents: [] })
     }
-    fetchMessages(sessionId).then(setMessages).catch((err) => {
+    fetchMessagesPaginated(sessionId, 100).then((data) => {
+      setMessages(data.messages)
+      useChatStore.setState({ hasMoreMessages: data.hasMore, totalMessages: data.total })
+    }).catch((err) => {
       console.error('Failed to load messages:', err)
       setMessages(session?.messages || [])
+    }).finally(() => {
+      setMessagesLoading(false)
     })
     // If server reports session is still active, show streaming state
     if (session?.active) {
@@ -125,12 +136,13 @@ export function ChatArea() {
             return !isHeartbeat && !!m.text?.trim()
           })
           if (latestAssistant?.text) {
-            void speak(latestAssistant.text)
+            void speak(latestAssistant.text, currentAgent?.elevenLabsVoiceId)
           }
         }
       }
       if (isServerActiveRef.current) await loadSessions()
     } catch (err) { console.error('Failed to refresh messages:', err) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
   // Subscribe to WS messages for this session — always subscribe when session exists,
@@ -198,10 +210,6 @@ export function ChatArea() {
     setCurrentSession(null)
   }, [sessionId])
 
-  const handleBack = useCallback(() => {
-    setCurrentSession(null)
-  }, [])
-
   const handlePrompt = useCallback((text: string) => {
     sendMessage(text)
   }, [sendMessage])
@@ -244,7 +252,7 @@ export function ChatArea() {
 
   const streamingForThisSession = streaming && (!streamingSessionId || streamingSessionId === session.id)
   const isMainChat = session.name === '__main__'
-  const isEmpty = !messages.length && !streamingForThisSession
+  const isEmpty = !messages.length && !streamingForThisSession && !messagesLoading
 
   return (
     <div className="flex-1 flex h-full min-h-0 min-w-0">
@@ -261,12 +269,14 @@ export function ChatArea() {
           streaming={streamingForThisSession}
           onStop={stopStreaming}
           onMenuToggle={() => setMenuOpen(!menuOpen)}
-          onBack={handleBack}
+          onBack={sidebarOpen ? () => setSidebarOpen(false) : undefined}
           browserActive={browserActive}
           onStopBrowser={handleStopBrowser}
           voiceActive={voice.active}
           voiceSupported={voice.supported}
           onVoiceToggle={handleVoiceToggle}
+          heartbeatHistoryOpen={heartbeatHistoryOpen}
+          onToggleHeartbeatHistory={() => setHeartbeatHistoryOpen((v) => !v)}
         />
       )}
       {!isDesktop && (
@@ -285,7 +295,17 @@ export function ChatArea() {
       )}
       <DevServerBar status={devServerStatus} onStop={handleStopDevServer} />
 
-      {isEmpty ? (
+      {messagesLoading && !messages.length ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3" style={{ animation: 'fade-in 0.2s ease' }}>
+            <div className="relative w-10 h-10">
+              <div className="absolute inset-0 rounded-full border-2 border-white/[0.06]" />
+              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-accent-bright animate-spin" />
+            </div>
+            <span className="text-[13px] text-text-3/50 font-500">Loading messages...</span>
+          </div>
+        </div>
+      ) : isEmpty ? (
         <div className="flex-1 flex flex-col items-center justify-center px-6 pb-4 relative">
           {/* Atmospheric background glow */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -361,19 +381,9 @@ export function ChatArea() {
       />
 
       <Dropdown open={menuOpen} onClose={() => setMenuOpen(false)}>
-        {session.agentId && agents[session.agentId] && (
-          <DropdownItem onClick={() => { setMenuOpen(false); setEditingAgentId(session.agentId!); setAgentSheetOpen(true) }}>
-            Edit Agent
-          </DropdownItem>
-        )}
         <DropdownItem onClick={() => { setMenuOpen(false); setConfirmClear(true) }}>
           Clear History
         </DropdownItem>
-        {session.agentId && agents[session.agentId] && !isMainChat && (
-          <DropdownItem danger onClick={() => { setMenuOpen(false); setConfirmDeleteAgent(true) }}>
-            Delete Agent
-          </DropdownItem>
-        )}
         {!isMainChat && (
           <DropdownItem danger onClick={() => { setMenuOpen(false); setConfirmDelete(true) }}>
             Delete Chat
@@ -432,7 +442,21 @@ export function ChatArea() {
       <ChatPreviewPanel content={previewContent} onClose={() => setPreviewContent(null)} />
     )}
     {isDesktop && inspectorOpen && currentAgent && (
-      <InspectorPanel agent={currentAgent} />
+      <InspectorPanel
+        agent={currentAgent}
+        onEditAgent={() => { setEditingAgentId(session.agentId!); setAgentSheetOpen(true) }}
+        onClearHistory={() => setConfirmClear(true)}
+        onDeleteAgent={!isMainChat ? () => setConfirmDeleteAgent(true) : undefined}
+        onDeleteChat={!isMainChat ? () => setConfirmDelete(true) : undefined}
+        isMainChat={isMainChat}
+      />
+    )}
+    {isDesktop && heartbeatHistoryOpen && currentAgent?.heartbeatEnabled && (
+      <HeartbeatHistoryPanel
+        messages={messages}
+        agentHeartbeatGoal={currentAgent.heartbeatGoal ?? undefined}
+        onClose={() => setHeartbeatHistoryOpen(false)}
+      />
     )}
     </div>
   )
@@ -442,7 +466,7 @@ function PromptIcon({ type }: { type: string }) {
   const cls = "w-5 h-5"
   switch (type) {
     case 'book':
-      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ color: '#818CF8' }}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ color: 'var(--color-accent-bright)' }}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
     case 'link':
       return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ color: '#F472B6' }}><path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
     case 'bot':

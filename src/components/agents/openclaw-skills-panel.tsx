@@ -23,6 +23,7 @@ export function OpenClawSkillsPanel({ agentId, initialMode = 'all', initialAllow
   const [saving, setSaving] = useState(false)
   const [installTarget, setInstallTarget] = useState<OpenClawSkillEntry | null>(null)
   const [removeTarget, setRemoveTarget] = useState<OpenClawSkillEntry | null>(null)
+  const [readinessFilter, setReadinessFilter] = useState<'all' | 'ready' | 'needs-setup'>('all')
 
   const loadSkills = useCallback(async () => {
     setLoading(true)
@@ -67,15 +68,24 @@ export function OpenClawSkillsPanel({ agentId, initialMode = 'all', initialAllow
     }
   }
 
+  const readyCount = skills.filter((s) => s.eligible).length
+  const needsSetupCount = skills.filter((s) => !s.eligible).length
+
+  const filteredSkills = readinessFilter === 'all'
+    ? skills
+    : readinessFilter === 'ready'
+      ? skills.filter((s) => s.eligible)
+      : skills.filter((s) => !s.eligible)
+
   const grouped = SOURCE_ORDER
     .map((source) => ({
       source,
-      items: skills.filter((s) => s.source === source),
+      items: filteredSkills.filter((s) => s.source === source),
     }))
     .filter((g) => g.items.length > 0)
 
   if (loading) {
-    return <div className="flex items-center justify-center h-32 text-[13px] text-text-3/50">Loading skills...</div>
+    return <div className="flex items-center justify-center gap-2 h-32 text-[13px] text-text-3/50"><span className="w-3 h-3 rounded-full border-2 border-text-3/20 border-t-accent-bright animate-spin" />Loading skills...</div>
   }
 
   if (error) {
@@ -90,11 +100,30 @@ export function OpenClawSkillsPanel({ agentId, initialMode = 'all', initialAllow
           <button
             key={m}
             onClick={() => handleModeChange(m)}
-            className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 capitalize cursor-pointer transition-all
+            className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 capitalize cursor-pointer transition-all focus-visible:ring-1 focus-visible:ring-accent-bright/50
               ${mode === m ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
             style={{ fontFamily: 'inherit' }}
           >
             {m === 'selected' ? 'Custom' : m}
+          </button>
+        ))}
+      </div>
+
+      {/* Readiness filter */}
+      <div className="flex gap-1">
+        {([
+          { key: 'all' as const, label: `All (${skills.length})` },
+          { key: 'ready' as const, label: `Ready (${readyCount})` },
+          { key: 'needs-setup' as const, label: `Needs Setup (${needsSetupCount})` },
+        ]).map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setReadinessFilter(f.key)}
+            className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 cursor-pointer transition-all focus-visible:ring-1 focus-visible:ring-accent-bright/50
+              ${readinessFilter === f.key ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
+            style={{ fontFamily: 'inherit' }}
+          >
+            {f.label}
           </button>
         ))}
       </div>

@@ -12,6 +12,11 @@ import { CronJobForm } from './cron-job-form'
 
 interface Props {
   agent: Agent
+  onEditAgent?: () => void
+  onClearHistory?: () => void
+  onDeleteAgent?: () => void
+  onDeleteChat?: () => void
+  isMainChat?: boolean
 }
 
 type InspectorTab = 'overview' | 'files' | 'skills' | 'automations' | 'advanced'
@@ -24,7 +29,7 @@ const TABS: { id: InspectorTab; label: string; openclawOnly?: boolean }[] = [
   { id: 'advanced', label: 'Advanced' },
 ]
 
-export function InspectorPanel({ agent }: Props) {
+export function InspectorPanel({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDeleteChat, isMainChat }: Props) {
   const inspectorTab = useAppStore((s) => s.inspectorTab)
   const setInspectorTab = useAppStore((s) => s.setInspectorTab)
   const setInspectorOpen = useAppStore((s) => s.setInspectorOpen)
@@ -52,7 +57,7 @@ export function InspectorPanel({ agent }: Props) {
   const agentSchedules = Object.values(schedules).filter((s) => s.agentId === agent.id)
 
   return (
-    <div className="w-[400px] shrink-0 border-l border-white/[0.06] bg-[#0d0f1a] flex flex-col h-full overflow-hidden fade-up-delay">
+    <div className="w-[400px] shrink-0 border-l border-white/[0.06] bg-bg flex flex-col h-full overflow-hidden fade-up-delay">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] shrink-0">
         <h3 className="font-display text-[14px] font-600 text-text truncate">{agent.name}</h3>
@@ -69,12 +74,14 @@ export function InspectorPanel({ agent }: Props) {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-0.5 px-3 pt-2 pb-1 overflow-x-auto shrink-0">
+      <div className="flex gap-0.5 px-3 pt-2 pb-1 overflow-x-auto shrink-0" role="tablist">
         {visibleTabs.map((tab) => (
           <button
             key={tab.id}
+            role="tab"
             onClick={() => setInspectorTab(tab.id)}
-            className={`px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 cursor-pointer transition-all whitespace-nowrap
+            aria-selected={inspectorTab === tab.id}
+            className={`px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 cursor-pointer transition-all whitespace-nowrap focus-visible:ring-1 focus-visible:ring-accent-bright/50
               ${inspectorTab === tab.id
                 ? 'bg-accent-soft text-accent-bright'
                 : 'bg-transparent text-text-3 hover:text-text-2'}`}
@@ -88,7 +95,14 @@ export function InspectorPanel({ agent }: Props) {
       {/* Tab content */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         {inspectorTab === 'overview' && (
-          <OverviewTab agent={agent} />
+          <OverviewTab
+            agent={agent}
+            onEditAgent={onEditAgent}
+            onClearHistory={onClearHistory}
+            onDeleteAgent={onDeleteAgent}
+            onDeleteChat={onDeleteChat}
+            isMainChat={isMainChat}
+          />
         )}
         {inspectorTab === 'files' && isOpenClaw && (
           <AgentFilesEditor agentId={agent.id} />
@@ -117,7 +131,16 @@ export function InspectorPanel({ agent }: Props) {
   )
 }
 
-function OverviewTab({ agent }: { agent: Agent }) {
+interface OverviewTabProps {
+  agent: Agent
+  onEditAgent?: () => void
+  onClearHistory?: () => void
+  onDeleteAgent?: () => void
+  onDeleteChat?: () => void
+  isMainChat?: boolean
+}
+
+function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDeleteChat, isMainChat }: OverviewTabProps) {
   return (
     <div className="p-4 flex flex-col gap-4">
       <div>
@@ -159,6 +182,58 @@ function OverviewTab({ agent }: { agent: Agent }) {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Actions */}
+      {(onEditAgent || onClearHistory || onDeleteAgent || onDeleteChat) && (
+        <>
+          <div className="border-t border-white/[0.06] mt-2" />
+          <div className="flex flex-col gap-2">
+            {onEditAgent && (
+              <button
+                onClick={onEditAgent}
+                className="w-full px-3 py-2 rounded-[8px] text-[12px] font-600 text-accent-bright bg-accent-soft/50 border border-accent-bright/10 cursor-pointer transition-all hover:bg-accent-soft"
+                style={{ fontFamily: 'inherit' }}
+              >
+                Edit Agent
+              </button>
+            )}
+            {(onClearHistory || onDeleteAgent || onDeleteChat) && (
+              <>
+                <label className="block text-[11px] font-600 uppercase tracking-wider text-red-400/50 mt-2">Danger Zone</label>
+                <div className="flex flex-col gap-1.5">
+                  {onClearHistory && (
+                    <button
+                      onClick={onClearHistory}
+                      className="w-full px-3 py-2 rounded-[8px] text-[12px] font-600 text-red-400/80 bg-red-400/[0.04] border border-red-400/[0.08] cursor-pointer transition-all hover:bg-red-400/[0.08] hover:text-red-400 text-left"
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      Clear History
+                    </button>
+                  )}
+                  {onDeleteAgent && !isMainChat && (
+                    <button
+                      onClick={onDeleteAgent}
+                      className="w-full px-3 py-2 rounded-[8px] text-[12px] font-600 text-red-400/80 bg-red-400/[0.04] border border-red-400/[0.08] cursor-pointer transition-all hover:bg-red-400/[0.08] hover:text-red-400 text-left"
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      Delete Agent
+                    </button>
+                  )}
+                  {onDeleteChat && !isMainChat && (
+                    <button
+                      onClick={onDeleteChat}
+                      className="w-full px-3 py-2 rounded-[8px] text-[12px] font-600 text-red-400/80 bg-red-400/[0.04] border border-red-400/[0.08] cursor-pointer transition-all hover:bg-red-400/[0.08] hover:text-red-400 text-left"
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      Delete Chat
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </>
       )}
     </div>
   )

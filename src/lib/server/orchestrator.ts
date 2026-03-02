@@ -6,6 +6,7 @@ import {
 import { WORKSPACE_DIR } from './data-dir'
 import { loadRuntimeSettings, getLegacyOrchestratorMaxTurns } from './runtime-settings'
 import { getMemoryDb } from './memory-db'
+import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import { getProvider } from '../providers'
 import type { Agent } from '@/types'
 
@@ -109,6 +110,7 @@ async function executeOrchestratorLegacy(
   const settings = loadSettings()
   const promptParts: string[] = []
   if (settings.userPrompt) promptParts.push(settings.userPrompt)
+  promptParts.push(buildCurrentDateTimePromptContext())
   if (orchestrator.soul) promptParts.push(orchestrator.soul)
   if (orchestrator.systemPrompt) promptParts.push(orchestrator.systemPrompt)
   if (orchestrator.skillIds?.length) {
@@ -308,8 +310,8 @@ async function executeSubTask(
 
 export async function callProvider(
   agent: Agent,
-  systemPrompt: string,
-  history: { role: string; text: string }[],
+  systemPrompt?: string,
+  history: { role: string; text: string }[] = [],
 ): Promise<string> {
   const provider = getProvider(agent.provider)
   if (!provider) throw new Error(`Unknown provider: ${agent.provider}`)
@@ -346,6 +348,7 @@ export async function callProvider(
     session: mockSession,
     message: history[history.length - 1].text,
     apiKey,
+    systemPrompt,
     write: (data: string) => {
       // Parse SSE data to extract text
       if (data.startsWith('data: ')) {

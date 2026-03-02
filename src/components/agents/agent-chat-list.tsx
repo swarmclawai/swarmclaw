@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
+import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { fetchMessages } from '@/lib/sessions'
 import type { Agent, Session } from '@/types'
 import { AgentAvatar } from './agent-avatar'
@@ -28,6 +29,8 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
   const streamingSessionId = useChatStore((s) => s.streamingSessionId)
   const chatFilter = useAppStore((s) => s.chatFilter ?? 'all')
   const setChatFilter = useAppStore((s) => s.setChatFilter)
+  const chatrooms = useChatroomStore((s) => s.chatrooms)
+  const chatroomStreaming = useChatroomStore((s) => s.streamingAgents)
   const [search, setSearch] = useState('')
 
   // FLIP animation refs
@@ -57,6 +60,21 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
       })
   }, [agents, sessions, search])
 
+  // Compute agents active in chatrooms (message in last 30min or currently streaming)
+  const chatroomActiveAgentIds = useMemo(() => {
+    const set = new Set<string>()
+    const cutoff = Date.now() - 30 * 60 * 1000
+    for (const chatroom of Object.values(chatrooms)) {
+      for (let i = chatroom.messages.length - 1; i >= 0; i--) {
+        const msg = chatroom.messages[i]
+        if (msg.time < cutoff) break
+        if (msg.role === 'assistant' && msg.senderId !== 'user') set.add(msg.senderId)
+      }
+    }
+    for (const agentId of chatroomStreaming.keys()) set.add(agentId)
+    return set
+  }, [chatrooms, chatroomStreaming])
+
   // Compute running tasks per agent
   const runningAgentIds = useMemo(() => {
     const set = new Set<string>()
@@ -74,12 +92,13 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
       const threadSession = a.threadSessionId ? sessions[a.threadSessionId] as Session | undefined : undefined
       const isRunning = runningAgentIds.has(a.id) || (threadSession?.active ?? false)
       const isStreaming = streamingSessionId === a.threadSessionId
-      if (chatFilter === 'active') return isRunning || isStreaming
+      const isChatroomActive = chatroomActiveAgentIds.has(a.id)
+      if (chatFilter === 'active') return isRunning || isStreaming || isChatroomActive
       // 'recent' — activity within 24h
       const lastActive = threadSession?.lastActiveAt || a.updatedAt
       return now - lastActive < 86_400_000
     })
-  }, [sortedAgents, chatFilter, sessions, runningAgentIds, streamingSessionId])
+  }, [sortedAgents, chatFilter, sessions, runningAgentIds, streamingSessionId, chatroomActiveAgentIds])
 
   // FLIP: animate row position changes
   useLayoutEffect(() => {
@@ -109,7 +128,9 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
       try {
         const msgs = await fetchMessages(state.currentSessionId)
         setMessages(msgs)
-      } catch { /* ignore */ }
+      } catch (err: unknown) {
+        console.error('[agent-chat-list] Failed to load messages:', err instanceof Error ? err.message : String(err))
+      }
     }
     onSelect?.()
     // Delay scroll so React renders the new messages first
@@ -186,7 +207,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
           const isActive = currentAgentId === agent.id
           const heartbeatOn = agent.heartbeatEnabled === true && (agent.tools?.length ?? 0) > 0
           const recentlyActive = (threadSession?.lastActiveAt ?? 0) > Date.now() - 30 * 60 * 1000
-          const isWorking = runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive
+          const isWorking = runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(agent.id)
           const isTyping = streamingSessionId === agent.threadSessionId
           const preview = lastMsg?.text?.slice(0, 80)?.replace(/\n/g, ' ') || ''
 
@@ -194,7 +215,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
             <div
               key={agent.id}
               ref={(el) => setRowRef(agent.id, el)}
-              className={`group/row relative w-full text-left py-3 px-3.5 rounded-[12px] cursor-pointer transition-all duration-150 border-none
+              className={`group/row relative w-full text-left py-3 px-4 rounded-[12px] cursor-pointer transition-all duration-150 border-none
                 ${isActive
                   ? 'bg-accent-soft/80 border border-accent-bright/20'
                   : 'bg-transparent hover:bg-white/[0.02]'}`}
@@ -213,7 +234,9 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
                       {agent.name}
                     </span>
                     <span className="text-[10px] text-text-3/60 font-mono shrink-0">
-                      {agent.model ? agent.model.split('/').pop()?.split(':')[0] : agent.provider}
+                      {(threadSession?.model || agent.model)
+                        ? (threadSession?.model || agent.model)!.split('/').pop()?.split(':')[0]
+                        : agent.provider}
                     </span>
                     {/* Set as default agent */}
                     {(() => {

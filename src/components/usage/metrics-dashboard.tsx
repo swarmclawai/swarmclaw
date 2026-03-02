@@ -57,6 +57,13 @@ function formatCost(n: number): string {
   return `$${n.toFixed(4)}`
 }
 
+function formatDuration(ms: number): string {
+  if (!ms) return '—'
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+  if (ms < 3600_000) return `${Math.round(ms / 60_000)}m`
+  return `${(ms / 3600_000).toFixed(1)}h`
+}
+
 function formatBucketLabel(bucket: string, range: Range): string {
   if (range === '24h') {
     // "2026-03-01T14" → "14:00"
@@ -128,7 +135,24 @@ export function MetricsDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // --- Task metrics ---
+  const [taskMetrics, setTaskMetrics] = useState<{
+    wip: number; completedCount: number; avgCycleMs: number
+    velocity: { bucket: string; count: number }[]
+    byAgent: { agentName: string; completed: number; failed: number }[]
+  } | null>(null)
+
+  const loadTaskMetrics = useCallback(async () => {
+    try {
+      const res = await api<typeof taskMetrics>('GET', `/tasks/metrics?range=${range}`)
+      setTaskMetrics(res)
+    } catch { /* ignore */ }
+  }, [range])
+
+  useEffect(() => { loadTaskMetrics() }, [loadTaskMetrics])
+
   useWs('usage', loadData, 30_000)
+  useWs('tasks', loadTaskMetrics, 15_000)
 
   const completionRate = computeCompletionRate(tasks)
 
@@ -154,20 +178,20 @@ export function MetricsDashboard() {
 
   const tooltipStyle = {
     contentStyle: {
-      background: '#1a1a2e',
+      background: 'var(--color-surface)',
       border: '1px solid rgba(255,255,255,0.08)',
       borderRadius: 8,
       fontSize: 12,
-      color: '#e0e0e0',
+      color: 'var(--color-text)',
     },
-    itemStyle: { color: '#e0e0e0' },
-    labelStyle: { color: '#a0a0b0' },
+    itemStyle: { color: 'var(--color-text)' },
+    labelStyle: { color: 'var(--color-text-2)' },
   }
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-y-auto">
       <div className="px-8 pt-6 pb-4 shrink-0">
-        <h1 className="font-display text-[28px] font-800 tracking-[-0.03em]">Usage</h1>
+        <h1 className="font-display text-[28px] font-700 tracking-[-0.03em]">Usage</h1>
         <p className="text-[13px] text-text-3 mt-1">Token usage, cost tracking &amp; agent performance</p>
       </div>
 
@@ -192,7 +216,10 @@ export function MetricsDashboard() {
 
       {loading && !data ? (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-text-3 text-[13px]">Loading metrics…</p>
+          <div className="flex items-center gap-3">
+            <span className="w-5 h-5 rounded-full border-2 border-text-3/20 border-t-accent-bright animate-spin" />
+            <span className="text-[14px] text-text-3">Loading metrics...</span>
+          </div>
         </div>
       ) : (
         <div className="px-8 pb-8 space-y-6">
@@ -275,6 +302,63 @@ export function MetricsDashboard() {
               )}
             </ChartCard>
           </div>
+
+          {/* Task KPIs */}
+          {taskMetrics && (
+            <>
+              <h3 className="font-display text-[16px] font-700 text-text mt-2">Task Performance</h3>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard label="Tasks Completed" value={String(taskMetrics.completedCount)} />
+                <StatCard label="Avg Cycle Time" value={formatDuration(taskMetrics.avgCycleMs)} />
+                <StatCard label="WIP" value={String(taskMetrics.wip)} />
+                <StatCard label="Completion Rate" value={`${completionRate}%`} />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <ChartCard title="Task Velocity">
+                  {taskMetrics.velocity.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={280}>
+                      <BarChart data={taskMetrics.velocity.map((v) => ({ ...v, label: formatBucketLabel(v.bucket, range) }))} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis dataKey="label" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <Tooltip {...tooltipStyle} formatter={(value: number | undefined) => [value ?? 0, 'Completed']} />
+                        <Bar dataKey="count" fill="#34D399" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <EmptyChart />
+                  )}
+                </ChartCard>
+
+                <ChartCard title="Tasks by Agent">
+                  {taskMetrics.byAgent.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={280}>
+                      <BarChart
+                        data={taskMetrics.byAgent.slice(0, 8).map((a) => ({
+                          name: a.agentName.length > 12 ? a.agentName.slice(0, 12) + '…' : a.agentName,
+                          completed: a.completed,
+                          failed: a.failed,
+                        }))}
+                        margin={{ top: 5, right: 20, bottom: 5, left: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis dataKey="name" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <Tooltip {...tooltipStyle} />
+                        <Bar dataKey="completed" fill="#34D399" radius={[4, 4, 0, 0]} stackId="a" name="Completed" />
+                        <Bar dataKey="failed" fill="#F87171" radius={[4, 4, 0, 0]} stackId="a" name="Failed" />
+                        <Legend verticalAlign="bottom" iconType="circle" iconSize={8}
+                          formatter={(value: string) => <span style={{ color: '#a0a0b0', fontSize: 11 }}>{value}</span>} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <EmptyChart />
+                  )}
+                </ChartCard>
+              </div>
+            </>
+          )}
 
           {/* Provider Health */}
           {data?.providerHealth && Object.keys(data.providerHealth).length > 0 && (

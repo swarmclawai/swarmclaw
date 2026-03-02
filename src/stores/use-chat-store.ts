@@ -103,6 +103,15 @@ interface ChatState {
   addQueuedMessage: (text: string) => void
   removeQueuedMessage: (index: number) => void
   shiftQueuedMessage: () => string | undefined
+
+  // Context clearing
+  clearContext: () => Promise<void>
+
+  // Pagination
+  hasMoreMessages: boolean
+  loadingMore: boolean
+  totalMessages: number
+  loadMoreMessages: () => Promise<void>
 }
 
 // Module-level cadence interval (not in state to avoid re-renders)
@@ -130,7 +139,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   displayText: '',
   agentStatus: null,
   messages: [],
-  setMessages: (msgs) => set({ messages: msgs, toolEvents: [] }),
+  setMessages: (msgs) => set({ messages: msgs, toolEvents: [], hasMoreMessages: false, totalMessages: msgs.length }),
   toolEvents: [],
   clearToolEvents: () => set({ toolEvents: [] }),
   lastUsage: null,
@@ -276,7 +285,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set({ displayText: fullText })
         }
       } else if (event.t === 'md') {
-        // Parse metadata events (usage/run/queue). Ignore unknown keys.
+        // Parse metadata events (usage/run/queue/thinking). Ignore unknown keys.
         try {
           const meta = JSON.parse(event.text || '{}')
           if (meta.usage) {
@@ -284,6 +293,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
           if (meta.suggestions) {
             suggestions = meta.suggestions
+          }
+          if (meta.thinking && typeof meta.thinking === 'string') {
+            set({ thinkingText: meta.thinking })
           }
         } catch {
           // Ignore non-JSON metadata payloads.
@@ -349,11 +361,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (get().soundEnabled && soundFiredStart) playStreamEnd()
     if (fullText.trim()) {
       const currentToolEvents = get().toolEvents
+      const thinkingSnapshot = get().thinkingText || undefined
       const assistantMsg: Message = {
         role: 'assistant',
         text: fullText.trim(),
         time: Date.now(),
         kind: 'chat',
+        thinking: thinkingSnapshot,
         toolEvents: currentToolEvents.length ? currentToolEvents.map(e => ({
           name: e.name,
           input: e.input,
@@ -523,6 +537,55 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     set((s) => ({ messages: [...s.messages, assistantMsg] }))
     useAppStore.getState().loadSessions()
+  },
+
+  clearContext: async () => {
+    const sessionId = useAppStore.getState().currentSessionId
+    if (!sessionId || get().streaming) return
+    const marker: Message = { role: 'user', text: '', kind: 'context-clear', time: Date.now() }
+    set((s) => ({ messages: [...s.messages, marker] }))
+    try {
+      const key = getStoredAccessKey()
+      await fetch(`/api/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(key ? { 'X-Access-Key': key } : {}) },
+        body: JSON.stringify({ kind: 'context-clear' }),
+      })
+    } catch {
+      // Ignore — marker is already in local state
+    }
+  },
+
+  hasMoreMessages: false,
+  loadingMore: false,
+  totalMessages: 0,
+  loadMoreMessages: async () => {
+    const { messages, loadingMore, hasMoreMessages, totalMessages } = get()
+    if (loadingMore || !hasMoreMessages) return
+    const sessionId = useAppStore.getState().currentSessionId
+    if (!sessionId) return
+    set({ loadingMore: true })
+    try {
+      const key = getStoredAccessKey()
+      // Find the earliest message's original index (startIndex tracked on initial load)
+      const currentStartIndex = totalMessages - messages.length
+      const res = await fetch(`/api/sessions/${sessionId}/messages?limit=100&before=${currentStartIndex}`, {
+        headers: key ? { 'X-Access-Key': key } : undefined,
+      })
+      if (res.ok) {
+        const data = await res.json() as { messages: Message[]; total: number; hasMore: boolean; startIndex: number }
+        set((s) => ({
+          messages: [...data.messages, ...s.messages],
+          hasMoreMessages: data.hasMore,
+          totalMessages: data.total,
+          loadingMore: false,
+        }))
+      } else {
+        set({ loadingMore: false })
+      }
+    } catch {
+      set({ loadingMore: false })
+    }
   },
 
   stopStreaming: async () => {

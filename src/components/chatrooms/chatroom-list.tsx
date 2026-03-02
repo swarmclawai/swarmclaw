@@ -24,6 +24,13 @@ export function ChatroomList() {
   useEffect(() => { refresh() }, [refresh])
   useWs('chatrooms', refresh, 15_000)
 
+  // Auto-select the latest chatroom when none is selected
+  useEffect(() => {
+    if (currentChatroomId) return
+    const latest = Object.values(chatrooms).sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    if (latest) setCurrentChatroom(latest.id)
+  }, [chatrooms, currentChatroomId, setCurrentChatroom])
+
   const [filter, setFilter] = useState<'all' | 'active' | 'recent'>('all')
 
   const sorted = useMemo(() =>
@@ -63,7 +70,7 @@ export function ChatroomList() {
                   type="button"
                   onClick={() => setFilter(f)}
                   data-active={filter === f || undefined}
-                  className="px-3 py-1.5 rounded-[8px] text-[11px] font-600 border-none cursor-pointer transition-all
+                  className="px-3 py-1.5 rounded-[8px] text-[11px] font-600 border-none cursor-pointer transition-all focus-visible:ring-1 focus-visible:ring-accent-bright/50
                     data-[active]:bg-accent-soft data-[active]:text-accent-bright
                     bg-transparent text-text-3 hover:text-text-2 hover:bg-white/[0.04]"
                 >

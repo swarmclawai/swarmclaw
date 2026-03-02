@@ -14,6 +14,7 @@ import { AgentHoverCard } from './agent-hover-card'
 import { ChatroomToolRequestBanner } from './chatroom-tool-request-banner'
 import { isStructuredMarkdown } from '@/components/chat/markdown-utils'
 import { TransferAgentPicker } from '@/components/chat/transfer-agent-picker'
+import { ConnectorPlatformIcon, CONNECTOR_PLATFORM_META } from '@/components/shared/connector-platform-icon'
 import type { ChatroomMessage, Agent } from '@/types'
 
 interface Props {
@@ -188,13 +189,17 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
           <div className="flex items-baseline gap-2 mb-0.5">
             {!isUser && agent ? (
               <AgentHoverCard agent={agent}>
-                <span className="text-[13px] font-600 text-accent-bright hover:underline cursor-pointer">
+                <span className="text-[13px] font-600 text-accent-bright hover:underline cursor-pointer flex items-center gap-1.5">
+                  {message.source && <ConnectorPlatformIcon platform={message.source.platform} size={12} />}
                   {message.senderName}
                 </span>
               </AgentHoverCard>
             ) : (
-              <span className="text-[13px] font-600 text-text">
-                {message.senderName}
+              <span className="text-[13px] font-600 text-text flex items-center gap-1.5">
+                {message.source && <ConnectorPlatformIcon platform={message.source.platform} size={12} />}
+                {isUser && message.source?.senderName
+                  ? `${message.source.senderName} via ${CONNECTOR_PLATFORM_META[message.source.platform]?.label || message.source.platform}`
+                  : message.senderName}
               </span>
             )}
             <span className="label-mono" title={new Date(message.time).toLocaleString()}>{formatRelativeTime(message.time)}</span>

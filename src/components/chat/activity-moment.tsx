@@ -11,6 +11,8 @@ const NOTABLE_TOOLS: Record<string, { label: string; color: string; icon: 'brain
   delegate_to_claude_code: { label: 'Delegated to Claude Code', color: '#38BDF8', icon: 'delegate' },
   delegate_to_codex_cli: { label: 'Delegated to Codex', color: '#38BDF8', icon: 'delegate' },
   delegate_to_opencode_cli: { label: 'Delegated to OpenCode', color: '#38BDF8', icon: 'delegate' },
+  delegate_to_agent: { label: 'Delegating task', color: '#6366F1', icon: 'delegate' },
+  check_delegation_status: { label: 'Checking delegation', color: '#6366F1', icon: 'delegate' },
   web_search: { label: 'Searched the web', color: '#22C55E', icon: 'search' },
   connector_message_tool: { label: 'Sent a message', color: '#F97316', icon: 'message' },
 }
@@ -23,6 +25,8 @@ function extractSnippet(toolName: string, toolInput: string): string | null {
     if (toolName === 'manage_tasks' && parsed.title) return parsed.title
     if (toolName === 'manage_schedules' && parsed.name) return parsed.name
     if (toolName === 'manage_agents' && parsed.name) return parsed.name
+    if (toolName === 'delegate_to_agent' && (parsed.agentName || parsed.agentId)) return parsed.agentName || parsed.agentId
+    if (toolName === 'check_delegation_status' && parsed.agentName) return parsed.agentName
     if (toolName.startsWith('delegate_to_') && parsed.task) return parsed.task
     if (toolName === 'web_search' && parsed.query) return parsed.query
     if (toolName === 'connector_message_tool' && parsed.to) return parsed.to
@@ -104,8 +108,8 @@ export function ActivityMoment({ toolName, toolInput, onDismiss }: Props) {
       <div
         className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] shadow-lg whitespace-nowrap"
         style={{
-          background: `${config.color}18`,
-          border: `1px solid ${config.color}30`,
+          background: 'var(--card)',
+          border: `1px solid ${config.color}40`,
         }}
       >
         <MomentIcon icon={config.icon} color={config.color} />
@@ -153,8 +157,8 @@ export function HeartbeatMoment({ onDismiss }: { onDismiss: () => void }) {
       <div
         className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] shadow-lg whitespace-nowrap"
         style={{
-          background: 'rgba(34,197,94,0.1)',
-          border: '1px solid rgba(34,197,94,0.2)',
+          background: 'var(--card)',
+          border: '1px solid rgba(34,197,94,0.3)',
         }}
       >
         <svg width="11" height="11" viewBox="0 0 24 24" fill="#22c55e">

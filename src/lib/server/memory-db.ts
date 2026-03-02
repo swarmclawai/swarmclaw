@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
+import { createHash } from 'crypto'
 import { genId } from '@/lib/id'
 import type { MemoryEntry, FileReference, MemoryImage, MemoryReference } from '@/types'
 import { getEmbedding, cosineSimilarity, serializeEmbedding, deserializeEmbedding } from './embeddings'
@@ -31,6 +32,11 @@ export const MEMORY_FTS_STOP_WORDS = new Set([
   'to', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'who', 'with',
   'you', 'your',
 ])
+
+function computeContentHash(category: string, content: string): string {
+  const normalized = `${category}|${content.toLowerCase().trim()}`
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 16)
+}
 
 function shouldSkipSearchQuery(input: string): boolean {
   const text = String(input || '').toLowerCase().trim()
@@ -357,12 +363,19 @@ function initDb() {
     'image TEXT',
     'pinned INTEGER DEFAULT 0',
     'sharedWith TEXT',
+    'accessCount INTEGER DEFAULT 0',
+    'lastAccessedAt INTEGER DEFAULT 0',
+    'contentHash TEXT',
+    'reinforcementCount INTEGER DEFAULT 0',
   ]) {
     try { db.exec(`ALTER TABLE memories ADD COLUMN ${col}`) } catch { /* already exists */ }
   }
 
   // Partial index for fast pinned-memory lookups
   db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(agentId, updatedAt DESC) WHERE pinned = 1`)
+
+  // Index for content hash dedup lookups
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_content_hash ON memories(contentHash) WHERE contentHash IS NOT NULL`)
 
   // FTS5 virtual table for full-text search
   db.exec(`
@@ -447,6 +460,24 @@ function initDb() {
   })
   migrateLegacyRows()
 
+  // Backfill contentHash for existing rows that don't have one yet
+  const unhashed = (db.prepare(`SELECT COUNT(*) as cnt FROM memories WHERE contentHash IS NULL`).get() as { cnt: number }).cnt
+  if (unhashed > 0) {
+    const backfillRows = db.prepare(`SELECT id, category, content FROM memories WHERE contentHash IS NULL`).all() as Array<{ id: string; category: string; content: string }>
+    const backfillStmt = db.prepare(`UPDATE memories SET contentHash = ? WHERE id = ?`)
+    const BATCH = 500
+    for (let i = 0; i < backfillRows.length; i += BATCH) {
+      const batch = backfillRows.slice(i, i + BATCH)
+      const tx = db.transaction(() => {
+        for (const r of batch) {
+          backfillStmt.run(computeContentHash(r.category, r.content), r.id)
+        }
+      })
+      tx()
+    }
+    console.log(`[memory-db] Backfilled contentHash for ${backfillRows.length} memory row(s)`)
+  }
+
   // Fresh installs now start with an empty memory graph.
   // Durable memories are created only from actual user/agent interactions.
 
@@ -454,9 +485,9 @@ function initDb() {
     insert: db.prepare(`
       INSERT INTO memories (
         id, agentId, sessionId, category, title, content, metadata, embedding,
-        "references", filePaths, image, imagePath, linkedMemoryIds, pinned, sharedWith, createdAt, updatedAt
+        "references", filePaths, image, imagePath, linkedMemoryIds, pinned, sharedWith, contentHash, createdAt, updatedAt
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     update: db.prepare(`
       UPDATE memories
@@ -511,6 +542,24 @@ function initDb() {
       ORDER BY updatedAt DESC
       LIMIT 1
     `),
+    findByContentHash: db.prepare(`
+      SELECT * FROM memories
+      WHERE contentHash = ? AND agentId = ?
+      ORDER BY updatedAt DESC
+      LIMIT 1
+    `),
+    findByContentHashShared: db.prepare(`
+      SELECT * FROM memories
+      WHERE contentHash = ? AND agentId IS NULL
+      ORDER BY updatedAt DESC
+      LIMIT 1
+    `),
+    reinforceMemory: db.prepare(`
+      UPDATE memories SET reinforcementCount = reinforcementCount + 1, updatedAt = ? WHERE id = ?
+    `),
+    bumpAccessCount: db.prepare(`
+      UPDATE memories SET accessCount = accessCount + 1, lastAccessedAt = ? WHERE id = ?
+    `),
   }
 
   function rowToEntry(row: Record<string, unknown>): MemoryEntry {
@@ -535,6 +584,10 @@ function initDb() {
       linkedMemoryIds: linkedMemoryIds.length ? linkedMemoryIds : undefined,
       pinned: row.pinned === 1,
       sharedWith: parseJsonSafe<string[]>(row.sharedWith, []).length ? parseJsonSafe<string[]>(row.sharedWith, []) : undefined,
+      accessCount: typeof row.accessCount === 'number' ? row.accessCount : 0,
+      lastAccessedAt: typeof row.lastAccessedAt === 'number' ? row.lastAccessedAt : 0,
+      contentHash: typeof row.contentHash === 'string' ? row.contentHash : undefined,
+      reinforcementCount: typeof row.reinforcementCount === 'number' ? row.reinforcementCount : 0,
       createdAt: typeof row.createdAt === 'number' ? row.createdAt : Date.now(),
       updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : Date.now(),
     }
@@ -574,6 +627,17 @@ function initDb() {
       const category = data.category || 'note'
       const title = data.title || 'Untitled'
       const content = data.content || ''
+      const contentHash = computeContentHash(category, content)
+
+      // Content-hash dedup: if same content already exists for this agent, reinforce instead of duplicating
+      const agentId = data.agentId || null
+      const existingByHash = agentId
+        ? stmts.findByContentHash.get(contentHash, agentId) as Record<string, unknown> | undefined
+        : stmts.findByContentHashShared.get(contentHash) as Record<string, unknown> | undefined
+      if (existingByHash) {
+        stmts.reinforceMemory.run(now, existingByHash.id)
+        return rowToEntry({ ...existingByHash, reinforcementCount: ((existingByHash.reinforcementCount as number) || 0) + 1, updatedAt: now })
+      }
 
       // Guard against exact duplicate memory spam for the same session/category.
       if (sessionId) {
@@ -583,7 +647,7 @@ function initDb() {
       const pinned = data.pinned ? 1 : 0
       const sharedWith = Array.isArray(data.sharedWith) && data.sharedWith.length ? JSON.stringify(data.sharedWith) : null
       stmts.insert.run(
-        id, data.agentId || null, sessionId,
+        id, agentId, sessionId,
         category, title, content,
         data.metadata ? JSON.stringify(data.metadata) : null,
         null, // embedding computed async
@@ -594,6 +658,7 @@ function initDb() {
         linkedMemoryIds.length ? JSON.stringify(linkedMemoryIds) : null,
         pinned,
         sharedWith,
+        contentHash,
         now, now,
       )
       // Compute embedding in background (fire-and-forget)
@@ -623,6 +688,10 @@ function initDb() {
         image,
         imagePath: image?.path || null,
         linkedMemoryIds,
+        accessCount: 0,
+        lastAccessedAt: 0,
+        contentHash,
+        reinforcementCount: 0,
         createdAt: now,
         updatedAt: now,
       }
@@ -699,6 +768,10 @@ function initDb() {
     get(id: string): MemoryEntry | null {
       const row = stmts.getById.get(id) as Record<string, unknown> | undefined
       if (!row) return null
+      // Bump access count (non-blocking)
+      setTimeout(() => {
+        try { stmts.bumpAccessCount.run(Date.now(), id) } catch { /* best-effort */ }
+      }, 0)
       return rowToEntry(row)
     },
 
@@ -791,6 +864,7 @@ function initDb() {
         : []
 
       // Attempt vector search (synchronous — uses cached embedding if available)
+      const vectorSimilarityScores = new Map<string, number>()
       let vectorResults: MemoryEntry[] = []
       try {
         const queryEmbedding = getEmbeddingSync(query)
@@ -809,13 +883,17 @@ function initDb() {
             .sort((a, b) => b.score - a.score)
             .slice(0, 20)
 
-          vectorResults = scored.map((s) => rowToEntry(s.row))
+          vectorResults = scored.map((s) => {
+            const entry = rowToEntry(s.row)
+            vectorSimilarityScores.set(entry.id, s.score)
+            return entry
+          })
         }
       } catch {
         // Vector search unavailable, use FTS only
       }
 
-      // Merge: deduplicate by id, FTS results first then vector-only
+      // Merge: deduplicate by id
       const seen = new Set<string>()
       const merged: MemoryEntry[] = []
       for (const entry of [...ftsResults, ...vectorResults]) {
@@ -824,7 +902,34 @@ function initDb() {
           merged.push(entry)
         }
       }
-      const out = merged.slice(0, MAX_MERGED_RESULTS)
+
+      // Apply salience scoring: similarity * recencyDecay * reinforcement * pinnedBoost
+      const now = Date.now()
+      const HALF_LIFE_DAYS = 30
+      const salienceScored = merged.map((entry) => {
+        const similarity = vectorSimilarityScores.get(entry.id) ?? 0.5
+        const daysSinceAccess = (now - (entry.lastAccessedAt || entry.updatedAt)) / 86_400_000
+        const recencyDecay = Math.exp(-0.693 * daysSinceAccess / HALF_LIFE_DAYS)
+        const reinforcement = Math.log((entry.reinforcementCount || 0) + 1) + 1
+        const pinnedBoost = entry.pinned ? 1.5 : 1.0
+        const salience = similarity * recencyDecay * reinforcement * pinnedBoost
+        return { entry, salience }
+      })
+      salienceScored.sort((a, b) => b.salience - a.salience)
+
+      const out = salienceScored.slice(0, MAX_MERGED_RESULTS).map((s) => s.entry)
+
+      // Bump access counts for returned results (non-blocking)
+      if (out.length) {
+        const returnedIds = out.map((e) => e.id)
+        setTimeout(() => {
+          try {
+            const ts = Date.now()
+            for (const mid of returnedIds) stmts.bumpAccessCount.run(ts, mid)
+          } catch { /* best-effort */ }
+        }, 0)
+      }
+
       const elapsed = Date.now() - startedAt
       if (elapsed > 1200) {
         console.warn(
@@ -965,9 +1070,32 @@ function initDb() {
       const pruneWorking = options.pruneWorking !== false
       const cutoff = Date.now() - Math.max(1, Math.min(24 * 365, Math.trunc(options.ttlHours || 24))) * 3600_000
 
+      // Hash-based dedup: group by contentHash + agentId, keep the one with highest reinforcementCount
+      if (dedupe && toDelete.size < deleteBudget) {
+        const hashGroups = new Map<string, MemoryEntry[]>()
+        for (const row of rows) {
+          if (!row.contentHash || toDelete.has(row.id)) continue
+          const groupKey = `${row.agentId || ''}|${row.contentHash}`
+          const group = hashGroups.get(groupKey)
+          if (group) group.push(row)
+          else hashGroups.set(groupKey, [row])
+        }
+        for (const group of hashGroups.values()) {
+          if (group.length <= 1) continue
+          group.sort((a, b) => (b.reinforcementCount || 0) - (a.reinforcementCount || 0))
+          for (let i = 1; i < group.length; i++) {
+            toDelete.add(group[i].id)
+            if (toDelete.size >= deleteBudget) break
+          }
+          if (toDelete.size >= deleteBudget) break
+        }
+      }
+
+      // Exact string-match dedup (legacy fallback for rows without contentHash)
       if (dedupe) {
         const seen = new Set<string>()
         for (const row of rows) {
+          if (toDelete.has(row.id)) continue
           const key = [
             row.agentId || '',
             row.sessionId || '',
