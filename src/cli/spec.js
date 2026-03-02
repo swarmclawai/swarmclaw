@@ -127,6 +127,15 @@ const COMMAND_GROUPS = {
       },
     },
   },
+  uploads: {
+    description: 'Manage uploaded artifacts',
+    commands: {
+      list: { description: 'List uploaded artifacts', method: 'GET', path: '/uploads' },
+      get: { description: 'Download uploaded artifact by filename', method: 'GET', path: '/uploads/:filename', params: ['filename'], binary: true },
+      delete: { description: 'Delete uploaded artifact by filename', method: 'DELETE', path: '/uploads/:filename', params: ['filename'] },
+      'delete-many': { description: 'Delete uploads by filter/body (filenames, olderThanDays, category, or all)', method: 'DELETE', path: '/uploads' },
+    },
+  },
   files: {
     description: 'Serve/open local files',
     commands: {
