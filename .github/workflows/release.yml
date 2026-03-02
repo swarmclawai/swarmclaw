@@ -39,7 +39,19 @@ jobs:
       - name: Build
         run: npm run build:ci
 
+      - name: Check npm version availability
+        id: npm_version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if npm view "@swarmclawai/swarmclaw@${VERSION}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Version ${VERSION} already exists on npm; publish step will be skipped."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
+        if: steps.npm_version.outputs.exists != 'true'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
