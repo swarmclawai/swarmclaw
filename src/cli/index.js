@@ -497,9 +497,12 @@ const COMMAND_GROUPS = [
   },
   {
     name: 'uploads',
-    description: 'Fetch uploaded artifacts',
+    description: 'Manage uploaded artifacts',
     commands: [
+      cmd('list', 'GET', '/uploads', 'List uploaded artifacts'),
       cmd('get', 'GET', '/uploads/:filename', 'Download uploaded artifact', { responseType: 'binary' }),
+      cmd('delete', 'DELETE', '/uploads/:filename', 'Delete uploaded artifact by filename'),
+      cmd('delete-many', 'DELETE', '/uploads', 'Delete uploads by filter/body (filenames, olderThanDays, category, or all)', { expectsJsonBody: true }),
     ],
   },
   {
