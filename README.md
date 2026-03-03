@@ -18,22 +18,6 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 ![Agent Builder](public/screenshots/agents.png)
 ![Task Board](public/screenshots/tasks.png)
 
-## Why SwarmClaw?
-
-OpenClaw is great for running a single agent. Once you are running multiple agents across different gateways, providers, and chat platforms, you need a control plane. SwarmClaw is that control plane.
-
-| OpenClaw pain point at scale | SwarmClaw solution |
-|-|-|
-| Managing multiple OpenClaw gateways from separate terminals | One dashboard for your full agent fleet |
-| Locked into a single LLM provider | 15 built-in providers |
-| No native multi-agent orchestration | LangGraph-powered multi-agent workflows |
-| No task queue or scheduling layer | Kanban task board + cron scheduling |
-| Manually bridging agents to chat platforms | 10+ chat connectors from the UI |
-| No cost visibility | Per-message token tracking and cost estimates |
-| Complex CLI-only setup | One-command install with guided setup wizard |
-
-SwarmClaw doesn't replace OpenClaw — it makes OpenClaw better. Think of it as the mission control for your agent fleet.
-
 ## OpenClaw Integration
 
 SwarmClaw was built for OpenClaw users who outgrew a single agent. Connect each SwarmClaw agent to a different OpenClaw gateway (one local, several remote) and manage the whole swarm from one UI.
