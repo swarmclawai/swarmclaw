@@ -5,6 +5,7 @@ import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { FilePreview } from '@/components/shared/file-preview'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { uploadImage } from '@/lib/upload'
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 import type { Agent } from '@/types'
 
 interface Props {
@@ -33,7 +34,7 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!chatroomId) return
-    const draft = localStorage.getItem(`sc_draft_cr_${chatroomId}`)
+    const draft = safeStorageGet(`sc_draft_cr_${chatroomId}`)
     setText(draft || '')
   }, [chatroomId])
 
@@ -42,8 +43,8 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
     if (!chatroomId) return
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
     draftTimerRef.current = setTimeout(() => {
-      if (text) localStorage.setItem(`sc_draft_cr_${chatroomId}`, text)
-      else localStorage.removeItem(`sc_draft_cr_${chatroomId}`)
+      if (text) safeStorageSet(`sc_draft_cr_${chatroomId}`, text)
+      else safeStorageRemove(`sc_draft_cr_${chatroomId}`)
     }, 300)
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current) }
   }, [text, chatroomId])
@@ -167,7 +168,7 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
       if ((text.trim() || pendingFiles.length) && !disabled) {
         onSend(text)
         setText('')
-        if (chatroomId) localStorage.removeItem(`sc_draft_cr_${chatroomId}`)
+        if (chatroomId) safeStorageRemove(`sc_draft_cr_${chatroomId}`)
         setShowMentions(false)
       }
     }
@@ -294,7 +295,7 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
             if ((text.trim() || pendingFiles.length) && !disabled) {
               onSend(text)
               setText('')
-              if (chatroomId) localStorage.removeItem(`sc_draft_cr_${chatroomId}`)
+              if (chatroomId) safeStorageRemove(`sc_draft_cr_${chatroomId}`)
               setShowMentions(false)
             }
           }}

@@ -58,6 +58,7 @@ import { ChatArea } from '@/components/chat/chat-area'
 import { CanvasPanel } from '@/components/canvas/canvas-panel'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { api } from '@/lib/api-client'
+import { safeStorageGet, safeStorageSet } from '@/lib/safe-storage'
 import type { AppView } from '@/types'
 
 const RAIL_EXPANDED_KEY = 'sc_rail_expanded'
@@ -118,9 +119,8 @@ export function AppLayout() {
   }, [handleShortcutKey])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (localStorage.getItem(STAR_NOTIFICATION_KEY)) return
-    localStorage.setItem(STAR_NOTIFICATION_KEY, '1')
+    if (safeStorageGet(STAR_NOTIFICATION_KEY)) return
+    safeStorageSet(STAR_NOTIFICATION_KEY, '1')
     void api('POST', '/notifications', {
       type: 'info',
       title: 'Enjoying SwarmClaw?',
@@ -143,15 +143,14 @@ export function AppLayout() {
   }, [appSettings.themeHue])
 
   const [railExpanded, setRailExpanded] = useState(() => {
-    if (typeof window === 'undefined') return true
-    const stored = localStorage.getItem(RAIL_EXPANDED_KEY)
+    const stored = safeStorageGet(RAIL_EXPANDED_KEY)
     return stored === null ? true : stored === 'true'
   })
 
   const toggleRail = () => {
     const next = !railExpanded
     setRailExpanded(next)
-    localStorage.setItem(RAIL_EXPANDED_KEY, String(next))
+    safeStorageSet(RAIL_EXPANDED_KEY, String(next))
   }
 
   const handleSwitchUser = () => {

@@ -265,6 +265,7 @@ export function extractMedia(output: string): { images: string[]; videos: string
   const videos: string[] = []
   const pdfs: { name: string; url: string }[] = []
   const files: { name: string; url: string }[] = []
+  const imageEntries: Array<{ filename: string; url: string }> = []
 
   // Extract ![alt](/api/uploads/filename) — detect videos vs images by extension
   let cleanText = output.replace(/!\[([^\]]*)\]\(\/api\/uploads\/([^)]+)\)/g, (_match, _alt, filename) => {
@@ -272,7 +273,7 @@ export function extractMedia(output: string): { images: string[]; videos: string
     if (/\.(mp4|webm|mov|avi)$/i.test(filename)) {
       videos.push(url)
     } else {
-      images.push(url)
+      imageEntries.push({ filename, url })
     }
     return ''
   })
@@ -290,6 +291,17 @@ export function extractMedia(output: string): { images: string[]; videos: string
 
   // Clean up leftover whitespace
   cleanText = cleanText.replace(/\n{3,}/g, '\n\n').trim()
+
+  // Playwright screenshot calls can surface both browser-*.png and screenshot-*.png
+  // for the same capture; prefer screenshot-* to avoid duplicate UI images.
+  const hasScreenshotVariant = imageEntries.some((entry) => /^screenshot-\d+\./i.test(entry.filename))
+  const seenImages = new Set<string>()
+  for (const entry of imageEntries) {
+    if (hasScreenshotVariant && /^browser-\d+\./i.test(entry.filename)) continue
+    if (seenImages.has(entry.url)) continue
+    seenImages.add(entry.url)
+    images.push(entry.url)
+  }
 
   return { images, videos, pdfs, files, cleanText }
 }

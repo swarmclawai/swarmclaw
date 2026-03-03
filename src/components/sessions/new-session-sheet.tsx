@@ -13,6 +13,7 @@ import { SheetFooter } from '@/components/shared/sheet-footer'
 import { inputClass } from '@/components/shared/form-styles'
 import type { ProviderType, SessionTool } from '@/types'
 import { SectionLabel } from '@/components/shared/section-label'
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 
 export function NewSessionSheet() {
   const open = useAppStore((s) => s.newSessionOpen)
@@ -64,7 +65,7 @@ export function NewSessionSheet() {
       setOllamaMode('local')
       // Auto-select last used agent, or default agent if no history
       const agentsList = Object.values(agents)
-      const lastAgentId = typeof window !== 'undefined' ? localStorage.getItem('swarmclaw-last-agent') : null
+      const lastAgentId = safeStorageGet('swarmclaw-last-agent')
       const lastAgent = lastAgentId ? agentsList.find((a) => a.id === lastAgentId) : null
       const defaultAgent = lastAgent || agentsList.find((a) => a.id === 'default') || agentsList[0]
       if (defaultAgent) {
@@ -153,9 +154,9 @@ export function NewSessionSheet() {
     )
     // Remember agent selection for next time
     if (selectedAgentId) {
-      localStorage.setItem('swarmclaw-last-agent', selectedAgentId)
+      safeStorageSet('swarmclaw-last-agent', selectedAgentId)
     } else {
-      localStorage.removeItem('swarmclaw-last-agent')
+      safeStorageRemove('swarmclaw-last-agent')
     }
     updateSessionInStore(s)
     setCurrentSession(s.id)

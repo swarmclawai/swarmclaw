@@ -8,6 +8,7 @@ import type { ToolBuildContext } from './context'
 import { spawnSync } from 'child_process'
 import { safePath, truncate, MAX_OUTPUT, findBinaryOnPath } from './context'
 import { getSearchProvider } from './search-providers'
+import { dedupeScreenshotMarkdownLines } from './web-output'
 
 // ---------------------------------------------------------------------------
 // Search result compression — summarize verbose results before injecting into context
@@ -277,7 +278,8 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       }
 
       if (Array.isArray(content)) {
-        const parts: string[] = []
+        let parts: string[] = []
+        const isScreenshotTool = toolName === 'browser_take_screenshot'
         const contentHasBinaryImage = content.some((c) => c.type === 'image' && !!c.data)
         for (const c of content) {
           if (c.type === 'image' && c.data) {
@@ -334,6 +336,8 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             }
           }
         }
+        if (isScreenshotTool) parts = dedupeScreenshotMarkdownLines(parts)
+
         if (savedPaths.length > 0) {
           const unique = Array.from(new Set(savedPaths))
           const rendered = unique.map((p) => path.relative(cwd, p) || '.').join(', ')

@@ -8,6 +8,7 @@ import { useAutoResize } from '@/hooks/use-auto-resize'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { FilePreview } from '@/components/shared/file-preview'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 
 interface Props {
   streaming: boolean
@@ -36,7 +37,7 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!sessionId) return
-    const draft = localStorage.getItem(`sc_draft_${sessionId}`)
+    const draft = safeStorageGet(`sc_draft_${sessionId}`)
     setValue(draft || '')
   }, [sessionId])
 
@@ -45,8 +46,8 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
     if (!sessionId) return
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
     draftTimerRef.current = setTimeout(() => {
-      if (value) localStorage.setItem(`sc_draft_${sessionId}`, value)
-      else localStorage.removeItem(`sc_draft_${sessionId}`)
+      if (value) safeStorageSet(`sc_draft_${sessionId}`, value)
+      else safeStorageRemove(`sc_draft_${sessionId}`)
     }, 300)
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current) }
   }, [value, sessionId])
@@ -65,7 +66,7 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
     }
     onSend(text || 'See attached file(s).')
     setValue('')
-    if (sessionId) localStorage.removeItem(`sc_draft_${sessionId}`)
+    if (sessionId) safeStorageRemove(`sc_draft_${sessionId}`)
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }

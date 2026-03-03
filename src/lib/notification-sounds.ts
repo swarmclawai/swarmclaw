@@ -1,3 +1,5 @@
+import { safeStorageGet, safeStorageSet } from '@/lib/safe-storage'
+
 let ctx: AudioContext | null = null
 
 function ensureCtx(): AudioContext | null {
@@ -48,11 +50,9 @@ export function playError() {
 const LS_KEY = 'sc_sound_notifications'
 
 export function getSoundEnabled(): boolean {
-  if (typeof window === 'undefined') return false
-  return localStorage.getItem(LS_KEY) === '1'
+  return safeStorageGet(LS_KEY) === '1'
 }
 
 export function setSoundEnabled(v: boolean) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(LS_KEY, v ? '1' : '0')
+  safeStorageSet(LS_KEY, v ? '1' : '0')
 }

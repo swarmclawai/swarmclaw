@@ -1,37 +1,25 @@
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { safeStorageGet, safeStorageSet, safeStorageRemove } from '@/lib/safe-storage'
+
 const ACCESS_KEY_STORAGE = 'sc_access_key'
 const DEFAULT_API_TIMEOUT_MS = 12_000
 const DEFAULT_GET_RETRIES = 2
 const RETRY_DELAY_BASE_MS = 300
 
 export function getStoredAccessKey(): string {
-  if (typeof window === 'undefined') return ''
-  return localStorage.getItem(ACCESS_KEY_STORAGE) || ''
+  return safeStorageGet(ACCESS_KEY_STORAGE) || ''
 }
 
 export function setStoredAccessKey(key: string) {
-  localStorage.setItem(ACCESS_KEY_STORAGE, key)
+  safeStorageSet(ACCESS_KEY_STORAGE, key)
 }
 
 export function clearStoredAccessKey() {
-  localStorage.removeItem(ACCESS_KEY_STORAGE)
+  safeStorageRemove(ACCESS_KEY_STORAGE)
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function fetchWithTimeout(
-  input: RequestInfo | URL,
-  init: RequestInit,
-  timeoutMs: number,
-): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    return await fetch(input, { ...init, signal: controller.signal })
-  } finally {
-    clearTimeout(timer)
-  }
 }
 
 function isAbortError(err: unknown): boolean {
