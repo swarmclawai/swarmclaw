@@ -1,7 +1,8 @@
 # SwarmClaw
 
 [![CI](https://github.com/swarmclawai/swarmclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/swarmclawai/swarmclaw/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/swarmclawai/swarmclaw?sort=semver)](https://github.com/swarmclawai/swarmclaw/releases)
+[![Release](https://img.shields.io/github/v/release/swarmclawai/swarmclaw?sort=date)](https://github.com/swarmclawai/swarmclaw/releases)
+[![npm](https://img.shields.io/npm/v/%40swarmclawai%2Fswarmclaw?label=npm)](https://www.npmjs.com/package/@swarmclawai/swarmclaw)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/public/branding/swarmclaw-org-avatar.png" alt="SwarmClaw lobster logo" width="120" />
@@ -21,48 +22,6 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 - Never expose port 3456 without a reverse proxy + TLS
 - Review agent system prompts before giving them shell or browser tools
 - Repeated failed access key attempts are rate-limited to slow brute-force attacks
-
-## Features
-
-- **15 Built-in Providers** — Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, plus custom OpenAI-compatible endpoints
-- **OpenClaw Gateway** — Per-agent toggle to connect any agent to a local or remote OpenClaw gateway. Each agent gets its own gateway URL and token — run a swarm of OpenClaws from one dashboard. The `openclaw` CLI ships as a bundled dependency (no separate install needed)
-- **OpenClaw Control Plane** — Built-in gateway connection controls, reload mode switching (hot/hybrid/full), config issue detection/repair, remote history sync, and live execution approval handling
-- **Agent Builder** — Create agents with custom personalities (soul), system prompts, tools, and skills. AI-powered generation from a description
-- **Agent Inspector Panel** — Per-agent side panel for OpenClaw file editing (`SOUL.md`, `IDENTITY.md`, `USER.md`, etc.), guided personality editing, skill install/enable/remove, permission presets, sandbox env allowlist, and cron automations
-- **Agent Fleet Management** — Avatar seeds with generated avatars, running/approval fleet filters, soft-delete agent trash with restore/permanent delete, and approval counters in agent cards
-- **Agent Tools** — Shell, process control for long-running commands, files, edit file, send file, web search, web fetch, CLI delegation (Claude/Codex/OpenCode), Playwright browser automation, sub-agent spawning, canvas presentation, direct HTTP requests, git operations, persistent memory, and sandboxed code execution (JS/TS via Deno, Python)
-- **Platform Tools** — Agents can manage other agents, tasks, schedules, skills, connectors, sessions, and encrypted secrets via built-in platform tools
-- **Orchestration** — Multi-agent workflows powered by LangGraph with automatic sub-agent routing, checkpointed execution, and rich delegation cards that link to sub-agent chat threads
-- **Agentic Execution Policy** — Tool-first autonomous action loop with progress updates, evidence-driven answers, and better use of platform tools for long-lived work
-- **Runtime Date/Time Grounding** — Session, orchestrator, chatroom, and connector prompts include authoritative current timestamp context to reduce stale-date behavior
-- **Task Board** — Queue and track agent tasks with status, comments, results, and archiving. Strict capability policy pauses tasks for human approval before tool execution
-- **Task Metrics API** — Built-in analytics endpoint for WIP, cycle times, throughput velocity, completion/failure by agent, and priority distribution
-- **Background Daemon** — Auto-processes queued tasks and scheduled jobs with a 30s heartbeat plus recurring health monitoring
-- **Scheduling** — Cron-based agent scheduling with human-friendly presets
-- **Loop Runtime Controls** — Switch between bounded and ongoing loops with configurable step caps, runtime guards, heartbeat cadence, and timeout budgets
-- **Session Run Queue** — Per-session queued runs with followup/steer/collect modes, collect coalescing for bursty inputs, and run-state APIs
-- **Chat Iteration Workflow** — Edit-and-resend user turns, fork a new session from any message, bookmark key messages, use contextual follow-up suggestion chips, and auto-continue after tool access grants
-- **Agent Chatrooms** — Multi-agent room conversations with `@mention` routing, chained agent replies, reactions, and file/image-aware chat context
-- **Live Chat Telemetry** — Thinking/tool/responding stream phases, live main-loop status badges, connector activity presence, tone indicator, and optional sound notifications
-- **Global Search Palette** — `Cmd/Ctrl+K` search across agents, tasks, sessions, schedules, webhooks, and skills from anywhere in the app
-- **Notification Center** — Real-time in-app notifications for task/schedule/daemon events with unread tracking, mark-all/clear-read controls, and optional action links
-- **Preview-Rich Chat UI** — Side preview panel for tool outputs (image/browser/html/code), inline code/PDF previews for attachments, and image lightbox support
-- **Voice Settings** — Per-instance ElevenLabs API key + voice ID for TTS replies, plus configurable speech recognition language for chat input
-- **Chat Connectors** — Bridge agents to Discord, Slack, Telegram, WhatsApp, BlueBubbles (iMessage), Signal, Microsoft Teams, Google Chat, Matrix, and OpenClaw with media-aware inbound handling
-- **Skills System** — Discover local skills, import skills from URL, and load OpenClaw `SKILL.md` files (frontmatter-compatible)
-- **Execution Logging** — Structured audit trail for triggers, tool calls, file ops, commits, and errors in a dedicated `logs.db`
-- **Context Management** — Auto-compaction of conversation history when approaching context limits, with manual `context_status` and `context_summarize` tools for agents
-- **Memory** — Per-agent and per-session memory with hybrid FTS5 + vector embeddings search, relevance-based memory recall injected into runs, and periodic auto-journaling for durable execution context
-- **Cost Tracking** — Per-message token counting and cost estimation displayed in the chat header
-- **Provider Health Metrics** — Usage dashboard surfaces provider request volume, success rates, models used, and last-used timestamps
-- **Model Failover** — Automatic key rotation on rate limits and auth errors with configurable fallback credentials
-- **Plugin System** — Extend agent behavior with JS plugins (hooks: beforeAgentStart, afterAgentComplete, beforeToolExec, afterToolExec, onMessage)
-- **Secrets Vault** — Encrypted storage for API keys and service tokens
-- **Custom Providers** — Add any OpenAI-compatible API as a provider
-- **MCP Servers** — Connect agents to any Model Context Protocol server. Per-agent server selection with tool discovery and per-tool disable toggles
-- **Sandboxed Code Execution** — Agents can write and run JS/TS (Deno) or Python scripts in an isolated sandbox with network access, scoped filesystem, and artifact output
-- **Real-Time Sync** — WebSocket push notifications for instant UI updates across tabs and devices (fallback to polling when WS is unavailable)
-- **Mobile-First UI** — Responsive glass-themed dark interface, works on phone and desktop
 
 ## Requirements
 
@@ -145,6 +104,48 @@ Notes:
 - Ollama checks can auto-suggest a model from the connected endpoint.
 - OpenClaw is configured per-agent via the **OpenClaw Gateway** toggle (not in the setup wizard).
 - You can skip setup and configure everything later in the sidebar.
+
+## Features
+
+- **15 Built-in Providers** — Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, plus custom OpenAI-compatible endpoints
+- **OpenClaw Gateway** — Per-agent toggle to connect any agent to a local or remote OpenClaw gateway. Each agent gets its own gateway URL and token — run a swarm of OpenClaws from one dashboard. The `openclaw` CLI ships as a bundled dependency (no separate install needed)
+- **OpenClaw Control Plane** — Built-in gateway connection controls, reload mode switching (hot/hybrid/full), config issue detection/repair, remote history sync, and live execution approval handling
+- **Agent Builder** — Create agents with custom personalities (soul), system prompts, tools, and skills. AI-powered generation from a description
+- **Agent Inspector Panel** — Per-agent side panel for OpenClaw file editing (`SOUL.md`, `IDENTITY.md`, `USER.md`, etc.), guided personality editing, skill install/enable/remove, permission presets, sandbox env allowlist, and cron automations
+- **Agent Fleet Management** — Avatar seeds with generated avatars, running/approval fleet filters, soft-delete agent trash with restore/permanent delete, and approval counters in agent cards
+- **Agent Tools** — Shell, process control for long-running commands, files, edit file, send file, web search, web fetch, CLI delegation (Claude/Codex/OpenCode), Playwright browser automation, sub-agent spawning, canvas presentation, direct HTTP requests, git operations, persistent memory, and sandboxed code execution (JS/TS via Deno, Python)
+- **Platform Tools** — Agents can manage other agents, tasks, schedules, skills, connectors, sessions, and encrypted secrets via built-in platform tools
+- **Orchestration** — Multi-agent workflows powered by LangGraph with automatic sub-agent routing, checkpointed execution, and rich delegation cards that link to sub-agent chat threads
+- **Agentic Execution Policy** — Tool-first autonomous action loop with progress updates, evidence-driven answers, and better use of platform tools for long-lived work
+- **Runtime Date/Time Grounding** — Session, orchestrator, chatroom, and connector prompts include authoritative current timestamp context to reduce stale-date behavior
+- **Task Board** — Queue and track agent tasks with status, comments, results, and archiving. Strict capability policy pauses tasks for human approval before tool execution
+- **Task Metrics API** — Built-in analytics endpoint for WIP, cycle times, throughput velocity, completion/failure by agent, and priority distribution
+- **Background Daemon** — Auto-processes queued tasks and scheduled jobs with a 30s heartbeat plus recurring health monitoring
+- **Scheduling** — Cron-based agent scheduling with human-friendly presets
+- **Loop Runtime Controls** — Switch between bounded and ongoing loops with configurable step caps, runtime guards, heartbeat cadence, and timeout budgets
+- **Session Run Queue** — Per-session queued runs with followup/steer/collect modes, collect coalescing for bursty inputs, and run-state APIs
+- **Chat Iteration Workflow** — Edit-and-resend user turns, fork a new session from any message, bookmark key messages, use contextual follow-up suggestion chips, and auto-continue after tool access grants
+- **Agent Chatrooms** — Multi-agent room conversations with `@mention` routing, chained agent replies, reactions, and file/image-aware chat context
+- **Live Chat Telemetry** — Thinking/tool/responding stream phases, live main-loop status badges, connector activity presence, tone indicator, and optional sound notifications
+- **Global Search Palette** — `Cmd/Ctrl+K` search across agents, tasks, sessions, schedules, webhooks, and skills from anywhere in the app
+- **Notification Center** — Real-time in-app notifications for task/schedule/daemon events with unread tracking, mark-all/clear-read controls, and optional action links
+- **Preview-Rich Chat UI** — Side preview panel for tool outputs (image/browser/html/code), inline code/PDF previews for attachments, and image lightbox support
+- **Voice Settings** — Per-instance ElevenLabs API key + voice ID for TTS replies, plus configurable speech recognition language for chat input
+- **Chat Connectors** — Bridge agents to Discord, Slack, Telegram, WhatsApp, BlueBubbles (iMessage), Signal, Microsoft Teams, Google Chat, Matrix, and OpenClaw with media-aware inbound handling
+- **Skills System** — Discover local skills, import skills from URL, and load OpenClaw `SKILL.md` files (frontmatter-compatible)
+- **Execution Logging** — Structured audit trail for triggers, tool calls, file ops, commits, and errors in a dedicated `logs.db`
+- **Context Management** — Auto-compaction of conversation history when approaching context limits, with manual `context_status` and `context_summarize` tools for agents
+- **Memory** — Per-agent and per-session memory with hybrid FTS5 + vector embeddings search, relevance-based memory recall injected into runs, and periodic auto-journaling for durable execution context
+- **Cost Tracking** — Per-message token counting and cost estimation displayed in the chat header
+- **Provider Health Metrics** — Usage dashboard surfaces provider request volume, success rates, models used, and last-used timestamps
+- **Model Failover** — Automatic key rotation on rate limits and auth errors with configurable fallback credentials
+- **Plugin System** — Extend agent behavior with JS plugins (hooks: beforeAgentStart, afterAgentComplete, beforeToolExec, afterToolExec, onMessage)
+- **Secrets Vault** — Encrypted storage for API keys and service tokens
+- **Custom Providers** — Add any OpenAI-compatible API as a provider
+- **MCP Servers** — Connect agents to any Model Context Protocol server. Per-agent server selection with tool discovery and per-tool disable toggles
+- **Sandboxed Code Execution** — Agents can write and run JS/TS (Deno) or Python scripts in an isolated sandbox with network access, scoped filesystem, and artifact output
+- **Real-Time Sync** — WebSocket push notifications for instant UI updates across tabs and devices (fallback to polling when WS is unavailable)
+- **Mobile-First UI** — Responsive glass-themed dark interface, works on phone and desktop
 
 ## Configuration
 
