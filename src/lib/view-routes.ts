@@ -49,7 +49,11 @@ export function parsePath(pathname: string): { view: AppView; id: string | null 
     if (pathname.startsWith(path + '/')) {
       const rest = pathname.slice(path.length + 1)
       if (rest && !rest.includes('/') && VIEWS_WITH_ID.has(view)) {
-        return { view, id: decodeURIComponent(rest) }
+        try {
+          return { view, id: decodeURIComponent(rest) }
+        } catch {
+          return null
+        }
       }
     }
   }

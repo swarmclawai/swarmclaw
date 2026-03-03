@@ -90,6 +90,12 @@ const STATUS_COLORS: Record<string, string> = {
   blocked: '#EF4444',
 }
 
+function isGeneratedBrowserScreenshot(url: string): boolean {
+  const match = url.match(/\/api\/uploads\/([^/?#]+)/)
+  if (!match?.[1]) return false
+  return /^(browser|screenshot)-\d+\./i.test(match[1])
+}
+
 // AttachmentChip, parseAttachmentUrl, regex constants, and FILE_TYPE_COLORS
 // are now imported from @/components/shared/attachment-chip
 
@@ -162,6 +168,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     // Collect URLs from the visible (last) tool event to avoid showing duplicates
     const lastOutput = toolEvents[toolEvents.length - 1]?.output || ''
     const visibleMedia = extractMedia(lastOutput)
+    const hasNamedVisibleImage = visibleMedia.images.some((url) => !isGeneratedBrowserScreenshot(url))
     const seen = new Set<string>([
       ...visibleMedia.images,
       ...visibleMedia.videos,
@@ -175,7 +182,10 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     for (const ev of toolEvents.slice(0, -1)) {
       if (!ev.output) continue
       const m = extractMedia(ev.output)
-      for (const url of m.images) { if (!seen.has(url)) { seen.add(url); images.push(url) } }
+      for (const url of m.images) {
+        if (hasNamedVisibleImage && isGeneratedBrowserScreenshot(url)) continue
+        if (!seen.has(url)) { seen.add(url); images.push(url) }
+      }
       for (const url of m.videos) { if (!seen.has(url)) { seen.add(url); videos.push(url) } }
       for (const p of m.pdfs) { if (!seen.has(p.url)) { seen.add(p.url); pdfs.push(p) } }
       for (const f of m.files) { if (!seen.has(f.url)) { seen.add(f.url); files.push(f) } }

@@ -7,6 +7,7 @@ import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
 import { fetchTasks } from '../lib/tasks'
 import { api } from '../lib/api-client'
+import { safeStorageGet, safeStorageGetJson, safeStorageRemove, safeStorageSet } from '../lib/safe-storage'
 
 interface AppState {
   currentUser: string | null
@@ -209,14 +210,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentUser: null,
   _hydrated: false,
   hydrate: () => {
-    if (typeof window === 'undefined') return
-    const user = localStorage.getItem('sc_user')
-    const savedAgentId = localStorage.getItem('sc_agent')
+    const user = safeStorageGet('sc_user')
+    const savedAgentId = safeStorageGet('sc_agent')
     set({ currentUser: user, currentAgentId: savedAgentId, _hydrated: true })
   },
   setUser: (user) => {
-    if (user) localStorage.setItem('sc_user', user)
-    else localStorage.removeItem('sc_user')
+    if (user) safeStorageSet('sc_user', user)
+    else safeStorageRemove('sc_user')
     set({ currentUser: user })
   },
 
@@ -324,11 +324,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCurrentAgent: async (id) => {
     if (!id) {
       set({ currentAgentId: null })
-      if (typeof window !== 'undefined') localStorage.removeItem('sc_agent')
+      safeStorageRemove('sc_agent')
       return
     }
     set({ currentAgentId: id })
-    if (typeof window !== 'undefined') localStorage.setItem('sc_agent', id)
+    safeStorageSet('sc_agent', id)
     try {
       const user = get().currentUser || 'default'
       const session = await api<Session>('POST', `/agents/${id}/thread`, { user })
@@ -628,13 +628,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Unread tracking
-  lastReadTimestamps: typeof window !== 'undefined'
-    ? (() => { try { return JSON.parse(localStorage.getItem('sc_last_read') || '{}') } catch { return {} } })()
-    : {},
+  lastReadTimestamps: safeStorageGetJson<Record<string, number>>('sc_last_read', {}),
   markChatRead: (id) => {
     const ts = { ...get().lastReadTimestamps, [id]: Date.now() }
     set({ lastReadTimestamps: ts })
-    try { localStorage.setItem('sc_last_read', JSON.stringify(ts)) } catch { /* ignore */ }
+    safeStorageSet('sc_last_read', JSON.stringify(ts))
   },
 
   // Notifications

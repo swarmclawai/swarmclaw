@@ -5,12 +5,15 @@ import { useAppStore } from '@/stores/use-app-store'
 import { initAudioContext } from '@/lib/tts'
 import { getStoredAccessKey, clearStoredAccessKey, api } from '@/lib/api-client'
 import { connectWs, disconnectWs } from '@/lib/ws-client'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { useWs } from '@/hooks/use-ws'
 import { AccessKeyGate } from '@/components/auth/access-key-gate'
 import { UserPicker } from '@/components/auth/user-picker'
 import { SetupWizard } from '@/components/auth/setup-wizard'
 import { AppLayout } from '@/components/layout/app-layout'
 import { useViewRouter } from '@/hooks/use-view-router'
+
+const AUTH_CHECK_TIMEOUT_MS = 8_000
 
 function FullScreenLoader() {
   return (
@@ -158,11 +161,11 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch('/api/auth', {
+      const res = await fetchWithTimeout('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key }),
-      })
+      }, AUTH_CHECK_TIMEOUT_MS)
       if (res.ok) {
         setAuthenticated(true)
       } else {
@@ -171,8 +174,9 @@ export default function Home() {
       }
     } catch {
       setAuthenticated(true)
+    } finally {
+      setAuthChecked(true)
     }
-    setAuthChecked(true)
   }, [])
 
   // After auth, try to restore username from server settings

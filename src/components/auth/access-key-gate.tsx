@@ -2,10 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { setStoredAccessKey } from '@/lib/api-client'
+import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
 interface AccessKeyGateProps {
   onAuthenticated: () => void
 }
+
+const AUTH_CHECK_TIMEOUT_MS = 8_000
 
 export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
   const [key, setKey] = useState('')
@@ -19,16 +22,22 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    fetch('/api/auth')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.firstTime && data.key) {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetchWithTimeout('/api/auth', {}, AUTH_CHECK_TIMEOUT_MS)
+        const data = await res.json().catch(() => ({}))
+        if (!cancelled && data.firstTime && data.key) {
           setFirstTime(true)
           setGeneratedKey(data.key)
         }
-      })
-      .catch((err) => console.error('Auth check failed:', err))
-      .finally(() => setChecking(false))
+      } catch (err) {
+        console.error('Auth check failed:', err)
+      } finally {
+        if (!cancelled) setChecking(false)
+      }
+    })()
+    return () => { cancelled = true }
   }, [])
 
   const handleCopyKey = async () => {
@@ -44,14 +53,16 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
   const handleClaimKey = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/auth', {
+      const res = await fetchWithTimeout('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: generatedKey }),
-      })
+      }, AUTH_CHECK_TIMEOUT_MS)
       if (res.ok) {
         setStoredAccessKey(generatedKey)
         onAuthenticated()
+      } else {
+        setError('Invalid access key')
       }
     } catch {
       setError('Connection failed')
@@ -69,11 +80,11 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
     setError('')
 
     try {
-      const res = await fetch('/api/auth', {
+      const res = await fetchWithTimeout('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: trimmed }),
-      })
+      }, AUTH_CHECK_TIMEOUT_MS)
       if (res.ok) {
         setStoredAccessKey(trimmed)
         onAuthenticated()
