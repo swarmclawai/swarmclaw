@@ -47,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.6.2 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.6.6 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
