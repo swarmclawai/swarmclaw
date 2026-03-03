@@ -60,6 +60,18 @@ Each agent can point to a **different** OpenClaw gateway — one local, several 
 
 URLs without a protocol are auto-prefixed with `http://`. For remote gateways with TLS, use `https://` explicitly.
 
+## SwarmClaw ClawHub Skill
+
+Use the `swarmclaw` ClawHub skill when you want an OpenClaw agent to operate your SwarmClaw control plane directly from chat: list agents, dispatch tasks, check sessions, run diagnostics, and coordinate multi-agent work.
+
+Install it from ClawHub:
+
+```bash
+clawhub install swarmclaw
+```
+
+Skill source and runbook: [`swarmclaw/SKILL.md`](swarmclaw/SKILL.md).
+
 - Always use the access key authentication (generated on first run)
 - Never expose port 3456 without a reverse proxy + TLS
 - Review agent system prompts before giving them shell or browser tools
