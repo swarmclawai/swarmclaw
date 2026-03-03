@@ -1,7 +1,7 @@
 ---
 name: swarmclaw
 description: Manage your SwarmClaw agent fleet, create and assign tasks, check agent and session status, trigger workflows, and orchestrate multi-agent work from chat. Use when asked to dispatch work to other agents, check what agents are doing, run diagnostics, or coordinate across a SwarmClaw dashboard instance.
-version: 1.0.0
+version: 1.0.1
 metadata:
   openclaw:
     requires:
@@ -29,6 +29,16 @@ Authentication uses `SWARMCLAW_ACCESS_KEY` (preferred) or CLI key flags. Default
 Use machine-readable output when parsing command results:
 - `--raw` for legacy commands
 - `--json` for API-mapped commands
+
+## Setup
+
+1. Install: `npm i -g @swarmclawai/swarmclaw` or `curl -fsSL https://swarmclaw.ai/install.sh | bash`
+2. Set env var: `export SWARMCLAW_ACCESS_KEY=<your-key>` (shown in terminal on first run)
+3. Full docs: https://swarmclaw.ai/docs — CLI reference: https://github.com/swarmclawai/swarmclaw
+
+## Multi-Gateway Fleet Management
+
+SwarmClaw can connect to multiple OpenClaw gateways at the same time. Each SwarmClaw agent can target a different gateway, including one local and several remote instances. This skill’s commands operate through the SwarmClaw control plane, so your agent/task/session actions apply across the fleet view. Use it when you need status and task coordination across more than one OpenClaw instance.
 
 ## Commands
 
@@ -131,3 +141,12 @@ swarmclaw setup doctor --raw
 ```
 
 Then report issues found and suggest fixes based on the doctor output.
+
+Check agents across gateways:
+User says: "What's happening across all my OpenClaw instances?"
+
+```bash
+swarmclaw agents list --raw
+```
+
+Then use the output to identify agents across multiple gateways with their connection status, and summarize which gateways are healthy and which agents are active on each.
