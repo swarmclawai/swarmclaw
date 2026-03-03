@@ -39,6 +39,24 @@ jobs:
       - name: Build
         run: npm run build:ci
 
+      - name: Sync package version with tag
+        id: package_version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CURRENT_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$CURRENT_VERSION" != "$TAG_VERSION" ]; then
+            echo "Updating package version from ${CURRENT_VERSION} to ${TAG_VERSION}"
+            npm pkg set version="$TAG_VERSION"
+          fi
+
+          PUBLISHED_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$PUBLISHED_VERSION" != "$TAG_VERSION" ]; then
+            echo "Failed to set package version to ${TAG_VERSION}; got ${PUBLISHED_VERSION}" >&2
+            exit 1
+          fi
+
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Set image name
         id: image
         run: |
@@ -76,7 +94,7 @@ jobs:
       - name: Check npm version availability
         id: npm_version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ steps.package_version.outputs.version }}"
           if npm view "@swarmclawai/swarmclaw@${VERSION}" version >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Version ${VERSION} already exists on npm; publish step will be skipped."
