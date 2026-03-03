@@ -351,6 +351,20 @@ const COMMAND_GROUPS = {
       metrics: { description: 'Get task board metrics (supports --query range=24h|7d|30d)', method: 'GET', path: '/tasks/metrics' },
     },
   },
+  wallets: {
+    description: 'Agent wallet operations',
+    commands: {
+      list: { description: 'List wallets', method: 'GET', path: '/wallets' },
+      get: { description: 'Get wallet by id', method: 'GET', path: '/wallets/:id', params: ['id'] },
+      create: { description: 'Create wallet', method: 'POST', path: '/wallets' },
+      update: { description: 'Update wallet settings', method: 'PATCH', path: '/wallets/:id', params: ['id'] },
+      delete: { description: 'Delete wallet', method: 'DELETE', path: '/wallets/:id', params: ['id'] },
+      send: { description: 'Send funds from wallet', method: 'POST', path: '/wallets/:id/send', params: ['id'] },
+      approve: { description: 'Approve or deny pending wallet transaction', method: 'POST', path: '/wallets/:id/approve', params: ['id'] },
+      transactions: { description: 'List wallet transactions', method: 'GET', path: '/wallets/:id/transactions', params: ['id'] },
+      'balance-history': { description: 'Get wallet balance history', method: 'GET', path: '/wallets/:id/balance-history', params: ['id'] },
+    },
+  },
   webhooks: {
     description: 'Inbound webhook triggers',
     commands: {

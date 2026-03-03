@@ -486,6 +486,21 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'wallets',
+    description: 'Manage agent wallets and wallet transactions',
+    commands: [
+      cmd('list', 'GET', '/wallets', 'List wallets'),
+      cmd('get', 'GET', '/wallets/:id', 'Get wallet by id'),
+      cmd('create', 'POST', '/wallets', 'Create wallet', { expectsJsonBody: true }),
+      cmd('update', 'PATCH', '/wallets/:id', 'Update wallet settings', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/wallets/:id', 'Delete wallet'),
+      cmd('send', 'POST', '/wallets/:id/send', 'Send funds from wallet', { expectsJsonBody: true }),
+      cmd('approve', 'POST', '/wallets/:id/approve', 'Approve or deny a pending wallet transaction', { expectsJsonBody: true }),
+      cmd('transactions', 'GET', '/wallets/:id/transactions', 'List wallet transactions'),
+      cmd('balance-history', 'GET', '/wallets/:id/balance-history', 'Get wallet balance history'),
+    ],
+  },
+  {
     name: 'upload',
     description: 'Upload raw file/blob',
     commands: [
