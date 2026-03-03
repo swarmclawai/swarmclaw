@@ -8,12 +8,13 @@ export function parseMentionedAgentId(
   description: string,
   agents: Record<string, Agent>,
 ): string | null {
-  const mentionRegex = /@(\S+)/g
+  const mentionRegex = /(?:^|[\s(])@([a-zA-Z0-9._-]+)/g
   const agentList = Object.values(agents)
   let match: RegExpExecArray | null
 
   while ((match = mentionRegex.exec(description)) !== null) {
-    const mention = match[1].toLowerCase()
+    const mention = (match[1] || '').toLowerCase().replace(/[.,!?;:]+$/g, '')
+    if (!mention) continue
 
     // Exact name match (case-insensitive)
     const exact = agentList.find((a) => a.name.toLowerCase() === mention)

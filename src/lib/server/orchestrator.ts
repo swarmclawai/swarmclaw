@@ -296,7 +296,12 @@ async function executeSubTask(
   saveSessions(sessions)
 
   const history = [{ role: 'user', text: task }]
-  const result = await callProvider(agent, agent.systemPrompt, history)
+  // Build system prompt with identity so the agent knows who it is
+  const promptParts: string[] = []
+  promptParts.push(`## My Identity\nMy name is ${agent.name}.${agent.description ? ' ' + agent.description : ''} I should always refer to myself by this name.`)
+  if (agent.soul) promptParts.push(agent.soul)
+  if (agent.systemPrompt) promptParts.push(agent.systemPrompt)
+  const result = await callProvider(agent, promptParts.join('\n\n'), history)
 
   childSession.messages.push({ role: 'user', text: task, time: Date.now() })
   childSession.messages.push({ role: 'assistant', text: result, time: Date.now() })

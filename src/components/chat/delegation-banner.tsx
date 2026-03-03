@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { useAppStore } from '@/stores/use-app-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { api } from '@/lib/api-client'
@@ -10,6 +10,7 @@ type DelegationStatus = 'delegating' | 'checking' | 'completed' | 'failed'
 interface DelegationBannerProps {
   agentName: string
   agentAvatarSeed: string | null
+  agentAvatarUrl?: string | null
   taskPreview: string
   taskId: string | null
   status: DelegationStatus
@@ -60,7 +61,7 @@ function statusText(status: DelegationStatus, name: string): string {
   }
 }
 
-export function DelegationBanner({ agentName, agentAvatarSeed, taskPreview, taskId, status }: DelegationBannerProps) {
+export function DelegationBanner({ agentName, agentAvatarSeed, agentAvatarUrl, taskPreview, taskId, status }: DelegationBannerProps) {
   const cfg = STATUS_CONFIG[status]
 
   const handleTaskClick = () => {
@@ -83,7 +84,7 @@ export function DelegationBanner({ agentName, agentAvatarSeed, taskPreview, task
       }}
     >
       <div className="shrink-0" style={{ animation: 'delegation-handoff-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both' }}>
-        <AgentAvatar seed={agentAvatarSeed} name={agentName} size={24} />
+        <AgentAvatar seed={agentAvatarSeed} avatarUrl={agentAvatarUrl} name={agentName} size={24} />
       </div>
       <StatusIcon status={status} color={cfg.color} />
       <div className="flex flex-col gap-0.5 min-w-0 flex-1">
@@ -120,6 +121,8 @@ export interface TaskCompletionInfo {
   /** The agent that executed the task (present on delegated results) */
   executorName: string | null
   workingDir: string | null
+  reportPath: string | null
+  outputFiles: string[]
   resumeInfo: string | null
   resultBody: string
   imageUrl?: string
@@ -140,12 +143,32 @@ export function parseTaskCompletion(text: string): TaskCompletionInfo | null {
   const sections = bodyStart === -1 ? [] : text.slice(bodyStart + 2).split('\n\n')
 
   let workingDir: string | null = null
+  let reportPath: string | null = null
+  const outputFiles: string[] = []
   let resumeInfo: string | null = null
   const resultParts: string[] = []
 
   for (const section of sections) {
     if (section.startsWith('Working directory: ')) {
       workingDir = section.replace('Working directory: ', '').replace(/^`|`$/g, '')
+    } else if (section.startsWith('Output files:')) {
+      const fromBackticks = [...section.matchAll(/`([^`\n]+)`/g)].map((m) => (m[1] || '').trim()).filter(Boolean)
+      if (fromBackticks.length > 0) {
+        for (const fileRef of fromBackticks) {
+          if (!outputFiles.includes(fileRef)) outputFiles.push(fileRef)
+        }
+      } else {
+        const fromBullets = section
+          .split('\n')
+          .slice(1)
+          .map((line) => line.replace(/^\s*-\s*/, '').trim())
+          .filter(Boolean)
+        for (const fileRef of fromBullets) {
+          if (!outputFiles.includes(fileRef)) outputFiles.push(fileRef)
+        }
+      }
+    } else if (section.startsWith('Task report: ')) {
+      reportPath = section.replace('Task report: ', '').replace(/^`|`$/g, '')
     } else if (/^(Claude session|Codex thread|OpenCode session|CLI session):/.test(section)) {
       resumeInfo = section
     } else if (section.trim()) {
@@ -153,12 +176,21 @@ export function parseTaskCompletion(text: string): TaskCompletionInfo | null {
     }
   }
 
-  return { status, taskTitle, taskId, executorName, workingDir, resumeInfo, resultBody: resultParts.join('\n\n') }
+  return {
+    status,
+    taskTitle,
+    taskId,
+    executorName,
+    workingDir,
+    reportPath,
+    outputFiles,
+    resumeInfo,
+    resultBody: resultParts.join('\n\n'),
+  }
 }
 
 export function TaskCompletionCard({ info }: { info: TaskCompletionInfo }) {
   const isSuccess = info.status === 'completed'
-  const [expanded, setExpanded] = useState(false)
 
   const handleTaskClick = () => {
     if (!info.taskId) return
@@ -169,10 +201,6 @@ export function TaskCompletionCard({ info }: { info: TaskCompletionInfo }) {
       store.setTaskSheetOpen(true)
     })
   }
-
-  // Truncate result for preview
-  const resultPreview = info.resultBody.length > 200 ? info.resultBody.slice(0, 200) + '...' : info.resultBody
-  const hasLongResult = info.resultBody.length > 200
 
   return (
     <div
@@ -278,6 +306,47 @@ export function TaskCompletionCard({ info }: { info: TaskCompletionInfo }) {
           </div>
         )}
 
+        {info.outputFiles.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-text-3/55">Output files</span>
+            <div className="flex flex-wrap gap-1.5">
+              {info.outputFiles.map((fileRef) => {
+                const openPath = info.workingDir && !fileRef.startsWith('/') && !fileRef.startsWith('~/')
+                  ? `${info.workingDir.replace(/\/$/, '')}/${fileRef}`
+                  : fileRef
+                return (
+                  <button
+                    key={fileRef}
+                    type="button"
+                    onClick={() => { api('POST', '/files/open', { path: openPath }).catch(() => {}) }}
+                    className="px-2 py-1 rounded-[7px] text-[10px] font-mono bg-white/[0.03] border border-white/[0.08] text-text-3/70 hover:text-text-3 cursor-pointer max-w-full truncate"
+                    title={`Open ${openPath}`}
+                  >
+                    {fileRef}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {info.reportPath && (
+          <div className="flex items-center gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-text-3/40">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            <button
+              type="button"
+              onClick={() => { api('POST', '/files/open', { path: info.reportPath }).catch(() => {}) }}
+              className="text-[11px] text-text-3/60 hover:text-text-3 font-mono truncate bg-transparent border-none p-0 cursor-pointer transition-colors"
+              title="Open task report"
+            >
+              {info.reportPath}
+            </button>
+          </div>
+        )}
+
         {/* Image artifact */}
         {info.imageUrl && (
           <div className="mt-0.5">
@@ -295,19 +364,35 @@ export function TaskCompletionCard({ info }: { info: TaskCompletionInfo }) {
         {/* Result body */}
         {info.resultBody && (
           <div className="mt-0.5">
-            <div className="rounded-[10px] bg-white/[0.02] border border-white/[0.04] px-3 py-2.5">
-              <pre className="text-[12px] leading-[1.6] text-text-3/80 whitespace-pre-wrap break-words m-0 font-mono">
-                {expanded ? info.resultBody : resultPreview}
-              </pre>
-              {hasLongResult && (
-                <button
-                  type="button"
-                  onClick={() => setExpanded((v) => !v)}
-                  className="mt-2 text-[11px] font-600 text-text-3/50 hover:text-text-3 bg-transparent border-none cursor-pointer p-0 transition-colors"
+            <div className="rounded-[10px] bg-white/[0.02] border border-white/[0.04] px-3 py-2.5 max-h-[260px] overflow-y-auto">
+              <div className="text-[12px] leading-[1.6] text-text-3/80 break-words">
+                <ReactMarkdown
+                  components={{
+                    a: ({ href, children }) => (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-emerald-300 hover:text-emerald-200 underline decoration-emerald-300/40"
+                      >
+                        {children}
+                      </a>
+                    ),
+                    img: ({ src, alt }) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={src || ''}
+                        alt={alt || 'Task artifact'}
+                        loading="lazy"
+                        className="max-w-full rounded-[8px] border border-white/[0.08] my-2"
+                      />
+                    ),
+                    p: ({ children }) => <p className="m-0 mb-2">{children}</p>,
+                  }}
                 >
-                  {expanded ? 'Show less' : 'Show full result'}
-                </button>
-              )}
+                  {info.resultBody}
+                </ReactMarkdown>
+              </div>
             </div>
           </div>
         )}
@@ -321,12 +406,13 @@ export function TaskCompletionCard({ info }: { info: TaskCompletionInfo }) {
 interface DelegationSourceBannerProps {
   delegatorName: string
   delegatorAvatarSeed: string | null
+  delegatorAvatarUrl?: string | null
   taskTitle: string
   taskId: string | null
   description: string
 }
 
-export function DelegationSourceBanner({ delegatorName, delegatorAvatarSeed, taskTitle, taskId, description }: DelegationSourceBannerProps) {
+export function DelegationSourceBanner({ delegatorName, delegatorAvatarSeed, delegatorAvatarUrl, taskTitle, taskId, description }: DelegationSourceBannerProps) {
   const handleTaskClick = () => {
     if (!taskId) return
     const store = useAppStore.getState()
@@ -343,7 +429,7 @@ export function DelegationSourceBanner({ delegatorName, delegatorAvatarSeed, tas
       style={{ animation: 'delegation-handoff-in 0.45s cubic-bezier(0.16, 1, 0.3, 1)' }}
     >
       <div className="shrink-0 mt-0.5" style={{ animation: 'delegation-handoff-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both' }}>
-        <AgentAvatar seed={delegatorAvatarSeed} name={delegatorName} size={24} />
+        <AgentAvatar seed={delegatorAvatarSeed} avatarUrl={delegatorAvatarUrl} name={delegatorName} size={24} />
       </div>
       <div className="flex flex-col gap-1 min-w-0 flex-1">
         <span className="text-[12px] font-600 text-indigo-400">

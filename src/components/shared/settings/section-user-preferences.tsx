@@ -35,11 +35,11 @@ export function UserPreferencesSection({ appSettings, patchSettings, inputClass 
         </div>
         <button
           type="button"
-          onClick={() => patchSettings({ suggestionsEnabled: appSettings.suggestionsEnabled === false })}
-          className={`relative w-9 h-5 rounded-full transition-colors ${appSettings.suggestionsEnabled !== false ? 'bg-accent-bright' : 'bg-white/[0.10]'}`}
+          onClick={() => patchSettings({ suggestionsEnabled: !appSettings.suggestionsEnabled })}
+          className={`relative w-9 h-5 rounded-full transition-colors ${appSettings.suggestionsEnabled ? 'bg-accent-bright' : 'bg-white/[0.10]'}`}
           style={{ fontFamily: 'inherit' }}
         >
-          <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${appSettings.suggestionsEnabled !== false ? 'translate-x-4' : ''}`} />
+          <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${appSettings.suggestionsEnabled ? 'translate-x-4' : ''}`} />
         </button>
       </div>
 
@@ -70,7 +70,7 @@ export function UserPreferencesSection({ appSettings, patchSettings, inputClass 
                   : 'bg-transparent border-white/[0.06] text-text-3 hover:bg-white/[0.03]'}`}
               style={{ fontFamily: 'inherit' }}
             >
-              <AgentAvatar seed={agent.avatarSeed || null} name={agent.name} size={18} />
+              <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={18} />
               {agent.name}
             </button>
           ))}

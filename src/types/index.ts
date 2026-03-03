@@ -264,14 +264,62 @@ export interface Agent {
   elevenLabsVoiceId?: string | null
   projectId?: string
   avatarSeed?: string
+  avatarUrl?: string | null
   pinned?: boolean
   lastUsedAt?: number
   totalCost?: number
   trashedAt?: number
   openclawSkillMode?: SkillAllowlistMode
   openclawAllowedSkills?: string[]
+  walletId?: string | null
   createdAt: number
   updatedAt: number
+}
+
+// --- Agent Wallets ---
+
+export type WalletChain = 'solana'
+
+export interface AgentWallet {
+  id: string
+  agentId: string
+  chain: WalletChain
+  publicKey: string
+  encryptedPrivateKey: string       // AES-256-GCM via encryptKey()
+  label?: string
+  spendingLimitLamports?: number    // per-tx cap (default 0.1 SOL = 100_000_000)
+  dailyLimitLamports?: number       // 24h rolling cap (default 1 SOL = 1_000_000_000)
+  requireApproval: boolean          // default true
+  createdAt: number
+  updatedAt: number
+}
+
+export type WalletTransactionType = 'send' | 'receive' | 'swap'
+export type WalletTransactionStatus = 'pending_approval' | 'pending' | 'confirmed' | 'failed' | 'denied'
+
+export interface WalletTransaction {
+  id: string
+  walletId: string
+  agentId: string
+  chain: WalletChain
+  type: WalletTransactionType
+  signature: string
+  fromAddress: string
+  toAddress: string
+  amountLamports: number
+  feeLamports?: number
+  status: WalletTransactionStatus
+  memo?: string                     // agent's reason for tx
+  approvedBy?: 'user' | 'auto'
+  tokenMint?: string                // null = native SOL
+  timestamp: number
+}
+
+export interface WalletBalanceSnapshot {
+  id: string
+  walletId: string
+  balanceLamports: number
+  timestamp: number
 }
 
 export type AgentTool = 'browser'
@@ -356,7 +404,7 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human' | 'orchestrated'
-export type AppView = 'home' | 'agents' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
+export type AppView = 'home' | 'agents' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'wallets' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
 
 // --- Chatrooms ---
 
@@ -646,6 +694,8 @@ export interface MessageSource {
   platform: ConnectorPlatform
   connectorId: string
   connectorName: string
+  channelId?: string
+  senderId?: string
   senderName?: string
 }
 
@@ -711,8 +761,17 @@ export interface BoardTask {
   completionReportPath?: string | null
   result?: string | null
   error?: string | null
+  outputFiles?: string[]
+  artifacts?: Array<{
+    url: string
+    type: 'image' | 'video' | 'pdf' | 'file'
+    filename: string
+  }>
   comments?: TaskComment[]
   images?: string[]
+  createdByAgentId?: string | null
+  createdInSessionId?: string | null
+  delegatedByAgentId?: string | null
   createdAt: number
   updatedAt: number
   queuedAt?: number | null

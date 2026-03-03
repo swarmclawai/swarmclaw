@@ -76,7 +76,7 @@ export function ChatToolToggles({ session }: Props) {
               {group.tools.map((tool) => {
                 const enabled = sessionTools.includes(tool.id)
                 return (
-                  <label key={tool.id} className="flex items-center gap-2.5 py-1.5 cursor-pointer">
+                  <label key={tool.id} className="flex items-center gap-2.5 py-1.5 cursor-pointer" title={tool.description}>
                     <div
                       onClick={() => toggleTool(tool.id)}
                       className={`w-8 h-[18px] rounded-full transition-all duration-200 relative cursor-pointer shrink-0

@@ -38,21 +38,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
-# runtime data (sessions, credentials, etc.)
-/data/*.json
-/data/*.db
-/data/*.db-shm
-/data/*.db-wal
-/data/*.log
-/data/whatsapp-auth/
-/data/openclaw/
-/data/task-reports/*
-/data/uploads/
-/data/workspace/
-/data/.setup_pending
-/data/.sqlite_migrated
+# runtime data is always private (sessions, credentials, wallets, uploads, etc.)
+/data/*
 !/data/.gitkeep
-!/data/task-reports/.gitkeep
 
 # user config backup
 /data-backup/
@@ -70,6 +58,7 @@ next-env.d.ts
 # local scratch files
 todo.html
 IMPROVEMENTS.md
+/agent-harness.md
 
 # local scratch dir accidentally created by tooling
 /~/

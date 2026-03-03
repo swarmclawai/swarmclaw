@@ -21,16 +21,30 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   if (body.name !== undefined) chatroom.name = body.name
   if (body.description !== undefined) chatroom.description = body.description
+  if (body.chatMode !== undefined) {
+    chatroom.chatMode = body.chatMode === 'parallel' ? 'parallel' : 'sequential'
+  }
+  if (body.autoAddress !== undefined) {
+    chatroom.autoAddress = Boolean(body.autoAddress)
+  }
 
   // Diff agentIds and inject join/leave system messages
   if (Array.isArray(body.agentIds)) {
+    const agents = loadAgents()
+    const invalidAgentIds = (body.agentIds as string[]).filter((agentId) => !agents[agentId])
+    if (invalidAgentIds.length > 0) {
+      return NextResponse.json(
+        { error: `Unknown chatroom member(s): ${invalidAgentIds.join(', ')}` },
+        { status: 400 },
+      )
+    }
+
     const oldIds = new Set(chatroom.agentIds)
     const newIds = new Set(body.agentIds as string[])
     const added = (body.agentIds as string[]).filter((aid: string) => !oldIds.has(aid))
     const removed = chatroom.agentIds.filter((aid: string) => !newIds.has(aid))
 
     if (added.length > 0 || removed.length > 0) {
-      const agents = loadAgents()
       if (!Array.isArray(chatroom.messages)) chatroom.messages = []
       const now = Date.now()
       let offset = 0

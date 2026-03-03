@@ -192,7 +192,7 @@ export function ChatroomView() {
                   onClick={() => navigateToAgent(agent.id)}
                   className="relative transition-all duration-200 hover:scale-110 hover:z-10 hover:-translate-y-0.5 cursor-pointer bg-transparent border-none p-0"
                 >
-                  <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={22} status={streamingAgents.has(agent.id) ? 'busy' : 'online'} />
+                  <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={22} status={streamingAgents.has(agent.id) ? 'busy' : 'online'} />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={6}>

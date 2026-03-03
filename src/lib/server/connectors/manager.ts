@@ -16,12 +16,16 @@ import { requestHeartbeatNow } from '../heartbeat-wake'
 import { buildCurrentDateTimePromptContext } from '../prompt-runtime-context'
 import {
   parseMentions,
+  compactChatroomMessages,
   buildChatroomSystemPrompt,
   buildSyntheticSession,
   buildAgentSystemPromptForChatroom,
   buildHistoryForAgent,
   resolveApiKey as resolveApiKeyHelper,
 } from '../chatroom-helpers'
+import { filterHealthyChatroomAgents } from '../chatroom-health'
+import { markProviderFailure, markProviderSuccess } from '../provider-health'
+import { getProvider } from '@/lib/providers'
 import type { Connector, MessageSource, Chatroom, ChatroomMessage } from '@/types'
 import type { ConnectorInstance, InboundMessage, InboundMedia } from './types'
 import {
@@ -35,6 +39,7 @@ import {
   parsePairingPolicy,
   type PairingPolicy,
 } from './pairing'
+import { enrichInboundMessageWithAudioTranscript } from './inbound-audio-transcription'
 
 function resolveUploadPathFromUrl(rawUrl: string): string | null {
   if (!rawUrl) return null
@@ -657,10 +662,27 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
   if (!chatroom) return '[Error] Chatroom not found.'
 
   const agents = loadAgents()
+  const preferredCredentialId = (() => {
+    if (connector.agentId && agents[connector.agentId]?.credentialId) {
+      return agents[connector.agentId].credentialId as string
+    }
+    for (const agentId of chatroom.agentIds) {
+      const credentialId = agents[agentId]?.credentialId
+      if (credentialId) return credentialId as string
+    }
+    return null
+  })()
+  msg = await enrichInboundMessageWithAudioTranscript({
+    msg,
+    preferredCredentialId,
+  })
+
   const source: MessageSource = {
     platform: connector.platform,
     connectorId: connector.id,
     connectorName: connector.name,
+    channelId: msg.channelId,
+    senderId: msg.senderId,
     senderName: msg.senderName,
   }
   const inboundText = formatInboundUserText(msg)
@@ -673,6 +695,8 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
   if (chatroom.autoAddress && mentions.length === 0) {
     mentions = [...chatroom.agentIds]
   }
+  const mentionHealth = filterHealthyChatroomAgents(mentions, agents)
+  mentions = mentionHealth.healthyAgentIds
 
   // Create and persist the user message in the chatroom
   const userMessage: ChatroomMessage = {
@@ -689,11 +713,22 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
     source,
   }
   chatroom.messages.push(userMessage)
+  compactChatroomMessages(chatroom)
   chatroom.updatedAt = Date.now()
   chatrooms[chatroomId] = chatroom
   saveChatrooms(chatrooms)
   notify('chatrooms')
   notify(`chatroom:${chatroomId}`)
+
+  if (mentions.length === 0) {
+    if (mentionHealth.skipped.length > 0) {
+      const skippedSummary = mentionHealth.skipped
+        .map((row) => `${agents[row.agentId]?.name || row.agentId}: ${row.reason}`)
+        .join(', ')
+      return `[Error] No healthy agents were available for this request. Skipped: ${skippedSummary}`
+    }
+    return '[Error] No agents were selected for this request.'
+  }
 
   // Process mentioned agents sequentially and collect responses
   const responses: string[] = []
@@ -704,6 +739,23 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
     const apiKey = resolveApiKeyHelper(agent.credentialId)
     const freshChatrooms = loadChatrooms()
     const freshChatroom = freshChatrooms[chatroomId] as Chatroom
+    if (compactChatroomMessages(freshChatroom)) {
+      freshChatrooms[chatroomId] = freshChatroom
+      saveChatrooms(freshChatrooms)
+      notify(`chatroom:${chatroomId}`)
+    }
+
+    const providerInfo = getProvider(agent.provider)
+    if (providerInfo?.requiresApiKey && !apiKey) {
+      markProviderFailure(agent.provider, 'missing_api_credentials')
+      responses.push(`[${agent.name}] [Error] Missing API credentials.`)
+      continue
+    }
+    if (providerInfo?.requiresEndpoint && !agent.apiEndpoint) {
+      markProviderFailure(agent.provider, 'missing_api_endpoint')
+      responses.push(`[${agent.name}] [Error] Missing endpoint configuration.`)
+      continue
+    }
 
     const syntheticSession = buildSyntheticSession(agent, chatroomId)
     const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent)
@@ -730,6 +782,7 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
           platform: connector.platform,
           connectorId: connector.id,
           connectorName: connector.name,
+          channelId: msg.channelId,
         }
         const agentMessage: ChatroomMessage = {
           id: genId(),
@@ -737,7 +790,10 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
           senderName: agent.name,
           role: 'assistant',
           text: responseText,
-          mentions: parseMentions(responseText, agents, freshChatroom.agentIds),
+          mentions: filterHealthyChatroomAgents(
+            parseMentions(responseText, agents, freshChatroom.agentIds),
+            agents,
+          ).healthyAgentIds,
           reactions: [],
           time: Date.now(),
           source: agentSource,
@@ -750,10 +806,14 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
         saveChatrooms(latestChatrooms)
         notify(`chatroom:${chatroomId}`)
 
+        markProviderSuccess(agent.provider)
         responses.push(`[${agent.name}] ${responseText}`)
+      } else {
+        markProviderSuccess(agent.provider)
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err)
+      markProviderFailure(agent.provider, errMsg)
       console.error(`[connector] Chatroom agent ${agent.name} error:`, errMsg)
     }
   }
@@ -798,6 +858,10 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   if (!effectiveAgentId) return '[Error] Connector has no agent configured.'
   const agent = agents[effectiveAgentId]
   if (!agent) return '[Error] Connector agent not found.'
+  msg = await enrichInboundMessageWithAudioTranscript({
+    msg,
+    preferredCredentialId: agent.credentialId || null,
+  })
 
   // Enqueue system event + heartbeat wake for the agent
   const preview = (msg.text || '').slice(0, 80)
@@ -931,9 +995,14 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     return commandResult
   }
 
-  // Build system prompt: [userPrompt] \n\n [soul] \n\n [systemPrompt]
+  // Build system prompt: [identity] \n\n [userPrompt] \n\n [soul] \n\n [systemPrompt]
   const settings = loadSettings()
   const promptParts: string[] = []
+  // Identity block — agent needs to know who it is
+  const identityLines = [`## My Identity`, `My name is ${agent.name}.`]
+  if (agent.description) identityLines.push(agent.description)
+  identityLines.push('I should always refer to myself by this name. I am not "Assistant" — I have my own name and identity.')
+  promptParts.push(identityLines.join(' '))
   if (settings.userPrompt) promptParts.push(settings.userPrompt)
   promptParts.push(buildCurrentDateTimePromptContext())
   if (agent.soul) promptParts.push(agent.soul)
@@ -959,6 +1028,11 @@ Be action-first and autonomous: when the user gives an instruction, execute it i
 Do not end every reply with a question.
 Only ask a question when a specific missing detail blocks progress.
 When a task is complete, state the result plainly and stop.
+
+## Async Update Routing
+When you start work that may finish later (task, schedule, delegated run), tell the user where updates will be sent.
+Default to this same ${msg.platform} chat unless the user requested another destination.
+If channel preference is ambiguous and there are multiple reasonable destinations, ask one short routing question.
 
 ## Knowing When Not to Reply
 Real conversations have natural pauses — not every message needs a response. Reply with exactly "NO_MESSAGE" (nothing else) to stay silent when replying would feel unnatural or forced.
@@ -987,6 +1061,8 @@ If media sending fails, report the exact error and retry with a corrected path/t
     platform: connector.platform,
     connectorId: connector.id,
     connectorName: connector.name,
+    channelId: msg.channelId,
+    senderId: msg.senderId,
     senderName: msg.senderName,
   }
   session.messages.push({
@@ -1002,6 +1078,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
   const s1 = loadSessions()
   s1[session.id] = session
   saveSessions(s1)
+  notify(`messages:${session.id}`)
 
   // Stream the response
   let fullText = ''
@@ -1109,6 +1186,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
     platform: connector.platform,
     connectorId: connector.id,
     connectorName: connector.name,
+    channelId: msg.channelId,
   }
   if (fullText.trim()) {
     session.messages.push({ role: 'assistant', text: fullText.trim(), time: Date.now(), source: assistantSource })

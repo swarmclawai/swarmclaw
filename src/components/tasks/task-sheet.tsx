@@ -244,7 +244,7 @@ export function TaskSheet() {
           <div className="mb-8">
             <SectionLabel>Agent</SectionLabel>
             <div className="flex items-center gap-2.5 px-4 py-3 rounded-[14px] border border-white/[0.06] bg-surface">
-              <AgentAvatar seed={taskAgent.avatarSeed || null} name={taskAgent.name} size={24} />
+              <AgentAvatar seed={taskAgent.avatarSeed || null} avatarUrl={taskAgent.avatarUrl} name={taskAgent.name} size={24} />
               <span className="text-[14px] font-600 text-text">{taskAgent.name}</span>
             </div>
           </div>
@@ -363,6 +363,26 @@ export function TaskSheet() {
             <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface text-[13px] text-text-2 whitespace-pre-wrap max-h-[200px] overflow-y-auto">
               {editing.result}
             </div>
+          </div>
+        )}
+
+        {Array.isArray(editing.outputFiles) && editing.outputFiles.length > 0 && (
+          <div className="mb-8">
+            <SectionLabel>Output Files</SectionLabel>
+            <div className="flex flex-col gap-1.5">
+              {editing.outputFiles.map((fileRef) => (
+                <code key={fileRef} className="text-[12px] text-text-3 font-mono break-all">
+                  {fileRef}
+                </code>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {editing.completionReportPath && (
+          <div className="mb-8">
+            <SectionLabel>Task Report</SectionLabel>
+            <code className="text-[12px] text-text-3 font-mono break-all">{editing.completionReportPath}</code>
           </div>
         )}
 

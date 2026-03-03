@@ -12,6 +12,7 @@ import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
 import { saveInboundMediaBuffer, mimeFromPath, isImageMime, isAudioMime } from './media'
 import { isNoMessage } from './manager'
+import { formatTextForWhatsApp } from './whatsapp-text'
 
 import { DATA_DIR } from '../data-dir'
 
@@ -67,15 +68,17 @@ const whatsapp: PlatformConnector = {
       hasCredentials: hasStoredCreds(authDir),
       async sendMessage(channelId, text, options) {
         if (!sock) throw new Error('WhatsApp connector is not connected')
+        const normalizedText = formatTextForWhatsApp(text || '')
+        const normalizedCaption = formatTextForWhatsApp(options?.caption || normalizedText)
         // Local file path takes priority
         if (options?.mediaPath) {
           if (!fs.existsSync(options.mediaPath)) throw new Error(`File not found: ${options.mediaPath}`)
           const buf = fs.readFileSync(options.mediaPath)
           const mime = options.mimeType || mimeFromPath(options.mediaPath)
-          const caption = options.caption || text || undefined
+          const caption = normalizedCaption || undefined
           const fName = options.fileName || path.basename(options.mediaPath)
           let sent
-          if (isImageMime(mime)) {
+          if (isImageMime(mime) || mime.startsWith('video/')) {
             try {
               sent = await sock.sendMessage(channelId, { image: buf, caption, mimetype: mime })
             } catch (err: unknown) {
@@ -94,7 +97,7 @@ const whatsapp: PlatformConnector = {
         if (options?.imageUrl) {
           const sent = await sock.sendMessage(channelId, {
             image: { url: options.imageUrl },
-            caption: options.caption || text || undefined,
+            caption: normalizedCaption || undefined,
           })
           if (sent?.key?.id) sentMessageIds.add(sent.key.id)
           return { messageId: sent?.key?.id || undefined }
@@ -104,13 +107,13 @@ const whatsapp: PlatformConnector = {
             document: { url: options.fileUrl },
             fileName: options.fileName || 'attachment',
             mimetype: options.mimeType || 'application/octet-stream',
-            caption: options.caption || text || undefined,
+            caption: normalizedCaption || undefined,
           })
           if (sent?.key?.id) sentMessageIds.add(sent.key.id)
           return { messageId: sent?.key?.id || undefined }
         }
 
-        const payload = text || options?.caption || ''
+        const payload = normalizedText || normalizedCaption || ''
         const chunks = payload.length <= 4096 ? [payload] : (payload.match(/[\s\S]{1,4000}/g) || [payload])
         let lastMessageId: string | undefined
         for (const chunk of chunks) {

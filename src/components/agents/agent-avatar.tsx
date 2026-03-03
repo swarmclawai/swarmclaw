@@ -13,6 +13,7 @@ function sanitizeSvg(svg: string): string {
 
 interface Props {
   seed?: string | null
+  avatarUrl?: string | null
   name: string
   size?: number
   className?: string
@@ -27,7 +28,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 const HEART_PATH = 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'
 
-export function AgentAvatar({ seed, name, size = 32, className = '', status, heartbeatPulse }: Props) {
+export function AgentAvatar({ seed, avatarUrl, name, size = 32, className = '', status, heartbeatPulse }: Props) {
   const svgHtml = useMemo(() => {
     if (!seed) return null
     return sanitizeSvg(multiavatar(seed))
@@ -52,6 +53,19 @@ export function AgentAvatar({ seed, name, size = 32, className = '', status, hea
       <path d={HEART_PATH} />
     </svg>
   ) : null
+
+  if (avatarUrl) {
+    return (
+      <div className={`relative shrink-0 ${className}`} style={{ width: size, height: size }}>
+        <div className="rounded-full overflow-hidden w-full h-full">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={avatarUrl} alt={name} className="w-full h-full object-cover" draggable={false} />
+        </div>
+        {heartEl}
+        {dot}
+      </div>
+    )
+  }
 
   if (svgHtml) {
     return (

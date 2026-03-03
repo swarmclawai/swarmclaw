@@ -109,6 +109,21 @@ function collectToolEvent(ev: SSEEvent, bag: MessageToolEvent[]) {
   }
 }
 
+function shouldReplaceRecentAssistantMessage(params: {
+  previous: Message | null | undefined
+  nextToolEvents: MessageToolEvent[]
+  nextKind: Message['kind']
+  now: number
+}): boolean {
+  const { previous, nextToolEvents, nextKind, now } = params
+  if (!previous || previous.role !== 'assistant') return false
+  if (nextToolEvents.length === 0) return false
+  if (previous.kind && nextKind && previous.kind !== nextKind) return false
+  if (typeof previous.time === 'number' && now - previous.time > 45_000) return false
+  const prevTools = Array.isArray(previous.toolEvents) ? previous.toolEvents.length : 0
+  return prevTools === 0
+}
+
 function requestedToolNamesFromMessage(message: string): string[] {
   const lower = message.toLowerCase()
   const candidates = [
@@ -377,6 +392,11 @@ function buildAgentSystemPrompt(session: any): string | undefined {
 
   const settings = loadSettings()
   const parts: string[] = []
+  // Identity block — agent needs to know who it is
+  const identityLines = [`## My Identity`, `My name is ${agent.name}.`]
+  if (agent.description) identityLines.push(agent.description)
+  identityLines.push('I should always refer to myself by this name. I am not "Assistant" — I have my own name and identity.')
+  parts.push(identityLines.join(' '))
   if (settings.userPrompt) parts.push(settings.userPrompt)
   parts.push(buildCurrentDateTimePromptContext())
   if (agent.soul) parts.push(agent.soul)
@@ -1014,14 +1034,26 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       const persistedText = heartbeatClassification === 'strip'
         ? textForPersistence.replace(/HEARTBEAT_OK/gi, '').trim()
         : textForPersistence
-      current.messages.push({
+      const nowTs = Date.now()
+      const nextAssistantMessage: Message = {
         role: 'assistant',
         text: persistedText,
-        time: Date.now(),
+        time: nowTs,
         thinking: thinkingText || undefined,
         toolEvents: toolEvents.length ? toolEvents : undefined,
         kind: persistedKind,
-      })
+      }
+      const previous = current.messages.at(-1)
+      if (shouldReplaceRecentAssistantMessage({
+        previous,
+        nextToolEvents: toolEvents,
+        nextKind: persistedKind,
+        now: nowTs,
+      })) {
+        current.messages[current.messages.length - 1] = nextAssistantMessage
+      } else {
+        current.messages.push(nextAssistantMessage)
+      }
       changed = true
 
       // Conversation tone detection

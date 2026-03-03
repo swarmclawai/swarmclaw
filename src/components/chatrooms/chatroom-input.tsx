@@ -203,7 +203,7 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
                 selectedIndex === i + 1 ? 'bg-white/[0.08]' : 'hover:bg-white/[0.06]'
               }`}
             >
-              <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={20} />
+              <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={20} />
               <span className="text-[13px] text-text">{agent.name}</span>
             </button>
           ))}

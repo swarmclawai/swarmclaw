@@ -206,7 +206,7 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
                   </>
                 ) : agent ? (
                   <>
-                    <AgentAvatar seed={agent.avatarSeed || null} name={agent.name} size={24} />
+                    <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={24} />
                     <div className="flex-1 min-w-0">
                       <span className="text-[12px] font-600 text-text-2 block truncate">{agent.name}</span>
                       <span className="text-[10px] text-text-3/60 block">{agent.provider}/{agent.model}</span>

@@ -8,11 +8,14 @@ import { getProvider } from '@/lib/providers'
 import {
   resolveApiKey,
   parseMentions,
+  compactChatroomMessages,
   buildChatroomSystemPrompt,
   buildSyntheticSession,
   buildAgentSystemPromptForChatroom,
   buildHistoryForAgent,
 } from '@/lib/server/chatroom-helpers'
+import { filterHealthyChatroomAgents } from '@/lib/server/chatroom-health'
+import { markProviderFailure, markProviderSuccess } from '@/lib/server/provider-health'
 import type { Chatroom, ChatroomMessage, Agent } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -49,6 +52,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (chatroom.autoAddress && mentions.length === 0) {
     mentions = [...chatroom.agentIds]
   }
+  const mentionHealth = filterHealthyChatroomAgents(mentions, agents)
+  mentions = mentionHealth.healthyAgentIds
   const userMessage: ChatroomMessage = {
     id: genId(),
     senderId,
@@ -63,6 +68,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     ...(replyToId ? { replyToId } : {}),
   }
   chatroom.messages.push(userMessage)
+  compactChatroomMessages(chatroom)
   chatroom.updatedAt = Date.now()
   chatrooms[id] = chatroom
   saveChatrooms(chatrooms)
@@ -94,6 +100,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
 
       const processAgents = async () => {
+        if (mentionHealth.skipped.length > 0) {
+          const detail = mentionHealth.skipped
+            .map((row) => `${agents[row.agentId]?.name || row.agentId}: ${row.reason}`)
+            .join(', ')
+          writeEvent({ t: 'err', text: `Skipped agents: ${detail}` })
+        }
+        if (mentions.length === 0) {
+          writeEvent({ t: 'err', text: 'No healthy agents available in this chatroom. Check provider credentials/endpoints and retry.' })
+          writeEvent({ t: 'done' })
+          if (!closed) {
+            try { controller.close() } catch { /* already closed */ }
+            closed = true
+          }
+          return
+        }
+
         // Build agent queue: start with mentioned agents, then chain
         const initialQueue: Array<{ agentId: string; depth: number; contextMessage?: string }> = mentions.map((aid) => ({ agentId: aid, depth: 0 }))
         const processed = new Set<string>()
@@ -128,6 +150,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           try {
             const freshChatrooms = loadChatrooms()
             const freshChatroom = freshChatrooms[id] as Chatroom
+            if (compactChatroomMessages(freshChatroom)) {
+              freshChatrooms[id] = freshChatroom
+              saveChatrooms(freshChatrooms)
+              notify(`chatroom:${id}`)
+            }
 
             const syntheticSession = buildSyntheticSession(agent, id)
             const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent)
@@ -170,16 +197,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
               history,
             })
 
-            const responseText = result.fullText || fullText
+            const responseText = result.finalResponse || result.fullText || fullText
 
             // Don't persist empty or error-only messages — they pollute chat history
             if (!responseText.trim() && agentError) {
+              markProviderFailure(agent.provider, agentError)
               writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })
               return []
             }
 
             if (responseText.trim()) {
-              const newMentions = parseMentions(responseText, agents, freshChatroom.agentIds)
+              const parsedMentions = parseMentions(responseText, agents, freshChatroom.agentIds)
+              const chainedHealth = filterHealthyChatroomAgents(parsedMentions, agents)
+              const newMentions = chainedHealth.healthyAgentIds
+              if (chainedHealth.skipped.length > 0) {
+                const detail = chainedHealth.skipped
+                  .map((row) => `${agents[row.agentId]?.name || row.agentId}: ${row.reason}`)
+                  .join(', ')
+                writeEvent({ t: 'err', text: `Mentioned agents skipped: ${detail}`, agentId: agent.id, agentName: agent.name })
+              }
               const agentMessage: ChatroomMessage = {
                 id: genId(),
                 senderId: agent.id,
@@ -198,16 +234,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
               saveChatrooms(latestChatrooms)
               notify(`chatroom:${id}`)
 
+              markProviderSuccess(agent.provider)
               writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })
 
               // Return chained agent IDs — enriched context is built below when queuing
               return newMentions.filter((mid) => !processed.has(mid) && freshChatroom.agentIds.includes(mid))
             }
 
+            markProviderSuccess(agent.provider)
             writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })
             return []
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err)
+            markProviderFailure(agent.provider, msg)
             writeEvent({ t: 'err', text: `Agent ${agent.name} error: ${msg}`, agentId: agent.id })
             writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })
             return []

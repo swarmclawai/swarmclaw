@@ -68,7 +68,7 @@ function AssignAgentPicker({ projectId, onClose }: { projectId: string; onClose:
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[8px] text-left hover:bg-white/[0.06] transition-colors cursor-pointer bg-transparent border-none"
               style={{ fontFamily: 'inherit' }}
             >
-              <AgentAvatar seed={a.avatarSeed} name={a.name} size={22} />
+              <AgentAvatar seed={a.avatarSeed} avatarUrl={a.avatarUrl} name={a.name} size={22} />
               <div className="min-w-0 flex-1">
                 <div className="text-[12px] text-text truncate">{a.name}</div>
                 <div className="text-[10px] text-text-3/40 truncate">{a.model || a.provider}</div>
@@ -312,7 +312,7 @@ export function ProjectDetail() {
                     className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer bg-transparent border-none text-left p-0"
                     style={{ fontFamily: 'inherit' }}
                   >
-                    <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={28} />
+                    <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={28} />
                     <div className="min-w-0 flex-1">
                       <div className="text-[13px] font-600 text-text truncate">{agent.name}</div>
                       <div className="text-[11px] text-text-3/50 truncate">{agent.model || agent.provider}</div>
@@ -381,7 +381,7 @@ export function ProjectDetail() {
                     <span className="text-[13px] text-text truncate flex-1">{task.title}</span>
                     {agent && (
                       <span className="shrink-0 flex items-center gap-1.5 text-[11px] text-text-3/40">
-                        <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={16} />
+                        <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={16} />
                         {agent.name}
                       </span>
                     )}
@@ -448,7 +448,7 @@ export function ProjectDetail() {
                       </span>
                       {agent && (
                         <span className="shrink-0 flex items-center gap-1.5 text-[11px] text-text-3/40">
-                          <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={16} />
+                          <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={16} />
                         </span>
                       )}
                       {schedule.nextRunAt && (

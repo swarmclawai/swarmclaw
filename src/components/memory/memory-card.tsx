@@ -17,10 +17,11 @@ interface Props {
   active?: boolean
   agentName?: string | null
   agentAvatarSeed?: string | null
+  agentAvatarUrl?: string | null
   onClick: () => void
 }
 
-export function MemoryCard({ entry, active, agentName, agentAvatarSeed, onClick }: Props) {
+export function MemoryCard({ entry, active, agentName, agentAvatarSeed, agentAvatarUrl, onClick }: Props) {
   return (
     <div
       onClick={onClick}
@@ -73,7 +74,7 @@ export function MemoryCard({ entry, active, agentName, agentAvatarSeed, onClick 
       )}
       {agentName ? (
         <div className="flex items-center gap-1.5 mt-1.5">
-          <AgentAvatar seed={agentAvatarSeed || null} name={agentName} size={16} />
+          <AgentAvatar seed={agentAvatarSeed || null} avatarUrl={agentAvatarUrl} name={agentName} size={16} />
           <span className="text-[10px] text-text-3/60 truncate">{agentName}</span>
         </div>
       ) : !entry.agentId ? (

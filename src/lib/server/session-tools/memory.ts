@@ -187,7 +187,7 @@ export function buildMemoryTools(bctx: ToolBuildContext): StructuredToolInterfac
         },
         {
           name: 'memory_tool',
-          description: 'Store and retrieve long-term memories that persist across sessions. Memories can be shared or agent-scoped. Supports file references, image attachments, and linking memories together with depth traversal. Also supports a cross-agent knowledge base via "knowledge_store" and "knowledge_search". Use "store", "get", "search", "list", "delete", "link", "unlink", "knowledge_store", or "knowledge_search".',
+          description: 'My long-term memory — things I remember across conversations. I can store personal notes, recall past context, and build up knowledge over time. Memories can be private to me or shared with other agents. I can also attach files, link related memories, and contribute to a shared knowledge base. Actions: store, get, search, list, delete, link, unlink, knowledge_store, knowledge_search.',
           schema: z.object({
             action: z.enum(['store', 'get', 'search', 'list', 'delete', 'link', 'unlink', 'knowledge_store', 'knowledge_search']).describe('The action to perform'),
             key: z.string().describe('For store: memory title. For get/delete/link/unlink: memory ID. For search: optional query fallback.'),

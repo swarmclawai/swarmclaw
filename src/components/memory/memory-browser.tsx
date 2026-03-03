@@ -163,6 +163,7 @@ export function MemoryBrowser() {
                     active={e.id === selectedMemoryId}
                     agentName={showAgent ? (agent?.name || null) : undefined}
                     agentAvatarSeed={showAgent ? (agent?.avatarSeed || null) : undefined}
+                    agentAvatarUrl={showAgent ? (agent?.avatarUrl || null) : undefined}
                     onClick={() => setSelectedMemoryId(e.id)}
                   />
                 )

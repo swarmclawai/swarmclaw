@@ -18,6 +18,7 @@ export const VIEW_TO_PATH: Record<AppView, string> = {
   knowledge: '/knowledge',
   plugins: '/plugins',
   usage: '/usage',
+  wallets: '/wallets',
   runs: '/runs',
   logs: '/logs',
   settings: '/settings',

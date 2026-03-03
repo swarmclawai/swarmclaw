@@ -136,6 +136,7 @@ interface Props {
   message: Message
   assistantName?: string
   agentAvatarSeed?: string
+  agentAvatarUrl?: string | null
   agentName?: string
   isLast?: boolean
   onRetry?: () => void
@@ -147,7 +148,7 @@ interface Props {
   momentOverlay?: React.ReactNode
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, assistantName, agentAvatarSeed, agentName, isLast, onRetry, messageIndex, onToggleBookmark, onEditResend, onFork, onTransferToAgent, momentOverlay }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, assistantName, agentAvatarSeed, agentAvatarUrl, agentName, isLast, onRetry, messageIndex, onToggleBookmark, onEditResend, onFork, onTransferToAgent, momentOverlay }: Props) {
   const isUser = message.role === 'user'
   const isHeartbeat = !isUser && (message.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(message.text || ''))
   const currentUser = useAppStore((s) => s.currentUser)
@@ -231,7 +232,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
       {!isUser && (
         <div className="absolute left-[4px] top-0">
           <div style={momentOverlay ? { animation: 'avatar-moment-pulse 0.6s ease' } : undefined}>
-            {agentName ? <AgentAvatar seed={agentAvatarSeed || null} name={agentName} size={28} /> : <AiAvatar size="sm" />}
+            {agentName ? <AgentAvatar seed={agentAvatarSeed || null} avatarUrl={agentAvatarUrl} name={agentName} size={28} /> : <AiAvatar size="sm" />}
           </div>
           {momentOverlay}
         </div>

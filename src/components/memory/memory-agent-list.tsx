@@ -120,7 +120,7 @@ export function MemoryAgentList() {
               {isActive && (
                 <div className="absolute left-0 top-2 bottom-2 w-[2.5px] rounded-full bg-accent-bright" />
               )}
-              <AgentAvatar seed={agent.avatarSeed || null} name={agent.name} size={28} />
+              <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={28} />
               <span className={`text-[13px] font-600 flex-1 truncate ${isActive ? 'text-accent-bright' : 'text-text-2'}`}>
                 {agent.name}
               </span>

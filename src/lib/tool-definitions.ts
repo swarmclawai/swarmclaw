@@ -24,6 +24,7 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
   { id: 'create_spreadsheet', label: 'Create Spreadsheet', description: 'Create Excel or CSV files from structured data' },
   { id: 'http_request', label: 'HTTP Request', description: 'Make HTTP API calls (GET, POST, PUT, DELETE, etc.)' },
   { id: 'git', label: 'Git', description: 'Run structured git operations (status, commit, push, diff, etc.)' },
+  { id: 'wallet', label: 'Wallet', description: 'Manage agent crypto wallet — check balance, send SOL, view transactions' },
 ]
 
 export const PLATFORM_TOOLS: ToolDefinition[] = [

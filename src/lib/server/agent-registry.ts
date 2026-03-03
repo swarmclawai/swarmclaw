@@ -63,8 +63,8 @@ export function buildAgentAwarenessBlock(excludeId: string): string {
   })
 
   return [
-    '## Available Agents',
+    '## My Colleagues',
+    'These are the other agents I work alongside. I can hand off tasks to any of them if their skills are a better fit:',
     ...lines,
-    'You can delegate tasks to any agent using the delegate_to_agent tool.',
   ].join('\n')
 }

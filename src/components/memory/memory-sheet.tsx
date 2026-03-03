@@ -104,7 +104,7 @@ export function MemorySheet() {
                   : 'bg-white/[0.02] border-white/[0.06] text-text-3 hover:text-text-2 hover:bg-white/[0.04]'}`}
               style={{ fontFamily: 'inherit' }}
             >
-              <AgentAvatar seed={agent.avatarSeed || null} name={agent.name} size={20} />
+              <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={20} />
               <span className="truncate max-w-[120px]">{agent.name}</span>
             </button>
           ))}
@@ -140,7 +140,7 @@ export function MemorySheet() {
                         : 'bg-white/[0.02] border-white/[0.06] text-text-3 hover:text-text-2 hover:bg-white/[0.04]'}`}
                     style={{ fontFamily: 'inherit' }}
                   >
-                    <AgentAvatar seed={agent.avatarSeed || null} name={agent.name} size={20} />
+                    <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={20} />
                     <span className="truncate max-w-[120px]">{agent.name}</span>
                   </button>
                 )

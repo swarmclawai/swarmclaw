@@ -21,6 +21,7 @@ import { buildSubagentTools } from './subagent'
 import { buildCanvasTools } from './canvas'
 import { buildHttpTools } from './http'
 import { buildGitTools } from './git'
+import { buildWalletTools } from './wallet'
 
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
@@ -34,7 +35,9 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
   const cliProcessTimeoutMs = runtime.cliProcessTimeoutMs
   const appSettings = loadSettings()
   const toolPolicy = resolveSessionToolPolicy(enabledTools, appSettings)
-  const activeTools = toolPolicy.enabledTools
+  const activeTools = toolPolicy.enabledTools.includes('shell') && !toolPolicy.enabledTools.includes('process')
+    ? [...toolPolicy.enabledTools, 'process']
+    : toolPolicy.enabledTools
   const hasTool = (toolName: string) => activeTools.includes(toolName)
 
   if (toolPolicy.blockedTools.length > 0) {
@@ -107,6 +110,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
     ...buildCanvasTools(bctx),
     ...buildHttpTools(bctx),
     ...buildGitTools(bctx),
+    ...buildWalletTools(bctx),
   )
 
   // ---------------------------------------------------------------------------
@@ -158,7 +162,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
       },
       {
         name: 'request_tool_access',
-        description: 'Request access to a tool that is currently disabled. The user will be prompted to grant access, and a follow-up "Continue" message will be sent automatically once granted. End your current response after calling this — do NOT tell the user to "let you know" or ask them to confirm; the continuation is automatic.',
+        description: 'Ask the user for access to a tool I don\'t currently have. They\'ll get a prompt to grant it, and once they do, I\'ll automatically continue where I left off. I should end my current response after calling this — no need to ask the user to confirm, it happens on its own.',
         schema: z.object({
           toolId: z.string().describe('The tool ID to request access for (e.g. manage_tasks, shell, claude_code)'),
           reason: z.string().describe('Brief explanation of why you need this tool'),

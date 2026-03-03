@@ -52,7 +52,7 @@ export function TransferAgentPicker({ excludeIds, filterIds, onSelect, onClose }
               className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.06] transition-colors cursor-pointer bg-transparent border-none"
               style={{ fontFamily: 'inherit' }}
             >
-              <AgentAvatar seed={a.avatarSeed} name={a.name} size={20} />
+              <AgentAvatar seed={a.avatarSeed} avatarUrl={a.avatarUrl} name={a.name} size={20} />
               <span className="text-[12px] text-text truncate">{a.name}</span>
             </button>
           ))}

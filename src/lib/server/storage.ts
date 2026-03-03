@@ -54,6 +54,9 @@ const COLLECTIONS = [
   'webhook_retry_queue',
   'notifications',
   'chatrooms',
+  'wallets',
+  'wallet_transactions',
+  'wallet_balance_history',
 ] as const
 
 for (const table of COLLECTIONS) {
@@ -824,6 +827,41 @@ export function markNotificationRead(id: string) {
   } catch {
     // ignore malformed
   }
+}
+
+// --- Wallets ---
+export function loadWallets(): Record<string, unknown> {
+  return loadCollection('wallets')
+}
+
+export function upsertWallet(id: string, wallet: unknown) {
+  upsertCollectionItem('wallets', id, wallet)
+}
+
+export function deleteWallet(id: string) {
+  deleteCollectionItem('wallets', id)
+}
+
+// --- Wallet Transactions ---
+export function loadWalletTransactions(): Record<string, unknown> {
+  return loadCollection('wallet_transactions')
+}
+
+export function upsertWalletTransaction(id: string, tx: unknown) {
+  upsertCollectionItem('wallet_transactions', id, tx)
+}
+
+export function deleteWalletTransaction(id: string) {
+  deleteCollectionItem('wallet_transactions', id)
+}
+
+// --- Wallet Balance History ---
+export function loadWalletBalanceHistory(): Record<string, unknown> {
+  return loadCollection('wallet_balance_history')
+}
+
+export function upsertWalletBalanceSnapshot(id: string, snapshot: unknown) {
+  upsertCollectionItem('wallet_balance_history', id, snapshot)
 }
 
 export function getSessionMessages(sessionId: string): Message[] {

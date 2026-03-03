@@ -439,7 +439,7 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
           )}
           {filteredMessages.length === 0 && !streaming && (
             <div className="flex flex-col items-center justify-center gap-3 py-20 text-center" style={{ animation: 'fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
-              <AgentAvatar seed={agent?.avatarSeed || null} name={agent?.name || 'Agent'} size={48} />
+              <AgentAvatar seed={agent?.avatarSeed || null} avatarUrl={agent?.avatarUrl} name={agent?.name || 'Agent'} size={48} />
               <span className="font-display text-[16px] font-600 text-text-2">{agent?.name || 'Assistant'}</span>
               <span className="text-[14px] text-text-3/60">
                 {INTRO_GREETINGS[stableHash(agent?.id || session?.id || '') % INTRO_GREETINGS.length]}
@@ -526,6 +526,7 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
                     message={msg}
                     assistantName={assistantName}
                     agentAvatarSeed={agent?.avatarSeed}
+                    agentAvatarUrl={agent?.avatarUrl}
                     agentName={agent?.name}
                     isLast={isLastAssistant}
                     onRetry={isLastAssistant ? retryLastMessage : undefined}
@@ -540,9 +541,9 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
             )
           })}
           <ApprovalCards agentId={agent?.id} />
-          {streaming && !displayText && <ThinkingIndicator assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentName={agent?.name} />}
-          {streaming && displayText && <StreamingBubble text={displayText} assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentName={agent?.name} />}
-          {appSettings.suggestionsEnabled !== false && !streaming && filteredMessages.length > 0 && filteredMessages[filteredMessages.length - 1]?.role === 'assistant' && (
+          {streaming && !displayText && <ThinkingIndicator assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentAvatarUrl={agent?.avatarUrl} agentName={agent?.name} />}
+          {streaming && displayText && <StreamingBubble text={displayText} assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentAvatarUrl={agent?.avatarUrl} agentName={agent?.name} />}
+          {appSettings.suggestionsEnabled === true && !streaming && filteredMessages.length > 0 && filteredMessages[filteredMessages.length - 1]?.role === 'assistant' && (
             <SuggestionsBar lastMessage={filteredMessages[filteredMessages.length - 1]} onSend={sendMessage} />
           )}
         </div>

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-02T22:15:43.558Z",
-  "totalIssues": 592,
-  "uniqueIssues": 208,
+  "generatedAt": "2026-03-03T16:32:16.727Z",
+  "totalIssues": 588,
+  "uniqueIssues": 204,
   "issues": [
     {
       "filePath": "bin/server-cmd.js",
@@ -310,13 +310,6 @@
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
       "message": "React Hook useEffect has missing dependencies: 'loadNetworkInfo', 'loadSessions', 'loadSettings', and 'syncUserFromServer'. Either include them or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/page.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -1049,20 +1042,6 @@
     },
     {
       "filePath": "src/lib/server/connectors/discord.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'isImageMime' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/connectors/discord.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'mimeFromPath' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/connectors/discord.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
@@ -1326,13 +1305,6 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 5
-    },
-    {
-      "filePath": "src/lib/server/session-tools/connector.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'ctx' is assigned a value but never used.",
-      "count": 1
     },
     {
       "filePath": "src/lib/server/session-tools/context.ts",

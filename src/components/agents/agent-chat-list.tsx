@@ -223,7 +223,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
             >
               <div className="flex items-center gap-2.5">
                 <div className="relative shrink-0">
-                  <AgentAvatar seed={agent.avatarSeed || null} name={agent.name} size={36} />
+                  <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={36} />
                   <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg ${
                     isWorking ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.4)]' : 'bg-text-3/30'
                   }`} />

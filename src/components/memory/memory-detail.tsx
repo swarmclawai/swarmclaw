@@ -329,7 +329,7 @@ export function MemoryDetail() {
                           : 'bg-white/[0.02] border-white/[0.06] text-text-3 hover:text-text-2 hover:bg-white/[0.04]'}`}
                       style={{ fontFamily: 'inherit' }}
                     >
-                      <AgentAvatar seed={agent.avatarSeed || null} name={agent.name} size={16} />
+                      <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={16} />
                       <span className="truncate max-w-[100px]">{agent.name}</span>
                     </button>
                   ))}
@@ -360,7 +360,7 @@ export function MemoryDetail() {
                                 : 'bg-white/[0.02] border-white/[0.06] text-text-3 hover:text-text-2 hover:bg-white/[0.04]'}`}
                             style={{ fontFamily: 'inherit' }}
                           >
-                            <AgentAvatar seed={agent.avatarSeed || null} name={agent.name} size={16} />
+                            <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={16} />
                             <span className="truncate max-w-[100px]">{agent.name}</span>
                           </button>
                         )
@@ -406,7 +406,7 @@ export function MemoryDetail() {
                       const a = agents[aid]
                       return (
                         <span key={aid} className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-white/[0.03] text-[11px] text-text-3">
-                          <AgentAvatar seed={a?.avatarSeed || null} name={a?.name || aid} size={16} />
+                          <AgentAvatar seed={a?.avatarSeed || null} avatarUrl={a?.avatarUrl} name={a?.name || aid} size={16} />
                           {a?.name || aid}
                         </span>
                       )

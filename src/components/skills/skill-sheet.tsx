@@ -255,7 +255,7 @@ export function SkillSheet() {
                     }`}
                     style={{ fontFamily: 'inherit' }}
                   >
-                    <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={24} />
+                    <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={24} />
                     <span className="text-[13px] text-text flex-1 truncate">{agent.name}</span>
                     {selected && (
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-accent-bright shrink-0">

@@ -1,5 +1,6 @@
 import { loadSettings, loadSkills, loadCredentials, decryptKey } from './storage'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
+import { genId } from '@/lib/id'
 import type { Chatroom, Agent, Session, Message } from '@/types'
 
 /** Resolve API key from an agent's credentialId */
@@ -11,22 +12,69 @@ export function resolveApiKey(credentialId: string | null | undefined): string |
   try { return decryptKey(cred.encryptedKey) } catch { return null }
 }
 
+const COMPACTION_PREFIX = '[Conversation summary]'
+
+function normalizeMentionToken(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[.,!?;:]+$/g, '')
+    .replace(/\s+/g, '')
+    .trim()
+}
+
+function truncateText(text: string, max: number): string {
+  const compact = String(text || '').replace(/\s+/g, ' ').trim()
+  if (compact.length <= max) return compact
+  return `${compact.slice(0, Math.max(0, max - 3))}...`
+}
+
 /** Parse @mentions from message text, returns matching agentIds */
 export function parseMentions(text: string, agents: Record<string, Agent>, memberIds: string[]): string[] {
   if (/@all\b/i.test(text)) return [...memberIds]
-  const mentionPattern = /@(\S+)/g
+  const mentionPattern = /(?:^|[\s(])@([a-zA-Z0-9._-]+)/g
   const mentioned: string[] = []
   let match: RegExpExecArray | null
   while ((match = mentionPattern.exec(text)) !== null) {
-    const name = match[1].toLowerCase()
+    const token = normalizeMentionToken(match[1] || '')
+    if (!token) continue
     for (const id of memberIds) {
       const agent = agents[id]
-      if (agent && agent.name.toLowerCase().replace(/\s+/g, '') === name) {
+      const normalizedName = normalizeMentionToken(agent?.name || '')
+      const normalizedId = normalizeMentionToken(id)
+      if (agent && (normalizedName === token || normalizedId === token)) {
         if (!mentioned.includes(id)) mentioned.push(id)
       }
     }
   }
   return mentioned
+}
+
+/**
+ * Persisted chatroom compaction so long-lived rooms stay inside context budgets.
+ * Returns true when the message list was compacted.
+ */
+export function compactChatroomMessages(chatroom: Chatroom, keepLast = 90): boolean {
+  const maxKeep = Math.max(20, keepLast)
+  if (!Array.isArray(chatroom.messages) || chatroom.messages.length <= maxKeep) return false
+
+  const dropped = chatroom.messages.length - maxKeep
+  const kept = chatroom.messages.slice(-maxKeep).filter((msg, idx) => {
+    if (idx !== 0) return true
+    return !(msg.senderId === 'system' && typeof msg.text === 'string' && msg.text.startsWith(COMPACTION_PREFIX))
+  })
+  const summaryMessage = {
+    id: genId(),
+    senderId: 'system',
+    senderName: 'System',
+    role: 'assistant' as const,
+    text: `${COMPACTION_PREFIX} ${dropped} earlier chat message(s) were condensed to keep the room responsive.`,
+    mentions: [],
+    reactions: [],
+    time: Date.now(),
+  }
+  chatroom.messages = [summaryMessage, ...kept]
+  chatroom.updatedAt = Date.now()
+  return true
 }
 
 /** Build chatroom context as a system prompt addendum with agent profiles and collaboration guidelines */
@@ -47,9 +95,10 @@ export function buildChatroomSystemPrompt(chatroom: Chatroom, agents: Record<str
     .filter(Boolean)
     .join('\n')
 
-  const recentMessages = chatroom.messages.slice(-30).map((m) => {
-    return `[${m.senderName}]: ${m.text}`
-  }).join('\n')
+  const recentMessages = chatroom.messages
+    .slice(-8)
+    .map((m) => `[${m.senderName}]: ${truncateText(m.text, 180)}`)
+    .join('\n')
 
   const memberCount = chatroom.agentIds.length
   const otherNames = chatroom.agentIds
@@ -70,6 +119,8 @@ export function buildChatroomSystemPrompt(chatroom: Chatroom, agents: Record<str
     '- **You are in a group chat.** Talk like you are in a real-time conversation with teammates — be direct, casual, and concise.',
     '- **Be yourself.** Respond with personality. Don\'t give generic "let me know if you need anything" responses. Actually engage with what was said.',
     '- **Answer the question or react to the message.** If someone says "how are you doing?" just answer naturally. If someone asks a question you can help with, help directly.',
+    '- **Do not meta-narrate user intent.** Avoid phrases like "it seems like you\'re trying to..." — respond directly to what they said.',
+    '- **Handle greetings like a human.** For "hello", "how are you", or light check-ins, give a normal conversational reply instead of tool/process commentary.',
     '- **Keep responses short** unless depth is needed. A few sentences is usually enough. This is a chat, not an essay.',
     '- **@mention teammates** only when you genuinely need their specific expertise. Don\'t tag people just to be polite.',
     '- **Don\'t narrate your capabilities** unless asked. Just demonstrate them by doing things.',
@@ -121,10 +172,12 @@ export function buildAgentSystemPromptForChatroom(agent: Agent): string {
 
 /** Convert chatroom messages to Message history format for LLM */
 export function buildHistoryForAgent(chatroom: Chatroom, agentId: string, imagePath?: string, attachedFiles?: string[]): Message[] {
-  const history = chatroom.messages.slice(-50).map((m) => {
+  const recentMessages = chatroom.messages.slice(-24)
+  const includeAttachmentsFrom = Math.max(0, recentMessages.length - 6)
+  const history = recentMessages.map((m, idx) => {
     let msgText = `[${m.senderName}]: ${m.text}`
-    // Include attachment info in history
-    if (m.attachedFiles?.length) {
+    const includeAttachments = idx >= includeAttachmentsFrom
+    if (includeAttachments && m.attachedFiles?.length) {
       const names = m.attachedFiles.map((f) => f.split('/').pop()).join(', ')
       msgText += `\n[Attached: ${names}]`
     }
@@ -132,8 +185,8 @@ export function buildHistoryForAgent(chatroom: Chatroom, agentId: string, imageP
       role: m.senderId === agentId ? 'assistant' as const : 'user' as const,
       text: msgText,
       time: m.time,
-      ...(m.imagePath ? { imagePath: m.imagePath } : {}),
-      ...(m.attachedFiles ? { attachedFiles: m.attachedFiles } : {}),
+      ...(includeAttachments && m.imagePath ? { imagePath: m.imagePath } : {}),
+      ...(includeAttachments && m.attachedFiles ? { attachedFiles: m.attachedFiles } : {}),
     }
   })
   // Pass through imagePath/attachedFiles from the current message to the last history entry

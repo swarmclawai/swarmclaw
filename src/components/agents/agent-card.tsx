@@ -157,6 +157,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
         <div className="flex items-center gap-2.5">
           <AgentAvatar
             seed={agent.avatarSeed}
+            avatarUrl={agent.avatarUrl}
             name={agent.name}
             size={28}
             status={isRunning ? 'busy' : isOnline ? 'online' : undefined}

@@ -115,7 +115,7 @@ export function AgentSwitchDialog() {
                 ${idx === selectedIdx ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'}`}
               style={{ fontFamily: 'inherit' }}
             >
-              <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={28} />
+              <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={28} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-500 text-text truncate">{agent.name}</span>

@@ -7,7 +7,8 @@ import { api } from '@/lib/api-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { toast } from 'sonner'
 import { ModelCombobox } from '@/components/shared/model-combobox'
-import type { ProviderType, ClaudeSkill } from '@/types'
+import type { ProviderType, ClaudeSkill, AgentWallet } from '@/types'
+import { WalletSection } from '@/components/wallets/wallet-section'
 import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
 import { NATIVE_CAPABILITY_PROVIDER_IDS, NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 import { AgentAvatar } from './agent-avatar'
@@ -105,12 +106,15 @@ export function AgentSheet() {
   const [openclawEnabled, setOpenclawEnabled] = useState(false)
   const [projectId, setProjectId] = useState<string | undefined>(undefined)
   const [avatarSeed, setAvatarSeed] = useState('')
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
   const [thinkingLevel, setThinkingLevel] = useState<'' | 'minimal' | 'low' | 'medium' | 'high'>('')
   const [voiceId, setVoiceId] = useState('')
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(false)
   const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
   const [heartbeatModel, setHeartbeatModel] = useState('')
   const [heartbeatPrompt, setHeartbeatPrompt] = useState('')
+  const [agentWallet, setAgentWallet] = useState<(Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }) | null>(null)
   const [addingKey, setAddingKey] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyValue, setNewKeyValue] = useState('')
@@ -178,18 +182,27 @@ export function AgentSheet() {
         setMcpDisabledTools(editing.mcpDisabledTools || [])
         setFallbackCredentialIds(editing.fallbackCredentialIds || [])
         // platformAssignScope derived from isOrchestrator — no separate state
-        setCapabilities(editing.capabilities || [])
+        setCapabilities(Array.isArray(editing.capabilities) ? editing.capabilities : [])
         setCapInput('')
         setOllamaMode(editing.credentialId && editing.provider === 'ollama' ? 'cloud' : 'local')
         setOpenclawEnabled(editing.provider === 'openclaw')
         setProjectId(editing.projectId)
         setAvatarSeed(editing.avatarSeed || crypto.randomUUID().slice(0, 8))
+        setAvatarUrl(editing.avatarUrl || null)
         setThinkingLevel(editing.thinkingLevel || '')
         setVoiceId(editing.elevenLabsVoiceId || '')
         setHeartbeatEnabled(editing.heartbeatEnabled || false)
         setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
         setHeartbeatModel(editing.heartbeatModel || '')
         setHeartbeatPrompt(editing.heartbeatPrompt || '')
+        // Load wallet if agent has one
+        if (editing.walletId) {
+          api<Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }>('GET', `/wallets/${editing.walletId}`)
+            .then(setAgentWallet)
+            .catch(() => setAgentWallet(null))
+        } else {
+          setAgentWallet(null)
+        }
       } else {
         setName('')
         setDescription('')
@@ -310,6 +323,7 @@ export function AgentSheet() {
       capabilities,
       projectId: projectId || undefined,
       avatarSeed: avatarSeed.trim() || undefined,
+      avatarUrl: avatarUrl || null,
       thinkingLevel: thinkingLevel || undefined,
       elevenLabsVoiceId: voiceId.trim() || null,
       heartbeatEnabled,
@@ -480,30 +494,82 @@ export function AgentSheet() {
 
       <div className="mb-8">
         <SectionLabel>Avatar</SectionLabel>
-        <div className="flex items-center gap-3">
-          <AgentAvatar seed={avatarSeed || null} name={name || 'A'} size={40} />
-          <input
-            type="text"
-            value={avatarSeed}
-            onChange={(e) => setAvatarSeed(e.target.value)}
-            placeholder="Avatar seed (any text)"
-            className={inputClass}
-            style={{ fontFamily: 'inherit', flex: 1 }}
-          />
-          <button
-            type="button"
-            onClick={() => setAvatarSeed(crypto.randomUUID().slice(0, 8))}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] border border-white/[0.08] bg-transparent text-text-3 text-[12px] font-600 cursor-pointer transition-all hover:bg-white/[0.04] hover:text-text-2 active:scale-95 shrink-0"
-            style={{ fontFamily: 'inherit' }}
-            title="Shuffle avatar"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <rect x="4" y="4" width="16" height="16" rx="2" />
-              <circle cx="9" cy="9" r="1" fill="currentColor" />
-              <circle cx="15" cy="15" r="1" fill="currentColor" />
-            </svg>
-            Shuffle
-          </button>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-4">
+            <div className="relative group shrink-0">
+              <AgentAvatar seed={avatarUrl ? null : (avatarSeed || null)} avatarUrl={avatarUrl} name={name || 'A'} size={64} />
+              <label className="absolute inset-0 rounded-full flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    setUploading(true)
+                    try {
+                      const res = await fetch('/api/upload', {
+                        method: 'POST',
+                        headers: { 'x-filename': file.name },
+                        body: await file.arrayBuffer(),
+                      })
+                      const data = await res.json()
+                      if (data.url) {
+                        setAvatarUrl(data.url)
+                        setAvatarSeed('')
+                      }
+                    } finally {
+                      setUploading(false)
+                      e.target.value = ''
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAvatarUrl(null)
+                    if (!avatarSeed) setAvatarSeed(crypto.randomUUID().slice(0, 8))
+                  }}
+                  className="text-[11px] text-text-3 hover:text-red-400 transition-colors self-start cursor-pointer"
+                >
+                  Remove custom image
+                </button>
+              )}
+              {uploading && <span className="text-[11px] text-text-3">Uploading...</span>}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={avatarSeed}
+              onChange={(e) => { setAvatarSeed(e.target.value); setAvatarUrl(null) }}
+              placeholder="Avatar seed (any text)"
+              className={inputClass}
+              style={{ fontFamily: 'inherit', flex: 1 }}
+            />
+            <button
+              type="button"
+              onClick={() => { setAvatarSeed(crypto.randomUUID().slice(0, 8)); setAvatarUrl(null) }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] border border-white/[0.08] bg-transparent text-text-3 text-[12px] font-600 cursor-pointer transition-all hover:bg-white/[0.04] hover:text-text-2 active:scale-95 shrink-0"
+              style={{ fontFamily: 'inherit' }}
+              title="Shuffle avatar"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+                <circle cx="9" cy="9" r="1" fill="currentColor" />
+                <circle cx="15" cy="15" r="1" fill="currentColor" />
+              </svg>
+              Shuffle
+            </button>
+          </div>
         </div>
       </div>
 
@@ -665,6 +731,26 @@ export function AgentSheet() {
         )}
         <p className="text-[11px] text-text-3/70 mt-1.5">Periodic check-in runs on idle sessions using this agent. Processes pending events and monitors status.</p>
       </div>
+
+      {/* Wallet Section */}
+      {editingId && (
+        <WalletSection
+          agentId={editingId}
+          wallet={agentWallet}
+          onWalletCreated={async () => {
+            await loadAgents()
+            // Fetch the wallet for this agent
+            try {
+              const wallets = await api<Record<string, Omit<AgentWallet, 'encryptedPrivateKey'>>>('GET', '/wallets')
+              const match = Object.values(wallets).find((w) => w.agentId === editingId)
+              if (match) {
+                const detail = await api<Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }>('GET', `/wallets/${match.id}`)
+                setAgentWallet(detail)
+              }
+            } catch { /* ignore */ }
+          }}
+        />
+      )}
 
       {provider !== 'openclaw' && (
         <div className="mb-8">
