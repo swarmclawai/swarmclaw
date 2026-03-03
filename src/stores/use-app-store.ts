@@ -204,6 +204,10 @@ interface AppState {
   markAllNotificationsRead: () => Promise<void>
   clearReadNotifications: () => Promise<void>
 
+  // Wallets
+  walletPanelAgentId: string | null
+  setWalletPanelAgentId: (id: string | null) => void
+
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -683,5 +687,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       // ignore
     }
   },
+
+  // Wallets
+  walletPanelAgentId: null,
+  setWalletPanelAgentId: (id) => set({ walletPanelAgentId: id }),
 
 }))

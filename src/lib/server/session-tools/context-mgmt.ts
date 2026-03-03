@@ -28,7 +28,7 @@ export function buildContextTools(bctx: ToolBuildContext): StructuredToolInterfa
         },
         {
           name: 'context_status',
-          description: 'Check current context window usage for this session. Returns estimated tokens used, provider context limit, percentage used, and compaction strategy recommendation.',
+          description: 'Check how much of my context window I\'ve used. Returns my token usage, the model\'s limit, percentage used, and whether I should compact.',
           schema: z.object({}),
         },
       ),
@@ -108,7 +108,7 @@ export function buildContextTools(bctx: ToolBuildContext): StructuredToolInterfa
         },
         {
           name: 'context_summarize',
-          description: 'Summarize and compact the conversation history to free context window space. Old messages are consolidated to memory (preserving decisions, key facts, results) and replaced with a summary. Use context_status first to check if compaction is needed.',
+          description: 'Compact my conversation history to free up context space. I\'ll save important decisions, facts, and results to memory, then replace older messages with a summary. I should check context_status first to see if this is needed.',
           schema: z.object({
             keepLastN: z.number().optional().describe('Number of recent messages to keep (default 10, min 2).'),
           }),

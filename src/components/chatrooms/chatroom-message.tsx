@@ -172,7 +172,7 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
               className="bg-transparent border-none p-0 cursor-pointer transition-all duration-150 hover:scale-110 hover:-translate-y-0.5"
               style={momentOverlay ? { animation: 'avatar-moment-pulse 0.6s ease' } : undefined}
             >
-              <AgentAvatar seed={agent.avatarSeed || null} name={message.senderName} size={28} status={streamingAgentIds?.has(message.senderId) ? 'busy' : 'online'} />
+              <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={message.senderName} size={28} status={streamingAgentIds?.has(message.senderId) ? 'busy' : 'online'} />
             </button>
           ) : (
             <div style={momentOverlay ? { animation: 'avatar-moment-pulse 0.6s ease' } : undefined}>

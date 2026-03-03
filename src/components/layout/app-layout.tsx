@@ -41,6 +41,7 @@ import { PluginSheet } from '@/components/plugins/plugin-sheet'
 import { RunList } from '@/components/runs/run-list'
 import { ActivityFeed } from '@/components/activity/activity-feed'
 import { MetricsDashboard } from '@/components/usage/metrics-dashboard'
+import { WalletPanel } from '@/components/wallets/wallet-panel'
 import { ProjectList } from '@/components/projects/project-list'
 import { ProjectDetail } from '@/components/projects/project-detail'
 import { ProjectSheet } from '@/components/projects/project-sheet'
@@ -398,6 +399,11 @@ export function AppLayout() {
                 <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
               </svg>
             </NavItem>
+            <NavItem view="wallets" label="Wallets" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('wallets')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="6" width="20" height="14" rx="2" /><path d="M22 10H18a2 2 0 0 0 0 4h4" /><path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
+              </svg>
+            </NavItem>
             <NavItem view="runs" label="Runs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('runs')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -519,8 +525,8 @@ export function AppLayout() {
         </div>
       )}
 
-      {/* Desktop: Side panel */}
-      {isDesktop && sidebarOpen && (
+      {/* Desktop: Side panel (wallets has its own built-in sidebar) */}
+      {isDesktop && sidebarOpen && activeView !== 'wallets' && (
         <div
           className="w-[280px] shrink-0 bg-raised border-r border-white/[0.04] flex flex-col h-full"
           style={{ animation: 'panel-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)' }}
@@ -727,6 +733,8 @@ export function AppLayout() {
             <ActivityFeed />
           ) : activeView === 'usage' ? (
             <MetricsDashboard />
+          ) : activeView === 'wallets' ? (
+            <WalletPanel />
           ) : activeView === 'chatrooms' ? (
             <div className="flex-1 flex h-full min-w-0">
               <div className="w-[280px] shrink-0 border-r border-white/[0.06] flex flex-col">
@@ -886,6 +894,7 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   logs: 'Application logs & error tracking',
   plugins: 'Extend agent capabilities with custom plugins',
   usage: 'Usage metrics, cost tracking & agent performance',
+  wallets: 'Agent crypto wallets — hold funds, send SOL, manage spending',
   runs: 'Live run monitoring & history',
   settings: 'Manage providers, API keys & orchestrator engine',
   projects: 'Group agents, tasks & schedules into projects',
@@ -895,7 +904,7 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
 const FULL_WIDTH_VIEWS = new Set<AppView>([
   'home', 'chatrooms', 'schedules', 'secrets', 'providers', 'skills',
   'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'plugins',
-  'usage', 'runs', 'logs', 'settings', 'activity', 'projects',
+  'usage', 'wallets', 'runs', 'logs', 'settings', 'activity', 'projects',
 ])
 
 const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { icon: string; title: string; description: string; features: string[] }> = {
@@ -1006,6 +1015,12 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { icon: str
     title: 'Activity',
     description: 'Audit trail of all entity mutations across the system.',
     features: ['Track agent, task, and connector changes', 'Filter by entity type and action', 'Real-time updates via WebSocket', 'Relative timestamps'],
+  },
+  wallets: {
+    icon: 'wallet',
+    title: 'Wallets',
+    description: 'Agent crypto wallets for autonomous financial operations on Solana.',
+    features: ['Create Solana wallets for agents', 'Per-transaction and daily spending limits', 'User approval for transactions', 'Balance tracking and transaction history'],
   },
 }
 

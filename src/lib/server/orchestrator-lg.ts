@@ -124,7 +124,12 @@ async function executeSubTaskViaCli(agent: Agent, task: string, parentSessionId:
   }
   ss(sessions)
 
-  const result = await callProvider(agent, agent.systemPrompt, [{ role: 'user', text: task }])
+  // Build system prompt with identity
+  const subPromptParts: string[] = []
+  subPromptParts.push(`## My Identity\nMy name is ${agent.name}.${agent.description ? ' ' + agent.description : ''} I should always refer to myself by this name.`)
+  if (agent.soul) subPromptParts.push(agent.soul)
+  if (agent.systemPrompt) subPromptParts.push(agent.systemPrompt)
+  const result = await callProvider(agent, subPromptParts.join('\n\n'), [{ role: 'user', text: task }])
 
   const s2 = ls()
   if (s2[childId]) {
@@ -348,9 +353,14 @@ export async function executeLangGraphOrchestrator(
     apiKey: engine.apiKey,
     apiEndpoint: engine.apiEndpoint,
   })
-  // Build system message: [userPrompt] \n\n [soul] \n\n [systemPrompt] \n\n [orchestrator context]
+  // Build system message: [identity] \n\n [userPrompt] \n\n [soul] \n\n [systemPrompt] \n\n [orchestrator context]
   const settings = loadSettings()
   const promptParts: string[] = []
+  // Identity block
+  const orchIdentity = [`## My Identity`, `My name is ${orchestrator.name}.`]
+  if (orchestrator.description) orchIdentity.push(orchestrator.description)
+  orchIdentity.push('I should always refer to myself by this name.')
+  promptParts.push(orchIdentity.join(' '))
   if (settings.userPrompt) promptParts.push(settings.userPrompt)
   promptParts.push(buildCurrentDateTimePromptContext())
   if (orchestrator.soul) promptParts.push(orchestrator.soul)

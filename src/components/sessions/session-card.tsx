@@ -86,7 +86,7 @@ export function SessionCard({ session, active, onClick }: Props) {
       <div className="flex items-center gap-2.5">
         {agent && (
           <div className="relative shrink-0">
-            <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={24} />
+            <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={24} />
             {(heartbeatEnabled || session.active) && (
               <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-[#0f0f1a]" />
             )}

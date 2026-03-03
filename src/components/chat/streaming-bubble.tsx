@@ -104,10 +104,11 @@ interface Props {
   text: string
   assistantName?: string
   agentAvatarSeed?: string
+  agentAvatarUrl?: string | null
   agentName?: string
 }
 
-export function StreamingBubble({ text, assistantName, agentAvatarSeed, agentName }: Props) {
+export function StreamingBubble({ text, assistantName, agentAvatarSeed, agentAvatarUrl, agentName }: Props) {
   const toolEvents = useChatStore((s) => s.toolEvents)
   const streamPhase = useChatStore((s) => s.streamPhase)
   const streamToolName = useChatStore((s) => s.streamToolName)
@@ -137,7 +138,7 @@ export function StreamingBubble({ text, assistantName, agentAvatarSeed, agentNam
       style={{ animation: 'msg-in-left 0.35s cubic-bezier(0.16, 1, 0.3, 1)' }}
     >
       <div className="absolute left-[4px] top-0 relative">
-        {agentName ? <AgentAvatar seed={agentAvatarSeed || null} name={agentName} size={28} /> : <AiAvatar size="sm" mood={streamPhase === 'tool' ? 'tool' : 'thinking'} />}
+        {agentName ? <AgentAvatar seed={agentAvatarSeed || null} avatarUrl={agentAvatarUrl} name={agentName} size={28} /> : <AiAvatar size="sm" mood={streamPhase === 'tool' ? 'tool' : 'thinking'} />}
         {currentMoment && (
           <ActivityMoment
             key={currentMoment.id}

@@ -178,7 +178,7 @@ export function ChatroomSheet() {
                         selected ? 'bg-accent-soft/40' : 'hover:bg-white/[0.04]'
                       }`}
                     >
-                      <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={24} />
+                      <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={24} />
                       <span className="text-[13px] text-text flex-1 truncate">{agent.name}</span>
                       {selected && (
                         <CheckIcon size={14} className="text-accent-bright shrink-0" />

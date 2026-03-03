@@ -42,37 +42,38 @@ interface StreamAgentChatOpts {
 
 function buildToolCapabilityLines(enabledTools: string[], opts?: { platformAssignScope?: 'self' | 'all' }): string[] {
   const lines: string[] = []
-  if (enabledTools.includes('shell')) lines.push('- Shell execution is available (`execute_command`). Use it for running servers, installing deps, running scripts, git commands, build/test steps, and any single or chained shell commands. Supports background mode for long-running processes like dev servers.')
-  if (enabledTools.includes('process')) lines.push('- Process control is available (`process_tool`) for long-running commands (poll/log/write/kill).')
+  if (enabledTools.includes('shell')) lines.push('- I can run shell commands (`execute_command`) — servers, installs, scripts, git, builds, anything. I can run things in the background for long-lived processes like dev servers.')
+  if (enabledTools.includes('process')) lines.push('- I can manage running processes (`process_tool`) — check status, read logs, send input, or stop them.')
   if (enabledTools.includes('files') || enabledTools.includes('copy_file') || enabledTools.includes('move_file') || enabledTools.includes('delete_file')) {
-    lines.push('- File operations are available (`read_file`, `write_file`, `list_files`, `copy_file`, `move_file`, `send_file`). `delete_file` is destructive and may be disabled unless explicitly enabled.')
+    lines.push('- I can read, write, copy, move, and send files (`read_file`, `write_file`, `list_files`, `copy_file`, `move_file`, `send_file`). Deleting files is destructive, so that may need explicit permission.')
   }
-  if (enabledTools.includes('edit_file')) lines.push('- Precise single-match replacement is available (`edit_file`).')
-  if (enabledTools.includes('web_search')) lines.push('- Web search is available (`web_search`). Use it for external research, options discovery, and validation.')
-  if (enabledTools.includes('web_fetch')) lines.push('- URL content extraction is available (`web_fetch`) for source-backed analysis.')
-  if (enabledTools.includes('browser')) lines.push('- Browser automation is available (`browser`). Use it for interactive websites and screenshots.')
-  if (enabledTools.includes('claude_code')) lines.push('- Claude delegation is available (`delegate_to_claude_code`) for deep coding/refactor tasks. Resume IDs may be returned via `[delegate_meta]`.')
-  if (enabledTools.includes('codex_cli')) lines.push('- Codex delegation is available (`delegate_to_codex_cli`) for deep coding/refactor tasks. Resume IDs may be returned via `[delegate_meta]`.')
-  if (enabledTools.includes('opencode_cli')) lines.push('- OpenCode delegation is available (`delegate_to_opencode_cli`) for deep coding/refactor tasks. Resume IDs may be returned via `[delegate_meta]`.')
-  if (enabledTools.includes('memory')) lines.push('- Long-term memory is available (`memory_tool`) to store and recall durable context.')
-  if (enabledTools.includes('sandbox')) lines.push('- Sandboxed code execution is available (`sandbox_exec`). Write and run JS/TS (Deno) or Python scripts in an isolated environment. Output includes stdout, stderr, and any files created as downloadable artifacts.')
-  if (enabledTools.includes('manage_agents')) lines.push('- Agent management is available (`manage_agents`) to create or adjust specialist agents.')
-  if (enabledTools.includes('manage_tasks')) lines.push('- Task management is available (`manage_tasks`) to create and track execution plans.')
-  if (enabledTools.includes('manage_schedules')) lines.push('- Schedule management is available (`manage_schedules`) for recurring/ongoing runs.')
-  if (enabledTools.includes('manage_documents')) lines.push('- Document indexing/search is available (`manage_documents`) for long-term knowledge and retrieval.')
-  if (enabledTools.includes('manage_webhooks')) lines.push('- Webhook registration is available (`manage_webhooks`) so external events can trigger agent work.')
-  if (enabledTools.includes('manage_skills')) lines.push('- Skill management is available (`manage_skills`) to add reusable capabilities.')
-  if (enabledTools.includes('manage_connectors')) lines.push('- Connector management is available (`manage_connectors`) for channels like WhatsApp/Telegram/Slack, plus proactive outbound notifications via `connector_message_tool`.')
-  if (enabledTools.includes('manage_sessions')) lines.push('- Session management is available (`manage_sessions`, `sessions_tool`, `whoami_tool`, `search_history_tool`) for session identity, history lookup, delegation, and inter-session messaging.')
+  if (enabledTools.includes('edit_file')) lines.push('- I can make precise edits to files (`edit_file`) — surgical find-and-replace without rewriting the whole file.')
+  if (enabledTools.includes('web_search')) lines.push('- I can search the web (`web_search`) for research, fact-checking, and discovery.')
+  if (enabledTools.includes('web_fetch')) lines.push('- I can fetch and read web pages (`web_fetch`) to pull in real content for analysis.')
+  if (enabledTools.includes('browser')) lines.push('- I can control a browser (`browser`) — navigate sites, fill forms, take screenshots, interact with web apps.')
+  if (enabledTools.includes('claude_code')) lines.push('- I can hand off deep coding work to Claude Code (`delegate_to_claude_code`) for complex multi-file refactors and code generation. Resume IDs may come back via `[delegate_meta]`.')
+  if (enabledTools.includes('codex_cli')) lines.push('- I can hand off deep coding work to Codex (`delegate_to_codex_cli`) for complex multi-file refactors and code generation. Resume IDs may come back via `[delegate_meta]`.')
+  if (enabledTools.includes('opencode_cli')) lines.push('- I can hand off deep coding work to OpenCode (`delegate_to_opencode_cli`) for complex multi-file refactors and code generation. Resume IDs may come back via `[delegate_meta]`.')
+  if (enabledTools.includes('memory')) lines.push('- I have long-term memory (`memory_tool`) — I can remember things across conversations and recall them when needed.')
+  if (enabledTools.includes('sandbox')) lines.push('- I can run code in a sandbox (`sandbox_exec`) — JS/TS via Deno or Python, in an isolated environment. I get stdout, stderr, and any files created.')
+  if (enabledTools.includes('manage_agents')) lines.push('- I can create and configure other agents (`manage_agents`) — spin up specialists when a task calls for it.')
+  if (enabledTools.includes('manage_tasks')) lines.push('- I can manage tasks (`manage_tasks`) — create plans, track progress, and stay organized over time.')
+  if (enabledTools.includes('manage_schedules')) lines.push('- I can set up schedules (`manage_schedules`) for recurring work or future follow-ups.')
+  if (enabledTools.includes('manage_documents')) lines.push('- I can store and search documents (`manage_documents`) for long-term knowledge and reference.')
+  if (enabledTools.includes('manage_webhooks')) lines.push('- I can register webhooks (`manage_webhooks`) so external events can trigger my work automatically.')
+  if (enabledTools.includes('manage_skills')) lines.push('- I can manage reusable skills (`manage_skills`) — building blocks I can learn and apply.')
+  if (enabledTools.includes('manage_connectors')) lines.push('- I can manage messaging channels (`manage_connectors`) — WhatsApp, Telegram, Slack, Discord — and send proactive messages via `connector_message_tool`.')
+  if (enabledTools.includes('manage_sessions')) lines.push('- I can manage chat sessions (`manage_sessions`, `sessions_tool`, `whoami_tool`, `search_history_tool`) — check my identity, look up past conversations, message other sessions, and coordinate work.')
   // Context tools are available to any session with tools (not just manage_sessions)
   if (enabledTools.length > 0) {
-    lines.push('- Context management is available (`context_status`, `context_summarize`). Use `context_status` to check token usage and `context_summarize` to compact conversation history when approaching limits.')
+    lines.push('- I can monitor my own context usage (`context_status`) and compact my conversation history (`context_summarize`) when I\'m running low on space.')
     if (opts?.platformAssignScope === 'all') {
-      lines.push('- Agent delegation is available (`delegate_to_agent`). Use it to assign tasks to other agents based on their capabilities.')
+      lines.push('- I can delegate tasks to other agents (`delegate_to_agent`) based on their strengths and availability.')
     }
   }
-  if (enabledTools.includes('manage_secrets')) lines.push('- Secret management is available (`manage_secrets`) for durable encrypted credentials and API tokens.')
-  if (enabledTools.includes('manage_chatrooms')) lines.push('- Chatroom management is available (`manage_chatrooms`) for multi-agent collaborative chatrooms with @mention-based interactions.')
+  if (enabledTools.includes('manage_secrets')) lines.push('- I can store and retrieve encrypted secrets (`manage_secrets`) — API keys, credentials, tokens.')
+  if (enabledTools.includes('manage_chatrooms')) lines.push('- I can create and participate in chatrooms (`manage_chatrooms`) for multi-agent collaboration with @mention-based discussions.')
+  if (enabledTools.includes('wallet')) lines.push('- I have my own crypto wallet (`wallet_tool`) — I can check my balance, send SOL, and review my transaction history.')
   return lines
 }
 
@@ -92,8 +93,8 @@ function buildAgenticExecutionPolicy(opts: {
   ].filter(Boolean) as string[]
   const hasDelegationTool = delegationOrder.length > 0
   return [
-    '## Agentic Execution Policy',
-    'You are not a passive chatbot. Execute work proactively and use available tools to gather evidence, create artifacts, and make progress.',
+    '## How I Work',
+    'I take initiative. When there\'s work to do, I do it — I use my tools to research, build, and make real progress rather than just talking about it.',
     hasTooling
       ? 'For open-ended requests, run an action loop: plan briefly, execute tools, evaluate results, then continue until meaningful progress is achieved.'
       : 'This session has no tools enabled, so be explicit about what tool access is needed for deeper execution.',
@@ -139,6 +140,18 @@ function buildAgenticExecutionPolicy(opts: {
     hasDelegationTool
       ? 'CRITICAL — tool selection: ALWAYS use `execute_command` for running servers, dev servers, HTTP servers, installing dependencies, running scripts, git operations, process management, starting/stopping services, or any command the user wants to "run". Delegation tools (Claude/Codex/OpenCode) CANNOT keep a server running — their session ends and the process dies. `execute_command` with background=true is the ONLY way to run persistent processes.'
       : '',
+    opts.enabledTools.includes('shell')
+      ? 'When the user asks for an IP address or network URL, execute shell commands to resolve it and return the concrete value. Never reply with placeholders like `<your-local-ip>` and never tell the user to run `ifconfig`/`ipconfig` themselves unless shell access is unavailable.'
+      : '',
+    opts.enabledTools.includes('shell')
+      ? 'For long-lived servers/processes: start with `execute_command` using `background=true`, capture the returned processId, then verify with `process_tool` status/log before claiming success. If the process exits or crashes, retry with a corrected command and report what changed.'
+      : '',
+    opts.enabledTools.includes('shell')
+      ? 'Do not claim a server is running unless there is direct tool evidence (process status/log output).'
+      : '',
+    opts.enabledTools.includes('shell')
+      ? 'If `execute_command` fails due workdir/path traversal, retry without a workdir override or use a safe relative path under the current session cwd.'
+      : '',
     hasDelegationTool
       ? `Only use CLI delegation (${delegationOrder.join(' -> ')}) for tasks that need deep code understanding across multiple files: large refactors, complex debugging, multi-file code generation, or test suites. Never delegate when the user says "run", "start", "serve", "execute", or "test it locally".`
       : '',
@@ -178,7 +191,7 @@ function buildAgenticExecutionPolicy(opts: {
     opts.heartbeatIntervalSec > 0
       ? `Expected heartbeat cadence is roughly every ${opts.heartbeatIntervalSec} seconds while ongoing work is active.`
       : '',
-    toolLines.length ? 'Available capabilities:\n' + toolLines.join('\n') : '',
+    toolLines.length ? 'What I can do:\n' + toolLines.join('\n') : '',
   ].filter(Boolean).join('\n')
 }
 
@@ -192,6 +205,10 @@ export interface StreamAgentChatResult {
 
 export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<StreamAgentChatResult> {
   const { session, message, imagePath, attachedFiles, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
+  const sessionToolsWithImplicitProcess = Array.from(new Set([
+    ...(session.tools || []),
+    ...((session.tools || []).includes('shell') ? ['process'] : []),
+  ]))
 
   // fallbackCredentialIds is intentionally accepted for compatibility with caller signatures.
   void fallbackCredentialIds
@@ -249,6 +266,11 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     agentMcpServerIds = agent?.mcpServerIds
     agentMcpDisabledTools = agent?.mcpDisabledTools
     if (!hasProvidedSystemPrompt) {
+      // Identity block — make sure the agent knows who it is
+      const identityLines = [`## My Identity`, `My name is ${agent?.name || 'Agent'}.`]
+      if (agent?.description) identityLines.push(agent.description)
+      identityLines.push('I should always refer to myself by this name. I am not "Assistant" — I have my own name and identity.')
+      stateModifierParts.push(identityLines.join(' '))
       if (agent?.soul) stateModifierParts.push(agent.soul)
       if (agent?.systemPrompt) stateModifierParts.push(agent.systemPrompt)
       if (agent?.skillIds?.length) {
@@ -262,7 +284,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   }
 
   if (!hasProvidedSystemPrompt) {
-    stateModifierParts.push('You are a capable AI assistant with tool access. Be execution-oriented and outcome-focused.')
+    stateModifierParts.push('I\'m here to get things done. I take action, use my tools, and focus on outcomes.')
   }
 
   // Thinking level guidance (applies to all providers via system prompt)
@@ -339,28 +361,28 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
       // Memory Policy — always injected when memory tool is available
       stateModifierParts.push([
-        '## Memory Policy',
-        'You have long-term memory. Use it proactively — do not wait to be asked.',
+        '## My Memory',
+        'I have long-term memory that persists across conversations. I use it naturally — I don\'t wait to be asked to remember things.',
         '',
-        '**Store memories for:**',
-        '- User preferences, corrections, or explicit "remember this" requests',
-        '- Key decisions or outcomes from complex tasks',
-        '- Discovered facts about projects, codebases, or environments',
-        '- Errors encountered and their solutions',
-        '- Relationship context (who is who, team dynamics)',
-        '- Important configuration details or environment specifics',
+        '**Things worth remembering:**',
+        '- What the user likes, dislikes, or has corrected me on',
+        '- Important decisions, outcomes, and lessons learned',
+        '- What I\'ve discovered about projects, codebases, or environments',
+        '- Problems I\'ve hit and how I solved them',
+        '- Who people are and how they relate to each other',
+        '- Configuration details and environment specifics that I\'ll need again',
         '',
-        '**Do NOT store:**',
-        '- Trivial acknowledgments or small talk',
-        '- Temporary in-progress work (use category "working" for ephemeral notes)',
-        '- Information already in your system prompt',
-        '- Exact duplicates of memories you already have',
+        '**Not worth cluttering my memory with:**',
+        '- Throwaway acknowledgments or small talk',
+        '- Work-in-progress that\'ll change soon (use category "working" for scratch notes)',
+        '- Things already in my system prompt',
+        '- Something I\'ve already stored',
         '',
-        '**Best practices:**',
-        '- Use descriptive titles ("User prefers dark mode" not "Note 1")',
+        '**Good habits:**',
+        '- Give memories clear titles ("User prefers dark mode" not "Note 1")',
         '- Use categories: preference, fact, learning, project, identity, decision',
-        '- Search memory before storing to avoid duplicates',
-        '- When correcting old knowledge, update or delete the old memory',
+        '- Check what I already know before storing something new',
+        '- When I learn something that corrects old knowledge, update or remove the old memory',
       ].join('\n'))
 
       // Pre-compaction memory flush: nudge agent to persist learnings when conversation is long
@@ -368,9 +390,9 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       if (msgCount > 20) {
         stateModifierParts.push([
           '## Memory Flush Reminder',
-          'This conversation is getting long. Before context is trimmed, store any important',
-          'learnings, decisions, or facts as memories now. Only store what is significant and durable —',
-          'skip trivial details. If nothing needs storing, continue normally.',
+          'This conversation is getting long and I might lose older context soon. I should save anything',
+          'important I\'ve learned, decided, or discovered to my memory now — things I\'d want to recall',
+          'in future conversations. Only what matters, not every detail. If there\'s nothing worth saving, carry on.',
         ].join('\n'))
       }
     } catch {
@@ -389,12 +411,44 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     }
   }
 
+  // Inject wallet context when agent has wallet tool enabled and a linked wallet
+  if ((session.tools || []).includes('wallet') && session.agentId) {
+    try {
+      const { loadWallets } = await import('./storage')
+      const wallets = loadWallets() as Record<string, { agentId: string; publicKey: string; chain: string; spendingLimitLamports?: number; dailyLimitLamports?: number; requireApproval: boolean }>
+      const wallet = Object.values(wallets).find((w) => w.agentId === session.agentId)
+      if (wallet) {
+        const { getBalance, lamportsToSol } = await import('./solana')
+        let balanceSol = 0
+        try {
+          const lamports = await getBalance(wallet.publicKey)
+          balanceSol = lamportsToSol(lamports)
+        } catch { /* RPC failure — show 0 */ }
+        const perTxLimit = lamportsToSol(wallet.spendingLimitLamports ?? 100_000_000)
+        const dailyLimit = lamportsToSol(wallet.dailyLimitLamports ?? 1_000_000_000)
+        stateModifierParts.push([
+          '## Your Wallet',
+          `You own a ${wallet.chain} wallet — this is your wallet, your funds, your address. Speak about it in the first person ("my wallet", "my balance", "I have X SOL"). You can spend from it freely within your limits${wallet.requireApproval ? ', though the user needs to approve each send before it goes through' : ''}.`,
+          `- Address: ${wallet.publicKey}`,
+          `- Balance: ${balanceSol} SOL`,
+          `- Per-transaction limit: ${perTxLimit} SOL`,
+          `- Daily limit: ${dailyLimit} SOL`,
+          'Use the `wallet_tool` to check your balance, send SOL, or view your transaction history.',
+        ].join('\n'))
+      }
+    } catch {
+      // Wallet context is non-critical
+    }
+  }
+
   // Tell the LLM about tools it could use but doesn't have enabled
   {
-    const enabledSet = new Set(session.tools || [])
+    const enabledSet = new Set(sessionToolsWithImplicitProcess)
     const allToolIds = [
-      'shell', 'files', 'edit_file', 'process', 'web_search', 'web_fetch', 'browser', 'memory',
+      'shell', 'files', 'copy_file', 'move_file', 'delete_file', 'edit_file', 'process',
+      'web_search', 'web_fetch', 'browser', 'memory',
       'claude_code', 'codex_cli', 'opencode_cli',
+      'sandbox', 'create_document', 'create_spreadsheet', 'http_request', 'git', 'wallet',
       'manage_agents', 'manage_tasks', 'manage_schedules', 'manage_skills',
       'manage_documents', 'manage_webhooks', 'manage_connectors', 'manage_sessions', 'manage_secrets',
     ]
@@ -403,13 +457,13 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     const allDisabled = [...disabled, ...mcpDisabled]
     if (allDisabled.length > 0) {
       stateModifierParts.push(
-        `## Disabled Tools\nThe following tools exist but are not enabled for you: ${allDisabled.join(', ')}.\n` +
-        'If you need one of these to complete a task, use the `request_tool_access` tool to ask the user for permission.',
+        `## Tools I Don't Have Yet\nI don't currently have access to: ${allDisabled.join(', ')}.\n` +
+        'If I need any of these for a task, I can ask the user to enable them with `request_tool_access`.',
       )
     }
   }
 
-  if (settings.suggestionsEnabled !== false) {
+  if (settings.suggestionsEnabled === true) {
     stateModifierParts.push(
       [
         '## Follow-up Suggestions',
@@ -423,7 +477,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   stateModifierParts.push(
     buildAgenticExecutionPolicy({
-      enabledTools: session.tools || [],
+      enabledTools: sessionToolsWithImplicitProcess,
       loopMode: runtime.loopMode,
       heartbeatPrompt,
       heartbeatIntervalSec,
@@ -433,7 +487,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   const stateModifier = stateModifierParts.join('\n\n')
 
-  const { tools, cleanup } = await buildSessionTools(session.cwd, session.tools || [], {
+  const { tools, cleanup } = await buildSessionTools(session.cwd, sessionToolsWithImplicitProcess, {
     agentId: session.agentId,
     sessionId: session.id,
     platformAssignScope: agentPlatformAssignScope,
@@ -647,13 +701,16 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
           }
         }
       } else if (kind === 'on_llm_end') {
-        // Track token usage from LLM responses
-        const usage = event.data?.output?.llmOutput?.tokenUsage
-          || event.data?.output?.llmOutput?.usage
-          || event.data?.output?.usage_metadata
+        // Track token usage from LLM responses — check all known LangChain event shapes
+        const output = event.data?.output
+        const usage = output?.llmOutput?.tokenUsage
+          || output?.llmOutput?.usage
+          || output?.usage_metadata
+          || output?.response_metadata?.usage
+          || output?.response_metadata?.tokenUsage
         if (usage) {
-          totalInputTokens += usage.promptTokens || usage.input_tokens || 0
-          totalOutputTokens += usage.completionTokens || usage.output_tokens || 0
+          totalInputTokens += usage.promptTokens || usage.input_tokens || usage.prompt_tokens || 0
+          totalOutputTokens += usage.completionTokens || usage.output_tokens || usage.completion_tokens || 0
         }
       } else if (kind === 'on_tool_start') {
         hasToolCalls = true
@@ -759,7 +816,13 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     write(`data: ${JSON.stringify({ t: 'md', text: JSON.stringify({ thinking: accumulatedThinking }) })}\n\n`)
   }
 
-  // Track cost
+  // Track cost — fall back to character-count estimation when providers
+  // don't surface token counts through LangChain's on_llm_end event.
+  if (totalInputTokens === 0 && totalOutputTokens === 0 && fullText) {
+    const historyText = history.map((m) => m.text || '').join('')
+    totalInputTokens = Math.ceil((message.length + historyText.length + (systemPrompt?.length || 0)) / 4)
+    totalOutputTokens = Math.ceil(fullText.length / 4)
+  }
   const totalTokens = totalInputTokens + totalOutputTokens
   if (totalTokens > 0) {
     const cost = estimateCost(session.model, totalInputTokens, totalOutputTokens)

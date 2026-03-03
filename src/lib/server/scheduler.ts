@@ -146,7 +146,10 @@ async function tick() {
       existingTask.title = `[Sched] ${schedule.name} (run #${schedule.runNumber})`
       existingTask.result = null
       existingTask.error = null
+      existingTask.outputFiles = []
+      existingTask.artifacts = []
       existingTask.sessionId = null
+      existingTask.completionReportPath = null
       existingTask.updatedAt = now
       existingTask.queuedAt = null
       existingTask.startedAt = null

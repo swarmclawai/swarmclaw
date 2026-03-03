@@ -16,11 +16,22 @@ export async function POST(req: Request) {
   const chatrooms = loadChatrooms()
   const id = genId()
 
-  const agentIds: string[] = Array.isArray(body.agentIds) ? body.agentIds : []
+  const requestedAgentIds: string[] = Array.isArray(body.agentIds) ? body.agentIds : []
+  const knownAgents = loadAgents()
+  const invalidAgentIds = requestedAgentIds.filter((agentId) => !knownAgents[agentId])
+  if (invalidAgentIds.length > 0) {
+    return NextResponse.json(
+      { error: `Unknown chatroom member(s): ${invalidAgentIds.join(', ')}` },
+      { status: 400 },
+    )
+  }
+  const agentIds: string[] = requestedAgentIds
+  const chatMode = body.chatMode === 'parallel' ? 'parallel' : 'sequential'
+  const autoAddress = Boolean(body.autoAddress)
   const now = Date.now()
 
   // Generate join messages for initial agents
-  const agents = agentIds.length > 0 ? loadAgents() : {}
+  const agents = agentIds.length > 0 ? knownAgents : {}
   const joinMessages: ChatroomMessage[] = agentIds.map((agentId: string, i: number) => ({
     id: genId(),
     senderId: 'system',
@@ -38,6 +49,8 @@ export async function POST(req: Request) {
     description: body.description || '',
     agentIds,
     messages: joinMessages,
+    chatMode,
+    autoAddress,
     createdAt: now,
     updatedAt: now,
   }

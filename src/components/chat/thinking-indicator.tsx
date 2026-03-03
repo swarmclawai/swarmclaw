@@ -10,6 +10,7 @@ import { useChatStore } from '@/stores/use-chat-store'
 interface Props {
   assistantName?: string
   agentAvatarSeed?: string
+  agentAvatarUrl?: string | null
   agentName?: string
 }
 
@@ -34,7 +35,7 @@ function ElapsedTimer({ startTime }: { startTime: number }) {
   )
 }
 
-export function ThinkingIndicator({ assistantName, agentAvatarSeed, agentName }: Props) {
+export function ThinkingIndicator({ assistantName, agentAvatarSeed, agentAvatarUrl, agentName }: Props) {
   const streamPhase = useChatStore((s) => s.streamPhase)
   const streamToolName = useChatStore((s) => s.streamToolName)
   const thinkingText = useChatStore((s) => s.thinkingText)
@@ -50,7 +51,7 @@ export function ThinkingIndicator({ assistantName, agentAvatarSeed, agentName }:
     <div className="flex flex-col items-start relative pl-[44px]"
       style={{ animation: 'msg-in-left 0.35s cubic-bezier(0.16, 1, 0.3, 1)' }}>
       <div className="absolute left-[4px] top-0">
-        {agentName ? <AgentAvatar seed={agentAvatarSeed || null} name={agentName} size={28} /> : <AiAvatar size="sm" mood={streamPhase === 'tool' ? 'tool' : 'thinking'} />}
+        {agentName ? <AgentAvatar seed={agentAvatarSeed || null} avatarUrl={agentAvatarUrl} name={agentName} size={28} /> : <AiAvatar size="sm" mood={streamPhase === 'tool' ? 'tool' : 'thinking'} />}
       </div>
       <div className="flex items-center gap-2.5 mb-2 px-1">
         <span className="text-[12px] font-600 text-text-3">{assistantName || 'Claude'}</span>

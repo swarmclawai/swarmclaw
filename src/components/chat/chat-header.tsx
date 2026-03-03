@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import type { Session } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
@@ -17,6 +17,7 @@ import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ModelCombobox } from '@/components/shared/model-combobox'
 import { toast } from 'sonner'
 import type { ProviderType } from '@/types'
+import { useWs } from '@/hooks/use-ws'
 
 function shortPath(p: string): string {
   return (p || '').replace(/^\/Users\/\w+/, '~')
@@ -106,6 +107,19 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const [renameError, setRenameError] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const renameContainerRef = useRef<HTMLSpanElement>(null)
+  const setWalletPanelAgentId = useAppStore((s) => s.setWalletPanelAgentId)
+  const [walletBalance, setWalletBalance] = useState<number | null>(null)
+
+  const fetchWalletBalance = useCallback(async () => {
+    if (!agent?.walletId) { setWalletBalance(null); return }
+    try {
+      const data = await api<{ balanceSol?: number }>('GET', `/wallets/${agent.walletId}`)
+      setWalletBalance(data.balanceSol ?? null)
+    } catch { setWalletBalance(null) }
+  }, [agent?.walletId])
+
+  useEffect(() => { fetchWalletBalance() }, [fetchWalletBalance])
+  useWs('wallets', fetchWalletBalance)
 
   // Find linked task for this session
   const linkedTask = useMemo(() => {
@@ -458,7 +472,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const hasToolToggles = ((agent?.tools?.length ?? 0) > 0) || ((session.tools?.length ?? 0) > 0)
   const hasMemoryLink = !!(agent && session.tools?.includes('memory'))
   const hasSourceFilter = !!hasMultipleSources
-  const hasContextBar = !!(hasToolToggles || isMainSession || hasMemoryLink || hasSourceFilter || linkedTask || resumeHandle || (isOpenClawAgent && openclawSessionKey) || browserActive)
+  const hasContextBar = !!(isMainSession || hasMemoryLink || hasSourceFilter || linkedTask || resumeHandle || (isOpenClawAgent && openclawSessionKey) || browserActive)
 
   return (
     <header
@@ -486,26 +500,26 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
           <div className="relative shrink-0">
             {streaming && (
               <div
-                className="absolute -inset-[3px] rounded-full opacity-40"
+                className="absolute -inset-[4px] rounded-full"
                 style={{
-                  background: 'conic-gradient(from 0deg, var(--color-accent-bright), transparent 120deg, transparent 240deg, var(--color-accent-bright))',
-                  animation: 'spin 2.5s linear infinite',
-                  filter: 'blur(3px)',
+                  background: 'radial-gradient(circle, var(--color-accent-bright), transparent 70%)',
+                  animation: 'pulse-glow 2s ease-in-out infinite',
+                  filter: 'blur(5px)',
                 }}
               />
             )}
             <div
-              className="relative rounded-full"
+              className="relative rounded-full transition-transform duration-500"
               style={{
                 padding: 2,
                 background: streaming
-                  ? 'conic-gradient(from 0deg, var(--color-accent-bright), transparent 120deg, transparent 240deg, var(--color-accent-bright))'
+                  ? 'linear-gradient(135deg, var(--color-accent-bright), var(--color-accent))'
                   : 'linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03))',
-                animation: streaming ? 'spin 2.5s linear infinite' : undefined,
+                animation: streaming ? 'avatar-pulse 2s ease-in-out infinite' : undefined,
               }}
             >
               <div className="rounded-full bg-bg">
-                <AgentAvatar seed={agent.avatarSeed} name={agent.name} size={hasContextBar ? 44 : 34} />
+                <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={(hasContextBar || hasToolToggles) ? 44 : 34} />
               </div>
             </div>
           </div>
@@ -513,8 +527,9 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
 
         {/* Identity + metadata — fills center */}
         <div className="flex-1 min-w-0 flex items-center gap-3">
-          {/* Name + inline badges */}
-          <div className="flex items-center gap-2 min-w-0 shrink">
+          {/* Name (row 1) + tools (row 2) */}
+          <div className="flex flex-col gap-0.5 min-w-0 shrink">
+          <div className="flex items-center gap-2 min-w-0">
             {renaming && agent ? (
               <span ref={renameContainerRef} className="inline-flex items-center gap-2">
                 <input
@@ -585,10 +600,28 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <span className="shrink-0 w-2 h-2 rounded-full bg-accent-bright" style={{ animation: 'pulse 1.5s ease infinite' }} />
             )}
           </div>
+          {hasToolToggles && <ChatToolToggles session={session} />}
+          </div>
 
-          {/* Metadata tray: model · usage · path · status */}
+          {/* Metadata tray: wallet · model · path · status */}
           <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
             <span className="text-text-3/10 text-[10px] select-none shrink-0">/</span>
+            {walletBalance !== null && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => { setWalletPanelAgentId(agent!.id); setActiveView('wallets') }}
+                  className="inline-flex items-center gap-1 shrink-0 bg-transparent border-none p-0.5 rounded-[4px] cursor-pointer text-[11px] text-text-3/45 font-mono hover:text-text-3/70 hover:bg-white/[0.04] transition-colors"
+                  title="View wallet"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <rect x="2" y="6" width="20" height="14" rx="2" /><path d="M22 10H18a2 2 0 0 0 0 4h4" />
+                  </svg>
+                  {walletBalance.toFixed(3)} SOL
+                </button>
+                <span className="text-text-3/10 text-[10px] select-none shrink-0">·</span>
+              </>
+            )}
             {modelName && (
               <div className="relative shrink-0" ref={modelSwitcherRef}>
                 <button
@@ -727,7 +760,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               </button>
               {hbDropdownOpen && (
                 <div className="absolute top-full right-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[80px]">
-                  {[1800, 3600, 7200, 21600, 43200].map((sec) => (
+                  {[...(typeof window !== 'undefined' && window.location.hostname === 'localhost' ? [10, 15, 30, 60] : []), 1800, 3600, 7200, 21600, 43200].map((sec) => (
                     <button
                       key={sec}
                       onClick={() => handleSelectHeartbeatInterval(sec)}
@@ -809,11 +842,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
 
       {/* Context bar: tools, mission controls, links */}
       {hasContextBar && (
-        <div className="flex items-center gap-1.5 px-3.5 pb-1.5 overflow-x-auto scrollbar-none">
-          {hasToolToggles && <ChatToolToggles session={session} />}
-          {hasToolToggles && (hasMemoryLink || isMainSession || linkedTask || resumeHandle || isOpenClawAgent || browserActive) && (
-            <div className="w-px h-4 bg-white/[0.05] shrink-0" />
-          )}
+        <div className="flex items-center gap-1.5 px-3.5 pb-1.5 flex-wrap">
           {isMainSession && (
             <>
               <button

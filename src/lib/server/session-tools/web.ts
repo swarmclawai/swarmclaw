@@ -141,7 +141,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         },
         {
           name: 'web_search',
-          description: 'Search the web. Returns an array of results with title, url, and snippet.',
+          description: 'Search the web for information. Returns results with title, url, and snippet.',
           schema: z.object({
             query: z.string().describe('Search query'),
             maxResults: z.number().optional().describe('Maximum results to return (default 5, max 10)'),
@@ -179,7 +179,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         },
         {
           name: 'web_fetch',
-          description: 'Fetch a URL and return its text content (HTML stripped). Useful for reading web pages.',
+          description: 'Fetch a URL and read its content (HTML stripped to text). How I read web pages and pull in external information.',
           schema: z.object({
             url: z.string().describe('The URL to fetch'),
           }),

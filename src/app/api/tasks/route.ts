@@ -84,6 +84,30 @@ export async function POST(req: Request) {
     sessionId: typeof body.sessionId === 'string' ? body.sessionId : null,
     result: typeof body.result === 'string' ? body.result : null,
     error: typeof body.error === 'string' ? body.error : null,
+    outputFiles: Array.isArray(body.outputFiles)
+      ? body.outputFiles.filter((entry: unknown) => typeof entry === 'string').slice(0, 24)
+      : [],
+    artifacts: Array.isArray(body.artifacts)
+      ? body.artifacts
+          .filter((artifact: unknown) => artifact && typeof artifact === 'object')
+          .map((artifact: unknown) => {
+            const row = artifact as {
+              url?: unknown
+              type?: unknown
+              filename?: unknown
+            }
+            const normalizedType = String(row.type || '')
+            return {
+              url: String(row.url || ''),
+              type: ['image', 'video', 'pdf', 'file'].includes(normalizedType)
+                ? (normalizedType as 'image' | 'video' | 'pdf' | 'file')
+                : 'file',
+              filename: String(row.filename || ''),
+            }
+          })
+          .filter((artifact: { url: string; filename: string }) => artifact.url && artifact.filename)
+          .slice(0, 24)
+      : [],
     createdAt: now,
     updatedAt: now,
     queuedAt: null,

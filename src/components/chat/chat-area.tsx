@@ -146,8 +146,8 @@ export function ChatArea() {
     if (!sessionId) return
     try {
       const msgs = await fetchMessages(sessionId)
-      if (msgs.length > messagesLenRef.current) {
-        const newMsgs = msgs.slice(messagesLenRef.current)
+      if (msgs.length !== messagesLenRef.current) {
+        const newMsgs = msgs.length > messagesLenRef.current ? msgs.slice(messagesLenRef.current) : []
         setMessages(msgs)
         if (ttsEnabledRef.current && typeof document !== 'undefined' && document.visibilityState === 'visible') {
           const latestAssistant = [...newMsgs].reverse().find((m) => {

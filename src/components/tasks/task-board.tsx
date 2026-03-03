@@ -264,7 +264,7 @@ export function TaskBoard() {
             >
               {filterAgentId && agents[filterAgentId] ? (
                 <>
-                  <AgentAvatar seed={agents[filterAgentId].avatarSeed || null} name={agents[filterAgentId].name} size={18} />
+                  <AgentAvatar seed={agents[filterAgentId].avatarSeed || null} avatarUrl={agents[filterAgentId].avatarUrl} name={agents[filterAgentId].name} size={18} />
                   {agents[filterAgentId].name}
                 </>
               ) : 'All Agents'}
@@ -290,7 +290,7 @@ export function TaskBoard() {
                       ${filterAgentId === a.id ? 'bg-white/[0.06] text-text' : 'bg-transparent text-text-3 hover:bg-white/[0.04]'}`}
                     style={{ fontFamily: 'inherit' }}
                   >
-                    <AgentAvatar seed={a.avatarSeed || null} name={a.name} size={20} />
+                    <AgentAvatar seed={a.avatarSeed || null} avatarUrl={a.avatarUrl} name={a.name} size={20} />
                     {a.name}
                   </button>
                 ))}
@@ -480,7 +480,7 @@ export function TaskBoard() {
                     className="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-600 cursor-pointer border-none text-left bg-transparent text-text-3 hover:bg-white/[0.06] hover:text-text transition-colors"
                     style={{ fontFamily: 'inherit' }}
                   >
-                    <AgentAvatar seed={a.avatarSeed || null} name={a.name} size={16} />
+                    <AgentAvatar seed={a.avatarSeed || null} avatarUrl={a.avatarUrl} name={a.name} size={16} />
                     {a.name}
                   </button>
                 ))}

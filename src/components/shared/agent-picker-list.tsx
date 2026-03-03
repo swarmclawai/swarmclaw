@@ -72,7 +72,7 @@ export function AgentPickerList({
             {active && (
               <div className="absolute left-0 top-2 bottom-2 w-[2.5px] rounded-full bg-accent-bright" />
             )}
-            <AgentAvatar seed={a.avatarSeed || null} name={a.name} size={28} />
+            <AgentAvatar seed={a.avatarSeed || null} avatarUrl={a.avatarUrl} name={a.name} size={28} />
             <span className={`text-[13px] font-600 flex-1 truncate ${active ? 'text-accent-bright' : 'text-text-2'}`}>
               {a.name}
             </span>

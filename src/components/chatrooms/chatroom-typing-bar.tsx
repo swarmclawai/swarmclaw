@@ -63,7 +63,7 @@ export function ChatroomTypingBar({ streamingAgents }: Props) {
         return (
           <div key={agentId} className="flex gap-2.5 px-4 py-1.5" style={{ animation: 'msg-in 0.2s ease-out both' }}>
             <div className="shrink-0 mt-0.5 w-7">
-              <AgentAvatar seed={agent?.avatarSeed || null} name={a.name} size={28} />
+              <AgentAvatar seed={agent?.avatarSeed || null} avatarUrl={agent?.avatarUrl} name={a.name} size={28} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-baseline gap-2 mb-0.5">

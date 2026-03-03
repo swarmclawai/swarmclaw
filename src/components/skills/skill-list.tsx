@@ -309,7 +309,7 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
                     <div className="flex items-center gap-1.5 mt-1.5">
                       <div className="flex items-center -space-x-1.5">
                         {scopedAgents.slice(0, 5).map((agent) => (
-                          <AgentAvatar key={agent.id} seed={agent.avatarSeed} name={agent.name} size={16} className="ring-1 ring-surface" />
+                          <AgentAvatar key={agent.id} seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={16} className="ring-1 ring-surface" />
                         ))}
                       </div>
                       {scopedAgents.length > 5 && (

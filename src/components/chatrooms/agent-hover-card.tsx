@@ -46,7 +46,7 @@ export function AgentHoverCard({ agent, children, status }: Props) {
       <HoverCardContent align="start" className="w-[280px]">
         {/* Header: avatar + name + model */}
         <div className="flex items-center gap-2">
-          <AgentAvatar seed={agent.avatarSeed || null} name={agent.name} size={28} status={status} />
+          <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={28} status={status} />
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-600 text-text truncate">{agent.name}</div>
             <div className="label-mono truncate">{agent.model}</div>

@@ -13,7 +13,7 @@ export function buildChatroomTools(bctx: ToolBuildContext): StructuredToolInterf
   if (hasTool('manage_chatrooms')) {
     tools.push(
       tool(
-        async ({ action, chatroomId, name, description, agentIds, agentId, message }) => {
+        async ({ action, chatroomId, name, description, agentIds, agentId, message, chatMode, autoAddress }) => {
           try {
             const chatrooms = loadChatrooms() as Record<string, Chatroom>
 
@@ -31,13 +31,20 @@ export function buildChatroomTools(bctx: ToolBuildContext): StructuredToolInterf
             if (action === 'create_chatroom') {
               const id = genId()
               const agents = loadAgents()
-              const validAgentIds = (agentIds || []).filter((aid: string) => agents[aid])
+              const requestedAgentIds = agentIds || []
+              const invalidAgentIds = requestedAgentIds.filter((aid: string) => !agents[aid])
+              if (invalidAgentIds.length > 0) {
+                return `Error: unknown agent IDs: ${invalidAgentIds.join(', ')}`
+              }
+              const validAgentIds = requestedAgentIds
               const chatroom: Chatroom = {
                 id,
                 name: name || 'New Chatroom',
                 description: description || '',
                 agentIds: validAgentIds,
                 messages: [],
+                chatMode: chatMode === 'parallel' ? 'parallel' : 'sequential',
+                autoAddress: Boolean(autoAddress),
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
               }
@@ -124,6 +131,8 @@ export function buildChatroomTools(bctx: ToolBuildContext): StructuredToolInterf
             name: z.string().optional().describe('Chatroom name (for create_chatroom)'),
             description: z.string().optional().describe('Chatroom description (for create_chatroom)'),
             agentIds: z.array(z.string()).optional().describe('Initial agent IDs (for create_chatroom)'),
+            chatMode: z.enum(['sequential', 'parallel']).optional().describe('Optional orchestration mode for create_chatroom'),
+            autoAddress: z.boolean().optional().describe('Whether to auto-address all members when no @mention is present'),
             agentId: z.string().optional().describe('Agent ID (for add_agent/remove_agent)'),
             message: z.string().optional().describe('Message text (for send_message)'),
           }),
