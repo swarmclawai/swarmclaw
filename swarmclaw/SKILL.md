@@ -1,7 +1,7 @@
 ---
 name: swarmclaw
 description: Manage your SwarmClaw agent fleet, create and assign tasks, check agent and session status, trigger workflows, and orchestrate multi-agent work from chat. Use when asked to dispatch work to other agents, check what agents are doing, run diagnostics, or coordinate across a SwarmClaw dashboard instance.
-version: 1.0.1
+version: 1.0.2
 metadata:
   openclaw:
     requires:
@@ -32,7 +32,7 @@ Use machine-readable output when parsing command results:
 
 ## Setup
 
-1. Install: `npm i -g @swarmclawai/swarmclaw` or `curl -fsSL https://swarmclaw.ai/install.sh | bash`
+1. Install: `npm i -g @swarmclawai/swarmclaw`
 2. Set env var: `export SWARMCLAW_ACCESS_KEY=<your-key>` (shown in terminal on first run)
 3. Full docs: https://swarmclaw.ai/docs — CLI reference: https://github.com/swarmclawai/swarmclaw
 
