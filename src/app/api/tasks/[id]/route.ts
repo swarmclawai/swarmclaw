@@ -10,6 +10,7 @@ import { notify } from '@/lib/server/ws-hub'
 import { createNotification } from '@/lib/server/create-notification'
 import { enqueueSystemEvent } from '@/lib/server/system-events'
 import { requestHeartbeatNow } from '@/lib/server/heartbeat-wake'
+import { validateDag, cascadeUnblock } from '@/lib/server/dag-validation'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Keep completed queue integrity even if daemon is not running.
@@ -28,6 +29,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!tasks[id]) return notFound()
 
   const prevStatus = tasks[id].status
+
+  // DAG validation: reject if proposed blockedBy would create a cycle
+  if (Array.isArray(body.blockedBy)) {
+    const dagResult = validateDag(tasks, id, body.blockedBy)
+    if (!dagResult.valid) {
+      return NextResponse.json(
+        { error: 'Dependency cycle detected', cycle: dagResult.cycle },
+        { status: 400 },
+      )
+    }
+  }
 
   // Support atomic comment append to avoid race conditions
   if (body.appendComment) {
@@ -114,20 +126,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  // When a task is completed, auto-unblock dependent tasks
+  // When a task is completed, cascade unblock dependent tasks
   if (tasks[id].status === 'completed') {
-    const blockedIds = Array.isArray(tasks[id].blocks) ? tasks[id].blocks as string[] : []
-    for (const blockedId of blockedIds) {
-      const blocked = tasks[blockedId]
-      if (!blocked) continue
-      const deps = Array.isArray(blocked.blockedBy) ? blocked.blockedBy as string[] : []
-      const allDone = deps.every((depId: string) => tasks[depId]?.status === 'completed')
-      if (allDone && (blocked.status === 'backlog' || blocked.status === 'todo')) {
-        blocked.status = 'queued'
-        blocked.queuedAt = Date.now()
-        blocked.updatedAt = Date.now()
-        saveTasks(tasks)
-        enqueueTask(blockedId)
+    const unblockedIds = cascadeUnblock(tasks, id)
+    if (unblockedIds.length > 0) {
+      saveTasks(tasks)
+      for (const uid of unblockedIds) {
+        enqueueTask(uid)
       }
     }
   }

@@ -279,7 +279,7 @@ async function connectToGateway(
 
 // --- Provider ---
 
-export function streamOpenClawChat({ session, message, imagePath, apiKey, write, active }: StreamChatOptions): Promise<string> {
+export function streamOpenClawChat({ session, message, imagePath, apiKey, write, active, signal }: StreamChatOptions): Promise<string> {
   let prompt = message
   if (imagePath) {
     prompt = `[The user has shared an image at: ${imagePath}]\n\n${message}`
@@ -315,6 +315,11 @@ export function streamOpenClawChat({ session, message, imagePath, apiKey, write,
       }, 120_000)
 
       active.set(session.id, { kill: () => { ws.close(); clearTimeout(timeout); finish('Aborted.') } })
+
+      if (signal) {
+        if (signal.aborted) { ws.close(); clearTimeout(timeout); finish('Aborted.'); return }
+        signal.addEventListener('abort', () => { ws.close(); clearTimeout(timeout); finish('Aborted.') }, { once: true })
+      }
 
       const agentReqId = randomUUID()
       ws.send(JSON.stringify({

@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 import { api, getStoredAccessKey } from '@/lib/api-client'
-import type { Chatroom, ChatroomMessage, SSEEvent } from '@/types'
+import type { Chatroom, ChatroomMessage, ChatroomRoutingRule, SSEEvent } from '@/types'
 import type { PendingFile } from '@/stores/use-chat-store'
 
 interface ToolEvent {
@@ -37,7 +37,7 @@ interface ChatroomState {
   setReplyingTo: (msg: ChatroomMessage | null) => void
 
   loadChatrooms: () => Promise<void>
-  createChatroom: (data: { name: string; description?: string; agentIds?: string[]; chatMode?: 'sequential' | 'parallel'; autoAddress?: boolean }) => Promise<Chatroom>
+  createChatroom: (data: { name: string; description?: string; agentIds?: string[]; chatMode?: 'sequential' | 'parallel'; autoAddress?: boolean; routingRules?: ChatroomRoutingRule[] }) => Promise<Chatroom>
   updateChatroom: (id: string, data: Partial<Chatroom>) => Promise<void>
   deleteChatroom: (id: string) => Promise<void>
   setCurrentChatroom: (id: string | null) => void
@@ -48,6 +48,12 @@ interface ChatroomState {
   removeMember: (agentId: string) => Promise<void>
   setChatroomSheetOpen: (open: boolean) => void
   setEditingChatroomId: (id: string | null) => void
+
+  // Moderation
+  deleteMessage: (messageId: string, targetAgentId: string) => Promise<void>
+  muteAgent: (targetAgentId: string, minutes?: number) => Promise<void>
+  unmuteAgent: (targetAgentId: string) => Promise<void>
+  setMemberRole: (targetAgentId: string, role: 'admin' | 'moderator' | 'member') => Promise<void>
 }
 
 export const useChatroomStore = create<ChatroomState>((set, get) => ({
@@ -273,4 +279,48 @@ export const useChatroomStore = create<ChatroomState>((set, get) => ({
 
   setChatroomSheetOpen: (open) => set({ chatroomSheetOpen: open }),
   setEditingChatroomId: (id) => set({ editingChatroomId: id }),
+
+  // Moderation
+  deleteMessage: async (messageId, targetAgentId) => {
+    const { currentChatroomId } = get()
+    if (!currentChatroomId) return
+    const chatroom = await api<Chatroom>('POST', `/chatrooms/${currentChatroomId}/moderate`, {
+      action: 'delete-message',
+      targetAgentId,
+      messageId,
+    })
+    set((s) => ({ chatrooms: { ...s.chatrooms, [currentChatroomId]: chatroom } }))
+  },
+
+  muteAgent: async (targetAgentId, minutes = 30) => {
+    const { currentChatroomId } = get()
+    if (!currentChatroomId) return
+    const chatroom = await api<Chatroom>('POST', `/chatrooms/${currentChatroomId}/moderate`, {
+      action: 'mute',
+      targetAgentId,
+      muteDurationMinutes: minutes,
+    })
+    set((s) => ({ chatrooms: { ...s.chatrooms, [currentChatroomId]: chatroom } }))
+  },
+
+  unmuteAgent: async (targetAgentId) => {
+    const { currentChatroomId } = get()
+    if (!currentChatroomId) return
+    const chatroom = await api<Chatroom>('POST', `/chatrooms/${currentChatroomId}/moderate`, {
+      action: 'unmute',
+      targetAgentId,
+    })
+    set((s) => ({ chatrooms: { ...s.chatrooms, [currentChatroomId]: chatroom } }))
+  },
+
+  setMemberRole: async (targetAgentId, role) => {
+    const { currentChatroomId } = get()
+    if (!currentChatroomId) return
+    const chatroom = await api<Chatroom>('POST', `/chatrooms/${currentChatroomId}/moderate`, {
+      action: 'set-role',
+      targetAgentId,
+      role,
+    })
+    set((s) => ({ chatrooms: { ...s.chatrooms, [currentChatroomId]: chatroom } }))
+  },
 }))

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { AreaChart, Area, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
@@ -85,6 +86,7 @@ export function HomeView() {
   const setTaskSheetOpen = useAppStore((s) => s.setTaskSheetOpen)
   const setMessages = useChatStore((s) => s.setMessages)
   const [todayCost, setTodayCost] = useState(0)
+  const [costTrend, setCostTrend] = useState<{ cost: number }[]>([])
 
   const allAgents = Object.values(agents).filter((a) => !a.trashedAt)
   const pinnedAgents = allAgents.filter((a) => a.pinned)
@@ -144,10 +146,11 @@ export function HomeView() {
     void loadSchedules()
     void loadNotifications()
     void loadConnectors()
-    api<{ records: Array<{ estimatedCost: number }> }>('GET', '/usage?range=24h')
+    api<{ records: Array<{ estimatedCost: number }>; timeSeries: Array<{ cost: number }> }>('GET', '/usage?range=7d')
       .then((data) => {
         const total = (data.records || []).reduce((s, r) => s + (r.estimatedCost || 0), 0)
         setTodayCost(total)
+        setCostTrend((data.timeSeries || []).map((pt) => ({ cost: pt.cost })))
       })
       .catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,12 +199,30 @@ export function HomeView() {
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <StatCard label="Agents" value={String(agentCount)} />
           <StatCard label="Active Tasks" value={String(activeTaskCount)} accent={activeTaskCount > 0} />
           <StatCard label="Today's Cost" value={`$${todayCost.toFixed(2)}`} />
           <StatCard label="Connectors" value={`${activeConnectorCount}/${allConnectors.length}`} accent={activeConnectorCount > 0} />
         </div>
+
+        {/* Cost trend sparkline */}
+        {costTrend.length > 1 && (
+          <div className="mb-10 px-1">
+            <p className="text-[10px] text-text-3/50 uppercase tracking-wider mb-1">7-day cost trend</p>
+            <ResponsiveContainer width="100%" height={60}>
+              <AreaChart data={costTrend} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#818CF8" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="#818CF8" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <Area type="monotone" dataKey="cost" stroke="#818CF8" strokeWidth={1.5} fill="url(#costGrad)" dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
         {/* Notifications banner */}
         {unreadNotifications.length > 0 && (

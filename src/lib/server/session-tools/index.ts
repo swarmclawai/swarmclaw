@@ -22,6 +22,7 @@ import { buildCanvasTools } from './canvas'
 import { buildHttpTools } from './http'
 import { buildGitTools } from './git'
 import { buildWalletTools } from './wallet'
+import { buildOpenClawWorkspaceTools } from './openclaw-workspace'
 
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
@@ -111,6 +112,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
     ...buildHttpTools(bctx),
     ...buildGitTools(bctx),
     ...buildWalletTools(bctx),
+    ...buildOpenClawWorkspaceTools(bctx),
   )
 
   // ---------------------------------------------------------------------------

@@ -25,6 +25,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const encoder = new TextEncoder()
+  let abortRun: (() => void) | null = null
   const stream = new ReadableStream({
     start(controller) {
       let closed = false
@@ -48,7 +49,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         mode: queueMode,
         onEvent: (ev) => writeEvent(ev as unknown as Record<string, unknown>),
         replyToId,
+        callerSignal: req.signal,
       })
+      abortRun = run.abort
 
       log.info('chat', `Enqueued session run ${run.runId}`, {
         sessionId: id,
@@ -86,7 +89,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         })
     },
     cancel() {
-      // Client disconnected; subsequent writes should be ignored.
+      // Client disconnected — abort the run so the LLM stream is cancelled.
+      abortRun?.()
     },
   })
 

@@ -1185,6 +1185,9 @@ const openclaw: PlatformConnector = {
           throw err
         }
       },
+      isAlive() {
+        return !stopped && connected && !!ws && ws.readyState === WebSocket.OPEN
+      },
       async stop() {
         stopped = true
         cleanupSocket()

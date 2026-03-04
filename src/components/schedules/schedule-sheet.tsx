@@ -9,6 +9,16 @@ import { inputClass } from '@/components/shared/form-styles'
 import type { ScheduleType, ScheduleStatus } from '@/types'
 import cronstrue from 'cronstrue'
 import { SectionLabel } from '@/components/shared/section-label'
+import { SCHEDULE_TEMPLATES, type ScheduleTemplate } from '@/lib/schedule-templates'
+import {
+  Newspaper, BarChart3, HeartPulse, PenLine, Trash2,
+  Activity, ShieldCheck, DatabaseBackup, FileText,
+} from 'lucide-react'
+
+const TEMPLATE_ICONS: Record<string, React.ComponentType<{ className?: string; size?: number }>> = {
+  Newspaper, BarChart3, HeartPulse, PenLine, Trash2,
+  Activity, ShieldCheck, DatabaseBackup, FileText,
+}
 
 const CRON_PRESETS = [
   { label: 'Every hour', cron: '0 * * * *' },
@@ -44,8 +54,30 @@ function formatDate(d: Date): string {
     ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-const STEPS = ['What', 'When', 'Review'] as const
-type Step = 0 | 1 | 2
+const STEPS_CREATE = ['Template', 'What', 'When', 'Review'] as const
+const STEPS_EDIT = ['What', 'When', 'Review'] as const
+type Step = 0 | 1 | 2 | 3
+
+function applyTemplate(
+  tpl: ScheduleTemplate,
+  setters: {
+    setName: (v: string) => void
+    setTaskPrompt: (v: string) => void
+    setScheduleType: (v: ScheduleType) => void
+    setCron: (v: string) => void
+    setIntervalMs: (v: number) => void
+    setCustomCron: (v: boolean) => void
+  },
+) {
+  setters.setName(tpl.name)
+  setters.setTaskPrompt(tpl.defaults.taskPrompt)
+  setters.setScheduleType(tpl.defaults.scheduleType)
+  if (tpl.defaults.cron) {
+    setters.setCron(tpl.defaults.cron)
+    setters.setCustomCron(!CRON_PRESETS.some((p) => p.cron === tpl.defaults.cron))
+  }
+  if (tpl.defaults.intervalMs) setters.setIntervalMs(tpl.defaults.intervalMs)
+}
 
 export function ScheduleSheet() {
   const open = useAppStore((s) => s.scheduleSheetOpen)
@@ -56,6 +88,8 @@ export function ScheduleSheet() {
   const loadSchedules = useAppStore((s) => s.loadSchedules)
   const agents = useAppStore((s) => s.agents)
   const loadAgents = useAppStore((s) => s.loadAgents)
+  const templatePrefill = useAppStore((s) => s.scheduleTemplatePrefill)
+  const setTemplatePrefill = useAppStore((s) => s.setScheduleTemplatePrefill)
 
   const [step, setStep] = useState<Step>(0)
   const [name, setName] = useState('')
@@ -68,13 +102,21 @@ export function ScheduleSheet() {
   const [customCron, setCustomCron] = useState(false)
 
   const editing = editingId ? schedules[editingId] : null
+  const isCreating = !editing
+  const steps = isCreating ? STEPS_CREATE : STEPS_EDIT
   const agentList = Object.values(agents).sort((a, b) => a.name.localeCompare(b.name))
+
+  // Compute which logical step we're on (template step only exists in create mode)
+  const templateStep = isCreating ? 0 : -1
+  const whatStep = isCreating ? 1 : 0
+  const whenStep = isCreating ? 2 : 1
+  const reviewStep = isCreating ? 3 : 2
 
   useEffect(() => {
     if (open) {
       loadAgents()
-      setStep(0)
       if (editing) {
+        setStep(0)
         setName(editing.name || '')
         setAgentId(editing.agentId)
         setTaskPrompt(editing.taskPrompt)
@@ -83,7 +125,22 @@ export function ScheduleSheet() {
         setIntervalMs(editing.intervalMs || 3600000)
         setStatus(editing.status)
         setCustomCron(!CRON_PRESETS.some((p) => p.cron === editing.cron))
+      } else if (templatePrefill) {
+        // Opened from a quick-start card with pre-filled values
+        setName(templatePrefill.name)
+        setTaskPrompt(templatePrefill.taskPrompt)
+        setScheduleType(templatePrefill.scheduleType)
+        if (templatePrefill.cron) {
+          setCron(templatePrefill.cron)
+          setCustomCron(!CRON_PRESETS.some((p) => p.cron === templatePrefill.cron))
+        }
+        if (templatePrefill.intervalMs) setIntervalMs(templatePrefill.intervalMs)
+        setAgentId('')
+        setStatus('active')
+        setStep(1) // Skip template picker, go to "What" step
+        setTemplatePrefill(null)
       } else {
+        setStep(0) // Start at template picker
         setName('')
         setAgentId('')
         setTaskPrompt('')
@@ -153,15 +210,17 @@ export function ScheduleSheet() {
 
       {/* Step indicator */}
       <div className="flex items-center gap-2 mb-10">
-        {STEPS.map((label, i) => (
+        {steps.map((label, i) => (
           <div key={label} className="flex items-center gap-2">
             {i > 0 && <div className={`w-8 h-px ${i <= step ? 'bg-accent-bright/40' : 'bg-white/[0.06]'}`} />}
             <button
               onClick={() => {
-                // Allow going back, but only forward if valid
                 if (i < step) setStep(i as Step)
-                else if (i === 1 && step === 0 && step0Valid) setStep(1)
-                else if (i === 2 && step === 1 && step1Valid) setStep(2)
+                else if (i === step + 1) {
+                  if (step === whatStep && step0Valid) setStep(i as Step)
+                  else if (step === whenStep && step1Valid) setStep(i as Step)
+                  else if (step === templateStep) setStep(i as Step)
+                }
               }}
               className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-[8px] text-[12px] font-600 cursor-pointer transition-all border-none
                 ${i === step
@@ -189,8 +248,50 @@ export function ScheduleSheet() {
         ))}
       </div>
 
-      {/* Step 0: What */}
-      {step === 0 && (
+      {/* Template Picker (create only) */}
+      {step === templateStep && isCreating && (
+        <div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            {SCHEDULE_TEMPLATES.map((tpl) => {
+              const IconComp = TEMPLATE_ICONS[tpl.icon] || FileText
+              return (
+                <button
+                  key={tpl.id}
+                  onClick={() => {
+                    const setters = { setName, setTaskPrompt, setScheduleType, setCron, setIntervalMs, setCustomCron }
+                    applyTemplate(tpl, setters)
+                    setStep(whatStep as Step)
+                  }}
+                  className="flex items-start gap-3.5 p-4 rounded-[14px] border border-white/[0.06] bg-surface
+                    text-left cursor-pointer transition-all duration-200 hover:bg-surface-2 hover:border-white/[0.1]
+                    active:scale-[0.98]"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <div className="w-9 h-9 rounded-[10px] bg-accent-soft flex items-center justify-center shrink-0 mt-0.5">
+                    <IconComp size={16} className="text-accent-bright" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-600 text-text mb-0.5">{tpl.name}</div>
+                    <div className="text-[12px] text-text-3/70 leading-[1.4]">{tpl.description}</div>
+                    <div className="mt-1.5 text-[11px] text-text-3/40 capitalize">{tpl.category}</div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          <button
+            onClick={() => setStep(whatStep as Step)}
+            className="w-full py-3.5 rounded-[14px] border border-dashed border-white/[0.08] bg-transparent
+              text-text-3 text-[14px] font-600 cursor-pointer transition-all hover:bg-surface hover:text-text-2 hover:border-white/[0.12]"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Start from scratch
+          </button>
+        </div>
+      )}
+
+      {/* Step: What */}
+      {step === whatStep && (
         <div>
           <div className="mb-8">
             <SectionLabel>Name</SectionLabel>
@@ -221,8 +322,8 @@ export function ScheduleSheet() {
         </div>
       )}
 
-      {/* Step 1: When */}
-      {step === 1 && (
+      {/* Step: When */}
+      {step === whenStep && (
         <div>
           <div className="mb-8">
             <SectionLabel>Schedule Type</SectionLabel>
@@ -334,8 +435,8 @@ export function ScheduleSheet() {
         </div>
       )}
 
-      {/* Step 2: Review */}
-      {step === 2 && (
+      {/* Step: Review */}
+      {step === reviewStep && (
         <div className="mb-8">
           <div className="p-5 rounded-[16px] bg-surface border border-white/[0.06] space-y-4">
             <div>
@@ -381,7 +482,7 @@ export function ScheduleSheet() {
             Delete
           </button>
         )}
-        {step > 0 && (
+        {step > (isCreating ? templateStep : 0) && step !== templateStep && (
           <button
             onClick={() => setStep((step - 1) as Step)}
             className="py-3.5 px-6 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all"
@@ -391,17 +492,27 @@ export function ScheduleSheet() {
           </button>
         )}
         <div className="flex-1" />
-        <button
-          onClick={onClose}
-          className="py-3.5 px-6 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all"
-          style={{ fontFamily: 'inherit' }}
-        >
-          Cancel
-        </button>
-        {step < 2 ? (
+        {step !== templateStep && (
+          <button
+            onClick={onClose}
+            className="py-3.5 px-6 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Cancel
+          </button>
+        )}
+        {step === templateStep && isCreating ? (
+          <button
+            onClick={onClose}
+            className="py-3.5 px-6 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Cancel
+          </button>
+        ) : step < reviewStep ? (
           <button
             onClick={() => setStep((step + 1) as Step)}
-            disabled={step === 0 ? !step0Valid : !step1Valid}
+            disabled={step === whatStep ? !step0Valid : !step1Valid}
             className="py-3.5 px-8 rounded-[14px] border-none bg-accent-bright text-white text-[15px] font-600 cursor-pointer active:scale-[0.97] disabled:opacity-30 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.25)] hover:brightness-110"
             style={{ fontFamily: 'inherit' }}
           >

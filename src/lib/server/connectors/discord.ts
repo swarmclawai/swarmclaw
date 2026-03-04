@@ -105,6 +105,9 @@ const discord: PlatformConnector = {
 
     return {
       connector,
+      isAlive() {
+        return client.isReady()
+      },
       async sendMessage(channelId, text, options) {
         const channel = await client.channels.fetch(channelId)
         if (!channel || !('send' in channel) || typeof (channel as any).send !== 'function') {

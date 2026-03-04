@@ -66,6 +66,15 @@ const whatsapp: PlatformConnector = {
       qrDataUrl: null,
       authenticated: false,
       hasCredentials: hasStoredCreds(authDir),
+      isAlive() {
+        if (stopped || !sock) return false
+        // Check the underlying WebSocket connection state
+        const ws = sock.ws
+        if (!ws) return false
+        // If authenticated, the connection is alive
+        // If we have a socket but not yet authenticated (QR phase), still considered alive
+        return !stopped
+      },
       async sendMessage(channelId, text, options) {
         if (!sock) throw new Error('WhatsApp connector is not connected')
         const normalizedText = formatTextForWhatsApp(text || '')

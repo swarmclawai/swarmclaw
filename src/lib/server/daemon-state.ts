@@ -10,6 +10,7 @@ import {
   sendConnectorMessage,
   startConnector,
   getConnectorStatus,
+  checkConnectorHealth,
 } from './connectors/manager'
 import { startHeartbeatService, stopHeartbeatService, getHeartbeatServiceStatus } from './heartbeat-service'
 import { hasOpenClawAgents, ensureGatewayConnected, disconnectGateway, getGateway } from './openclaw-gateway'
@@ -82,6 +83,10 @@ const ds: {
   /** Session IDs we've already alerted as stale (alert-once semantics). */
   staleSessionIds: Set<string>
   connectorRestartState: Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>
+  /** OpenClaw gateway agent IDs currently considered down. */
+  openclawDownAgentIds: Set<string>
+  /** Per-agent auto-repair state for OpenClaw gateways. */
+  openclawRepairState: Map<string, { attempts: number; lastAttemptAt: number; cooldownUntil: number }>
   manualStopRequested: boolean
   running: boolean
   lastProcessedAt: number | null
@@ -94,6 +99,8 @@ const ds: {
   memoryConsolidationIntervalId: null,
   staleSessionIds: new Set<string>(),
   connectorRestartState: new Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>(),
+  openclawDownAgentIds: new Set<string>(),
+  openclawRepairState: new Map<string, { attempts: number; lastAttemptAt: number; cooldownUntil: number }>(),
   manualStopRequested: false,
   running: false,
   lastProcessedAt: null,
@@ -102,6 +109,8 @@ const ds: {
 // Backfill fields for hot-reloaded daemon state objects from older code versions.
 if (!ds.staleSessionIds) ds.staleSessionIds = new Set<string>()
 if (!ds.connectorRestartState) ds.connectorRestartState = new Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>()
+if (!ds.openclawDownAgentIds) ds.openclawDownAgentIds = new Set<string>()
+if (!ds.openclawRepairState) ds.openclawRepairState = new Map<string, { attempts: number; lastAttemptAt: number; cooldownUntil: number }>()
 // Migrate from old issueLastAlertAt map if present (HMR across code versions)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 if ((ds as any).issueLastAlertAt) delete (ds as any).issueLastAlertAt
@@ -247,6 +256,13 @@ async function sendHealthAlert(text: string) {
 }
 
 async function runConnectorHealthChecks(now: number) {
+  // First, check isAlive() on running instances and attempt reconnection for dead ones
+  try {
+    await checkConnectorHealth()
+  } catch (err: unknown) {
+    console.error('[health] Connector isAlive check failed:', err instanceof Error ? err.message : String(err))
+  }
+
   const connectors = loadConnectors()
   for (const connector of Object.values(connectors) as Record<string, unknown>[]) {
     if (!connector?.id || typeof connector.id !== 'string') continue
@@ -533,6 +549,107 @@ async function runProviderHealthChecks() {
   }
 }
 
+const OPENCLAW_REPAIR_MAX_ATTEMPTS = 3
+const OPENCLAW_REPAIR_COOLDOWN_MS = 300_000 // 5 minutes
+
+async function runOpenClawGatewayHealthChecks() {
+  const agents = loadAgents()
+  const credentials = loadCredentials()
+
+  // Build deduplicated OpenClaw agent tuples
+  const seen = new Set<string>()
+  const tuples: { agentId: string; endpoint: string; credentialId: string; credentialName: string }[] = []
+
+  for (const agent of Object.values(agents) as Record<string, unknown>[]) {
+    if (!agent?.id || typeof agent.id !== 'string') continue
+    if (agent.provider !== 'openclaw') continue
+
+    const key = `openclaw:${agent.id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    const credentialId = typeof agent.credentialId === 'string' ? agent.credentialId : ''
+    const endpoint = typeof agent.apiEndpoint === 'string' ? agent.apiEndpoint : ''
+    const cred = credentialId ? (credentials[credentialId] as Record<string, unknown> | undefined) : undefined
+    const credName = typeof cred?.name === 'string' ? cred.name : 'openclaw'
+
+    tuples.push({ agentId: agent.id, endpoint, credentialId, credentialName: credName })
+  }
+
+  if (!tuples.length) return
+
+  const { probeOpenClawHealth } = await import('./openclaw-health')
+
+  for (const tuple of tuples) {
+    let token: string | undefined
+    if (tuple.credentialId) {
+      const cred = credentials[tuple.credentialId] as Record<string, unknown> | undefined
+      if (cred?.encryptedKey && typeof cred.encryptedKey === 'string') {
+        try { token = decryptKey(cred.encryptedKey) } catch { continue }
+      }
+    }
+
+    const result = await probeOpenClawHealth({
+      endpoint: tuple.endpoint || undefined,
+      token,
+      timeoutMs: 10_000,
+    })
+
+    const now = Date.now()
+
+    if (result.ok) {
+      // Recovered
+      if (ds.openclawDownAgentIds.has(tuple.agentId)) {
+        ds.openclawDownAgentIds.delete(tuple.agentId)
+        ds.openclawRepairState.delete(tuple.agentId)
+        createNotification({
+          type: 'success',
+          title: 'OpenClaw gateway recovered',
+          message: `Gateway for ${tuple.credentialName} is reachable again.`,
+          dedupKey: `openclaw-gw-down:${tuple.agentId}`,
+        })
+      }
+      continue
+    }
+
+    // Unhealthy
+    const repair = ds.openclawRepairState.get(tuple.agentId) || { attempts: 0, lastAttemptAt: 0, cooldownUntil: 0 }
+
+    // In cooldown — skip
+    if (repair.cooldownUntil > now) continue
+
+    // Cooldown expired — reset
+    if (repair.cooldownUntil > 0 && repair.cooldownUntil <= now) {
+      repair.attempts = 0
+      repair.cooldownUntil = 0
+    }
+
+    ds.openclawDownAgentIds.add(tuple.agentId)
+
+    if (repair.attempts < OPENCLAW_REPAIR_MAX_ATTEMPTS) {
+      try {
+        const { runOpenClawDoctor } = await import('./openclaw-doctor')
+        await runOpenClawDoctor({ fix: true })
+      } catch (err: unknown) {
+        console.warn('[daemon] openclaw doctor --fix failed:', err instanceof Error ? err.message : String(err))
+      }
+      repair.attempts += 1
+      repair.lastAttemptAt = now
+    } else {
+      repair.cooldownUntil = now + OPENCLAW_REPAIR_COOLDOWN_MS
+    }
+
+    ds.openclawRepairState.set(tuple.agentId, repair)
+
+    createNotification({
+      type: 'error',
+      title: `OpenClaw gateway unreachable: ${tuple.credentialName}`,
+      message: result.error || 'Health check failed',
+      dedupKey: `openclaw-gw-down:${tuple.agentId}`,
+    })
+  }
+}
+
 async function runHealthChecks() {
   // Continuously keep the completed queue honest.
   validateCompletedTasksQueue()
@@ -599,6 +716,13 @@ async function runHealthChecks() {
     await runProviderHealthChecks()
   } catch (err: unknown) {
     console.error('[daemon] Provider health check failed:', err instanceof Error ? err.message : String(err))
+  }
+
+  // OpenClaw gateway health checks + auto-repair
+  try {
+    await runOpenClawGatewayHealthChecks()
+  } catch (err: unknown) {
+    console.error('[daemon] OpenClaw gateway health check failed:', err instanceof Error ? err.message : String(err))
   }
 
   // Process webhook retry queue

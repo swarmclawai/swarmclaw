@@ -29,3 +29,73 @@ export function estimateCost(model: string, inputTokens: number, outputTokens: n
 export function getModelCosts(): Record<string, [number, number]> {
   return { ...MODEL_COSTS }
 }
+
+// --- Agent Monthly Budget ---
+
+import { loadUsage, loadSessions } from './storage'
+import type { Agent, UsageRecord } from '@/types'
+
+/**
+ * Sum the estimated cost for an agent in the current calendar month.
+ * Usage records are keyed by sessionId; we resolve agentId through sessions.
+ */
+export function getAgentMonthlySpend(agentId: string): number {
+  const sessions = loadSessions()
+  // Build a set of sessionIds linked to this agent
+  const agentSessionIds = new Set<string>()
+  for (const [sid, session] of Object.entries(sessions)) {
+    if (session?.agentId === agentId) agentSessionIds.add(sid)
+  }
+  if (agentSessionIds.size === 0) return 0
+
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+
+  const usage = loadUsage()
+  let total = 0
+  for (const sid of agentSessionIds) {
+    const records = usage[sid]
+    if (!Array.isArray(records)) continue
+    for (const record of records) {
+      const r = record as UsageRecord
+      if (typeof r.timestamp !== 'number' || r.timestamp < monthStart) continue
+      if (typeof r.estimatedCost === 'number' && Number.isFinite(r.estimatedCost) && r.estimatedCost > 0) {
+        total += r.estimatedCost
+      }
+    }
+  }
+  return total
+}
+
+export interface BudgetCheckResult {
+  ok: boolean
+  spend: number
+  budget: number
+  message?: string
+}
+
+/**
+ * Check whether an agent is within its monthly budget.
+ * Returns ok: true if no budget is set or spend is under the cap.
+ */
+export function checkBudget(agent: Agent): BudgetCheckResult {
+  const budget = typeof agent.monthlyBudget === 'number' && Number.isFinite(agent.monthlyBudget) && agent.monthlyBudget > 0
+    ? agent.monthlyBudget
+    : 0
+
+  if (budget <= 0) {
+    return { ok: true, spend: 0, budget: 0 }
+  }
+
+  const spend = getAgentMonthlySpend(agent.id)
+  if (spend >= budget) {
+    return {
+      ok: false,
+      spend,
+      budget,
+      message: `Agent "${agent.name}" has reached its monthly budget: $${spend.toFixed(4)} spent of $${budget.toFixed(2)} cap.`,
+    }
+  }
+
+  return { ok: true, spend, budget }
+}

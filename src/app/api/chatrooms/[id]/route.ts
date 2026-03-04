@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadChatrooms, saveChatrooms, loadAgents } from '@/lib/server/storage'
+import { loadChatrooms, saveChatrooms, loadAgents, loadConnectors, saveConnectors } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { notFound } from '@/lib/server/collection-helpers'
 import { genId } from '@/lib/id'
@@ -26,6 +26,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
   if (body.autoAddress !== undefined) {
     chatroom.autoAddress = Boolean(body.autoAddress)
+  }
+  if (body.routingRules !== undefined) {
+    chatroom.routingRules = Array.isArray(body.routingRules) ? body.routingRules : undefined
   }
 
   // Diff agentIds and inject join/leave system messages
@@ -90,6 +93,21 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id } = await params
   const chatrooms = loadChatrooms()
   if (!chatrooms[id]) return notFound()
+
+  // Cascade: null out chatroomId on any connectors that reference this chatroom
+  const connectors = loadConnectors()
+  let connectorsDirty = false
+  for (const connector of Object.values(connectors)) {
+    if (connector.chatroomId === id) {
+      connector.chatroomId = null
+      connector.updatedAt = Date.now()
+      connectorsDirty = true
+    }
+  }
+  if (connectorsDirty) {
+    saveConnectors(connectors)
+    notify('connectors')
+  }
 
   delete chatrooms[id]
   saveChatrooms(chatrooms)

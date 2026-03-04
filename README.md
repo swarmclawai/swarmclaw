@@ -118,11 +118,16 @@ You can complete first-time setup from terminal:
 # Start the app (if not already running)
 npm run dev
 
-# In another terminal, run setup with your provider
+# In another terminal, run interactive setup (walks you through provider selection)
+node ./bin/swarmclaw.js setup init
+
+# Or pass flags directly for non-interactive setup
 node ./bin/swarmclaw.js setup init --provider openai --api-key "$OPENAI_API_KEY"
 ```
 
 Notes:
+- When run with no flags in a TTY, `setup init` enters interactive mode — pick providers, enter keys, name agents, and add multiple providers in one session.
+- Use `--no-interactive` to force flag-only mode.
 - On a fresh instance, `setup init` can auto-discover and claim the first-run access key from `/api/auth`.
 - For existing installs, pass `--key <ACCESS_KEY>` (or set `SWARMCLAW_ACCESS_KEY`).
 - `setup init` performs provider validation, stores credentials, creates a starter agent, and marks setup complete.
@@ -132,22 +137,22 @@ Notes:
 
 After login, SwarmClaw opens a guided wizard designed for non-technical users:
 
-1. Choose a provider: **OpenAI**, **Anthropic**, or **Ollama**
-2. Add only required fields (API key and/or endpoint)
-3. Click **Check Connection** for live validation before continuing
-4. (Optional) click **Run System Check** for setup diagnostics
-5. Create a starter assistant (advanced settings are optional)
+1. **Choose a provider** — Pick from all 11 supported providers (OpenAI, Anthropic, Google Gemini, DeepSeek, Groq, Together AI, Mistral, xAI, Fireworks, OpenClaw, Ollama)
+2. **Connect provider** — Enter only required fields (API key and/or endpoint), then click **Check Connection** for live validation
+3. **Create your agent** — Each provider gets a unique default name (e.g. Atlas for OpenAI, Claude for Anthropic, Bolt for Groq). Choose **Create & Add Another** to set up multiple providers, or **Create & Finish** to continue
+4. **Summary** — Review all created agents and discover connectors (Discord, Slack, Telegram, WhatsApp)
 
 Notes:
+- You can add multiple providers in a single wizard session — configured providers are dimmed and shown as chips.
 - Ollama checks can auto-suggest a model from the connected endpoint.
-- OpenClaw is configured per-agent via the **OpenClaw Gateway** toggle (not in the setup wizard).
-- You can skip setup and configure everything later in the sidebar.
+- You can skip setup at any step and configure everything later in the sidebar.
 
 ## Features
 
 - **15 Built-in Providers** — Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, plus custom OpenAI-compatible endpoints
 - **OpenClaw Gateway** — Per-agent toggle to connect any agent to a local or remote OpenClaw gateway. Each agent gets its own gateway URL and token — run a swarm of OpenClaws from one dashboard. The `openclaw` CLI ships as a bundled dependency (no separate install needed)
 - **OpenClaw Control Plane** — Built-in gateway connection controls, reload mode switching (hot/hybrid/full), config issue detection/repair, remote history sync, and live execution approval handling
+- **Gateway Watchdog** — Proactive gateway health monitoring with auto-repair via `openclaw doctor`, outbound ops alerts to Discord/Slack/custom webhooks, workspace backup/rollback/history tools for agents, and connector liveness detection
 - **Agent Builder** — Create agents with custom personalities (soul), system prompts, tools, and skills. AI-powered generation from a description
 - **Agent Inspector Panel** — Per-agent side panel for OpenClaw file editing (`SOUL.md`, `IDENTITY.md`, `USER.md`, etc.), guided personality editing, skill install/enable/remove, permission presets, sandbox env allowlist, and cron automations
 - **Agent Fleet Management** — Avatar seeds with generated avatars, running/approval fleet filters, soft-delete agent trash with restore/permanent delete, and approval counters in agent cards
@@ -648,7 +653,10 @@ swarmclaw tasks create --title "Fix flaky CI test" --description "Stabilize retr
 # run setup diagnostics
 swarmclaw setup doctor
 
-# complete setup from CLI (example: OpenAI)
+# interactive setup (walks through provider selection, supports multiple providers)
+swarmclaw setup init
+
+# or non-interactive setup with flags
 swarmclaw setup init --provider openai --api-key "$OPENAI_API_KEY"
 
 # run memory maintenance analysis

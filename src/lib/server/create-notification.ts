@@ -1,6 +1,7 @@
 import { genId } from '@/lib/id'
 import { saveNotification, hasUnreadNotificationWithKey } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
+import { dispatchAlert } from '@/lib/server/alert-dispatch'
 import type { AppNotification } from '@/types'
 
 /**
@@ -38,5 +39,6 @@ export function createNotification(opts: {
   }
   saveNotification(id, notification)
   notify('notifications')
+  dispatchAlert(notification).catch(() => {})
   return notification
 }

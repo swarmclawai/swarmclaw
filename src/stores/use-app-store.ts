@@ -68,6 +68,8 @@ interface AppState {
   setScheduleSheetOpen: (open: boolean) => void
   editingScheduleId: string | null
   setEditingScheduleId: (id: string | null) => void
+  scheduleTemplatePrefill: { name: string; taskPrompt: string; scheduleType: 'cron' | 'interval'; cron?: string; intervalMs?: number } | null
+  setScheduleTemplatePrefill: (prefill: { name: string; taskPrompt: string; scheduleType: 'cron' | 'interval'; cron?: string; intervalMs?: number } | null) => void
 
   memorySheetOpen: boolean
   setMemorySheetOpen: (open: boolean) => void
@@ -382,6 +384,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setScheduleSheetOpen: (open) => set({ scheduleSheetOpen: open }),
   editingScheduleId: null,
   setEditingScheduleId: (id) => set({ editingScheduleId: id }),
+  scheduleTemplatePrefill: null,
+  setScheduleTemplatePrefill: (prefill) => set({ scheduleTemplatePrefill: prefill }),
 
   memorySheetOpen: false,
   setMemorySheetOpen: (open) => set({ memorySheetOpen: open }),
@@ -608,9 +612,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   inspectorTab: 'overview',
   setInspectorTab: (tab) => set({ inspectorTab: tab }),
 
-  // Fleet sidebar filter
-  fleetFilter: 'all',
-  setFleetFilter: (filter) => set({ fleetFilter: filter }),
+  // Fleet sidebar filter (persisted to localStorage)
+  fleetFilter: (safeStorageGet('sc_fleet_filter') as FleetFilter) || 'all',
+  setFleetFilter: (filter) => { safeStorageSet('sc_fleet_filter', filter); set({ fleetFilter: filter }) },
 
   // Chat list filter
   chatFilter: 'all' as const,

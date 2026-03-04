@@ -1,6 +1,7 @@
 import fs from 'fs'
 import https from 'https'
 import type { StreamChatOptions } from './index'
+import { PROVIDER_DEFAULTS } from './provider-defaults'
 
 const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|webp|bmp)$/i
 const TEXT_EXTS = /\.(txt|md|csv|json|xml|html|js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|yml|yaml|toml|env|log|sh|sql|css|scss)$/i
@@ -23,7 +24,7 @@ function fileToContentBlocks(filePath: string): any[] {
   return [{ type: 'text', text: `[Attached file: ${filePath.split('/').pop()}]` }]
 }
 
-export function streamAnthropicChat({ session, message, imagePath, imageUrl, apiKey, systemPrompt, write, active, loadHistory, onUsage }: StreamChatOptions): Promise<string> {
+export function streamAnthropicChat({ session, message, imagePath, imageUrl, apiKey, systemPrompt, write, active, loadHistory, onUsage, signal }: StreamChatOptions): Promise<string> {
   return new Promise((resolve) => {
     const messages = buildMessages(session, message, imagePath, loadHistory, imageUrl)
     const model = session.model || 'claude-sonnet-4-6'
@@ -43,9 +44,21 @@ export function streamAnthropicChat({ session, message, imagePath, imageUrl, api
     const payload = JSON.stringify(body)
     const abortController = { aborted: false }
     let fullResponse = ''
+    let apiReqRef: ReturnType<typeof https.request> | null = null
+
+    if (signal) {
+      if (signal.aborted) {
+        abortController.aborted = true
+      } else {
+        signal.addEventListener('abort', () => {
+          abortController.aborted = true
+          apiReqRef?.destroy()
+        }, { once: true })
+      }
+    }
 
     const apiReq = https.request({
-      hostname: 'api.anthropic.com',
+      hostname: PROVIDER_DEFAULTS.anthropic,
       path: '/v1/messages',
       method: 'POST',
       headers: {
@@ -109,6 +122,7 @@ export function streamAnthropicChat({ session, message, imagePath, imageUrl, api
       })
     })
 
+    apiReqRef = apiReq
     active.set(session.id, { kill: () => { abortController.aborted = true; apiReq.destroy() } })
 
     apiReq.on('error', (e) => {

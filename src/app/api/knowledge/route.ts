@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  const { title, content, tags, scope, agentIds } = body as Record<string, unknown>
+  const { title, content, tags, scope, agentIds, source, sourceUrl } = body as Record<string, unknown>
 
   if (typeof title !== 'string' || !title.trim()) {
     return NextResponse.json({ error: 'title is required.' }, { status: 400 })
@@ -43,12 +43,17 @@ export async function POST(req: Request) {
     ? (agentIds as unknown[]).filter((id): id is string => typeof id === 'string')
     : []
 
+  const normalizedSource = typeof source === 'string' && source.trim() ? source.trim() : undefined
+  const normalizedSourceUrl = typeof sourceUrl === 'string' && sourceUrl.trim() ? sourceUrl.trim() : undefined
+
   const entry = addKnowledge({
     title: title.trim(),
     content,
     tags: normalizedTags,
     scope: normalizedScope,
     agentIds: normalizedAgentIds,
+    source: normalizedSource,
+    sourceUrl: normalizedSourceUrl,
   })
 
   return NextResponse.json(entry)

@@ -193,8 +193,13 @@ const slack: PlatformConnector = {
     await app.start()
     console.log(`[slack] Bot connected (socket mode)`)
 
+    let appStopped = false
+
     return {
       connector,
+      isAlive() {
+        return !appStopped && !!app.client
+      },
       async sendMessage(channelId, text, options) {
         const webClient = app.client
 
@@ -248,6 +253,7 @@ const slack: PlatformConnector = {
         return { messageId: lastTs }
       },
       async stop() {
+        appStopped = true
         await app.stop()
         console.log(`[slack] Bot disconnected`)
       },

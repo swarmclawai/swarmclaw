@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "description": "Self-hosted AI agent orchestration dashboard — manage LLM providers, orchestrate agent swarms, schedule tasks, and bridge agents to chat platforms.",
   "license": "MIT",
   "repository": {
@@ -78,9 +78,12 @@
     "exceljs": "^4.4.0",
     "grammy": "^1.40.0",
     "highlight.js": "^11.11.1",
+    "imapflow": "^1.2.11",
     "lucide-react": "^0.574.0",
+    "mailparser": "^3.9.3",
     "next": "16.1.6",
     "next-themes": "^0.4.6",
+    "nodemailer": "^8.0.1",
     "openclaw": "^2026.2.26",
     "pdf-parse": "^2.4.5",
     "qrcode": "^1.5.4",
@@ -103,7 +106,9 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/mailparser": "^3.4.6",
     "@types/node": "^20",
+    "@types/nodemailer": "^7.0.11",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",

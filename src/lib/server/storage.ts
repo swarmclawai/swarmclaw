@@ -9,6 +9,100 @@ import type { Message } from '@/types'
 import { ensureMainSessionFlag } from './main-session'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
+// --- LRU Cache ---
+
+const DEFAULT_LRU_CAPACITY = 5000
+
+/** Per-collection capacity overrides from COLLECTION_CACHE_LIMITS env var (JSON). */
+function parseCacheLimits(): Record<string, number> {
+  const raw = process.env.COLLECTION_CACHE_LIMITS
+  if (!raw) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const result: Record<string, number> = {}
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'number' && v > 0) result[k] = v
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+const cacheLimits = parseCacheLimits()
+
+function capacityFor(collection: string): number {
+  return cacheLimits[collection] ?? DEFAULT_LRU_CAPACITY
+}
+
+/**
+ * A Map wrapper with LRU eviction. JS Maps iterate in insertion order,
+ * so the *first* key is the least-recently-used entry.
+ */
+class LRUMap<K, V> {
+  private readonly map = new Map<K, V>()
+  readonly capacity: number
+
+  constructor(capacity: number) {
+    this.capacity = Math.max(1, capacity)
+  }
+
+  get(key: K): V | undefined {
+    if (!this.map.has(key)) return undefined
+    const value = this.map.get(key)!
+    // Move to end (most-recently-used)
+    this.map.delete(key)
+    this.map.set(key, value)
+    return value
+  }
+
+  set(key: K, value: V): this {
+    if (this.map.has(key)) {
+      this.map.delete(key)
+    }
+    this.map.set(key, value)
+    // Evict oldest if over capacity
+    if (this.map.size > this.capacity) {
+      const oldest = this.map.keys().next().value as K
+      this.map.delete(oldest)
+    }
+    return this
+  }
+
+  has(key: K): boolean {
+    return this.map.has(key)
+  }
+
+  delete(key: K): boolean {
+    return this.map.delete(key)
+  }
+
+  get size(): number {
+    return this.map.size
+  }
+
+  clear(): void {
+    this.map.clear()
+  }
+
+  keys(): MapIterator<K> {
+    return this.map.keys()
+  }
+
+  values(): MapIterator<V> {
+    return this.map.values()
+  }
+
+  entries(): MapIterator<[K, V]> {
+    return this.map.entries()
+  }
+
+  [Symbol.iterator](): MapIterator<[K, V]> {
+    return this.map[Symbol.iterator]()
+  }
+}
+
 // Ensure directories exist
 for (const dir of [DATA_DIR, UPLOAD_DIR, WORKSPACE_DIR]) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -26,12 +120,12 @@ db.pragma('foreign_keys = ON')
 
 const collectionCacheKey = '__swarmclaw_storage_collection_cache__' as const
 type StorageGlobals = typeof globalThis & {
-  [collectionCacheKey]?: Map<string, Map<string, string>>
+  [collectionCacheKey]?: Map<string, LRUMap<string, string>>
 }
 const storageGlobals = globalThis as StorageGlobals
-const collectionCache: Map<string, Map<string, string>> =
+const collectionCache: Map<string, LRUMap<string, string>> =
   storageGlobals[collectionCacheKey]
-  ?? (storageGlobals[collectionCacheKey] = new Map<string, Map<string, string>>())
+  ?? (storageGlobals[collectionCacheKey] = new Map<string, LRUMap<string, string>>())
 
 // Collection tables (id → JSON blob)
 const COLLECTIONS = [
@@ -57,6 +151,8 @@ const COLLECTIONS = [
   'wallets',
   'wallet_transactions',
   'wallet_balance_history',
+  'moderation_logs',
+  'connector_health',
 ] as const
 
 for (const table of COLLECTIONS) {
@@ -69,16 +165,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY CHECK (id = 1)
 db.exec(`CREATE TABLE IF NOT EXISTS usage (session_id TEXT NOT NULL, data TEXT NOT NULL)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_session ON usage(session_id)`)
 
-function readCollectionRaw(table: string): Map<string, string> {
+function readCollectionRaw(table: string): LRUMap<string, string> {
   const rows = db.prepare(`SELECT id, data FROM ${table}`).all() as { id: string; data: string }[]
-  const raw = new Map<string, string>()
+  const raw = new LRUMap<string, string>(capacityFor(table))
   for (const row of rows) {
     raw.set(row.id, row.data)
   }
   return raw
 }
 
-function getCollectionRawCache(table: string): Map<string, string> {
+function getCollectionRawCache(table: string): LRUMap<string, string> {
   // Always reload from SQLite so concurrent Next.js workers/processes
   // observe each other's writes immediately.
   const loaded = readCollectionRaw(table)
@@ -862,6 +958,24 @@ export function loadWalletBalanceHistory(): Record<string, unknown> {
 
 export function upsertWalletBalanceSnapshot(id: string, snapshot: unknown) {
   upsertCollectionItem('wallet_balance_history', id, snapshot)
+}
+
+// --- Moderation Logs ---
+export function loadModerationLogs(): Record<string, unknown> {
+  return loadCollection('moderation_logs')
+}
+
+export function appendModerationLog(id: string, entry: unknown) {
+  upsertCollectionItem('moderation_logs', id, entry)
+}
+
+// --- Connector Health ---
+export function loadConnectorHealth(): Record<string, unknown> {
+  return loadCollection('connector_health')
+}
+
+export function upsertConnectorHealthEvent(id: string, event: unknown) {
+  upsertCollectionItem('connector_health', id, event)
 }
 
 export function getSessionMessages(sessionId: string): Message[] {

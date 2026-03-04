@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import { useAppStore } from '@/stores/use-app-store'
@@ -32,7 +32,7 @@ interface UsageResponse {
   records: unknown[]
   totalTokens: number
   totalCost: number
-  byAgent: Record<string, { tokens: number; cost: number }>
+  byAgent: Record<string, { name: string; cost: number; tokens: number; count: number }>
   byProvider: Record<string, { tokens: number; cost: number }>
   timeSeries: TimePoint[]
   providerHealth?: Record<string, ProviderHealthEntry>
@@ -171,8 +171,8 @@ export function MetricsDashboard() {
   const agentData = Object.entries(data?.byAgent ?? {})
     .sort((a, b) => b[1].cost - a[1].cost)
     .slice(0, 10)
-    .map(([name, v]) => ({
-      name: name.length > 12 ? name.slice(0, 12) + '…' : name,
+    .map(([_id, v]) => ({
+      name: v.name.length > 16 ? v.name.slice(0, 16) + '…' : v.name,
       cost: Math.round(v.cost * 10000) / 10000,
     }))
 
@@ -270,32 +270,20 @@ export function MetricsDashboard() {
               )}
             </ChartCard>
 
-            <ChartCard title="Cost by Session">
+            <ChartCard title="Agent Breakdown">
               {agentData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
-                    <Pie
-                      data={agentData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={2}
-                      dataKey="cost"
-                      nameKey="name"
-                    >
+                  <BarChart data={agentData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
+                    <XAxis type="number" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${v}`} />
+                    <YAxis type="category" dataKey="name" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} width={100} />
+                    <Tooltip {...tooltipStyle} formatter={(value: number | undefined) => [formatCost(value ?? 0), 'Cost']} />
+                    <Bar dataKey="cost" radius={[0, 4, 4, 0]}>
                       {agentData.map((_entry, i) => (
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
-                    </Pie>
-                    <Tooltip {...tooltipStyle} formatter={(value: number | undefined) => [formatCost(value ?? 0), 'Cost']} />
-                    <Legend
-                      verticalAlign="bottom"
-                      iconType="circle"
-                      iconSize={8}
-                      formatter={(value: string) => <span style={{ color: '#a0a0b0', fontSize: 11 }}>{value}</span>}
-                    />
-                  </PieChart>
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
               ) : (
                 <EmptyChart />

@@ -62,6 +62,8 @@ export interface ConnectorInstance {
   deleteMessage?: (channelId: string, messageId: string) => Promise<void>
   /** Rich messaging: pin a message */
   pinMessage?: (channelId: string, messageId: string) => Promise<void>
+  /** Health check: returns true if the underlying connection is alive */
+  isAlive?: () => boolean
 }
 
 /** Platform-specific connector implementation */

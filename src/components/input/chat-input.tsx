@@ -8,6 +8,7 @@ import { useAutoResize } from '@/hooks/use-auto-resize'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { FilePreview } from '@/components/shared/file-preview'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
 import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 
 interface Props {
@@ -17,6 +18,8 @@ interface Props {
 }
 
 // FilePreview is now imported from @/components/shared/file-preview
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 
 export function ChatInput({ streaming, onSend, onStop }: Props) {
   const [value, setValue] = useState('')
@@ -90,6 +93,10 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
   )
 
   const uploadAndAdd = useCallback(async (file: File) => {
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error(`File too large: ${(file.size / 1024 / 1024).toFixed(1)} MB (max 10 MB)`)
+      return
+    }
     try {
       const result = await uploadImage(file)
       addPendingFile({ file, path: result.path, url: result.url })
@@ -123,7 +130,7 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
   const hasContent = value.trim().length > 0 || pendingFiles.length > 0
 
   return (
-    <div className="shrink-0 px-6 md:px-12 lg:px-16 pb-4 pt-2"
+    <div className="shrink-0 px-4 md:px-12 lg:px-16 pb-4 pt-2 fixed bottom-0 left-0 right-0 z-20 bg-bg/95 backdrop-blur-md md:relative md:z-auto md:bg-transparent md:backdrop-blur-none"
       style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
       <div>
         {streaming && (

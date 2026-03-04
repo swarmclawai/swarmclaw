@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { loadChatrooms, saveChatrooms, loadAgents } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
+import { ChatroomCreateSchema, formatZodError } from '@/lib/validation/schemas'
+import { z } from 'zod'
 import type { Chatroom, ChatroomMessage } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -12,11 +14,16 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json()
+  const raw = await req.json()
+  const parsed = ChatroomCreateSchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json(formatZodError(parsed.error as z.ZodError), { status: 400 })
+  }
+  const body = parsed.data
   const chatrooms = loadChatrooms()
   const id = genId()
 
-  const requestedAgentIds: string[] = Array.isArray(body.agentIds) ? body.agentIds : []
+  const requestedAgentIds: string[] = body.agentIds
   const knownAgents = loadAgents()
   const invalidAgentIds = requestedAgentIds.filter((agentId) => !knownAgents[agentId])
   if (invalidAgentIds.length > 0) {
@@ -51,6 +58,9 @@ export async function POST(req: Request) {
     messages: joinMessages,
     chatMode,
     autoAddress,
+    ...(Array.isArray(body.routingRules) && body.routingRules.length > 0
+      ? { routingRules: body.routingRules }
+      : {}),
     createdAt: now,
     updatedAt: now,
   }

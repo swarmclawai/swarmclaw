@@ -85,6 +85,17 @@ function registerRun(run: SessionRunRecord) {
   trimRecentRuns()
 }
 
+/** Chain an external AbortSignal to an internal AbortController so that
+ *  when the caller (e.g. HTTP request) disconnects, the run is cancelled. */
+function chainCallerSignal(callerSignal: AbortSignal, controller: AbortController): void {
+  if (callerSignal.aborted) {
+    controller.abort()
+    return
+  }
+  const onAbort = () => controller.abort()
+  callerSignal.addEventListener('abort', onAbort, { once: true })
+}
+
 function emitToSubscribers(entry: QueueEntry, event: SSEEvent) {
   for (const send of entry.onEvents) {
     try {
@@ -347,6 +358,8 @@ export interface EnqueueSessionRunInput {
   modelOverride?: string
   heartbeatConfig?: { ackMaxChars: number; showOk: boolean; showAlerts: boolean; target: string | null }
   replyToId?: string
+  /** External abort signal (e.g. from the HTTP request) — chained to the run's internal AbortController */
+  callerSignal?: AbortSignal
 }
 
 export interface EnqueueSessionRunResult {
@@ -355,6 +368,8 @@ export interface EnqueueSessionRunResult {
   deduped?: boolean
   coalesced?: boolean
   promise: Promise<ExecuteChatTurnResult>
+  /** Abort the run's internal AbortController (cancels the LLM stream). */
+  abort: () => void
 }
 
 export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSessionRunResult {
@@ -371,11 +386,13 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
   const dedupe = findDedupeMatch(input.sessionId, input.dedupeKey)
   if (dedupe) {
     if (input.onEvent) dedupe.onEvents.push(input.onEvent)
+    if (input.callerSignal) chainCallerSignal(input.callerSignal, dedupe.signalController)
     return {
       runId: dedupe.run.id,
       position: 0,
       deduped: true,
       promise: dedupe.promise,
+      abort: () => dedupe.signalController.abort(),
     }
   }
 
@@ -413,12 +430,14 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
         candidate.run.queuedAt = nowMs
       }
       if (input.onEvent) candidate.onEvents.push(input.onEvent)
+      if (input.callerSignal) chainCallerSignal(input.callerSignal, candidate.signalController)
       emitRunMeta(candidate, 'queued', { position: 0, coalesced: true, mergedIntoRunId: candidate.run.id })
       return {
         runId: candidate.run.id,
         position: 0,
         coalesced: true,
         promise: candidate.promise,
+        abort: () => candidate.signalController.abort(),
       }
     }
   }
@@ -463,12 +482,14 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
     promise,
   }
 
+  if (input.callerSignal) chainCallerSignal(input.callerSignal, entry.signalController)
+
   q.push(entry)
   const position = (running ? 1 : 0) + q.length - 1
   emitRunMeta(entry, 'queued', { position })
   void drainExecution(executionKey)
 
-  return { runId, position, promise }
+  return { runId, position, promise, abort: () => entry.signalController.abort() }
 }
 
 export function getSessionRunState(sessionId: string): {

@@ -12,6 +12,7 @@ import { executeSessionChatTurn } from './chat-execution'
 import { extractTaskResult, formatResultBody } from './task-result'
 import { getCheckpointSaver } from './langgraph-checkpoint'
 import { isProtectedMainSession } from './main-session'
+import { cascadeUnblock } from './dag-validation'
 import type { Agent, BoardTask, Connector, Message } from '@/types'
 
 // HMR-safe: pin processing flag to globalThis so hot reloads don't reset it
@@ -1111,6 +1112,17 @@ export async function processNext() {
           getCheckpointSaver().deleteThread(taskId).catch((e) =>
             console.warn(`[queue] Failed to clean up checkpoints for task ${taskId}:`, e)
           )
+          // Cascade unblock: auto-queue tasks whose blockers are all done
+          const latestTasks = loadTasks()
+          const unblockedIds = cascadeUnblock(latestTasks, taskId)
+          if (unblockedIds.length > 0) {
+            saveTasks(latestTasks)
+            for (const uid of unblockedIds) {
+              enqueueTask(uid)
+              console.log(`[queue] Auto-unblocked task "${latestTasks[uid]?.title}" (${uid})`)
+            }
+            notify('tasks')
+          }
           console.log(`[queue] Task "${task.title}" completed`)
         } else {
           if (doneTask?.status === 'queued') {

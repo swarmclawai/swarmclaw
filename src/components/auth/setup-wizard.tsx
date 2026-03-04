@@ -4,35 +4,13 @@ import { useMemo, useState } from 'react'
 import { api } from '@/lib/api-client'
 import { useAppStore } from '@/stores/use-app-store'
 import type { ProviderType, Credential } from '@/types'
+import {
+  SETUP_PROVIDERS,
+  DEFAULT_AGENTS,
+  type SetupProvider,
+} from '@/lib/setup-defaults'
 
-type WizardProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'google'
-  | 'deepseek'
-  | 'groq'
-  | 'together'
-  | 'mistral'
-  | 'xai'
-  | 'fireworks'
-  | 'ollama'
-  | 'openclaw'
 type CheckState = 'idle' | 'checking' | 'ok' | 'error'
-
-interface WizardProviderOption {
-  id: WizardProvider
-  name: string
-  description: string
-  requiresKey: boolean
-  supportsEndpoint: boolean
-  defaultEndpoint?: string
-  keyUrl?: string
-  keyLabel?: string
-  keyPlaceholder?: string
-  optionalKey?: boolean
-  badge?: string
-  icon: string
-}
 
 interface ProviderCheckResponse {
   ok: boolean
@@ -60,240 +38,11 @@ interface SetupWizardProps {
   onComplete: () => void
 }
 
-const STARTER_AGENT_TOOLS = [
-  'memory',
-  'files',
-  'web_search',
-  'web_fetch',
-  'browser',
-  'manage_agents',
-  'manage_tasks',
-  'manage_schedules',
-  'manage_skills',
-  'manage_connectors',
-  'manage_sessions',
-  'manage_secrets',
-  'manage_documents',
-  'manage_webhooks',
-  'claude_code',
-  'codex_cli',
-  'opencode_cli',
-]
-
-const SWARMCLAW_ASSISTANT_PROMPT = `You are the default SwarmClaw assistant inside the SwarmClaw dashboard.
-
-Primary objective:
-- Help the user operate SwarmClaw itself before anything else.
-
-When the user asks about SwarmClaw, prioritize concrete guidance with exact UI paths and commands:
-- Sessions: create, configure provider/model, and run chats.
-- Agents: create specialist agents/orchestrators, set provider/model, tools, and prompts.
-- Providers: connect API keys/endpoints, troubleshoot auth/model issues.
-- Tasks + Schedules: queue work and automate recurring runs.
-- Skills + Connectors + Webhooks + Secrets + Memory: explain when to use each and how to configure safely.
-
-Behavior:
-- Be concise, direct, and action-oriented.
-- If the request is ambiguous, ask one focused clarifying question.
-- Prefer step-by-step instructions that can be executed immediately.
-- When the user asks for direct execution (for example browsing, screenshots, research, or file edits), use available tools and return real results instead of only describing what to do.
-- If a capability depends on provider/tool configuration, call that out explicitly.`
-
-const PROVIDERS: WizardProviderOption[] = [
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    description: 'Great default for most users. Fast, reliable GPT models.',
-    requiresKey: true,
-    supportsEndpoint: true,
-    defaultEndpoint: 'https://api.openai.com/v1',
-    keyUrl: 'https://platform.openai.com/api-keys',
-    keyLabel: 'platform.openai.com',
-    badge: 'Recommended',
-    icon: 'O',
-  },
-  {
-    id: 'anthropic',
-    name: 'Anthropic',
-    description: 'Claude models — strong for coding, analysis, and long-form reasoning.',
-    requiresKey: true,
-    supportsEndpoint: false,
-    keyUrl: 'https://console.anthropic.com/settings/keys',
-    keyLabel: 'console.anthropic.com',
-    icon: 'A',
-  },
-  {
-    id: 'google',
-    name: 'Google Gemini',
-    description: 'Gemini models with strong multimodal and coding support.',
-    requiresKey: true,
-    supportsEndpoint: false,
-    keyUrl: 'https://aistudio.google.com/app/apikey',
-    keyLabel: 'aistudio.google.com',
-    keyPlaceholder: 'AIza...',
-    icon: 'G',
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    description: 'High-value reasoning and coding models from DeepSeek.',
-    requiresKey: true,
-    supportsEndpoint: false,
-    keyUrl: 'https://platform.deepseek.com/api_keys',
-    keyLabel: 'platform.deepseek.com',
-    icon: 'D',
-  },
-  {
-    id: 'groq',
-    name: 'Groq',
-    description: 'Very fast inference with open and reasoning model options.',
-    requiresKey: true,
-    supportsEndpoint: false,
-    keyUrl: 'https://console.groq.com/keys',
-    keyLabel: 'console.groq.com',
-    icon: 'G',
-  },
-  {
-    id: 'together',
-    name: 'Together AI',
-    description: 'Broad catalog of open models with OpenAI-compatible APIs.',
-    requiresKey: true,
-    supportsEndpoint: false,
-    keyUrl: 'https://api.together.xyz/settings/api-keys',
-    keyLabel: 'api.together.xyz',
-    icon: 'T',
-  },
-  {
-    id: 'mistral',
-    name: 'Mistral AI',
-    description: 'Efficient frontier models with strong latency and quality.',
-    requiresKey: true,
-    supportsEndpoint: false,
-    keyUrl: 'https://console.mistral.ai/api-keys/',
-    keyLabel: 'console.mistral.ai',
-    icon: 'M',
-  },
-  {
-    id: 'xai',
-    name: 'xAI (Grok)',
-    description: 'Grok models for fast answers, coding, and analysis.',
-    requiresKey: true,
-    supportsEndpoint: false,
-    keyUrl: 'https://console.x.ai',
-    keyLabel: 'console.x.ai',
-    icon: 'X',
-  },
-  {
-    id: 'fireworks',
-    name: 'Fireworks AI',
-    description: 'Serverless and optimized open-model inference endpoints.',
-    requiresKey: true,
-    supportsEndpoint: false,
-    keyUrl: 'https://fireworks.ai/account/api-keys',
-    keyLabel: 'fireworks.ai',
-    icon: 'F',
-  },
-  {
-    id: 'openclaw',
-    name: 'OpenClaw',
-    description: 'Connect to your local or remote OpenClaw gateway (multi-OpenClaw ready).',
-    requiresKey: false,
-    supportsEndpoint: true,
-    defaultEndpoint: 'http://localhost:18789/v1',
-    optionalKey: true,
-    badge: 'OpenClaw',
-    icon: 'C',
-  },
-  {
-    id: 'ollama',
-    name: 'Ollama',
-    description: 'Run local open-source models. No API key required.',
-    requiresKey: false,
-    supportsEndpoint: true,
-    defaultEndpoint: 'http://localhost:11434',
-    badge: 'Local',
-    icon: 'L',
-  },
-]
-
-const DEFAULT_AGENTS: Record<WizardProvider, { name: string; description: string; systemPrompt: string; model: string; tools: string[] }> = {
-  anthropic: {
-    name: 'Assistant',
-    description: 'A helpful Claude-powered assistant.',
-    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-    model: 'claude-sonnet-4-6',
-    tools: STARTER_AGENT_TOOLS,
-  },
-  openai: {
-    name: 'Assistant',
-    description: 'A helpful GPT-powered assistant.',
-    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-    model: 'gpt-4o',
-    tools: STARTER_AGENT_TOOLS,
-  },
-  google: {
-    name: 'Assistant',
-    description: 'A helpful Gemini-powered assistant.',
-    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-    model: 'gemini-2.5-pro',
-    tools: STARTER_AGENT_TOOLS,
-  },
-  deepseek: {
-    name: 'Assistant',
-    description: 'A helpful DeepSeek-powered assistant.',
-    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-    model: 'deepseek-chat',
-    tools: STARTER_AGENT_TOOLS,
-  },
-  groq: {
-    name: 'Assistant',
-    description: 'A low-latency assistant powered by Groq.',
-    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-    model: 'llama-3.3-70b-versatile',
-    tools: STARTER_AGENT_TOOLS,
-  },
-  together: {
-    name: 'Assistant',
-    description: 'A helpful assistant powered by Together AI.',
-    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-    model: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8',
-    tools: STARTER_AGENT_TOOLS,
-  },
-  mistral: {
-    name: 'Assistant',
-    description: 'A helpful assistant powered by Mistral.',
-    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-    model: 'mistral-large-latest',
-    tools: STARTER_AGENT_TOOLS,
-  },
-  xai: {
-    name: 'Assistant',
-    description: 'A helpful assistant powered by xAI Grok.',
-    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-    model: 'grok-3',
-    tools: STARTER_AGENT_TOOLS,
-  },
-  fireworks: {
-    name: 'Assistant',
-    description: 'A helpful assistant powered by Fireworks AI.',
-    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-    model: 'accounts/fireworks/models/deepseek-r1-0528',
-    tools: STARTER_AGENT_TOOLS,
-  },
-  ollama: {
-    name: 'Assistant',
-    description: 'A local assistant running through Ollama.',
-    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
-    model: 'llama3',
-    tools: STARTER_AGENT_TOOLS,
-  },
-  openclaw: {
-    name: 'OpenClaw Operator',
-    description: 'A manager agent for talking to and coordinating OpenClaw instances.',
-    systemPrompt: 'You are an operator focused on reliable execution, clear status updates, and task completion.',
-    model: 'default',
-    tools: STARTER_AGENT_TOOLS,
-  },
+interface ConfiguredProvider {
+  provider: SetupProvider
+  credentialId: string | null
+  agentId: string
+  agentName: string
 }
 
 function SparkleIcon() {
@@ -339,13 +88,13 @@ function StepDots({ current, total }: { current: number; total: number }) {
   )
 }
 
-function SkipLink({ onClick }: { onClick: () => void }) {
+function SkipLink({ onClick, label }: { onClick: () => void; label?: string }) {
   return (
     <button
       onClick={onClick}
       className="mt-8 text-[13px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none"
     >
-      Skip setup for now
+      {label || 'Skip setup for now'}
     </button>
   )
 }
@@ -358,6 +107,30 @@ function ProviderBadge({ label }: { label?: string }) {
     </span>
   )
 }
+
+function ConfiguredChips({ providers }: { providers: ConfiguredProvider[] }) {
+  if (providers.length === 0) return null
+  return (
+    <div className="flex flex-wrap gap-2 justify-center mb-6">
+      {providers.map((cp) => (
+        <span
+          key={cp.provider}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-[12px] font-500"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          {cp.agentName}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+const CONNECTOR_ICONS = [
+  { name: 'Discord', icon: 'D' },
+  { name: 'Slack', icon: 'S' },
+  { name: 'Telegram', icon: 'T' },
+  { name: 'WhatsApp', icon: 'W' },
+]
 
 function getOpenClawErrorHint(message: string): string | null {
   const lower = message.toLowerCase()
@@ -374,7 +147,7 @@ function getOpenClawErrorHint(message: string): string | null {
 
 export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [step, setStep] = useState(0)
-  const [provider, setProvider] = useState<WizardProvider | null>(null)
+  const [provider, setProvider] = useState<SetupProvider | null>(null)
   const [endpoint, setEndpoint] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [credentialId, setCredentialId] = useState<string | null>(null)
@@ -391,15 +164,18 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [agentPrompt, setAgentPrompt] = useState('')
   const [agentModel, setAgentModel] = useState('')
 
+  const [configuredProviders, setConfiguredProviders] = useState<ConfiguredProvider[]>([])
+
   const selectedProvider = useMemo(
-    () => PROVIDERS.find((p) => p.id === provider) || null,
+    () => SETUP_PROVIDERS.find((p) => p.id === provider) || null,
     [provider],
   )
-  const totalSteps = 3
+  const totalSteps = 4
   const requiresKey = selectedProvider?.requiresKey || false
   const supportsEndpoint = selectedProvider?.supportsEndpoint || false
   const keyIsOptional = selectedProvider?.optionalKey || false
   const requiresVerifiedConnection = provider === 'openclaw'
+  const configuredIds = new Set(configuredProviders.map((cp) => cp.provider))
 
   const skip = async () => {
     try {
@@ -410,9 +186,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     onComplete()
   }
 
-  const selectProvider = (next: WizardProvider) => {
+  const selectProvider = (next: SetupProvider) => {
     const defaults = DEFAULT_AGENTS[next]
-    const meta = PROVIDERS.find((p) => p.id === next)
+    const meta = SETUP_PROVIDERS.find((p) => p.id === next)
 
     setProvider(next)
     setEndpoint(meta?.defaultEndpoint || '')
@@ -462,9 +238,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       setCheckState(result.ok ? 'ok' : 'error')
       setCheckMessage(result.message || (result.ok ? 'Connected successfully.' : 'Connection failed.'))
       return !!result.ok
-    } catch (err: any) {
+    } catch (err: unknown) {
       setCheckState('error')
-      setCheckMessage(err?.message || 'Connection check failed.')
+      setCheckMessage(err instanceof Error ? err.message : String(err))
       return false
     }
   }
@@ -476,10 +252,10 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       const report = await api<SetupDoctorResponse>('GET', '/setup/doctor')
       setDoctorReport(report)
       setDoctorState('done')
-    } catch (err: any) {
+    } catch (err: unknown) {
       setDoctorState('error')
       setDoctorReport(null)
-      setDoctorError(err?.message || 'Failed to run setup diagnostics.')
+      setDoctorError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -515,14 +291,14 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
       setCredentialId(nextCredentialId || null)
       setStep(2)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to save provider setup.')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
   }
 
-  const createStarterAgent = async () => {
+  const createAgentAndFinish = async (addAnother: boolean) => {
     if (!provider || !agentName.trim()) return
     if (requiresVerifiedConnection && checkState !== 'ok') {
       setError('OpenClaw connection is not verified. Go back and run the connection check.')
@@ -546,35 +322,51 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         payload.apiEndpoint = endpoint.trim()
       }
 
-      const agents = await api<Record<string, { id: string }>>('GET', '/agents')
-      const canReuseDefault =
-        !!agents.default
-        && Object.keys(agents).length === 1
-        && agentName.trim().toLowerCase() === 'assistant'
+      const isFirstProvider = configuredProviders.length === 0
+      let agentId: string
 
-      const agentId = canReuseDefault
-        ? 'default'
-        : (await api<{ id: string }>('POST', '/agents', payload)).id
+      if (isFirstProvider) {
+        const agents = await api<Record<string, { id: string }>>('GET', '/agents')
+        const canReuseDefault =
+          !!agents.default
+          && Object.keys(agents).length === 1
+          && agentName.trim().toLowerCase() === DEFAULT_AGENTS[provider].name.toLowerCase()
 
-      if (canReuseDefault) {
-        await api('PUT', '/agents/default', payload)
-      }
+        agentId = canReuseDefault
+          ? 'default'
+          : (await api<{ id: string }>('POST', '/agents', payload)).id
 
-      const appState = useAppStore.getState()
-      const currentUser = appState.currentUser
-      if (currentUser && agentId) {
-        const sessionMap = await api<Record<string, { id: string; name: string; user: string }>>('GET', '/sessions')
-        const existingMain = Object.values(sessionMap).find((s) => s.name === '__main__' && s.user === currentUser)
-        const mainId = existingMain?.id || `main-${currentUser}`
-        const selectedModel = (payload.model as string) || DEFAULT_AGENTS[provider].model
-        const selectedEndpoint = supportsEndpoint ? (payload.apiEndpoint as string | undefined) || null : null
-        const selectedTools = Array.isArray(payload.tools) ? payload.tools as string[] : DEFAULT_AGENTS[provider].tools
+        if (canReuseDefault) {
+          await api('PUT', '/agents/default', payload)
+        }
 
-        if (!existingMain) {
-          await api('POST', '/sessions', {
-            id: mainId,
-            name: '__main__',
-            user: currentUser,
+        // Create/update __main__ chat for the first provider
+        const appState = useAppStore.getState()
+        const currentUser = appState.currentUser
+        if (currentUser && agentId) {
+          const sessionMap = await api<Record<string, { id: string; name: string; user: string }>>('GET', '/sessions')
+          const existingMain = Object.values(sessionMap).find((s) => s.name === '__main__' && s.user === currentUser)
+          const mainId = existingMain?.id || `main-${currentUser}`
+          const selectedModel = (payload.model as string) || DEFAULT_AGENTS[provider].model
+          const selectedEndpoint = supportsEndpoint ? (payload.apiEndpoint as string | undefined) || null : null
+          const selectedTools = Array.isArray(payload.tools) ? payload.tools as string[] : DEFAULT_AGENTS[provider].tools
+
+          if (!existingMain) {
+            await api('POST', '/sessions', {
+              id: mainId,
+              name: '__main__',
+              user: currentUser,
+              agentId,
+              provider,
+              model: selectedModel,
+              credentialId: credentialId || null,
+              apiEndpoint: selectedEndpoint,
+              tools: selectedTools,
+              heartbeatEnabled: true,
+            })
+          }
+
+          await api('PUT', `/sessions/${mainId}`, {
             agentId,
             provider,
             model: selectedModel,
@@ -583,25 +375,45 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             tools: selectedTools,
             heartbeatEnabled: true,
           })
+
+          await appState.loadSessions()
+          appState.setCurrentSession(mainId)
         }
-
-        await api('PUT', `/sessions/${mainId}`, {
-          agentId,
-          provider,
-          model: selectedModel,
-          credentialId: credentialId || null,
-          apiEndpoint: selectedEndpoint,
-          tools: selectedTools,
-          heartbeatEnabled: true,
-        })
-
-        await appState.loadSessions()
-        appState.setCurrentSession(mainId)
+      } else {
+        // Additional providers just create the agent
+        agentId = (await api<{ id: string }>('POST', '/agents', payload)).id
       }
-      await api('PUT', '/settings', { setupCompleted: true })
-      onComplete()
-    } catch (err: any) {
-      setError(err?.message || 'Failed to create starter assistant.')
+
+      const newConfigured: ConfiguredProvider = {
+        provider,
+        credentialId: credentialId || null,
+        agentId,
+        agentName: agentName.trim(),
+      }
+      const nextConfigured = [...configuredProviders, newConfigured]
+      setConfiguredProviders(nextConfigured)
+
+      if (addAnother) {
+        // Reset for next provider selection
+        setProvider(null)
+        setEndpoint('')
+        setApiKey('')
+        setCredentialId(null)
+        setCheckState('idle')
+        setCheckMessage('')
+        setAgentName('')
+        setAgentDescription('')
+        setAgentPrompt('')
+        setAgentModel('')
+        setError('')
+        setStep(0)
+      } else {
+        // Finish setup
+        await api('PUT', '/settings', { setupCompleted: true })
+        setStep(3)
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
@@ -629,44 +441,58 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         {step === 0 && (
           <>
             <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
-              2-Minute Setup
+              {configuredProviders.length > 0 ? 'Add Another Provider' : '2-Minute Setup'}
             </h1>
             <p className="text-[15px] text-text-2 mb-2">
-              No coding required. Pick a provider, paste a key if needed, and start chatting.
+              {configuredProviders.length > 0
+                ? 'Pick another provider to set up, or finish below.'
+                : 'No coding required. Pick a provider, paste a key if needed, and start chatting.'}
             </p>
             <p className="text-[13px] text-text-3 mb-8">
               You can change providers, models, and agent settings anytime later.
             </p>
 
+            <ConfiguredChips providers={configuredProviders} />
+
             <div className="flex flex-col gap-3 max-h-[44vh] overflow-y-auto pr-1">
-              {PROVIDERS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => selectProvider(p.id)}
-                  className="w-full px-5 py-4 rounded-[14px] border border-white/[0.08] bg-surface text-left
-                    cursor-pointer hover:border-accent-bright/30 hover:bg-surface-hover transition-all duration-200
-                    flex items-start gap-4"
-                >
-                  <div className="w-10 h-10 rounded-[10px] bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0 mt-0.5">
-                    <span className="text-[16px] font-display font-700 text-accent-bright">
-                      {p.icon}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-[15px] font-display font-600 text-text mb-1">
-                      {p.name}
-                      <ProviderBadge label={p.badge} />
+              {SETUP_PROVIDERS.map((p) => {
+                const isConfigured = configuredIds.has(p.id)
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => !isConfigured && selectProvider(p.id)}
+                    disabled={isConfigured}
+                    className={`w-full px-5 py-4 rounded-[14px] border border-white/[0.08] bg-surface text-left
+                      transition-all duration-200 flex items-start gap-4
+                      ${isConfigured
+                        ? 'opacity-40 cursor-not-allowed'
+                        : 'cursor-pointer hover:border-accent-bright/30 hover:bg-surface-hover'
+                      }`}
+                  >
+                    <div className="w-10 h-10 rounded-[10px] bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-[16px] font-display font-700 text-accent-bright">
+                        {p.icon}
+                      </span>
                     </div>
-                    <div className="text-[13px] text-text-3 leading-relaxed">{p.description}</div>
-                    {!p.requiresKey && (
-                      <div className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 text-[11px] font-500">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        No API key required
+                    <div>
+                      <div className="text-[15px] font-display font-600 text-text mb-1">
+                        {p.name}
+                        {isConfigured
+                          ? <span className="ml-2 text-[10px] text-emerald-400 uppercase tracking-[0.08em]">Configured</span>
+                          : <ProviderBadge label={p.badge} />
+                        }
                       </div>
-                    )}
-                  </div>
-                </button>
-              ))}
+                      <div className="text-[13px] text-text-3 leading-relaxed">{p.description}</div>
+                      {!p.requiresKey && !isConfigured && (
+                        <div className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 text-[11px] font-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          No API key required
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
             </div>
 
             <div className="mt-4 text-left">
@@ -702,7 +528,13 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
               )}
             </div>
 
-            <SkipLink onClick={skip} />
+            <SkipLink
+              onClick={configuredProviders.length > 0 ? async () => {
+                await api('PUT', '/settings', { setupCompleted: true })
+                setStep(3)
+              } : skip}
+              label={configuredProviders.length > 0 ? 'Finish Setup' : 'Skip setup for now'}
+            />
           </>
         )}
 
@@ -831,17 +663,23 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
               </button>
             </div>
 
-            <SkipLink onClick={skip} />
+            <SkipLink
+              onClick={configuredProviders.length > 0 ? async () => {
+                await api('PUT', '/settings', { setupCompleted: true })
+                setStep(3)
+              } : skip}
+              label={configuredProviders.length > 0 ? 'Finish Setup' : 'Skip setup for now'}
+            />
           </>
         )}
 
         {step === 2 && provider && selectedProvider && (
           <>
             <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
-              You&apos;re Ready
+              Create Your Agent
             </h1>
             <p className="text-[15px] text-text-2 mb-7">
-              We&apos;ll create a starter assistant so you can begin immediately.
+              We&apos;ll create a starter agent so you can begin immediately.
             </p>
 
             <div className="mb-5 p-4 rounded-[14px] border border-white/[0.08] bg-surface text-left">
@@ -921,17 +759,94 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 Back
               </button>
               <button
-                onClick={createStarterAgent}
+                onClick={() => createAgentAndFinish(true)}
                 disabled={!agentName.trim() || saving}
-                className="px-10 py-3.5 rounded-[14px] border-none bg-accent-bright text-white text-[15px] font-display font-600
+                className="px-6 py-3.5 rounded-[14px] border border-white/[0.08] bg-white/[0.03] text-text text-[14px]
+                  font-display font-600 cursor-pointer hover:bg-white/[0.06] transition-all duration-200 disabled:opacity-40"
+              >
+                {saving ? 'Creating...' : 'Create & Add Another'}
+              </button>
+              <button
+                onClick={() => createAgentAndFinish(false)}
+                disabled={!agentName.trim() || saving}
+                className="px-8 py-3.5 rounded-[14px] border-none bg-accent-bright text-white text-[15px] font-display font-600
                   cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
                   shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
               >
-                {saving ? 'Creating...' : 'Create Starter Assistant'}
+                {saving ? 'Creating...' : 'Create & Finish'}
               </button>
             </div>
 
-            <SkipLink onClick={skip} />
+            <SkipLink
+              onClick={configuredProviders.length > 0 ? async () => {
+                await api('PUT', '/settings', { setupCompleted: true })
+                setStep(3)
+              } : skip}
+              label={configuredProviders.length > 0 ? 'Finish Setup' : 'Skip setup for now'}
+            />
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
+              You&apos;re All Set
+            </h1>
+            <p className="text-[15px] text-text-2 mb-7">
+              {configuredProviders.length === 1
+                ? 'Your agent is ready to chat.'
+                : `${configuredProviders.length} agents created and ready to chat.`}
+            </p>
+
+            {configuredProviders.length > 0 && (
+              <div className="mb-6 p-4 rounded-[14px] border border-white/[0.08] bg-surface text-left">
+                <div className="text-[12px] uppercase tracking-[0.08em] text-text-3 mb-3">Agents Created</div>
+                <div className="space-y-2">
+                  {configuredProviders.map((cp) => {
+                    const meta = SETUP_PROVIDERS.find((p) => p.id === cp.provider)
+                    return (
+                      <div key={cp.provider} className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-[8px] bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0">
+                          <span className="text-[13px] font-display font-700 text-accent-bright">
+                            {meta?.icon || '?'}
+                          </span>
+                        </div>
+                        <div>
+                          <div className="text-[14px] text-text font-500">{cp.agentName}</div>
+                          <div className="text-[12px] text-text-3">{meta?.name || cp.provider}</div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="mb-8 p-4 rounded-[14px] border border-white/[0.08] bg-surface text-left">
+              <div className="text-[12px] uppercase tracking-[0.08em] text-text-3 mb-3">Coming Soon — Connectors</div>
+              <p className="text-[13px] text-text-2 mb-3">
+                Bridge your agents to chat platforms. Set this up anytime from Connectors.
+              </p>
+              <div className="flex gap-3">
+                {CONNECTOR_ICONS.map((c) => (
+                  <div key={c.name} className="flex flex-col items-center gap-1.5">
+                    <div className="w-10 h-10 rounded-[10px] bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
+                      <span className="text-[14px] font-display font-600 text-text-3">{c.icon}</span>
+                    </div>
+                    <span className="text-[10px] text-text-3">{c.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={onComplete}
+              className="px-10 py-3.5 rounded-[14px] border-none bg-accent-bright text-white text-[15px] font-display font-600
+                cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
+                shadow-[0_6px_28px_rgba(99,102,241,0.3)]"
+            >
+              Get Started
+            </button>
           </>
         )}
       </div>

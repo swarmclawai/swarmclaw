@@ -272,6 +272,10 @@ export interface Agent {
   openclawSkillMode?: SkillAllowlistMode
   openclawAllowedSkills?: string[]
   walletId?: string | null
+  monthlyBudget?: number | null
+  budgetAction?: 'warn' | 'block'
+  /** Runtime-enriched: current month's spend. Populated by GET /api/agents when monthlyBudget is set. */
+  monthlySpend?: number
   createdAt: number
   updatedAt: number
 }
@@ -408,6 +412,21 @@ export type AppView = 'home' | 'agents' | 'chatrooms' | 'schedules' | 'memory' |
 
 // --- Chatrooms ---
 
+export interface ChatroomRoutingRule {
+  id: string
+  type: 'keyword' | 'capability'
+  pattern?: string
+  keywords?: string[]
+  agentId: string
+  priority: number
+}
+
+export interface ChatroomMember {
+  agentId: string
+  role: 'admin' | 'moderator' | 'member'
+  mutedUntil?: string
+}
+
 export interface ChatroomReaction {
   emoji: string
   reactorId: string   // 'user' or agentId
@@ -435,10 +454,12 @@ export interface Chatroom {
   name: string
   description?: string
   agentIds: string[]
+  members?: ChatroomMember[]
   messages: ChatroomMessage[]
   pinnedMessageIds?: string[]
   chatMode?: 'sequential' | 'parallel'
   autoAddress?: boolean
+  routingRules?: ChatroomRoutingRule[]
   createdAt: number
   updatedAt: number
 }
@@ -626,6 +647,10 @@ export interface AppSettings {
   openclawWorkspacePath?: string | null
   openclawAutoSyncMemory?: boolean
   openclawAutoSyncSchedules?: boolean
+  // Outbound ops alert webhook
+  alertWebhookUrl?: string | null
+  alertWebhookType?: 'discord' | 'slack' | 'custom' | null
+  alertWebhookEvents?: ('error' | 'warning')[]
 }
 
 // --- Orchestrator Secrets ---
@@ -685,9 +710,21 @@ export interface Skill {
   updatedAt: number
 }
 
+// --- Connector Health Events ---
+
+export type ConnectorHealthEventType = 'started' | 'stopped' | 'error' | 'reconnected' | 'disconnected'
+
+export interface ConnectorHealthEvent {
+  id: string
+  connectorId: string
+  event: ConnectorHealthEventType
+  message?: string
+  timestamp: string
+}
+
 // --- Connectors (Chat Platform Bridges) ---
 
-export type ConnectorPlatform = 'discord' | 'telegram' | 'slack' | 'whatsapp' | 'openclaw' | 'bluebubbles' | 'signal' | 'teams' | 'googlechat' | 'matrix'
+export type ConnectorPlatform = 'discord' | 'telegram' | 'slack' | 'whatsapp' | 'openclaw' | 'bluebubbles' | 'signal' | 'teams' | 'googlechat' | 'matrix' | 'email'
 export type ConnectorStatus = 'stopped' | 'running' | 'error'
 
 export interface MessageSource {

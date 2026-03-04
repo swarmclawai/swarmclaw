@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { updateTask, archiveTask } from '@/lib/tasks'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import type { BoardTask } from '@/types'
 
 function timeAgo(ts: number) {
@@ -30,7 +31,9 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const setActiveView = useAppStore((s) => s.setActiveView)
   const [dragging, setDragging] = useState(false)
+  const [confirmArchive, setConfirmArchive] = useState(false)
 
+  const tasks = useAppStore((s) => s.tasks)
   const agent = agents[task.agentId]
   const project = task.projectId ? projects[task.projectId] : null
 
@@ -117,7 +120,7 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
         )}
         {isBlocked && (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-rose-400 shrink-0 mt-0.5">
-            <title>{`Blocked by ${task.blockedBy?.length} task(s)`}</title>
+            <title>{`Blocked by: ${(task.blockedBy || []).map((bid) => tasks[bid]?.title || bid).join(', ')}`}</title>
             <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
           </svg>
         )}
@@ -211,6 +214,14 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
             {task.comments.length}
           </span>
         )}
+        {Array.isArray(task.blocks) && task.blocks.length > 0 && (
+          <span
+            className="px-1.5 py-0.5 rounded-[5px] bg-amber-500/10 text-amber-400 text-[10px] font-600"
+            title={`Blocks: ${task.blocks.map((bid) => tasks[bid]?.title || bid).join(', ')}`}
+          >
+            blocks {task.blocks.length}
+          </span>
+        )}
 
         {task.status === 'backlog' && (
           <button
@@ -236,7 +247,8 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
 
         {(task.status === 'completed' || task.status === 'failed') && !task.sessionId && (
           <button
-            onClick={handleArchive}
+            onClick={(e) => { e.stopPropagation(); setConfirmArchive(true) }}
+            aria-label="Archive task"
             className="ml-auto px-2.5 py-1 rounded-[8px] text-[11px] font-600 bg-white/[0.04] text-text-3 border-none cursor-pointer
               opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/[0.08]"
             style={{ fontFamily: 'inherit' }}
@@ -304,6 +316,14 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
           ))}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmArchive}
+        title="Archive Task"
+        message={`Archive "${task.title}"? You can view archived tasks later.`}
+        confirmLabel="Archive"
+        onConfirm={() => { setConfirmArchive(false); handleArchive({ stopPropagation: () => {} } as React.MouseEvent) }}
+        onCancel={() => setConfirmArchive(false)}
+      />
     </div>
   )
 }
