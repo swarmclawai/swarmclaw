@@ -158,7 +158,7 @@ Notes:
 - **Agent Fleet Management** — Avatar seeds with generated avatars, running/approval fleet filters, soft-delete agent trash with restore/permanent delete, and approval counters in agent cards
 - **Agent Tools** — Shell, process control for long-running commands, files, edit file, send file, web search, web fetch, CLI delegation (Claude/Codex/OpenCode), Playwright browser automation, sub-agent spawning, canvas presentation, direct HTTP requests, git operations, persistent memory, and sandboxed code execution (JS/TS via Deno, Python)
 - **Platform Tools** — Agents can manage other agents, tasks, schedules, skills, connectors, sessions, and encrypted secrets via built-in platform tools
-- **Orchestration** — Multi-agent workflows powered by LangGraph with automatic sub-agent routing, checkpointed execution, and rich delegation cards that link to sub-agent chat threads
+- **Orchestration** — Multi-agent workflows powered by LangGraph with automatic sub-agent routing, checkpointed execution, checkpoint timeline with time-travel restore, and rich delegation cards that link to sub-agent chat threads
 - **Agentic Execution Policy** — Tool-first autonomous action loop with progress updates, evidence-driven answers, and better use of platform tools for long-lived work
 - **Runtime Date/Time Grounding** — Session, orchestrator, chatroom, and connector prompts include authoritative current timestamp context to reduce stale-date behavior
 - **Task Board** — Queue and track agent tasks with status, comments, structured result artifacts (`outputFiles`, uploads), completion reports, and archiving. Strict capability policy pauses tasks for human approval before tool execution
@@ -178,15 +178,21 @@ Notes:
 - **Skills System** — Discover local skills, import skills from URL, and load OpenClaw `SKILL.md` files (frontmatter-compatible)
 - **Execution Logging** — Structured audit trail for triggers, tool calls, file ops, commits, and errors in a dedicated `logs.db`
 - **Context Management** — Auto-compaction of conversation history when approaching context limits, with manual `context_status` and `context_summarize` tools for agents
-- **Memory** — Per-agent and per-session memory with hybrid FTS5 + vector embeddings search, relevance-based memory recall injected into runs, and periodic auto-journaling for durable execution context
-- **Cost Tracking** — Per-message token counting and cost estimation displayed in the chat header
-- **Provider Health Metrics** — Usage dashboard surfaces provider request volume, success rates, models used, and last-used timestamps
+- **Memory** — Per-agent and per-session memory with hybrid FTS5 + vector embeddings search, query expansion (LLM-generated semantic variants), MMR diversity ranking, cross-agent search (`scope: all`), pinned memories (always preloaded), memory sharing between agents, linked memory graph with interactive visualization, image attachments, and periodic auto-journaling for durable execution context
+- **Knowledge Base** — Shared knowledge store (`knowledge_store` / `knowledge_search` actions) with tags, source tracking, and provenance URLs — separate from per-agent memories
+- **Memory Graph Visualization** — Interactive force-directed graph view of linked memories with node details and relationship exploration
+- **Cost Tracking** — Per-message token counting and cost estimation displayed in the chat header, with per-agent monthly budget caps (`warn` or `block` enforcement)
+- **Provider Health Metrics** — Usage dashboard surfaces provider request volume, success rates, average latency, models used, and last-used timestamps
 - **Model Failover** — Automatic key rotation on rate limits and auth errors with configurable fallback credentials
-- **Plugin System** — Extend agent behavior with JS plugins (hooks: beforeAgentStart, afterAgentComplete, beforeToolExec, afterToolExec, onMessage)
+- **Plugin System** — Extend agent behavior with JS plugins (hooks: beforeAgentStart, afterAgentComplete, beforeToolExec, afterToolExec, onMessage, onTaskComplete, onAgentDelegation). Plugins can also define custom tools that agents can use
 - **Secrets Vault** — Encrypted storage for API keys and service tokens
 - **Custom Providers** — Add any OpenAI-compatible API as a provider
 - **MCP Servers** — Connect agents to any Model Context Protocol server. Per-agent server selection with tool discovery and per-tool disable toggles
 - **Sandboxed Code Execution** — Agents can write and run JS/TS (Deno) or Python scripts in an isolated sandbox with network access, scoped filesystem, and artifact output
+- **Eval Framework** — Built-in agent evaluation with scenario-based testing across categories (coding, research, companionship, multi-step, memory, planning, tool-usage), weighted scoring criteria, and LLM judge support
+- **Guardian Auto-Recovery** — Automatic workspace recovery when agents fail critically, rolling back to the last known good state via git reset
+- **Soul Library** — Browse and apply pre-built personality templates (archetypes) to agents, or create custom souls for reuse across your swarm
+- **Context Degradation Warnings** — Proactive alerts when context usage exceeds 85%, with strategy recommendations (save to memory, summarize, checkpoint)
 - **Real-Time Sync** — WebSocket push notifications for instant UI updates across tabs and devices (fallback to polling when WS is unavailable)
 - **Mobile-First UI** — Responsive glass-themed dark interface, works on phone and desktop
 
@@ -329,6 +335,7 @@ Agents with platform tools enabled can manage the SwarmClaw instance:
 | Manage Agents | List, create, update, delete agents |
 | Manage Tasks | Create and manage task board items with agent assignment |
 | Manage Schedules | Create cron, interval, or one-time scheduled jobs |
+| Reminders | Schedule a conversational wake event in the current chat (`schedule_wake`) |
 | Manage Skills | List, create, update reusable skill definitions |
 | Manage Documents | Upload/search/get/delete indexed docs for lightweight RAG workflows |
 | Manage Webhooks | Register external webhook endpoints that trigger agent sessions |
@@ -459,10 +466,21 @@ module.exports = {
   hooks: {
     beforeAgentStart: async ({ session, message }) => { /* ... */ },
     afterAgentComplete: async ({ session, response }) => { /* ... */ },
-    beforeToolExec: async ({ toolName, input }) => { /* ... */ },
+    beforeToolExec: async ({ toolName, input }) => { /* return { abort: true } to cancel */ },
     afterToolExec: async ({ toolName, input, output }) => { /* ... */ },
     onMessage: async ({ session, message }) => { /* ... */ },
+    onTaskComplete: async ({ taskId, result }) => { /* ... */ },
+    onAgentDelegation: async ({ sourceAgentId, targetAgentId, task }) => { /* ... */ },
   },
+  // Plugins can also define custom tools that agents can use
+  tools: [
+    {
+      name: 'my_custom_tool',
+      description: 'Does something amazing',
+      parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+      execute: async (args, ctx) => 'Result: ' + args.query,
+    },
+  ],
 }
 ```
 

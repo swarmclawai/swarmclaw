@@ -266,6 +266,16 @@ export class SqliteCheckpointSaver extends BaseCheckpointSaver {
     this.db.prepare(`DELETE FROM langgraph_checkpoints WHERE thread_id = ?`).run(threadId)
     this.db.prepare(`DELETE FROM langgraph_writes WHERE thread_id = ?`).run(threadId)
   }
+
+  async deleteCheckpoint(threadId: string, checkpointId: string): Promise<void> {
+    this.db.prepare(`DELETE FROM langgraph_checkpoints WHERE thread_id = ? AND checkpoint_id = ?`).run(threadId, checkpointId)
+    this.db.prepare(`DELETE FROM langgraph_writes WHERE thread_id = ? AND checkpoint_id = ?`).run(threadId, checkpointId)
+  }
+
+  async deleteCheckpointsAfter(threadId: string, timestamp: number): Promise<void> {
+    this.db.prepare(`DELETE FROM langgraph_checkpoints WHERE thread_id = ? AND created_at > ?`).run(threadId, timestamp)
+    this.db.prepare(`DELETE FROM langgraph_writes WHERE thread_id = ? AND checkpoint_id NOT IN (SELECT checkpoint_id FROM langgraph_checkpoints WHERE thread_id = ?)`).run(threadId, threadId)
+  }
 }
 
 let _saver: SqliteCheckpointSaver | undefined

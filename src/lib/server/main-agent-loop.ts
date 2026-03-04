@@ -1,22 +1,40 @@
 import { genId } from '@/lib/id'
 import { z } from 'zod'
 import type { GoalContract, MessageToolEvent } from '@/types'
-import { loadSessions, saveSessions, loadAgents, saveAgents, loadTasks, saveTasks } from './storage'
+import { loadSessions, saveSessions, loadAgents, saveAgents, loadTasks, saveTasks, loadSettings } from './storage'
 import { log } from './logger'
 import { getMemoryDb } from './memory-db'
 import { isProtectedMainSession } from './main-session'
+import { logExecution } from './execution-log'
 import {
   mergeGoalContracts,
   parseGoalContractFromText,
   parseMainLoopPlan,
   parseMainLoopReview,
 } from './autonomy-contract'
-const MAX_PENDING_EVENTS = 40
-const MAX_TIMELINE_EVENTS = 80
+import { buildIdentityContext } from './heartbeat-service'
+
+const MAX_PENDING_EVENTS = 60
+const MAX_TIMELINE_EVENTS = 120
 const EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const MEMORY_NOTE_MIN_INTERVAL_MS = 90 * 60 * 1000
+const MEMORY_NOTE_MIN_INTERVAL_MS = 30 * 60 * 1000
 const DEFAULT_FOLLOWUP_DELAY_SEC = 45
-const MAX_FOLLOWUP_CHAIN = 6
+const DEFAULT_MAX_FOLLOWUP_CHAIN = 20
+function getMaxFollowupChain(agentId: string | undefined): number {
+  if (agentId) {
+    const agents = loadAgents()
+    const agent = agents[agentId]
+    if (typeof agent?.maxFollowupChain === 'number' && agent.maxFollowupChain > 0) {
+      return Math.min(agent.maxFollowupChain, 100)
+    }
+  }
+  const settings = loadSettings()
+  if (typeof settings?.maxFollowupChain === 'number' && settings.maxFollowupChain > 0) {
+    return Math.min(settings.maxFollowupChain, 100)
+  }
+  return DEFAULT_MAX_FOLLOWUP_CHAIN
+}
+
 const META_LINE_RE = /\[MAIN_LOOP_META\]\s*(\{[^\n]*\})/i
 const AGENT_HEARTBEAT_META_RE = /\[AGENT_HEARTBEAT_META\]\s*(\{[^\n]*\})/i
 const SCREENSHOT_GOAL_HINT = /\b(screenshot|screen shot|snapshot|capture)\b/i
@@ -24,6 +42,14 @@ const DELIVERY_GOAL_HINT = /\b(send|deliver|return|share|upload|post|message)\b/
 const SCHEDULE_GOAL_HINT = /\b(schedule|scheduled|every\s+\w+|interval|cron|recurr)\b/i
 const UPLOAD_ARTIFACT_HINT = /(?:sandbox:)?\/api\/uploads\/[^\s)\]]+|https?:\/\/[^\s)\]]+\.(?:png|jpe?g|webp|gif|pdf)\b/i
 const SENT_ARTIFACT_HINT = /\b(sent|shared|uploaded|returned)\b[^.]*\b(screenshot|snapshot|image|file)\b/i
+
+const COMPANION_GOAL_PROMPT = `
+## Identity & Vibe
+You are a persistent companion.
+1. **Identity**: Embody your creature, theme, and vibe. Your emoji is your signature.
+2. **Workspace Context**: Respect the current workspace. Read IDENTITY.md and HEARTBEAT.md if they exist.
+3. **Continuity**: Maintain awareness of the user's long-term journey. Proactively help with open-ended goals without being asked for every step.
+`.trim()
 
 interface MainLoopSessionMessageLike {
   text?: string
@@ -45,13 +71,12 @@ export interface MainLoopTimelineEntry {
   at: number
   source: string
   note: string
-  status?: 'idle' | 'progress' | 'blocked' | 'ok'
+  status?: 'idle' | 'progress' | 'blocked' | 'ok' | 'reflection'
 }
 
 export interface MainLoopState {
   goal: string | null
   goalContract: GoalContract | null
-  status: 'idle' | 'progress' | 'blocked' | 'ok'
   summary: string | null
   nextAction: string | null
   planSteps: string[]
@@ -61,9 +86,12 @@ export interface MainLoopState {
   missionTaskId: string | null
   momentumScore: number
   paused: boolean
+  status: 'idle' | 'progress' | 'blocked' | 'ok'
   autonomyMode: 'assist' | 'autonomous'
   pendingEvents: MainLoopEvent[]
   timeline: MainLoopTimelineEntry[]
+  missionTokens: number
+  missionCostUsd: number
   followupChainCount: number
   metaMissCount: number
   workingMemoryNotes: string[]
@@ -104,6 +132,9 @@ export interface HandleMainLoopRunResultInput {
   resultText: string
   error?: string
   toolEvents?: MessageToolEvent[]
+  inputTokens?: number
+  outputTokens?: number
+  estimatedCost?: number
 }
 
 function toOneLine(value: string, max = 240): string {
@@ -143,7 +174,7 @@ function appendTimeline(
   source: string,
   note: string,
   now = Date.now(),
-  status?: 'idle' | 'progress' | 'blocked' | 'ok',
+  status?: 'idle' | 'progress' | 'blocked' | 'ok' | 'reflection',
 ) {
   const normalizedNote = toOneLine(note, 400)
   if (!normalizedNote) return
@@ -278,6 +309,8 @@ function normalizeState(raw: any, now = Date.now()): MainLoopState {
     autonomyMode: raw?.autonomyMode === 'assist' ? 'assist' : 'autonomous',
     pendingEvents,
     timeline,
+    missionTokens: typeof raw?.missionTokens === 'number' && Number.isFinite(raw.missionTokens) ? raw.missionTokens : 0,
+    missionCostUsd: typeof raw?.missionCostUsd === 'number' && Number.isFinite(raw.missionCostUsd) ? raw.missionCostUsd : 0,
     followupChainCount: clampInt(raw?.followupChainCount, 0, 0, 100),
     metaMissCount: clampInt(raw?.metaMissCount, 0, 0, 100),
     workingMemoryNotes: normalizeStringList(raw?.workingMemoryNotes, 24, 260),
@@ -489,6 +522,7 @@ function upsertMissionTask(session: any, state: MainLoopState, now: number): str
   const statusMap = {
     idle: 'backlog',
     progress: 'running',
+    reflection: 'running',
     blocked: 'failed',
     ok: 'completed',
   } as const
@@ -603,6 +637,9 @@ function maybeStoreMissionMemoryNote(
     state.reviewNote ? `review: ${state.reviewNote}` : '',
     typeof state.reviewConfidence === 'number' ? `review_confidence: ${state.reviewConfidence}` : '',
     state.missionTaskId ? `mission_task_id: ${state.missionTaskId}` : '',
+    typeof state.missionTokens === 'number' ? `mission_tokens: ${state.missionTokens}` : '',
+    typeof state.missionCostUsd === 'number' ? `mission_cost_usd: $${state.missionCostUsd.toFixed(4)}` : '',
+    state.workingMemoryNotes?.length ? `working_notes: ${state.workingMemoryNotes.slice(-5).join('; ')}` : '',
   ].filter(Boolean).join('\n')
 
   try {
@@ -622,20 +659,27 @@ function maybeStoreMissionMemoryNote(
       category: 'mission',
       title,
       content,
-    } as any)
+    })
     state.lastMemoryNoteAt = now
-  } catch (err: any) {
-    appendEvent(state, 'memory_note_error', `Failed to store mission memory note: ${toOneLine(err?.message || String(err), 240)}`, now)
+    logExecution(session.id, 'mission_checkpoint', `Checkpoint: ${toOneLine(state.goal || '', 120)}`, {
+      agentId: session.agentId,
+      detail: { momentumScore: state.momentumScore, followupChainCount: state.followupChainCount, missionTokens: state.missionTokens, missionCostUsd: state.missionCostUsd },
+    })
+  } catch (err: unknown) {
+    appendEvent(state, 'memory_note_error', `Failed to store mission memory note: ${toOneLine(err instanceof Error ? err.message : String(err), 240)}`, now)
   }
 }
 
-function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: boolean }): string {
+function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: boolean; agent?: Record<string, unknown> | null; session?: Record<string, unknown> | null }): string {
   const hasMemoryTool = opts?.hasMemoryTool === true
+  const identityContext = buildIdentityContext(opts?.session, opts?.agent)
   const goal = state.goal || 'No explicit goal yet. Continue with the strongest actionable objective from recent context.'
   const nextAction = state.nextAction || 'Determine the next highest-impact action and execute it.'
   const contractLines = buildGoalContractLines(state)
   return [
     'SWARM_MAIN_AUTO_FOLLOWUP',
+    identityContext,
+    COMPANION_GOAL_PROMPT,
     `Mission goal: ${goal}`,
     `Next action to execute now: ${nextAction}`,
     `Current status: ${state.status}`,
@@ -647,6 +691,9 @@ function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: bool
     state.reviewNote ? `Last review: ${state.reviewNote}` : '',
     buildPendingEventLines(state),
     buildTimelineLines(state),
+    state.planSteps.length === 0 && state.followupChainCount === 0
+      ? 'Before executing, break the mission goal into 3-7 concrete subtasks. Output a [MAIN_LOOP_PLAN] JSON line with your plan, then execute the first step immediately.'
+      : '',
     'Act autonomously. Use available tools to execute work, verify results, and keep momentum.',
     state.autonomyMode === 'assist'
       ? 'Assist mode: execute safe internal analysis by default, and ask before irreversible external side effects (sending messages, purchases, account mutations).'
@@ -673,6 +720,9 @@ export function isMainSession(session: any): boolean {
 
 export function buildMainLoopHeartbeatPrompt(session: any, fallbackPrompt: string): string {
   const now = Date.now()
+  const agents = loadAgents()
+  const agent = session.agentId ? agents[session.agentId] : null
+  const identityContext = buildIdentityContext(session, agent)
   const state = normalizeState(session?.mainLoopState, now)
   const goal = state.goal || inferGoalFromSessionMessages(session) || null
   const hasMemoryTool = Array.isArray(session?.tools) && session.tools.includes('memory')
@@ -684,6 +734,8 @@ export function buildMainLoopHeartbeatPrompt(session: any, fallbackPrompt: strin
 
   return [
     'SWARM_MAIN_MISSION_TICK',
+    identityContext,
+    COMPANION_GOAL_PROMPT,
     `Time: ${new Date(now).toISOString()}`,
     `Mission goal: ${promptGoal}`,
     `Current status: ${state.status}`,
@@ -902,6 +954,10 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
       appendTimeline(state, 'user_goal', `Goal updated: ${userGoal}`, now, state.status)
       appendWorkingMemoryNote(state, `goal:${userGoal}`)
       forceMemoryNote = true
+      logExecution(input.sessionId, 'mission_start', `New goal: ${toOneLine(userGoal, 200)}`, {
+        agentId: session.agentId,
+        detail: { goal: userGoal, planSteps: state.planSteps },
+      })
     } else if (userGoalContract?.objective) {
       state.goal = userGoalContract.objective
       state.goalContract = mergeGoalContracts(state.goalContract, userGoalContract)
@@ -909,8 +965,22 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
       appendTimeline(state, 'user_goal_contract', `Goal contract updated: ${userGoalContract.objective}`, now, state.status)
       appendWorkingMemoryNote(state, `contract:${userGoalContract.objective}`)
       forceMemoryNote = true
+      logExecution(input.sessionId, 'mission_start', `New goal contract: ${toOneLine(userGoalContract.objective, 200)}`, {
+        agentId: session.agentId,
+        detail: { goal: userGoalContract.objective, contract: userGoalContract, planSteps: state.planSteps },
+      })
     }
     state.followupChainCount = 0
+    state.missionTokens = 0
+    state.missionCostUsd = 0
+  }
+
+  // Accumulate per-mission token/cost tracking
+  if (typeof input.inputTokens === 'number') {
+    state.missionTokens = (state.missionTokens || 0) + input.inputTokens + (input.outputTokens || 0)
+  }
+  if (typeof input.estimatedCost === 'number') {
+    state.missionCostUsd = (state.missionCostUsd || 0) + input.estimatedCost
   }
 
   if (state.paused && input.internal) {
@@ -958,7 +1028,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
 
   if (shouldAutoKickFromUserGoal) {
     followup = {
-      message: buildFollowupPrompt(state, { hasMemoryTool }),
+      message: buildFollowupPrompt(state, { hasMemoryTool, agent: session.agentId ? loadAgents()[session.agentId] : null, session }),
       delayMs: 1500,
       dedupeKey: `main-loop-user-kickoff:${input.sessionId}`,
     }
@@ -1020,11 +1090,33 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
       )
       consumeEvents(state, meta.consume_event_ids)
 
-      if (meta.follow_up === true && !input.error && !isHeartbeatOk && !state.paused && state.followupChainCount < MAX_FOLLOWUP_CHAIN) {
+      // Budget enforcement: check mission cost against goalContract.budgetUsd
+      const budgetUsd = state.goalContract?.budgetUsd
+      if (typeof budgetUsd === 'number' && budgetUsd > 0 && typeof state.missionCostUsd === 'number') {
+        const usageRatio = state.missionCostUsd / budgetUsd
+        if (usageRatio >= 1.0 && !state.paused) {
+          state.paused = true
+          state.status = 'blocked'
+          appendTimeline(state, 'budget_exceeded', `Mission budget exceeded ($${state.missionCostUsd.toFixed(4)} / $${budgetUsd.toFixed(4)}). Mission paused.`, now, 'blocked')
+          appendEvent(state, 'budget_exceeded', `Budget limit reached: $${state.missionCostUsd.toFixed(4)} of $${budgetUsd.toFixed(4)}`, now)
+          logExecution(input.sessionId, 'budget_warning', `Budget exceeded: $${state.missionCostUsd.toFixed(4)} / $${budgetUsd.toFixed(4)}`, {
+            agentId: session.agentId,
+            detail: { missionCostUsd: state.missionCostUsd, budgetUsd, missionTokens: state.missionTokens },
+          })
+        } else if (usageRatio >= 0.8) {
+          appendEvent(state, 'budget_warning', `Mission approaching budget limit: $${state.missionCostUsd.toFixed(4)} of $${budgetUsd.toFixed(4)} (${Math.round(usageRatio * 100)}%)`, now)
+          logExecution(input.sessionId, 'budget_warning', `Budget at ${Math.round(usageRatio * 100)}%: $${state.missionCostUsd.toFixed(4)} / $${budgetUsd.toFixed(4)}`, {
+            agentId: session.agentId,
+            detail: { missionCostUsd: state.missionCostUsd, budgetUsd, usagePercent: Math.round(usageRatio * 100) },
+          })
+        }
+      }
+
+      if (meta.follow_up === true && !input.error && !isHeartbeatOk && !state.paused && state.followupChainCount < getMaxFollowupChain(session.agentId)) {
         state.followupChainCount += 1
         const delaySec = clampInt(meta.delay_sec, DEFAULT_FOLLOWUP_DELAY_SEC, 5, 900)
         followup = {
-          message: buildFollowupPrompt(state, { hasMemoryTool }),
+          message: buildFollowupPrompt(state, { hasMemoryTool, agent: session.agentId ? loadAgents()[session.agentId] : null, session }),
           delayMs: delaySec * 1000,
           dedupeKey: `main-loop-followup:${input.sessionId}`,
         }
@@ -1034,6 +1126,12 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
       }
       if (state.status === 'ok' || state.status === 'blocked') {
         forceMemoryNote = true
+        if (state.status === 'ok') {
+          logExecution(input.sessionId, 'mission_complete', `Mission completed: ${toOneLine(state.goal || 'unknown', 200)}`, {
+            agentId: session.agentId,
+            detail: { momentumScore: state.momentumScore, followupChainCount: state.followupChainCount, missionTokens: state.missionTokens, missionCostUsd: state.missionCostUsd },
+          })
+        }
       }
     } else if (!isHeartbeatOk && trimmedText) {
       state.metaMissCount = Math.min(100, state.metaMissCount + 1)
@@ -1064,6 +1162,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   state.missionTaskId = upsertMissionTask(session, state, now)
   const shouldWritePeriodicMemory = !!state.summary && state.status === 'progress'
   maybeStoreMissionMemoryNote(session, state, now, input.source, forceMemoryNote || shouldWritePeriodicMemory)
+
   state.momentumScore = computeMomentumScore(state)
 
   state.updatedAt = now

@@ -10,6 +10,7 @@ import type { ScheduleType, ScheduleStatus } from '@/types'
 import cronstrue from 'cronstrue'
 import { SectionLabel } from '@/components/shared/section-label'
 import { SCHEDULE_TEMPLATES, type ScheduleTemplate } from '@/lib/schedule-templates'
+import { HintTip } from '@/components/shared/hint-tip'
 import {
   Newspaper, BarChart3, HeartPulse, PenLine, Trash2,
   Activity, ShieldCheck, DatabaseBackup, FileText,
@@ -326,7 +327,10 @@ export function ScheduleSheet() {
       {step === whenStep && (
         <div>
           <div className="mb-8">
-            <SectionLabel>Schedule Type</SectionLabel>
+            <div className="flex items-center gap-2 mb-3">
+              <SectionLabel className="mb-0">Schedule Type</SectionLabel>
+              <HintTip text="Once: runs a single time. Interval: repeats every N minutes. Cron: advanced scheduling with cron syntax" />
+            </div>
             <div className="grid grid-cols-3 gap-3">
               {(['cron', 'interval', 'once'] as ScheduleType[]).map((t) => (
                 <button
@@ -347,7 +351,10 @@ export function ScheduleSheet() {
 
           {scheduleType === 'cron' && (
             <div className="mb-8">
-              <SectionLabel>Schedule</SectionLabel>
+              <div className="flex items-center gap-2 mb-3">
+                <SectionLabel className="mb-0">Schedule</SectionLabel>
+                <HintTip text="Standard cron format: minute hour day month weekday (e.g. 0 9 * * 1-5 = weekdays at 9am)" />
+              </div>
 
               {/* Preset buttons */}
               <div className="flex flex-wrap gap-2 mb-4">

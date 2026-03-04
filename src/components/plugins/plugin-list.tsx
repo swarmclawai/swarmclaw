@@ -191,7 +191,7 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
             Installed
           </button>
           <button onClick={() => setTab('marketplace')} className={tabClass('marketplace')} style={{ fontFamily: 'inherit' }}>
-            Marketplace
+            SwarmForge
           </button>
         </div>
       )}

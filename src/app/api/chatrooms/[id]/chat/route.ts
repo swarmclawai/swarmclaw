@@ -18,6 +18,7 @@ import {
 import { filterHealthyChatroomAgents } from '@/lib/server/chatroom-health'
 import { evaluateRoutingRules } from '@/lib/server/chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '@/lib/server/provider-health'
+import { applyAgentReactionsFromText } from '@/lib/server/chatroom-orchestration'
 import type { Chatroom, ChatroomMessage, Agent } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -249,6 +250,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
               latestChatrooms[id] = latestChatroom
               saveChatrooms(latestChatrooms)
               notify(`chatroom:${id}`)
+
+              // Extract and apply reactions (e.g. [REACTION]{"emoji":"👍","to":"..."})
+              applyAgentReactionsFromText(responseText, id, agent.id)
 
               markProviderSuccess(agent.provider)
               writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })

@@ -18,6 +18,7 @@ import { MemoryBrowser } from '@/components/memory/memory-browser'
 import { TaskList } from '@/components/tasks/task-list'
 import { TaskSheet } from '@/components/tasks/task-sheet'
 import { TaskBoard } from '@/components/tasks/task-board'
+import { ApprovalsPanel } from '@/components/tasks/approvals-panel'
 import { SecretsList } from '@/components/secrets/secrets-list'
 import { SecretSheet } from '@/components/secrets/secret-sheet'
 import { ProviderList } from '@/components/providers/provider-list'
@@ -369,6 +370,12 @@ export function AppLayout() {
                 <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 14l2 2 4-4" />
               </svg>
             </NavItem>
+            <NavItem view="approvals" label="Approvals" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('approvals')} badge={pendingApprovalCount}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                <path d="m9 12 2 2 4-4"/>
+              </svg>
+            </NavItem>
             <NavItem view="secrets" label="Secrets" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('secrets')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -548,7 +555,7 @@ export function AppLayout() {
         >
           <div className="flex items-center px-5 pt-5 pb-3 shrink-0">
             <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">{activeView}</h2>
-            {activeView === 'logs' || activeView === 'usage' || activeView === 'runs' ? null : activeView === 'memory' ? (
+            {activeView === 'logs' || activeView === 'usage' || activeView === 'runs' || activeView === 'approvals' ? null : activeView === 'memory' ? (
               <button
                 onClick={() => useAppStore.getState().setMemorySheetOpen(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 text-accent-bright bg-accent-soft hover:bg-accent-bright/15 transition-all cursor-pointer"
@@ -653,7 +660,7 @@ export function AppLayout() {
                 </button>
               ))}
             </div>
-            {activeView !== 'logs' && activeView !== 'usage' && activeView !== 'runs' && activeView !== 'settings' && (
+            {activeView !== 'logs' && activeView !== 'usage' && activeView !== 'runs' && activeView !== 'settings' && activeView !== 'approvals' && (
             <div className="px-4 py-2.5 shrink-0">
               <button
                 onClick={() => {
@@ -742,6 +749,8 @@ export function AppLayout() {
             </div>
           ) : activeView === 'tasks' && isDesktop ? (
             <TaskBoard />
+          ) : activeView === 'approvals' ? (
+            <ApprovalsPanel />
           ) : activeView === 'memory' ? (
             <MemoryBrowser />
           ) : activeView === 'activity' ? (
@@ -900,6 +909,7 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   schedules: 'Automated task schedules',
   memory: 'Long-term agent memory store',
   tasks: 'Task board for orchestrator jobs',
+  approvals: 'Pending tool execution approvals',
   secrets: 'API keys & credentials for orchestrators',
   providers: 'LLM providers & custom endpoints',
   skills: 'Reusable instruction sets for agents',
@@ -1037,6 +1047,12 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { icon: str
     title: 'Wallets',
     description: 'Agent crypto wallets for autonomous financial operations on Solana.',
     features: ['Create Solana wallets for agents', 'Per-transaction and daily spending limits', 'User approval for transactions', 'Balance tracking and transaction history'],
+  },
+  approvals: {
+    icon: 'check-circle',
+    title: 'Approvals',
+    description: 'Review and approve pending tool executions from agents.',
+    features: ['Review tool calls before execution', 'Approve or reject agent actions', 'Full context for each pending approval'],
   },
 }
 

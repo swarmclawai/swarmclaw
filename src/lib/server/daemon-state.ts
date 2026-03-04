@@ -1,4 +1,4 @@
-import { loadQueue, loadSchedules, loadSessions, saveSessions, loadConnectors, saveConnectors, loadWebhookRetryQueue, upsertWebhookRetry, deleteWebhookRetry, loadWebhooks, loadAgents, appendWebhookLog, loadCredentials, decryptKey } from './storage'
+import { loadQueue, loadSchedules, loadSessions, saveSessions, loadConnectors, saveConnectors, loadWebhookRetryQueue, upsertWebhookRetry, deleteWebhookRetry, loadWebhooks, loadAgents, loadSettings, appendWebhookLog, loadCredentials, decryptKey } from './storage'
 import { notify } from './ws-hub'
 import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue, recoverStalledRunningTasks } from './queue'
 import { startScheduler, stopScheduler } from './scheduler'
@@ -80,6 +80,7 @@ const ds: {
   healthIntervalId: ReturnType<typeof setInterval> | null
   memoryConsolidationTimeoutId: ReturnType<typeof setTimeout> | null
   memoryConsolidationIntervalId: ReturnType<typeof setInterval> | null
+  evalSchedulerIntervalId: ReturnType<typeof setInterval> | null
   /** Session IDs we've already alerted as stale (alert-once semantics). */
   staleSessionIds: Set<string>
   connectorRestartState: Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>
@@ -97,6 +98,7 @@ const ds: {
   healthIntervalId: null,
   memoryConsolidationTimeoutId: null,
   memoryConsolidationIntervalId: null,
+  evalSchedulerIntervalId: null,
   staleSessionIds: new Set<string>(),
   connectorRestartState: new Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>(),
   openclawDownAgentIds: new Set<string>(),
@@ -118,6 +120,7 @@ if (ds.healthIntervalId === undefined) ds.healthIntervalId = null
 if (ds.manualStopRequested === undefined) ds.manualStopRequested = false
 if (ds.memoryConsolidationTimeoutId === undefined) ds.memoryConsolidationTimeoutId = null
 if (ds.memoryConsolidationIntervalId === undefined) ds.memoryConsolidationIntervalId = null
+if (ds.evalSchedulerIntervalId === undefined) ds.evalSchedulerIntervalId = null
 
 export function ensureDaemonStarted(source = 'unknown'): boolean {
   if (ds.running) return false
@@ -140,6 +143,7 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     startHealthMonitor()
     startHeartbeatService()
     startMemoryConsolidation()
+    startEvalScheduler()
     return
   }
   ds.running = true
@@ -155,6 +159,7 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     startHealthMonitor()
     startHeartbeatService()
     startMemoryConsolidation()
+    startEvalScheduler()
   } catch (err: unknown) {
     ds.running = false
     notify('daemon')
@@ -182,6 +187,7 @@ export function stopDaemon(options?: { source?: string; manualStop?: boolean }) 
   stopHealthMonitor()
   stopHeartbeatService()
   stopMemoryConsolidation()
+  stopEvalScheduler()
   stopAllConnectors().catch(() => {})
 }
 
@@ -782,6 +788,69 @@ function stopMemoryConsolidation() {
   if (ds.memoryConsolidationIntervalId) {
     clearInterval(ds.memoryConsolidationIntervalId)
     ds.memoryConsolidationIntervalId = null
+  }
+}
+
+// --- Eval scheduler ---
+
+const EVAL_DEFAULT_INTERVAL_MS = 24 * 3600_000 // 24 hours
+
+function parseCronToMs(cron: string | null | undefined): number | null {
+  if (!cron || typeof cron !== 'string') return null
+  // Simple heuristic: extract hours from common cron patterns like "0 */6 * * *"
+  const hourMatch = cron.match(/\*\/(\d+)/)
+  if (hourMatch) return parseInt(hourMatch[1], 10) * 3600_000
+  return EVAL_DEFAULT_INTERVAL_MS
+}
+
+async function runEvalSchedulerTick() {
+  try {
+    const settings = loadSettings()
+    if (!settings.autonomyEvalEnabled) return
+
+    const { runEvalSuite } = await import('./eval/runner')
+    const agents = loadAgents()
+    const heartbeatAgentIds = Object.keys(agents).filter(
+      (id) => agents[id].heartbeatEnabled === true,
+    )
+
+    for (const agentId of heartbeatAgentIds) {
+      try {
+        const result = await runEvalSuite(agentId)
+        console.log(
+          `[daemon:eval] Agent ${agents[agentId].name}: ${result.percentage}% (${result.totalScore}/${result.maxScore})`,
+        )
+        createNotification({
+          title: `Eval: ${agents[agentId].name} scored ${result.percentage}%`,
+          message: `${result.runs.length} scenarios, ${result.totalScore}/${result.maxScore} points`,
+          type: result.percentage >= 60 ? 'info' : 'warning',
+        })
+      } catch (err: unknown) {
+        console.error(`[daemon:eval] Failed for agent ${agentId}:`, err instanceof Error ? err.message : String(err))
+      }
+    }
+  } catch (err: unknown) {
+    console.error('[daemon:eval] Scheduler tick error:', err instanceof Error ? err.message : String(err))
+  }
+}
+
+function startEvalScheduler() {
+  if (ds.evalSchedulerIntervalId) return
+  try {
+    const settings = loadSettings()
+    if (!settings.autonomyEvalEnabled) return
+    const intervalMs = parseCronToMs(settings.autonomyEvalCron) || EVAL_DEFAULT_INTERVAL_MS
+    ds.evalSchedulerIntervalId = setInterval(runEvalSchedulerTick, intervalMs)
+    console.log(`[daemon:eval] Eval scheduler started (interval=${Math.round(intervalMs / 3600_000)}h)`)
+  } catch {
+    // Eval scheduling is optional — don't block daemon start
+  }
+}
+
+function stopEvalScheduler() {
+  if (ds.evalSchedulerIntervalId) {
+    clearInterval(ds.evalSchedulerIntervalId)
+    ds.evalSchedulerIntervalId = null
   }
 }
 

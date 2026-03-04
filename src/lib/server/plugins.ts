@@ -1,18 +1,21 @@
 import fs from 'fs'
 import path from 'path'
 import { createRequire } from 'module'
-import type { Plugin, PluginHooks, PluginMeta } from '@/types'
+import type { Plugin, PluginHooks, PluginMeta, PluginToolDef } from '@/types'
 
 import { DATA_DIR } from './data-dir'
 
 const PLUGINS_DIR = path.join(DATA_DIR, 'plugins')
 const PLUGINS_CONFIG = path.join(DATA_DIR, 'plugins.json')
 
+// Hook registrar: maps event names to functions that register a handler
+type HookRegistrar = Record<string, (fn: (...args: unknown[]) => unknown) => void>
+
 // OpenClaw plugin format: { name, version, activate(ctx), deactivate() }
 interface OpenClawPlugin {
   name: string
   version?: string
-  activate: (ctx: Record<string, (fn: (...args: any[]) => any) => void>) => void
+  activate: (ctx: HookRegistrar) => void
   deactivate?: () => void
 }
 
@@ -21,33 +24,39 @@ interface OpenClawPlugin {
  * Supports both SwarmClaw format ({ name, hooks }) and OpenClaw format
  * ({ name, activate(ctx) }) where activate receives event hook registrars.
  */
-function normalizePlugin(mod: any): Plugin | null {
-  const raw = mod.default || mod
+function normalizePlugin(mod: unknown): Plugin | null {
+  const modObj = mod as Record<string, unknown>
+  const raw: Record<string, unknown> = (modObj?.default as Record<string, unknown>) || modObj
 
   // SwarmClaw native format
   if (raw.name && raw.hooks) {
-    return raw as Plugin
+    return {
+      name: raw.name,
+      description: raw.description,
+      hooks: raw.hooks,
+      tools: raw.tools,
+    } as Plugin
   }
 
   // OpenClaw format: { name, activate(ctx), deactivate() }
   if (raw.name && typeof raw.activate === 'function') {
-    const oc = raw as OpenClawPlugin
+    const oc = raw as unknown as OpenClawPlugin
     const hooks: PluginHooks = {}
 
     // OpenClaw's activate receives an object of hook registrars.
     // Map OpenClaw lifecycle names to SwarmClaw hook names.
-    const registrar: Record<string, (fn: (...args: any[]) => any) => void> = {
-      onAgentStart: (fn) => { hooks.beforeAgentStart = fn },
-      onAgentComplete: (fn) => { hooks.afterAgentComplete = fn },
-      onToolCall: (fn) => { hooks.beforeToolExec = fn },
-      onToolResult: (fn) => { hooks.afterToolExec = fn },
-      onMessage: (fn) => { hooks.onMessage = fn },
+    const registrar: HookRegistrar = {
+      onAgentStart: (fn) => { hooks.beforeAgentStart = fn as PluginHooks['beforeAgentStart'] },
+      onAgentComplete: (fn) => { hooks.afterAgentComplete = fn as PluginHooks['afterAgentComplete'] },
+      onToolCall: (fn) => { hooks.beforeToolExec = fn as PluginHooks['beforeToolExec'] },
+      onToolResult: (fn) => { hooks.afterToolExec = fn as PluginHooks['afterToolExec'] },
+      onMessage: (fn) => { hooks.onMessage = fn as PluginHooks['onMessage'] },
     }
 
     try {
       oc.activate(registrar)
-    } catch (err: any) {
-      console.error(`[plugins] OpenClaw activate() failed for ${oc.name}:`, err.message)
+    } catch (err: unknown) {
+      console.error(`[plugins] OpenClaw activate() failed for ${oc.name}:`, err instanceof Error ? err.message : String(err))
       return null
     }
 
@@ -68,9 +77,10 @@ if (!fs.existsSync(PLUGINS_CONFIG)) fs.writeFileSync(PLUGINS_CONFIG, '{}')
 // Use createRequire to avoid Turbopack static analysis of require()
 const dynamicRequire = createRequire(import.meta.url || __filename)
 
-interface LoadedPlugin {
+  interface LoadedPlugin {
   meta: PluginMeta
   hooks: PluginHooks
+  tools?: PluginToolDef[]
 }
 
 class PluginManager {
@@ -112,11 +122,12 @@ class PluginManager {
                 enabled: true,
               },
               hooks: plugin.hooks,
+              tools: plugin.tools,
             })
             console.log(`[plugins] Loaded: ${plugin.name} (${file})`)
           }
-        } catch (err: any) {
-          console.error(`[plugins] Failed to load ${file}:`, err.message)
+        } catch (err: unknown) {
+          console.error(`[plugins] Failed to load ${file}:`, err instanceof Error ? err.message : String(err))
         }
       }
     } catch {
@@ -124,6 +135,17 @@ class PluginManager {
     }
 
     this.loaded = true
+  }
+
+  getPluginTools(): PluginToolDef[] {
+    this.load()
+    const allTools: PluginToolDef[] = []
+    for (const plugin of this.plugins) {
+      if (plugin.tools && Array.isArray(plugin.tools)) {
+        allTools.push(...plugin.tools)
+      }
+    }
+    return allTools
   }
 
   async runHook<K extends keyof PluginHooks>(
@@ -135,9 +157,9 @@ class PluginManager {
       const hook = plugin.hooks[hookName]
       if (hook) {
         try {
-          await (hook as any)(ctx)
-        } catch (err: any) {
-          console.error(`[plugins] Error in ${plugin.meta.name}.${hookName}:`, err.message)
+          await (hook as (ctx: Parameters<NonNullable<PluginHooks[K]>>[0]) => Promise<void> | void)(ctx)
+        } catch (err: unknown) {
+          console.error(`[plugins] Error in ${plugin.meta.name}.${hookName}:`, err instanceof Error ? err.message : String(err))
         }
       }
     }
@@ -198,8 +220,8 @@ class PluginManager {
       fs.writeFileSync(path.join(PLUGINS_DIR, sanitized), code, 'utf8')
       this.reload()
       return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err.message }
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   }
 

@@ -132,6 +132,45 @@ function readHeartbeatFile(session: any): string {
   return ''
 }
 
+function readIdentityFile(session: Record<string, unknown>): Record<string, string> {
+  try {
+    const filePath = path.join(typeof session.cwd === 'string' ? session.cwd : WORKSPACE_DIR, 'IDENTITY.md')
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf-8')
+      const identity: Record<string, string> = {}
+      for (const line of content.split('\n')) {
+        const cleaned = line.trim().replace(/^\s*-\s*/, '')
+        const colonIndex = cleaned.indexOf(':')
+        if (colonIndex === -1) continue
+        const label = cleaned.slice(0, colonIndex).replace(/[*_]/g, '').trim().toLowerCase()
+        const value = cleaned.slice(colonIndex + 1).replace(/^[*_]+|[*_]+$/g, '').trim()
+        if (value) identity[label] = value
+      }
+      return identity
+    }
+  } catch { /* ignore */ }
+  return {}
+}
+
+export function buildIdentityContext(session: Record<string, unknown> | undefined | null, agent: Record<string, unknown> | undefined | null): string {
+  const fileId = session ? readIdentityFile(session) : {}
+  const name = fileId.name || agent?.name || ''
+  const emoji = fileId.emoji || agent?.emoji || ''
+  const creature = fileId.creature || agent?.creature || ''
+  const vibe = fileId.vibe || agent?.vibe || ''
+  const theme = fileId.theme || agent?.theme || ''
+
+  const lines = []
+  if (name) lines.push(`Name: ${name}`)
+  if (emoji) lines.push(`Emoji: ${emoji}`)
+  if (creature) lines.push(`Creature: ${creature}`)
+  if (vibe) lines.push(`Vibe: ${vibe}`)
+  if (theme) lines.push(`Theme: ${theme}`)
+
+  if (lines.length === 0) return ''
+  return `## Your Identity\n${lines.join('\n')}`
+}
+
 /** Detect HEARTBEAT.md files that contain only skeleton structure (headers, empty list items) but no real content. */
 export function isHeartbeatContentEffectivelyEmpty(content: string | undefined | null): boolean {
   if (!content || typeof content !== 'string') return true
@@ -148,6 +187,7 @@ export function isHeartbeatContentEffectivelyEmpty(content: string | undefined |
 function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: string, heartbeatFileContent: string): string {
   if (!agent) return fallbackPrompt
 
+  const identityContext = buildIdentityContext(session, agent)
   // Drain system events accumulated since last heartbeat
   const events = drainSystemEvents(session.id)
   const eventBlock = events.length > 0
@@ -178,7 +218,7 @@ function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: str
   return [
     'AGENT_HEARTBEAT_TICK',
     `Time: ${new Date().toISOString()}`,
-    `Agent: ${agent.name}`,
+    identityContext,
     description ? `Description: ${description}` : '',
     eventBlock ? `Events since last heartbeat:\n${eventBlock}` : '',
     dynamicGoal
@@ -200,6 +240,14 @@ function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: str
     '[AGENT_HEARTBEAT_META]{"goal": "your evolved goal", "status": "progress", "next_action": "what you plan to do next"}',
     'You can evolve your goal as you learn more. Set status to "progress" while working, "ok" when done, "idle" when waiting.',
   ].filter(Boolean).join('\n')
+}
+
+function applyMomentumMultiplier(intervalSec: number, momentumScore: number): number {
+  let multiplier = 1.0
+  if (momentumScore >= 80) multiplier = 0.5
+  else if (momentumScore < 40) multiplier = 2.0
+  const adjusted = Math.round(intervalSec * multiplier)
+  return Math.max(30, Math.min(7200, adjusted))
 }
 
 function resolveInterval(obj: Record<string, any>, currentSec: number): number {
@@ -346,6 +394,10 @@ async function tickHeartbeats() {
 
     const cfg = heartbeatConfigForSession(session, settings, agents)
     if (!cfg.enabled) continue
+
+    // Apply momentum-based multiplier to heartbeat interval
+    const momentumScore = session.mainLoopState?.momentumScore ?? 40
+    cfg.intervalSec = applyMomentumMultiplier(cfg.intervalSec, momentumScore)
 
     // For sessions with explicit opt-in, use a shorter idle threshold (just intervalSec * 2).
     // For inherited/global heartbeats, keep the 180s minimum to avoid noisy auto-fire.

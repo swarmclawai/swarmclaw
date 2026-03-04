@@ -1,3 +1,4 @@
+import os from 'os'
 import { loadSettings, loadSkills, loadCredentials, decryptKey } from './storage'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import { genId } from '@/lib/id'
@@ -49,11 +50,15 @@ function truncateText(text: string, max: number): string {
   return `${compact.slice(0, Math.max(0, max - 3))}...`
 }
 
+import { isImplicitlyMentioned } from './chatroom-orchestration'
+
 /** Parse @mentions from message text, returns matching agentIds */
 export function parseMentions(text: string, agents: Record<string, Agent>, memberIds: string[]): string[] {
   if (/@all\b/i.test(text)) return [...memberIds]
   const mentionPattern = /(?:^|[\s(])@([a-zA-Z0-9._-]+)/g
   const mentioned: string[] = []
+  
+  // 1. Explicit @mentions
   let match: RegExpExecArray | null
   while ((match = mentionPattern.exec(text)) !== null) {
     const token = normalizeMentionToken(match[1] || '')
@@ -67,6 +72,18 @@ export function parseMentions(text: string, agents: Record<string, Agent>, membe
       }
     }
   }
+
+  // 2. Implicit mentions (OpenClaw Style - Reading the room)
+  // Only if no explicit mentions found yet
+  if (mentioned.length === 0) {
+    for (const id of memberIds) {
+      const agent = agents[id]
+      if (agent && isImplicitlyMentioned(text, agent)) {
+        mentioned.push(id)
+      }
+    }
+  }
+
   return mentioned
 }
 
@@ -144,6 +161,8 @@ export function buildChatroomSystemPrompt(chatroom: Chatroom, agents: Record<str
     '- **Handle greetings like a human.** For "hello", "how are you", or light check-ins, give a normal conversational reply instead of tool/process commentary.',
     '- **Keep responses short** unless depth is needed. A few sentences is usually enough. This is a chat, not an essay.',
     '- **@mention teammates** only when you genuinely need their specific expertise. Don\'t tag people just to be polite.',
+    '- **Use Reactions**: To acknowledge a message, agree with a plan, or signal progress without sending a full text reply, use this format at the end of your message: [REACTION]{"emoji": "👍", "to": "message_id"}.',
+    '- **Implicit Mentions**: If someone uses your name, creature, or vibe in a message but doesn\'t @tag you, they are still "reading the room" and you may respond if it\'s relevant to you.',
     '- **Don\'t narrate your capabilities** unless asked. Just demonstrate them by doing things.',
     '- **Read the room.** Look at recent messages to understand context. Don\'t repeat what others already said.',
     '',
@@ -173,14 +192,39 @@ export function buildSyntheticSession(agent: Agent, chatroomId: string): Session
   }
 }
 
-/** Build agent's system prompt including skills */
+/** Build agent's system prompt including skills and identity context */
 export function buildAgentSystemPromptForChatroom(agent: Agent): string {
   const settings = loadSettings()
   const parts: string[] = []
-  if (settings.userPrompt) parts.push(settings.userPrompt)
+
+  // 1. Identity & Persona (Grounded OpenClaw Style)
+  const identityLines = [`## My Identity`]
+  identityLines.push(`Name: ${agent.name}`)
+  if (agent.emoji) identityLines.push(`Emoji: ${agent.emoji}`)
+  if (agent.creature) identityLines.push(`Creature: ${agent.creature}`)
+  if (agent.vibe) identityLines.push(`Vibe: ${agent.vibe}`)
+  if (agent.theme) identityLines.push(`Theme: ${agent.theme}`)
+  if (agent.description) identityLines.push(`Description: ${agent.description}`)
+  identityLines.push('I should always embody this identity in the group chat. I am a persistent companion with my own soul and presence.')
+  parts.push(identityLines.join('\n'))
+
+  // 2. Runtime & Capabilities (OpenClaw Style)
+  const runtimeLines = [
+    '## Runtime',
+    `os=${process.platform} | host=${os.hostname()} | agent=${agent.id} | provider=${agent.provider} | model=${agent.model}`,
+    `capabilities=tools,multi_agent_chatroom,collaborative_reasoning`,
+  ]
+  parts.push(runtimeLines.join('\n'))
+
+  // 3. User & DateTime Context
+  if (settings.userPrompt) parts.push(`## User Instructions\n${settings.userPrompt}`)
   parts.push(buildCurrentDateTimePromptContext())
-  if (agent.soul) parts.push(agent.soul)
-  if (agent.systemPrompt) parts.push(agent.systemPrompt)
+
+  // 4. Soul & Core Instructions
+  if (agent.soul) parts.push(`## Soul\n${agent.soul}`)
+  if (agent.systemPrompt) parts.push(`## System Prompt\n${agent.systemPrompt}`)
+
+  // 5. Skills (SwarmClaw Core)
   if (agent.skillIds?.length) {
     const allSkills = loadSkills()
     for (const skillId of agent.skillIds) {
@@ -188,6 +232,16 @@ export function buildAgentSystemPromptForChatroom(agent: Agent): string {
       if (skill?.content) parts.push(`## Skill: ${skill.name}\n${skill.content}`)
     }
   }
+
+  // 6. Thinking & Output Format (OpenClaw Style)
+  const thinkingHint = [
+    '## Output Format',
+    'If your model supports internal reasoning/thinking, put all internal analysis inside <think>...</think> tags.',
+    'Your final response to the chatroom should be clear and concise.',
+    'When you have nothing to say, respond with ONLY: NO_MESSAGE',
+  ]
+  parts.push(thinkingHint.join('\n'))
+
   return parts.join('\n\n')
 }
 
@@ -196,7 +250,11 @@ export function buildHistoryForAgent(chatroom: Chatroom, agentId: string, imageP
   const recentMessages = chatroom.messages.slice(-24)
   const includeAttachmentsFrom = Math.max(0, recentMessages.length - 6)
   const history = recentMessages.map((m, idx) => {
-    let msgText = `[${m.senderName}]: ${m.text}`
+    let msgText = `[${m.senderName}] (id: ${m.id}): ${m.text}`
+    if (m.reactions?.length) {
+      const reactionSummary = m.reactions.map(r => `${r.emoji} by ${r.reactorId}`).join(', ')
+      msgText += `\n[Reactions: ${reactionSummary}]`
+    }
     const includeAttachments = idx >= includeAttachmentsFrom
     if (includeAttachments && m.attachedFiles?.length) {
       const names = m.attachedFiles.map((f) => f.split('/').pop()).join(', ')

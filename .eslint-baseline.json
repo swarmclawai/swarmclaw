@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-04T12:35:42.500Z",
-  "totalIssues": 576,
-  "uniqueIssues": 198,
+  "generatedAt": "2026-03-04T16:48:17.467Z",
+  "totalIssues": 555,
+  "uniqueIssues": 195,
   "issues": [
     {
       "filePath": "bin/server-cmd.js",
@@ -510,13 +510,6 @@
     },
     {
       "filePath": "src/components/chat/session-debug-panel.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'TYPE_ICONS' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/chat/session-debug-panel.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
       "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
@@ -975,7 +968,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 21
+      "count": 20
     },
     {
       "filePath": "src/lib/server/chat-execution.ts",
@@ -1136,7 +1129,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 16
+      "count": 14
     },
     {
       "filePath": "src/lib/server/main-session.ts",
@@ -1230,13 +1223,6 @@
       "count": 4
     },
     {
-      "filePath": "src/lib/server/plugins.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 10
-    },
-    {
       "filePath": "src/lib/server/process-manager.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1318,7 +1304,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 10
+      "count": 8
     },
     {
       "filePath": "src/lib/server/session-tools/session-info.ts",
@@ -1346,7 +1332,7 @@
       "ruleId": "prefer-const",
       "severity": 2,
       "message": "'text' is never reassigned. Use 'const' instead.",
-      "count": 2
+      "count": 1
     },
     {
       "filePath": "src/lib/server/storage-mcp.test.ts",
@@ -1382,13 +1368,6 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 2
-    },
-    {
-      "filePath": "src/types/index.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 4
     }
   ]
 }

@@ -53,6 +53,7 @@ export async function POST(req: Request) {
     tools: body.tools,
     capabilities: body.capabilities,
     thinkingLevel: body.thinkingLevel || undefined,
+    autoRecovery: body.autoRecovery || false,
     soul: body.soul || undefined,
     createdAt: now,
     updatedAt: now,

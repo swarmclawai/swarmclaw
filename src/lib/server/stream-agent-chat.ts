@@ -59,6 +59,7 @@ function buildToolCapabilityLines(enabledTools: string[], opts?: { platformAssig
   if (enabledTools.includes('manage_agents')) lines.push('- I can create and configure other agents (`manage_agents`) — spin up specialists when a task calls for it.')
   if (enabledTools.includes('manage_tasks')) lines.push('- I can manage tasks (`manage_tasks`) — create plans, track progress, and stay organized over time.')
   if (enabledTools.includes('manage_schedules')) lines.push('- I can set up schedules (`manage_schedules`) for recurring work or future follow-ups.')
+  if (enabledTools.includes('schedule_wake')) lines.push('- I can set a conversational timer (`schedule_wake`) to remind myself to check back on something later in this chat.')
   if (enabledTools.includes('manage_documents')) lines.push('- I can store and search documents (`manage_documents`) for long-term knowledge and reference.')
   if (enabledTools.includes('manage_webhooks')) lines.push('- I can register webhooks (`manage_webhooks`) so external events can trigger my work automatically.')
   if (enabledTools.includes('manage_skills')) lines.push('- I can manage reusable skills (`manage_skills`) — building blocks I can learn and apply.')
@@ -77,12 +78,36 @@ function buildToolCapabilityLines(enabledTools: string[], opts?: { platformAssig
   return lines
 }
 
+/** Detect whether a user message is a broad, high-level goal that benefits from decomposition. */
+function isBroadGoal(text: string): boolean {
+  if (text.length < 50) return false
+  // Messages with code fences, file paths, or numbered steps are already structured
+  if (/```/.test(text)) return false
+  if (/\/(src|lib|app|pages|components|api)\//.test(text)) return false
+  if (/^\s*\d+[.)]\s/m.test(text)) return false
+  // Short direct questions aren't broad goals
+  if (text.length < 80 && text.endsWith('?')) return false
+  return true
+}
+
+const GOAL_DECOMPOSITION_BLOCK = [
+  '## Goal Decomposition',
+  'When you receive a broad, open-ended goal:',
+  '1. Break it into 3-7 concrete, sequentially-executable subtasks before taking action.',
+  '2. If manage_tasks is available, create a task for each subtask to track progress.',
+  '3. Output your plan in a [MAIN_LOOP_PLAN] JSON line: {"steps":["step1","step2",...],"current_step":"step1"}',
+  '4. Execute the first subtask immediately — do not stop after planning.',
+  '5. After each subtask, update progress and move to the next.',
+].join('\n')
+
 function buildAgenticExecutionPolicy(opts: {
   enabledTools: string[]
   loopMode: 'bounded' | 'ongoing'
   heartbeatPrompt: string
   heartbeatIntervalSec: number
   platformAssignScope?: 'self' | 'all'
+  userMessage?: string
+  hasExistingPlan?: boolean
 }) {
   const hasTooling = opts.enabledTools.length > 0
   const toolLines = buildToolCapabilityLines(opts.enabledTools, { platformAssignScope: opts.platformAssignScope })
@@ -192,6 +217,8 @@ function buildAgenticExecutionPolicy(opts: {
       ? `Expected heartbeat cadence is roughly every ${opts.heartbeatIntervalSec} seconds while ongoing work is active.`
       : '',
     toolLines.length ? 'What I can do:\n' + toolLines.join('\n') : '',
+    // Inject goal decomposition instructions for broad goals without existing plans
+    (opts.userMessage && !opts.hasExistingPlan && isBroadGoal(opts.userMessage)) ? GOAL_DECOMPOSITION_BLOCK : '',
   ].filter(Boolean).join('\n')
 }
 
@@ -204,6 +231,7 @@ export interface StreamAgentChatResult {
 }
 
 export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<StreamAgentChatResult> {
+  const startTs = Date.now()
   const { session, message, imagePath, attachedFiles, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
   const sessionToolsWithImplicitProcess = Array.from(new Set([
     ...(session.tools || []),
@@ -385,15 +413,17 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         '- When I learn something that corrects old knowledge, update or remove the old memory',
       ].join('\n'))
 
-      // Pre-compaction memory flush: nudge agent to persist learnings when conversation is long
+      // Pre-compaction memory flush & Personality Evolution: nudge agent to reflect when conversation is long
       const msgCount = history.filter(m => m.role === 'user' || m.role === 'assistant').length
       if (msgCount > 20) {
+        const canEditSelf = (session.tools || []).includes('manage_agents')
         stateModifierParts.push([
-          '## Memory Flush Reminder',
-          'This conversation is getting long and I might lose older context soon. I should save anything',
-          'important I\'ve learned, decided, or discovered to my memory now — things I\'d want to recall',
-          'in future conversations. Only what matters, not every detail. If there\'s nothing worth saving, carry on.',
-        ].join('\n'))
+          '## Reflection & Consolidation Reminder',
+          'This conversation is getting long and I might lose older context soon.',
+          '1. **Memory:** I should save anything important I\'ve learned, decided, or discovered to my memory now. Only what matters, not every detail.',
+          canEditSelf ? `2. **Personality Evolution:** I should reflect on this conversation. Have my boundaries, tone, or relationship with the user evolved? If so, I MUST use \`manage_agents\` (action: update, id: "${session.agentId}") to update my \`soul\` field with these new learnings.` : '',
+          'If there\'s nothing worth saving or updating, carry on.',
+        ].filter(Boolean).join('\n'))
       }
     } catch {
       // If memory context fails to load, continue without blocking the run.
@@ -449,7 +479,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       'web_search', 'web_fetch', 'browser', 'memory',
       'claude_code', 'codex_cli', 'opencode_cli',
       'sandbox', 'create_document', 'create_spreadsheet', 'http_request', 'git', 'wallet',
-      'manage_agents', 'manage_tasks', 'manage_schedules', 'manage_skills',
+      'manage_agents', 'manage_tasks', 'manage_schedules', 'schedule_wake', 'manage_skills',
       'manage_documents', 'manage_webhooks', 'manage_connectors', 'manage_sessions', 'manage_secrets',
     ]
     const disabled = allToolIds.filter((t) => !enabledSet.has(t))
@@ -475,6 +505,9 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     )
   }
 
+  // Check for existing plan in mainLoopState to skip decomposition injection
+  const hasExistingPlan = Array.isArray(session.mainLoopState?.planSteps) && session.mainLoopState.planSteps.length > 0
+
   stateModifierParts.push(
     buildAgenticExecutionPolicy({
       enabledTools: sessionToolsWithImplicitProcess,
@@ -482,10 +515,12 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       heartbeatPrompt,
       heartbeatIntervalSec,
       platformAssignScope: agentPlatformAssignScope,
+      userMessage: message,
+      hasExistingPlan,
     }),
   )
 
-  const stateModifier = stateModifierParts.join('\n\n')
+  let stateModifier = stateModifierParts.join('\n\n')
 
   const { tools, cleanup } = await buildSessionTools(session.cwd, sessionToolsWithImplicitProcess, {
     agentId: session.agentId,
@@ -611,6 +646,19 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     }
   } catch {
     // Context manager failure — continue with full history
+  }
+
+  // Context degradation warning: prepend warning to system prompt when nearing limits
+  try {
+    const { getContextDegradationWarning, estimateTokens: estTokens } = await import('./context-manager')
+    const sysTokens = estTokens(stateModifier)
+    const warning = getContextDegradationWarning(effectiveHistory, sysTokens, session.provider, session.model)
+    if (warning) {
+      stateModifierParts.unshift(warning)
+      stateModifier = stateModifierParts.join('\n\n')
+    }
+  } catch {
+    // Warning failure is non-critical
   }
 
   // Apply context-clear boundary: slice from most recent context-clear marker
@@ -836,6 +884,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       totalTokens,
       estimatedCost: cost,
       timestamp: Date.now(),
+      durationMs: Date.now() - startTs,
     }
     appendUsage(session.id, usageRecord)
     // Send usage metadata to client

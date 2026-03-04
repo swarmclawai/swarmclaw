@@ -53,6 +53,7 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   manage_agents: { categories: ['platform'], concreteTools: ['manage_agents'] },
   manage_tasks: { categories: ['platform'], concreteTools: ['manage_tasks'] },
   manage_schedules: { categories: ['platform'], concreteTools: ['manage_schedules'] },
+  schedule_wake: { categories: ['platform'], concreteTools: ['schedule_wake'] },
   manage_skills: { categories: ['platform'], concreteTools: ['manage_skills'] },
   manage_documents: { categories: ['platform'], concreteTools: ['manage_documents'] },
   manage_webhooks: { categories: ['platform', 'network'], concreteTools: ['manage_webhooks'] },

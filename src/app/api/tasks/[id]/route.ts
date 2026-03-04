@@ -11,6 +11,7 @@ import { createNotification } from '@/lib/server/create-notification'
 import { enqueueSystemEvent } from '@/lib/server/system-events'
 import { requestHeartbeatNow } from '@/lib/server/heartbeat-wake'
 import { validateDag, cascadeUnblock } from '@/lib/server/dag-validation'
+import { getPluginManager } from '@/lib/server/plugins'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Keep completed queue integrity even if daemon is not running.
@@ -100,6 +101,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       entityType: 'task',
       entityId: id,
     })
+    
+    if (tasks[id].status === 'completed') {
+      getPluginManager().runHook('onTaskComplete', { taskId: id, result: tasks[id].result })
+    }
 
     // Enqueue system event + heartbeat wake
     if (tasks[id].sessionId) {

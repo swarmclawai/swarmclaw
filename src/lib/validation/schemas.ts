@@ -14,6 +14,7 @@ export const AgentCreateSchema = z.object({
   capabilities: z.array(z.string()).optional().default([]),
   thinkingLevel: z.string().optional(),
   soul: z.string().optional(),
+  autoRecovery: z.boolean().optional().default(false),
 })
 
 export const ConnectorCreateSchema = z.object({

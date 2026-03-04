@@ -8,14 +8,18 @@ import { genId } from '@/lib/id'
 // ---------------------------------------------------------------------------
 
 export type LogCategory =
-  | 'trigger'       // what kicked off the action
-  | 'decision'      // reasoning / model choice
-  | 'tool_call'     // tool invocation with input
-  | 'tool_result'   // tool output
-  | 'outbound'      // messages sent to users/platforms
-  | 'file_op'       // file read/write/delete with checksums
-  | 'commit'        // git commit activity
-  | 'error'         // errors during execution
+  | 'trigger'            // what kicked off the action
+  | 'decision'           // reasoning / model choice
+  | 'tool_call'          // tool invocation with input
+  | 'tool_result'        // tool output
+  | 'outbound'           // messages sent to users/platforms
+  | 'file_op'            // file read/write/delete with checksums
+  | 'commit'             // git commit activity
+  | 'error'              // errors during execution
+  | 'mission_start'      // new mission/goal started
+  | 'mission_checkpoint' // periodic mission state snapshot
+  | 'mission_complete'   // mission reached ok status
+  | 'budget_warning'     // mission approaching or exceeding budget
 
 export interface ExecutionLogEntry {
   id: string

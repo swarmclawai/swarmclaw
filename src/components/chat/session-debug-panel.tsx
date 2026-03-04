@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import type { Message } from '@/types'
 import { IconButton } from '@/components/shared/icon-button'
+import { CheckpointTimeline } from './checkpoint-timeline'
+import { useAppStore } from '@/stores/use-app-store'
 
 interface Props {
   messages: Message[]
@@ -60,23 +62,16 @@ const TYPE_COLORS: Record<EventType, string> = {
   tool_call: '#8B5CF6',
 }
 
-const TYPE_ICONS: Record<EventType, string> = {
-  user: 'U',
-  assistant: 'AI',
-  delegation: 'D',
-  agent_result: 'R',
-  system: 'S',
-  error: '!',
-  tool_call: 'T',
-}
-
 function fmtTime(ts: number) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 export function SessionDebugPanel({ messages, open, onClose }: Props) {
+  const [tab, setTab] = useState<'log' | 'timeline'>('log')
   const [filter, setFilter] = useState<EventType | 'all'>('all')
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
+  
+  const currentSessionId = useAppStore((s) => s.currentSessionId)
 
   const events = messages.map(classifyMessage)
   const filtered = filter === 'all' ? events : events.filter((e) => e.type === filter)
@@ -105,8 +100,23 @@ export function SessionDebugPanel({ messages, open, onClose }: Props) {
           <path d="M18 20V4" />
           <path d="M6 20v-4" />
         </svg>
-        <span className="font-display text-[16px] font-600 tracking-[-0.02em] flex-1">Session Debug</span>
-        <span className="text-[12px] text-text-3 font-mono">{events.length} events</span>
+        <span className="font-display text-[16px] font-600 tracking-[-0.02em] flex-1">Session X-Ray</span>
+        
+        <div className="flex bg-white/[0.04] p-0.5 rounded-[8px] mr-2">
+           <button 
+             onClick={() => setTab('log')}
+             className={`px-3 py-1 rounded-[6px] text-[11px] font-600 transition-all ${tab === 'log' ? 'bg-white/[0.08] text-text shadow-sm' : 'text-text-3 hover:text-text-2'}`}
+           >
+             Event Log
+           </button>
+           <button 
+             onClick={() => setTab('timeline')}
+             className={`px-3 py-1 rounded-[6px] text-[11px] font-600 transition-all ${tab === 'timeline' ? 'bg-accent-soft text-accent-bright' : 'text-text-3 hover:text-text-2'}`}
+           >
+             Time Travel
+           </button>
+        </div>
+
         <IconButton onClick={onClose} aria-label="Close debug panel">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -115,82 +125,94 @@ export function SessionDebugPanel({ messages, open, onClose }: Props) {
         </IconButton>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2 px-5 py-3 border-b border-white/[0.04] overflow-x-auto shrink-0">
-        {filters.map((f) => (
-          <button
-            key={f.id}
-            onClick={() => setFilter(f.id)}
-            className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 cursor-pointer transition-all border whitespace-nowrap
-              ${filter === f.id
-                ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
-                : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
-            style={{ fontFamily: 'inherit' }}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Event timeline */}
-      <div className="flex-1 overflow-y-auto px-5 py-4">
-        <div className="relative">
-          {/* Timeline line */}
-          <div className="absolute left-[15px] top-0 bottom-0 w-px bg-white/[0.06]" />
-
-          {filtered.map((event, i) => {
-            const color = TYPE_COLORS[event.type]
-            const expanded = expandedIdx === i
-            return (
+      {tab === 'log' ? (
+        <>
+          {/* Filters */}
+          <div className="flex gap-2 px-5 py-3 border-b border-white/[0.04] overflow-x-auto shrink-0">
+            {filters.map((f) => (
               <button
-                key={i}
-                onClick={() => setExpandedIdx(expanded ? null : i)}
-                className="w-full text-left relative pl-10 pb-4 group cursor-pointer"
+                key={f.id}
+                onClick={() => setFilter(f.id)}
+                className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 cursor-pointer transition-all border whitespace-nowrap
+                  ${filter === f.id
+                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                    : 'bg-surface border-white/[0.06] text-text-3 hover:text-text-2'}`}
+                style={{ fontFamily: 'inherit' }}
               >
-                {/* Dot */}
-                <div
-                  className="absolute left-[10px] top-1 w-[11px] h-[11px] rounded-full border-2"
-                  style={{ borderColor: color, backgroundColor: expanded ? color : 'transparent' }}
-                />
-
-                {/* Content */}
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[11px] font-700 uppercase tracking-wider" style={{ color }}>
-                    {event.label}
-                  </span>
-                  <span className="text-[10px] text-text-3/70 font-mono">{fmtTime(event.time)}</span>
-                </div>
-
-                <p className={`text-[12px] text-text-3 leading-[1.5] ${expanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
-                  {event.detail}
-                </p>
-
-                {!expanded && event.detail.length > 150 && (
-                  <span className="text-[11px] text-accent-bright/60 mt-1 inline-block">click to expand</span>
-                )}
+                {f.label}
               </button>
-            )
-          })}
+            ))}
+          </div>
 
-          {filtered.length === 0 && (
-            <p className="text-center text-[13px] text-text-3 py-12">No events matching filter</p>
-          )}
+          {/* Event timeline */}
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            <div className="relative">
+              {/* Timeline line */}
+              <div className="absolute left-[15px] top-0 bottom-0 w-px bg-white/[0.06]" />
+
+              {filtered.map((event, i) => {
+                const color = TYPE_COLORS[event.type]
+                const expanded = expandedIdx === i
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setExpandedIdx(expanded ? null : i)}
+                    className="w-full text-left relative pl-10 pb-4 group cursor-pointer"
+                  >
+                    {/* Dot */}
+                    <div
+                      className="absolute left-[10px] top-1 w-[11px] h-[11px] rounded-full border-2"
+                      style={{ borderColor: color, backgroundColor: expanded ? color : 'transparent' }}
+                    />
+
+                    {/* Content */}
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[11px] font-700 uppercase tracking-wider" style={{ color }}>
+                        {event.label}
+                      </span>
+                      <span className="text-[10px] text-text-3/70 font-mono">{fmtTime(event.time)}</span>
+                    </div>
+
+                    <p className={`text-[12px] text-text-3 leading-[1.5] ${expanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
+                      {event.detail}
+                    </p>
+
+                    {!expanded && event.detail.length > 150 && (
+                      <span className="text-[11px] text-accent-bright/60 mt-1 inline-block">click to expand</span>
+                    )}
+                  </button>
+                )
+              })}
+
+              {filtered.length === 0 && (
+                <p className="text-center text-[13px] text-text-3 py-12">No events matching filter</p>
+              )}
+            </div>
+          </div>
+
+          {/* Stats bar */}
+          <div className="flex items-center gap-4 px-5 py-3 border-t border-white/[0.06] shrink-0">
+            {(['delegation', 'agent_result', 'error'] as EventType[]).map((type) => {
+              const count = events.filter((e) => e.type === type).length
+              if (!count) return null
+              return (
+                <span key={type} className="flex items-center gap-1.5 text-[11px] font-mono" style={{ color: TYPE_COLORS[type] }}>
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: TYPE_COLORS[type] }} />
+                  {count} {type === 'delegation' ? 'delegations' : type === 'agent_result' ? 'results' : 'errors'}
+                </span>
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+           {currentSessionId ? (
+             <CheckpointTimeline sessionId={currentSessionId} />
+           ) : (
+             <div className="p-12 text-center text-text-3">No active session</div>
+           )}
         </div>
-      </div>
-
-      {/* Stats bar */}
-      <div className="flex items-center gap-4 px-5 py-3 border-t border-white/[0.06] shrink-0">
-        {(['delegation', 'agent_result', 'error'] as EventType[]).map((type) => {
-          const count = events.filter((e) => e.type === type).length
-          if (!count) return null
-          return (
-            <span key={type} className="flex items-center gap-1.5 text-[11px] font-mono" style={{ color: TYPE_COLORS[type] }}>
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: TYPE_COLORS[type] }} />
-              {count} {type === 'delegation' ? 'delegations' : type === 'agent_result' ? 'results' : 'errors'}
-            </span>
-          )
-        })}
-      </div>
+      )}
     </div>
   )
 }

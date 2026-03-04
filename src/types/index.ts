@@ -75,6 +75,8 @@ export interface Session {
   heartbeatIntervalSec?: number | null
   heartbeatTarget?: 'last' | 'none' | string | null
   lastAutoMemoryAt?: number | null
+  lastHeartbeatText?: string | null
+  lastHeartbeatSentAt?: number | null
   mainLoopState?: {
     goal?: string | null
     goalContract?: GoalContract | null
@@ -102,6 +104,8 @@ export interface Session {
       note: string
       status?: 'idle' | 'progress' | 'blocked' | 'ok'
     }>
+    missionTokens?: number
+    missionCostUsd?: number
     followupChainCount?: number
     metaMissCount?: number
     workingMemoryNotes?: string[]
@@ -116,6 +120,11 @@ export interface Session {
   queuedCount?: number
   currentRunId?: string | null
   conversationTone?: string
+  emoji?: string
+  creature?: string
+  vibe?: string
+  theme?: string
+  avatar?: string
   canvasContent?: string | null
 }
 
@@ -148,6 +157,7 @@ export interface UsageRecord {
   totalTokens: number
   estimatedCost: number
   timestamp: number
+  durationMs?: number
 }
 
 // --- Plugin System ---
@@ -155,15 +165,27 @@ export interface UsageRecord {
 export interface PluginHooks {
   beforeAgentStart?: (ctx: { session: Session; message: string }) => Promise<void> | void
   afterAgentComplete?: (ctx: { session: Session; response: string }) => Promise<void> | void
-  beforeToolExec?: (ctx: { toolName: string; input: any }) => Promise<any> | any
-  afterToolExec?: (ctx: { toolName: string; input: any; output: string }) => Promise<void> | void
+  beforeToolExec?: (ctx: { toolName: string; input: Record<string, unknown> | null }) => Promise<Record<string, unknown> | void> | Record<string, unknown> | void
+  afterToolExec?: (ctx: { toolName: string; input: Record<string, unknown> | null; output: string }) => Promise<void> | void
   onMessage?: (ctx: { session: Session; message: Message }) => Promise<void> | void
+
+  // Orchestration & Swarm Hooks
+  onTaskComplete?: (ctx: { taskId: string; result: unknown }) => Promise<void> | void
+  onAgentDelegation?: (ctx: { sourceAgentId: string; targetAgentId: string; task: string }) => Promise<void> | void
+}
+
+export interface PluginToolDef {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+  execute: (args: Record<string, unknown>, ctx: { session: Session; message: string }) => Promise<string | object> | string | object
 }
 
 export interface Plugin {
   name: string
   description?: string
   hooks: PluginHooks
+  tools?: PluginToolDef[]
 }
 
 export interface PluginMeta {
@@ -233,6 +255,11 @@ export interface Agent {
   name: string
   description: string
   soul?: string
+  emoji?: string
+  creature?: string
+  vibe?: string
+  theme?: string
+  avatar?: string
   systemPrompt: string
   provider: ProviderType
   model: string
@@ -273,9 +300,12 @@ export interface Agent {
   openclawAllowedSkills?: string[]
   walletId?: string | null
   monthlyBudget?: number | null
+  autoRecovery?: boolean
+
   budgetAction?: 'warn' | 'block'
   /** Runtime-enriched: current month's spend. Populated by GET /api/agents when monthlyBudget is set. */
   monthlySpend?: number
+  maxFollowupChain?: number
   createdAt: number
   updatedAt: number
 }
@@ -408,7 +438,7 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human' | 'orchestrated'
-export type AppView = 'home' | 'agents' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'wallets' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
+export type AppView = 'home' | 'agents' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'approvals' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'wallets' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
 
 // --- Chatrooms ---
 
@@ -581,6 +611,7 @@ export interface AppSettings {
   legacyOrchestratorMaxTurns?: number
   ongoingLoopMaxIterations?: number
   ongoingLoopMaxRuntimeMinutes?: number
+  maxFollowupChain?: number
   shellCommandTimeoutSec?: number
   claudeCodeTimeoutSec?: number
   cliProcessTimeoutSec?: number

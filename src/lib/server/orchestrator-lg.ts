@@ -12,6 +12,7 @@ import { getCheckpointSaver } from './langgraph-checkpoint'
 import { notify } from './ws-hub'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
+import { getPluginManager } from './plugins'
 import { genId } from '@/lib/id'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 import type { Agent, TaskComment, MessageToolEvent } from '@/types'
@@ -176,6 +177,7 @@ export async function executeLangGraphOrchestrator(
         return `Agent "${agentName}" not found. Available: ${agents.map((a) => a.name).join(', ')}`
       }
       console.log(`[orchestrator-lg] Delegating to ${agent.name}: ${agentTask.slice(0, 80)}`)
+      getPluginManager().runHook('onAgentDelegation', { sourceAgentId: orchestrator.id, targetAgentId: agent.id, task: agentTask })
       const result = await executeSubTaskViaCli(agent, agentTask, sessionId)
       saveMessage(sessionId, 'assistant', `Delegated to ${agent.name}: ${agentTask.slice(0, 100)}`, [{
         name: 'delegate_to_agent',
@@ -623,6 +625,7 @@ export async function resumeLangGraphOrchestrator(
     async ({ agentName, task: agentTask }) => {
       const agent = agents.find((a) => a.name.toLowerCase() === agentName.toLowerCase())
       if (!agent) return `Agent "${agentName}" not found. Available: ${agents.map((a) => a.name).join(', ')}`
+      getPluginManager().runHook('onAgentDelegation', { sourceAgentId: orchestrator.id, targetAgentId: agent.id, task: agentTask })
       const result = await executeSubTaskViaCli(agent, agentTask, sessionId)
       saveMessage(sessionId, 'assistant', `Delegated to ${agent.name}: ${agentTask.slice(0, 100)}`, [{
         name: 'delegate_to_agent',

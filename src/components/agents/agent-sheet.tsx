@@ -16,6 +16,7 @@ import { AgentPickerList } from '@/components/shared/agent-picker-list'
 import { randomSoul } from '@/lib/soul-suggestions'
 import { SectionLabel } from '@/components/shared/section-label'
 import { SoulLibraryPicker } from './soul-library-picker'
+import { HintTip } from '@/components/shared/hint-tip'
 
 const HB_PRESETS = [1800, 3600, 7200, 21600, 43200] as const
 
@@ -109,6 +110,7 @@ export function AgentSheet() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [thinkingLevel, setThinkingLevel] = useState<'' | 'minimal' | 'low' | 'medium' | 'high'>('')
+  const [autoRecovery, setAutoRecovery] = useState(false)
   const [voiceId, setVoiceId] = useState('')
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(false)
   const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
@@ -193,6 +195,7 @@ export function AgentSheet() {
         setAvatarSeed(editing.avatarSeed || crypto.randomUUID().slice(0, 8))
         setAvatarUrl(editing.avatarUrl || null)
         setThinkingLevel(editing.thinkingLevel || '')
+        setAutoRecovery(editing.autoRecovery || false)
         setVoiceId(editing.elevenLabsVoiceId || '')
         setHeartbeatEnabled(editing.heartbeatEnabled || false)
         setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
@@ -235,6 +238,7 @@ export function AgentSheet() {
         setProjectId(undefined)
         setAvatarSeed('')
         setThinkingLevel('')
+        setAutoRecovery(false)
         setVoiceId('')
         setHeartbeatEnabled(false)
         setHeartbeatIntervalSec('')
@@ -334,6 +338,7 @@ export function AgentSheet() {
       avatarSeed: avatarSeed.trim() || undefined,
       avatarUrl: avatarUrl || null,
       thinkingLevel: thinkingLevel || undefined,
+      autoRecovery,
       elevenLabsVoiceId: voiceId.trim() || null,
       heartbeatEnabled,
       heartbeatInterval: heartbeatIntervalSec ? formatHbDuration(Number(heartbeatIntervalSec)) : null,
@@ -653,8 +658,9 @@ export function AgentSheet() {
 
       {/* Thinking Level */}
       <div className="mb-8">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
           Thinking Level <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+          <HintTip text="Higher levels produce more thoughtful responses but cost more tokens" />
         </label>
         <select
           value={thinkingLevel}
@@ -669,6 +675,20 @@ export function AgentSheet() {
           <option value="high">High — Deep, thorough reasoning</option>
         </select>
         <p className="text-[11px] text-text-3/70 mt-1.5">Controls reasoning depth. Anthropic models use extended thinking; OpenAI o-series uses reasoning_effort. Others get system prompt guidance.</p>
+      </div>
+
+      {/* Auto-Recovery */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Guardian Auto-Recovery <HintTip text="Automatically resets the agent's workspace if it gets into a broken state" /></label>
+          <div
+            onClick={() => setAutoRecovery(!autoRecovery)}
+            className={`w-9 h-5 rounded-full transition-all relative cursor-pointer ${autoRecovery ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${autoRecovery ? 'left-[18px]' : 'left-0.5'}`} />
+          </div>
+        </div>
+        <p className="text-[11px] text-text-3/70">If this agent critically fails a task that modifies the workspace, SwarmClaw Guardian will automatically perform a <code className="text-[10px] bg-white/[0.05] px-1 rounded">git reset --hard</code> to restore the last known good state.</p>
       </div>
 
       {/* ElevenLabs Voice ID */}
@@ -692,7 +712,7 @@ export function AgentSheet() {
       {/* Heartbeat Configuration */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Heartbeat</label>
+          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Heartbeat <HintTip text="Periodically runs a background prompt to keep the agent active and aware" /></label>
           <button
             type="button"
             onClick={() => setHeartbeatEnabled(!heartbeatEnabled)}
@@ -704,7 +724,7 @@ export function AgentSheet() {
         {heartbeatEnabled && (
           <div className="space-y-4 mt-3">
             <div>
-              <label className="block text-[12px] text-text-3/70 mb-1.5">Interval</label>
+              <label className="flex items-center gap-1.5 text-[12px] text-text-3/70 mb-1.5">Interval <HintTip text="Minutes between each heartbeat check" /></label>
               <select
                 value={heartbeatIntervalSec}
                 onChange={(e) => setHeartbeatIntervalSec(e.target.value)}
@@ -746,7 +766,7 @@ export function AgentSheet() {
       {/* Monthly Budget */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Monthly Budget</label>
+          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Monthly Budget <HintTip text="Set a spending limit for this agent's API usage" /></label>
           <button
             type="button"
             onClick={() => setBudgetEnabled(!budgetEnabled)}
@@ -774,7 +794,7 @@ export function AgentSheet() {
               </div>
             </div>
             <div>
-              <label className="block text-[12px] text-text-3/70 mb-1.5">When exceeded</label>
+              <label className="flex items-center gap-1.5 text-[12px] text-text-3/70 mb-1.5">When exceeded <HintTip text="Warn shows an alert but keeps running; Block stops the agent from making API calls" /></label>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -835,6 +855,7 @@ export function AgentSheet() {
         <div className="mb-8">
           <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
             Soul / Personality <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+            <HintTip text="The agent's voice and tone — how it talks, not what it knows" />
             {soul !== soulInitial && soulSaveState === 'idle' && (
               <span className="inline-flex items-center gap-1 normal-case tracking-normal text-[10px] text-amber-400 font-600">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
@@ -889,7 +910,7 @@ export function AgentSheet() {
       {provider !== 'openclaw' && (
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
-            <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">System Prompt</label>
+            <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">System Prompt <HintTip text="Instructions that tell the agent what it can do, what tools to use, and how to behave" /></label>
             <button onClick={() => promptFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
             <input ref={promptFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSystemPrompt)} className="hidden" />
           </div>

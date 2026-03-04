@@ -11,6 +11,7 @@ import { StreamingBubble } from './streaming-bubble'
 import { ThinkingIndicator } from './thinking-indicator'
 import { SuggestionsBar } from './suggestions-bar'
 import { ExecApprovalCard } from './exec-approval-card'
+import { TaskApprovalCard } from './task-approval-card'
 import { HeartbeatMoment, ActivityMoment, isNotableTool } from './activity-moment'
 import { useApprovalStore } from '@/stores/use-approval-store'
 import { useWs } from '@/hooks/use-ws'
@@ -573,13 +574,28 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
 
 function ApprovalCards({ agentId }: { agentId?: string | null }) {
   const approvals = useApprovalStore((s) => s.approvals)
+  const tasks = useAppStore((s) => s.tasks)
+  const sessionId = useAppStore((s) => s.currentSessionId)
+
   const cards = Object.values(approvals).filter((a) => !agentId || a.agentId === agentId)
-  if (!cards.length) return null
+  
+  // Find tasks associated with this session that need approval
+  const pendingTasks = Object.values(tasks).filter((t) => {
+    if (!t.pendingApproval) return false
+    // Show if matches the current session OR the current agent
+    return t.sessionId === sessionId || (agentId && t.agentId === agentId)
+  })
+
+  if (!cards.length && !pendingTasks.length) return null
+
   return (
-    <>
+    <div className="flex flex-col gap-2">
       {cards.map((a) => (
         <ExecApprovalCard key={a.id} approval={a} />
       ))}
-    </>
+      {pendingTasks.map((t) => (
+        <TaskApprovalCard key={t.id} task={t} />
+      ))}
+    </div>
   )
 }

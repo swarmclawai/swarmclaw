@@ -94,12 +94,14 @@ export async function GET(req: Request) {
     errorCount: number
     lastUsed: number
     models: Set<string>
+    totalDurationMs: number
+    latencyCount: number
   }> = {}
 
   for (const r of records) {
     const prov = r.provider || 'unknown'
     if (!healthAccum[prov]) {
-      healthAccum[prov] = { totalRequests: 0, successCount: 0, errorCount: 0, lastUsed: 0, models: new Set() }
+      healthAccum[prov] = { totalRequests: 0, successCount: 0, errorCount: 0, lastUsed: 0, models: new Set(), totalDurationMs: 0, latencyCount: 0 }
     }
     const h = healthAccum[prov]
     h.totalRequests += 1
@@ -107,6 +109,11 @@ export async function GET(req: Request) {
     h.successCount += 1
     if ((r.timestamp || 0) > h.lastUsed) h.lastUsed = r.timestamp || 0
     if (r.model) h.models.add(r.model)
+    
+    if (typeof r.durationMs === 'number' && r.durationMs > 0) {
+      h.totalDurationMs += r.durationMs
+      h.latencyCount += 1
+    }
   }
 
   const providerHealth: Record<string, {
@@ -125,7 +132,7 @@ export async function GET(req: Request) {
       successCount: h.successCount,
       errorCount: h.errorCount,
       errorRate: h.totalRequests > 0 ? h.errorCount / h.totalRequests : 0,
-      avgLatencyMs: 0, // UsageRecord does not track latency
+      avgLatencyMs: h.latencyCount > 0 ? h.totalDurationMs / h.latencyCount : 0,
       lastUsed: h.lastUsed,
       models: Array.from(h.models),
     }

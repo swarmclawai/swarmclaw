@@ -1,13 +1,24 @@
 import type { Message } from '@/types'
 import { getMemoryDb } from './memory-db'
 
+import { repairTranscriptConsistency } from './transcript-repair'
+
 // --- LLM compaction constants ---
 
-const COMPACTION_CHUNK_BUDGET_RATIO = 0.4   // 40% of context per summarization chunk
-const COMPACTION_SAFETY_MARGIN = 1.2         // 20% buffer for token underestimation
-const COMPACTION_OVERHEAD_TOKENS = 4096      // reserved for summarization prompt + response
+const BASE_CHUNK_RATIO = 0.4
+const MIN_CHUNK_RATIO = 0.15
+const COMPACTION_SAFETY_MARGIN = 1.2
+const COMPACTION_OVERHEAD_TOKENS = 4096
 const MAX_TOOL_FAILURES = 8
 const MAX_FAILURE_CHARS = 240
+
+const MERGE_SUMMARIES_INSTRUCTIONS =
+  'Merge these partial summaries into a single cohesive summary. Preserve decisions,' +
+  ' TODOs, open questions, and any constraints.'
+
+const IDENTIFIER_PRESERVATION_INSTRUCTIONS =
+  'Preserve all opaque identifiers exactly as written (no shortening or reconstruction), ' +
+  'including UUIDs, hashes, IDs, tokens, API keys, hostnames, IPs, ports, URLs, and file names.'
 
 /** Callback that sends a prompt to an LLM and returns response text */
 export type LLMSummarizer = (prompt: string) => Promise<string>
@@ -132,6 +143,44 @@ export function getContextStatus(
   }
 }
 
+// --- Context degradation warnings ---
+
+/** Returns a warning string when context usage exceeds thresholds, or null if within safe bounds. */
+export function getContextDegradationWarning(
+  messages: Message[],
+  systemPromptTokens: number,
+  provider: string,
+  model: string,
+): string | null {
+  const status = getContextStatus(messages, systemPromptTokens, provider, model)
+  const pct = status.percentUsed
+  const remaining = status.contextWindow - status.estimatedTokens
+  const estTurnsLeft = Math.max(0, Math.floor(remaining / 2000))
+
+  if (pct >= 85) {
+    return [
+      `[CONTEXT_WARNING] Context window is ${pct}% full (${status.estimatedTokens.toLocaleString()} / ${status.contextWindow.toLocaleString()} tokens).`,
+      `Estimated remaining capacity: ~${estTurnsLeft} turns.`,
+      'CRITICAL: Save essential state to memory immediately. Summarize key findings, decisions, and next steps.',
+      'Consider completing the current subtask and storing a checkpoint before context is exhausted.',
+    ].join(' ')
+  }
+  if (pct >= 70) {
+    return [
+      `[CONTEXT_WARNING] Context window is ${pct}% full.`,
+      `Estimated remaining capacity: ~${estTurnsLeft} turns.`,
+      'Recommended: Store important progress notes to memory. Prioritize completing high-value subtasks.',
+    ].join(' ')
+  }
+  if (pct >= 60) {
+    return [
+      `[CONTEXT_WARNING] Context window is ${pct}% full (~${estTurnsLeft} turns remaining).`,
+      'Consider saving intermediate state to memory for continuity.',
+    ].join(' ')
+  }
+  return null
+}
+
 // --- Memory consolidation ---
 
 /** Extract important facts from old messages before pruning */
@@ -240,6 +289,54 @@ export function splitMessagesByTokenBudget(messages: Message[], budgetPerChunk: 
   return chunks
 }
 
+/** Compute adaptive chunk ratio based on average message size. */
+export function computeAdaptiveChunkRatio(messages: Message[], contextWindow: number): number {
+  if (messages.length === 0) return BASE_CHUNK_RATIO
+  const totalTokens = estimateMessagesTokens(messages)
+  const avgTokens = totalTokens / messages.length
+  const safeAvgTokens = avgTokens * COMPACTION_SAFETY_MARGIN
+  const avgRatio = safeAvgTokens / contextWindow
+
+  if (avgRatio > 0.1) {
+    const reduction = Math.min(avgRatio * 2, BASE_CHUNK_RATIO - MIN_CHUNK_RATIO)
+    return Math.max(MIN_CHUNK_RATIO, BASE_CHUNK_RATIO - reduction)
+  }
+  return BASE_CHUNK_RATIO
+}
+
+/** Summarize in hierarchical stages if context is very large */
+export async function summarizeInStages(opts: {
+  messages: Message[]
+  contextWindow: number
+  summarize: LLMSummarizer
+  maxChunkTokens: number
+}): Promise<string> {
+  const { messages, summarize, maxChunkTokens } = opts
+  const totalTokens = estimateMessagesTokens(messages)
+
+  if (totalTokens <= maxChunkTokens || messages.length < 4) {
+    return summarize(buildSummarizationPrompt(messages))
+  }
+
+  const chunks = splitMessagesByTokenBudget(messages, maxChunkTokens)
+  if (chunks.length <= 1) {
+    return summarize(buildSummarizationPrompt(messages))
+  }
+
+  const partialSummaries: string[] = []
+  for (const chunk of chunks) {
+    try {
+      const partial = await summarize(buildSummarizationPrompt(chunk))
+      if (partial?.trim()) partialSummaries.push(partial.trim())
+    } catch { /* skip failed chunk */ }
+  }
+
+  if (partialSummaries.length === 0) return 'Summary unavailable.'
+  if (partialSummaries.length === 1) return partialSummaries[0]
+
+  return summarize(buildMergePrompt(partialSummaries))
+}
+
 /** Build an OpenClaw-aligned summarization prompt for a batch of messages */
 function buildSummarizationPrompt(messages: Message[]): string {
   const transcript = messages.map((m) => {
@@ -258,13 +355,13 @@ function buildSummarizationPrompt(messages: Message[]): string {
     'Summarize the following conversation transcript into structured notes.',
     '',
     'Rules:',
-    '- Preserve all decisions, TODOs, open questions, and constraints',
-    '- Preserve all opaque identifiers exactly as they appear (UUIDs, hashes, IDs, URLs, file paths, API keys, variable names)',
-    '- Note errors encountered and their resolutions',
-    '- Keep technical details needed to continue work (versions, configs, commands)',
-    '- Aim for 20-40% of original length',
-    '- Use structured notes with bullet points, not narrative prose',
-    '- Group by topic/theme when possible',
+    '- Preserve all decisions, TODOs, open questions, and any constraints.',
+    `- ${IDENTIFIER_PRESERVATION_INSTRUCTIONS}`,
+    '- Note errors encountered and their resolutions.',
+    '- Keep technical details needed to continue work (versions, configs, commands).',
+    '- Aim for 20-40% of original length.',
+    '- Use structured notes with bullet points, not narrative prose.',
+    '- Group by topic/theme when possible.',
     '',
     '---TRANSCRIPT---',
     transcript,
@@ -280,11 +377,12 @@ function buildMergePrompt(partialSummaries: string[]): string {
     'Merge the following partial conversation summaries into a single cohesive summary.',
     '',
     'Rules:',
-    '- Remove redundancy across parts while preserving all important details',
-    '- Preserve all opaque identifiers exactly (UUIDs, hashes, IDs, URLs, file paths)',
-    '- Keep decisions, TODOs, open questions, constraints, and error resolutions',
-    '- Use structured notes with bullet points',
-    '- The result should be shorter than the combined input',
+    '- Remove redundancy across parts while preserving all important details.',
+    `- ${MERGE_SUMMARIES_INSTRUCTIONS}`,
+    `- ${IDENTIFIER_PRESERVATION_INSTRUCTIONS}`,
+    '- Keep decisions, TODOs, open questions, constraints, and error resolutions.',
+    '- Use structured notes with bullet points.',
+    '- The result should be shorter than the combined input.',
     '',
     numbered,
   ].join('\n')
@@ -324,62 +422,46 @@ export async function llmCompact(opts: {
     return { messages, prunedCount: 0, memoriesStored: 0, summaryAdded: false }
   }
 
-  const oldMessages = messages.slice(0, -keepLastN)
-  const recentMessages = messages.slice(-keepLastN)
+  const repaired = repairTranscriptConsistency(messages)
+  const oldMessages = repaired.slice(0, -keepLastN)
+  const recentMessages = repaired.slice(-keepLastN)
 
-  // 1. Consolidate important info to memory (existing regex extraction)
+  // 1. Consolidate important info to memory
   const memoriesStored = consolidateToMemory(oldMessages, agentId, sessionId)
 
-  // 2. Extract metadata from old messages
+  // 2. Extract metadata
   const toolFailures = extractToolFailures(oldMessages)
   const fileOps = extractFileOperations(oldMessages)
 
-  // 3. Compute chunk budget
+  // 3. Compute adaptive budget
   const contextWindow = getContextWindowSize(provider, model)
-  const chunkBudget = Math.floor((contextWindow / COMPACTION_SAFETY_MARGIN) * COMPACTION_CHUNK_BUDGET_RATIO) - COMPACTION_OVERHEAD_TOKENS
+  const ratio = computeAdaptiveChunkRatio(oldMessages, contextWindow)
+  const chunkBudget = Math.floor((contextWindow / COMPACTION_SAFETY_MARGIN) * ratio) - COMPACTION_OVERHEAD_TOKENS
 
-  // 4. Split old messages into chunks
-  const chunks = splitMessagesByTokenBudget(oldMessages, Math.max(chunkBudget, 2000))
-
-  // 5. Summarize chunks (progressive fallback on failure)
+  // 4. Hierarchical summarization
   let finalSummary: string | null = null
   try {
-    if (chunks.length === 1) {
-      finalSummary = await summarize(buildSummarizationPrompt(chunks[0]))
-    } else {
-      // Multi-chunk: summarize each, then merge
-      const partialSummaries: string[] = []
-      for (const chunk of chunks) {
-        try {
-          const partial = await summarize(buildSummarizationPrompt(chunk))
-          if (partial?.trim()) partialSummaries.push(partial.trim())
-        } catch {
-          // Skip failed chunks — progressive fallback
-        }
-      }
-      if (partialSummaries.length === 0) {
-        finalSummary = null // all chunks failed
-      } else if (partialSummaries.length === 1) {
-        finalSummary = partialSummaries[0]
-      } else {
-        finalSummary = await summarize(buildMergePrompt(partialSummaries))
-      }
-    }
+    finalSummary = await summarizeInStages({
+      messages: oldMessages,
+      contextWindow,
+      summarize,
+      maxChunkTokens: Math.max(chunkBudget, 2000),
+    })
   } catch {
     finalSummary = null
   }
 
-  // 6. Fall back to sliding window if LLM summarization failed entirely
+  // 5. Fall back to sliding window if LLM summarization failed entirely
   if (!finalSummary?.trim()) {
     return {
-      messages: slidingWindowCompact(messages, keepLastN),
+      messages: slidingWindowCompact(repaired, keepLastN),
       prunedCount: oldMessages.length,
       memoriesStored,
       summaryAdded: false,
     }
   }
 
-  // 7. Append metadata sections
+  // 6. Append metadata sections
   const metaSections: string[] = [finalSummary.trim()]
 
   if (toolFailures.length > 0) {
@@ -392,7 +474,7 @@ export async function llmCompact(opts: {
     metaSections.push('\n## File Operations\n' + parts.join('\n'))
   }
 
-  // 8. Build context summary message
+  // 7. Build context summary message
   const summaryMessage: Message = {
     role: 'assistant',
     text: `[Context Summary]\n${metaSections.join('\n')}`,

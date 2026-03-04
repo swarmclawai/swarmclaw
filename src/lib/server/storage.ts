@@ -153,6 +153,8 @@ const COLLECTIONS = [
   'wallet_balance_history',
   'moderation_logs',
   'connector_health',
+  'souls',
+  'benchmarks',
 ] as const
 
 for (const table of COLLECTIONS) {
@@ -623,6 +625,16 @@ export function loadSchedules(): Record<string, any> {
 export function saveSchedules(s: Record<string, any>) {
   saveCollection('schedules', s)
 }
+
+// --- Souls ---
+export const loadSouls = () => loadCollection('souls')
+export const saveSouls = (s: Parameters<typeof saveCollection>[1]) => saveCollection('souls', s)
+export const deleteSoul = (id: string) => deleteCollectionItem('souls', id)
+
+// --- Benchmarks ---
+export const loadBenchmarks = () => loadCollection('benchmarks')
+export const saveBenchmarks = (b: Parameters<typeof saveCollection>[1]) => saveCollection('benchmarks', b)
+export const deleteBenchmark = (id: string) => deleteCollectionItem('benchmarks', id)
 
 // --- Tasks ---
 export function loadTasks(): Record<string, any> {

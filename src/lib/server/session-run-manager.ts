@@ -271,6 +271,9 @@ async function drainExecution(executionKey: string): Promise<void> {
         resultText: result.text,
         error: result.error,
         toolEvents: result.toolEvents,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        estimatedCost: result.estimatedCost,
       })
     } catch (mainLoopErr: any) {
       log.warn('session-run', `Main-loop update failed for ${next.run.id}`, mainLoopErr?.message || String(mainLoopErr))
@@ -372,6 +375,19 @@ export interface EnqueueSessionRunResult {
   abort: () => void
 }
 
+const LONG_TOOL_NAMES: ReadonlySet<string> = new Set(['claude_code', 'codex_cli', 'opencode_cli'])
+
+function computeEffectiveRunTimeoutMs(
+  baseTimeoutMs: number,
+  sessionTools: string[],
+  runtime: { claudeCodeTimeoutMs: number },
+): number {
+  const hasLongTool = sessionTools.some(t => LONG_TOOL_NAMES.has(t))
+  if (!hasLongTool) return baseTimeoutMs
+  const toolTimeout = runtime.claudeCodeTimeoutMs + 120_000
+  return Math.max(baseTimeoutMs, toolTimeout)
+}
+
 export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSessionRunResult {
   const internal = input.internal === true
   const mode = normalizeMode(input.mode, internal)
@@ -379,9 +395,13 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
   const executionKey = executionKeyForSession(input.sessionId)
   const runtime = loadRuntimeSettings()
   const defaultMaxRuntimeMs = runtime.ongoingLoopMaxRuntimeMs ?? (10 * 60_000)
+  const sessions = loadSessions()
+  const sessionData = sessions[input.sessionId]
+  const sessionTools: string[] = sessionData?.tools || []
+  const adjustedDefaultMs = computeEffectiveRunTimeoutMs(defaultMaxRuntimeMs, sessionTools, runtime)
   const effectiveMaxRuntimeMs = typeof input.maxRuntimeMs === 'number'
     ? input.maxRuntimeMs
-    : defaultMaxRuntimeMs
+    : adjustedDefaultMs
 
   const dedupe = findDedupeMatch(input.sessionId, input.dedupeKey)
   if (dedupe) {

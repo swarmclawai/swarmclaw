@@ -7,6 +7,7 @@ const NOTABLE_TOOLS: Record<string, { label: string; color: string; icon: 'brain
   memory_tool: { label: 'Committed to memory', color: '#A855F7', icon: 'brain' },
   manage_tasks: { label: 'Created a task', color: '#EC4899', icon: 'clipboard' },
   manage_schedules: { label: 'Scheduled something', color: '#EC4899', icon: 'clipboard' },
+  schedule_wake: { label: 'Set a reminder', color: '#F59E0B', icon: 'clipboard' },
   manage_agents: { label: 'Created an agent', color: '#EC4899', icon: 'clipboard' },
   delegate_to_claude_code: { label: 'Delegated to Claude Code', color: '#38BDF8', icon: 'delegate' },
   delegate_to_codex_cli: { label: 'Delegated to Codex', color: '#38BDF8', icon: 'delegate' },
@@ -24,6 +25,7 @@ function extractSnippet(toolName: string, toolInput: string): string | null {
     if ((toolName === 'memory' || toolName === 'memory_tool') && parsed.key) return parsed.key
     if (toolName === 'manage_tasks' && parsed.title) return parsed.title
     if (toolName === 'manage_schedules' && parsed.name) return parsed.name
+    if (toolName === 'schedule_wake' && parsed.message) return parsed.message
     if (toolName === 'manage_agents' && parsed.name) return parsed.name
     if (toolName === 'delegate_to_agent' && (parsed.agentName || parsed.agentId)) return parsed.agentName || parsed.agentId
     if (toolName === 'check_delegation_status' && parsed.agentName) return parsed.agentName

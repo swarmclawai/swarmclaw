@@ -1,4 +1,5 @@
 import fs from 'fs'
+import os from 'os'
 import {
   loadSessions,
   saveSessions,
@@ -17,6 +18,7 @@ import { estimateCost, checkBudget } from './cost'
 import { log } from './logger'
 import { logExecution } from './execution-log'
 import { streamAgentChat } from './stream-agent-chat'
+import { runLinkUnderstanding } from './link-understanding'
 import { buildSessionTools } from './session-tools'
 import { stripMainLoopMetaForPersistence } from './main-agent-loop'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
@@ -74,6 +76,9 @@ export interface ExecuteChatTurnResult {
   persisted: boolean
   toolEvents: MessageToolEvent[]
   error?: string
+  inputTokens?: number
+  outputTokens?: number
+  estimatedCost?: number
 }
 
 function extractEventJson(line: string): SSEEvent | null {
@@ -389,18 +394,39 @@ function buildAgentSystemPrompt(session: any): string | undefined {
   if (!session.agentId) return undefined
   const agents = loadAgents()
   const agent = agents[session.agentId]
+  if (!agent) return undefined
 
   const settings = loadSettings()
   const parts: string[] = []
-  // Identity block — agent needs to know who it is
-  const identityLines = [`## My Identity`, `My name is ${agent.name}.`]
-  if (agent.description) identityLines.push(agent.description)
-  identityLines.push('I should always refer to myself by this name. I am not "Assistant" — I have my own name and identity.')
-  parts.push(identityLines.join(' '))
-  if (settings.userPrompt) parts.push(settings.userPrompt)
+
+  // 1. Identity & Persona (Grounded OpenClaw Style)
+  const identityLines = [`## My Identity`]
+  identityLines.push(`Name: ${agent.name}`)
+  if (agent.emoji) identityLines.push(`Emoji: ${agent.emoji}`)
+  if (agent.creature) identityLines.push(`Creature: ${agent.creature}`)
+  if (agent.vibe) identityLines.push(`Vibe: ${agent.vibe}`)
+  if (agent.theme) identityLines.push(`Theme: ${agent.theme}`)
+  if (agent.description) identityLines.push(`Description: ${agent.description}`)
+  identityLines.push('I should always embody this identity. I am not just an "Assistant" — I am a persistent companion with my own soul and presence.')
+  parts.push(identityLines.join('\n'))
+
+  // 2. Runtime & Capabilities (OpenClaw Style)
+  const runtimeLines = [
+    '## Runtime',
+    `os=${process.platform} | host=${os.hostname()} | agent=${agent.id} | provider=${agent.provider} | model=${agent.model}`,
+    `capabilities=tools,heartbeats,autonomous_loop,multi_agent_chat`,
+  ]
+  parts.push(runtimeLines.join('\n'))
+
+  // 3. User & DateTime Context
+  if (settings.userPrompt) parts.push(`## User Instructions\n${settings.userPrompt}`)
   parts.push(buildCurrentDateTimePromptContext())
-  if (agent.soul) parts.push(agent.soul)
-  if (agent.systemPrompt) parts.push(agent.systemPrompt)
+
+  // 4. Soul & Core Instructions
+  if (agent.soul) parts.push(`## Soul\n${agent.soul}`)
+  if (agent.systemPrompt) parts.push(`## System Prompt\n${agent.systemPrompt}`)
+
+  // 5. Skills (SwarmClaw Core)
   if (agent.skillIds?.length) {
     const allSkills = loadSkills()
     for (const skillId of agent.skillIds) {
@@ -408,7 +434,22 @@ function buildAgentSystemPrompt(session: any): string | undefined {
       if (skill?.content) parts.push(`## Skill: ${skill.name}\n${skill.content}`)
     }
   }
-  if (!parts.length) return undefined
+
+  // 6. Thinking & Output Format (OpenClaw Style)
+  const thinkingHint = [
+    '## Output Format',
+    'If your model supports internal reasoning/thinking, put all internal analysis inside <think>...</think> tags.',
+    'Your final response to the user should be clear and concise.',
+    'When you have nothing to say, respond with ONLY: NO_MESSAGE',
+  ]
+  parts.push(thinkingHint.join('\n'))
+
+  // 7. Heartbeat Guidance
+  parts.push([
+    '## Heartbeats',
+    'You run on an autonomous heartbeat. If you receive a heartbeat poll and nothing needs attention, reply exactly: HEARTBEAT_OK',
+  ].join('\n'))
+
   return parts.join('\n\n')
 }
 
@@ -676,6 +717,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const apiKey = resolveApiKeyForSession(session, provider)
 
   if (!internal) {
+    const linkAnalysis = await runLinkUnderstanding(message)
     session.messages.push({
       role: 'user',
       text: message,
@@ -685,6 +727,14 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       attachedFiles: attachedFiles?.length ? attachedFiles : undefined,
       replyToId: input.replyToId || undefined,
     })
+    if (linkAnalysis.length > 0) {
+      session.messages.push({
+        role: 'assistant',
+        kind: 'system',
+        text: `[Automated Link Analysis]\n${linkAnalysis.join('\n\n')}`,
+        time: Date.now(),
+      })
+    }
     session.lastActiveAt = Date.now()
     saveSessions(sessions)
   }
@@ -692,6 +742,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const systemPrompt = buildAgentSystemPrompt(session)
   const toolEvents: MessageToolEvent[] = []
   const streamErrors: string[] = []
+  const accumulatedUsage = { inputTokens: 0, outputTokens: 0, estimatedCost: 0 }
 
   let thinkingText = ''
   const emit = (ev: SSEEvent) => {
@@ -704,6 +755,17 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
     if (ev.t === 'thinking' && ev.text) {
       thinkingText += ev.text
+    }
+    if (ev.t === 'md' && ev.text) {
+      try {
+        const mdPayload = JSON.parse(ev.text) as Record<string, unknown>
+        const usage = mdPayload.usage as { inputTokens?: number; outputTokens?: number; estimatedCost?: number } | undefined
+        if (usage) {
+          if (typeof usage.inputTokens === 'number') accumulatedUsage.inputTokens += usage.inputTokens
+          if (typeof usage.outputTokens === 'number') accumulatedUsage.outputTokens += usage.outputTokens
+          if (typeof usage.estimatedCost === 'number') accumulatedUsage.estimatedCost += usage.estimatedCost
+        }
+      } catch { /* ignore non-JSON md events */ }
     }
     collectToolEvent(ev, toolEvents)
     onEvent?.(ev)
@@ -738,6 +800,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const directUsage = { inputTokens: 0, outputTokens: 0, received: false }
   const hasTools = !!sessionForRun.tools?.length && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
 
+  let durationMs = 0
+  const startTs = Date.now()
   try {
     // Heartbeat runs get a small tail of recent messages so the agent can see
     // prior findings and avoid repeating the same searches. Full history is
@@ -747,7 +811,6 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       : undefined
 
     console.log(`[chat-execution] provider=${providerType}, hasTools=${hasTools}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, tools=${(sessionForRun.tools || []).length}`)
-
     fullResponse = hasTools
       ? (await streamAgentChat({
           session: sessionForRun,
@@ -772,8 +835,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           onUsage: (u) => { directUsage.inputTokens = u.inputTokens; directUsage.outputTokens = u.outputTokens; directUsage.received = true },
           signal: abortController.signal,
         })
-  } catch (err: any) {
-    errorMessage = err?.message || String(err)
+    durationMs = Date.now() - startTs
+  } catch (err: unknown) {
+    errorMessage = err instanceof Error ? err.message : String(err)
     const failureText = errorMessage || 'Run failed.'
     markProviderFailure(providerType, failureText)
     emit({ t: 'err', text: failureText })
@@ -811,6 +875,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         totalTokens,
         estimatedCost: cost,
         timestamp: Date.now(),
+        durationMs,
       }
       appendUsage(sessionId, usageRecord)
       emit({
@@ -1024,6 +1089,18 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   let heartbeatClassification: 'suppress' | 'strip' | 'keep' | null = null
   if (isHeartbeatRun && textForPersistence.length > 0) {
     heartbeatClassification = classifyHeartbeatResponse(textForPersistence, heartbeatConfig?.ackMaxChars ?? 300, toolEvents.length > 0)
+
+    // Deduplication logic from OpenClaw (nagging prevention)
+    // If the model repeats itself exactly within 24h, suppress the heartbeat alert.
+    if (heartbeatClassification !== 'suppress' && !toolEvents.length) {
+      const prevText = session.lastHeartbeatText || ''
+      const prevSentAt = session.lastHeartbeatSentAt || 0
+      const isDuplicate = prevText.trim() === textForPersistence.trim()
+        && (Date.now() - prevSentAt) < 24 * 60 * 60 * 1000
+      if (isDuplicate) {
+        heartbeatClassification = 'suppress'
+      }
+    }
   }
 
   // Emit WS notification for every heartbeat completion so UI can show pulse
@@ -1093,6 +1170,10 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         current.messages[current.messages.length - 1] = nextAssistantMessage
       } else {
         current.messages.push(nextAssistantMessage)
+      }
+      if (isHeartbeatRun) {
+        current.lastHeartbeatText = persistedText
+        current.lastHeartbeatSentAt = nowTs
       }
       changed = true
 
@@ -1184,5 +1265,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     persisted: shouldPersistAssistant,
     toolEvents,
     error: errorMessage,
+    inputTokens: accumulatedUsage.inputTokens || undefined,
+    outputTokens: accumulatedUsage.outputTokens || undefined,
+    estimatedCost: accumulatedUsage.estimatedCost || undefined,
   }
 }

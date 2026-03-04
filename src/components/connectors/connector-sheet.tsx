@@ -12,6 +12,7 @@ import { AgentPickerList } from '@/components/shared/agent-picker-list'
 import { ChatroomPickerList } from '@/components/shared/chatroom-picker-list'
 import { SheetFooter } from '@/components/shared/sheet-footer'
 import { SectionLabel } from '@/components/shared/section-label'
+import { HintTip } from '@/components/shared/hint-tip'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { ConnectorHealth } from '@/components/connectors/connector-health'
 
@@ -643,12 +644,18 @@ export function ConnectorSheet() {
       {/* Platform-specific config */}
       {[...platformConfig.configFields, ...COMMON_CONFIG_FIELDS].map((field) => {
         const isTagField = field.key === 'allowedJids' || field.key === 'channelIds' || field.key === 'chatIds' || field.key === 'allowFrom'
+        const fieldHint: Record<string, string> = {
+          channelIds: "Find these in your platform's developer settings. Leave empty to allow all channels",
+          chatIds: "Find these in your platform's developer settings. Leave empty to allow all channels",
+          allowedJids: "Phone numbers in international format (e.g. 447xxx). Leave empty to allow all",
+        }
         if (isTagField) {
           const tags = (config[field.key] || '').split(',').map((s) => s.trim()).filter(Boolean)
           return (
             <div key={field.key} className="mb-6">
-              <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+              <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
                 {field.label} <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+                {fieldHint[field.key] && <HintTip text={fieldHint[field.key]} />}
               </label>
               {field.help && <p className="text-[12px] text-text-3/60 mb-2">{field.help}</p>}
               <div className="flex flex-wrap gap-2 mb-2">

@@ -12,6 +12,7 @@ import {
 } from '@/lib/runtime-loop'
 import type { LoopMode } from '@/types'
 import type { SettingsSectionProps } from './types'
+import { HintTip } from '@/components/shared/hint-tip'
 
 export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: SettingsSectionProps) {
   const loopMode: LoopMode = appSettings.loopMode === 'ongoing' ? 'ongoing' : 'bounded'
@@ -25,7 +26,7 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
         Choose bounded or ongoing agent loops and set safety guards for task execution.
       </p>
       <div className="p-6 rounded-[18px] bg-surface border border-white/[0.06]">
-        <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Loop Mode</label>
+        <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Loop Mode <HintTip text="Bounded = fixed max steps. Ongoing = runs until the task completes (with a safety cap)" /></label>
         <div className="grid grid-cols-2 gap-2 mb-5">
           {([
             { id: 'bounded' as const, name: 'Bounded' },
@@ -48,7 +49,7 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
         {loopMode === 'bounded' ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
             <div>
-              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Agent Steps</label>
+              <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Agent Steps <HintTip text="Maximum actions an agent can take before stopping — prevents infinite loops" /></label>
               <input
                 type="number"
                 min={1}
@@ -63,7 +64,7 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
               />
             </div>
             <div>
-              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Orchestrator Steps</label>
+              <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Orchestrator Steps <HintTip text="Maximum tool calls the orchestrator can make when coordinating multiple agents" /></label>
               <input
                 type="number"
                 min={1}
@@ -78,7 +79,7 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
               />
             </div>
             <div>
-              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Legacy Turns</label>
+              <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Legacy Turns <HintTip text="Max conversation turns for older orchestration mode — increase if agents get cut off mid-task" /></label>
               <input
                 type="number"
                 min={1}

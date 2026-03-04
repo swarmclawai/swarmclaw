@@ -13,6 +13,7 @@ import { extractTaskResult, formatResultBody } from './task-result'
 import { getCheckpointSaver } from './langgraph-checkpoint'
 import { isProtectedMainSession } from './main-session'
 import { cascadeUnblock } from './dag-validation'
+import { performGuardianRollback } from './guardian'
 import type { Agent, BoardTask, Connector, Message } from '@/types'
 
 // HMR-safe: pin processing flag to globalThis so hot reloads don't reset it
@@ -802,6 +803,32 @@ function scheduleRetryOrDeadLetter(task: BoardTask, reason: string): 'retry' | '
     text: `Task moved to dead-letter after ${task.attempts}/${task.maxAttempts} attempts.\n\nReason: ${reason}`,
     createdAt: now,
   })
+
+  // Guardian Auto-Rollback
+  const agents = loadAgents()
+  const agent = task.agentId ? agents[task.agentId] : null
+  if (agent?.autoRecovery) {
+    const cwd = task.projectId 
+      ? path.join(WORKSPACE_DIR, 'projects', task.projectId) 
+      : WORKSPACE_DIR
+    const rollback = performGuardianRollback(cwd)
+    if (rollback.ok) {
+      task.comments.push({
+        id: genId(),
+        author: 'Guardian',
+        text: `Auto-recovery triggered: Workspace successfully rolled back to last clean state.`,
+        createdAt: now + 1,
+      })
+    } else {
+      task.comments.push({
+        id: genId(),
+        author: 'Guardian',
+        text: `Auto-recovery failed: ${rollback.reason}`,
+        createdAt: now + 1,
+      })
+    }
+  }
+
   return 'dead_lettered'
 }
 

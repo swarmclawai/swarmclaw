@@ -2,27 +2,37 @@ import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { ToolBuildContext } from './context'
 import { truncate, MAX_OUTPUT } from './context'
+import { withRetry } from '../tool-retry'
+
+interface HttpRequestArgs {
+  method: string
+  url: string
+  headers?: Record<string, string>
+  body?: string
+  timeoutSec?: number
+  followRedirects?: boolean
+}
 
 export function buildHttpTools(bctx: ToolBuildContext): StructuredToolInterface[] {
   if (!bctx.hasTool('http_request')) return []
 
   return [
     tool(
-      async ({ method, url, headers, body, timeoutSec, followRedirects }) => {
+      (args: HttpRequestArgs) => withRetry(async (_a: HttpRequestArgs) => {
         try {
-          const timeout = Math.max(1, Math.min(timeoutSec ?? 30, 120)) * 1000
+          const timeout = Math.max(1, Math.min(_a.timeoutSec ?? 30, 120)) * 1000
           const init: RequestInit = {
-            method,
-            headers: (headers ?? undefined) as Record<string, string> | undefined,
+            method: _a.method,
+            headers: (_a.headers ?? undefined) as Record<string, string> | undefined,
             signal: AbortSignal.timeout(timeout),
           }
-          if (body && method !== 'GET' && method !== 'HEAD') {
-            init.body = body
+          if (_a.body && _a.method !== 'GET' && _a.method !== 'HEAD') {
+            init.body = _a.body
           }
-          if (followRedirects === false) {
+          if (_a.followRedirects === false) {
             init.redirect = 'manual'
           }
-          const res = await fetch(url, init)
+          const res = await fetch(_a.url, init)
           const resHeaders: Record<string, string> = {}
           for (const key of ['content-type', 'location', 'x-request-id', 'retry-after', 'content-length']) {
             const val = res.headers.get(key)
@@ -39,7 +49,7 @@ export function buildHttpTools(bctx: ToolBuildContext): StructuredToolInterface[
         } catch (err: unknown) {
           return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
         }
-      },
+      }, args),
       {
         name: 'http_request',
         description: 'Make an HTTP API request. Supports all methods, custom headers, and request bodies. Returns status, headers, and body.',

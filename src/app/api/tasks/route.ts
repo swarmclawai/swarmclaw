@@ -11,6 +11,7 @@ import { notify } from '@/lib/server/ws-hub'
 import { computeTaskFingerprint, findDuplicateTask } from '@/lib/task-dedupe'
 import { resolveTaskAgentFromDescription } from '@/lib/server/task-mention'
 import { validateDag } from '@/lib/server/dag-validation'
+import { getPluginManager } from '@/lib/server/plugins'
 
 export async function GET(req: Request) {
   // Keep completed queue integrity even if daemon is not running.
@@ -162,6 +163,7 @@ export async function POST(req: Request) {
     if (validation.ok) {
       tasks[id].completedAt = Date.now()
       tasks[id].error = null
+      getPluginManager().runHook('onTaskComplete', { taskId: id, result: tasks[id].result })
     } else {
       tasks[id].status = 'failed'
       tasks[id].completedAt = null

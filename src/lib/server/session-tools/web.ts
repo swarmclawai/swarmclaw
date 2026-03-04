@@ -9,6 +9,7 @@ import { spawnSync } from 'child_process'
 import { safePath, truncate, MAX_OUTPUT, findBinaryOnPath } from './context'
 import { getSearchProvider } from './search-providers'
 import { dedupeScreenshotMarkdownLines } from './web-output'
+import { withRetry } from '../tool-retry'
 
 // ---------------------------------------------------------------------------
 // Search result compression — summarize verbose results before injecting into context
@@ -32,7 +33,7 @@ async function compressSearchResults(
   if (session.credentialId) {
     const creds = loadCredentials()
     const cred = creds[session.credentialId]
-    if (cred) apiKey = decryptKey(cred)
+    if (cred) apiKey = decryptKey(cred.encryptedKey)
   }
 
   const systemPrompt = 'You are a search result summarizer. Condense search results into a concise reference. Keep key facts, URLs, and data points. Remove filler and redundancy. Output plain text, not JSON.'
@@ -116,19 +117,19 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
   if (bctx.hasTool('web_search')) {
     tools.push(
       tool(
-        async ({ query, maxResults }) => {
+        ({ query, maxResults }) => withRetry(async (_args: { query: string; maxResults?: number }) => {
           try {
-            const limit = Math.min(maxResults || 5, 10)
+            const limit = Math.min(_args.maxResults || 5, 10)
             const { loadSettings } = await import('../storage')
             const settings = loadSettings()
             const provider = await getSearchProvider(settings)
-            const results = await provider.search(query, limit)
+            const results = await provider.search(_args.query, limit)
             if (results.length === 0) return 'No results found.'
             const raw = JSON.stringify(results, null, 2)
             // Compress search results if they exceed 2000 chars
             if (raw.length > 2000) {
               try {
-                const compressed = await compressSearchResults(results, query, bctx)
+                const compressed = await compressSearchResults(results, _args.query, bctx)
                 if (compressed) return compressed
               } catch {
                 // Compression failed — fall through to raw results
@@ -138,7 +139,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
           } catch (err: unknown) {
             return `Error searching web: ${err instanceof Error ? err.message : String(err)}`
           }
-        },
+        }, { query, maxResults }),
         {
           name: 'web_search',
           description: 'Search the web for information. Returns results with title, url, and snippet.',
@@ -156,30 +157,53 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
   if (bctx.hasTool('web_fetch')) {
     tools.push(
       tool(
-        async ({ url }) => {
+        ({ url }) => withRetry(async (_args: { url: string }) => {
           try {
-            const res = await fetch(url, {
+            const res = await fetch(_args.url, {
               headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SwarmClaw/1.0)' },
               signal: AbortSignal.timeout(15000),
             })
             if (!res.ok) return `HTTP ${res.status}: ${res.statusText}`
+            
+            const contentType = res.headers.get('content-type') || ''
+            if (contentType.includes('application/pdf')) {
+              try {
+                // @ts-expect-error pdf-parse has no type declarations
+                const pdfParse = (await import(/* webpackIgnore: true */ 'pdf-parse')).default
+                const arrayBuffer = await res.arrayBuffer()
+                const result = await pdfParse(Buffer.from(arrayBuffer))
+                return truncate(result.text, MAX_OUTPUT)
+              } catch (err: unknown) {
+                return `Error parsing PDF: ${err instanceof Error ? err.message : String(err)}`
+              }
+            }
+
             const html = await res.text()
+            
+            // Basic YouTube extraction (title and description)
+            if (_args.url.includes('youtube.com/watch') || _args.url.includes('youtu.be/')) {
+               const $ = cheerio.load(html)
+               const title = $('meta[property="og:title"]').attr('content') || $('title').text()
+               const description = $('meta[property="og:description"]').attr('content') || ''
+               return truncate(`YouTube Video: ${title}\n\nDescription:\n${description}\n\n(Transcript extraction requires a specialized tool or API)`, MAX_OUTPUT)
+            }
+
             // Use cheerio for robust HTML text extraction
             const $ = cheerio.load(html)
             $('script, style, noscript, nav, footer, header').remove()
             // Prefer article/main content if available
             const main = $('article, main, [role="main"]').first()
-            let text = (main.length ? main.text() : $('body').text())
+            const text = (main.length ? main.text() : $('body').text())
               .replace(/\s+/g, ' ')
               .trim()
             return truncate(text, MAX_OUTPUT)
           } catch (err: unknown) {
             return `Error fetching URL: ${err instanceof Error ? err.message : String(err)}`
           }
-        },
+        }, { url }),
         {
           name: 'web_fetch',
-          description: 'Fetch a URL and read its content (HTML stripped to text). How I read web pages and pull in external information.',
+          description: 'Fetch a URL and read its content. Supports HTML web pages and direct PDF links. Provides basic metadata for YouTube videos.',
           schema: z.object({
             url: z.string().describe('The URL to fetch'),
           }),

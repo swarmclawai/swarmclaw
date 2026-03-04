@@ -4,6 +4,8 @@ import fs from 'fs'
 import { genId } from '@/lib/id'
 import { getMemoryDb, getMemoryLookupLimits, storeMemoryImageAsset } from '../memory-db'
 import { loadSettings } from '../storage'
+import { expandQuery } from '../query-expansion'
+import type { MemoryEntry } from '@/types'
 import type { ToolBuildContext } from './context'
 
 export function buildMemoryTools(bctx: ToolBuildContext): StructuredToolInterface[] {
@@ -20,8 +22,9 @@ export function buildMemoryTools(bctx: ToolBuildContext): StructuredToolInterfac
           try {
             const scopeMode = scope || 'auto'
             const currentAgentId = ctx?.agentId || null
-            const canAccessMemory = (m: any) => !m?.agentId || m.agentId === currentAgentId
-            const filterScope = (rows: any[]) => {
+            const canAccessMemory = (m: MemoryEntry) => !m?.agentId || m.agentId === currentAgentId
+            const filterScope = (rows: MemoryEntry[]) => {
+              if (scopeMode === 'all') return rows
               if (scopeMode === 'shared') return rows.filter((m) => !m.agentId)
               if (scopeMode === 'agent') return rows.filter((m) => currentAgentId && m.agentId === currentAgentId)
               return rows.filter(canAccessMemory)
@@ -126,17 +129,42 @@ export function buildMemoryTools(bctx: ToolBuildContext): StructuredToolInterfac
               return formatEntry(found)
             }
             if (action === 'search') {
+              const queries = query ? await expandQuery(query) : [key || '']
+              
               if (effectiveDepth > 0) {
-                const result = memDb.searchWithLinked(query || key, undefined, effectiveDepth, maxPerLookup, effectiveLinkedLimit)
-                const accessible = filterScope(result.entries)
+                const allResults: MemoryEntry[] = []
+                const seenIds = new Set<string>()
+                let anyTruncated = false
+                for (const q of queries) {
+                  const result = memDb.searchWithLinked(q, undefined, effectiveDepth, maxPerLookup, effectiveLinkedLimit)
+                  if (result.truncated) anyTruncated = true
+                  for (const r of result.entries) {
+                    if (!seenIds.has(r.id)) {
+                      seenIds.add(r.id)
+                      allResults.push(r)
+                    }
+                  }
+                }
+                const accessible = filterScope(allResults)
                 if (!accessible.length) return 'No memories found.'
-                let output = accessible.map(formatEntry).join('\n')
-                if (result.truncated) output += `\n\n[Results truncated at ${maxPerLookup} memories / ${effectiveLinkedLimit} linked expansions]`
+                let output = accessible.slice(0, maxPerLookup).map(formatEntry).join('\n')
+                if (anyTruncated) output += `\n\n[Results truncated at ${maxPerLookup} memories / ${effectiveLinkedLimit} linked expansions]`
                 return output
               }
-              const results = filterScope(memDb.search(query || key))
-              if (!results.length) return 'No memories found.'
-              return results.slice(0, maxPerLookup).map(formatEntry).join('\n')
+
+              const allResults: MemoryEntry[] = []
+              const seenIds = new Set<string>()
+              for (const q of queries) {
+                const results = filterScope(memDb.search(q))
+                for (const r of results) {
+                  if (!seenIds.has(r.id)) {
+                    seenIds.add(r.id)
+                    allResults.push(r)
+                  }
+                }
+              }
+              if (!allResults.length) return 'No memories found.'
+              return allResults.slice(0, maxPerLookup).map(formatEntry).join('\n')
             }
             if (action === 'list') {
               const results = filterScope(memDb.list(undefined, maxPerLookup))
@@ -204,14 +232,14 @@ export function buildMemoryTools(bctx: ToolBuildContext): StructuredToolInterfac
         },
         {
           name: 'memory_tool',
-          description: 'My long-term memory — things I remember across conversations. I can store personal notes, recall past context, and build up knowledge over time. Memories can be private to me or shared with other agents. I can also attach files, link related memories, and contribute to a shared knowledge base. Actions: store, get, search, list, delete, link, unlink, knowledge_store, knowledge_search.',
+          description: `My long-term memory — things I remember across conversations. I can store personal notes, recall past context, and build up knowledge over time. Memories can be private to me or shared with other agents. I can also attach files, link related memories, and contribute to a shared knowledge base. Use \`scope: 'all'\` to search memories across all agents (useful when you need context from other agents' work).${bctx.hasTool('manage_agents') || bctx.hasTool('manage_sessions') ? ' As an orchestrator, cross-agent search with scope=all is especially useful for gathering context from sub-agents.' : ''} Actions: store, get, search, list, delete, link, unlink, knowledge_store, knowledge_search.`,
           schema: z.object({
             action: z.enum(['store', 'get', 'search', 'list', 'delete', 'link', 'unlink', 'knowledge_store', 'knowledge_search']).describe('The action to perform'),
             key: z.string().describe('For store: memory title. For get/delete/link/unlink: memory ID. For search: optional query fallback.'),
             value: z.string().optional().describe('The memory content (for store action)'),
             category: z.string().optional().describe('Category like "note", "fact", "preference", "project", "identity" (for store action, defaults to "note")'),
             query: z.string().optional().describe('Search query (alternative to key for search action)'),
-            scope: z.enum(['auto', 'shared', 'agent']).optional().describe('Scope hint: auto (shared + own), shared, or agent'),
+            scope: z.enum(['auto', 'shared', 'agent', 'all']).optional().describe('Scope hint: auto (shared + own), shared (shared only), agent (own only), or all (every agent — cross-agent search)'),
             filePaths: z.array(z.object({
               path: z.string().describe('File or folder path'),
               contextSnippet: z.string().optional().describe('Brief context about this file reference'),

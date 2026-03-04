@@ -9,6 +9,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/api-client'
 import type { BoardTask } from '@/types'
+import { HintTip } from '@/components/shared/hint-tip'
 
 type Range = '24h' | '7d' | '30d'
 
@@ -348,10 +349,31 @@ export function MetricsDashboard() {
             </>
           )}
 
+          {/* Latency by Provider */}
+          <ChartCard title="Average Latency by Provider (ms)">
+            {providerData.some(p => (data?.providerHealth?.[p.name]?.avgLatencyMs ?? 0) > 0) ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={providerData.map(p => ({ ...p, latency: Math.round(data?.providerHealth?.[p.name]?.avgLatencyMs || 0) }))} layout="vertical" margin={{ top: 5, right: 30, bottom: 5, left: 40 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis dataKey="name" type="category" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
+                  <Tooltip {...tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                  <Bar dataKey="latency" radius={[0, 4, 4, 0]}>
+                    {providerData.map((_entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyChart />
+            )}
+          </ChartCard>
+
           {/* Provider Health */}
           {data?.providerHealth && Object.keys(data.providerHealth).length > 0 && (
             <div>
-              <h3 className="font-display text-[14px] font-600 text-text-2 mb-3">Provider Health</h3>
+              <h3 className="font-display text-[14px] font-600 text-text-2 mb-3 flex items-center gap-2">Provider Health <HintTip text="API reliability and performance across your configured providers" /></h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Object.entries(data.providerHealth)
                   .sort(([, a], [, b]) => b.totalRequests - a.totalRequests)
@@ -367,13 +389,13 @@ export function MetricsDashboard() {
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
                         <span className="text-text-3">Requests</span>
                         <span className="text-text font-500 text-right">{h.totalRequests}</span>
-                        <span className="text-text-3">Error Rate</span>
+                        <span className="text-text-3 flex items-center gap-1">Error Rate <HintTip text="Percentage of API calls that failed" /></span>
                         <span className={`font-500 text-right ${errorRateColor(h.errorRate)}`}>
                           {(h.errorRate * 100).toFixed(1)}%
                         </span>
                         {h.avgLatencyMs > 0 && (
                           <>
-                            <span className="text-text-3">Avg Latency</span>
+                            <span className="text-text-3 flex items-center gap-1">Avg Latency <HintTip text="Average response time from the provider" /></span>
                             <span className="text-text font-500 text-right">{Math.round(h.avgLatencyMs)}ms</span>
                           </>
                         )}

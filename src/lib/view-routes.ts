@@ -9,6 +9,7 @@ export const VIEW_TO_PATH: Record<AppView, string> = {
   schedules: '/schedules',
   memory: '/memory',
   tasks: '/tasks',
+  approvals: '/approvals',
   secrets: '/secrets',
   providers: '/providers',
   skills: '/skills',

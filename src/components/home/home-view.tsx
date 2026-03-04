@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AreaChart, Area, ResponsiveContainer } from 'recharts'
+import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { api } from '@/lib/api-client'
 import type { Agent, Session, ActivityEntry, BoardTask, AppNotification } from '@/types'
+import { HintTip } from '@/components/shared/hint-tip'
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts
@@ -86,7 +87,7 @@ export function HomeView() {
   const setTaskSheetOpen = useAppStore((s) => s.setTaskSheetOpen)
   const setMessages = useChatStore((s) => s.setMessages)
   const [todayCost, setTodayCost] = useState(0)
-  const [costTrend, setCostTrend] = useState<{ cost: number }[]>([])
+  const [costTrend, setCostTrend] = useState<{ cost: number; bucket: string }[]>([])
 
   const allAgents = Object.values(agents).filter((a) => !a.trashedAt)
   const pinnedAgents = allAgents.filter((a) => a.pinned)
@@ -146,11 +147,13 @@ export function HomeView() {
     void loadSchedules()
     void loadNotifications()
     void loadConnectors()
-    api<{ records: Array<{ estimatedCost: number }>; timeSeries: Array<{ cost: number }> }>('GET', '/usage?range=7d')
+    api<{ records: Array<{ estimatedCost: number }>; timeSeries: Array<{ cost: number; bucket: string }> }>('GET', '/usage?range=7d')
       .then((data) => {
-        const total = (data.records || []).reduce((s, r) => s + (r.estimatedCost || 0), 0)
-        setTodayCost(total)
-        setCostTrend((data.timeSeries || []).map((pt) => ({ cost: pt.cost })))
+        const series = (data.timeSeries || []).map((pt: { cost: number; bucket?: string }) => ({ cost: pt.cost, bucket: pt.bucket || '' }))
+        setCostTrend(series)
+        const todayBucket = new Date().toISOString().slice(0, 10)
+        const todayPt = series.find((pt) => pt.bucket === todayBucket)
+        setTodayCost(todayPt?.cost || 0)
       })
       .catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -200,25 +203,43 @@ export function HomeView() {
 
         {/* Quick Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <StatCard label="Agents" value={String(agentCount)} />
-          <StatCard label="Active Tasks" value={String(activeTaskCount)} accent={activeTaskCount > 0} />
-          <StatCard label="Today's Cost" value={`$${todayCost.toFixed(2)}`} />
-          <StatCard label="Connectors" value={`${activeConnectorCount}/${allConnectors.length}`} accent={activeConnectorCount > 0} />
+          <StatCard label="Agents" value={String(agentCount)} hint="Total active agents configured in your dashboard" />
+          <StatCard label="Active Tasks" value={String(activeTaskCount)} accent={activeTaskCount > 0} hint="Tasks currently running or queued for execution" />
+          <StatCard label="Today's Cost" value={`$${todayCost.toFixed(2)}`} hint="Estimated API cost for today across all providers" />
+          <StatCard label="Connectors" value={`${activeConnectorCount}/${allConnectors.length}`} accent={activeConnectorCount > 0} hint="Active bridges to chat platforms (Discord, Slack, etc.)" />
         </div>
 
         {/* Cost trend sparkline */}
         {costTrend.length > 1 && (
           <div className="mb-10 px-1">
-            <p className="text-[10px] text-text-3/50 uppercase tracking-wider mb-1">7-day cost trend</p>
+            <p className="text-[10px] text-text-3/50 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              7-day cost trend <HintTip text="Daily API spend over the past week — hover for details" />
+            </p>
             <ResponsiveContainer width="100%" height={60}>
-              <AreaChart data={costTrend} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+              <AreaChart data={costTrend} margin={{ top: 2, right: 0, bottom: 0, left: 0 }} style={{ cursor: 'crosshair' }}>
                 <defs>
                   <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#818CF8" stopOpacity={0.3} />
                     <stop offset="100%" stopColor="#818CF8" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <Area type="monotone" dataKey="cost" stroke="#818CF8" strokeWidth={1.5} fill="url(#costGrad)" dot={false} />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.[0]) return null
+                    const d = payload[0].payload as { cost: number; bucket: string }
+                    const label = d.bucket
+                      ? new Date(d.bucket + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+                      : ''
+                    return (
+                      <div className="rounded-[8px] bg-surface border border-white/[0.1] px-3 py-2 shadow-lg">
+                        <p className="text-[11px] text-text-3/70 m-0">{label}</p>
+                        <p className="text-[14px] font-600 text-text m-0 mt-0.5">${d.cost.toFixed(4)}</p>
+                      </div>
+                    )
+                  }}
+                  cursor={{ stroke: '#818CF8', strokeWidth: 1, strokeDasharray: '3 3' }}
+                />
+                <Area type="monotone" dataKey="cost" stroke="#818CF8" strokeWidth={1.5} fill="url(#costGrad)" dot={false} activeDot={{ r: 3, fill: '#818CF8', stroke: '#818CF8' }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -505,10 +526,13 @@ function SectionHeader({ label, onViewAll }: { label: string; onViewAll?: () => 
   )
 }
 
-function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function StatCard({ label, value, accent, hint }: { label: string; value: string; accent?: boolean; hint?: string }) {
   return (
     <div className="px-4 py-3 rounded-[12px] bg-white/[0.03] border border-white/[0.06]">
-      <p className="text-[11px] font-600 text-text-3/60 uppercase tracking-wider mb-1">{label}</p>
+      <p className="text-[11px] font-600 text-text-3/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+        {label}
+        {hint && <HintTip text={hint} />}
+      </p>
       <p className={`font-display text-[20px] font-700 tracking-[-0.02em] ${accent ? 'text-accent-bright' : 'text-text'}`}>{value}</p>
     </div>
   )

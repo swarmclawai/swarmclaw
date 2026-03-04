@@ -31,6 +31,7 @@ export const PLATFORM_TOOLS: ToolDefinition[] = [
   { id: 'manage_agents', label: 'Agents', description: 'Create, edit, and delete agents' },
   { id: 'manage_tasks', label: 'Tasks', description: 'Create, edit, and delete tasks' },
   { id: 'manage_schedules', label: 'Schedules', description: 'Create, edit, and delete schedules' },
+  { id: 'schedule_wake', label: 'Reminders', description: 'Schedule a proactive wake event in the current chat' },
   { id: 'manage_skills', label: 'Skills', description: 'Create, edit, and delete skills' },
   { id: 'manage_documents', label: 'Documents', description: 'Upload, search, and delete indexed documents' },
   { id: 'manage_webhooks', label: 'Webhooks', description: 'Register webhooks that trigger agent workflows' },

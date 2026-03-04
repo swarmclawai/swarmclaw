@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
+import type { Session } from '@/types'
 import { loadSettings, loadSessions, saveSessions, loadMcpServers } from '../storage'
 import { loadRuntimeSettings } from '../runtime-settings'
 import { log } from '../logger'
@@ -23,6 +24,9 @@ import { buildHttpTools } from './http'
 import { buildGitTools } from './git'
 import { buildWalletTools } from './wallet'
 import { buildOpenClawWorkspaceTools } from './openclaw-workspace'
+import { buildScheduleTools } from './schedule'
+import { getPluginManager } from '../plugins'
+import { jsonSchemaToZod } from '../mcp-client'
 
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
@@ -113,6 +117,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
     ...buildGitTools(bctx),
     ...buildWalletTools(bctx),
     ...buildOpenClawWorkspaceTools(bctx),
+    ...buildScheduleTools(bctx),
   )
 
   // ---------------------------------------------------------------------------
@@ -149,6 +154,35 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
         await disconnectMcpServer(conn.client, conn.transport)
       }
     })
+  }
+
+  // ---------------------------------------------------------------------------
+  // Plugin tools — native tools provided by SwarmClaw plugins
+  // ---------------------------------------------------------------------------
+  try {
+    const pluginTools = getPluginManager().getPluginTools()
+    for (const pt of pluginTools) {
+      if (!disabledMcpToolNames.has(pt.name)) {
+        tools.push(
+          tool(
+            async (args) => {
+              const res = await pt.execute(args as Record<string, unknown>, {
+                session: { id: ctx?.sessionId || 'unknown', agentId: ctx?.agentId } as Session,
+                message: '',
+              })
+              return typeof res === 'string' ? res : JSON.stringify(res)
+            },
+            {
+              name: pt.name,
+              description: pt.description,
+              schema: jsonSchemaToZod(pt.parameters),
+            }
+          )
+        )
+      }
+    }
+  } catch (err: unknown) {
+    log.error('session-tools', 'Failed to load plugin tools', { error: err instanceof Error ? err.message : String(err) })
   }
 
   // request_tool_access: always available

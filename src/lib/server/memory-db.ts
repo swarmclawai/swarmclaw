@@ -5,6 +5,7 @@ import { createHash } from 'crypto'
 import { genId } from '@/lib/id'
 import type { MemoryEntry, FileReference, MemoryImage, MemoryReference } from '@/types'
 import { getEmbedding, cosineSimilarity, serializeEmbedding, deserializeEmbedding } from './embeddings'
+import { applyMMR } from './mmr'
 import { loadSettings } from './storage'
 import {
   normalizeLinkedMemoryIds,
@@ -23,8 +24,8 @@ const MAX_IMAGE_INPUT_BYTES = 10 * 1024 * 1024 // 10MB
 const IMAGE_EXT_WHITELIST = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'])
 export const MAX_FTS_QUERY_TERMS = 6
 export const MAX_FTS_TERM_LENGTH = 48
-const MAX_FTS_RESULT_ROWS = 30
-const MAX_MERGED_RESULTS = 50
+const MAX_FTS_RESULT_ROWS = 50
+const MAX_MERGED_RESULTS = 80
 
 export const MEMORY_FTS_STOP_WORDS = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'how',
@@ -865,9 +866,12 @@ function initDb() {
 
       // Attempt vector search (synchronous — uses cached embedding if available)
       const vectorSimilarityScores = new Map<string, number>()
+      const rawEmbeddings = new Map<string, number[]>()
       let vectorResults: MemoryEntry[] = []
+      let queryEmbeddingResult: number[] | undefined
       try {
         const queryEmbedding = getEmbeddingSync(query)
+        queryEmbeddingResult = queryEmbedding || undefined
         if (queryEmbedding) {
           const rows = agentId
             ? getAllWithEmbeddingsByAgent.all(agentId) as any[]
@@ -877,7 +881,7 @@ function initDb() {
             .map((row) => {
               const emb = deserializeEmbedding(row.embedding)
               const score = cosineSimilarity(queryEmbedding, emb)
-              return { row, score }
+              return { row, score, emb }
             })
             .filter((s) => s.score > 0.3) // relevance threshold
             .sort((a, b) => b.score - a.score)
@@ -886,6 +890,7 @@ function initDb() {
           vectorResults = scored.map((s) => {
             const entry = rowToEntry(s.row)
             vectorSimilarityScores.set(entry.id, s.score)
+            rawEmbeddings.set(entry.id, s.emb)
             return entry
           })
         }
@@ -913,11 +918,17 @@ function initDb() {
         const reinforcement = Math.log((entry.reinforcementCount || 0) + 1) + 1
         const pinnedBoost = entry.pinned ? 1.5 : 1.0
         const salience = similarity * recencyDecay * reinforcement * pinnedBoost
-        return { entry, salience }
+        return { entry, salience, embedding: rawEmbeddings.get(entry.id) }
       })
-      salienceScored.sort((a, b) => b.salience - a.salience)
-
-      const out = salienceScored.slice(0, MAX_MERGED_RESULTS).map((s) => s.entry)
+      
+      // Apply MMR if we have a query embedding, otherwise standard sort
+      let out: MemoryEntry[] = []
+      if (queryEmbeddingResult) {
+        out = applyMMR(queryEmbeddingResult, salienceScored, MAX_MERGED_RESULTS, 0.6) // Lambda 0.6 = favor relevance slightly over diversity
+      } else {
+        salienceScored.sort((a, b) => b.salience - a.salience)
+        out = salienceScored.slice(0, MAX_MERGED_RESULTS).map((s) => s.entry)
+      }
 
       // Bump access counts for returned results (non-blocking)
       if (out.length) {

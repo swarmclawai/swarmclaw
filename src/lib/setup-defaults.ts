@@ -157,6 +157,7 @@ export const STARTER_AGENT_TOOLS = [
   'manage_agents',
   'manage_tasks',
   'manage_schedules',
+  'schedule_wake',
   'manage_skills',
   'manage_connectors',
   'manage_sessions',
