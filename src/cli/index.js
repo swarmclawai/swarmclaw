@@ -21,6 +21,7 @@ const COMMAND_GROUPS = [
       cmd('restore', 'POST', '/agents/trash', 'Restore a trashed agent', { expectsJsonBody: true }),
       cmd('purge', 'DELETE', '/agents/trash', 'Permanently delete a trashed agent', { expectsJsonBody: true }),
       cmd('thread', 'POST', '/agents/:id/thread', 'Get or create agent thread session'),
+      cmd('clone', 'POST', '/agents/:id/clone', 'Clone an agent'),
     ],
   },
   {
@@ -77,6 +78,7 @@ const COMMAND_GROUPS = [
       cmd('pin', 'POST', '/chatrooms/:id/pins', 'Toggle pin on a chatroom message', {
         expectsJsonBody: true,
       }),
+      cmd('moderate', 'POST', '/chatrooms/:id/moderate', 'Run moderation action on a chatroom', { expectsJsonBody: true }),
     ],
   },
   {
@@ -109,6 +111,7 @@ const COMMAND_GROUPS = [
         expectsJsonBody: true,
         defaultBody: { action: 'repair' },
       }),
+      cmd('health', 'GET', '/connectors/:id/health', 'Get connector health status'),
     ],
   },
   {
@@ -289,6 +292,8 @@ const COMMAND_GROUPS = [
       cmd('skills-install', 'POST', '/openclaw/skills/install', 'Install OpenClaw skill dependencies', { expectsJsonBody: true }),
       cmd('skills-remove', 'POST', '/openclaw/skills/remove', 'Remove OpenClaw skill', { expectsJsonBody: true }),
       cmd('sync', 'POST', '/openclaw/sync', 'Run OpenClaw sync action', { expectsJsonBody: true }),
+      cmd('doctor', 'GET', '/openclaw/doctor', 'Run OpenClaw doctor check (read-only)'),
+      cmd('doctor-fix', 'POST', '/openclaw/doctor', 'Run OpenClaw doctor with auto-fix', { expectsJsonBody: true }),
     ],
   },
   {
