@@ -13,7 +13,7 @@ import {
   active,
 } from './storage'
 import { getProvider } from '@/lib/providers'
-import { estimateCost } from './cost'
+import { estimateCost, checkBudget } from './cost'
 import { log } from './logger'
 import { logExecution } from './execution-log'
 import { streamAgentChat } from './stream-agent-chat'
@@ -582,6 +582,45 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     onEvent?.({ t: 'err', text: `Capability policy blocked tools for this run: ${blockedSummary}` })
   }
 
+  // --- Agent monthly budget enforcement ---
+  if (session.agentId) {
+    const agentsMap = loadAgents()
+    const agent = agentsMap[session.agentId]
+    if (agent?.monthlyBudget && agent.monthlyBudget > 0) {
+      const budgetResult = checkBudget(agent)
+      if (!budgetResult.ok) {
+        const action = agent.budgetAction || 'warn'
+        if (action === 'block') {
+          const budgetError = budgetResult.message || `Agent budget exceeded: $${budgetResult.spend.toFixed(4)} / $${budgetResult.budget.toFixed(2)}`
+          onEvent?.({ t: 'err', text: budgetError })
+
+          let persisted = false
+          if (!internal) {
+            session.messages.push({
+              role: 'assistant',
+              text: budgetError,
+              time: Date.now(),
+            })
+            session.lastActiveAt = Date.now()
+            saveSessions(sessions)
+            persisted = true
+          }
+
+          return {
+            runId,
+            sessionId,
+            text: budgetError,
+            persisted,
+            toolEvents: [],
+            error: budgetError,
+          }
+        }
+        // budgetAction === 'warn': emit a warning but continue
+        onEvent?.({ t: 'status', text: JSON.stringify({ budgetWarning: budgetResult.message }) })
+      }
+    }
+  }
+
   const dailySpendLimitUsd = parseUsdLimit(appSettings.safetyMaxDailySpendUsd)
   if (dailySpendLimitUsd !== null) {
     const todaySpendUsd = getTodaySpendUsd()
@@ -731,6 +770,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           active,
           loadHistory: isAutoRunNoHistory ? () => getSessionMessages(sessionId).slice(-6) : (sid: string) => applyContextClearBoundary(getSessionMessages(sid)),
           onUsage: (u) => { directUsage.inputTokens = u.inputTokens; directUsage.outputTokens = u.outputTokens; directUsage.received = true },
+          signal: abortController.signal,
         })
   } catch (err: any) {
     errorMessage = err?.message || String(err)

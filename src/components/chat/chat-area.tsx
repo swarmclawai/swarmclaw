@@ -324,17 +324,32 @@ export function ChatArea() {
       <DevServerBar status={devServerStatus} onStop={handleStopDevServer} />
 
       {messagesLoading && !messages.length ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3" style={{ animation: 'fade-in 0.2s ease' }}>
-            <div className="relative w-10 h-10">
-              <div className="absolute inset-0 rounded-full border-2 border-white/[0.06]" />
-              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-accent-bright animate-spin" />
+        <div className="flex-1 flex flex-col gap-5 px-4 md:px-12 lg:px-16 py-8" style={{ animation: 'fade-in 0.2s ease' }}>
+          {/* Skeleton message bubbles */}
+          <div className="flex gap-3 max-w-[70%]">
+            <div className="w-8 h-8 rounded-full bg-white/[0.06] animate-pulse shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3 w-24 rounded bg-white/[0.06] animate-pulse" />
+              <div className="h-16 rounded-[12px] bg-white/[0.04] animate-pulse" />
             </div>
-            <span className="text-[13px] text-text-3/50 font-500">Loading messages...</span>
+          </div>
+          <div className="flex gap-3 max-w-[60%] self-end flex-row-reverse">
+            <div className="w-8 h-8 rounded-full bg-white/[0.06] animate-pulse shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3 w-16 rounded bg-white/[0.06] animate-pulse ml-auto" />
+              <div className="h-10 rounded-[12px] bg-white/[0.04] animate-pulse" />
+            </div>
+          </div>
+          <div className="flex gap-3 max-w-[65%]">
+            <div className="w-8 h-8 rounded-full bg-white/[0.06] animate-pulse shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3 w-20 rounded bg-white/[0.06] animate-pulse" />
+              <div className="h-24 rounded-[12px] bg-white/[0.04] animate-pulse" />
+            </div>
           </div>
         </div>
       ) : isEmpty ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-6 pb-4 relative">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 pb-[120px] md:pb-4 relative">
           {/* Atmospheric background glow */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             <div className="absolute top-[20%] left-[50%] -translate-x-1/2 w-[500px] h-[300px]"

@@ -397,7 +397,7 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
       <div
         ref={scrollRef}
         onScroll={updateScrollState}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 md:px-12 lg:px-16 pt-6 pb-10 fade-up"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 md:px-12 lg:px-16 pt-6 pb-[120px] md:pb-10 fade-up"
       >
         <div className="flex flex-col gap-6 relative">
           {/* Chat spine — vertical line for assistant messages */}

@@ -5,6 +5,8 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { fetchMessages } from '@/lib/sessions'
+import { api } from '@/lib/api-client'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import type { Agent, Session } from '@/types'
 import { AgentAvatar } from './agent-avatar'
 import { toast } from 'sonner'
@@ -32,6 +34,39 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
   const chatrooms = useChatroomStore((s) => s.chatrooms)
   const chatroomStreaming = useChatroomStore((s) => s.streamingAgents)
   const [search, setSearch] = useState('')
+  const [bulkMode, setBulkMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const loadSessions = useAppStore((s) => s.loadSessions)
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const handleBulkDelete = useCallback(async () => {
+    // Collect session IDs for selected agents
+    const sessionIds = [...selectedIds]
+      .map((agentId) => {
+        const agent = agents[agentId]
+        return agent?.threadSessionId
+      })
+      .filter(Boolean) as string[]
+    if (!sessionIds.length) { toast.error('No chats to delete'); return }
+    try {
+      await api('DELETE', '/sessions', { ids: sessionIds })
+      await loadSessions()
+      toast.success(`Deleted ${sessionIds.length} chat(s)`)
+      setBulkMode(false)
+      setSelectedIds(new Set())
+    } catch {
+      toast.error('Failed to delete chats')
+    }
+  }, [selectedIds, agents, loadSessions])
 
   // FLIP animation refs
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map())
@@ -169,7 +204,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      {/* Filter control */}
+      {/* Filter control + bulk mode toggle */}
       {sortedAgents.length > 2 && (
         <div className="flex items-center gap-1 px-4 pt-2.5 pb-1">
           {(['all', 'active', 'recent'] as const).map((f) => (
@@ -185,6 +220,28 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
               {f}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => { setBulkMode(!bulkMode); setSelectedIds(new Set()) }}
+            aria-label={bulkMode ? 'Exit selection mode' : 'Select chats'}
+            className={`ml-auto label-mono px-2.5 py-1 rounded-[6px] border-none cursor-pointer transition-colors
+              ${bulkMode ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2 hover:bg-white/[0.04]'}`}
+          >
+            {bulkMode ? 'Cancel' : 'Select'}
+          </button>
+        </div>
+      )}
+      {/* Bulk action bar */}
+      {bulkMode && selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-white/[0.02] border-b border-white/[0.04]">
+          <span className="text-[12px] text-text-2 font-500 flex-1">{selectedIds.size} selected</span>
+          <button
+            onClick={() => setConfirmBulkDelete(true)}
+            className="px-3 py-1.5 rounded-[8px] border-none bg-red-500/10 text-red-400 text-[12px] font-600 cursor-pointer hover:bg-red-500/20 transition-colors"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Delete
+          </button>
         </div>
       )}
       {(sortedAgents.length > 5 || search) && (
@@ -219,9 +276,19 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
                 ${isActive
                   ? 'bg-accent-soft/80 border border-accent-bright/20'
                   : 'bg-transparent hover:bg-white/[0.02]'}`}
-              onClick={() => handleSelect(agent)}
+              onClick={() => bulkMode ? toggleSelected(agent.id) : handleSelect(agent)}
             >
               <div className="flex items-center gap-2.5">
+                {bulkMode && (
+                  <div className={`w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 transition-colors
+                    ${selectedIds.has(agent.id) ? 'bg-accent-bright border-accent-bright' : 'border-white/20 bg-transparent'}`}>
+                    {selectedIds.has(agent.id) && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </div>
+                )}
                 <div className="relative shrink-0">
                   <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={36} />
                   <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg ${
@@ -303,6 +370,15 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
           )
         })}
       </div>
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title="Delete Chats"
+        message={`Delete ${selectedIds.size} chat(s)? This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => { setConfirmBulkDelete(false); handleBulkDelete() }}
+        onCancel={() => setConfirmBulkDelete(false)}
+      />
     </div>
   )
 }

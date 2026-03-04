@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadUsage } from '@/lib/server/storage'
+import { loadUsage, loadSessions, loadAgents } from '@/lib/server/storage'
 import type { UsageRecord } from '@/types'
 export const dynamic = 'force-dynamic'
 
@@ -41,10 +41,14 @@ export async function GET(req: Request) {
     }
   }
 
+  // Build session→agent lookup
+  const sessions = loadSessions() as Record<string, { agentId?: string }>
+  const agents = loadAgents() as Record<string, { name?: string }>
+
   // Compute summaries
   let totalTokens = 0
   let totalCost = 0
-  const byAgent: Record<string, { tokens: number; cost: number }> = {}
+  const byAgent: Record<string, { name: string; cost: number; tokens: number; count: number }> = {}
   const byProvider: Record<string, { tokens: number; cost: number }> = {}
   const bucketMap: Record<string, { tokens: number; cost: number }> = {}
 
@@ -60,11 +64,16 @@ export async function GET(req: Request) {
     byProvider[prov].tokens += tokens
     byProvider[prov].cost += cost
 
-    // by agent (using sessionId as proxy — agents map to sessions)
-    const agentKey = r.sessionId || 'unknown'
-    if (!byAgent[agentKey]) byAgent[agentKey] = { tokens: 0, cost: 0 }
-    byAgent[agentKey].tokens += tokens
-    byAgent[agentKey].cost += cost
+    // by agent — resolve sessionId → agentId → agent name
+    const session = r.sessionId ? sessions[r.sessionId] : undefined
+    const agentId = session?.agentId || 'unknown'
+    const agentName = agentId !== 'unknown' && agents[agentId]?.name
+      ? agents[agentId].name
+      : agentId
+    if (!byAgent[agentId]) byAgent[agentId] = { name: agentName, cost: 0, tokens: 0, count: 0 }
+    byAgent[agentId].cost += cost
+    byAgent[agentId].tokens += tokens
+    byAgent[agentId].count += 1
 
     // time series bucketing
     const bk = bucketKey(r.timestamp || now, range)

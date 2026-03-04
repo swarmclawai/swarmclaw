@@ -29,6 +29,8 @@ export interface StreamChatOptions {
   active: Map<string, any>
   loadHistory: (sessionId: string) => any[]
   onUsage?: (usage: StreamChatUsage) => void
+  /** Abort signal from the caller — providers should use this to cancel in-flight requests. */
+  signal?: AbortSignal
 }
 
 interface BuiltinProviderConfig extends ProviderInfo {
@@ -351,6 +353,11 @@ export async function streamChatWithFailover(
           t: 'md',
           text: JSON.stringify({ failover: { from: credId, reason: err.message?.slice(0, 100) } }),
         })}\n\n`)
+        // Exponential backoff for rate-limit / server errors (skip for auth rotation)
+        if (statusCode !== 401) {
+          const delay = Math.min(500 * Math.pow(2, i), 8000)
+          await new Promise((r) => setTimeout(r, delay))
+        }
         continue
       }
       throw err

@@ -1,7 +1,7 @@
 import { loadSettings, loadSkills, loadCredentials, decryptKey } from './storage'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import { genId } from '@/lib/id'
-import type { Chatroom, Agent, Session, Message } from '@/types'
+import type { Chatroom, ChatroomMember, Agent, Session, Message } from '@/types'
 
 /** Resolve API key from an agent's credentialId */
 export function resolveApiKey(credentialId: string | null | undefined): string | null {
@@ -10,6 +10,27 @@ export function resolveApiKey(credentialId: string | null | undefined): string |
   const cred = creds[credentialId]
   if (!cred?.encryptedKey) return null
   try { return decryptKey(cred.encryptedKey) } catch { return null }
+}
+
+/** Derive chatroom members from the `members` array if present, otherwise fallback to `agentIds` with default 'member' role. */
+export function getMembers(chatroom: Chatroom): ChatroomMember[] {
+  if (chatroom.members?.length) return chatroom.members
+  return chatroom.agentIds.map((agentId) => ({ agentId, role: 'member' as const }))
+}
+
+/** Return the role of an agent in a chatroom, defaulting to 'member'. */
+export function getMemberRole(chatroom: Chatroom, agentId: string): string {
+  const members = getMembers(chatroom)
+  const member = members.find((m) => m.agentId === agentId)
+  return member?.role || 'member'
+}
+
+/** Check if an agent is currently muted in the chatroom. */
+export function isMuted(chatroom: Chatroom, agentId: string): boolean {
+  const members = getMembers(chatroom)
+  const member = members.find((m) => m.agentId === agentId)
+  if (!member?.mutedUntil) return false
+  return new Date(member.mutedUntil).getTime() > Date.now()
 }
 
 const COMPACTION_PREFIX = '[Conversation summary]'

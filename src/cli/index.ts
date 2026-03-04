@@ -2,14 +2,18 @@
 
 import { Command } from 'commander'
 import { pathToFileURL } from 'node:url'
+import {
+  SETUP_PROVIDERS,
+  DEFAULT_AGENTS,
+  STARTER_AGENT_TOOLS,
+  type SetupProvider,
+} from '../lib/setup-defaults.ts'
 
 interface CliContext {
   baseUrl: string
   accessKey: string
   rawOutput: boolean
 }
-
-type SetupProvider = 'openai' | 'anthropic' | 'ollama' | 'openclaw'
 
 interface SetupAuthStatus {
   firstTime?: boolean
@@ -23,34 +27,7 @@ interface SetupProviderCheckResponse {
   recommendedModel?: string
 }
 
-const SUPPORTED_SETUP_PROVIDERS = new Set<SetupProvider>(['openai', 'anthropic', 'ollama', 'openclaw'])
-
-const DEFAULT_SETUP_AGENTS: Record<SetupProvider, { name: string; description: string; systemPrompt: string; model: string }> = {
-  openai: {
-    name: 'Assistant',
-    description: 'A helpful GPT-powered assistant.',
-    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
-    model: 'gpt-4o',
-  },
-  anthropic: {
-    name: 'Assistant',
-    description: 'A helpful Claude-powered assistant.',
-    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
-    model: 'claude-sonnet-4-6',
-  },
-  ollama: {
-    name: 'Assistant',
-    description: 'A local assistant running through Ollama.',
-    systemPrompt: 'You are a helpful, pragmatic assistant. Be concise, concrete, and action-oriented.',
-    model: 'llama3',
-  },
-  openclaw: {
-    name: 'OpenClaw Operator',
-    description: 'A manager agent for talking to and coordinating OpenClaw instances.',
-    systemPrompt: 'You are an operator focused on reliable execution, clear status updates, and task completion.',
-    model: 'default',
-  },
-}
+const SUPPORTED_SETUP_PROVIDERS = new Set<SetupProvider>(SETUP_PROVIDERS.map((p) => p.id))
 
 const DEFAULT_BASE_URL =
   process.env.SWARMCLAW_URL
@@ -206,7 +183,8 @@ async function apiRequestWithAccessKey<T = unknown>(
 function normalizeSetupProvider(value: string | undefined): SetupProvider {
   const lower = (value || '').trim().toLowerCase()
   if (SUPPORTED_SETUP_PROVIDERS.has(lower as SetupProvider)) return lower as SetupProvider
-  throw new Error(`Unsupported provider "${value}". Supported: openai, anthropic, ollama, openclaw`)
+  const supported = SETUP_PROVIDERS.map((p) => p.id).join(', ')
+  throw new Error(`Unsupported provider "${value}". Supported: ${supported}`)
 }
 
 function maskToken(value: string): string {
@@ -285,6 +263,201 @@ async function runWithHandler(command: Command, task: (ctx: CliContext) => Promi
     const msg = err instanceof Error ? err.message : String(err)
     console.error(msg)
     process.exitCode = 1
+  }
+}
+
+async function readSecret(prompt: string): Promise<string> {
+  const { stdin, stdout } = process
+  stdout.write(prompt)
+  return new Promise((resolve) => {
+    let buf = ''
+    const wasRaw = stdin.isRaw
+    stdin.setRawMode?.(true)
+    stdin.resume()
+    stdin.setEncoding('utf8')
+    const onData = (ch: string) => {
+      if (ch === '\n' || ch === '\r') {
+        stdin.setRawMode?.(wasRaw ?? false)
+        stdin.pause()
+        stdin.removeListener('data', onData)
+        stdout.write('\n')
+        resolve(buf)
+      } else if (ch === '\u0003') {
+        // Ctrl+C
+        process.exit(130)
+      } else if (ch === '\u007f' || ch === '\b') {
+        buf = buf.slice(0, -1)
+      } else {
+        buf += ch
+      }
+    }
+    stdin.on('data', onData)
+  })
+}
+
+async function runInteractiveSetup(ctx: CliContext): Promise<unknown> {
+  const { createInterface } = await import('node:readline/promises')
+
+  const auth = await resolveSetupAccessKey(ctx)
+  const configuredProviders: string[] = []
+  const createdAgents: Array<{ name: string; provider: string; model: string }> = []
+
+  // Wraps readline so we can destroy/recreate after raw-mode readSecret
+  let rl = createInterface({ input: process.stdin, output: process.stdout })
+
+  const freshRl = () => {
+    try { rl.close() } catch { /* already closed */ }
+    rl = createInterface({ input: process.stdin, output: process.stdout })
+  }
+
+  const ask = async (question: string, defaultValue?: string): Promise<string> => {
+    const suffix = defaultValue ? ` (${defaultValue})` : ''
+    const answer = (await rl.question(`${question}${suffix}: `)).trim()
+    return answer || defaultValue || ''
+  }
+
+  const askYN = async (question: string, defaultYes: boolean): Promise<boolean> => {
+    const hint = defaultYes ? 'Y/n' : 'y/N'
+    const answer = (await rl.question(`${question} [${hint}]: `)).trim().toLowerCase()
+    if (!answer) return defaultYes
+    return answer.startsWith('y')
+  }
+
+  const askSecret = async (prompt: string): Promise<string> => {
+    rl.close()
+    const value = await readSecret(prompt)
+    freshRl()
+    return value
+  }
+
+  console.log('\n  SwarmClaw Interactive Setup\n')
+
+  let addMore = true
+  while (addMore) {
+    console.log('  Available providers:\n')
+    const available = SETUP_PROVIDERS.filter((p) => !configuredProviders.includes(p.id))
+    if (available.length === 0) {
+      console.log('  All providers configured!\n')
+      break
+    }
+    available.forEach((p, i) => {
+      const badge = p.badge ? ` (${p.badge})` : ''
+      console.log(`  ${i + 1}. ${p.name}${badge}`)
+    })
+    console.log()
+
+    const choiceStr = await ask('Pick a provider', '1')
+    const choiceNum = parseInt(choiceStr, 10)
+    const selected = (choiceNum >= 1 && choiceNum <= available.length)
+      ? available[choiceNum - 1]
+      : available.find((p) => p.id === choiceStr.toLowerCase() || p.name.toLowerCase() === choiceStr.toLowerCase())
+
+    if (!selected) {
+      console.log(`  Invalid choice "${choiceStr}". Try again.\n`)
+      continue
+    }
+
+    const provider = selected.id
+    const defaults = DEFAULT_AGENTS[provider]
+    console.log(`\n  Setting up ${selected.name}...\n`)
+
+    // Collect inputs
+    let inputApiKey = ''
+    if (selected.requiresKey) {
+      inputApiKey = await askSecret('  API key: ')
+      if (!inputApiKey) {
+        console.log('  API key is required for this provider.\n')
+        continue
+      }
+    } else if (selected.optionalKey) {
+      inputApiKey = await askSecret('  Token (optional, press Enter to skip): ')
+    }
+
+    let inputEndpoint = ''
+    if (selected.supportsEndpoint) {
+      inputEndpoint = await ask('  Endpoint', selected.defaultEndpoint)
+    }
+
+    const agentName = await ask('  Agent name', defaults.name)
+    const runCheck = await askYN('  Run connection check?', true)
+
+    // Connection check
+    let normalizedEndpoint = inputEndpoint || undefined
+    let selectedModel: string | undefined
+
+    if (runCheck) {
+      process.stdout.write('  Checking connection...')
+      try {
+        const check = await apiRequestWithAccessKey<SetupProviderCheckResponse>(
+          ctx, 'POST', '/setup/check-provider', auth.accessKey,
+          compactObject({
+            provider,
+            apiKey: inputApiKey || undefined,
+            endpoint: selected.supportsEndpoint ? normalizedEndpoint : undefined,
+          }),
+        )
+        if (check?.ok) {
+          console.log(' OK')
+          if (check.normalizedEndpoint) normalizedEndpoint = check.normalizedEndpoint
+          if (check.recommendedModel) selectedModel = check.recommendedModel
+        } else {
+          console.log(` FAILED: ${check?.message || 'Unknown error'}`)
+        }
+      } catch (err: unknown) {
+        console.log(` FAILED: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    // Save credential
+    let credentialId: string | null = null
+    if (inputApiKey) {
+      const credential = await apiRequestWithAccessKey<{ id?: string }>(
+        ctx, 'POST', '/credentials', auth.accessKey,
+        { provider, name: `${selected.name} key`, apiKey: inputApiKey },
+      )
+      credentialId = typeof credential?.id === 'string' ? credential.id : null
+    }
+
+    // Create agent
+    await apiRequestWithAccessKey<Record<string, unknown>>(
+      ctx, 'POST', '/agents', auth.accessKey,
+      compactObject({
+        name: agentName || defaults.name,
+        description: defaults.description,
+        systemPrompt: defaults.systemPrompt,
+        provider,
+        model: selectedModel || defaults.model,
+        credentialId: credentialId || null,
+        apiEndpoint: selected.supportsEndpoint ? (normalizedEndpoint || undefined) : undefined,
+        tools: STARTER_AGENT_TOOLS,
+      }),
+    )
+
+    configuredProviders.push(provider)
+    createdAgents.push({ name: agentName || defaults.name, provider, model: selectedModel || defaults.model })
+    console.log(`  Agent "${agentName || defaults.name}" created.\n`)
+
+    addMore = await askYN('  Add another provider?', false)
+  }
+
+  rl.close()
+
+  await apiRequestWithAccessKey(ctx, 'PUT', '/settings', auth.accessKey, { setupCompleted: true })
+
+  console.log('\n  Setup complete!\n')
+  console.log('  Created agents:')
+  for (const a of createdAgents) {
+    console.log(`    - ${a.name} (${a.provider}, ${a.model})`)
+  }
+  console.log()
+
+  return {
+    ok: true,
+    interactive: true,
+    providers: configuredProviders,
+    agents: createdAgents,
+    accessKeyMasked: maskToken(auth.accessKey),
+    firstTimeSetup: auth.firstTime,
   }
 }
 
@@ -743,8 +916,8 @@ export function buildProgram(): Command {
   setup
     .command('init')
     .description('Run command-line first-time setup (provider check, credential, starter agent)')
-    .option('--provider <provider>', 'Provider id (openai|anthropic|ollama|openclaw)', 'openai')
-    .option('--api-key <apiKey>', 'API key or token (required for openai/anthropic)')
+    .option('--provider <provider>', 'Provider id (e.g. openai, anthropic, ollama, google)')
+    .option('--api-key <apiKey>', 'API key or token')
     .option('--endpoint <endpoint>', 'Provider endpoint override')
     .option('--model <model>', 'Model override')
     .option('--agent-name <name>', 'Starter agent name')
@@ -752,6 +925,7 @@ export function buildProgram(): Command {
     .option('--system-prompt <systemPrompt>', 'Starter agent system prompt')
     .option('--skip-check', 'Skip provider connection check')
     .option('--no-create-agent', 'Do not create a starter agent')
+    .option('--no-interactive', 'Disable interactive prompts (flag-only mode)')
     .action(async function (opts: {
       provider?: string
       apiKey?: string
@@ -762,12 +936,21 @@ export function buildProgram(): Command {
       systemPrompt?: string
       skipCheck?: boolean
       createAgent?: boolean
+      interactive?: boolean
     }) {
       await runWithHandler(this as Command, async (ctx) => {
-        const provider = normalizeSetupProvider(opts.provider)
-        const defaults = DEFAULT_SETUP_AGENTS[provider]
-        const requiresApiKey = provider === 'openai' || provider === 'anthropic'
-        const supportsEndpoint = provider === 'openai' || provider === 'ollama' || provider === 'openclaw'
+        const hasFlags = !!(opts.provider && opts.provider !== 'openai') || !!opts.apiKey || !!opts.endpoint
+        const wantInteractive = opts.interactive !== false && !hasFlags && process.stdin.isTTY
+
+        if (wantInteractive) {
+          return runInteractiveSetup(ctx)
+        }
+
+        const provider = normalizeSetupProvider(opts.provider || 'openai')
+        const defaults = DEFAULT_AGENTS[provider]
+        const meta = SETUP_PROVIDERS.find((p) => p.id === provider)
+        const requiresApiKey = meta?.requiresKey ?? false
+        const supportsEndpoint = meta?.supportsEndpoint ?? false
 
         const inputApiKey = (opts.apiKey || '').trim()
         const inputEndpoint = (opts.endpoint || '').trim()
@@ -807,7 +990,7 @@ export function buildProgram(): Command {
         }
 
         let credentialId: string | null = null
-        if (inputApiKey && (provider === 'openai' || provider === 'anthropic' || provider === 'openclaw')) {
+        if (inputApiKey && (requiresApiKey || meta?.optionalKey)) {
           const credential = await apiRequestWithAccessKey<{ id?: string; name?: string }>(
             ctx,
             'POST',
@@ -815,7 +998,7 @@ export function buildProgram(): Command {
             auth.accessKey,
             {
               provider,
-              name: `${provider} key`,
+              name: `${meta?.name || provider} key`,
               apiKey: inputApiKey,
             },
           )
@@ -837,6 +1020,7 @@ export function buildProgram(): Command {
               model: selectedModel || defaults.model,
               credentialId: credentialId || null,
               apiEndpoint: supportsEndpoint ? (normalizedEndpoint || undefined) : undefined,
+              tools: STARTER_AGENT_TOOLS,
             }),
           )
         }

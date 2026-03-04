@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-03T16:32:16.727Z",
-  "totalIssues": 588,
-  "uniqueIssues": 204,
+  "generatedAt": "2026-03-04T12:35:42.500Z",
+  "totalIssues": 576,
+  "uniqueIssues": 198,
   "issues": [
     {
       "filePath": "bin/server-cmd.js",
@@ -24,13 +24,6 @@
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
       "count": 2
-    },
-    {
-      "filePath": "src/app/api/agents/route.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_req' is defined but never used.",
-      "count": 1
     },
     {
       "filePath": "src/app/api/auth/route.ts",
@@ -222,13 +215,6 @@
       "count": 2
     },
     {
-      "filePath": "src/app/api/sessions/route.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_req' is defined but never used.",
-      "count": 1
-    },
-    {
       "filePath": "src/app/api/settings/route.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -341,34 +327,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/agents/agent-card.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_ca' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/agents/agent-card.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_id' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/agents/agent-card.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_ua' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/agents/agent-card.tsx",
-      "ruleId": "react-hooks/purity",
-      "severity": 2,
-      "message": "Error: Cannot call impure function during render `Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).",
-      "count": 2
-    },
-    {
       "filePath": "src/components/agents/agent-files-editor.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
@@ -479,13 +437,6 @@
       "severity": 1,
       "message": "React Hook useEffect has a missing dependency: 'loadTrashedAgents'. Either include it or remove the dependency array.",
       "count": 1
-    },
-    {
-      "filePath": "src/components/auth/setup-wizard.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 4
     },
     {
       "filePath": "src/components/chat/chat-area.tsx",
@@ -908,6 +859,13 @@
       "count": 1
     },
     {
+      "filePath": "src/components/usage/metrics-dashboard.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_id' is defined but never used.",
+      "count": 1
+    },
+    {
       "filePath": "src/hooks/use-openclaw-gateway.ts",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
@@ -1115,7 +1073,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 3
+      "count": 2
     },
     {
       "filePath": "src/lib/server/connectors/whatsapp.ts",
@@ -1360,7 +1318,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 11
+      "count": 10
     },
     {
       "filePath": "src/lib/server/session-tools/session-info.ts",

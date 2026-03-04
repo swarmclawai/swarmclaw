@@ -85,6 +85,7 @@ function printNextSteps() {
   process.stdout.write('1. Run `npm run dev`.\n')
   process.stdout.write('2. Open http://localhost:3456 in your browser.\n')
   process.stdout.write('3. Copy the access key printed in the terminal and finish the setup wizard.\n')
+  process.stdout.write('   Or run `npx swarmclaw setup init` for interactive CLI setup.\n')
   process.stdout.write('4. For updates later, run `npm run update:easy`.\n')
 }
 

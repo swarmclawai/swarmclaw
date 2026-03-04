@@ -23,6 +23,7 @@ export const CONNECTOR_PLATFORM_META: Record<ConnectorPlatform, { label: string;
   teams: { label: 'Teams', color: '#6264A7' },
   googlechat: { label: 'Google Chat', color: '#00AC47' },
   matrix: { label: 'Matrix', color: '#0DBD8B' },
+  email: { label: 'Email', color: '#EA4335' },
 }
 
 export function getConnectorPlatformLabel(platform: ConnectorPlatform): string {

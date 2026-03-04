@@ -2,16 +2,17 @@ import fs from 'fs'
 import http from 'http'
 import https from 'https'
 import type { StreamChatOptions } from './index'
+import { PROVIDER_DEFAULTS } from './provider-defaults'
 
 const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|webp|bmp)$/i
 const TEXT_EXTS = /\.(txt|md|csv|json|xml|html|js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|yml|yaml|toml|env|log|sh|sql|css|scss)$/i
 
-export function streamOllamaChat({ session, message, imagePath, apiKey, write, active, loadHistory, onUsage }: StreamChatOptions): Promise<string> {
+export function streamOllamaChat({ session, message, imagePath, apiKey, write, active, loadHistory, onUsage, signal }: StreamChatOptions): Promise<string> {
   return new Promise((resolve) => {
     const messages = buildMessages(session, message, imagePath, loadHistory)
     const model = session.model || 'llama3'
     // Cloud: no endpoint but API key present → use Ollama cloud
-    const endpoint = session.apiEndpoint || (apiKey ? 'https://ollama.com' : 'http://localhost:11434')
+    const endpoint = session.apiEndpoint || (apiKey ? PROVIDER_DEFAULTS.ollamaCloud : PROVIDER_DEFAULTS.ollama)
 
     const parsed = new URL(endpoint)
     const isHttps = parsed.protocol === 'https:'
@@ -26,6 +27,18 @@ export function streamOllamaChat({ session, message, imagePath, apiKey, write, a
 
     const abortController = { aborted: false }
     let fullResponse = ''
+    let apiReqRef: ReturnType<typeof http.request> | null = null
+
+    if (signal) {
+      if (signal.aborted) {
+        abortController.aborted = true
+      } else {
+        signal.addEventListener('abort', () => {
+          abortController.aborted = true
+          apiReqRef?.destroy()
+        }, { once: true })
+      }
+    }
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -87,6 +100,7 @@ export function streamOllamaChat({ session, message, imagePath, apiKey, write, a
       })
     })
 
+    apiReqRef = apiReq
     active.set(session.id, { kill: () => { abortController.aborted = true; apiReq.destroy() } })
 
     apiReq.on('error', (e: NodeJS.ErrnoException) => {

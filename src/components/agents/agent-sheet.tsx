@@ -114,6 +114,9 @@ export function AgentSheet() {
   const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
   const [heartbeatModel, setHeartbeatModel] = useState('')
   const [heartbeatPrompt, setHeartbeatPrompt] = useState('')
+  const [budgetEnabled, setBudgetEnabled] = useState(false)
+  const [monthlyBudget, setMonthlyBudget] = useState('')
+  const [budgetAction, setBudgetAction] = useState<'warn' | 'block'>('warn')
   const [agentWallet, setAgentWallet] = useState<(Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }) | null>(null)
   const [addingKey, setAddingKey] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
@@ -195,6 +198,9 @@ export function AgentSheet() {
         setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
         setHeartbeatModel(editing.heartbeatModel || '')
         setHeartbeatPrompt(editing.heartbeatPrompt || '')
+        setBudgetEnabled(typeof editing.monthlyBudget === 'number' && editing.monthlyBudget > 0)
+        setMonthlyBudget(typeof editing.monthlyBudget === 'number' && editing.monthlyBudget > 0 ? String(editing.monthlyBudget) : '')
+        setBudgetAction(editing.budgetAction || 'warn')
         // Load wallet if agent has one
         if (editing.walletId) {
           api<Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }>('GET', `/wallets/${editing.walletId}`)
@@ -234,6 +240,9 @@ export function AgentSheet() {
         setHeartbeatIntervalSec('')
         setHeartbeatModel('')
         setHeartbeatPrompt('')
+        setBudgetEnabled(false)
+        setMonthlyBudget('')
+        setBudgetAction('warn')
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -331,6 +340,8 @@ export function AgentSheet() {
       heartbeatIntervalSec: heartbeatIntervalSec ? Number(heartbeatIntervalSec) : null,
       heartbeatModel: heartbeatModel.trim() || null,
       heartbeatPrompt: heartbeatPrompt.trim() || null,
+      monthlyBudget: budgetEnabled && monthlyBudget ? Number(monthlyBudget) : null,
+      budgetAction: budgetEnabled ? budgetAction : undefined,
     }
     if (editing) {
       await updateAgent(editing.id, data)
@@ -730,6 +741,74 @@ export function AgentSheet() {
           </div>
         )}
         <p className="text-[11px] text-text-3/70 mt-1.5">Periodic check-in runs on idle sessions using this agent. Processes pending events and monitors status.</p>
+      </div>
+
+      {/* Monthly Budget */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Monthly Budget</label>
+          <button
+            type="button"
+            onClick={() => setBudgetEnabled(!budgetEnabled)}
+            className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${budgetEnabled ? 'bg-accent' : 'bg-white/[0.12]'}`}
+          >
+            <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${budgetEnabled ? 'translate-x-[18px]' : ''}`} />
+          </button>
+        </div>
+        {budgetEnabled && (
+          <div className="space-y-4 mt-3">
+            <div>
+              <label className="block text-[12px] text-text-3/70 mb-1.5">Budget cap (USD)</label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-3/50 text-[14px]">$</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={monthlyBudget}
+                  onChange={(e) => setMonthlyBudget(e.target.value)}
+                  placeholder="10.00"
+                  className={`${inputClass} pl-7`}
+                  style={{ fontFamily: 'inherit' }}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[12px] text-text-3/70 mb-1.5">When exceeded</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBudgetAction('warn')}
+                  className={`flex-1 px-3 py-2.5 rounded-[10px] border text-[13px] font-600 cursor-pointer transition-all ${
+                    budgetAction === 'warn'
+                      ? 'border-amber-400/40 bg-amber-400/[0.08] text-amber-400'
+                      : 'border-white/[0.08] bg-transparent text-text-3 hover:bg-white/[0.04]'
+                  }`}
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  Warn
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBudgetAction('block')}
+                  className={`flex-1 px-3 py-2.5 rounded-[10px] border text-[13px] font-600 cursor-pointer transition-all ${
+                    budgetAction === 'block'
+                      ? 'border-red-400/40 bg-red-400/[0.08] text-red-400'
+                      : 'border-white/[0.08] bg-transparent text-text-3 hover:bg-white/[0.04]'
+                  }`}
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  Block
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        <p className="text-[11px] text-text-3/70 mt-1.5">
+          {budgetAction === 'block'
+            ? 'Cap monthly spend for this agent. When exceeded, chat runs are blocked until the next month.'
+            : 'Cap monthly spend for this agent. When exceeded, a warning is shown but runs continue.'}
+        </p>
       </div>
 
       {/* Wallet Section */}

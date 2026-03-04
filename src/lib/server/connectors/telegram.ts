@@ -40,8 +40,18 @@ const telegram: PlatformConnector = {
     bot.on('message', async (ctx) => {
       if (!ctx.message || !ctx.from || !ctx.chat) return
       const chatId = String(ctx.chat.id)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = ctx.message as any
       const text = raw.text || raw.caption || ''
+
+      // Filter out Telegram service/system messages (read receipts, reactions, etc.)
+      // that appear as short bracketed strings like [rr], [e], [read] etc.
+      const hasMedia = raw.photo || raw.video || raw.audio || raw.voice || raw.document || raw.animation
+      if (!hasMedia && /^\[.{1,5}\]$/.test(text.trim())) {
+        console.log(`[telegram] Ignoring system event from ${ctx.from.first_name}: ${text}`)
+        return
+      }
+
       console.log(`[telegram] Message from ${ctx.from.first_name} (chat=${chatId}): ${String(text).slice(0, 80)}`)
 
       // Filter by allowed chats if configured
@@ -157,6 +167,9 @@ const telegram: PlatformConnector = {
       }
     })
 
+    // Track whether the bot is actively polling
+    let botRunning = true
+
     // Start polling — not awaited (runs in background)
     bot.start({
       allowed_updates: ['message', 'edited_message'],
@@ -164,11 +177,15 @@ const telegram: PlatformConnector = {
         console.log(`[telegram] Bot started as @${botInfo.username} — polling for updates`)
       },
     }).catch((err) => {
+      botRunning = false
       console.error(`[telegram] Polling stopped with error:`, err.message || err)
     })
 
     return {
       connector,
+      isAlive() {
+        return botRunning
+      },
       async sendMessage(channelId, text, options) {
         const chatId = channelId
         const caption = options?.caption || text || undefined
@@ -221,6 +238,7 @@ const telegram: PlatformConnector = {
         return { messageId: lastId }
       },
       async stop() {
+        botRunning = false
         await bot.stop()
         console.log(`[telegram] Bot stopped`)
       },

@@ -4,6 +4,7 @@ import { Component, useState, useEffect, useCallback } from 'react'
 import type { ReactNode, ErrorInfo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
+import { useSwipe } from '@/hooks/use-swipe'
 import { Avatar } from '@/components/shared/avatar'
 import { SettingsPage } from '@/components/shared/settings/settings-page'
 import { AgentList } from '@/components/agents/agent-list'
@@ -53,6 +54,7 @@ import { HomeView } from '@/components/home/home-view'
 import { NetworkBanner } from './network-banner'
 import { UpdateBanner } from './update-banner'
 import { MobileHeader } from './mobile-header'
+import { CommandPalette } from '@/components/shared/command-palette'
 import { DaemonIndicator } from './daemon-indicator'
 import { NotificationCenter } from '@/components/shared/notification-center'
 import { ChatArea } from '@/components/chat/chat-area'
@@ -194,6 +196,14 @@ export function AppLayout() {
     : Object.values(agents)[0]?.id || null
   const isMainChat = activeView === 'agents' && currentAgentId === defaultAgentId
 
+  const swipeHandlers = useSwipe({
+    onSwipe: (dir) => {
+      if (dir === 'right') setSidebarOpen(true)
+      else setSidebarOpen(false)
+    },
+    leftSwipeEnabled: sidebarOpen,
+  })
+
   const currentSession = currentSessionId ? sessions[currentSessionId] : null
   const hasCanvas = !!(currentSession?.canvasContent && canvasDismissedFor !== currentSessionId)
   const canvasAgentName = currentSession?.agentId && agents[currentSession.agentId] ? agents[currentSession.agentId].name : undefined
@@ -210,7 +220,12 @@ export function AppLayout() {
   }
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div
+      className="h-full flex overflow-hidden"
+      onTouchStart={swipeHandlers.onTouchStart}
+      onTouchMove={swipeHandlers.onTouchMove}
+      onTouchEnd={swipeHandlers.onTouchEnd}
+    >
       {/* Desktop: Navigation rail (expandable) */}
       {isDesktop && (
         <div
@@ -801,6 +816,7 @@ export function AppLayout() {
         </div>
       </ErrorBoundary>
 
+      <CommandPalette />
       <SearchDialog />
       <AgentSwitchDialog />
       <KeyboardShortcutsDialog />

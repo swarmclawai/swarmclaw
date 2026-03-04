@@ -165,12 +165,16 @@ export function buildMemoryTools(bctx: ToolBuildContext): StructuredToolInterfac
             if (action === 'knowledge_store') {
               const { addKnowledge } = await import('../memory-db')
               if (!value) return 'Error: value (content) is required for knowledge_store'
+              const source = (input as Record<string, unknown>).source as string | undefined
+              const sourceUrl = (input as Record<string, unknown>).sourceUrl as string | undefined
               const entry = addKnowledge({
                 title: key || 'Untitled',
                 content: value,
                 tags: tags,
                 createdByAgentId: ctx?.agentId || null,
                 createdBySessionId: ctx?.sessionId || null,
+                source: source || undefined,
+                sourceUrl: sourceUrl || undefined,
               })
               return `Knowledge stored: "${entry.title}" (id: ${entry.id})`
             }
@@ -178,11 +182,24 @@ export function buildMemoryTools(bctx: ToolBuildContext): StructuredToolInterfac
               const { searchKnowledge } = await import('../memory-db')
               const results = searchKnowledge(query || key || '', tags, 10)
               if (!results.length) return 'No knowledge entries found.'
-              return results.map(r => `[${r.id}] ${r.title}: ${r.content.slice(0, 200)}`).join('\n---\n')
+              return results.map(r => {
+                const meta = r.metadata as Record<string, unknown> | undefined
+                const src = meta?.source as string | undefined
+                const srcUrl = meta?.sourceUrl as string | undefined
+                let line = `[${r.id}] ${r.title}: ${r.content.slice(0, 200)}`
+                if (src && srcUrl) {
+                  line += ` [${src}](${srcUrl})`
+                } else if (src) {
+                  line += ` (source: ${src})`
+                } else if (srcUrl) {
+                  line += ` (${srcUrl})`
+                }
+                return line
+              }).join('\n---\n')
             }
             return `Unknown action "${action}". Use: store, get, search, list, delete, link, unlink, knowledge_store, or knowledge_search.`
-          } catch (err: any) {
-            return `Error: ${err.message}`
+          } catch (err: unknown) {
+            return `Error: ${err instanceof Error ? err.message : String(err)}`
           }
         },
         {
@@ -224,6 +241,8 @@ export function buildMemoryTools(bctx: ToolBuildContext): StructuredToolInterfac
             linkedLimit: z.number().optional().describe('Max linked memories expanded during traversal. Respects configured server cap.'),
             targetIds: z.array(z.string()).optional().describe('Memory IDs to link/unlink (for link/unlink actions)'),
             tags: z.array(z.string()).optional().describe('Tags for categorizing knowledge entries'),
+            source: z.string().optional().describe("Source of the knowledge, e.g. 'user', 'web', 'document'"),
+            sourceUrl: z.string().optional().describe('URL where the knowledge was sourced from'),
             pinned: z.boolean().optional().describe('Mark memory as pinned (always preloaded in agent context). For store action.'),
             sharedWith: z.array(z.string()).optional().describe('Agent IDs to share this memory with (for store action). They can read it in their context.'),
           }),

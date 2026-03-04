@@ -15,7 +15,7 @@ import { ChatroomToolRequestBanner } from './chatroom-tool-request-banner'
 import { isStructuredMarkdown } from '@/components/chat/markdown-utils'
 import { TransferAgentPicker } from '@/components/chat/transfer-agent-picker'
 import { ConnectorPlatformIcon, CONNECTOR_PLATFORM_META } from '@/components/shared/connector-platform-icon'
-import type { ChatroomMessage, Agent } from '@/types'
+import type { ChatroomMessage, Chatroom, Agent } from '@/types'
 
 interface Props {
   message: ChatroomMessage
@@ -24,6 +24,11 @@ interface Props {
   onReply?: (message: ChatroomMessage) => void
   onTogglePin?: (messageId: string) => void
   onTransfer?: (messageId: string, targetAgentId: string) => void
+  onDeleteMessage?: (messageId: string, targetAgentId: string) => void
+  onMuteAgent?: (agentId: string) => void
+  onUnmuteAgent?: (agentId: string) => void
+  onSetRole?: (agentId: string, role: 'admin' | 'moderator' | 'member') => void
+  chatroom?: Chatroom
   pinnedMessageIds?: string[]
   /** Set of agentIds currently streaming */
   streamingAgentIds?: Set<string>
@@ -49,6 +54,25 @@ function formatRelativeTime(ts: number): string {
 function navigateToAgent(agentId: string) {
   useAppStore.getState().setActiveView('agents')
   useAppStore.getState().setCurrentAgent(agentId)
+}
+
+function getMemberRoleFromChatroom(chatroom: Chatroom | undefined, agentId: string): string {
+  if (!chatroom?.members?.length) return 'member'
+  const member = chatroom.members.find((m) => m.agentId === agentId)
+  return member?.role || 'member'
+}
+
+function isAgentMutedInChatroom(chatroom: Chatroom | undefined, agentId: string): boolean {
+  if (!chatroom?.members?.length) return false
+  const member = chatroom.members.find((m) => m.agentId === agentId)
+  if (!member?.mutedUntil) return false
+  return new Date(member.mutedUntil).getTime() > Date.now()
+}
+
+function roleBadgeStyle(role: string): { label: string; className: string } | null {
+  if (role === 'admin') return { label: 'Admin', className: 'bg-purple-500/20 text-purple-400 border-purple-500/30' }
+  if (role === 'moderator') return { label: 'Mod', className: 'bg-blue-500/20 text-blue-400 border-blue-500/30' }
+  return null
 }
 
 /** Pre-process @mentions into markdown-friendly format for ReactMarkdown */
@@ -111,9 +135,10 @@ function renderChatroomAttachments(message: ChatroomMessage) {
   )
 }
 
-export function ChatroomMessageBubble({ message, agents, onToggleReaction, onReply, onTogglePin, onTransfer, pinnedMessageIds, streamingAgentIds, messages, grouped: isGrouped, momentOverlay }: Props) {
+export function ChatroomMessageBubble({ message, agents, onToggleReaction, onReply, onTogglePin, onTransfer, onDeleteMessage, onMuteAgent, onUnmuteAgent, onSetRole, chatroom, pinnedMessageIds, streamingAgentIds, messages, grouped: isGrouped, momentOverlay }: Props) {
   const [showPicker, setShowPicker] = useState(false)
   const [showTransferPicker, setShowTransferPicker] = useState(false)
+  const [showModMenu, setShowModMenu] = useState(false)
   const userAvatarSeed = useAppStore((s) => s.appSettings.userAvatarSeed)
   const wide = isStructuredMarkdown(message.text)
 
@@ -185,26 +210,41 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        {!isGrouped && (
-          <div className="flex items-baseline gap-2 mb-0.5">
-            {!isUser && agent ? (
-              <AgentHoverCard agent={agent}>
-                <span className="text-[13px] font-600 text-accent-bright hover:underline cursor-pointer flex items-center gap-1.5">
+        {!isGrouped && (() => {
+          const role = !isUser ? getMemberRoleFromChatroom(chatroom, message.senderId) : 'member'
+          const badge = !isUser ? roleBadgeStyle(role) : null
+          const muted = !isUser ? isAgentMutedInChatroom(chatroom, message.senderId) : false
+          return (
+            <div className="flex items-baseline gap-2 mb-0.5">
+              {!isUser && agent ? (
+                <AgentHoverCard agent={agent}>
+                  <span className="text-[13px] font-600 text-accent-bright hover:underline cursor-pointer flex items-center gap-1.5">
+                    {message.source && <ConnectorPlatformIcon platform={message.source.platform} size={12} />}
+                    {message.senderName}
+                  </span>
+                </AgentHoverCard>
+              ) : (
+                <span className="text-[13px] font-600 text-text flex items-center gap-1.5">
                   {message.source && <ConnectorPlatformIcon platform={message.source.platform} size={12} />}
-                  {message.senderName}
+                  {isUser && message.source?.senderName
+                    ? `${message.source.senderName} via ${CONNECTOR_PLATFORM_META[message.source.platform]?.label || message.source.platform}`
+                    : message.senderName}
                 </span>
-              </AgentHoverCard>
-            ) : (
-              <span className="text-[13px] font-600 text-text flex items-center gap-1.5">
-                {message.source && <ConnectorPlatformIcon platform={message.source.platform} size={12} />}
-                {isUser && message.source?.senderName
-                  ? `${message.source.senderName} via ${CONNECTOR_PLATFORM_META[message.source.platform]?.label || message.source.platform}`
-                  : message.senderName}
-              </span>
-            )}
-            <span className="label-mono" title={new Date(message.time).toLocaleString()}>{formatRelativeTime(message.time)}</span>
-          </div>
-        )}
+              )}
+              {badge && (
+                <span className={`text-[9px] font-600 px-1 py-0.5 rounded border leading-none ${badge.className}`}>
+                  {badge.label}
+                </span>
+              )}
+              {muted && (
+                <span className="text-[9px] font-600 px-1 py-0.5 rounded border leading-none bg-red-500/20 text-red-400 border-red-500/30">
+                  Muted
+                </span>
+              )}
+              <span className="label-mono" title={new Date(message.time).toLocaleString()}>{formatRelativeTime(message.time)}</span>
+            </div>
+          )
+        })()}
 
         {/* Reply quote */}
         {replyToMessage && (
@@ -352,8 +392,8 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
         )}
       </div>
 
-      {/* Action buttons (reply + pin + transfer + reaction) */}
-      <div className="relative shrink-0 mt-0.5 flex items-start gap-0.5" style={{ zIndex: showPicker || showTransferPicker ? 50 : undefined }}>
+      {/* Action buttons (reply + pin + transfer + moderate + reaction) */}
+      <div className="relative shrink-0 mt-0.5 flex items-start gap-0.5" style={{ zIndex: showPicker || showTransferPicker || showModMenu ? 50 : undefined }}>
         {/* Reply button */}
         {onReply && (
           <button
@@ -404,6 +444,108 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
             }}
             onClose={() => setShowTransferPicker(false)}
           />
+        )}
+        {/* Moderation menu button */}
+        {!isUser && (onDeleteMessage || onMuteAgent || onSetRole) && (
+          <button
+            onClick={() => setShowModMenu(!showModMenu)}
+            className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
+            title="Moderate"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </button>
+        )}
+        {showModMenu && !isUser && (
+          <div className="absolute right-0 top-7 z-50 bg-[#1a1a2e] border border-white/[0.1] rounded-[8px] shadow-lg py-1 min-w-[160px]">
+            {onDeleteMessage && (
+              <button
+                onClick={() => {
+                  onDeleteMessage(message.id, message.senderId)
+                  setShowModMenu(false)
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-red-400 hover:bg-white/[0.06] transition-colors cursor-pointer bg-transparent border-none text-left"
+                style={{ fontFamily: 'inherit' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+                Delete message
+              </button>
+            )}
+            {onMuteAgent && onUnmuteAgent && (() => {
+              const muted = isAgentMutedInChatroom(chatroom, message.senderId)
+              return muted ? (
+                <button
+                  onClick={() => {
+                    onUnmuteAgent(message.senderId)
+                    setShowModMenu(false)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-green-400 hover:bg-white/[0.06] transition-colors cursor-pointer bg-transparent border-none text-left"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                  </svg>
+                  Unmute agent
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    onMuteAgent(message.senderId)
+                    setShowModMenu(false)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-amber-400 hover:bg-white/[0.06] transition-colors cursor-pointer bg-transparent border-none text-left"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <line x1="23" y1="9" x2="17" y2="15" />
+                    <line x1="17" y1="9" x2="23" y2="15" />
+                  </svg>
+                  Mute 30 min
+                </button>
+              )
+            })()}
+            {onSetRole && (() => {
+              const currentRole = getMemberRoleFromChatroom(chatroom, message.senderId)
+              const roleOptions: Array<{ value: 'admin' | 'moderator' | 'member'; label: string }> = [
+                { value: 'admin', label: 'Set Admin' },
+                { value: 'moderator', label: 'Set Moderator' },
+                { value: 'member', label: 'Set Member' },
+              ]
+              return roleOptions
+                .filter((opt) => opt.value !== currentRole)
+                .map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      onSetRole(message.senderId, opt.value)
+                      setShowModMenu(false)
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-text-2 hover:bg-white/[0.06] transition-colors cursor-pointer bg-transparent border-none text-left"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                      <circle cx="8.5" cy="7" r="4" />
+                      <polyline points="17 11 19 13 23 9" />
+                    </svg>
+                    {opt.label}
+                  </button>
+                ))
+            })()}
+            <button
+              onClick={() => setShowModMenu(false)}
+              className="w-full px-3 py-1.5 text-[11px] text-text-3 hover:bg-white/[0.06] transition-colors cursor-pointer bg-transparent border-none text-left border-t border-white/[0.06] mt-1"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Cancel
+            </button>
+          </div>
         )}
         {/* Reaction button */}
         <button

@@ -516,7 +516,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
             )}
           </div>
         ) : (
-          <div className={`msg-content text-[15px] break-words ${isUser ? 'leading-[1.6] text-white/95' : 'leading-[1.7] text-text'}`}>
+          <div className={`msg-content text-[15px] md:text-[14px] break-words ${isUser ? 'leading-[1.6] text-white/95' : 'leading-[1.7] text-text'}`}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeHighlight]}
@@ -660,12 +660,12 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
       )}
 
       {/* Action buttons */}
-      <div className={`flex items-center gap-1 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${isUser ? 'justify-end' : ''}`}>
+      <div className={`flex items-center gap-1 mt-1.5 px-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 ${isUser ? 'justify-end' : ''}`}>
         <button
           onClick={handleCopy}
           aria-label="Copy message"
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
-            text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 rounded-[8px] border-none bg-transparent
+            text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all justify-center md:justify-start"
           style={{ fontFamily: 'inherit' }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -678,8 +678,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           <button
             onClick={() => onToggleBookmark(messageIndex)}
             aria-label={message.bookmarked ? 'Remove bookmark' : 'Bookmark message'}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
-              text-[11px] font-500 cursor-pointer hover:bg-white/[0.04] transition-all ${message.bookmarked ? 'text-amber-400' : ''}`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 rounded-[8px] border-none bg-transparent
+              text-[11px] font-500 cursor-pointer hover:bg-white/[0.04] transition-all justify-center md:justify-start ${message.bookmarked ? 'text-amber-400' : ''}`}
             style={{ fontFamily: 'inherit' }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill={message.bookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -692,8 +692,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           <button
             onClick={() => { setEditText(message.text); setEditing(true) }}
             aria-label="Edit and resend"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
-              text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 rounded-[8px] border-none bg-transparent
+              text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all justify-center md:justify-start"
             style={{ fontFamily: 'inherit' }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -707,8 +707,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           <button
             onClick={() => onFork(messageIndex)}
             aria-label="Fork conversation from here"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
-              text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 rounded-[8px] border-none bg-transparent
+              text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all justify-center md:justify-start"
             style={{ fontFamily: 'inherit' }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -725,8 +725,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           <button
             onClick={onRetry}
             aria-label="Retry message"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
-              text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 rounded-[8px] border-none bg-transparent
+              text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all justify-center md:justify-start"
             style={{ fontFamily: 'inherit' }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -741,8 +741,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
             <button
               onClick={() => setTransferPickerOpen(!transferPickerOpen)}
               aria-label="Transfer to another agent"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border-none bg-transparent
-                text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 rounded-[8px] border-none bg-transparent
+                text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all justify-center md:justify-start"
               style={{ fontFamily: 'inherit' }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

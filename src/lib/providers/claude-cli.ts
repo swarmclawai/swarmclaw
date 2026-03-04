@@ -24,7 +24,7 @@ function findClaude(): string {
 
 const CLAUDE = findClaude()
 
-export function streamClaudeCliChat({ session, message, imagePath, systemPrompt, write, active }: StreamChatOptions): Promise<string> {
+export function streamClaudeCliChat({ session, message, imagePath, systemPrompt, write, active, signal }: StreamChatOptions): Promise<string> {
   const processTimeoutMs = loadRuntimeSettings().cliProcessTimeoutMs
   let prompt = message
   if (imagePath) {
@@ -108,6 +108,12 @@ export function streamClaudeCliChat({ session, message, imagePath, systemPrompt,
   proc.stdin!.end()
 
   active.set(session.id, proc)
+
+  if (signal) {
+    if (signal.aborted) { proc.kill(); }
+    else signal.addEventListener('abort', () => { proc.kill() }, { once: true })
+  }
+
   let fullResponse = ''
   let buf = ''
   let eventCount = 0

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { loadConnectors, saveConnectors } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
+import { ConnectorCreateSchema, formatZodError } from '@/lib/validation/schemas'
+import { z } from 'zod'
 import type { Connector } from '@/types'
 export const dynamic = 'force-dynamic'
 
@@ -10,7 +12,7 @@ export async function GET(_req: Request) {
   const connectors = loadConnectors()
   // Merge runtime status from manager
   try {
-    const { getConnectorStatus, isConnectorAuthenticated, hasConnectorCredentials, getConnectorQR } = await import('@/lib/server/connectors/manager')
+    const { getConnectorStatus, isConnectorAuthenticated, hasConnectorCredentials, getConnectorQR, getReconnectState } = await import('@/lib/server/connectors/manager')
     for (const c of Object.values(connectors) as Connector[]) {
       c.status = getConnectorStatus(c.id)
       if (c.platform === 'whatsapp') {
@@ -19,13 +21,26 @@ export async function GET(_req: Request) {
         const qr = getConnectorQR(c.id)
         if (qr) c.qrDataUrl = qr
       }
+      // Surface reconnect state if connector is in a recovery cycle
+      const rState = getReconnectState(c.id)
+      if (rState) {
+        const ext = c as unknown as Record<string, unknown>
+        ext.reconnectAttempts = rState.attempts
+        ext.nextRetryAt = rState.nextRetryAt
+        ext.reconnectError = rState.error
+      }
     }
   } catch { /* manager not loaded yet */ }
   return NextResponse.json(connectors)
 }
 
 export async function POST(req: Request) {
-  const body = await req.json()
+  const raw = await req.json()
+  const parsed = ConnectorCreateSchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json(formatZodError(parsed.error as z.ZodError), { status: 400 })
+  }
+  const body = parsed.data
   const connectors = loadConnectors()
   const id = genId()
 

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { loadTasks, saveTasks, loadSettings, loadAgents, logActivity } from '@/lib/server/storage'
+import { TaskCreateSchema, formatZodError } from '@/lib/validation/schemas'
+import { z } from 'zod'
 import { enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
@@ -8,6 +10,7 @@ import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
 import { notify } from '@/lib/server/ws-hub'
 import { computeTaskFingerprint, findDuplicateTask } from '@/lib/task-dedupe'
 import { resolveTaskAgentFromDescription } from '@/lib/server/task-mention'
+import { validateDag } from '@/lib/server/dag-validation'
 
 export async function GET(req: Request) {
   // Keep completed queue integrity even if daemon is not running.
@@ -55,7 +58,12 @@ export async function DELETE(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json()
+  const raw = await req.json()
+  const parsed = TaskCreateSchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json(formatZodError(parsed.error as z.ZodError), { status: 400 })
+  }
+  const body = { ...raw, ...parsed.data }
   const id = genId()
   const now = Date.now()
   const tasks = loadTasks()
@@ -66,6 +74,17 @@ export async function POST(req: Request) {
   const retryBackoffSec = Number.isFinite(Number(body.retryBackoffSec))
     ? Math.max(1, Math.min(3600, Math.trunc(Number(body.retryBackoffSec))))
     : Math.max(1, Math.min(3600, Math.trunc(Number(settings.taskRetryBackoffSec ?? 30))))
+  // DAG validation: reject if proposed blockedBy would create a cycle
+  if (Array.isArray(body.blockedBy) && body.blockedBy.length > 0) {
+    const dagResult = validateDag(tasks, id, body.blockedBy)
+    if (!dagResult.valid) {
+      return NextResponse.json(
+        { error: 'Dependency cycle detected', cycle: dagResult.cycle },
+        { status: 400 },
+      )
+    }
+  }
+
   // Resolve @mentions in description to auto-assign agent
   const resolvedAgentId = body.description
     ? resolveTaskAgentFromDescription(body.description, body.agentId || '', loadAgents())

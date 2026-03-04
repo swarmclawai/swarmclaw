@@ -1,5 +1,6 @@
 import fs from 'fs'
 import type { StreamChatOptions } from './index'
+import { PROVIDER_DEFAULTS } from './provider-defaults'
 
 const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|webp|bmp)$/i
 const TEXT_EXTS = /\.(txt|md|csv|json|xml|html|js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|yml|yaml|toml|env|log|sh|sql|css|scss)$/i
@@ -43,7 +44,7 @@ async function fileToContentParts(filePath: string): Promise<any[]> {
   return [{ type: 'text', text: `[Attached file: ${name}]` }]
 }
 
-export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey, systemPrompt, write, active, loadHistory, onUsage }: StreamChatOptions): Promise<string> {
+export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey, systemPrompt, write, active, loadHistory, onUsage, signal }: StreamChatOptions): Promise<string> {
   return new Promise(async (resolve) => {
     const messages = await buildMessages(session, message, imagePath, systemPrompt, loadHistory, imageUrl)
     const model = session.model || 'gpt-4o'
@@ -58,7 +59,7 @@ export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey
     let fullResponse = ''
 
     // Support custom base URLs for custom providers
-    const baseUrl = session.apiEndpoint || 'https://api.openai.com/v1'
+    const baseUrl = session.apiEndpoint || PROVIDER_DEFAULTS.openai
     const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`
 
     // OpenClaw endpoints behind Hostinger's proxy use express.json() middleware
@@ -67,6 +68,10 @@ export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey
     const contentType = session.contentType || 'application/json'
 
     const abortController = new AbortController()
+    if (signal) {
+      if (signal.aborted) abortController.abort()
+      else signal.addEventListener('abort', () => abortController.abort(), { once: true })
+    }
     active.set(session.id, { kill: () => abortController.abort() })
 
     try {

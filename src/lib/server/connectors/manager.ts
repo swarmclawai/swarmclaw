@@ -3,7 +3,9 @@ import {
   loadConnectors, saveConnectors, loadSessions, saveSessions,
   loadAgents, loadCredentials, decryptKey, loadSettings, loadSkills,
   loadChatrooms, saveChatrooms,
+  upsertConnectorHealthEvent,
 } from '../storage'
+import type { ConnectorHealthEventType } from '@/types'
 import { WORKSPACE_DIR } from '../data-dir'
 import { UPLOAD_DIR } from '../storage'
 import fs from 'fs'
@@ -24,6 +26,7 @@ import {
   resolveApiKey as resolveApiKeyHelper,
 } from '../chatroom-helpers'
 import { filterHealthyChatroomAgents } from '../chatroom-health'
+import { evaluateRoutingRules } from '../chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '../provider-health'
 import { getProvider } from '@/lib/providers'
 import type { Connector, MessageSource, Chatroom, ChatroomMessage } from '@/types'
@@ -276,6 +279,35 @@ const followupKey = '__swarmclaw_connector_followups__' as const
 const scheduledFollowups: Map<string, ScheduledConnectorFollowup> =
   g[followupKey] ?? (g[followupKey] = new Map<string, ScheduledConnectorFollowup>())
 
+/** Reconnect state per connector — tracks backoff and retry attempts for crash recovery */
+export interface ConnectorReconnectState {
+  attempts: number
+  lastAttemptAt: number
+  nextRetryAt: number
+  backoffMs: number
+  error: string
+}
+
+const reconnectStateKey = '__swarmclaw_connector_reconnect_state__' as const
+const reconnectState: Map<string, ConnectorReconnectState> =
+  g[reconnectStateKey] ?? (g[reconnectStateKey] = new Map<string, ConnectorReconnectState>())
+
+const RECONNECT_INITIAL_BACKOFF_MS = 1_000
+const RECONNECT_MAX_BACKOFF_MS = 5 * 60 * 1_000
+const RECONNECT_MAX_ATTEMPTS = 10
+
+/** Record a health event for a connector (persisted to connector_health collection) */
+function recordHealthEvent(connectorId: string, event: ConnectorHealthEventType, message?: string): void {
+  const id = genId()
+  upsertConnectorHealthEvent(id, {
+    id,
+    connectorId,
+    event,
+    message: message || undefined,
+    timestamp: new Date().toISOString(),
+  })
+}
+
 type RouteMessageHandler = (connector: Connector, msg: InboundMessage) => Promise<string>
 const routeHandlerKey = '__swarmclaw_connector_route_handler__' as const
 const routeMessageHandlerRef: { current: RouteMessageHandler } =
@@ -314,6 +346,7 @@ export async function getPlatform(platform: string) {
     case 'teams':     return (await import('./teams')).default
     case 'googlechat': return (await import('./googlechat')).default
     case 'matrix':    return (await import('./matrix')).default
+    case 'email':     return (await import('./email')).default
     default: throw new Error(`Unknown platform: ${platform}`)
   }
 }
@@ -691,7 +724,12 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
 
   // Parse mentions from the message text
   let mentions = parseMentions(msg.text || '', agents, chatroom.agentIds)
-  // Auto-address: if enabled and no explicit mentions, address all agents
+  // Routing rules: if no explicit mentions, evaluate keyword/capability rules
+  if (mentions.length === 0 && chatroom.routingRules?.length) {
+    const agentList = chatroom.agentIds.map((id) => agents[id]).filter(Boolean)
+    mentions = evaluateRoutingRules(msg.text || '', chatroom.routingRules, agentList)
+  }
+  // Auto-address: if enabled and still no mentions, address all agents
   if (chatroom.autoAddress && mentions.length === 0) {
     mentions = [...chatroom.agentIds]
   }
@@ -1313,7 +1351,7 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
     botToken = connector.config.password
   }
 
-  if (!botToken && connector.platform !== 'whatsapp' && connector.platform !== 'openclaw' && connector.platform !== 'signal') {
+  if (!botToken && connector.platform !== 'whatsapp' && connector.platform !== 'openclaw' && connector.platform !== 'signal' && connector.platform !== 'email') {
     throw new Error('No bot token configured')
   }
 
@@ -1340,14 +1378,17 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
     notify('connectors')
 
     console.log(`[connector] Started ${connector.platform} connector: ${connector.name}`)
+    recordHealthEvent(connectorId, 'started', `${connector.platform} connector "${connector.name}" started`)
   } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err)
     connector.status = 'error'
     connector.isEnabled = false
-    connector.lastError = err instanceof Error ? err.message : String(err)
+    connector.lastError = errMsg
     connector.updatedAt = Date.now()
     connectors[connectorId] = connector
     saveConnectors(connectors)
     notify('connectors')
+    recordHealthEvent(connectorId, 'error', errMsg)
     throw err
   }
 }
@@ -1379,6 +1420,7 @@ export async function stopConnector(connectorId: string): Promise<void> {
   }
 
   console.log(`[connector] Stopped connector: ${connectorId}`)
+  recordHealthEvent(connectorId, 'stopped', `Connector stopped`)
 }
 
 /** Get the runtime status of a connector */
@@ -1658,4 +1700,118 @@ export function scheduleConnectorFollowUp(params: {
   })
 
   return { followUpId, sendAt }
+}
+
+/**
+ * Check health of all running connectors via `isAlive()`.
+ * Dead connectors that are still enabled get automatic reconnection with exponential backoff.
+ * After RECONNECT_MAX_ATTEMPTS, the connector is marked as error and retries stop.
+ */
+export async function checkConnectorHealth(): Promise<void> {
+  const connectors = loadConnectors()
+  let connectorsDirty = false
+
+  for (const [id, instance] of running.entries()) {
+    // If the instance has no isAlive method, skip (e.g. OpenClaw, BlueBubbles)
+    if (typeof instance.isAlive !== 'function') continue
+
+    if (instance.isAlive()) {
+      // Connector is healthy — clear any reconnect state
+      if (reconnectState.has(id)) {
+        console.log(`[connector-health] Connector "${instance.connector.name}" recovered`)
+        reconnectState.delete(id)
+      }
+      continue
+    }
+
+    // Connector is dead but still in the running Map
+    console.warn(`[connector-health] Connector "${instance.connector.name}" (${id}) isAlive=false — removing from running`)
+    recordHealthEvent(id, 'disconnected', `Connector "${instance.connector.name}" detected as dead (isAlive=false)`)
+
+    // Clean up the dead instance
+    try { await instance.stop() } catch { /* ignore */ }
+    running.delete(id)
+
+    const connector = connectors[id] as Connector | undefined
+    if (!connector) continue
+
+    // If the connector is not enabled, don't attempt reconnect
+    if (!connector.isEnabled) {
+      reconnectState.delete(id)
+      continue
+    }
+
+    // Attempt reconnect with backoff
+    const state = reconnectState.get(id) ?? {
+      attempts: 0,
+      lastAttemptAt: 0,
+      nextRetryAt: 0,
+      backoffMs: RECONNECT_INITIAL_BACKOFF_MS,
+      error: '',
+    }
+
+    // Check if we've exceeded max attempts
+    if (state.attempts >= RECONNECT_MAX_ATTEMPTS) {
+      console.warn(`[connector-health] Connector "${connector.name}" exceeded ${RECONNECT_MAX_ATTEMPTS} reconnect attempts — marking as error`)
+      connector.status = 'error'
+      connector.lastError = `Auto-reconnect gave up after ${RECONNECT_MAX_ATTEMPTS} attempts: ${state.error}`
+      connector.updatedAt = Date.now()
+      connectors[id] = connector
+      connectorsDirty = true
+      reconnectState.delete(id)
+      notify('connectors')
+      continue
+    }
+
+    const now = Date.now()
+
+    // Check if enough time has passed for the next retry
+    if (now < state.nextRetryAt) {
+      // Not yet time to retry — keep state and skip
+      continue
+    }
+
+    state.attempts += 1
+    state.lastAttemptAt = now
+    reconnectState.set(id, state)
+
+    try {
+      console.log(`[connector-health] Reconnecting "${connector.name}" (attempt ${state.attempts}/${RECONNECT_MAX_ATTEMPTS})`)
+      await startConnector(id)
+      // Success — clear reconnect state
+      reconnectState.delete(id)
+      console.log(`[connector-health] Connector "${connector.name}" reconnected successfully`)
+      recordHealthEvent(id, 'reconnected', `Connector "${connector.name}" reconnected after ${state.attempts} attempt(s)`)
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      state.error = errorMsg
+      state.backoffMs = Math.min(RECONNECT_MAX_BACKOFF_MS, RECONNECT_INITIAL_BACKOFF_MS * (2 ** state.attempts))
+      state.nextRetryAt = now + state.backoffMs
+      reconnectState.set(id, state)
+      console.warn(`[connector-health] Reconnect failed for "${connector.name}" (attempt ${state.attempts}/${RECONNECT_MAX_ATTEMPTS}): ${errorMsg}. Next retry at ${new Date(state.nextRetryAt).toISOString()}`)
+    }
+  }
+
+  if (connectorsDirty) {
+    saveConnectors(connectors)
+  }
+
+  // Purge reconnect state for connectors that no longer exist
+  for (const id of reconnectState.keys()) {
+    if (!connectors[id]) reconnectState.delete(id)
+  }
+}
+
+/** Get the reconnect state for a specific connector (null if not in reconnect cycle) */
+export function getReconnectState(connectorId: string): ConnectorReconnectState | null {
+  return reconnectState.get(connectorId) ?? null
+}
+
+/** Get all reconnect states (for dashboard/API) */
+export function getAllReconnectStates(): Record<string, ConnectorReconnectState> {
+  const result: Record<string, ConnectorReconnectState> = {}
+  for (const [id, state] of reconnectState.entries()) {
+    result[id] = { ...state }
+  }
+  return result
 }

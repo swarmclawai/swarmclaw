@@ -13,6 +13,7 @@ import { ChatroomPickerList } from '@/components/shared/chatroom-picker-list'
 import { SheetFooter } from '@/components/shared/sheet-footer'
 import { SectionLabel } from '@/components/shared/section-label'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
+import { ConnectorHealth } from '@/components/connectors/connector-health'
 
 /** Auto-detect URLs in text and make them clickable links that open in a new tab */
 function linkify(text: string) {
@@ -655,6 +656,7 @@ export function ConnectorSheet() {
                   <span key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-accent-soft/50 border border-accent-bright/20 text-[12px] font-mono text-accent-bright">
                     {tag}
                     <button
+                      aria-label={`Remove ${tag}`}
                       onClick={() => {
                         const next = tags.filter((_, j) => j !== i).join(',')
                         setConfig({ ...config, [field.key]: next })
@@ -857,6 +859,13 @@ export function ConnectorSheet() {
         <div className="mb-6 p-4 rounded-[14px] bg-red-500/[0.06] border border-red-500/15">
           <div className="text-[12px] font-600 text-red-400 mb-1">Error</div>
           <div className="text-[12px] text-red-400/70 leading-[1.5] font-mono">{editing.lastError}</div>
+        </div>
+      )}
+
+      {/* Health timeline (existing connectors only) */}
+      {editing && (
+        <div className="mb-6">
+          <ConnectorHealth connectorId={editing.id} />
         </div>
       )}
 

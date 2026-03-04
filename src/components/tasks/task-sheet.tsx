@@ -54,6 +54,8 @@ export function TaskSheet() {
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const [blockedBy, setBlockedBy] = useState<string[]>([])
+  const [depSearch, setDepSearch] = useState('')
+  const [depError, setDepError] = useState<string | null>(null)
   const [dueAt, setDueAt] = useState<string>('')
   const [customFields, setCustomFields] = useState<Record<string, string | number | boolean>>({})
   const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical' | ''>('')
@@ -76,6 +78,8 @@ export function TaskSheet() {
         setFile(editing.file || null)
         setTags(editing.tags || [])
         setBlockedBy(editing.blockedBy || [])
+        setDepSearch('')
+        setDepError(null)
         setDueAt(editing.dueAt ? new Date(editing.dueAt).toISOString().slice(0, 10) : '')
         setCustomFields(editing.customFields || {})
         setPriority(editing.priority || '')
@@ -89,6 +93,8 @@ export function TaskSheet() {
         setFile(null)
         setTags([])
         setBlockedBy([])
+        setDepSearch('')
+        setDepError(null)
         setDueAt('')
         setCustomFields({})
         setPriority('')
@@ -119,11 +125,25 @@ export function TaskSheet() {
       customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
       priority: priority || undefined,
     } as Partial<BoardTask> & { title: string; description: string; agentId: string }
-    if (editing) {
-      await updateTask(editing.id, payload)
-    } else {
-      await createTask(payload)
+    try {
+      if (editing) {
+        const res = await updateTask(editing.id, payload)
+        if (res && typeof res === 'object' && 'error' in res) {
+          setDepError(String((res as unknown as Record<string, unknown>).error))
+          return
+        }
+      } else {
+        const res = await createTask(payload)
+        if (res && typeof res === 'object' && 'error' in res) {
+          setDepError(String((res as unknown as Record<string, unknown>).error))
+          return
+        }
+      }
+    } catch (err: unknown) {
+      setDepError(err instanceof Error ? err.message : String(err))
+      return
     }
+    setDepError(null)
     await loadTasks()
     onClose()
   }
@@ -683,18 +703,73 @@ export function TaskSheet() {
       {/* Dependencies */}
       <div className="mb-8">
         <SectionLabel>Blocked By <span className="normal-case tracking-normal font-normal text-text-3">(tasks that must complete first)</span></SectionLabel>
-        <select
-          multiple
-          aria-label="Assign agents"
-          value={blockedBy}
-          onChange={(e) => setBlockedBy(Array.from(e.target.selectedOptions, (o) => o.value))}
-          className="w-full px-4 py-3 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[13px] outline-none min-h-[80px] focus-glow"
-          style={{ fontFamily: 'inherit' }}
-        >
-          {Object.values(tasks)
-            .filter((t) => t.id !== editingId && t.status !== 'archived')
-            .map((t) => <option key={t.id} value={t.id}>{t.title} ({t.status})</option>)}
-        </select>
+        {/* Selected blockers as removable chips */}
+        {blockedBy.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {blockedBy.map((bid) => {
+              const bt = tasks[bid]
+              return (
+                <span key={bid} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[8px] bg-rose-500/10 text-rose-400 text-[12px] font-600">
+                  {bt ? bt.title : bid}
+                  <button
+                    onClick={() => setBlockedBy((prev) => prev.filter((b) => b !== bid))}
+                    className="text-rose-400/60 hover:text-rose-400 cursor-pointer border-none bg-transparent p-0 text-[14px] leading-none"
+                  >
+                    &times;
+                  </button>
+                </span>
+              )
+            })}
+          </div>
+        )}
+        {/* Searchable dropdown for adding dependencies */}
+        <div className="relative">
+          <input
+            type="text"
+            value={depSearch}
+            onChange={(e) => setDepSearch(e.target.value)}
+            placeholder="Search tasks to add as dependency..."
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          />
+          {depSearch.trim() && (
+            <div className="absolute z-20 top-full left-0 right-0 mt-1 max-h-[200px] overflow-y-auto rounded-[12px] border border-white/[0.08] bg-surface shadow-xl">
+              {Object.values(tasks)
+                .filter((t) =>
+                  t.id !== editingId &&
+                  t.status !== 'archived' &&
+                  !blockedBy.includes(t.id) &&
+                  t.title.toLowerCase().includes(depSearch.toLowerCase())
+                )
+                .slice(0, 10)
+                .map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setBlockedBy((prev) => [...prev, t.id])
+                      setDepSearch('')
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-[13px] text-text-2 hover:bg-surface-2 cursor-pointer border-none bg-transparent transition-colors flex items-center gap-2"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <span className="flex-1 truncate">{t.title}</span>
+                    <span className="text-[10px] text-text-3 shrink-0">({t.status})</span>
+                  </button>
+                ))}
+              {Object.values(tasks).filter((t) =>
+                t.id !== editingId &&
+                t.status !== 'archived' &&
+                !blockedBy.includes(t.id) &&
+                t.title.toLowerCase().includes(depSearch.toLowerCase())
+              ).length === 0 && (
+                <div className="px-4 py-3 text-[13px] text-text-3">No matching tasks</div>
+              )}
+            </div>
+          )}
+        </div>
+        {depError && (
+          <p className="mt-2 text-[12px] text-red-400 font-600">{depError}</p>
+        )}
         {editing && Array.isArray(editing.blocks) && editing.blocks.length > 0 && (
           <div className="mt-3">
             <span className="text-[11px] font-600 text-text-3 uppercase tracking-[0.06em]">Blocks:</span>

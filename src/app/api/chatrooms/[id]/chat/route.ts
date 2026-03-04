@@ -13,8 +13,10 @@ import {
   buildSyntheticSession,
   buildAgentSystemPromptForChatroom,
   buildHistoryForAgent,
+  isMuted,
 } from '@/lib/server/chatroom-helpers'
 import { filterHealthyChatroomAgents } from '@/lib/server/chatroom-health'
+import { evaluateRoutingRules } from '@/lib/server/chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '@/lib/server/provider-health'
 import type { Chatroom, ChatroomMessage, Agent } from '@/types'
 
@@ -48,7 +50,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Persist incoming message
   const senderName = senderId === 'user' ? 'You' : (agents[senderId]?.name || senderId)
   let mentions = parseMentions(text, agents, chatroom.agentIds)
-  // Auto-address: if enabled and no explicit mentions, address all agents
+  // Routing rules: if no explicit mentions, evaluate keyword/capability rules
+  if (mentions.length === 0 && chatroom.routingRules?.length) {
+    const agentList = chatroom.agentIds.map((aid) => agents[aid]).filter(Boolean)
+    mentions = evaluateRoutingRules(text, chatroom.routingRules, agentList)
+  }
+  // Auto-address: if enabled and still no mentions, address all agents
   if (chatroom.autoAddress && mentions.length === 0) {
     mentions = [...chatroom.agentIds]
   }
@@ -128,6 +135,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
           const agent = agents[item.agentId]
           if (!agent) return []
+
+          // Skip muted agents
+          const freshForMuteCheck = loadChatrooms()[id] as Chatroom | undefined
+          if (freshForMuteCheck && isMuted(freshForMuteCheck, item.agentId)) {
+            writeEvent({ t: 'cr_agent_start', agentId: agent.id, agentName: agent.name })
+            writeEvent({ t: 'err', text: `${agent.name} is muted`, agentId: agent.id, agentName: agent.name })
+            writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })
+            return []
+          }
 
           // Pre-flight: check if the agent's provider is usable before attempting to stream
           const providerInfo = getProvider(agent.provider)

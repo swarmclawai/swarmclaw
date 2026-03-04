@@ -11,7 +11,7 @@ import { ensureMainSessionFlag, isProtectedMainSession } from '@/lib/server/main
 export const dynamic = 'force-dynamic'
 
 
-export async function GET(_req: Request) {
+export async function GET(req: Request) {
   const sessions = loadSessions()
   for (const id of Object.keys(sessions)) {
     const run = getSessionRunState(id)
@@ -19,7 +19,16 @@ export async function GET(_req: Request) {
     sessions[id].queuedCount = run.queueLength
     sessions[id].currentRunId = run.runningRunId || null
   }
-  return NextResponse.json(sessions)
+
+  const { searchParams } = new URL(req.url)
+  const limitParam = searchParams.get('limit')
+  if (!limitParam) return NextResponse.json(sessions)
+
+  const limit = Math.max(1, Number(limitParam) || 50)
+  const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
+  const all = Object.values(sessions).sort((a, b) => (b.lastActiveAt ?? b.createdAt) - (a.lastActiveAt ?? a.createdAt))
+  const items = all.slice(offset, offset + limit)
+  return NextResponse.json({ items, total: all.length, hasMore: offset + limit < all.length })
 }
 
 export async function DELETE(req: Request) {

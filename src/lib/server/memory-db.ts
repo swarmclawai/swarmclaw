@@ -1192,21 +1192,26 @@ export function addKnowledge(params: {
   agentIds?: string[]
   createdByAgentId?: string | null
   createdBySessionId?: string | null
+  source?: string
+  sourceUrl?: string
 }): MemoryEntry {
   const db = getMemoryDb()
+  const metadata: Record<string, unknown> = {
+    tags: params.tags || [],
+    scope: params.scope || 'global',
+    agentIds: params.scope === 'agent' ? (params.agentIds || []) : [],
+    createdByAgentId: params.createdByAgentId || null,
+    createdBySessionId: params.createdBySessionId || null,
+  }
+  if (params.source) metadata.source = params.source
+  if (params.sourceUrl) metadata.sourceUrl = params.sourceUrl
   return db.add({
     agentId: null,
     sessionId: null,
     category: 'knowledge',
     title: params.title,
     content: params.content,
-    metadata: {
-      tags: params.tags || [],
-      scope: params.scope || 'global',
-      agentIds: params.scope === 'agent' ? (params.agentIds || []) : [],
-      createdByAgentId: params.createdByAgentId || null,
-      createdBySessionId: params.createdBySessionId || null,
-    },
+    metadata,
   })
 }
 

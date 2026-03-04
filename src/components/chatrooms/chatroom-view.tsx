@@ -10,11 +10,33 @@ import { ChatroomTypingBar } from './chatroom-typing-bar'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { HeartbeatMoment, ActivityMoment, isNotableTool } from '@/components/chat/activity-moment'
-import type { Chatroom, ChatroomMessage, Agent } from '@/types'
+import type { Chatroom, ChatroomMessage, ChatroomMember, Agent } from '@/types'
 
 function navigateToAgent(agentId: string) {
   useAppStore.getState().setActiveView('agents')
   useAppStore.getState().setCurrentAgent(agentId)
+}
+
+function getRoleBadge(role: string) {
+  if (role === 'admin') return { label: 'Admin', className: 'bg-purple-500/20 text-purple-400 border-purple-500/30' }
+  if (role === 'moderator') return { label: 'Mod', className: 'bg-blue-500/20 text-blue-400 border-blue-500/30' }
+  return null
+}
+
+function getMemberFromChatroom(chatroom: Chatroom, agentId: string): ChatroomMember | undefined {
+  if (chatroom.members?.length) return chatroom.members.find((m) => m.agentId === agentId)
+  return undefined
+}
+
+function getMemberRole(chatroom: Chatroom, agentId: string): string {
+  const member = getMemberFromChatroom(chatroom, agentId)
+  return member?.role || 'member'
+}
+
+function isAgentMuted(chatroom: Chatroom, agentId: string): boolean {
+  const member = getMemberFromChatroom(chatroom, agentId)
+  if (!member?.mutedUntil) return false
+  return new Date(member.mutedUntil).getTime() > Date.now()
 }
 
 type MomentType = { kind: 'heartbeat' } | { kind: 'tool'; name: string; input: string }
@@ -65,6 +87,10 @@ export function ChatroomView() {
   const loadChatrooms = useChatroomStore((s) => s.loadChatrooms)
   const setChatroomSheetOpen = useChatroomStore((s) => s.setChatroomSheetOpen)
   const setEditingChatroomId = useChatroomStore((s) => s.setEditingChatroomId)
+  const deleteMessage = useChatroomStore((s) => s.deleteMessage)
+  const muteAgent = useChatroomStore((s) => s.muteAgent)
+  const unmuteAgent = useChatroomStore((s) => s.unmuteAgent)
+  const setMemberRole = useChatroomStore((s) => s.setMemberRole)
   const agents = useAppStore((s) => s.agents) as Record<string, Agent>
   const scrollRef = useRef<HTMLDivElement>(null)
   const [pinsExpanded, setPinsExpanded] = useState(false)
@@ -183,23 +209,37 @@ export function ChatroomView() {
             {chatroom.description ? ` · ${chatroom.description}` : ''}
           </p>
         </div>
-        {/* Member avatars */}
+        {/* Member avatars with role badges */}
         <div className="flex -space-x-1.5 shrink-0">
-          {memberAgents.slice(0, 5).map((agent) => (
-            <Tooltip key={agent.id}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => navigateToAgent(agent.id)}
-                  className="relative transition-all duration-200 hover:scale-110 hover:z-10 hover:-translate-y-0.5 cursor-pointer bg-transparent border-none p-0"
-                >
-                  <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={22} status={streamingAgents.has(agent.id) ? 'busy' : 'online'} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" sideOffset={6}>
-                {agent.name}
-              </TooltipContent>
-            </Tooltip>
-          ))}
+          {memberAgents.slice(0, 5).map((agent) => {
+            const role = getMemberRole(chatroom, agent.id)
+            const badge = getRoleBadge(role)
+            const muted = isAgentMuted(chatroom, agent.id)
+            return (
+              <Tooltip key={agent.id}>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => navigateToAgent(agent.id)}
+                    className={`relative transition-all duration-200 hover:scale-110 hover:z-10 hover:-translate-y-0.5 cursor-pointer bg-transparent border-none p-0 ${muted ? 'opacity-40' : ''}`}
+                  >
+                    <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={22} status={streamingAgents.has(agent.id) ? 'busy' : 'online'} />
+                    {badge && (
+                      <span className={`absolute -bottom-1 -right-1 text-[7px] font-700 px-0.5 rounded border ${badge.className}`}>
+                        {badge.label[0]}
+                      </span>
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={6}>
+                  <div className="flex items-center gap-1.5">
+                    <span>{agent.name}</span>
+                    {badge && <span className={`text-[9px] font-600 px-1 py-0.5 rounded border ${badge.className}`}>{badge.label}</span>}
+                    {muted && <span className="text-[9px] text-red-400">Muted</span>}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            )
+          })}
           {memberAgents.length > 5 && (
             <div className="w-[22px] h-[22px] rounded-full bg-white/[0.08] flex items-center justify-center text-[9px] text-text-3">
               +{memberAgents.length - 5}
@@ -320,6 +360,11 @@ export function ChatroomView() {
                   onReply={(m: ChatroomMessage) => setReplyingTo(m)}
                   onTogglePin={togglePin}
                   onTransfer={handleTransfer}
+                  onDeleteMessage={(messageId, targetAgentId) => deleteMessage(messageId, targetAgentId)}
+                  onMuteAgent={(agentId) => muteAgent(agentId)}
+                  onUnmuteAgent={(agentId) => unmuteAgent(agentId)}
+                  onSetRole={(agentId, role) => setMemberRole(agentId, role)}
+                  chatroom={chatroom}
                   pinnedMessageIds={pinnedIds}
                   streamingAgentIds={streamingAgentIds}
                   messages={chatroom.messages}

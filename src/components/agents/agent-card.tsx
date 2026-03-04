@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/api-client'
-import { createAgent, deleteAgent } from '@/lib/agents'
+import { deleteAgent } from '@/lib/agents'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import {
   DropdownMenu,
@@ -79,11 +79,18 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
     setRunning(false)
   }
 
+  const [cloning, setCloning] = useState(false)
   const handleDuplicate = async () => {
-    const { id: _id, createdAt: _ca, updatedAt: _ua, ...rest } = agent
-    await createAgent({ ...rest, name: agent.name + ' (Copy)' })
-    await loadAgents()
-    toast.success('Agent duplicated')
+    setCloning(true)
+    try {
+      await api('POST', `/agents/${agent.id}/clone`)
+      await loadAgents()
+      toast.success('Agent duplicated')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCloning(false)
+    }
   }
 
   const handleDelete = async () => {
@@ -140,7 +147,9 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
             <DropdownMenuItem onClick={() => { togglePinAgent(agent.id); toast.success(agent.pinned ? 'Agent unpinned' : 'Agent pinned') }}>
               {agent.pinned ? 'Unpin' : 'Pin'}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleDuplicate}>Duplicate</DropdownMenuItem>
+            <DropdownMenuItem onClick={handleDuplicate} disabled={cloning}>
+              {cloning ? 'Duplicating...' : 'Duplicate'}
+            </DropdownMenuItem>
             {!isDefault && onSetDefault && (
               <DropdownMenuItem onClick={() => { onSetDefault(agent.id); toast.success(`${agent.name} set as default`) }}>Set Default</DropdownMenuItem>
             )}
@@ -217,6 +226,28 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
             <span>Cost: ${agent.totalCost.toFixed(2)}</span>
           )}
         </div>
+        {typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0 && (
+          <div className="mt-2">
+            <div className="flex items-center justify-between text-[10px] text-text-3/60 mb-1">
+              <span>${(agent.monthlySpend ?? 0).toFixed(2)} / ${agent.monthlyBudget.toFixed(2)}</span>
+              <span className={`font-600 ${(agent.monthlySpend ?? 0) >= agent.monthlyBudget ? 'text-red-400' : 'text-text-3/50'}`}>
+                {agent.budgetAction === 'block' ? 'hard cap' : 'soft cap'}
+              </span>
+            </div>
+            <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  (agent.monthlySpend ?? 0) >= agent.monthlyBudget
+                    ? 'bg-red-400'
+                    : (agent.monthlySpend ?? 0) >= agent.monthlyBudget * 0.8
+                      ? 'bg-amber-400'
+                      : 'bg-accent'
+                }`}
+                style={{ width: `${Math.min(100, ((agent.monthlySpend ?? 0) / agent.monthlyBudget) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
