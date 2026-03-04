@@ -161,6 +161,16 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'eval',
+    description: 'Run agent evaluation scenarios',
+    commands: [
+      cmd('scenarios', 'GET', '/eval/scenarios', 'List available eval scenarios'),
+      cmd('status', 'GET', '/eval/run', 'Get eval run status'),
+      cmd('run', 'POST', '/eval/run', 'Run an eval scenario against an agent', { expectsJsonBody: true }),
+      cmd('suite', 'POST', '/eval/suite', 'Run a full eval suite against an agent', { expectsJsonBody: true }),
+    ],
+  },
+  {
     name: 'files',
     description: 'Serve and manage local files',
     commands: [
@@ -209,6 +219,7 @@ const COMMAND_GROUPS = [
       cmd('delete', 'DELETE', '/memory/:id', 'Delete memory entry'),
       cmd('maintenance', 'GET', '/memory/maintenance', 'Analyze memory dedupe/prune candidates'),
       cmd('maintenance-run', 'POST', '/memory/maintenance', 'Run memory dedupe/prune maintenance', { expectsJsonBody: true }),
+      cmd('graph', 'GET', '/memory/graph', 'Get memory graph (nodes and links) for visualization'),
     ],
   },
   {
@@ -428,6 +439,8 @@ const COMMAND_GROUPS = [
         expectsJsonBody: true,
         defaultBody: { action: 'status' },
       }),
+      cmd('checkpoints', 'GET', '/sessions/:id/checkpoints', 'List checkpoint history for a session'),
+      cmd('restore', 'POST', '/sessions/:id/restore', 'Restore session to a previous checkpoint', { expectsJsonBody: true }),
     ],
   },
   {
@@ -457,6 +470,17 @@ const COMMAND_GROUPS = [
       cmd('update', 'PUT', '/skills/:id', 'Update skill', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/skills/:id', 'Delete skill'),
       cmd('import', 'POST', '/skills/import', 'Import skill from URL', { expectsJsonBody: true }),
+    ],
+  },
+  {
+    name: 'souls',
+    description: 'Browse and manage soul library templates',
+    commands: [
+      cmd('list', 'GET', '/souls', 'List soul templates'),
+      cmd('get', 'GET', '/souls/:id', 'Get soul template by id'),
+      cmd('create', 'POST', '/souls', 'Create custom soul template', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/souls/:id', 'Update soul template', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/souls/:id', 'Delete soul template'),
     ],
   },
   {
