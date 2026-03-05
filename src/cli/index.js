@@ -345,6 +345,8 @@ const COMMAND_GROUPS = [
       cmd('update', 'PATCH', '/plugins', 'Update a plugin (use --query id=plugin.js or --query all=true)'),
       cmd('install', 'POST', '/plugins/install', 'Install plugin from URL', { expectsJsonBody: true }),
       cmd('marketplace', 'GET', '/plugins/marketplace', 'Get marketplace catalog'),
+      cmd('settings-get', 'GET', '/plugins/settings', 'Get plugin settings (use --query pluginId=plugin_name)'),
+      cmd('settings-set', 'PUT', '/plugins/settings', 'Set plugin settings (use --query pluginId=plugin_name and --data JSON)', { expectsJsonBody: true }),
       cmd('ui', 'GET', '/plugins/ui', 'List plugin UI extensions (use --query type=sidebar|header|chat_actions|connectors)'),
     ],
   },
