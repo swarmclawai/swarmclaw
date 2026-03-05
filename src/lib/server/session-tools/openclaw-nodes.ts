@@ -81,7 +81,7 @@ getPluginManager().registerBuiltin('openclaw_nodes', NodesPlugin)
  * Legacy Bridge
  */
 export function buildOpenClawNodeTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('openclaw_nodes')) return []
+  if (!bctx.hasPlugin('openclaw_nodes')) return []
   return [
     tool(
       async (args) => executeNodesAction(args),

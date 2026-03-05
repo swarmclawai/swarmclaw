@@ -29,12 +29,20 @@ interface ProviderHealthEntry {
   models: string[]
 }
 
+interface PluginUsageEntry {
+  definitionTokens: number
+  invocationTokens: number
+  invocations: number
+  estimatedCost: number
+}
+
 interface UsageResponse {
   records: unknown[]
   totalTokens: number
   totalCost: number
   byAgent: Record<string, { name: string; cost: number; tokens: number; count: number }>
   byProvider: Record<string, { tokens: number; cost: number }>
+  byPlugin?: Record<string, PluginUsageEntry>
   timeSeries: TimePoint[]
   providerHealth?: Record<string, ProviderHealthEntry>
 }
@@ -170,6 +178,18 @@ export function MetricsDashboard() {
       cost: Math.round(v.cost * 10000) / 10000,
     }))
 
+  const pluginData = Object.entries(data?.byPlugin ?? {})
+    .filter(([id]) => id !== '_system' && id !== '_unknown')
+    .sort((a, b) => (b[1].definitionTokens + b[1].invocationTokens) - (a[1].definitionTokens + a[1].invocationTokens))
+    .slice(0, 12)
+    .map(([id, v]) => ({
+      name: id.length > 18 ? id.slice(0, 18) + '…' : id,
+      definitionTokens: v.definitionTokens,
+      invocationTokens: v.invocationTokens,
+      invocations: v.invocations,
+      estimatedCost: v.estimatedCost,
+    }))
+
   const tooltipStyle = {
     contentStyle: {
       background: 'var(--color-surface)',
@@ -287,6 +307,59 @@ export function MetricsDashboard() {
               )}
             </ChartCard>
           </div>
+
+          {/* Plugin Usage */}
+          {pluginData.length > 0 && (
+            <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.28s both' }}>
+              <ChartCard title="Plugin Token Usage">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={pluginData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
+                    <XAxis type="number" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={formatTokens} />
+                    <YAxis type="category" dataKey="name" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} width={120} />
+                    <Tooltip
+                      {...tooltipStyle}
+                      formatter={(value: number | undefined, name?: string) => [
+                        formatTokens(value ?? 0),
+                        name === 'definitionTokens' ? 'Context (definitions)' : 'Invocations',
+                      ]}
+                    />
+                    <Bar dataKey="definitionTokens" fill="#818CF8" radius={[0, 0, 0, 0]} stackId="a" name="definitionTokens" />
+                    <Bar dataKey="invocationTokens" fill="#34D399" radius={[0, 4, 4, 0]} stackId="a" name="invocationTokens" />
+                    <Legend
+                      verticalAlign="bottom"
+                      iconType="circle"
+                      iconSize={8}
+                      formatter={(value: string) => (
+                        <span style={{ color: '#a0a0b0', fontSize: 11 }}>
+                          {value === 'definitionTokens' ? 'Context (definitions)' : 'Invocations'}
+                        </span>
+                      )}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-4">
+                {pluginData.filter((p) => p.invocations > 0).map((p, idx) => (
+                  <div
+                    key={p.name}
+                    className="bg-surface-2 rounded-[10px] p-3 border border-white/[0.04] hover:bg-surface transition-all"
+                    style={{ animation: 'spring-in 0.5s var(--ease-spring) both', animationDelay: `${0.3 + idx * 0.03}s` }}
+                  >
+                    <p className="text-[12px] font-600 text-text truncate">{p.name}</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-[18px] font-display font-700 text-text">{p.invocations}</span>
+                      <span className="text-[11px] text-text-3">calls</span>
+                    </div>
+                    <p className="text-[11px] text-text-3 mt-0.5">
+                      {formatTokens(p.invocationTokens)} invocation tokens &middot; {formatCost(p.estimatedCost)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Task KPIs */}
           {taskMetrics && (

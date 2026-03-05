@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
-import { createCredential, deleteCredential } from '@/lib/sessions'
+import { createCredential, deleteCredential } from '@/lib/chats'
 import { toast } from 'sonner'
 import type { ProviderType } from '@/types'
 import type { SettingsSectionProps } from './types'

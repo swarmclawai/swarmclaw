@@ -121,7 +121,7 @@ const PLATFORMS: {
     tokenHelp: 'Required when your OpenClaw gateway is auth-protected',
     configFields: [
       { key: 'wsUrl', label: 'WebSocket URL', placeholder: 'ws://localhost:18789', help: 'OpenClaw gateway WebSocket endpoint (root URL, not /ws)' },
-      { key: 'sessionKey', label: 'Chat Key Filter', placeholder: 'main', help: 'Optional. If set, only inbound events for this OpenClaw session are processed.' },
+      { key: 'sessionKey', label: 'Chat Key Filter', placeholder: 'main', help: 'Optional. If set, only inbound events for this OpenClaw chat are processed.' },
       { key: 'nodeId', label: 'Client Label', placeholder: 'swarmclaw', help: 'Optional display label shown in OpenClaw presence metadata.' },
       { key: 'role', label: 'Gateway Role', placeholder: 'operator', help: 'Optional role claim for connect handshake. Default is operator.' },
       { key: 'scopes', label: 'Scopes (CSV)', placeholder: 'operator.read,operator.write', help: 'Optional comma-separated scopes for OpenClaw connect.' },

@@ -5,7 +5,7 @@ import { loadSettings, loadSessions, saveSessions, loadMcpServers } from '../sto
 import { loadRuntimeSettings } from '../runtime-settings'
 import { log } from '../logger'
 import { resolveSessionToolPolicy } from '../tool-capability-policy'
-import { expandToolIds } from '../tool-aliases'
+import { expandPluginIds } from '../tool-aliases'
 import type { ToolContext, SessionToolsResult, ToolBuildContext } from './context'
 
 // Import all tool modules to trigger their builtin registration
@@ -33,6 +33,10 @@ import { buildDiscoveryTools } from './discovery'
 import { buildMonitorTools } from './monitor'
 import { buildSampleUITools } from './sample-ui'
 import { buildPluginCreatorTools } from './plugin-creator'
+import { buildImageGenTools } from './image-gen'
+import { buildEmailTools } from './email'
+import { buildCalendarTools } from './calendar'
+import { buildReplicateTools } from './replicate'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 
 import { getPluginManager } from '../plugins'
@@ -41,34 +45,37 @@ import { jsonSchemaToZod } from '../mcp-client'
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
 
-export async function buildSessionTools(cwd: string, enabledTools: string[], ctx?: ToolContext): Promise<SessionToolsResult> {
+export async function buildSessionTools(cwd: string, enabledPlugins: string[], ctx?: ToolContext): Promise<SessionToolsResult> {
   const tools: StructuredToolInterface[] = []
   const cleanupFns: (() => Promise<void>)[] = []
-  
+
   try {
     const runtime = loadRuntimeSettings()
     const commandTimeoutMs = runtime.shellCommandTimeoutMs
     const claudeTimeoutMs = runtime.claudeCodeTimeoutMs
     const cliProcessTimeoutMs = runtime.cliProcessTimeoutMs
     const appSettings = loadSettings()
-    const toolPolicy = resolveSessionToolPolicy(enabledTools, appSettings)
-    const expandedEnabledTools = expandToolIds(toolPolicy.enabledTools)
-    const expandedBlockedTools = expandToolIds(toolPolicy.blockedTools.map((entry) => entry.tool))
-    const blockedToolSet = new Set(expandedBlockedTools)
-    const filteredEnabledTools = expandedEnabledTools.filter((toolId) => !blockedToolSet.has(toolId))
-    const activeTools = filteredEnabledTools.includes('shell')
-      && !filteredEnabledTools.includes('process')
-      && !blockedToolSet.has('process')
-      ? [...filteredEnabledTools, 'process']
-      : filteredEnabledTools
-    const activeToolSet = new Set(activeTools)
-    const hasTool = (toolName: string) => activeToolSet.has(toolName)
+    const toolPolicy = resolveSessionToolPolicy(enabledPlugins, appSettings)
+    const expandedEnabled = expandPluginIds(toolPolicy.enabledPlugins)
+    const expandedBlocked = expandPluginIds(toolPolicy.blockedPlugins.map((entry) => entry.tool))
+    const blockedSet = new Set(expandedBlocked)
+    const filteredEnabled = expandedEnabled.filter((id) => !blockedSet.has(id))
+    const pluginManager = getPluginManager()
+    const activePlugins = (filteredEnabled.includes('shell')
+      && !filteredEnabled.includes('process')
+      && !blockedSet.has('process')
+      ? [...filteredEnabled, 'process']
+      : filteredEnabled).filter(t => pluginManager.isEnabled(t))
+    const activePluginSet = new Set(activePlugins)
+    const hasPlugin = (pluginName: string) => activePluginSet.has(pluginName)
+    /** @deprecated Use hasPlugin */
+    const hasTool = hasPlugin
 
-    if (toolPolicy.blockedTools.length > 0) {
-      log.info('session-tools', 'Capability policy blocked tool families', {
+    if (toolPolicy.blockedPlugins.length > 0) {
+      log.info('session-tools', 'Capability policy blocked plugin families', {
         sessionId: ctx?.sessionId || null,
         agentId: ctx?.agentId || null,
-        blockedTools: toolPolicy.blockedTools.map((entry) => `${entry.tool}:${entry.reason}`),
+        blockedPlugins: toolPolicy.blockedPlugins.map((entry) => `${entry.tool}:${entry.reason}`),
       })
     }
 
@@ -78,14 +85,14 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
       return sessions[ctx.sessionId] || null
     }
 
-    const readStoredDelegateResumeId = (key: 'claudeCode' | 'codex' | 'opencode'): string | null => {
+    const readStoredDelegateResumeId = (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini'): string | null => {
       const session = resolveCurrentSession()
       if (!session?.delegateResumeIds || typeof session.delegateResumeIds !== 'object') return null
       const raw = session.delegateResumeIds[key]
       return typeof raw === 'string' && raw.trim() ? raw.trim() : null
     }
 
-    const persistDelegateResumeId = (key: 'claudeCode' | 'codex' | 'opencode', resumeId: string | null | undefined): void => {
+    const persistDelegateResumeId = (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini', resumeId: string | null | undefined): void => {
       const normalized = typeof resumeId === 'string' ? resumeId.trim() : ''
       if (!normalized || !ctx?.sessionId) return
       const sessions = loadSessions()
@@ -106,6 +113,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
     const bctx: ToolBuildContext = {
       cwd,
       ctx,
+      hasPlugin,
       hasTool,
       cleanupFns,
       commandTimeoutMs,
@@ -114,41 +122,54 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
       persistDelegateResumeId,
       readStoredDelegateResumeId,
       resolveCurrentSession,
-      activeTools,
+      activePlugins,
     }
 
     // 1. Build Native Bridge Tools (Legacy enablement)
-    tools.push(
-      ...buildShellTools(bctx),
-      ...buildFileTools(bctx),
-      ...buildEditFileTools(bctx),
-      ...buildDelegateTools(bctx),
-      ...buildWebTools(bctx),
-      ...buildMemoryTools(bctx),
-      ...buildPlatformTools(bctx),
-      ...buildSandboxTools(bctx),
-      ...buildChatroomTools(bctx),
-      ...buildSubagentTools(bctx),
-      ...buildCanvasTools(bctx),
-      ...buildHttpTools(bctx),
-      ...buildGitTools(bctx),
-      ...buildWalletTools(bctx),
-      ...buildOpenClawWorkspaceTools(bctx),
-      ...buildScheduleTools(bctx),
-      ...buildSessionInfoTools(bctx),
-      ...buildOpenClawNodeTools(bctx),
-      ...buildContextTools(bctx),
-      ...buildConnectorTools(bctx),
-      ...buildDiscoveryTools(bctx),
-      ...buildMonitorTools(bctx),
-      ...buildSampleUITools(bctx),
-      ...buildPluginCreatorTools(bctx),
-    )
+    const toolToPluginMap: Record<string, string> = {}
+
+    const nativeBuilders: Array<[string, (ctx: ToolBuildContext) => StructuredToolInterface[]]> = [
+      ['shell', buildShellTools],
+      ['files', buildFileTools],
+      ['edit_file', buildEditFileTools],
+      ['delegate', buildDelegateTools],
+      ['web', buildWebTools],
+      ['memory', buildMemoryTools],
+      ['manage_platform', buildPlatformTools],
+      ['sandbox', buildSandboxTools],
+      ['manage_chatrooms', buildChatroomTools],
+      ['spawn_subagent', buildSubagentTools],
+      ['canvas', buildCanvasTools],
+      ['http', buildHttpTools],
+      ['git', buildGitTools],
+      ['wallet', buildWalletTools],
+      ['openclaw_workspace', buildOpenClawWorkspaceTools],
+      ['schedule', buildScheduleTools],
+      ['manage_sessions', buildSessionInfoTools],
+      ['openclaw_nodes', buildOpenClawNodeTools],
+      ['context_mgmt', buildContextTools],
+      ['manage_connectors', buildConnectorTools],
+      ['discovery', buildDiscoveryTools],
+      ['monitor', buildMonitorTools],
+      ['sample_ui', buildSampleUITools],
+      ['plugin_creator', buildPluginCreatorTools],
+      ['image_gen', buildImageGenTools],
+      ['email', buildEmailTools],
+      ['calendar', buildCalendarTools],
+      ['replicate', buildReplicateTools],
+    ]
+
+    for (const [pluginId, builder] of nativeBuilders) {
+      const builtTools = builder(bctx)
+      for (const t of builtTools) {
+        toolToPluginMap[t.name] = pluginId
+      }
+      tools.push(...builtTools)
+    }
 
     // 2. Build Plugin Tools (Built-in + External)
     try {
-      const pluginManager = getPluginManager()
-      const pluginTools = pluginManager.getTools(activeTools)
+      const pluginTools = pluginManager.getTools(activePlugins)
       const existingNames = new Set(tools.map((t) => t.name))
       
       for (const entry of pluginTools) {
@@ -161,6 +182,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
           continue
         }
         existingNames.add(pt.name)
+        toolToPluginMap[pt.name] = entry.pluginId
 
         tools.push(
           tool(
@@ -208,6 +230,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
           const mcpLcTools = await mcpToolsToLangChain(conn.client, config.name)
           for (const t of mcpLcTools) {
             if (!disabledMcpToolNames.has(t.name)) {
+              toolToPluginMap[t.name] = `mcp:${serverId}`
               tools.push(t)
             }
           }
@@ -224,6 +247,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
     }
 
     // 4. Always available: request_tool_access
+    toolToPluginMap['request_tool_access'] = '_system'
     tools.push(
       tool(
         async (args) => {
@@ -255,6 +279,7 @@ export async function buildSessionTools(cwd: string, enabledTools: string[], ctx
           try { await fn() } catch { /* ignore */ }
         }
       },
+      toolToPluginMap,
     }
   } catch (err: any) {
     console.error('[session-tools] buildSessionTools critical failure:', err.message)

@@ -1,10 +1,10 @@
 import { genId } from '@/lib/id'
 import { z } from 'zod'
 import type { GoalContract, MessageToolEvent } from '@/types'
-import { loadSessions, saveSessions, loadAgents, saveAgents, loadTasks, saveTasks, loadSettings } from './storage'
+import { loadSessions, saveSessions, loadAgents, saveAgents, loadSettings } from './storage'
 import { log } from './logger'
 import { getMemoryDb } from './memory-db'
-import { isProtectedMainSession } from './main-session'
+import { isMainLoopSession } from './main-session'
 import { logExecution } from './execution-log'
 import {
   mergeGoalContracts,
@@ -352,25 +352,6 @@ function appendWorkingMemoryNote(state: MainLoopState, note: string) {
   state.workingMemoryNotes = [...existing.slice(-23), value]
 }
 
-function inferGoalFromUserMessage(message: string): string | null {
-  const text = (message || '').trim()
-  if (!text) return null
-  if (/^SWARM_MAIN_(MISSION_TICK|AUTO_FOLLOWUP)\b/i.test(text)) return null
-  if (/^SWARM_HEARTBEAT_CHECK\b/i.test(text)) return null
-  if (/^(ok|okay|cool|thanks|thx|got it|nice|yep|yeah|nope|nah)[.! ]*$/i.test(text)) return null
-  return text.slice(0, 600)
-}
-
-function inferGoalFromSessionMessages(session: any): string | null {
-  const msgs = Array.isArray(session?.messages) ? session.messages : []
-  for (let i = msgs.length - 1; i >= 0; i -= 1) {
-    const msg = msgs[i]
-    if (msg?.role !== 'user') continue
-    const inferred = inferGoalFromUserMessage(typeof msg?.text === 'string' ? msg.text : '')
-    if (inferred) return inferred
-  }
-  return null
-}
 
 function parseMainLoopMeta(text: string): MainLoopMeta | null {
   const raw = (text || '').trim()
@@ -505,110 +486,7 @@ function getMissionCompletionGateReason(session: MainLoopSessionEvidenceLike | n
   return 'Mission requires screenshot artifact evidence (upload link or explicit sent screenshot confirmation) before completion.'
 }
 
-function upsertMissionTask(session: any, state: MainLoopState, now: number): string | null {
-  if (!state.goal) return state.missionTaskId || null
 
-  const tasks = loadTasks()
-  let task = state.missionTaskId ? tasks[state.missionTaskId] : null
-  if (!task) {
-    task = Object.values(tasks).find((t: any) =>
-      t?.sessionId === session.id
-      && t?.title?.startsWith('Mission:')
-      && t?.status !== 'archived'
-    ) as any || null
-  }
-
-  const title = `Mission: ${state.goal.slice(0, 140)}`
-  const statusMap = {
-    idle: 'backlog',
-    progress: 'running',
-    reflection: 'running',
-    blocked: 'failed',
-    ok: 'completed',
-  } as const
-  let mappedStatus = statusMap[state.status]
-  const completionGateReason = mappedStatus === 'completed'
-    ? getMissionCompletionGateReason(session, state)
-    : null
-  if (completionGateReason) mappedStatus = 'running'
-
-  let changed = false
-  const contractLines = buildGoalContractLines(state)
-  const planLines = state.planSteps.length
-    ? [`plan_steps: ${state.planSteps.join(' -> ')}`]
-    : []
-  if (state.currentPlanStep) planLines.push(`current_plan_step: ${state.currentPlanStep}`)
-  if (state.reviewNote) planLines.push(`latest_review: ${state.reviewNote}`)
-
-  const baseDescription = [
-    'Autonomous mission goal tracked from main loop.',
-    `Goal: ${state.goal}`,
-    state.nextAction ? `Next action: ${state.nextAction}` : '',
-    completionGateReason ? `Completion gate: ${completionGateReason}` : '',
-    ...contractLines,
-    ...planLines,
-  ].filter(Boolean).join('\n')
-
-  if (!task) {
-    const id = genId()
-    task = {
-      id,
-      title,
-      description: baseDescription,
-      status: mappedStatus,
-      agentId: session.agentId || 'default',
-      sessionId: session.id,
-      result: state.summary || null,
-      error: state.status === 'blocked' ? (state.summary || 'Blocked') : null,
-      createdAt: now,
-      updatedAt: now,
-      startedAt: mappedStatus === 'running' ? now : null,
-      completedAt: mappedStatus === 'completed' ? now : null,
-      queuedAt: null,
-      archivedAt: null,
-      comments: [],
-      images: [],
-      validation: null,
-    }
-    tasks[id] = task
-    changed = true
-  } else {
-    if (task.title !== title) {
-      task.title = title
-      changed = true
-    }
-    const nextDescription = baseDescription
-    if (task.description !== nextDescription) {
-      task.description = nextDescription
-      changed = true
-    }
-    if (task.status !== mappedStatus) {
-      task.status = mappedStatus
-      changed = true
-      if (mappedStatus === 'running' && !task.startedAt) task.startedAt = now
-      if (mappedStatus === 'completed') task.completedAt = now
-    }
-    const nextResult = state.summary || task.result || null
-    if (task.result !== nextResult) {
-      task.result = nextResult
-      changed = true
-    }
-    const nextError = mappedStatus === 'failed'
-      ? (state.summary || state.nextAction || 'Blocked')
-      : null
-    if (task.error !== nextError) {
-      task.error = nextError
-      changed = true
-    }
-    if (changed) task.updatedAt = now
-    tasks[task.id] = task
-  }
-
-  if (changed) {
-    saveTasks(tasks)
-  }
-  return task?.id || null
-}
 
 function maybeStoreMissionMemoryNote(
   session: any,
@@ -617,8 +495,7 @@ function maybeStoreMissionMemoryNote(
   source: string,
   force = false,
 ) {
-  if (!Array.isArray(session?.tools) || !session.tools.includes('memory')) return
-  if (!state.goal) return
+  if (!session?.agentId || !state.goal) return
   if (!force && state.lastMemoryNoteAt && (now - state.lastMemoryNoteAt) < MEMORY_NOTE_MIN_INTERVAL_MS) return
 
   const summary = state.summary || 'No summary'
@@ -670,8 +547,7 @@ function maybeStoreMissionMemoryNote(
   }
 }
 
-function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: boolean; agent?: Record<string, unknown> | null; session?: Record<string, unknown> | null }): string {
-  const hasMemoryTool = opts?.hasMemoryTool === true
+function buildFollowupPrompt(state: MainLoopState, opts?: { agent?: Record<string, unknown> | null; session?: Record<string, unknown> | null }): string {
   const identityContext = buildIdentityContext(opts?.session, opts?.agent)
   const goal = state.goal || 'No explicit goal yet. Continue with the strongest actionable objective from recent context.'
   const nextAction = state.nextAction || 'Determine the next highest-impact action and execute it.'
@@ -699,11 +575,10 @@ function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: bool
       ? 'Assist mode: execute safe internal analysis by default, and ask before irreversible external side effects (sending messages, purchases, account mutations).'
       : 'Autonomous mode: execute safe next actions without waiting for confirmation; ask only when blocked by permissions, credentials, or policy.',
     'Do not ask clarifying questions unless blocked by missing credentials, permissions, or safety constraints.',
-    hasMemoryTool
-      ? 'Use memory_tool actively: recall relevant prior notes before acting, and store a concise note after each meaningful step.'
-      : 'memory_tool is unavailable in this session. Keep concise progress summaries in your status/meta output.',
+    'Use any available tools actively to maintain state across turns.',
     'If you are blocked by missing credentials, permissions, or policy limits, say exactly what is blocked and the smallest unblock needed.',
     'For screenshot/image delivery goals (including scheduled captures), do not report status "ok" until a real artifact exists (upload link or explicit sent-file confirmation).',
+    'When the mission goal is fully completed, set status to "ok" with follow_up:false and include a clear summary of what was accomplished. The loop will auto-pause.',
     'If no meaningful action remains right now, reply exactly HEARTBEAT_OK.',
     'Otherwise include a concise human update, then append exactly one [MAIN_LOOP_META] JSON line.',
     'Optionally append one [MAIN_LOOP_PLAN] JSON line when you create/revise a plan.',
@@ -714,19 +589,19 @@ function buildFollowupPrompt(state: MainLoopState, opts?: { hasMemoryTool?: bool
   ].join('\n')
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function isMainSession(session: any): boolean {
-  return isProtectedMainSession(session)
+  return isMainLoopSession(session)
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function buildMainLoopHeartbeatPrompt(session: any, fallbackPrompt: string): string {
   const now = Date.now()
   const agents = loadAgents()
   const agent = session.agentId ? agents[session.agentId] : null
   const identityContext = buildIdentityContext(session, agent)
   const state = normalizeState(session?.mainLoopState, now)
-  const goal = state.goal || inferGoalFromSessionMessages(session) || null
-  const hasMemoryTool = Array.isArray(session?.tools) && session.tools.includes('memory')
-
+  const goal = state.goal || null
   const promptGoal = goal || 'No explicit mission captured yet. Infer the mission from recent user instructions and continue proactively.'
   const promptSummary = state.summary || 'No prior mission summary yet.'
   const promptNextAction = state.nextAction || 'No queued action. Determine one.'
@@ -758,11 +633,10 @@ export function buildMainLoopHeartbeatPrompt(session: any, fallbackPrompt: strin
     'Use tools where needed, verify outcomes, and avoid vague status-only replies.',
     'Do not ask broad exploratory questions when a safe next action exists. Pick a reasonable assumption, execute, and adapt from evidence.',
     'Do not ask clarifying questions unless blocked by missing credentials, permissions, or safety constraints.',
-    hasMemoryTool
-      ? 'Use memory_tool actively: recall relevant prior notes before acting, and store concise notes about progress, constraints, and next step after each meaningful action.'
-      : 'If memory_tool is unavailable, keep concise state in summary/next_action and continue execution.',
+    'Use any available tools actively to maintain state and recall context across turns.',
     'Use a planner-executor-review loop: keep a concrete step plan, execute one meaningful step, then self-review and either continue or re-plan.',
     'For screenshot/image delivery goals (including scheduled captures), do not report status "ok" until a real artifact exists (upload link or explicit sent-file confirmation).',
+    'When the mission goal is fully completed, set status to "ok" with follow_up:false and include a clear summary of what was accomplished. The loop will auto-pause.',
     'If nothing important changed and no action is needed now, reply exactly HEARTBEAT_OK.',
     'Otherwise: provide a concise human-readable update, then append exactly one [MAIN_LOOP_META] JSON line.',
     'Optionally append one [MAIN_LOOP_PLAN] JSON line when creating/updating plan steps.',
@@ -775,8 +649,7 @@ export function buildMainLoopHeartbeatPrompt(session: any, fallbackPrompt: strin
   ].join('\n')
 }
 
-export function stripMainLoopMetaForPersistence(text: string, internal: boolean): string {
-  if (!internal) return text
+export function stripMainLoopMetaForPersistence(text: string): string {
   if (!text) return ''
   return text
     .split('\n')
@@ -935,30 +808,16 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   const sessions = loadSessions()
   const session = sessions[input.sessionId]
   if (!session) return null
-  if (!isProtectedMainSession(session)) return handleAgentHeartbeatResult(session, input)
+  if (!isMainLoopSession(session)) return handleAgentHeartbeatResult(session, input)
 
   const now = Date.now()
   const state = normalizeState(session.mainLoopState, now)
-  const hasMemoryTool = Array.isArray(session.tools) && session.tools.includes('memory')
   state.pendingEvents = pruneEvents(state.pendingEvents, now)
   let forceMemoryNote = false
 
-  const userGoal = inferGoalFromUserMessage(input.message)
   const userGoalContract = parseGoalContractFromText(input.message)
   if (!input.internal) {
-    if (userGoal) {
-      state.goal = userGoal
-      if (userGoalContract) state.goalContract = mergeGoalContracts(state.goalContract, userGoalContract)
-      state.status = 'progress'
-      appendEvent(state, 'user_instruction', `User goal updated: ${userGoal}`, now)
-      appendTimeline(state, 'user_goal', `Goal updated: ${userGoal}`, now, state.status)
-      appendWorkingMemoryNote(state, `goal:${userGoal}`)
-      forceMemoryNote = true
-      logExecution(input.sessionId, 'mission_start', `New goal: ${toOneLine(userGoal, 200)}`, {
-        agentId: session.agentId,
-        detail: { goal: userGoal, planSteps: state.planSteps },
-      })
-    } else if (userGoalContract?.objective) {
+    if (userGoalContract?.objective) {
       state.goal = userGoalContract.objective
       state.goalContract = mergeGoalContracts(state.goalContract, userGoalContract)
       state.status = 'progress'
@@ -1022,13 +881,13 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   let followup: MainLoopFollowupRequest | null = null
   const shouldAutoKickFromUserGoal = !input.internal
     && !input.error
-    && (!!userGoal || !!userGoalContract?.objective)
+    && !!userGoalContract?.objective
     && !state.paused
     && state.autonomyMode === 'autonomous'
 
   if (shouldAutoKickFromUserGoal) {
     followup = {
-      message: buildFollowupPrompt(state, { hasMemoryTool, agent: session.agentId ? loadAgents()[session.agentId] : null, session }),
+      message: buildFollowupPrompt(state, { agent: session.agentId ? loadAgents()[session.agentId] : null, session }),
       delayMs: 1500,
       dedupeKey: `main-loop-user-kickoff:${input.sessionId}`,
     }
@@ -1116,7 +975,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
         state.followupChainCount += 1
         const delaySec = clampInt(meta.delay_sec, DEFAULT_FOLLOWUP_DELAY_SEC, 5, 900)
         followup = {
-          message: buildFollowupPrompt(state, { hasMemoryTool, agent: session.agentId ? loadAgents()[session.agentId] : null, session }),
+          message: buildFollowupPrompt(state, { agent: session.agentId ? loadAgents()[session.agentId] : null, session }),
           delayMs: delaySec * 1000,
           dedupeKey: `main-loop-followup:${input.sessionId}`,
         }
@@ -1127,10 +986,15 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
       if (state.status === 'ok' || state.status === 'blocked') {
         forceMemoryNote = true
         if (state.status === 'ok') {
+          // Auto-pause the mission loop — the goal is complete
+          state.paused = true
+          state.followupChainCount = 0
+          followup = null
           logExecution(input.sessionId, 'mission_complete', `Mission completed: ${toOneLine(state.goal || 'unknown', 200)}`, {
             agentId: session.agentId,
             detail: { momentumScore: state.momentumScore, followupChainCount: state.followupChainCount, missionTokens: state.missionTokens, missionCostUsd: state.missionCostUsd },
           })
+          appendTimeline(state, 'auto_pause', 'Mission goal completed — auto-paused.', now, state.status)
         }
       }
     } else if (!isHeartbeatOk && trimmedText) {
@@ -1159,7 +1023,8 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     }
   }
 
-  state.missionTaskId = upsertMissionTask(session, state, now)
+  // Agents don't auto-create tasks for themselves — they just do the work.
+  // Tasks are created explicitly by the user or when delegating to another agent.
   const shouldWritePeriodicMemory = !!state.summary && state.status === 'progress'
   maybeStoreMissionMemoryNote(session, state, now, input.source, forceMemoryNote || shouldWritePeriodicMemory)
 

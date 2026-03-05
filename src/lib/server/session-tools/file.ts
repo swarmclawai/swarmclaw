@@ -144,6 +144,7 @@ export function normalizeSendFilePaths(args: Record<string, unknown>): string[] 
   const candidates: string[] = []
   collectSendFilePaths(args.filePath, candidates)
   collectSendFilePaths(args.path, candidates)
+  collectSendFilePaths(args.file, candidates)
   collectSendFilePaths(args.files, candidates)
 
   const nestedInput = args.input
@@ -202,7 +203,9 @@ async function executeSendFile(args: Record<string, unknown>, bctx: { cwd: strin
 const FilePlugin: Plugin = {
   name: 'Core Files',
   description: 'Complete file management: read, write, list, move, copy, delete, and send.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can read, write, copy, move, and send files (`read_file`, `write_file`, `list_files`, `copy_file`, `move_file`, `send_file`). Deleting files is destructive, so that may need explicit permission.',
+  } as PluginHooks,
   tools: [
     {
       name: 'files',
@@ -265,7 +268,7 @@ getPluginManager().registerBuiltin('files', FilePlugin)
  * Legacy Bridge
  */
 export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('files')) return []
+  if (!bctx.hasPlugin('files')) return []
 
   return [
     tool(

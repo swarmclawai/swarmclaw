@@ -51,10 +51,10 @@ async function executeSessionsAction(args: any, context: { sessionId?: string; a
       const id = genId()
       const now = Date.now()
       sessions[id] = {
-        id, name: (name || `${agent.name} Session`).trim(), cwd: context.cwd, user: 'system',
+        id, name: (name || `${agent.name} Chat`).trim(), cwd: context.cwd, user: 'system',
         provider: agent.provider, model: agent.model, credentialId: agent.credentialId || null,
         messages: [], createdAt: now, lastActiveAt: now, sessionType: 'orchestrated',
-        agentId: agent.id, parentSessionId: context.sessionId || undefined, tools: agent.tools || [],
+        agentId: agent.id, parentSessionId: context.sessionId || undefined, plugins: agent.plugins || agent.tools || [],
       }
       saveSessions(sessions)
       return JSON.stringify({ sessionId: id, name: agent.name })
@@ -69,7 +69,10 @@ async function executeSessionsAction(args: any, context: { sessionId?: string; a
 const SessionInfoPlugin: Plugin = {
   name: 'Core Session Info',
   description: 'Identify current session context and manage other agent sessions.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can manage chat sessions (`manage_sessions`, `sessions_tool`, `whoami_tool`, `search_history_tool`) — check my identity, look up past conversations, message other sessions, and coordinate work.',
+    getOperatingGuidance: () => 'Inspect existing chats before creating duplicates.',
+  } as PluginHooks,
   tools: [
     {
       name: 'whoami_tool',
@@ -102,7 +105,7 @@ getPluginManager().registerBuiltin('session_info', SessionInfoPlugin)
  * Legacy Bridge
  */
 export function buildSessionInfoTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('manage_sessions')) return []
+  if (!bctx.hasPlugin('manage_sessions')) return []
   return [
     tool(
       async () => executeWhoAmI({ sessionId: bctx.ctx?.sessionId || undefined, agentId: bctx.ctx?.agentId || undefined }),

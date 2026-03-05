@@ -379,7 +379,7 @@ export function HomeView() {
             <div className="flex gap-3 overflow-x-auto pb-2">
               {pinnedAgents.map((agent) => {
                 const threadSession = agent.threadSessionId ? sessions[agent.threadSessionId] as Session | undefined : undefined
-                const heartbeatOn = agent.heartbeatEnabled === true && (agent.tools?.length ?? 0) > 0
+                const heartbeatOn = agent.heartbeatEnabled === true && (agent.plugins?.length ?? 0) > 0
                 const recentlyActive = (threadSession?.lastActiveAt ?? 0) > Date.now() - 30 * 60 * 1000
                 const isOnline = runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive
                 const isTyping = streamingSessionId === agent.threadSessionId

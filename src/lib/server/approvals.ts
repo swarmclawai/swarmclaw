@@ -69,9 +69,9 @@ export async function submitDecision(id: string, approved: boolean): Promise<voi
       const session = sessions[request.sessionId]
       if (session) {
         const toolId = getApprovalTargetId(request.data)
-        const currentTools = session.tools || []
+        const currentTools = session.plugins || []
         if (toolId && !currentTools.includes(toolId)) {
-          session.tools = [...currentTools, toolId]
+          session.plugins = [...currentTools, toolId]
           saveSessions(sessions)
         }
       }
@@ -99,9 +99,9 @@ export async function submitDecision(id: string, approved: boolean): Promise<voi
           const sessions = loadSessions()
           const session = sessions[request.sessionId]
           if (session) {
-            const currentTools = session.tools || []
+            const currentTools = session.plugins || []
             if (!currentTools.includes(filename)) {
-              session.tools = [...currentTools, filename]
+              session.plugins = [...currentTools, filename]
               saveSessions(sessions)
             }
           }

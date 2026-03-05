@@ -6,7 +6,7 @@ import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { api } from '@/lib/api-client'
 import { toast } from 'sonner'
-import type { PluginMeta, MarketplacePlugin } from '@/types'
+import type { PluginMeta, PluginSettingsField, MarketplacePlugin } from '@/types'
 
 function pluginDescription(plugin: PluginMeta): string {
   const raw = (plugin.description || '').trim()
@@ -45,8 +45,37 @@ export function PluginSheet() {
   const [search, setSearch] = useState('')
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [sort, setSort] = useState<'name' | 'downloads'>('downloads')
+  const [pluginSettingsValues, setPluginSettingsValues] = useState<Record<string, unknown>>({})
+  const [pluginSettingsLoading, setPluginSettingsLoading] = useState(false)
+  const [pluginSettingsSaving, setPluginSettingsSaving] = useState(false)
 
   const editing = editingFilename ? plugins[editingFilename] : null
+
+  // Load per-plugin settings when editing a plugin that has settingsFields
+  useEffect(() => {
+    if (!editing?.settingsFields?.length) {
+      setPluginSettingsValues({})
+      return
+    }
+    setPluginSettingsLoading(true)
+    api<Record<string, unknown>>('GET', `/plugins/settings?pluginId=${encodeURIComponent(editing.filename)}`)
+      .then((data) => setPluginSettingsValues(data ?? {}))
+      .catch(() => setPluginSettingsValues({}))
+      .finally(() => setPluginSettingsLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingFilename])
+
+  const savePluginSettings = useCallback(async () => {
+    if (!editing) return
+    setPluginSettingsSaving(true)
+    try {
+      await api('PUT', `/plugins/settings?pluginId=${encodeURIComponent(editing.filename)}`, pluginSettingsValues)
+      toast.success('Plugin settings saved')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save settings')
+    }
+    setPluginSettingsSaving(false)
+  }, [editing, pluginSettingsValues])
 
   const loadMarketplace = useCallback(async () => {
     setLoading(true)
@@ -205,15 +234,46 @@ export function PluginSheet() {
             </div>
           </div>
 
-          <button
-            onClick={() => setConfirmDelete(true)}
-            disabled={deleting}
-            className="w-full py-2.5 rounded-[10px] text-[13px] font-600 bg-red-500/10 text-red-400 border border-red-500/20
-              hover:bg-red-500/20 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-default"
-            style={{ fontFamily: 'inherit' }}
-          >
-            {deleting ? 'Deleting...' : 'Delete Plugin'}
-          </button>
+          {editing.settingsFields && editing.settingsFields.length > 0 && (
+            <div className="py-4 px-4 rounded-[14px] bg-surface border border-white/[0.06] space-y-3">
+              <div className="text-[13px] font-600 text-text">Settings</div>
+              {pluginSettingsLoading ? (
+                <p className="text-[11px] text-text-3/60">Loading...</p>
+              ) : (
+                <>
+                  {editing.settingsFields.map((field: PluginSettingsField) => (
+                    <PluginSettingRow
+                      key={field.key}
+                      field={field}
+                      value={pluginSettingsValues[field.key]}
+                      onChange={(v) => setPluginSettingsValues((prev) => ({ ...prev, [field.key]: v }))}
+                    />
+                  ))}
+                  <button
+                    onClick={savePluginSettings}
+                    disabled={pluginSettingsSaving}
+                    className="w-full py-2 rounded-[10px] text-[12px] font-600 bg-accent-soft text-accent-bright border border-accent-bright/20
+                      hover:bg-accent-soft/80 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-default mt-1"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    {pluginSettingsSaving ? 'Saving...' : 'Save Settings'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {editing.source !== 'local' && (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              disabled={deleting}
+              className="w-full py-2.5 rounded-[10px] text-[13px] font-600 bg-red-500/10 text-red-400 border border-red-500/20
+                hover:bg-red-500/20 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-default"
+              style={{ fontFamily: 'inherit' }}
+            >
+              {deleting ? 'Deleting...' : 'Delete Plugin'}
+            </button>
+          )}
         </div>
       ) : (
         <div>
@@ -402,5 +462,59 @@ export function PluginSheet() {
         onCancel={() => { if (!deleting) setConfirmDelete(false) }}
       />
     </BottomSheet>
+  )
+}
+
+function PluginSettingRow({ field, value, onChange }: { field: PluginSettingsField; value: unknown; onChange: (v: unknown) => void }) {
+  const inputCls = 'w-full py-2 px-3 rounded-[8px] text-[12px] bg-bg border border-white/[0.06] text-text placeholder:text-text-3/50 outline-none focus:border-accent-bright/30'
+
+  return (
+    <div>
+      <label className="block text-[11px] font-600 text-text-2 mb-1">
+        {field.label}
+        {field.required && <span className="text-red-400 ml-0.5">*</span>}
+      </label>
+      {field.type === 'boolean' ? (
+        <div
+          onClick={() => onChange(!(value ?? field.defaultValue ?? false))}
+          className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
+            ${(value ?? field.defaultValue ?? false) ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
+        >
+          <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
+            ${(value ?? field.defaultValue ?? false) ? 'left-[22px]' : 'left-0.5'}`} />
+        </div>
+      ) : field.type === 'select' ? (
+        <select
+          value={String(value ?? field.defaultValue ?? '')}
+          onChange={(e) => onChange(e.target.value)}
+          className={`${inputCls} cursor-pointer appearance-none`}
+          style={{ fontFamily: 'inherit' }}
+        >
+          <option value="">Select...</option>
+          {(field.options ?? []).map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      ) : field.type === 'number' ? (
+        <input
+          type="number"
+          value={String(value ?? field.defaultValue ?? '')}
+          onChange={(e) => onChange(e.target.value ? Number(e.target.value) : undefined)}
+          placeholder={field.placeholder}
+          className={inputCls}
+          style={{ fontFamily: 'inherit' }}
+        />
+      ) : (
+        <input
+          type={field.type === 'secret' ? 'password' : 'text'}
+          value={String(value ?? field.defaultValue ?? '')}
+          onChange={(e) => onChange(e.target.value || undefined)}
+          placeholder={field.placeholder}
+          className={inputCls}
+          style={{ fontFamily: 'inherit' }}
+        />
+      )}
+      {field.help && <p className="text-[10px] text-text-3/60 mt-1">{field.help}</p>}
+    </div>
   )
 }

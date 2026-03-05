@@ -4,30 +4,17 @@ import { HumanMessage, AIMessage } from '@langchain/core/messages'
 import { buildSessionTools } from './session-tools'
 import { buildChatModel } from './build-llm'
 import { loadSettings, loadAgents, loadSkills, appendUsage } from './storage'
-import { estimateCost } from './cost'
+import { estimateCost, buildPluginDefinitionCosts } from './cost'
 import { getPluginManager } from './plugins'
 import { loadRuntimeSettings, getAgentLoopRecursionLimit } from './runtime-settings'
-import { getMemoryDb } from './memory-db'
+
 import { logExecution } from './execution-log'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
-import { expandToolIds } from './tool-aliases'
-import type { Session, Message, UsageRecord } from '@/types'
+import { expandPluginIds } from './tool-aliases'
+import type { Session, Message, UsageRecord, PluginInvocationRecord } from '@/types'
 import { extractSuggestions } from './suggestions'
 
 /** Extract a breadcrumb title from notable tool completions (task/schedule/agent creation). */
-function extractBreadcrumbTitle(toolName: string, input: unknown, output: string | undefined): string | null {
-  if (!input || typeof input !== 'object') return null
-  const inp = input as Record<string, unknown>
-  const action = typeof inp.action === 'string' ? inp.action : ''
-  if (toolName === 'manage_tasks') {
-    if (action === 'create') return `Created task: ${inp.title || 'Untitled'}`
-    if (output && /status.*completed|completed.*successfully/i.test(output)) return `Completed task: ${inp.title || inp.taskId || 'unknown'}`
-  }
-  if (toolName === 'manage_schedules' && action === 'create') return `Created schedule: ${inp.name || 'Untitled'}`
-  if (toolName === 'manage_agents' && action === 'create') return `Created agent: ${inp.name || 'Untitled'}`
-  return null
-}
-
 interface StreamAgentChatOpts {
   session: Session
   message: string
@@ -41,41 +28,17 @@ interface StreamAgentChatOpts {
   signal?: AbortSignal
 }
 
-function buildToolCapabilityLines(enabledTools: string[], opts?: { platformAssignScope?: 'self' | 'all' }): string[] {
-  const lines: string[] = []
-  if (enabledTools.includes('shell')) lines.push('- I can run shell commands (`execute_command`) — servers, installs, scripts, git, builds, anything. I can run things in the background for long-lived processes like dev servers.')
-  if (enabledTools.includes('process')) lines.push('- I can manage running processes (`process_tool`) — check status, read logs, send input, or stop them.')
-  if (enabledTools.includes('files') || enabledTools.includes('copy_file') || enabledTools.includes('move_file') || enabledTools.includes('delete_file')) {
-    lines.push('- I can read, write, copy, move, and send files (`read_file`, `write_file`, `list_files`, `copy_file`, `move_file`, `send_file`). Deleting files is destructive, so that may need explicit permission.')
-  }
-  if (enabledTools.includes('edit_file')) lines.push('- I can make precise edits to files (`edit_file`) — surgical find-and-replace without rewriting the whole file.')
-  if (enabledTools.includes('web_search')) lines.push('- I can search the web (`web_search`) for research, fact-checking, and discovery.')
-  if (enabledTools.includes('web_fetch')) lines.push('- I can fetch and read web pages (`web_fetch`) to pull in real content for analysis.')
-  if (enabledTools.includes('browser')) lines.push('- I can control a browser (`browser`) — navigate sites, fill forms, take screenshots, interact with web apps.')
-  if (enabledTools.includes('claude_code')) lines.push('- I can hand off deep coding work to Claude Code (`delegate_to_claude_code`) for complex multi-file refactors and code generation. Resume IDs may come back via `[delegate_meta]`.')
-  if (enabledTools.includes('codex_cli')) lines.push('- I can hand off deep coding work to Codex (`delegate_to_codex_cli`) for complex multi-file refactors and code generation. Resume IDs may come back via `[delegate_meta]`.')
-  if (enabledTools.includes('opencode_cli')) lines.push('- I can hand off deep coding work to OpenCode (`delegate_to_opencode_cli`) for complex multi-file refactors and code generation. Resume IDs may come back via `[delegate_meta]`.')
-  if (enabledTools.includes('memory')) lines.push('- I have long-term memory (`memory_tool`) — I can remember things across conversations and recall them when needed.')
-  if (enabledTools.includes('sandbox')) lines.push('- I can run code in a sandbox (`sandbox_exec`) — JS/TS via Deno or Python, in an isolated environment. I get stdout, stderr, and any files created.')
-  if (enabledTools.includes('manage_agents')) lines.push('- I can create and configure other agents (`manage_agents`) — spin up specialists when a task calls for it.')
-  if (enabledTools.includes('manage_tasks')) lines.push('- I can manage tasks (`manage_tasks`) — create plans, track progress, and stay organized over time.')
-  if (enabledTools.includes('manage_schedules')) lines.push('- I can set up schedules (`manage_schedules`) for recurring work or future follow-ups.')
-  if (enabledTools.includes('schedule_wake')) lines.push('- I can set a conversational timer (`schedule_wake`) to remind myself to check back on something later in this chat.')
-  if (enabledTools.includes('manage_documents')) lines.push('- I can store and search documents (`manage_documents`) for long-term knowledge and reference.')
-  if (enabledTools.includes('manage_webhooks')) lines.push('- I can register webhooks (`manage_webhooks`) so external events can trigger my work automatically.')
-  if (enabledTools.includes('manage_skills')) lines.push('- I can manage reusable skills (`manage_skills`) — building blocks I can learn and apply.')
-  if (enabledTools.includes('manage_connectors')) lines.push('- I can manage messaging channels (`manage_connectors`) — WhatsApp, Telegram, Slack, Discord — and send proactive messages via `connector_message_tool`.')
-  if (enabledTools.includes('manage_sessions')) lines.push('- I can manage chat sessions (`manage_sessions`, `sessions_tool`, `whoami_tool`, `search_history_tool`) — check my identity, look up past conversations, message other sessions, and coordinate work.')
-  // Context tools are available to any session with tools (not just manage_sessions)
-  if (enabledTools.length > 0) {
+function buildPluginCapabilityLines(enabledPlugins: string[], opts?: { platformAssignScope?: 'self' | 'all' }): string[] {
+  // Collect capability descriptions dynamically from plugins
+  const lines = getPluginManager().collectCapabilityDescriptions(enabledPlugins)
+
+  // Context tools are available to any session with plugins
+  if (enabledPlugins.length > 0) {
     lines.push('- I can monitor my own context usage (`context_status`) and compact my conversation history (`context_summarize`) when I\'m running low on space.')
     if (opts?.platformAssignScope === 'all') {
       lines.push('- I can delegate tasks to other agents (`delegate_to_agent`) based on their strengths and availability.')
     }
   }
-  if (enabledTools.includes('manage_secrets')) lines.push('- I can store and retrieve encrypted secrets (`manage_secrets`) — API keys, credentials, tokens.')
-  if (enabledTools.includes('manage_chatrooms')) lines.push('- I can create and participate in chatrooms (`manage_chatrooms`) for multi-agent collaboration with @mention-based discussions.')
-  if (enabledTools.includes('wallet')) lines.push('- I have my own crypto wallet (`wallet_tool`) — I can check my balance, send SOL, and review my transaction history.')
   return lines
 }
 
@@ -102,7 +65,7 @@ const GOAL_DECOMPOSITION_BLOCK = [
 ].join('\n')
 
 function buildAgenticExecutionPolicy(opts: {
-  enabledTools: string[]
+  enabledPlugins: string[]
   loopMode: 'bounded' | 'ongoing'
   heartbeatPrompt: string
   heartbeatIntervalSec: number
@@ -110,10 +73,8 @@ function buildAgenticExecutionPolicy(opts: {
   userMessage?: string
   hasExistingPlan?: boolean
 }) {
-  const hasTooling = opts.enabledTools.length > 0
-  const toolLines = buildToolCapabilityLines(opts.enabledTools, { platformAssignScope: opts.platformAssignScope })
-  const has = (t: string) => opts.enabledTools.includes(t)
-  const hasDelegationTool = has('claude_code') || has('codex_cli') || has('opencode_cli')
+  const hasTooling = opts.enabledPlugins.length > 0
+  const pluginLines = buildPluginCapabilityLines(opts.enabledPlugins, { platformAssignScope: opts.platformAssignScope })
 
   const parts: string[] = []
 
@@ -130,30 +91,9 @@ function buildAgenticExecutionPolicy(opts: {
       : 'Loop: BOUNDED — execute multiple steps but finish within recursion budget.',
   )
 
-  // Tool-specific guidance (consolidated)
-  if (has('shell')) {
-    parts.push(
-      'Shell: use `execute_command` for servers, installs, scripts, git. Use `background=true` for long-lived processes.',
-      'Verify servers with `process_tool` status/log and liveness probes before claiming success.',
-      'Resolve IPs/URLs via shell — never use placeholders. Retry path errors without workdir override.',
-    )
-  }
-  if (hasDelegationTool) {
-    parts.push(
-      'CRITICAL: `execute_command` (not delegation) for running servers, installs, scripts. Delegation sessions end and kill processes.',
-      'Delegate only for deep multi-file code work: refactors, debugging, generation, test suites.',
-    )
-  }
-  if (has('memory')) {
-    parts.push(
-      'Memory: search before major tasks, store concise notes after meaningful steps. Platform preloads context each turn.',
-      'For open goals, form a hypothesis and execute — do not keep re-asking broad questions.',
-    )
-  }
-  if (has('manage_tasks')) parts.push('Create/update tasks for long-lived goals to track progress.')
-  if (has('manage_schedules')) parts.push('Use schedules for follow-ups. Check existing schedules before creating new ones.')
-  if (has('manage_connectors')) parts.push('Connectors: proactive outreach for significant events only. Keep messages concise, no duplicates.')
-  if (has('manage_sessions')) parts.push('Inspect existing chats before creating duplicates.')
+  // Plugin-specific operating guidance (collected dynamically from plugins)
+  const guidanceLines = getPluginManager().collectOperatingGuidance(opts.enabledPlugins)
+  if (guidanceLines.length) parts.push(...guidanceLines)
 
   // Response behavior
   parts.push(
@@ -167,7 +107,7 @@ function buildAgenticExecutionPolicy(opts: {
     'For SWARM_MAIN_MISSION_TICK / SWARM_MAIN_AUTO_FOLLOWUP messages, follow the response contract and include [MAIN_LOOP_META] JSON.',
   )
 
-  if (toolLines.length) parts.push('What I can do:\n' + toolLines.join('\n'))
+  if (pluginLines.length) parts.push('What I can do:\n' + pluginLines.join('\n'))
   if (opts.userMessage && !opts.hasExistingPlan && isBroadGoal(opts.userMessage)) parts.push(GOAL_DECOMPOSITION_BLOCK)
 
   return parts.filter(Boolean).join('\n')
@@ -184,10 +124,10 @@ export interface StreamAgentChatResult {
 export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<StreamAgentChatResult> {
   const startTs = Date.now()
   const { session, message, imagePath, attachedFiles, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
-  const rawTools = Array.isArray(session.tools) ? session.tools : []
-  const hasShellCapability = rawTools.some((toolId) => ['shell', 'execute_command'].includes(String(toolId)))
-  const sessionToolsWithImplicitProcess = expandToolIds([
-    ...rawTools,
+  const rawPlugins = Array.isArray(session.plugins) ? session.plugins : []
+  const hasShellCapability = rawPlugins.some((toolId) => ['shell', 'execute_command'].includes(String(toolId)))
+  const sessionPlugins = expandPluginIds([
+    ...rawPlugins,
     ...(hasShellCapability ? ['process'] : []),
   ])
 
@@ -279,109 +219,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     stateModifierParts.push(`## Reasoning Depth\n${thinkingGuidance[agentThinkingLevel]}`)
   }
 
-  if ((session.tools || []).includes('memory') && session.agentId) {
-    try {
-      const memDb = getMemoryDb()
-      const memoryQuerySeed = [
-        message,
-        ...history
-          .slice(-4)
-          .filter((h) => h.role === 'user')
-          .map((h) => h.text),
-      ].join('\n')
-
-      const seen = new Set<string>()
-      const formatMemoryLine = (m: { category?: string; title?: string; content?: string; pinned?: boolean }) => {
-        const category = String(m.category || 'note')
-        const title = String(m.title || 'Untitled').replace(/\s+/g, ' ').trim()
-        const snippet = String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 220)
-        const pin = m.pinned ? ' [pinned]' : ''
-        return `- [${category}]${pin} ${title}: ${snippet}`
-      }
-
-      // Pinned memories always appear first
-      const pinned = memDb.listPinned(session.agentId, 5)
-      const pinnedLines = pinned
-        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
-        .map(formatMemoryLine)
-
-      // Reduce relevant slice by pinned count to keep total context bounded
-      const relevantSlice = Math.max(2, 6 - pinnedLines.length)
-      const relevantLookup = memDb.searchWithLinked(memoryQuerySeed, session.agentId, 1, 10, 14)
-      const relevant = relevantLookup.entries.slice(0, relevantSlice)
-      const recent = memDb.list(session.agentId, 12).slice(0, 6)
-
-      const relevantLines = relevant
-        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
-        .map(formatMemoryLine)
-
-      const recentLines = recent
-        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
-        .map(formatMemoryLine)
-
-      const memorySections: string[] = []
-      if (pinnedLines.length) {
-        memorySections.push(
-          ['## Pinned Memories', 'Always-loaded memories marked as important.', ...pinnedLines].join('\n'),
-        )
-      }
-      if (relevantLines.length) {
-        memorySections.push(
-          ['## Relevant Memory Hits', 'These memories were retrieved by relevance for the current objective.', ...relevantLines].join('\n'),
-        )
-      }
-      if (recentLines.length) {
-        memorySections.push(
-          ['## Recent Memory Notes', 'Recent durable notes that may still apply.', ...recentLines].join('\n'),
-        )
-      }
-
-      if (memorySections.length) {
-        stateModifierParts.push(memorySections.join('\n\n'))
-      }
-
-      // Memory Policy — always injected when memory tool is available
-      stateModifierParts.push([
-        '## My Memory',
-        'I have long-term memory that persists across conversations. I use it naturally — I don\'t wait to be asked to remember things.',
-        '',
-        '**Things worth remembering:**',
-        '- What the user likes, dislikes, or has corrected me on',
-        '- Important decisions, outcomes, and lessons learned',
-        '- What I\'ve discovered about projects, codebases, or environments',
-        '- Problems I\'ve hit and how I solved them',
-        '- Who people are and how they relate to each other',
-        '- Configuration details and environment specifics that I\'ll need again',
-        '',
-        '**Not worth cluttering my memory with:**',
-        '- Throwaway acknowledgments or small talk',
-        '- Work-in-progress that\'ll change soon (use category "working" for scratch notes)',
-        '- Things already in my system prompt',
-        '- Something I\'ve already stored',
-        '',
-        '**Good habits:**',
-        '- Give memories clear titles ("User prefers dark mode" not "Note 1")',
-        '- Use categories: preference, fact, learning, project, identity, decision',
-        '- Check what I already know before storing something new',
-        '- When I learn something that corrects old knowledge, update or remove the old memory',
-      ].join('\n'))
-
-      // Pre-compaction memory flush: nudge agent to save important context before it's lost
-      const msgCount = history.filter(m => m.role === 'user' || m.role === 'assistant').length
-      if (msgCount > 20) {
-        stateModifierParts.push([
-          '## Reflection & Consolidation Reminder',
-          'This conversation is getting long and I might lose older context soon.',
-          'Save anything important I\'ve learned, decided, or discovered to memory now. Only what matters, not every detail.',
-        ].join('\n'))
-      }
-    } catch {
-      // If memory context fails to load, continue without blocking the run.
-    }
-  }
-
   // Inject agent awareness (Phase 2: agents know about each other)
-  if ((session.tools || []).length > 0 && session.agentId) {
+  if ((session.plugins || []).length > 0 && session.agentId) {
     try {
       const { buildAgentAwarenessBlock } = await import('./agent-registry')
       const awarenessBlock = buildAgentAwarenessBlock(session.agentId)
@@ -391,39 +230,17 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     }
   }
 
-  // Inject wallet context when agent has wallet tool enabled and a linked wallet
-  if ((session.tools || []).includes('wallet') && session.agentId) {
-    try {
-      const { loadWallets } = await import('./storage')
-      const wallets = loadWallets() as Record<string, { agentId: string; publicKey: string; chain: string; spendingLimitLamports?: number; dailyLimitLamports?: number; requireApproval: boolean }>
-      const wallet = Object.values(wallets).find((w) => w.agentId === session.agentId)
-      if (wallet) {
-        const { getBalance, lamportsToSol } = await import('./solana')
-        let balanceSol = 0
-        try {
-          const lamports = await getBalance(wallet.publicKey)
-          balanceSol = lamportsToSol(lamports)
-        } catch { /* RPC failure — show 0 */ }
-        const perTxLimit = lamportsToSol(wallet.spendingLimitLamports ?? 100_000_000)
-        const dailyLimit = lamportsToSol(wallet.dailyLimitLamports ?? 1_000_000_000)
-        stateModifierParts.push([
-          '## Your Wallet',
-          `You own a ${wallet.chain} wallet — this is your wallet, your funds, your address. Speak about it in the first person ("my wallet", "my balance", "I have X SOL"). You can spend from it freely within your limits${wallet.requireApproval ? ', though the user needs to approve each send before it goes through' : ''}.`,
-          `- Address: ${wallet.publicKey}`,
-          `- Balance: ${balanceSol} SOL`,
-          `- Per-transaction limit: ${perTxLimit} SOL`,
-          `- Daily limit: ${dailyLimit} SOL`,
-          'Use the `wallet_tool` to check your balance, send SOL, or view your transaction history.',
-        ].join('\n'))
-      }
-    } catch {
-      // Wallet context is non-critical
-    }
+  // Collect dynamic context from enabled plugins (wallet, memory, etc.)
+  try {
+    const pluginContextParts = await getPluginManager().collectAgentContext(session, sessionPlugins, message, history)
+    stateModifierParts.push(...pluginContextParts)
+  } catch {
+    // Plugin context injection is non-critical
   }
 
   // Tell the LLM about available plugins and their access status
   {
-    const agentEnabledSet = new Set(sessionToolsWithImplicitProcess)
+    const agentEnabledSet = new Set(sessionPlugins)
     const { getPluginManager } = await import('./plugins')
     const allPlugins = getPluginManager().listPlugins()
     const mcpDisabled = agentMcpDisabledTools ?? []
@@ -478,7 +295,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   stateModifierParts.push(
     buildAgenticExecutionPolicy({
-      enabledTools: sessionToolsWithImplicitProcess,
+      enabledPlugins: sessionPlugins,
       loopMode: runtime.loopMode,
       heartbeatPrompt,
       heartbeatIntervalSec,
@@ -490,7 +307,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   let stateModifier = stateModifierParts.join('\n\n')
 
-  const { tools, cleanup } = await buildSessionTools(session.cwd, sessionToolsWithImplicitProcess, {
+  const { tools, cleanup, toolToPluginMap } = await buildSessionTools(session.cwd, sessionPlugins, {
     agentId: session.agentId,
     sessionId: session.id,
     platformAssignScope: agentPlatformAssignScope,
@@ -582,12 +399,27 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     return parts
   }
 
-  // Auto-compaction: prune old history if approaching context window limit
-  let effectiveHistory = history
+  // Apply context-clear boundary: slice from most recent context-clear marker
+  let contextStart = 0
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].kind === 'context-clear') {
+      contextStart = i + 1
+      break
+    }
+  }
+  const postClearHistory = history.slice(contextStart)
+
+  // Hard cap: only send the most recent 30 messages to the LLM
+  const recentHistory = postClearHistory.slice(-30)
+
+  // Auto-compaction: only trigger if the messages we'll actually send exceed context limits.
+  // The .slice(-30) hard cap already prevents context overflow for long conversations,
+  // so this only fires for sessions with very large individual messages.
+  let effectiveHistory = recentHistory
   try {
     const { shouldAutoCompact, llmCompact, estimateTokens } = await import('./context-manager')
     const systemPromptTokens = estimateTokens(stateModifier)
-    if (shouldAutoCompact(history, systemPromptTokens, session.provider, session.model)) {
+    if (shouldAutoCompact(recentHistory, systemPromptTokens, session.provider, session.model)) {
       const summarize = async (prompt: string): Promise<string> => {
         const response = await llm.invoke([new HumanMessage(prompt)])
         if (typeof response.content === 'string') return response.content
@@ -599,7 +431,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         return ''
       }
       const result = await llmCompact({
-        messages: history,
+        messages: recentHistory,
         provider: session.provider,
         model: session.model,
         agentId: session.agentId || null,
@@ -608,12 +440,12 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       })
       effectiveHistory = result.messages
       console.log(
-        `[stream-agent-chat] Auto-compacted ${session.id}: ${history.length} → ${effectiveHistory.length} msgs` +
+        `[stream-agent-chat] Auto-compacted ${session.id}: ${recentHistory.length} → ${effectiveHistory.length} msgs` +
         (result.summaryAdded ? ' (LLM summary)' : ' (sliding window fallback)'),
       )
     }
   } catch {
-    // Context manager failure — continue with full history
+    // Context manager failure — continue with recent history
   }
 
   // Context degradation warning: prepend warning to system prompt when nearing limits
@@ -629,18 +461,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     // Warning failure is non-critical
   }
 
-  // Apply context-clear boundary: slice from most recent context-clear marker
-  let contextStart = 0
-  for (let i = effectiveHistory.length - 1; i >= 0; i--) {
-    if (effectiveHistory[i].kind === 'context-clear') {
-      contextStart = i + 1
-      break
-    }
-  }
-  const postClearHistory = effectiveHistory.slice(contextStart)
-
   const langchainMessages: Array<HumanMessage | AIMessage> = []
-  for (const m of postClearHistory.slice(-30)) {
+  for (const m of effectiveHistory) {
     if (m.role === 'user') {
       langchainMessages.push(new HumanMessage({ content: await buildLangChainContent(m.text, m.imagePath, m.attachedFiles) }))
     } else {
@@ -660,6 +482,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   let totalOutputTokens = 0
   let lastToolInput: unknown = null
   let accumulatedThinking = ''
+  const pluginInvocations: PluginInvocationRecord[] = []
+  let currentToolInputTokens = 0
 
   // Plugin hooks: beforeAgentStart
   const pluginMgr = getPluginManager()
@@ -763,9 +587,11 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
             const toolName = event.name || 'unknown'
             const input = event.data?.input
             lastToolInput = input
+            // Estimate input tokens for plugin invocation tracking
+            const inputStr = typeof input === 'string' ? input : JSON.stringify(input)
+            currentToolInputTokens = Math.ceil((inputStr?.length || 0) / 4)
             // Plugin hooks: beforeToolExec
             await pluginMgr.runHook('beforeToolExec', { toolName, input })
-            const inputStr = typeof input === 'string' ? input : JSON.stringify(input)
             logExecution(session.id, 'tool_call', `${toolName} invoked`, {
               agentId: session.agentId,
               detail: { toolName, input: inputStr?.slice(0, 4000) },
@@ -784,23 +610,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
                 ? String(output.content)
                 : JSON.stringify(output)
             // Plugin hooks: afterToolExec
-            await pluginMgr.runHook('afterToolExec', { toolName, input: null, output: outputStr })
-            // Event-driven memory breadcrumbs
-            if (session.agentId && (session.tools || []).includes('memory')) {
-              try {
-                const breadcrumbTitle = extractBreadcrumbTitle(toolName, lastToolInput, outputStr)
-                if (breadcrumbTitle) {
-                  const memDb = getMemoryDb()
-                  memDb.add({
-                    agentId: session.agentId,
-                    sessionId: session.id,
-                    category: 'breadcrumb',
-                    title: breadcrumbTitle,
-                    content: '',
-                  })
-                }
-              } catch { /* breadcrumbs are best-effort */ }
-            }
+            await pluginMgr.runHook('afterToolExec', { session, toolName, input: lastToolInput as Record<string, unknown> | null, output: outputStr })
             lastToolInput = null
             logExecution(session.id, 'tool_result', `${toolName} returned`, {
               agentId: session.agentId,
@@ -825,6 +635,16 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
                 })
               }
             }
+            // Track plugin invocation token estimates
+            const pluginId = toolToPluginMap[toolName] || '_unknown'
+            pluginInvocations.push({
+              pluginId,
+              toolName,
+              inputTokens: currentToolInputTokens,
+              outputTokens: Math.ceil((outputStr?.length || 0) / 4),
+            })
+            currentToolInputTokens = 0
+
             write(`data: ${JSON.stringify({
               t: 'tool_result',
               toolName,
@@ -931,6 +751,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   const totalTokens = totalInputTokens + totalOutputTokens
   if (totalTokens > 0) {
     const cost = estimateCost(session.model, totalInputTokens, totalOutputTokens)
+    const pluginDefinitionCosts = buildPluginDefinitionCosts(tools, toolToPluginMap)
     const usageRecord: UsageRecord = {
       sessionId: session.id,
       messageIndex: history.length,
@@ -942,6 +763,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       estimatedCost: cost,
       timestamp: Date.now(),
       durationMs: Date.now() - startTs,
+      pluginDefinitionCosts,
+      pluginInvocations: pluginInvocations.length > 0 ? pluginInvocations : undefined,
     }
     appendUsage(session.id, usageRecord)
     // Send usage metadata to client

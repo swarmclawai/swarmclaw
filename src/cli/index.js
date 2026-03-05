@@ -369,7 +369,7 @@ const COMMAND_GROUPS = [
     name: 'search',
     description: 'Global search across app resources',
     commands: [
-      cmd('query', 'GET', '/search', 'Search agents/tasks/sessions/schedules/webhooks/skills (use --query q=term)'),
+      cmd('query', 'GET', '/search', 'Search agents/tasks/chats/schedules/webhooks/skills (use --query q=term)'),
     ],
   },
   {
@@ -404,56 +404,56 @@ const COMMAND_GROUPS = [
     ],
   },
   {
-    name: 'sessions',
-    description: 'Manage chat sessions and runtime controls',
+    name: 'chats',
+    description: 'Manage agent chats and runtime controls',
     commands: [
-      cmd('list', 'GET', '/sessions', 'List sessions'),
-      cmd('get', 'GET', '/sessions/:id', 'Get session by id', { virtual: true, clientGetRoute: '/sessions' }),
-      cmd('create', 'POST', '/sessions', 'Create session', { expectsJsonBody: true }),
-      cmd('update', 'PUT', '/sessions/:id', 'Update session', { expectsJsonBody: true }),
-      cmd('delete', 'DELETE', '/sessions/:id', 'Delete session'),
-      cmd('delete-many', 'DELETE', '/sessions', 'Delete multiple sessions (body: {"ids":[...]})', { expectsJsonBody: true }),
-      cmd('heartbeat-disable-all', 'POST', '/sessions/heartbeat', 'Disable all session heartbeats and cancel queued heartbeat runs', {
+      cmd('list', 'GET', '/chats', 'List chats'),
+      cmd('get', 'GET', '/chats/:id', 'Get chat by id', { virtual: true, clientGetRoute: '/chats' }),
+      cmd('create', 'POST', '/chats', 'Create chat', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/chats/:id', 'Update chat', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/chats/:id', 'Delete chat'),
+      cmd('delete-many', 'DELETE', '/chats', 'Delete multiple chats (body: {"ids":[...]})', { expectsJsonBody: true }),
+      cmd('heartbeat-disable-all', 'POST', '/chats/heartbeat', 'Disable all chat heartbeats and cancel queued heartbeat runs', {
         expectsJsonBody: true,
         defaultBody: { action: 'disable_all' },
       }),
-      cmd('messages', 'GET', '/sessions/:id/messages', 'Get session messages'),
-      cmd('messages-update', 'PUT', '/sessions/:id/messages', 'Update session message metadata (e.g. bookmark)', { expectsJsonBody: true }),
-      cmd('messages-send', 'POST', '/sessions/:id/messages', 'Append a user/system message to a session', { expectsJsonBody: true }),
-      cmd('messages-delete', 'DELETE', '/sessions/:id/messages', 'Delete a message from a session', { expectsJsonBody: true }),
-      cmd('fork', 'POST', '/sessions/:id/fork', 'Fork session from a specific message index', { expectsJsonBody: true }),
-      cmd('edit-resend', 'POST', '/sessions/:id/edit-resend', 'Edit and resend from a specific message index', { expectsJsonBody: true }),
-      cmd('main-loop', 'GET', '/sessions/:id/main-loop', 'Get main mission loop state'),
-      cmd('main-loop-action', 'POST', '/sessions/:id/main-loop', 'Control main mission loop (pause/resume/set_goal/set_mode/clear_events/nudge)', {
+      cmd('messages', 'GET', '/chats/:id/messages', 'Get chat messages'),
+      cmd('messages-update', 'PUT', '/chats/:id/messages', 'Update chat message metadata (e.g. bookmark)', { expectsJsonBody: true }),
+      cmd('messages-send', 'POST', '/chats/:id/messages', 'Append a user/system message to a chat', { expectsJsonBody: true }),
+      cmd('messages-delete', 'DELETE', '/chats/:id/messages', 'Delete a message from a chat', { expectsJsonBody: true }),
+      cmd('fork', 'POST', '/chats/:id/fork', 'Fork chat from a specific message index', { expectsJsonBody: true }),
+      cmd('edit-resend', 'POST', '/chats/:id/edit-resend', 'Edit and resend from a specific message index', { expectsJsonBody: true }),
+      cmd('main-loop', 'GET', '/chats/:id/main-loop', 'Get main mission loop state'),
+      cmd('main-loop-action', 'POST', '/chats/:id/main-loop', 'Control main mission loop (pause/resume/set_goal/set_mode/clear_events/nudge)', {
         expectsJsonBody: true,
       }),
-      cmd('chat', 'POST', '/sessions/:id/chat', 'Send chat message (streaming)', {
+      cmd('chat', 'POST', '/chats/:id/chat', 'Send chat message (streaming)', {
         expectsJsonBody: true,
         responseType: 'sse',
       }),
-      cmd('stop', 'POST', '/sessions/:id/stop', 'Stop session run(s)'),
-      cmd('clear', 'POST', '/sessions/:id/clear', 'Clear session messages'),
-      cmd('browser-status', 'GET', '/sessions/:id/browser', 'Check browser status'),
-      cmd('browser-close', 'DELETE', '/sessions/:id/browser', 'Close browser session'),
-      cmd('mailbox', 'GET', '/sessions/:id/mailbox', 'List session mailbox envelopes'),
-      cmd('mailbox-action', 'POST', '/sessions/:id/mailbox', 'Send/ack/clear mailbox envelopes', { expectsJsonBody: true }),
-      cmd('retry', 'POST', '/sessions/:id/retry', 'Retry last assistant message'),
-      cmd('deploy', 'POST', '/sessions/:id/deploy', 'Deploy current session branch', { expectsJsonBody: true }),
-      cmd('devserver', 'POST', '/sessions/:id/devserver', 'Dev server action via JSON body', { expectsJsonBody: true }),
-      cmd('devserver-start', 'POST', '/sessions/:id/devserver', 'Start session dev server', {
+      cmd('stop', 'POST', '/chats/:id/stop', 'Stop chat run(s)'),
+      cmd('clear', 'POST', '/chats/:id/clear', 'Clear chat messages'),
+      cmd('browser-status', 'GET', '/chats/:id/browser', 'Check browser status'),
+      cmd('browser-close', 'DELETE', '/chats/:id/browser', 'Close browser'),
+      cmd('mailbox', 'GET', '/chats/:id/mailbox', 'List chat mailbox envelopes'),
+      cmd('mailbox-action', 'POST', '/chats/:id/mailbox', 'Send/ack/clear mailbox envelopes', { expectsJsonBody: true }),
+      cmd('retry', 'POST', '/chats/:id/retry', 'Retry last assistant message'),
+      cmd('deploy', 'POST', '/chats/:id/deploy', 'Deploy current chat branch', { expectsJsonBody: true }),
+      cmd('devserver', 'POST', '/chats/:id/devserver', 'Dev server action via JSON body', { expectsJsonBody: true }),
+      cmd('devserver-start', 'POST', '/chats/:id/devserver', 'Start chat dev server', {
         expectsJsonBody: true,
         defaultBody: { action: 'start' },
       }),
-      cmd('devserver-stop', 'POST', '/sessions/:id/devserver', 'Stop session dev server', {
+      cmd('devserver-stop', 'POST', '/chats/:id/devserver', 'Stop chat dev server', {
         expectsJsonBody: true,
         defaultBody: { action: 'stop' },
       }),
-      cmd('devserver-status', 'POST', '/sessions/:id/devserver', 'Check session dev server status', {
+      cmd('devserver-status', 'POST', '/chats/:id/devserver', 'Check chat dev server status', {
         expectsJsonBody: true,
         defaultBody: { action: 'status' },
       }),
-      cmd('checkpoints', 'GET', '/sessions/:id/checkpoints', 'List checkpoint history for a session'),
-      cmd('restore', 'POST', '/sessions/:id/restore', 'Restore session to a previous checkpoint', { expectsJsonBody: true }),
+      cmd('checkpoints', 'GET', '/chats/:id/checkpoints', 'List checkpoint history for a chat'),
+      cmd('restore', 'POST', '/chats/:id/restore', 'Restore chat to a previous checkpoint', { expectsJsonBody: true }),
     ],
   },
   {

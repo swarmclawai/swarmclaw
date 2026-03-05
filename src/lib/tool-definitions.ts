@@ -25,6 +25,10 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
   { id: 'monitor', label: 'Monitor', description: 'System observability: check resource usage, watch logs, and ping endpoints' },
   { id: 'plugin_creator', label: 'Plugin Creator', description: 'Design, write, and test custom SwarmClaw plugins dynamically' },
   { id: 'sample_ui', label: 'Sample UI', description: 'Demonstration of dynamic UI injection into Sidebar and Chat Header' },
+  { id: 'image_gen', label: 'Image Generation', description: 'Generate images from text prompts using OpenAI, Stability AI, Replicate, fal.ai, and more' },
+  { id: 'email', label: 'Email', description: 'Send emails via SMTP with plain text and HTML support' },
+  { id: 'calendar', label: 'Calendar', description: 'Manage Google Calendar or Outlook events — list, create, update, delete' },
+  { id: 'replicate', label: 'Replicate', description: 'Run any AI model on Replicate — image generation, LLMs, audio, video, and more' },
 ]
 
 /**

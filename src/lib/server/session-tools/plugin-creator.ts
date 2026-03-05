@@ -70,9 +70,9 @@ async function executePluginCreatorAction(args: Record<string, unknown>, ctxOrBc
           const sessions = loadSessions()
           const session = sessions[pctx.sessionId!]
           if (session) {
-            const currentTools = session.tools || []
+            const currentTools = session.plugins || []
             if (!currentTools.includes(filename)) {
-              session.tools = [...currentTools, filename]
+              session.plugins = [...currentTools, filename]
               saveSessions(sessions)
             }
           }
@@ -220,7 +220,7 @@ getPluginManager().registerBuiltin('plugin_creator', PluginCreatorPlugin)
  * Legacy Bridge
  */
 export function buildPluginCreatorTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('plugin_creator')) return []
+  if (!bctx.hasPlugin('plugin_creator')) return []
   return [
     tool(
       async (args) => executePluginCreatorAction(args, bctx),

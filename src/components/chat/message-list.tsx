@@ -129,7 +129,7 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
     if (!msg) return
     const next = !msg.bookmarked
     try {
-      await api('PUT', `/sessions/${sessionId}/messages`, { messageIndex: index, bookmarked: next })
+      await api('PUT', `/chats/${sessionId}/messages`, { messageIndex: index, bookmarked: next })
       const updated = [...messages]
       updated[index] = { ...updated[index], bookmarked: next }
       setMessages(updated)
@@ -469,7 +469,7 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
                       type="button"
                       onClick={async () => {
                         try {
-                          await api('DELETE', `/sessions/${sessionId}/messages`, { messageIndex: originalIndex })
+                          await api('DELETE', `/chats/${sessionId}/messages`, { messageIndex: originalIndex })
                           setMessages(messages.filter((_: Message, idx: number) => idx !== originalIndex))
                         } catch { /* best-effort */ }
                       }}

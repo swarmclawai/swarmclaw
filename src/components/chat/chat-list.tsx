@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
-import { SessionCard } from './session-card'
-import { fetchMessages } from '@/lib/sessions'
+import { ChatCard } from './chat-card'
+import { fetchMessages } from '@/lib/chats'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/shared/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
@@ -17,7 +17,7 @@ interface Props {
 type SessionFilter = 'all' | 'active' | 'human' | 'orchestrated'
 type SortMode = 'lastActive' | 'name' | 'messages'
 
-export function SessionList({ inSidebar, onSelect }: Props) {
+export function ChatList({ inSidebar, onSelect }: Props) {
   const sessions = useAppStore((s) => s.sessions)
   const currentUser = useAppStore((s) => s.currentUser)
   const currentSessionId = useAppStore((s) => s.currentSessionId)
@@ -44,7 +44,6 @@ export function SessionList({ inSidebar, onSelect }: Props) {
 
   const allUserSessions = useMemo(() => {
     return Object.values(sessions).filter((s) => {
-      if (s.name === '__main__') return false
       const owner = (s.user || '').toLowerCase()
       const isPlatformOwned = owner === 'system' || owner === 'connector' || owner === 'swarm'
       const isCurrentUserOwned = !!currentUser && owner === currentUser.toLowerCase()
@@ -186,7 +185,7 @@ export function SessionList({ inSidebar, onSelect }: Props) {
         <div className="flex flex-col gap-1 px-2 pb-4">
           {filtered.map((s) => (
             <div key={s.id} className="group/pin relative">
-              <SessionCard
+              <ChatCard
                 session={s}
                 active={s.id === currentSessionId}
                 onClick={() => handleSelect(s.id)}

@@ -112,7 +112,7 @@ const MonitorPlugin: Plugin = {
 getPluginManager().registerBuiltin('monitor', MonitorPlugin)
 
 export function buildMonitorTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('monitor')) return []
+  if (!bctx.hasPlugin('monitor')) return []
   return [
     tool(
       async (args) => executeMonitorAction(args, { cwd: bctx.cwd }),

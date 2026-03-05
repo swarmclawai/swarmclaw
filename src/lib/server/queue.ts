@@ -4,14 +4,14 @@ import path from 'node:path'
 import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSchedules, saveSchedules, loadSessions, saveSessions, loadSettings, loadConnectors, UPLOAD_DIR } from './storage'
 import { notify } from './ws-hub'
 import { WORKSPACE_DIR } from './data-dir'
-import { createOrchestratorSession, executeOrchestrator } from './orchestrator'
+import { createOrchestratorSession } from './orchestrator'
 import { formatValidationFailure, validateTaskCompletion } from './task-validation'
 import { ensureTaskCompletionReport } from './task-reports'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { executeSessionChatTurn } from './chat-execution'
 import { extractTaskResult, formatResultBody } from './task-result'
 import { getCheckpointSaver } from './langgraph-checkpoint'
-import { isProtectedMainSession } from './main-session'
+import { isMainLoopSession } from './main-session'
 import { cascadeUnblock } from './dag-validation'
 import { performGuardianRollback } from './guardian'
 import type { Agent, BoardTask, Connector, Message } from '@/types'
@@ -283,7 +283,7 @@ function pushQueueUnique(queue: string[], id: string): void {
 }
 
 function isMainSession(session: SessionLike | null | undefined): boolean {
-  return isProtectedMainSession(session)
+  return isMainLoopSession(session)
 }
 
 function resolveTaskOwnerUser(task: ScheduleTaskMeta, sessions: Record<string, SessionLike>): string | null {
@@ -521,10 +521,8 @@ async function executeTaskRun(
     '- Include concrete evidence in your final summary: changed file paths, commands run, and verification results.',
     '- If blocked, state the blocker explicitly and what input or permission is missing.',
   ].join('\n')
-  if (agent?.isOrchestrator) {
-    return executeOrchestrator(agent, prompt, sessionId, task.id)
-  }
-
+  // All agents (including orchestrators) go through the unified chat execution path.
+  // Agents with subAgentIds get delegation tools automatically via session-tools.
   const run = await executeSessionChatTurn({
     sessionId,
     message: prompt,
@@ -773,6 +771,7 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
   if (task.claudeResumeId) resumeLines.push(`Claude session: \`${task.claudeResumeId}\``)
   if (task.codexResumeId) resumeLines.push(`Codex thread: \`${task.codexResumeId}\``)
   if (task.opencodeResumeId) resumeLines.push(`OpenCode session: \`${task.opencodeResumeId}\``)
+  if (task.geminiResumeId) resumeLines.push(`Gemini session: \`${task.geminiResumeId}\``)
   // Fallback to legacy field
   if (resumeLines.length === 0 && task.cliResumeId) {
     resumeLines.push(`${task.cliProvider || 'CLI'} session: \`${task.cliResumeId}\``)
@@ -1315,24 +1314,27 @@ export async function processNext() {
             const execSession = execSessions[sessionId] as Record<string, unknown> | undefined
             if (execSession) {
               const delegateIds = execSession.delegateResumeIds as
-                | { claudeCode?: string | null; codex?: string | null; opencode?: string | null }
+                | { claudeCode?: string | null; codex?: string | null; opencode?: string | null; gemini?: string | null }
                 | undefined
               // Store each CLI resume ID separately
               const claudeId = (execSession.claudeSessionId as string) || delegateIds?.claudeCode || null
               const codexId = (execSession.codexThreadId as string) || delegateIds?.codex || null
               const opencodeId = (execSession.opencodeSessionId as string) || delegateIds?.opencode || null
+              const geminiId = delegateIds?.gemini || null
               if (claudeId) t2[taskId].claudeResumeId = claudeId
               if (codexId) t2[taskId].codexResumeId = codexId
               if (opencodeId) t2[taskId].opencodeResumeId = opencodeId
+              if (geminiId) t2[taskId].geminiResumeId = geminiId
               // Keep backward-compat single field (first available)
-              const primaryId = claudeId || codexId || opencodeId
+              const primaryId = claudeId || codexId || opencodeId || geminiId
               if (primaryId) {
                 t2[taskId].cliResumeId = primaryId
                 if (claudeId) t2[taskId].cliProvider = 'claude-cli'
                 else if (codexId) t2[taskId].cliProvider = 'codex-cli'
                 else if (opencodeId) t2[taskId].cliProvider = 'opencode-cli'
+                else if (geminiId) t2[taskId].cliProvider = 'gemini-cli'
               }
-              console.log(`[queue] CLI resume IDs for task ${taskId}: claude=${claudeId}, codex=${codexId}, opencode=${opencodeId}`)
+              console.log(`[queue] CLI resume IDs for task ${taskId}: claude=${claudeId}, codex=${codexId}, opencode=${opencodeId}, gemini=${geminiId}`)
             }
           } catch (e) {
             console.warn(`[queue] Failed to extract CLI resume IDs for task ${taskId}:`, e)

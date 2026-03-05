@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     apiEndpoint: normalizeProviderEndpoint(body.provider, body.apiEndpoint || null),
     isOrchestrator: body.isOrchestrator,
     subAgentIds: body.subAgentIds,
-    tools: body.tools,
+    plugins: body.plugins?.length ? body.plugins : (body.tools || []),
     capabilities: body.capabilities,
     thinkingLevel: body.thinkingLevel || undefined,
     autoRecovery: body.autoRecovery || false,

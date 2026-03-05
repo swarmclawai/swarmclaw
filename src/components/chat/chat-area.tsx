@@ -4,7 +4,7 @@ import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
 import { useChatStore } from '@/stores/use-chat-store'
-import { fetchMessages, fetchMessagesPaginated, clearMessages, deleteSession, devServer, checkBrowser, stopBrowser } from '@/lib/sessions'
+import { fetchMessages, fetchMessagesPaginated, clearMessages, deleteChat, devServer, checkBrowser, stopBrowser } from '@/lib/chats'
 import { uploadImage } from '@/lib/upload'
 import { deleteAgent } from '@/lib/agents'
 import { useMediaQuery } from '@/hooks/use-media-query'
@@ -133,7 +133,7 @@ export function ChatArea() {
       setDevServer(r.running ? r : null)
     }).catch(() => setDevServer(null))
     // Check browser status
-    if (session?.tools?.includes('browser')) {
+    if (session?.plugins?.includes('browser')) {
       checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch((err) => { console.error('Browser check failed:', err); setBrowserActive(false) })
     } else {
       setBrowserActive(false)
@@ -143,7 +143,7 @@ export function ChatArea() {
   // Auto-poll messages for orchestrated or server-active sessions
   const isOrchestrated = session?.sessionType === 'orchestrated'
   const isServerActive = session?.active === true
-  const isOngoingMonitored = appSettings.loopMode === 'ongoing' && !!session?.tools?.length
+  const isOngoingMonitored = appSettings.loopMode === 'ongoing' && !!session?.plugins?.length
   const shouldPollMessages = !!sessionId && (isOrchestrated || isServerActive || isOngoingMonitored)
   const messagesLenRef = useRef(messages.length)
   messagesLenRef.current = messages.length
@@ -200,7 +200,7 @@ export function ChatArea() {
   }, [isServerActive, sessionId])
 
   // Poll browser status while session has browser tools
-  const hasBrowserTool = session?.tools?.includes('browser')
+  const hasBrowserTool = session?.plugins?.includes('browser')
   const checkBrowserStatus = useCallback(() => {
     if (!sessionId || !hasBrowserTool) return
     checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch(() => {})
@@ -235,7 +235,7 @@ export function ChatArea() {
   const handleDelete = useCallback(async () => {
     setConfirmDelete(false)
     if (!sessionId) return
-    await deleteSession(sessionId)
+    await deleteChat(sessionId)
     removeSessionFromStore(sessionId)
     setCurrentSession(null)
   }, [sessionId])
@@ -281,7 +281,6 @@ export function ChatArea() {
   if (!session) return null
 
   const streamingForThisSession = streaming && (!streamingSessionId || streamingSessionId === session.id)
-  const isMainChat = session.name === '__main__'
   const isEmpty = !messages.length && !streamingForThisSession && !messagesLoading
 
   return (
@@ -438,11 +437,9 @@ export function ChatArea() {
         <DropdownItem onClick={() => { setMenuOpen(false); setConfirmClear(true) }}>
           Clear History
         </DropdownItem>
-        {!isMainChat && (
-          <DropdownItem danger onClick={() => { setMenuOpen(false); setConfirmDelete(true) }}>
-            Delete Chat
-          </DropdownItem>
-        )}
+        <DropdownItem danger onClick={() => { setMenuOpen(false); setConfirmDelete(true) }}>
+          Delete Chat
+        </DropdownItem>
       </Dropdown>
 
       <ConfirmDialog
@@ -500,9 +497,8 @@ export function ChatArea() {
         agent={currentAgent}
         onEditAgent={() => { setEditingAgentId(session.agentId!); setAgentSheetOpen(true) }}
         onClearHistory={() => setConfirmClear(true)}
-        onDeleteAgent={!isMainChat ? () => setConfirmDeleteAgent(true) : undefined}
-        onDeleteChat={!isMainChat ? () => setConfirmDelete(true) : undefined}
-        isMainChat={isMainChat}
+        onDeleteAgent={() => setConfirmDeleteAgent(true)}
+        onDeleteChat={() => setConfirmDelete(true)}
       />
     )}
     {isDesktop && heartbeatHistoryOpen && currentAgent?.heartbeatEnabled && (

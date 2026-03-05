@@ -34,7 +34,7 @@ interface Props {
   onClick: () => void
 }
 
-export function SessionCard({ session, active, onClick }: Props) {
+export function ChatCard({ session, active, onClick }: Props) {
   const removeSession = useAppStore((s) => s.removeSession)
   const appSettings = useAppStore((s) => s.appSettings)
   const agents = useAppStore((s) => s.agents)
@@ -50,7 +50,7 @@ export function SessionCard({ session, active, onClick }: Props) {
     if (!confirm(`Delete chat session "${session.name}"?`)) return
     
     try {
-      await api('DELETE', `/sessions/${session.id}`)
+      await api('DELETE', `/chats/${session.id}`)
       removeSession(session.id)
       toast.success('Session deleted')
     } catch (err: unknown) {
@@ -74,7 +74,7 @@ export function SessionCard({ session, active, onClick }: Props) {
   const intervalEnabled = Number.isFinite(intervalNum) ? intervalNum > 0 : true
   const heartbeatEnabled =
     (loopIsOngoing || explicitOptIn)
-    && (session.tools?.length ?? 0) > 0
+    && (session.plugins?.length ?? 0) > 0
     && intervalEnabled
     && session.heartbeatEnabled !== false
     && agent?.heartbeatEnabled !== false

@@ -233,12 +233,12 @@ const PLATFORM_RESOURCES: Record<string, {
 
 export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[] {
   const tools: StructuredToolInterface[] = []
-  const { cwd, ctx, hasTool } = bctx
+  const { cwd, ctx, hasPlugin } = bctx
 
   // Build dynamic agent summary for tools that need agent awareness
   const assignScope = ctx?.platformAssignScope || 'self'
   let agentSummary = ''
-  if (hasTool('manage_tasks') || hasTool('manage_schedules')) {
+  if (hasPlugin('manage_tasks') || hasPlugin('manage_schedules')) {
     if (assignScope === 'all') {
       try {
         const agents = loadAgents()
@@ -251,14 +251,14 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
   }
 
   for (const [toolKey, res] of Object.entries(PLATFORM_RESOURCES)) {
-    if (!hasTool(toolKey)) continue
+    if (!hasPlugin(toolKey)) continue
 
     let description = `Manage SwarmClaw ${res.label}. ${res.readOnly ? 'List and get only.' : 'List, get, create, update, or delete.'} Returns JSON.`
     if (toolKey === 'manage_tasks') {
       if (assignScope === 'self') {
-        description += `\n\nSet "agentId" to assign a task to yourself ("${ctx?.agentId || 'unknown'}") or leave it null. You can only assign tasks to yourself. Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.`
+        description += `\n\nDo NOT create tasks for yourself — just do the work directly. Tasks are for delegating work to other agents or for user-created work items. You can only list, get, update status, or complete tasks assigned to you ("${ctx?.agentId || 'unknown'}"). Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.`
       } else {
-        description += `\n\nSet "agentId" to assign a task to an agent (including yourself: "${ctx?.agentId || 'unknown'}"). Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.` + agentSummary
+        description += `\n\nDo NOT create tasks for yourself — just do the work directly. Only create tasks to delegate work to OTHER agents. Your agent ID is "${ctx?.agentId || 'unknown'}". Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.` + agentSummary
       }
     } else if (toolKey === 'manage_agents') {
       description += `\n\nAgents may self-edit their own soul. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field.`
@@ -395,6 +395,14 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   parsed.agentId || ctx?.agentId || '',
                   agents,
                 )
+              }
+              // Agents cannot create tasks for themselves — just do the work directly.
+              // Tasks are for delegating to other agents or user-created work items.
+              if (toolKey === 'manage_tasks' && ctx?.agentId) {
+                const resolvedAgentId = parsed.agentId || ctx.agentId
+                if (resolvedAgentId === ctx.agentId) {
+                  return 'Error: You cannot create tasks for yourself — just do the work directly. Tasks are for delegating work to other agents. If you need to track progress, use memory instead.'
+                }
               }
               if (toolKey === 'manage_tasks') {
                 parsed.title = deriveTaskTitle(parsed)
@@ -598,7 +606,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
     )
   }
 
-  if (hasTool('manage_documents')) {
+  if (hasPlugin('manage_documents')) {
     tools.push(
       tool(
         async (rawArgs) => {

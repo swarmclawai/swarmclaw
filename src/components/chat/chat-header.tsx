@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback, type ReactNode } from 'react'
 import type { Session } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
@@ -14,10 +14,23 @@ import {
 } from '@/components/shared/connector-platform-icon'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ModelCombobox } from '@/components/shared/model-combobox'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import type { ProviderType } from '@/types'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { useWs } from '@/hooks/use-ws'
+
+function Tip({ label, children, side = 'bottom' }: { label: string; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side} sideOffset={6}
+        className="bg-raised border border-white/[0.08] text-text shadow-[0_8px_32px_rgba(0,0,0,0.5)] rounded-[8px] px-2.5 py-1.5 text-[11px] z-[100]">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 function shortPath(p: string): string {
   return (p || '').replace(/^\/Users\/\w+/, '~')
@@ -109,6 +122,9 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const setWalletPanelAgentId = useAppStore((s) => s.setWalletPanelAgentId)
   const [walletBalance, setWalletBalance] = useState<number | null>(null)
   const [headerWidgets, setHeaderWidgets] = useState<Array<{ id: string; label: string; icon?: string }>>([])
+  const [goalModalOpen, setGoalModalOpen] = useState(false)
+  const [goalDraft, setGoalDraft] = useState('')
+  const goalInputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     api<Array<{ id: string; label: string; icon?: string }>>('GET', `/plugins/ui?type=header&sessionId=${session.id}`).then(widgets => {
@@ -197,17 +213,17 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const handleDismissResumeHandle = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      await api('PUT', `/sessions/${session.id}`, {
+      await api('PUT', `/chats/${session.id}`, {
         claudeSessionId: null,
         codexThreadId: null,
         opencodeSessionId: null,
-        delegateResumeIds: { claudeCode: null, codex: null, opencode: null },
+        delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null },
       })
       await loadSessions()
     } catch { /* best-effort */ }
   }
 
-  const heartbeatSupported = (session.tools?.length ?? 0) > 0
+  const heartbeatSupported = (session.plugins?.length ?? 0) > 0
   const loopIsOngoing = appSettings.loopMode === 'ongoing'
   const { heartbeatEnabled, heartbeatIntervalSec, heartbeatExplicitOptIn } = useMemo(() => {
     // Resolve through the same cascade as the backend: settings → agent → session
@@ -254,7 +270,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     }
   }, [appSettings, agent, session])
   const heartbeatWillRun = heartbeatEnabled && (loopIsOngoing || heartbeatExplicitOptIn)
-  const isMainSession = session.name === '__main__'
+  const hasMainLoop = session.id.startsWith('agent-thread-') || session.sessionType === 'orchestrated'
   const missionState = session.mainLoopState || {}
   const missionPaused = missionState.paused === true
   const missionMode = missionState.autonomyMode === 'assist' ? 'assist' : 'autonomous'
@@ -270,10 +286,10 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       if (session.agentId) {
         await api('PUT', `/agents/${session.agentId}`, { heartbeatEnabled: next })
         // Clear any stale session-level override so the agent value wins
-        await api('PUT', `/sessions/${session.id}`, { heartbeatEnabled: null })
+        await api('PUT', `/chats/${session.id}`, { heartbeatEnabled: null })
         await Promise.all([loadAgents(), loadSessions()])
       } else {
-        await api('PUT', `/sessions/${session.id}`, { heartbeatEnabled: next })
+        await api('PUT', `/chats/${session.id}`, { heartbeatEnabled: next })
         await loadSessions()
       }
       toast.success(`Heartbeat ${next ? 'enabled' : 'disabled'}`)
@@ -295,10 +311,10 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
           heartbeatEnabled: true,
         })
         // Clear stale session-level overrides
-        await api('PUT', `/sessions/${session.id}`, { heartbeatIntervalSec: null, heartbeatEnabled: null })
+        await api('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: null, heartbeatEnabled: null })
         await Promise.all([loadAgents(), loadSessions()])
       } else {
-        await api('PUT', `/sessions/${session.id}`, { heartbeatIntervalSec: sec, heartbeatEnabled: true })
+        await api('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: sec, heartbeatEnabled: true })
         await loadSessions()
       }
     } finally {
@@ -307,10 +323,10 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   }
 
   const postMainLoopAction = async (action: string, extra?: Record<string, unknown>) => {
-    if (!isMainSession || mainLoopSaving) return
+    if (!hasMainLoop || mainLoopSaving) return
     setMainLoopSaving(true)
     try {
-      const result = await api<{ runId?: string; deduped?: boolean }>('POST', `/sessions/${session.id}/main-loop`, {
+      const result = await api<{ runId?: string; deduped?: boolean }>('POST', `/chats/${session.id}/main-loop`, {
         action,
         ...(extra || {}),
       })
@@ -344,17 +360,22 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     void postMainLoopAction('nudge')
   }
 
-  const handleSetMissionGoal = () => {
-    if (!isMainSession) return
-    const seededGoal = typeof missionState.goal === 'string' ? missionState.goal : ''
-    const raw = window.prompt('Set mission goal', seededGoal)
-    const goal = (raw || '').trim()
+  const handleOpenGoalModal = () => {
+    if (!hasMainLoop) return
+    setGoalDraft(typeof missionState.goal === 'string' ? missionState.goal : '')
+    setGoalModalOpen(true)
+    requestAnimationFrame(() => goalInputRef.current?.focus())
+  }
+
+  const handleSubmitGoal = () => {
+    const goal = goalDraft.trim()
+    setGoalModalOpen(false)
     if (!goal) return
     void postMainLoopAction('set_goal', { goal })
   }
 
   const handleClearMissionEvents = () => {
-    if (!isMainSession || missionEventsCount <= 0) return
+    if (!hasMainLoop || missionEventsCount <= 0) return
     void postMainLoopAction('clear_events')
   }
 
@@ -473,7 +494,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const handleModelSwitch = async (nextProvider: ProviderType, nextModel: string) => {
     setModelSwitcherOpen(false)
     try {
-      await api('PUT', `/sessions/${session.id}`, { provider: nextProvider, model: nextModel })
+      await api('PUT', `/chats/${session.id}`, { provider: nextProvider, model: nextModel })
       await loadSessions()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to switch model')
@@ -502,12 +523,13 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   }, [mainLoopNotice])
 
   // Context bar shows for tools, mission controls, memories, source filter, task links, resume handles, browser
-  const hasToolToggles = ((agent?.tools?.length ?? 0) > 0) || ((session.tools?.length ?? 0) > 0)
-  const hasMemoryLink = !!(agent && session.tools?.includes('memory'))
+  const hasToolToggles = ((agent?.plugins?.length ?? 0) > 0) || ((session.plugins?.length ?? 0) > 0)
+  const hasMemoryLink = !!(agent && session.plugins?.includes('memory'))
   const hasSourceFilter = !!hasMultipleSources
-  const hasContextBar = !!(isMainSession || hasMemoryLink || hasSourceFilter || linkedTask || resumeHandle || (isOpenClawAgent && openclawSessionKey) || browserActive)
+  const hasContextBar = !!(hasMainLoop || hasMemoryLink || hasSourceFilter || linkedTask || resumeHandle || (isOpenClawAgent && openclawSessionKey) || browserActive)
 
   return (
+    <>
     <header
       className="relative z-20 border-b border-white/[0.06] shrink-0"
       style={{
@@ -586,8 +608,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 onClick={agent ? startRename : undefined}
                 title={agent ? 'Click to rename' : undefined}
               >{
-                session.name === '__main__' ? 'Main Chat'
-                : session.name.startsWith('agent-thread:') ? (agent?.name || session.name)
+                session.name.startsWith('agent-thread:') ? (agent?.name || session.name)
                 : session.name
               }</span>
             )}
@@ -673,6 +694,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
             )}
             {modelName && (
               <div className="relative shrink-0" ref={modelSwitcherRef}>
+                <Tip label="Switch LLM model">
                 <button
                   type="button"
                   onClick={() => {
@@ -681,13 +703,13 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                   }}
                   disabled={streaming}
                   className="inline-flex items-center gap-1 text-[11px] text-text-3/45 font-mono shrink-0 cursor-pointer bg-transparent border-none px-1 py-0.5 rounded-[5px] hover:bg-white/[0.04] hover:text-text-3/70 transition-colors disabled:cursor-default disabled:hover:text-text-3/45"
-                  title="Switch model"
                 >
                   {modelName}
                   <svg width="7" height="7" viewBox="0 0 16 16" fill="none" className="shrink-0 opacity-30">
                     <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 </button>
+                </Tip>
                 {modelSwitcherOpen && (
                   <div className="absolute z-50 top-full left-0 mt-2 w-[280px] rounded-[12px] border border-white/[0.08] bg-surface backdrop-blur-md shadow-xl p-3">
                     <div className="text-[10px] font-600 text-text-3/50 uppercase tracking-wider mb-2">Provider</div>
@@ -717,16 +739,17 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 )}
               </div>
             )}
+            <Tip label={`Open working directory: ${shortPath(session.cwd)}`}>
             <button
               type="button"
               onClick={() => { api('POST', '/files/open', { path: session.cwd }).catch(() => {}) }}
               className="inline-flex items-center shrink-0 bg-transparent border-none p-0.5 rounded-[4px] cursor-pointer text-text-3/20 hover:text-text-3/50 hover:bg-white/[0.04] transition-colors"
-              title={shortPath(session.cwd)}
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
               </svg>
             </button>
+            </Tip>
             {/* Live agent status */}
             {(() => {
               const liveStatus = agentStatus || (missionState.status ? {
@@ -776,12 +799,12 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         {/* Heartbeat compound control */}
         {heartbeatSupported && (
           <div className="flex items-center rounded-[8px] shrink-0" style={{ background: 'rgba(255,255,255,0.025)' }}>
+            <Tip label={heartbeatWillRun ? 'Disable heartbeat — periodic check-ins' : 'Enable heartbeat — periodic check-ins'}>
             <button
               onClick={handleToggleHeartbeat}
               disabled={heartbeatSaving}
               className={`flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 transition-colors cursor-pointer border-none text-[11px] font-600
                 ${heartbeatWillRun ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-text-3/60 hover:bg-white/[0.04]'}`}
-              title={heartbeatWillRun ? 'Disable heartbeat' : 'Enable heartbeat'}
             >
               <span className={`w-1.5 h-1.5 rounded-full transition-colors ${heartbeatWillRun ? 'bg-emerald-400' : 'bg-text-3/30'}`} />
               HB
@@ -789,18 +812,20 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 <span className="text-[9px] text-text-3/40">(bounded)</span>
               )}
             </button>
+            </Tip>
             <div className="relative" ref={hbDropdownRef}>
+              <Tip label="Set heartbeat interval">
               <button
                 onClick={() => setHbDropdownOpen((o) => !o)}
                 disabled={heartbeatSaving}
                 className="flex items-center gap-0.5 pl-1 pr-2 py-1 text-text-3/50 hover:text-text-3/70 hover:bg-white/[0.04] transition-colors cursor-pointer border-none"
-                title="Set heartbeat interval"
               >
                 <span className="text-[11px] font-600">{formatDuration(heartbeatIntervalSec)}</span>
                 <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="opacity-40">
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
               </button>
+              </Tip>
               {hbDropdownOpen && (
                 <div className="absolute top-full right-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[80px]">
                   {[...(typeof window !== 'undefined' && window.location.hostname === 'localhost' ? [10, 15, 30, 60] : []), 1800, 3600, 7200, 21600, 43200].map((sec) => (
@@ -886,53 +911,58 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       {/* Context bar: tools, mission controls, links */}
       {hasContextBar && (
         <div className="flex items-center gap-1.5 px-3.5 pb-1.5 flex-wrap">
-          {isMainSession && (
+          {hasMainLoop && (
             <>
-              <button
-                onClick={handleToggleMissionPause}
-                disabled={mainLoopSaving}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-[7px] transition-colors cursor-pointer border-none text-[10px] font-600
-                  ${missionPaused ? 'bg-amber-500/10 hover:bg-amber-500/18 text-amber-300' : 'bg-emerald-500/8 hover:bg-emerald-500/12 text-emerald-400'}`}
-                title={missionPaused ? 'Resume mission' : 'Pause mission'}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${missionPaused ? 'bg-amber-300' : 'bg-emerald-400'}`} />
-                {missionPaused ? 'Paused' : 'Live'}
-              </button>
-
-              <button
-                onClick={handleToggleMissionMode}
-                disabled={mainLoopSaving}
-                className={`flex items-center gap-1 px-2 py-1 rounded-[7px] transition-colors cursor-pointer border-none text-[10px] font-600
-                  ${missionMode === 'autonomous' ? 'bg-indigo-500/12 hover:bg-indigo-500/20 text-indigo-300' : 'bg-white/[0.03] hover:bg-white/[0.06] text-text-3/60'}`}
-                title="Toggle autonomy mode"
-              >
-                {missionMode === 'autonomous' ? 'Auto' : 'Assist'}
-              </button>
-              <button
-                onClick={handleNudgeMission}
-                disabled={mainLoopSaving || missionPaused}
-                className="px-2 py-1 rounded-[7px] bg-blue-500/8 hover:bg-blue-500/15 text-blue-400 transition-colors cursor-pointer border-none disabled:opacity-50 text-[10px] font-600"
-                title="Run one tick"
-              >
-                Nudge
-              </button>
-              <button
-                onClick={handleSetMissionGoal}
-                disabled={mainLoopSaving}
-                className="px-2 py-1 rounded-[7px] bg-fuchsia-500/8 hover:bg-fuchsia-500/15 text-fuchsia-300 transition-colors cursor-pointer border-none text-[10px] font-600"
-                title="Set mission goal"
-              >
-                Goal
-              </button>
-              {missionEventsCount > 0 && (
+              <Tip label={missionPaused ? 'Resume mission loop' : 'Pause mission loop'}>
                 <button
-                  onClick={handleClearMissionEvents}
+                  onClick={handleToggleMissionPause}
                   disabled={mainLoopSaving}
-                  className="px-2 py-1 rounded-[7px] bg-white/[0.03] hover:bg-white/[0.06] text-text-3/60 transition-colors cursor-pointer border-none text-[10px] font-600"
-                  title="Clear pending events"
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-[7px] transition-colors cursor-pointer border-none text-[10px] font-600
+                    ${missionPaused ? 'bg-amber-500/10 hover:bg-amber-500/18 text-amber-300' : 'bg-emerald-500/8 hover:bg-emerald-500/12 text-emerald-400'}`}
                 >
-                  Events {missionEventsCount}
+                  <span className={`w-1.5 h-1.5 rounded-full ${missionPaused ? 'bg-amber-300' : 'bg-emerald-400'}`} />
+                  {missionPaused ? 'Paused' : 'Live'}
                 </button>
+              </Tip>
+
+              <Tip label={missionMode === 'autonomous' ? 'Switch to assisted mode' : 'Switch to autonomous mode'}>
+                <button
+                  onClick={handleToggleMissionMode}
+                  disabled={mainLoopSaving}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-[7px] transition-colors cursor-pointer border-none text-[10px] font-600
+                    ${missionMode === 'autonomous' ? 'bg-indigo-500/12 hover:bg-indigo-500/20 text-indigo-300' : 'bg-white/[0.03] hover:bg-white/[0.06] text-text-3/60'}`}
+                >
+                  {missionMode === 'autonomous' ? 'Auto' : 'Assist'}
+                </button>
+              </Tip>
+              <Tip label="Run one iteration of the mission loop">
+                <button
+                  onClick={handleNudgeMission}
+                  disabled={mainLoopSaving || missionPaused}
+                  className="px-2 py-1 rounded-[7px] bg-blue-500/8 hover:bg-blue-500/15 text-blue-400 transition-colors cursor-pointer border-none disabled:opacity-50 text-[10px] font-600"
+                >
+                  Nudge
+                </button>
+              </Tip>
+              <Tip label="Set or edit the mission goal">
+                <button
+                  onClick={handleOpenGoalModal}
+                  disabled={mainLoopSaving}
+                  className="px-2 py-1 rounded-[7px] bg-fuchsia-500/8 hover:bg-fuchsia-500/15 text-fuchsia-300 transition-colors cursor-pointer border-none text-[10px] font-600"
+                >
+                  Goal
+                </button>
+              </Tip>
+              {missionEventsCount > 0 && (
+                <Tip label="Clear queued mission events">
+                  <button
+                    onClick={handleClearMissionEvents}
+                    disabled={mainLoopSaving}
+                    className="px-2 py-1 rounded-[7px] bg-white/[0.03] hover:bg-white/[0.06] text-text-3/60 transition-colors cursor-pointer border-none text-[10px] font-600"
+                  >
+                    Events {missionEventsCount}
+                  </button>
+                </Tip>
               )}
               <span className="text-[9px] text-text-3/40 uppercase tracking-wider shrink-0">
                 {missionStatus}{missionMomentum !== null ? ` · ${missionMomentum}` : ''}
@@ -942,6 +972,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
             </>
           )}
           {hasMemoryLink && (
+            <Tip label="View agent memories">
             <button
               onClick={() => { setMemoryAgentFilter(session.agentId!); setActiveView('memory'); setSidebarOpen(true) }}
               className="flex items-center gap-1 px-2 py-1 rounded-[7px] bg-accent-soft/40 hover:bg-accent-soft/70 transition-colors cursor-pointer text-[10px] font-600 text-accent-bright/55 hover:text-accent-bright/80 shrink-0"
@@ -951,9 +982,11 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               </svg>
               Memories
             </button>
+            </Tip>
           )}
           {hasSourceFilter && onConnectorFilterChange && connectorSources && (
             <div className="relative shrink-0" ref={sourceDropdownRef}>
+              <Tip label="Filter messages by source connector">
               <button
                 onClick={() => setSourceDropdownOpen((o) => !o)}
                 className={`flex items-center gap-1 px-2 py-1 rounded-[7px] transition-colors cursor-pointer border-none text-[10px] font-600 shrink-0 ${
@@ -961,7 +994,6 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                     ? 'bg-accent-soft/60 text-accent-bright/80 hover:bg-accent-soft'
                     : 'bg-white/[0.03] text-text-3/50 hover:bg-white/[0.06] hover:text-text-3/70'
                 }`}
-                title="Filter by message source"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
@@ -973,6 +1005,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                   <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               </button>
+              </Tip>
               {sourceDropdownOpen && (
                 <div className="absolute top-full left-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[140px]">
                   <button
@@ -1005,11 +1038,11 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
           )}
           {isOpenClawAgent && openclawSessionKey && (
             <>
+              <Tip label="Sync chat history from OpenClaw gateway">
               <button
                 onClick={handleSyncHistory}
                 disabled={syncingHistory}
                 className="flex items-center gap-1 px-2 py-1 rounded-[7px] bg-indigo-500/8 hover:bg-indigo-500/12 transition-colors cursor-pointer border-none disabled:opacity-50 text-[10px] font-600 text-indigo-400 shrink-0"
-                title="Sync from gateway"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
@@ -1017,10 +1050,12 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 </svg>
                 {syncingHistory ? 'Syncing...' : 'Sync'}
               </button>
+              </Tip>
               {syncResult && <span className="text-[9px] text-emerald-300/80 shrink-0">{syncResult}</span>}
             </>
           )}
           {linkedTask && (
+            <Tip label="View linked task">
             <button
               onClick={() => setActiveView('tasks')}
               className="flex items-center gap-1 px-2 py-1 rounded-[7px] bg-amber-500/8 hover:bg-amber-500/12 transition-colors cursor-pointer text-[10px] font-600 text-amber-500 shrink-0"
@@ -1030,13 +1065,14 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               </svg>
               <span className="truncate max-w-[160px]">{linkedTask.title}</span>
             </button>
+            </Tip>
           )}
           {resumeHandle && (
             <div className="flex items-center rounded-[7px] bg-white/[0.03] group/resume shrink-0">
+              <Tip label="Copy CLI resume command">
               <button
                 onClick={handleCopySessionId}
                 className="flex items-center gap-1 px-2 py-1 rounded-l-[7px] hover:bg-white/[0.06] transition-colors cursor-pointer"
-                title="Copy resume command"
               >
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/40 shrink-0">
                   <path d="M4 17l6 0l0 -6" /><path d="M20 7l-6 0l0 6" /><path d="M4 17l10 -10" />
@@ -1045,22 +1081,24 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                   {copied ? 'Copied!' : `${resumeHandle.label}: ${resumeHandle.id}`}
                 </span>
               </button>
+              </Tip>
+              <Tip label="Dismiss resume handle">
               <button
                 onClick={handleDismissResumeHandle}
                 className="px-1 py-1 rounded-r-[7px] hover:bg-white/[0.06] transition-colors cursor-pointer opacity-0 group-hover/resume:opacity-100"
-                title="Dismiss"
               >
                 <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3/40 hover:text-text-3">
                   <path d="M4 4l8 8M12 4l-8 8" />
                 </svg>
               </button>
+              </Tip>
             </div>
           )}
           {browserActive && (
+            <Tip label="Close the browser session">
             <button
               onClick={onStopBrowser}
               className="flex items-center gap-1 px-2 py-1 rounded-[7px] bg-accent-bright/8 hover:bg-red-500/12 transition-colors cursor-pointer group text-[10px] font-600 shrink-0"
-              title="Stop browser"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-accent-bright group-hover:text-red-400">
                 <rect x="3" y="3" width="18" height="14" rx="2" /><path d="M3 9h18" />
@@ -1070,9 +1108,54 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
+            </Tip>
           )}
         </div>
       )}
+
     </header>
+
+    {/* Goal modal — fixed to viewport, not constrained by header */}
+    {goalModalOpen && (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center" onClick={() => setGoalModalOpen(false)}>
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+        <div
+          className="relative w-[420px] max-w-[90vw] rounded-[16px] border border-white/[0.08] bg-surface shadow-2xl p-6"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h4 className="font-display text-[15px] font-700 text-text mb-1">Set Mission Goal</h4>
+          <p className="text-[11px] text-text-3/60 mb-4">Define what this agent should work towards.</p>
+          <textarea
+            ref={goalInputRef}
+            value={goalDraft}
+            onChange={(e) => setGoalDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmitGoal(); if (e.key === 'Escape') setGoalModalOpen(false) }}
+            placeholder="Describe the agent's mission..."
+            rows={4}
+            className="w-full py-2.5 px-3 rounded-[10px] text-[13px] bg-bg border border-white/[0.06] text-text placeholder:text-text-3/50 outline-none focus:border-accent-bright/30 mb-1 resize-y min-h-[80px]"
+            style={{ fontFamily: 'inherit' }}
+          />
+          <p className="text-[10px] text-text-3/40 mb-3">Cmd+Enter to submit</p>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => setGoalModalOpen(false)}
+              className="px-4 py-2 rounded-[8px] text-[12px] font-600 text-text-3 bg-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer border-none"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmitGoal}
+              disabled={!goalDraft.trim()}
+              className="px-4 py-2 rounded-[8px] text-[12px] font-600 text-accent-bright bg-accent-soft hover:bg-accent-soft/80 transition-colors cursor-pointer border border-accent-bright/20 disabled:opacity-40 disabled:cursor-default"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Set Goal
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

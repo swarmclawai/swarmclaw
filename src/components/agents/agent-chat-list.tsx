@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
-import { fetchMessages } from '@/lib/sessions'
+import { fetchMessages } from '@/lib/chats'
 import { api } from '@/lib/api-client'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import type { Agent, Session } from '@/types'
@@ -58,7 +58,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
       .filter(Boolean) as string[]
     if (!sessionIds.length) { toast.error('No chats to delete'); return }
     try {
-      await api('DELETE', '/sessions', { ids: sessionIds })
+      await api('DELETE', '/chats', { ids: sessionIds })
       await loadSessions()
       toast.success(`Deleted ${sessionIds.length} chat(s)`)
       setBulkMode(false)
@@ -262,7 +262,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
           const threadSession = agent.threadSessionId ? sessions[agent.threadSessionId] as Session | undefined : undefined
           const lastMsg = threadSession?.messages?.at(-1)
           const isActive = currentAgentId === agent.id
-          const heartbeatOn = agent.heartbeatEnabled === true && (agent.tools?.length ?? 0) > 0
+          const heartbeatOn = agent.heartbeatEnabled === true && (agent.plugins?.length ?? 0) > 0
           const recentlyActive = (threadSession?.lastActiveAt ?? 0) > Date.now() - 30 * 60 * 1000
           const isWorking = runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(agent.id)
           const isTyping = streamingSessionId === agent.threadSessionId

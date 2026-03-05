@@ -97,7 +97,7 @@ getPluginManager().registerBuiltin('http', HttpPlugin)
  * Legacy Bridge
  */
 export function buildHttpTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('http_request')) return []
+  if (!bctx.hasPlugin('http_request')) return []
 
   return [
     tool(

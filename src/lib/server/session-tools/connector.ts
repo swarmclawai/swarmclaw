@@ -429,7 +429,10 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
 const ConnectorPlugin: Plugin = {
   name: 'Core Connectors',
   description: 'Manage and send messages through chat platform connectors (WhatsApp, Telegram, Slack, etc.).',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can manage messaging channels (`manage_connectors`) — WhatsApp, Telegram, Slack, Discord — and send proactive messages via `connector_message_tool`.',
+    getOperatingGuidance: () => 'Connectors: proactive outreach for significant events only. Keep messages concise, no duplicates.',
+  } as PluginHooks,
   tools: [
     {
       name: 'connector_message_tool',
@@ -456,7 +459,7 @@ getPluginManager().registerBuiltin('connectors', ConnectorPlugin)
  * Legacy Bridge
  */
 export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('manage_connectors')) return []
+  if (!bctx.hasPlugin('manage_connectors')) return []
   return [
     tool(
       async (args) => executeConnectorAction(args as ConnectorActionInput, bctx),

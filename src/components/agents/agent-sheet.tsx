@@ -183,7 +183,7 @@ export function AgentSheet() {
         setApiEndpoint(editing.apiEndpoint || null)
         setIsOrchestrator(editing.isOrchestrator || false)
         setAgentAgentIds(editing.subAgentIds || [])
-        setTools(editing.tools || [])
+        setTools(editing.plugins || [])
         setSkills(editing.skills || [])
         setSkillIds(editing.skillIds || [])
         setMcpServerIds(editing.mcpServerIds || [])
@@ -782,7 +782,7 @@ export function AgentSheet() {
             </div>
           </div>
         )}
-        <p className="text-[11px] text-text-3/70 mt-1.5">Periodic check-in runs on idle sessions using this agent. Processes pending events and monitors status.</p>
+        <p className="text-[11px] text-text-3/70 mt-1.5">Periodic check-in runs on idle chats using this agent. Processes pending events and monitors status.</p>
       </div>
 
       {/* Spend Limits */}

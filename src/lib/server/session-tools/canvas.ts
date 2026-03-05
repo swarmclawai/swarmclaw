@@ -88,7 +88,7 @@ getPluginManager().registerBuiltin('canvas', CanvasPlugin)
  * Legacy Bridge
  */
 export function buildCanvasTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('canvas')) return []
+  if (!bctx.hasPlugin('canvas')) return []
   return [
     tool(
       async (args) => executeCanvasAction(args, { sessionId: bctx.ctx?.sessionId || undefined }),

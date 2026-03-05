@@ -14,6 +14,19 @@ Inspired by [OpenClaw](https://github.com/openclaw).
 
 **[Documentation](https://swarmclaw.ai/docs)** | **[Plugin Tutorial](https://swarmclaw.ai/docs/plugin-tutorial)** | **[Website](https://swarmclaw.ai)**
 
+## Documentation Map
+
+- [Getting Started](https://swarmclaw.ai/docs/getting-started) - install and first-run setup
+- [Providers](https://swarmclaw.ai/docs/providers) - provider setup and failover options
+- [Agents](https://swarmclaw.ai/docs/agents) - agent configuration, tools, and platform capabilities
+- [Tools](https://swarmclaw.ai/docs/tools) - built-in tool reference and guardrails
+- [Orchestration](https://swarmclaw.ai/docs/orchestration) - multi-agent flows, checkpoints, and restore
+- [Chatrooms](https://swarmclaw.ai/docs/chatrooms) - multi-agent rooms and routing
+- [Connectors](https://swarmclaw.ai/docs/connectors) - Discord/Slack/Telegram/WhatsApp and more
+- [Plugins](https://swarmclaw.ai/docs/plugins) - plugin architecture and extension points
+- [CLI Reference](https://swarmclaw.ai/docs/cli) - complete command reference
+- [Deployment](https://swarmclaw.ai/docs/deployment) - VPS, Docker, and production setup
+
 ![Dashboard](public/screenshots/dashboard.png)
 ![Agent Builder](public/screenshots/agents.png)
 ![Task Board](public/screenshots/tasks.png)
@@ -46,7 +59,7 @@ URLs without a protocol are auto-prefixed with `http://`. For remote gateways wi
 
 ## SwarmClaw ClawHub Skill
 
-Use the `swarmclaw` ClawHub skill when you want an OpenClaw agent to operate your SwarmClaw control plane directly from chat: list agents, dispatch tasks, check sessions, run diagnostics, and coordinate multi-agent work.
+Use the `swarmclaw` ClawHub skill when you want an OpenClaw agent to operate your SwarmClaw control plane directly from chat: list agents, dispatch tasks, check chats, run diagnostics, and coordinate multi-agent work.
 
 Install it from ClawHub:
 
@@ -68,6 +81,7 @@ Skill source and runbook: [`swarmclaw/SKILL.md`](swarmclaw/SKILL.md).
 - **Claude Code CLI** (optional, for `claude-cli` provider) — [Install](https://docs.anthropic.com/en/docs/claude-code/overview)
 - **OpenAI Codex CLI** (optional, for `codex-cli` provider) — [Install](https://github.com/openai/codex)
 - **OpenCode CLI** (optional, for `opencode-cli` provider) — [Install](https://github.com/opencode-ai/opencode)
+- **Gemini CLI** (optional, for `delegate` backend `gemini`) — install and authenticate `gemini` on your host
 
 ## Quick Start
 
@@ -85,7 +99,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.7.1 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.7.2 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -149,52 +163,23 @@ Notes:
 
 ## Features
 
-- **15 Built-in Providers** — Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, plus custom OpenAI-compatible endpoints
-- **OpenClaw Gateway** — Per-agent toggle to connect any agent to a local or remote OpenClaw gateway. Each agent gets its own gateway URL and token — run a swarm of OpenClaws from one dashboard. The `openclaw` CLI ships as a bundled dependency (no separate install needed)
-- **OpenClaw Control Plane** — Built-in gateway connection controls, reload mode switching (hot/hybrid/full), config issue detection/repair, remote history sync, and live execution approval handling
-- **Gateway Watchdog** — Proactive gateway health monitoring with auto-repair via `openclaw doctor`, outbound ops alerts to Discord/Slack/custom webhooks, workspace backup/rollback/history tools for agents, and connector liveness detection
-- **Agent Builder** — Create agents with custom personalities (soul), system prompts, tools, and skills. AI-powered generation from a description
-- **Agent Inspector Panel** — Per-agent side panel for OpenClaw file editing (`SOUL.md`, `IDENTITY.md`, `USER.md`, etc.), guided personality editing, skill install/enable/remove, permission presets, sandbox env allowlist, and cron automations
-- **Agent Fleet Management** — Avatar seeds with generated avatars, running/approval fleet filters, soft-delete agent trash with restore/permanent delete, and approval counters in agent cards
-- **Agent Tools** — Shell, process control for long-running commands, files, edit file, send file, web search, web fetch, CLI delegation (Claude/Codex/OpenCode), Playwright browser automation, sub-agent spawning, canvas presentation, direct HTTP requests, git operations, persistent memory, and sandboxed code execution (JS/TS via Deno, Python)
-- **Platform Tools** — Agents can manage other agents, tasks, schedules, skills, connectors, sessions, and encrypted secrets via built-in platform tools
-- **Orchestration** — Multi-agent workflows powered by LangGraph with automatic sub-agent routing, checkpointed execution, checkpoint timeline with time-travel restore, and rich delegation cards that link to sub-agent chat threads
-- **Agentic Execution Policy** — Tool-first autonomous action loop with progress updates, evidence-driven answers, and better use of platform tools for long-lived work
-- **Runtime Date/Time Grounding** — Session, orchestrator, chatroom, and connector prompts include authoritative current timestamp context to reduce stale-date behavior
-- **Task Board** — Queue and track agent tasks with status, comments, structured result artifacts (`outputFiles`, uploads), completion reports, and archiving. Strict capability policy pauses tasks for human approval before tool execution
-- **Task Metrics API** — Built-in analytics endpoint for WIP, cycle times, throughput velocity, completion/failure by agent, and priority distribution
-- **Background Daemon** — Auto-processes queued tasks and scheduled jobs with a 30s heartbeat plus recurring health monitoring
-- **Scheduling** — Cron-based agent scheduling with human-friendly presets
-- **Loop Runtime Controls** — Switch between bounded and ongoing loops with configurable step caps, runtime guards, heartbeat cadence, and timeout budgets
-- **Session Run Queue** — Per-session queued runs with followup/steer/collect modes, collect coalescing for bursty inputs, and run-state APIs
-- **Chat Iteration Workflow** — Edit-and-resend user turns, fork a new session from any message, bookmark key messages, use contextual follow-up suggestion chips, and auto-continue after tool access grants
-- **Agent Chatrooms** — Multi-agent room conversations with `@mention` routing, chained agent replies, reactions, file/image-aware context, health-aware member filtering, and persistent context compaction for long-lived rooms
-- **Live Chat Telemetry** — Thinking/tool/responding stream phases, live main-loop status badges, connector activity presence, tone indicator, and optional sound notifications
-- **Global Search Palette** — `Cmd/Ctrl+K` search across agents, tasks, sessions, schedules, webhooks, and skills from anywhere in the app
-- **Notification Center** — Real-time in-app notifications for task/schedule/daemon events with unread tracking, mark-all/clear-read controls, and optional action links
-- **Preview-Rich Chat UI** — Side preview panel for tool outputs (image/browser/html/code), inline code/PDF previews for attachments, and image lightbox support
-- **Voice Settings** — Per-instance ElevenLabs API key + voice ID for TTS replies, plus configurable speech recognition language for chat input
-- **Chat Connectors** — Bridge agents to Discord, Slack, Telegram, WhatsApp, BlueBubbles (iMessage), Signal, Microsoft Teams, Google Chat, Matrix, and OpenClaw with media-aware inbound handling, inbound voice-note transcription (ElevenLabs/OpenAI fallback), and WhatsApp-friendly plain-text formatting
-- **Skills System** — Discover local skills, import skills from URL, and load OpenClaw `SKILL.md` files (frontmatter-compatible)
-- **Execution Logging** — Structured audit trail for triggers, tool calls, file ops, commits, and errors in a dedicated `logs.db`
-- **Context Management** — Auto-compaction of conversation history when approaching context limits, with manual `context_status` and `context_summarize` tools for agents
-- **Memory** — Per-agent and per-session memory with hybrid FTS5 + vector embeddings search, query expansion (LLM-generated semantic variants), MMR diversity ranking, cross-agent search (`scope: all`), pinned memories (always preloaded), memory sharing between agents, linked memory graph with interactive visualization, image attachments, and periodic auto-journaling for durable execution context
-- **Knowledge Base** — Shared knowledge store (`knowledge_store` / `knowledge_search` actions) with tags, source tracking, and provenance URLs — separate from per-agent memories
-- **Memory Graph Visualization** — Interactive force-directed graph view of linked memories with node details and relationship exploration
-- **Cost Tracking** — Per-message token counting and cost estimation displayed in the chat header, with per-agent monthly budget caps (`warn` or `block` enforcement)
-- **Provider Health Metrics** — Usage dashboard surfaces provider request volume, success rates, average latency, models used, and last-used timestamps
-- **Model Failover** — Automatic key rotation on rate limits and auth errors with configurable fallback credentials
-- **Plugin System** — Extend agent behavior with JS plugins (hooks: beforeAgentStart, afterAgentComplete, beforeToolExec, afterToolExec, onMessage, onTaskComplete, onAgentDelegation). Plugins can also define custom tools that agents can use
-- **Secrets Vault** — Encrypted storage for API keys and service tokens
-- **Custom Providers** — Add any OpenAI-compatible API as a provider
-- **MCP Servers** — Connect agents to any Model Context Protocol server. Per-agent server selection with tool discovery and per-tool disable toggles
-- **Sandboxed Code Execution** — Agents can write and run JS/TS (Deno) or Python scripts in an isolated sandbox with network access, scoped filesystem, and artifact output
-- **Eval Framework** — Built-in agent evaluation with scenario-based testing across categories (coding, research, companionship, multi-step, memory, planning, tool-usage), weighted scoring criteria, and LLM judge support
-- **Guardian Auto-Recovery** — Automatic workspace recovery when agents fail critically, rolling back to the last known good state via git reset
-- **Soul Library** — Browse and apply pre-built personality templates (archetypes) to agents, or create custom souls for reuse across your swarm
-- **Context Degradation Warnings** — Proactive alerts when context usage exceeds 85%, with strategy recommendations (save to memory, summarize, checkpoint)
-- **Real-Time Sync** — WebSocket push notifications for instant UI updates across tabs and devices (fallback to polling when WS is unavailable)
-- **Mobile-First UI** — Responsive glass-themed dark interface, works on phone and desktop
+- **15 providers out of the box** - CLI providers + major hosted APIs + OpenAI-compatible custom endpoints
+- **OpenClaw-native control plane** - per-agent gateway mapping, reload modes, sync, and approval flows
+- **Agent builder + inspector** - personality/system tuning, skill management, and OpenClaw file editing
+- **Rich toolset** - shell, files, browser, git, sandbox execution, memory, MCP, and delegation
+- **Platform automation** - agents can manage tasks, schedules, chats, connectors, secrets, and more
+- **LangGraph orchestration** - routing to sub-agents with checkpoint timeline and restore
+- **Task board + daemon + scheduler** - long-running autonomous workflows with heartbeat safety
+- **Chat UX** - edit/resend, fork, bookmarks, previews, telemetry, notifications, and search palette
+- **Multi-agent chatrooms** - room routing with mentions, reactions, and persistent context compaction
+- **Connector bridge** - Discord, Slack, Telegram, WhatsApp, Teams, Matrix, OpenClaw, and others
+- **Memory + knowledge** - hybrid search, memory graph, shared knowledge store, and auto-journaling
+- **Operational guardrails** - capability policy, cost tracking, provider health, and credential failover
+- **Extensibility** - plugin hooks/tools/UI extensions plus reusable skills
+
+For the full feature matrix and per-capability details, see:
+- https://swarmclaw.ai/docs
+- https://swarmclaw.ai/docs/release-notes
 
 ## Configuration
 
@@ -206,7 +191,7 @@ CREDENTIAL_SECRET=<auto-generated>          # AES-256 encryption key for stored 
 SWARMCLAW_PLUGIN_FAILURE_THRESHOLD=3        # Consecutive failures before auto-disabling a plugin
 ```
 
-Data is stored in `data/swarmclaw.db` (SQLite with WAL mode), `data/memory.db` (agent memory with FTS5 + vector embeddings), `data/logs.db` (execution audit trail), and `data/langgraph-checkpoints.db` (orchestrator checkpoints). Back the `data/` directory up if you care about your sessions, agents, and credentials. Existing JSON file data is auto-migrated to SQLite on first run.
+Data is stored in `data/swarmclaw.db` (SQLite with WAL mode), `data/memory.db` (agent memory with FTS5 + vector embeddings), `data/logs.db` (execution audit trail), and `data/langgraph-checkpoints.db` (orchestrator checkpoints). Back the `data/` directory up if you care about your chats, agents, and credentials. Existing JSON file data is auto-migrated to SQLite on first run.
 Agent wallet private keys are stored encrypted (AES-256 via `CREDENTIAL_SECRET`) in `data/swarmclaw.db` and are never returned by wallet API responses; keep `data/` out of version control.
 
 The app listens on two ports: `PORT` (default 3456) for the HTTP/SSE API, and `PORT + 1` (default 3457) for WebSocket push notifications. The WS port can be customized with `--ws-port`.
@@ -289,7 +274,7 @@ Bridge any agent to a chat platform:
 | Matrix | matrix-bot-sdk | Homeserver URL + access token |
 | OpenClaw | gateway protocol | OpenClaw connector credentials |
 
-Connector sessions preserve attachment visibility in chat context:
+Connector chats preserve attachment visibility in chat context:
 - WhatsApp media is decoded and persisted to `/api/uploads/...` when possible
 - Telegram and Slack attachments are downloaded to uploads when possible
 - Discord attachments are captured as media metadata/URLs
@@ -309,21 +294,24 @@ Agents can use the following tools when enabled:
 
 | Tool | Description |
 |-|-|
-| Shell | Execute commands in the session working directory |
+| Shell | Execute commands in the chat working directory |
 | Process | Control long-running shell commands (`process_tool`) |
 | Files | Read, write, list, and send files |
-| Copy/Move/Delete File | Optional file ops (`copy_file`, `move_file`, `delete_file`) configurable per agent/session (`delete_file` is off by default) |
+| Copy/Move/Delete File | Optional file ops (`copy_file`, `move_file`, `delete_file`) configurable per agent/chat (`delete_file` is off by default) |
 | Edit File | Search-and-replace editing (exact match required) |
 | Web Search | Search the web via DuckDuckGo HTML scraping |
 | Web Fetch | Fetch and extract text content from URLs (uses cheerio) |
-| CLI Delegation | Delegate complex tasks to Claude Code, Codex CLI, or OpenCode CLI |
+| CLI Delegation | Delegate complex tasks to Claude Code, Codex CLI, OpenCode CLI, or Gemini CLI |
 | Spawn Subagent | Delegate a sub-task to another agent and capture its response in the current run |
 | Browser | Playwright-powered web browsing via MCP (navigate, click, type, screenshot, PDF) |
-| Canvas | Present/hide/snapshot live HTML content in a session canvas panel |
+| Canvas | Present/hide/snapshot live HTML content in a chat canvas panel |
 | HTTP Request | Make direct API calls with method, headers, body, redirect control, and timeout |
 | Git | Run structured git subcommands (`status`, `diff`, `log`, `add`, `commit`, `push`, etc.) with repo safety checks |
 | Memory | Store and retrieve long-term memories with FTS5 + vector search, file references, image attachments, and linked memory graph traversal |
 | Wallet | Manage an agent-linked Solana wallet (`wallet_tool`) to check balance/address, send SOL (limits + approval), and review transaction history |
+| Image Generation | Generate images from prompts (`generate_image`) via OpenAI, Stability, Replicate, fal.ai, Together, Fireworks, BFL, or custom endpoints; saved to uploads |
+| Email | Send outbound email via SMTP (`email`) with `send`/`status` actions |
+| Calendar | Manage Google/Outlook events (`calendar`) with list/create/update/delete/status actions |
 | Sandbox | Run JS/TS (Deno) or Python code in an isolated sandbox. Created files are returned as downloadable artifacts |
 | MCP Servers | Connect to external Model Context Protocol servers. Tools from MCP servers are injected as first-class agent tools |
 
@@ -339,13 +327,13 @@ Agents with platform tools enabled can manage the SwarmClaw instance:
 | Reminders | Schedule a conversational wake event in the current chat (`schedule_wake`) |
 | Manage Skills | List, create, update reusable skill definitions |
 | Manage Documents | Upload/search/get/delete indexed docs for lightweight RAG workflows |
-| Manage Webhooks | Register external webhook endpoints that trigger agent sessions |
+| Manage Webhooks | Register external webhook endpoints that trigger agent chats |
 | Manage Connectors | Manage chat platform bridges |
 | Manage Chatrooms | Create/list/update chatrooms, manage members, and post room messages for multi-agent collaboration |
-| Manage Sessions | Enable `sessions_tool` for list/history/status/send/spawn/stop, plus `context_status` and `context_summarize` for context window management |
+| Manage Chats | Enable `sessions_tool` for list/history/status/send/spawn/stop across chats, plus `context_status` and `context_summarize` for context window management |
 | Manage Secrets | Store and retrieve encrypted reusable secrets |
 
-Enable tools per-session or per-agent in the UI. CLI providers (Claude Code, Codex, OpenCode) handle tools natively through their own CLI.
+Enable tools per-chat or per-agent in the UI. CLI providers (Claude Code, Codex, OpenCode) handle tools natively through their own CLI.
 OpenClaw provider capabilities are also managed remotely in OpenClaw itself, so local Tools/Platform toggles are hidden for OpenClaw agents.
 
 ## Starter Skills (URL Import)
@@ -359,7 +347,7 @@ Import these directly in **Skills → Import via URL**:
 
 Token usage and estimated costs are tracked per message for API-based providers (Anthropic, OpenAI). After each response, a badge in the chat header shows token count and estimated cost.
 
-- **API endpoint:** `GET /api/usage` — returns usage summary by session and provider
+- **API endpoint:** `GET /api/usage` — returns usage summary by agent/provider plus plugin-level token rollups (`byPlugin`)
 - **Data:** Stored in `data/swarmclaw.db` (usage table)
 - Cost estimates use published model pricing (updated manually in `src/lib/server/cost.ts`)
 
@@ -372,7 +360,7 @@ Task analytics are available via API for dashboarding and release-readiness chec
 
 ## Background Daemon
 
-The daemon auto-processes queued tasks from the scheduler on a 30-second interval. It also runs recurring health checks that detect stale heartbeat sessions and can send proactive WhatsApp alerts when issues are detected. Toggle the daemon from the sidebar indicator or via API.
+The daemon auto-processes queued tasks from the scheduler on a 30-second interval. It also runs recurring health checks that detect stale heartbeat chats and can send proactive WhatsApp alerts when issues are detected. Toggle the daemon from the sidebar indicator or via API.
 
 Daemon runtime also triggers memory consolidation (daily summary generation plus recurring dedupe/prune maintenance).
 
@@ -381,7 +369,7 @@ Daemon runtime also triggers memory consolidation (daily summary generation plus
 
 ## Main Agent Loop
 
-For autonomous long-running missions, enable the **Main Loop** on a session. This lets an agent pursue a goal continuously with heartbeat-driven progress checks and automatic followups.
+For autonomous long-running missions, enable the **Main Loop** on an agent-thread or orchestrated chat. This lets an agent pursue a goal continuously with heartbeat-driven progress checks and automatic followups.
 
 - **Heartbeat prompts:** `SWARM_MAIN_MISSION_TICK` triggers on each heartbeat, giving the agent its goal, status, and pending events
 - **Auto-followup:** When an agent returns `[MAIN_LOOP_META] {"follow_up":true}`, the loop schedules another tick after `delay_sec`
@@ -389,8 +377,8 @@ For autonomous long-running missions, enable the **Main Loop** on a session. Thi
 - **Autonomy modes:**
   - `autonomous`: Agent executes safe actions without confirmation, only asks when blocked by permissions/credentials
   - `assist`: Agent asks before irreversible external actions (sending messages, purchases, account mutations)
-- **API:** `POST /api/sessions/[id]/main-loop` with `{"tick":true}` to trigger a mission tick
-- **CLI:** `swarmclaw sessions main-loop <id>` to inspect loop state, or `swarmclaw sessions main-loop-action <id> --data '{"action":"nudge"}'` to control it
+- **API:** `POST /api/chats/[id]/main-loop` with `{"tick":true}` to trigger a mission tick
+- **CLI:** `swarmclaw chats main-loop <id>` to inspect loop state, or `swarmclaw chats main-loop-action <id> --data '{"action":"nudge"}'` to control it
 
 Use this for background agents that should "keep working" on a goal until blocked or complete.
 
@@ -412,7 +400,7 @@ Configure this in **Settings → Capability Policy** to centrally govern tool ac
 - **Blocked tools:** specific tool families or concrete tool names
 - **Allowed tools:** explicit overrides when running stricter modes
 
-Policy is enforced in both session tool construction and direct forced tool invocations, so auto-routing and explicit tool requests use the same guardrails.
+Policy is enforced in both chat tool construction and direct forced tool invocations, so auto-routing and explicit tool requests use the same guardrails.
 
 ## CLI Troubleshooting
 
@@ -430,11 +418,11 @@ Policy is enforced in both session tool construction and direct forced tool invo
 Configure these in **Settings**:
 
 - **Voice** — set `ElevenLabs API Key`, `ElevenLabs Voice ID`, and `Speech Recognition Language`
-- **Heartbeat** — set `Heartbeat Interval (Seconds)` and `Heartbeat Prompt` for ongoing session pings
-- **Global heartbeat safety** — use `Stop All Session Heartbeats` to disable heartbeat across all sessions and cancel in-flight heartbeat runs.
+- **Heartbeat** — set `Heartbeat Interval (Seconds)` and `Heartbeat Prompt` for ongoing chat pings
+- **Global heartbeat safety** — use `Stop All Heartbeats` to disable heartbeat across all chats and cancel in-flight heartbeat runs.
 
-Heartbeat pings are internal checks for ongoing sessions. If there's no new status, the assistant returns `HEARTBEAT_OK`; otherwise it returns a concise progress update and next step. In chat UI, heartbeat entries render as compact expandable cards and consecutive heartbeat streaks are collapsed to the latest item.
-The daemon health monitor also auto-disables heartbeat on sessions that remain stale for an extended period.
+Heartbeat pings are internal checks for ongoing chats. If there's no new status, the assistant returns `HEARTBEAT_OK`; otherwise it returns a concise progress update and next step. In chat UI, heartbeat entries render as compact expandable cards and consecutive heartbeat streaks are collapsed to the latest item.
+The daemon health monitor also auto-disables heartbeat on chats that remain stale for an extended period.
 
 ## Embeddings & Hybrid Memory Search
 
@@ -448,7 +436,7 @@ When enabled, new memories get vector embeddings. Search uses both FTS5 keyword 
 
 ## Model Failover
 
-Agents and sessions can have **fallback credentials**. If the primary API key gets a 401, 429, or 500 error, SwarmClaw automatically retries with the next credential. Configure fallback keys in the agent builder UI.
+Agents and chats can have **fallback credentials**. If the primary API key gets a 401, 429, or 500 error, SwarmClaw automatically retries with the next credential. Configure fallback keys in the agent builder UI.
 
 ## Plugin System
 
@@ -612,8 +600,8 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example minor release (v0.7.0 style)
-npm version minor
+# example patch release (v0.7.2 style)
+npm version patch
 git push origin main --follow-tags
 ```
 
@@ -622,19 +610,20 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.7.0 Release Readiness Notes
+#### v0.7.2 Release Readiness Notes
 
-Before shipping `v0.7.0`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.7.2`, confirm the following user-facing changes are reflected in docs:
 
-1. Plugins UI now shows richer installed plugin details (description fallback, source/status, capability badges, and clearer detail sheet metadata).
-2. Marketplace plugin installs normalize legacy URLs from `swarmclawai/plugins` to `swarmclawai/swarmforge` to avoid 404 installs.
-3. Hydration fixes removed nested `<button>` structures in list-card UIs (Plugins, Providers, Secrets, MCP Servers).
-4. Clipboard actions now use a browser-safe fallback when `navigator.clipboard` is unavailable.
-5. Site docs/release notes are updated in `swarmclaw-site` (especially `content/docs/plugins.md`, `content/docs/release-notes.md`, and `public/registry/plugins.json`).
+1. `sessions` → `chats` naming is consistent in README, site docs, and CLI/API examples.
+2. New built-in plugins/tools are documented (`image_gen`, `email`, `calendar`) including settings expectations.
+3. Plugin settings support is documented (`settingsFields`, `/api/plugins/settings` read/write endpoints).
+4. Usage telemetry docs include plugin rollups (`byPlugin`) and plugin token usage dashboard context.
+5. Gemini CLI delegation support and `geminiResumeId` task metadata are documented where CLI sessions are described.
+6. Site release notes include a `v0.7.2` section and docs index points to the current release notes version.
 
 ## CLI
 
-SwarmClaw ships a built-in CLI for core operational workflows:
+SwarmClaw ships a built-in CLI for setup and day-to-day operations.
 
 ```bash
 # show command help
@@ -644,79 +633,36 @@ npm run cli -- --help
 node ./bin/swarmclaw.js --help
 ```
 
-### Usage
+Primary groups:
+- `chats` (canonical)
+- `tasks`
+- `schedules`
+- `chatrooms`
+- `connectors`
+- `memory`
+- `setup`
 
-```bash
-swarmclaw [global-options] <group> <command> [command-options]
-```
+Legacy note: some compatibility paths still accept `sessions`, but `chats` is the canonical command group.
 
-### Global Options
-
-| Flag | Description |
-|-|-|
-| `--base-url <url>` | API base URL (default: `http://localhost:3456`) |
-| `--access-key <key>` | Access key override (else `SWARMCLAW_API_KEY` or `platform-api-key.txt`) |
-| `--data <json\|@file\|->` | Request JSON body |
-| `--query key=value` | Query parameter (repeatable) |
-| `--header key=value` | Extra HTTP header (repeatable) |
-| `--json` | Compact JSON output |
-| `--wait` | Wait for run/task completion when IDs are returned |
-| `--timeout-ms <ms>` | Request/wait timeout (default `300000`) |
-| `--interval-ms <ms>` | Poll interval for `--wait` (default `2000`) |
-| `--out <file>` | Write binary response to file |
-
-Routing note: `swarmclaw` uses a hybrid router. Some legacy rich commands still support `-u/--url`, `-k/--key`, and `--raw`; mapped API commands use the options above.
-
-### Command Groups
-
-Run `swarmclaw --help` to list all groups and commands (the list evolves as APIs are added).
-Notable setup/operations groups include:
-
-| Group | Purpose |
-|-|-|
-| `setup` | Setup helpers like provider checks and `doctor` diagnostics |
-| `version` | Version status and update helpers |
-| `sessions` | Session lifecycle, chat, browser/devserver controls, mailbox |
-| `chatrooms` | Multi-agent chatrooms (members, reactions, streamed room chat) |
-| `memory` | Memory CRUD and maintenance utilities |
-| `notifications` | In-app notification listing and read-state controls |
-
-### Examples
+Quick examples:
 
 ```bash
 # list agents
 swarmclaw agents list
 
-# get agent details
-swarmclaw agents get <agentId>
+# create and inspect a chat
+swarmclaw chats create --name "Main Ops" --agent-id <agentId>
+swarmclaw chats list
 
-# create a task
-swarmclaw tasks create --title "Fix flaky CI test" --description "Stabilize retry logic" --agent-id <agentId>
+# run a main loop action
+swarmclaw chats main-loop-action <chatId> --data '{"action":"nudge"}'
 
 # run setup diagnostics
 swarmclaw setup doctor
-
-# interactive setup (walks through provider selection, supports multiple providers)
-swarmclaw setup init
-
-# or non-interactive setup with flags
-swarmclaw setup init --provider openai --api-key "$OPENAI_API_KEY"
-
-# run memory maintenance analysis
-swarmclaw memory maintenance
-
-# list chatrooms
-swarmclaw chatrooms list
-
-# send a room message and stream agent replies
-swarmclaw chatrooms chat <chatroomId> --data '{"text":"@all status update?"}'
-
-# react to a room message
-swarmclaw chatrooms react <chatroomId> --data '{"messageId":"<messageId>","emoji":"👍"}'
-
-# pin/unpin a room message
-swarmclaw chatrooms pin <chatroomId> --data '{"messageId":"<messageId>"}'
 ```
+
+Full reference (groups, commands, and options):
+- https://swarmclaw.ai/docs/cli
 
 ## Credits
 

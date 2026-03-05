@@ -407,7 +407,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!sessionId) return
     try {
       const key = getStoredAccessKey()
-      const res = await fetch(`/api/sessions/${sessionId}/edit-resend`, {
+      const res = await fetch(`/api/chats/${sessionId}/edit-resend`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -417,7 +417,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       })
       if (!res.ok) return
       // Reload messages from server (truncated)
-      const msgsRes = await fetch(`/api/sessions/${sessionId}/messages`, {
+      const msgsRes = await fetch(`/api/chats/${sessionId}/messages`, {
         headers: key ? { 'X-Access-Key': key } : undefined,
       })
       if (msgsRes.ok) {
@@ -437,7 +437,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!sessionId) return
     try {
       const key = getStoredAccessKey()
-      const res = await fetch(`/api/sessions/${sessionId}/retry`, {
+      const res = await fetch(`/api/chats/${sessionId}/retry`, {
         method: 'POST',
         headers: key ? { 'X-Access-Key': key } : undefined,
       })
@@ -445,7 +445,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { message, imagePath } = await res.json()
       if (!message) return
       // Reload messages from server (without the popped ones)
-      const msgsRes = await fetch(`/api/sessions/${sessionId}/messages`, {
+      const msgsRes = await fetch(`/api/chats/${sessionId}/messages`, {
         headers: key ? { 'X-Access-Key': key } : undefined,
       })
       if (msgsRes.ok) {
@@ -546,7 +546,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({ messages: [...s.messages, marker] }))
     try {
       const key = getStoredAccessKey()
-      await fetch(`/api/sessions/${sessionId}/messages`, {
+      await fetch(`/api/chats/${sessionId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(key ? { 'X-Access-Key': key } : {}) },
         body: JSON.stringify({ kind: 'context-clear' }),
@@ -569,7 +569,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const key = getStoredAccessKey()
       // Find the earliest message's original index (startIndex tracked on initial load)
       const currentStartIndex = totalMessages - messages.length
-      const res = await fetch(`/api/sessions/${sessionId}/messages?limit=100&before=${currentStartIndex}`, {
+      const res = await fetch(`/api/chats/${sessionId}/messages?limit=100&before=${currentStartIndex}`, {
         headers: key ? { 'X-Access-Key': key } : undefined,
       })
       if (res.ok) {
@@ -593,7 +593,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (sessionId) {
       try {
         const key = getStoredAccessKey()
-        await fetch(`/api/sessions/${sessionId}/stop`, {
+        await fetch(`/api/chats/${sessionId}/stop`, {
           method: 'POST',
           headers: key ? { 'X-Access-Key': key } : undefined,
         })

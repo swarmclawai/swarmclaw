@@ -49,10 +49,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     createdAt: now,
     lastActiveAt: now,
     active: false,
-    mainSession: true,
     sessionType: 'human' as const,
     agentId,
-    tools: agent.tools || [],
+    plugins: agent.plugins || agent.tools || [],
     heartbeatEnabled: agent.heartbeatEnabled || false,
     heartbeatIntervalSec: agent.heartbeatIntervalSec || null,
   }

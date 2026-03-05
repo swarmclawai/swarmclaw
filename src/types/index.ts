@@ -63,15 +63,17 @@ export interface Session {
     claudeCode?: string | null
     codex?: string | null
     opencode?: string | null
+    gemini?: string | null
   }
   messages: Message[]
   createdAt: number
   lastActiveAt: number
   active?: boolean
-  mainSession?: boolean
   sessionType?: SessionType
   agentId?: string | null
   parentSessionId?: string | null
+  plugins?: string[]
+  /** @deprecated Use `plugins` instead. Kept for backward compat with stored data. */
   tools?: string[]
   heartbeatEnabled?: boolean | null
   heartbeatIntervalSec?: number | null
@@ -167,6 +169,18 @@ export interface ApprovalRequest {
 
 export type Approvals = Record<string, ApprovalRequest>
 
+export interface PluginInvocationRecord {
+  pluginId: string
+  toolName: string
+  inputTokens: number
+  outputTokens: number
+}
+
+export interface PluginDefinitionCost {
+  pluginId: string
+  estimatedTokens: number
+}
+
 export interface UsageRecord {
   sessionId: string
   messageIndex: number
@@ -178,6 +192,8 @@ export interface UsageRecord {
   estimatedCost: number
   timestamp: number
   durationMs?: number
+  pluginDefinitionCosts?: PluginDefinitionCost[]
+  pluginInvocations?: PluginInvocationRecord[]
 }
 
 // --- Plugin System ---
@@ -186,8 +202,11 @@ export interface PluginHooks {
   beforeAgentStart?: (ctx: { session: Session; message: string }) => Promise<void> | void
   afterAgentComplete?: (ctx: { session: Session; response: string }) => Promise<void> | void
   beforeToolExec?: (ctx: { toolName: string; input: Record<string, unknown> | null }) => Promise<Record<string, unknown> | void> | Record<string, unknown> | void
-  afterToolExec?: (ctx: { toolName: string; input: Record<string, unknown> | null; output: string }) => Promise<void> | void
+  afterToolExec?: (ctx: { session: Session; toolName: string; input: Record<string, unknown> | null; output: string }) => Promise<void> | void
   onMessage?: (ctx: { session: Session; message: Message }) => Promise<void> | void
+
+  // Post-turn hook — fires after a full chat exchange (user message → agent response)
+  afterChatTurn?: (ctx: { session: Session; message: string; response: string; source: string; internal: boolean }) => Promise<void> | void
 
   // Orchestration & Swarm Hooks
   onTaskComplete?: (ctx: { taskId: string; result: unknown }) => Promise<void> | void
@@ -196,6 +215,15 @@ export interface PluginHooks {
   // Chat Middleware (Transform messages)
   transformInboundMessage?: (ctx: { session: Session; text: string }) => Promise<string> | string
   transformOutboundMessage?: (ctx: { session: Session; text: string }) => Promise<string> | string
+
+  // Context injection — return a markdown string to inject into the agent's state modifier, or null/undefined to skip
+  getAgentContext?: (ctx: { session: Session; enabledPlugins: string[]; message: string; history: Message[] }) => Promise<string | null | undefined> | string | null | undefined
+
+  // Self-description — returns a capability line for the system prompt (e.g., "I can remember things across conversations")
+  getCapabilityDescription?: () => string | null | undefined
+
+  // Operating guidance — returns operational hints for the agent when this plugin is active
+  getOperatingGuidance?: () => string | string[] | null | undefined
 }
 
 export interface PluginToolDef {
@@ -203,6 +231,17 @@ export interface PluginToolDef {
   description: string
   parameters: Record<string, unknown>
   execute: (args: Record<string, unknown>, ctx: { session: Session; message: string }) => Promise<string | object> | string | object
+}
+
+export interface PluginSettingsField {
+  key: string
+  label: string
+  type: 'text' | 'number' | 'boolean' | 'select' | 'secret'
+  placeholder?: string
+  help?: string
+  options?: Array<{ value: string; label: string }>
+  defaultValue?: string | number | boolean
+  required?: boolean
 }
 
 export interface PluginUIExtension {
@@ -225,6 +264,22 @@ export interface PluginUIExtension {
     tooltip?: string
     action: 'message' | 'link' | 'tool'
     value: string
+  }>
+  /** Settings fields declared by the plugin, rendered in the plugin settings panel */
+  settingsFields?: PluginSettingsField[]
+  /** Chat panels the plugin provides (e.g., browser view, terminal) */
+  chatPanels?: Array<{
+    id: string
+    label: string
+    icon?: string
+    /** WS topic to subscribe to for updates (e.g., 'browser:{sessionId}') */
+    wsTopic?: string
+  }>
+  /** Badges to show on agent cards when this plugin is enabled */
+  agentBadges?: Array<{
+    id: string
+    label: string
+    icon?: string
   }>
 }
 
@@ -252,6 +307,7 @@ export interface Plugin {
   name: string
   version?: string
   description?: string
+  enabledByDefault?: boolean
   hooks?: PluginHooks
   tools?: PluginToolDef[]
   ui?: PluginUIExtension
@@ -279,6 +335,7 @@ export interface PluginMeta {
   providerCount?: number
   connectorCount?: number
   createdByAgentId?: string | null
+  settingsFields?: PluginSettingsField[]
 }
 export interface MarketplacePlugin {
   id: string
@@ -350,7 +407,9 @@ export interface Agent {
   apiEndpoint?: string | null
   isOrchestrator?: boolean
   subAgentIds?: string[]
-  tools?: string[]              // e.g. ['browser'] — available tool integrations
+  plugins?: string[]             // e.g. ['browser', 'memory'] — enabled plugin IDs
+  /** @deprecated Use `plugins` instead. Kept for backward compat with stored data. */
+  tools?: string[]
   skills?: string[]             // e.g. ['frontend-design'] — Claude Code skills to use
   skillIds?: string[]           // IDs of uploaded skills from the Skills manager
   mcpServerIds?: string[]       // IDs of configured MCP servers to inject tools from
@@ -784,6 +843,8 @@ export interface AppSettings {
   taskQualityGateRequireReport?: boolean
   // Integrity monitor
   integrityMonitorEnabled?: boolean
+  // Per-plugin settings (keyed by pluginId)
+  pluginSettings?: Record<string, Record<string, unknown>>
 }
 
 // --- Orchestrator Secrets ---
@@ -977,6 +1038,7 @@ export interface BoardTask {
   claudeResumeId?: string | null
   codexResumeId?: string | null
   opencodeResumeId?: string | null
+  geminiResumeId?: string | null
   checkpoint?: {
     lastRunId?: string | null
     lastSessionId?: string | null

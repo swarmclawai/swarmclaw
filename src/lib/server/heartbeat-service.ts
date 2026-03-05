@@ -377,7 +377,7 @@ async function tickHeartbeats() {
 
   for (const session of Object.values(sessions) as any[]) {
     if (!session?.id) continue
-    if (!Array.isArray(session.tools) || session.tools.length === 0) continue
+    if (!Array.isArray(session.plugins) || session.plugins.length === 0) continue
     if (session.sessionType && session.sessionType !== 'human' && session.sessionType !== 'orchestrated') continue
 
     // Check if this session or its agent has explicit heartbeat opt-in

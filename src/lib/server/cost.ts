@@ -1,4 +1,5 @@
-import type { Agent, UsageRecord } from '@/types'
+import type { Agent, UsageRecord, PluginDefinitionCost } from '@/types'
+import type { StructuredToolInterface } from '@langchain/core/tools'
 import { loadSessions, loadUsage } from './storage'
 
 // Model cost table: [inputCostPer1M, outputCostPer1M] in USD
@@ -63,6 +64,38 @@ export function estimateCost(model: string, inputTokens: number, outputTokens: n
 
 export function getModelCosts(): Record<string, [number, number]> {
   return { ...MODEL_COSTS }
+}
+
+/**
+ * Estimate the number of tokens a tool definition occupies in the LLM context.
+ * Uses ~4 chars per token as a rough approximation.
+ */
+export function estimateToolDefinitionTokens(t: StructuredToolInterface): number {
+  let chars = (t.name || '').length + (t.description || '').length
+  try {
+    const schema = typeof t.schema === 'object' ? JSON.stringify(t.schema) : ''
+    chars += schema.length
+  } catch { /* ignore */ }
+  return Math.ceil(chars / 4)
+}
+
+/**
+ * Build per-plugin definition cost estimates from a set of tools and their plugin mapping.
+ */
+export function buildPluginDefinitionCosts(
+  tools: StructuredToolInterface[],
+  toolToPluginMap: Record<string, string>,
+): PluginDefinitionCost[] {
+  const totals = new Map<string, number>()
+  for (const t of tools) {
+    const pluginId = toolToPluginMap[t.name] || '_unknown'
+    const tokens = estimateToolDefinitionTokens(t)
+    totals.set(pluginId, (totals.get(pluginId) || 0) + tokens)
+  }
+  return Array.from(totals.entries()).map(([pluginId, estimatedTokens]) => ({
+    pluginId,
+    estimatedTokens,
+  }))
 }
 
 export interface AgentSpendWindows {

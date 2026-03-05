@@ -3,7 +3,7 @@ import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
 
 export const dynamic = 'force-dynamic'
 
-/** GET /api/sessions/[id]/checkpoints — returns checkpoint history for a thread */
+/** GET /api/chats/[id]/checkpoints — returns checkpoint history for a thread */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: threadId } = await params
   if (!threadId) return NextResponse.json({ error: 'Thread ID is required' }, { status: 400 })

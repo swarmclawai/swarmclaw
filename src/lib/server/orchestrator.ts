@@ -45,7 +45,7 @@ export function createOrchestratorSession(
     sessionType: 'orchestrated' as const,
     agentId: orchestrator.id,
     parentSessionId: parentSessionId || null,
-    tools: Array.isArray(orchestrator.tools) ? [...orchestrator.tools] : [],
+    plugins: Array.isArray(orchestrator.plugins) ? [...orchestrator.plugins] : (Array.isArray(orchestrator.tools) ? [...orchestrator.tools] : []),
     heartbeatEnabled: false,
   }
   saveSessions(sessions)
@@ -95,9 +95,9 @@ async function executeOrchestratorLegacy(
   const agentIds = orchestrator.subAgentIds || []
   const agents = agentIds.map((id) => allAgents[id]).filter(Boolean)
   const agentList = agents.map((a) => {
-    const tools = a.tools?.length ? ` [tools: ${a.tools.join(', ')}]` : ''
+    const plugins = (a.plugins || a.tools)?.length ? ` [plugins: ${(a.plugins || a.tools)!.join(', ')}]` : ''
     const skills = a.skills?.length ? ` [skills: ${a.skills.join(', ')}]` : ''
-    return `- ${a.name}: ${a.description}${tools}${skills}`
+    return `- ${a.name}: ${a.description}${plugins}${skills}`
   }).join('\n')
 
   // Load relevant memories
@@ -291,7 +291,7 @@ async function executeSubTask(
     sessionType: 'orchestrated' as const,
     agentId: agent.id,
     parentSessionId,
-    tools: agent.tools || [],
+    plugins: agent.plugins || agent.tools || [],
   }
   sessions[childId] = childSession
   saveSessions(sessions)
@@ -339,7 +339,7 @@ export async function callProvider(
     credentialId: agent.credentialId,
     apiEndpoint: agent.apiEndpoint,
     cwd: WORKSPACE_DIR,
-    tools: agent.tools || [],
+    plugins: agent.plugins || agent.tools || [],
     messages: history.map((h) => ({
       role: h.role as 'user' | 'assistant',
       text: h.text,

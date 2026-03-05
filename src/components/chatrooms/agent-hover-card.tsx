@@ -19,7 +19,7 @@ const ALL_TOOL_IDS = [...AVAILABLE_TOOLS, ...PLATFORM_TOOLS].map((t) => t.id)
 export function AgentHoverCard({ agent, children, status }: Props) {
   const [showAll, setShowAll] = useState(false)
   const [busy, setBusy] = useState(false)
-  const tools = agent.tools ?? []
+  const tools = agent.plugins ?? []
 
   const displayTools = showAll ? ALL_TOOL_IDS : tools
 
@@ -27,11 +27,11 @@ export function AgentHoverCard({ agent, children, status }: Props) {
     if (busy) return
     setBusy(true)
     try {
-      const current = agent.tools || []
+      const current = agent.plugins || []
       const updated = current.includes(toolId)
         ? current.filter((t) => t !== toolId)
         : [...current, toolId]
-      await api('PUT', `/agents/${agent.id}`, { tools: updated })
+      await api('PUT', `/agents/${agent.id}`, { plugins: updated })
       useAppStore.getState().loadAgents()
     } finally {
       setBusy(false)

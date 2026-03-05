@@ -40,7 +40,9 @@ async function executeScheduleWake(args: { delayMinutes: number; message: string
 const SchedulePlugin: Plugin = {
   name: 'Core Scheduler',
   description: 'Schedule wake events and reminders for agents.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can set a conversational timer (`schedule_wake`) to remind myself to check back on something later in this chat.',
+  } as PluginHooks,
   tools: [
     {
       name: 'schedule_wake',
@@ -64,7 +66,7 @@ getPluginManager().registerBuiltin('schedule', SchedulePlugin)
  * Legacy Bridge
  */
 export function buildScheduleTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('schedule_wake')) return []
+  if (!bctx.hasPlugin('schedule_wake')) return []
   return [
     tool(
       async (args) => executeScheduleWake(args as any, { sessionId: bctx.ctx?.sessionId || undefined }),

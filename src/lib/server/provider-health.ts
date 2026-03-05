@@ -1,6 +1,6 @@
 import { spawnSync } from 'child_process'
 
-type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'
+type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
 interface ProviderHealthState {
   failures: number
@@ -66,12 +66,14 @@ export function isProviderCoolingDown(providerId: string): boolean {
 function delegateBinary(delegateTool: DelegateTool): string {
   if (delegateTool === 'delegate_to_claude_code') return 'claude'
   if (delegateTool === 'delegate_to_codex_cli') return 'codex'
+  if (delegateTool === 'delegate_to_gemini_cli') return 'gemini'
   return 'opencode'
 }
 
 function delegateProviderId(delegateTool: DelegateTool): string {
   if (delegateTool === 'delegate_to_claude_code') return 'claude-cli'
   if (delegateTool === 'delegate_to_codex_cli') return 'codex-cli'
+  if (delegateTool === 'delegate_to_gemini_cli') return 'gemini-cli'
   return 'opencode-cli'
 }
 
@@ -202,14 +204,14 @@ export async function pingOpenClaw(
 
 /**
  * Ping a provider to check reachability. Returns `{ ok, message }`.
- * Skips CLI-based providers (claude-cli, codex-cli, opencode-cli) — returns ok.
+ * Skips CLI-based providers (claude-cli, codex-cli, opencode-cli, gemini-cli) — returns ok.
  */
 export async function pingProvider(
   provider: string,
   apiKey: string | undefined,
   endpoint: string | undefined,
 ): Promise<{ ok: boolean; message: string }> {
-  const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli']
+  const CLI_PROVIDERS = ['claude-cli', 'codex-cli', 'opencode-cli', 'gemini-cli']
   if (CLI_PROVIDERS.includes(provider)) return { ok: true, message: 'CLI provider — skipped.' }
 
   try {

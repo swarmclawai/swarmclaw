@@ -44,7 +44,7 @@ export function ChatroomToolRequestBanner({ agentId, agentName, text, toolOutput
   if (toolRequests.length === 0) return null
 
   const agent = agents[agentId]
-  const agentTools: string[] = agent?.tools || []
+  const agentTools: string[] = agent?.plugins || []
 
   const handleGrant = async (toolId: string) => {
     if (agentTools.includes(toolId)) {
@@ -52,7 +52,7 @@ export function ChatroomToolRequestBanner({ agentId, agentName, text, toolOutput
       return
     }
     const updated = [...agentTools, toolId]
-    await api('PUT', `/agents/${agentId}`, { tools: updated })
+    await api('PUT', `/agents/${agentId}`, { plugins: updated })
     await loadAgents()
     const newGranted = new Set(granted).add(toolId)
     setGranted(newGranted)

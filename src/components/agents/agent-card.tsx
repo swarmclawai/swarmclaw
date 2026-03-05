@@ -220,7 +220,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
         <div className="text-[12px] text-text-3/70 mt-1.5 truncate">{agent.description}</div>
         <div className="flex items-center gap-2 mt-1.5">
           <span className="text-[11px] text-text-3/60 font-mono">{agent.model || agent.provider}</span>
-          {agent.tools?.includes('browser') && (
+          {agent.plugins?.includes('browser') && (
             <span className="text-[10px] font-600 uppercase tracking-wider text-sky-400/70 bg-sky-400/[0.08] px-1.5 py-0.5 rounded-[5px]">
               browser
             </span>

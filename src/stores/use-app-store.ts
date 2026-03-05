@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter, ActivityEntry, AppNotification, ApprovalRequest } from '../types'
-import { fetchSessions, fetchDirs, fetchProviders, fetchCredentials } from '../lib/sessions'
+import { fetchChats, fetchDirs, fetchProviders, fetchCredentials } from '../lib/chats'
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
 import { fetchTasks } from '../lib/tasks'
@@ -235,7 +235,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentSessionId: null,
   loadSessions: async () => {
     try {
-      const sessions = await fetchSessions()
+      const sessions = await fetchChats()
       set({ sessions })
     } catch {
       // ignore
@@ -249,7 +249,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   clearSessions: async (ids) => {
     if (!ids.length) return
-    await api('DELETE', '/sessions', { ids })
+    await api('DELETE', '/chats', { ids })
     const sessions = { ...get().sessions }
     for (const id of ids) delete sessions[id]
     set({ sessions, currentSessionId: ids.includes(get().currentSessionId!) ? null : get().currentSessionId })
@@ -260,7 +260,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       sessions[id] = { ...sessions[id], pinned: !sessions[id].pinned }
       set({ sessions })
       // Persist to server
-      void api('PUT', `/sessions/${id}`, { pinned: sessions[id].pinned })
+      void api('PUT', `/chats/${id}`, { pinned: sessions[id].pinned })
     }
   },
   updateSessionInStore: (session) => {
@@ -268,7 +268,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   forkSession: async (sessionId, messageIndex) => {
     try {
-      const forked = await api<Session>('POST', `/sessions/${sessionId}/fork`, { messageIndex })
+      const forked = await api<Session>('POST', `/chats/${sessionId}/fork`, { messageIndex })
       if (!forked?.id) return null
       await get().loadSessions()
       set({ currentSessionId: forked.id })

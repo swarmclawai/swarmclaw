@@ -12,13 +12,15 @@ const MAX_DELEGATION_CHAIN_HOPS = 128
 interface DelegateContext {
   cwd?: string
   claudeTimeoutMs?: number
-  readStoredDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode') => string | null
-  persistDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode', id: string) => void
+  readStoredDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini') => string | null
+  persistDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini', id: string) => void
   ctx?: { platformAssignScope?: string; agentId?: string | null }
+  hasPlugin?: (name: string) => boolean
+  /** @deprecated Use hasPlugin */
   hasTool?: (name: string) => boolean
 }
 
-type DelegateBackend = 'claude' | 'codex' | 'opencode'
+type DelegateBackend = 'claude' | 'codex' | 'opencode' | 'gemini'
 
 function asTaskRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? value as Record<string, unknown> : null
@@ -74,6 +76,7 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
     claude: findBinaryOnPath('claude'),
     codex: findBinaryOnPath('codex'),
     opencode: findBinaryOnPath('opencode'),
+    gemini: findBinaryOnPath('gemini'),
   }
   const binary = backends[backend as keyof typeof backends]
   if (!binary) return `Error: Backend "${backend}" unavailable.`
@@ -81,6 +84,7 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
   if (backend === 'claude') return runClaudeDelegate(binary, task, resume, resumeId, bctx)
   if (backend === 'codex') return runCodexDelegate(binary, task, resume, resumeId, bctx)
   if (backend === 'opencode') return runOpenCodeDelegate(binary, task, resume, resumeId, bctx)
+  if (backend === 'gemini') return runGeminiDelegate(binary, task, resume, resumeId, bctx)
   return `Error: Unsupported backend "${backend}".`
 }
 
@@ -273,6 +277,86 @@ async function runOpenCodeDelegate(binary: string, task: string, resume: boolean
   }
 }
 
+async function runGeminiDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext): Promise<string> {
+  try {
+    const env = { ...process.env, TERM: 'dumb', NO_COLOR: '1' } as NodeJS.ProcessEnv
+    const storedResumeId = bctx.readStoredDelegateResumeId?.('gemini')
+    const resumeIdToUse = resumeId?.trim() || (resume ? storedResumeId : null)
+
+    return await new Promise<string>((resolve) => {
+      const args = ['--prompt', task, '--output-format', 'stream-json', '--yolo']
+      if (resumeIdToUse) args.push('--resume', resumeIdToUse)
+
+      const child = spawn(binary, args, { cwd: bctx.cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
+      let stdoutBuf = ''
+      let stderrBuf = ''
+      let responseText = ''
+      let discoveredId: string | null = null
+      let settled = false
+
+      const finish = (text: string) => {
+        if (settled) return
+        settled = true
+        resolve(truncate(text, MAX_OUTPUT))
+      }
+
+      const timeoutHandle = setTimeout(() => {
+        try { child.kill('SIGTERM') } catch { /* ignore */ }
+      }, bctx.claudeTimeoutMs || 300000)
+
+      child.stdout?.on('data', (chunk) => {
+        stdoutBuf += chunk.toString()
+        const lines = stdoutBuf.split('\n')
+        stdoutBuf = lines.pop() || ''
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed) continue
+          try {
+            const ev = JSON.parse(trimmed) as Record<string, unknown>
+            // Capture session ID from init event
+            if (ev.type === 'init' && typeof ev.session_id === 'string') {
+              discoveredId = ev.session_id
+            }
+            // Capture assistant text from message events
+            if (ev.type === 'message' && ev.role === 'assistant' && typeof ev.content === 'string') {
+              responseText += ev.content
+            }
+            // Capture final result
+            if (ev.type === 'result' && ev.status === 'error') {
+              const errMsg = typeof ev.error === 'string' ? ev.error : 'Gemini error'
+              stderrBuf += `${errMsg}\n`
+            }
+          } catch {
+            responseText += `${line}\n`
+          }
+        }
+      })
+
+      child.stderr?.on('data', (chunk) => {
+        stderrBuf += chunk.toString()
+        if (stderrBuf.length > 16_000) stderrBuf = stderrBuf.slice(-16_000)
+      })
+
+      child.on('close', (code, signal) => {
+        clearTimeout(timeoutHandle)
+        if (discoveredId) bctx.persistDelegateResumeId?.('gemini', discoveredId)
+        const output = responseText.trim()
+        if (output) return finish(output)
+        const stderr = stderrBuf.trim()
+        if (stderr) return finish(`Error: ${stderr}`)
+        return finish(`Error: Gemini exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`)
+      })
+
+      child.on('error', (err) => {
+        clearTimeout(timeoutHandle)
+        finish(`Error: ${err.message}`)
+      })
+    })
+  } catch (err: unknown) {
+    return `Error: ${err instanceof Error ? err.message : String(err)}`
+  }
+}
+
 async function runClaudeDelegate(binary: string, task: string, resume: boolean, resumeId: string, bctx: DelegateContext): Promise<string> {
   try {
     const env: NodeJS.ProcessEnv = stripEnvPrefixes({ ...process.env }, ['CLAUDE'])
@@ -335,16 +419,19 @@ async function runClaudeDelegate(binary: string, task: string, resume: boolean, 
 const DelegatePlugin: Plugin = {
   name: 'Core Delegate',
   description: 'Delegate complex multi-file tasks to specialized CLI backends or other agents.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can hand off deep coding work to Claude Code, Codex, or Gemini CLI (`delegate`) for complex multi-file refactors and code generation. Resume IDs may come back via `[delegate_meta]`.',
+    getOperatingGuidance: () => ['CRITICAL: `execute_command` (not delegation) for running servers, installs, scripts. Delegation sessions end and kill processes.', 'Delegate only for deep multi-file code work: refactors, debugging, generation, test suites.'],
+  } as PluginHooks,
   tools: [
     {
       name: 'delegate',
-      description: 'Delegate to a specialized backend (Claude, Codex, OpenCode).',
+      description: 'Delegate to a specialized backend (Claude, Codex, OpenCode, Gemini).',
       parameters: {
         type: 'object',
         properties: {
           task: { type: 'string' },
-          backend: { type: 'string', enum: ['claude', 'codex', 'opencode'] },
+          backend: { type: 'string', enum: ['claude', 'codex', 'opencode', 'gemini'] },
           resume: { type: 'boolean' },
           resumeId: { type: 'string', description: 'Optional explicit session/thread ID to resume' }
         },
@@ -362,9 +449,9 @@ getPluginManager().registerBuiltin('delegate', DelegatePlugin)
  */
 export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterface[] {
   const tools: StructuredToolInterface[] = []
-  const { hasTool } = bctx
+  const { hasPlugin } = bctx
 
-  if (hasTool('delegate')) {
+  if (hasPlugin('delegate')) {
     tools.push(
       tool(
         async (args) => executeDelegateAction(args, bctx),

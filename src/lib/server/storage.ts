@@ -6,7 +6,6 @@ import Database from 'better-sqlite3'
 
 import { DATA_DIR, WORKSPACE_DIR } from './data-dir'
 import type { Message } from '@/types'
-import { ensureMainSessionFlag } from './main-session'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
 // --- LRU Cache ---
@@ -421,7 +420,7 @@ You have opinions about good agent design. You suggest creative approaches, warn
 
 Be concise but not curt. Warmth doesn't require verbosity. When someone asks "how do I...?", give them the direct steps. Offer to do things rather than just explaining — if someone wants an agent created, create it. Use your tools when actions speak louder than words. If you don't know something, say so honestly.`,
       isOrchestrator: false,
-      tools: defaultStarterTools,
+      plugins: defaultStarterTools,
       heartbeatEnabled: true,
       platformAssignScope: 'all',
       skillIds: [],
@@ -435,10 +434,11 @@ Be concise but not curt. Warmth doesn't require verbosity. When someone asks "ho
     if (row?.data) {
       try {
         const existing = JSON.parse(row.data) as Record<string, unknown>
-        const existingTools = Array.isArray(existing.tools) ? existing.tools : []
-        const mergedTools = Array.from(new Set([...existingTools, ...defaultStarterTools])).filter((t) => t !== 'delete_file')
-        if (JSON.stringify(existingTools) !== JSON.stringify(mergedTools)) {
-          existing.tools = mergedTools
+        const existingPlugins = Array.isArray(existing.plugins) ? existing.plugins : Array.isArray(existing.tools) ? existing.tools : []
+        const mergedPlugins = Array.from(new Set([...existingPlugins, ...defaultStarterTools])).filter((t) => t !== 'delete_file')
+        if (JSON.stringify(existingPlugins) !== JSON.stringify(mergedPlugins)) {
+          existing.plugins = mergedPlugins
+          delete existing.tools
           existing.updatedAt = Date.now()
           db.prepare('UPDATE agents SET data = ? WHERE id = ?').run(JSON.stringify(existing), 'default')
         }
@@ -516,13 +516,17 @@ export function loadSessions(): Record<string, any> {
       changed = true
     }
 
-    const beforeMainFlag = session.mainSession === true
-    ensureMainSessionFlag(session)
-    if (!beforeMainFlag && session.mainSession === true) changed = true
 
     const agentId = typeof session.agentId === 'string' ? session.agentId.trim() : ''
     if (agentId && !Object.prototype.hasOwnProperty.call(agents, agentId)) {
       session.agentId = null
+      changed = true
+    }
+
+    // Migrate tools → plugins
+    if (Array.isArray(session.tools) && !Array.isArray(session.plugins)) {
+      session.plugins = session.tools
+      delete session.tools
       changed = true
     }
   }
@@ -596,8 +600,24 @@ export function decryptKey(encrypted: string): string {
 }
 
 // --- Agents ---
+
+/** Migrate legacy `tools` field → `plugins` on agent objects. */
+function migrateAgentPlugins(agents: Record<string, Record<string, unknown>>): boolean {
+  let changed = false
+  for (const agent of Object.values(agents)) {
+    if (!agent || typeof agent !== 'object') continue
+    if (Array.isArray(agent.tools) && !Array.isArray(agent.plugins)) {
+      agent.plugins = agent.tools
+      delete agent.tools
+      changed = true
+    }
+  }
+  return changed
+}
+
 export function loadAgents(opts?: { includeTrashed?: boolean }): Record<string, any> {
   const all = loadCollection('agents')
+  if (migrateAgentPlugins(all)) saveCollection('agents', all)
   if (opts?.includeTrashed) return all
   const result: Record<string, any> = {}
   for (const [id, agent] of Object.entries(all)) {

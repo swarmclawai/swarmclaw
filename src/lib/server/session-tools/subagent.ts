@@ -52,7 +52,7 @@ async function executeSubagentAction(args: any, context: { sessionId?: string; c
       id: sid, name: `subagent-${agent.name}`, cwd: cwd || context.cwd, user: 'agent',
       provider: agent.provider, model: agent.model, credentialId: agent.credentialId || null,
       messages: [], createdAt: now, lastActiveAt: now, sessionType: 'orchestrated',
-      agentId: agent.id, parentSessionId: context.sessionId || null, tools: agent.tools || [],
+      agentId: agent.id, parentSessionId: context.sessionId || null, plugins: agent.plugins || agent.tools || [],
     }
     saveSessions(sessions)
 
@@ -92,7 +92,7 @@ getPluginManager().registerBuiltin('subagent', SubagentPlugin)
  * Legacy Bridge
  */
 export function buildSubagentTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('spawn_subagent')) return []
+  if (!bctx.hasPlugin('spawn_subagent')) return []
   return [
     tool(
       async (args) => executeSubagentAction(args, { sessionId: bctx.ctx?.sessionId || undefined, cwd: bctx.cwd }),

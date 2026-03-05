@@ -14,20 +14,24 @@ export interface ToolContext {
 export interface SessionToolsResult {
   tools: StructuredToolInterface[]
   cleanup: () => Promise<void>
+  /** Maps tool name → plugin ID for attribution in usage tracking */
+  toolToPluginMap: Record<string, string>
 }
 
 export interface ToolBuildContext {
   cwd: string
   ctx: ToolContext | undefined
+  hasPlugin: (name: string) => boolean
+  /** @deprecated Use hasPlugin */
   hasTool: (name: string) => boolean
   cleanupFns: (() => Promise<void>)[]
   commandTimeoutMs: number
   claudeTimeoutMs: number
   cliProcessTimeoutMs: number
-  persistDelegateResumeId: (key: 'claudeCode' | 'codex' | 'opencode', id: string | null | undefined) => void
-  readStoredDelegateResumeId: (key: 'claudeCode' | 'codex' | 'opencode') => string | null
+  persistDelegateResumeId: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini', id: string | null | undefined) => void
+  readStoredDelegateResumeId: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini') => string | null
   resolveCurrentSession: () => any | null
-  activeTools: string[]
+  activePlugins: string[]
 }
 
 export function safePath(cwd: string, filePath: string): string {

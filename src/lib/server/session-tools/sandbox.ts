@@ -143,7 +143,9 @@ async function executeListRuntimes() {
 const SandboxPlugin: Plugin = {
   name: 'Core Sandbox',
   description: 'Secure isolated code execution for JS, TS, and Python.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can run code in a sandbox (`sandbox_exec`) — JS/TS via Deno or Python, in an isolated environment. I get stdout, stderr, and any files created.',
+  } as PluginHooks,
   tools: [
     {
       name: 'sandbox_exec',
@@ -174,7 +176,7 @@ getPluginManager().registerBuiltin('sandbox', SandboxPlugin)
  * Legacy Bridge
  */
 export function buildSandboxTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('sandbox')) return []
+  if (!bctx.hasPlugin('sandbox')) return []
   const tools: StructuredToolInterface[] = []
 
   tools.push(

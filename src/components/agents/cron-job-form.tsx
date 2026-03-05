@@ -94,10 +94,10 @@ export function CronJobForm({ agentId, onSaved, onCancel }: Props) {
           </select>
         </div>
         <div>
-          <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Session</label>
+          <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Chat Target</label>
           <select value={sessionTarget} onChange={(e) => setSessionTarget(e.target.value as typeof sessionTarget)} className={inputClass}>
-            <option value="main">Main session</option>
-            <option value="isolated">Isolated session</option>
+            <option value="main">Main chat</option>
+            <option value="isolated">Isolated chat</option>
           </select>
         </div>
       </div>

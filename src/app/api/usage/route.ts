@@ -50,6 +50,7 @@ export async function GET(req: Request) {
   let totalCost = 0
   const byAgent: Record<string, { name: string; cost: number; tokens: number; count: number }> = {}
   const byProvider: Record<string, { tokens: number; cost: number }> = {}
+  const byPlugin: Record<string, { definitionTokens: number; invocationTokens: number; invocations: number; estimatedCost: number }> = {}
   const bucketMap: Record<string, { tokens: number; cost: number }> = {}
 
   for (const r of records) {
@@ -75,11 +76,39 @@ export async function GET(req: Request) {
     byAgent[agentId].tokens += tokens
     byAgent[agentId].count += 1
 
+    // by plugin — definition costs (context overhead per LLM call)
+    if (Array.isArray(r.pluginDefinitionCosts)) {
+      for (const dc of r.pluginDefinitionCosts) {
+        if (!dc.pluginId) continue
+        if (!byPlugin[dc.pluginId]) byPlugin[dc.pluginId] = { definitionTokens: 0, invocationTokens: 0, invocations: 0, estimatedCost: 0 }
+        byPlugin[dc.pluginId].definitionTokens += dc.estimatedTokens || 0
+      }
+    }
+
+    // by plugin — invocation costs (actual tool calls)
+    if (Array.isArray(r.pluginInvocations)) {
+      for (const inv of r.pluginInvocations) {
+        if (!inv.pluginId) continue
+        if (!byPlugin[inv.pluginId]) byPlugin[inv.pluginId] = { definitionTokens: 0, invocationTokens: 0, invocations: 0, estimatedCost: 0 }
+        const p = byPlugin[inv.pluginId]
+        p.invocationTokens += (inv.inputTokens || 0) + (inv.outputTokens || 0)
+        p.invocations += 1
+      }
+    }
+
     // time series bucketing
     const bk = bucketKey(r.timestamp || now, range)
     if (!bucketMap[bk]) bucketMap[bk] = { tokens: 0, cost: 0 }
     bucketMap[bk].tokens += tokens
     bucketMap[bk].cost += cost
+  }
+
+  // Estimate per-plugin cost using the average input token rate from total usage
+  if (totalTokens > 0 && totalCost > 0) {
+    const avgCostPerToken = totalCost / totalTokens
+    for (const p of Object.values(byPlugin)) {
+      p.estimatedCost = Math.round((p.definitionTokens + p.invocationTokens) * avgCostPerToken * 10000) / 10000
+    }
   }
 
   // Sort time series
@@ -144,6 +173,7 @@ export async function GET(req: Request) {
     totalCost: Math.round(totalCost * 10000) / 10000,
     byAgent,
     byProvider,
+    byPlugin,
     timeSeries,
     providerHealth,
   })

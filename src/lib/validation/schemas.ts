@@ -10,7 +10,9 @@ export const AgentCreateSchema = z.object({
   apiEndpoint: z.string().nullable().optional().default(null),
   isOrchestrator: z.boolean().optional().default(false),
   subAgentIds: z.array(z.string()).optional().default([]),
-  tools: z.array(z.string()).optional().default([]),
+  plugins: z.array(z.string()).optional().default([]),
+  /** @deprecated Use plugins */
+  tools: z.array(z.string()).optional(),
   capabilities: z.array(z.string()).optional().default([]),
   thinkingLevel: z.string().optional(),
   soul: z.string().optional(),

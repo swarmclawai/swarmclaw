@@ -16,7 +16,7 @@ async function executePlatformAction(args: any, bctx: any) {
   // We reuse the existing CRUD tool logic but expose it via a single tool
   const crudTools = buildCrudTools({
     ...bctx,
-    hasTool: (id: string) => [
+    hasPlugin: (id: string) => [
       'manage_agents',
       'manage_tasks',
       'manage_schedules',
@@ -45,7 +45,10 @@ async function executePlatformAction(args: any, bctx: any) {
 const PlatformPlugin: Plugin = {
   name: 'Core Platform',
   description: 'Unified management of agents, tasks, schedules, skills, documents, and secrets.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can create and configure other agents (`manage_agents`), manage tasks (`manage_tasks`), set up schedules (`manage_schedules`), store and search documents (`manage_documents`), register webhooks (`manage_webhooks`), manage reusable skills (`manage_skills`), and store encrypted secrets (`manage_secrets`).',
+    getOperatingGuidance: () => ['Create/update tasks for long-lived goals to track progress.', 'Use schedules for follow-ups. Check existing schedules before creating new ones.', 'Inspect existing chats before creating duplicates.'],
+  } as PluginHooks,
   tools: [
     {
       name: 'manage_platform',
@@ -71,7 +74,7 @@ getPluginManager().registerBuiltin('manage_platform', PlatformPlugin)
  * Legacy Bridge
  */
 export function buildPlatformTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('manage_platform')) return []
+  if (!bctx.hasPlugin('manage_platform')) return []
 
   return [
     tool(

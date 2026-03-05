@@ -622,7 +622,7 @@ async function handleConnectorCommand(params: {
     const all = Array.isArray(session.messages) ? session.messages : []
     const userCount = all.filter((m: { role?: string }) => m?.role === 'user').length
     const assistantCount = all.filter((m: { role?: string }) => m?.role === 'assistant').length
-    const toolsCount = Array.isArray(session.tools) ? session.tools.length : 0
+    const toolsCount = Array.isArray(session.plugins) ? session.plugins.length : 0
     const statusText = [
       `Status for ${connector.platform} / ${connector.name}:`,
       `- Agent: ${agentName}`,
@@ -645,7 +645,7 @@ async function handleConnectorCommand(params: {
     session.claudeSessionId = null
     session.codexThreadId = null
     session.opencodeSessionId = null
-    session.delegateResumeIds = { claudeCode: null, codex: null, opencode: null }
+    session.delegateResumeIds = { claudeCode: null, codex: null, opencode: null, gemini: null }
     session.lastActiveAt = Date.now()
     persistSession(session)
     return `Reset complete for ${connector.platform} channel thread. Cleared ${cleared} message(s).`
@@ -1000,7 +1000,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
       lastActiveAt: Date.now(),
       sessionType: 'human' as const,
       agentId: agent.id,
-      tools: agent.tools || [],
+      plugins: agent.plugins || agent.tools || [],
     }
     sessions[id] = session
     saveSessions(sessions)
@@ -1148,7 +1148,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
   let fullText = ''
   let mediaExtractionText = ''
   let connectorToolDeliveredCurrentChannel = false
-  const hasTools = session.tools?.length && session.provider !== 'claude-cli'
+  const hasTools = session.plugins?.length && session.provider !== 'claude-cli'
   console.log(`[connector] Routing message to agent "${agent.name}" (${agent.provider}/${agent.model}), hasTools=${!!hasTools}`)
 
   if (hasTools) {

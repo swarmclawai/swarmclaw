@@ -27,7 +27,7 @@ export async function streamChat(
   }
 
   const key = getStoredAccessKey()
-  const res = await fetch(`/api/sessions/${sessionId}/chat`, {
+  const res = await fetch(`/api/chats/${sessionId}/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

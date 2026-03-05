@@ -97,7 +97,7 @@ getPluginManager().registerBuiltin('git', GitPlugin)
  * Legacy Bridge
  */
 export function buildGitTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('git')) return []
+  if (!bctx.hasPlugin('git')) return []
   return [
     tool(
       async (args) => executeGitAction(args, { cwd: bctx.cwd }),

@@ -657,27 +657,28 @@ export function buildProgram(): Command {
       await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'GET', `/runs/${encodeURIComponent(id)}`))
     })
 
-  const sessions = program.command('sessions').description('Manage sessions')
+  const chats = program.command('chats').description('Manage chats')
+  program.command('sessions').description('Manage chats (alias)').action(() => chats.help())
 
-  sessions
+  chats
     .command('list')
-    .description('List sessions')
+    .description('List chats')
     .action(async function () {
-      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'GET', '/sessions'))
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'GET', '/chats'))
     })
 
-  sessions
+  chats
     .command('get')
-    .description('Get session by id')
-    .argument('<id>', 'Session id')
+    .description('Get chat by id')
+    .argument('<id>', 'Chat id')
     .action(async function (id: string) {
-      await runWithHandler(this as Command, (ctx) => resolveByIdFromCollection(ctx, '/sessions', id))
+      await runWithHandler(this as Command, (ctx) => resolveByIdFromCollection(ctx, '/chats', id))
     })
 
-  sessions
+  chats
     .command('create')
-    .description('Create session')
-    .option('--name <name>', 'Session name', 'New Session')
+    .description('Create chat')
+    .option('--name <name>', 'Chat name', 'New Chat')
     .option('--user <user>', 'User name')
     .option('--cwd <cwd>', 'Working directory')
     .option('--provider <provider>', 'Provider id')
@@ -706,7 +707,7 @@ export function buildProgram(): Command {
       if (opts.heartbeatIntervalSec && (!Number.isFinite(heartbeatIntervalSec) || heartbeatIntervalSec! < 0)) {
         throw new Error(`Invalid --heartbeat-interval-sec value: ${opts.heartbeatIntervalSec}`)
       }
-      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'POST', '/sessions', compactObject({
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'POST', '/chats', compactObject({
         name: opts.name,
         user: opts.user,
         cwd: opts.cwd,
@@ -720,14 +721,14 @@ export function buildProgram(): Command {
       })))
     })
 
-  sessions
+  chats
     .command('update')
-    .description('Update session')
-    .argument('<id>', 'Session id')
-    .option('--name <name>', 'Session name')
+    .description('Update chat')
+    .argument('<id>', 'Chat id')
+    .option('--name <name>', 'Chat name')
     .option('--cwd <cwd>', 'Working directory')
     .option('--agent-id <agentId>', 'Agent id')
-    .option('--tools <json>', 'Tools JSON array, e.g. ["shell","memory"]')
+    .option('--plugins <json>', 'Plugins JSON array, e.g. ["shell","memory"]')
     .option('--heartbeat-enabled <heartbeatEnabled>', 'Heartbeat enabled (true|false)')
     .option('--heartbeat-interval-sec <heartbeatIntervalSec>', 'Heartbeat interval seconds')
     .action(async function (
@@ -736,7 +737,7 @@ export function buildProgram(): Command {
         name?: string
         cwd?: string
         agentId?: string
-        tools?: string
+        plugins?: string
         heartbeatEnabled?: string
         heartbeatIntervalSec?: string
       },
@@ -748,40 +749,40 @@ export function buildProgram(): Command {
       if (opts.heartbeatIntervalSec && (!Number.isFinite(heartbeatIntervalSec) || heartbeatIntervalSec! < 0)) {
         throw new Error(`Invalid --heartbeat-interval-sec value: ${opts.heartbeatIntervalSec}`)
       }
-      const tools = parseJsonValue(opts.tools, '--tools')
-      if (tools !== undefined && !Array.isArray(tools)) {
-        throw new Error('--tools must be a JSON array')
+      const plugins = parseJsonValue(opts.plugins, '--plugins')
+      if (plugins !== undefined && !Array.isArray(plugins)) {
+        throw new Error('--plugins must be a JSON array')
       }
-      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'PUT', `/sessions/${encodeURIComponent(id)}`, compactObject({
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'PUT', `/chats/${encodeURIComponent(id)}`, compactObject({
         name: opts.name,
         cwd: opts.cwd,
         agentId: opts.agentId,
-        tools,
+        plugins,
         heartbeatEnabled: typeof opts.heartbeatEnabled === 'string' ? heartbeatEnabled : undefined,
         heartbeatIntervalSec,
       })))
     })
 
-  sessions
+  chats
     .command('delete')
-    .description('Delete session')
-    .argument('<id>', 'Session id')
+    .description('Delete chat')
+    .argument('<id>', 'Chat id')
     .action(async function (id: string) {
-      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'DELETE', `/sessions/${encodeURIComponent(id)}`))
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'DELETE', `/chats/${encodeURIComponent(id)}`))
     })
 
-  sessions
+  chats
     .command('history')
-    .description('Get session message history')
-    .argument('<id>', 'Session id')
+    .description('Get chat message history')
+    .argument('<id>', 'Chat id')
     .action(async function (id: string) {
-      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'GET', `/sessions/${encodeURIComponent(id)}/messages`))
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'GET', `/chats/${encodeURIComponent(id)}/messages`))
     })
 
-  sessions
+  chats
     .command('mailbox')
-    .description('List session mailbox envelopes')
-    .argument('<id>', 'Session id')
+    .description('List chat mailbox envelopes')
+    .argument('<id>', 'Chat id')
     .option('--limit <limit>', 'Max envelopes to return (default: 50)')
     .option('--include-acked', 'Include acknowledged envelopes')
     .action(async function (
@@ -799,16 +800,16 @@ export function buildProgram(): Command {
         const params = new URLSearchParams()
         if (typeof limit === 'number') params.set('limit', String(limit))
         if (opts.includeAcked) params.set('includeAcked', '1')
-        return apiRequest(ctx, 'GET', `/sessions/${encodeURIComponent(id)}/mailbox`, undefined, params)
+        return apiRequest(ctx, 'GET', `/chats/${encodeURIComponent(id)}/mailbox`, undefined, params)
       })
     })
 
-  sessions
+  chats
     .command('stop')
-    .description('Stop running work for a session')
-    .argument('<id>', 'Session id')
+    .description('Stop running work for a chat')
+    .argument('<id>', 'Chat id')
     .action(async function (id: string) {
-      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'POST', `/sessions/${encodeURIComponent(id)}/stop`))
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'POST', `/chats/${encodeURIComponent(id)}/stop`))
     })
 
   const memory = program.command('memory').description('Manage memory')

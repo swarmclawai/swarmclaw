@@ -230,7 +230,7 @@ export function WebhookSheet() {
                       <div className="text-[11px] text-red-300/80 mt-1">{entry.error}</div>
                     )}
                     {entry.sessionId && (
-                      <div className="text-[10px] text-text-3/50 mt-1 font-mono">Session: {entry.sessionId}</div>
+                      <div className="text-[10px] text-text-3/50 mt-1 font-mono">Chat: {entry.sessionId}</div>
                     )}
                   </div>
                 ))}

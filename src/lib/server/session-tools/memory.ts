@@ -127,7 +127,144 @@ async function executeMemoryAction(input: any, ctx: any) {
 const MemoryPlugin: Plugin = {
   name: 'Core Memory',
   description: 'Advanced database-backed long-term memory with semantic search and graph linking.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getAgentContext: async (ctx) => {
+      const agentId = ctx.session.agentId
+      if (!agentId) return null
+
+      const memDb = getMemoryDb()
+      const memoryQuerySeed = [
+        ctx.message,
+        ...ctx.history
+          .slice(-4)
+          .filter((h) => h.role === 'user')
+          .map((h) => h.text),
+      ].join('\n')
+
+      const seen = new Set<string>()
+      const formatMemoryLine = (m: { category?: string; title?: string; content?: string; pinned?: boolean }) => {
+        const category = String(m.category || 'note')
+        const title = String(m.title || 'Untitled').replace(/\s+/g, ' ').trim()
+        const snippet = String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 220)
+        const pin = m.pinned ? ' [pinned]' : ''
+        return `- [${category}]${pin} ${title}: ${snippet}`
+      }
+
+      const pinned = memDb.listPinned(agentId, 5)
+      const pinnedLines = pinned
+        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
+        .map(formatMemoryLine)
+
+      const relevantSlice = Math.max(2, 6 - pinnedLines.length)
+      const relevantLookup = memDb.searchWithLinked(memoryQuerySeed, agentId, 1, 10, 14)
+      const relevant = relevantLookup.entries.slice(0, relevantSlice)
+      const recent = memDb.list(agentId, 12).slice(0, 6)
+
+      const relevantLines = relevant
+        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
+        .map(formatMemoryLine)
+
+      const recentLines = recent
+        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
+        .map(formatMemoryLine)
+
+      const parts: string[] = []
+      if (pinnedLines.length) {
+        parts.push(['## Pinned Memories', 'Always-loaded memories marked as important.', ...pinnedLines].join('\n'))
+      }
+      if (relevantLines.length) {
+        parts.push(['## Relevant Memory Hits', 'These memories were retrieved by relevance for the current objective.', ...relevantLines].join('\n'))
+      }
+      if (recentLines.length) {
+        parts.push(['## Recent Memory Notes', 'Recent durable notes that may still apply.', ...recentLines].join('\n'))
+      }
+
+      // Memory Policy
+      parts.push([
+        '## My Memory',
+        'I have long-term memory that persists across conversations. I use it naturally — I don\'t wait to be asked to remember things.',
+        '',
+        '**Things worth remembering:**',
+        '- What the user likes, dislikes, or has corrected me on',
+        '- Important decisions, outcomes, and lessons learned',
+        '- What I\'ve discovered about projects, codebases, or environments',
+        '- Problems I\'ve hit and how I solved them',
+        '- Who people are and how they relate to each other',
+        '- Configuration details and environment specifics that I\'ll need again',
+        '',
+        '**Not worth cluttering my memory with:**',
+        '- Throwaway acknowledgments or small talk',
+        '- Work-in-progress that\'ll change soon (use category "working" for scratch notes)',
+        '- Things already in my system prompt',
+        '- Something I\'ve already stored',
+        '',
+        '**Good habits:**',
+        '- Give memories clear titles ("User prefers dark mode" not "Note 1")',
+        '- Use categories: preference, fact, learning, project, identity, decision',
+        '- Check what I already know before storing something new',
+        '- When I learn something that corrects old knowledge, update or remove the old memory',
+      ].join('\n'))
+
+      // Pre-compaction consolidation nudge
+      const msgCount = ctx.history.filter(m => m.role === 'user' || m.role === 'assistant').length
+      if (msgCount > 20) {
+        parts.push([
+          '## Reflection & Consolidation Reminder',
+          'This conversation is getting long and I might lose older context soon.',
+          'Save anything important I\'ve learned, decided, or discovered to memory now. Only what matters, not every detail.',
+        ].join('\n'))
+      }
+
+      return parts.join('\n\n') || null
+    },
+    afterToolExec: (ctx) => {
+      const agentId = ctx.session.agentId
+      if (!agentId) return
+      const inp = ctx.input
+      if (!inp || typeof inp !== 'object') return
+      const action = typeof inp.action === 'string' ? inp.action : ''
+      let title: string | null = null
+      if (ctx.toolName === 'manage_tasks') {
+        if (action === 'create') title = `Created task: ${inp.title || 'Untitled'}`
+        else if (ctx.output && /status.*completed|completed.*successfully/i.test(ctx.output)) title = `Completed task: ${inp.title || inp.taskId || 'unknown'}`
+      }
+      if (ctx.toolName === 'manage_schedules' && action === 'create') title = `Created schedule: ${inp.name || 'Untitled'}`
+      if (ctx.toolName === 'manage_agents' && action === 'create') title = `Created agent: ${inp.name || 'Untitled'}`
+      if (!title) return
+      try {
+        const memDb = getMemoryDb()
+        memDb.add({ agentId, sessionId: ctx.session.id, category: 'breadcrumb', title, content: '' })
+      } catch { /* breadcrumbs are best-effort */ }
+    },
+    afterChatTurn: (ctx) => {
+      if (ctx.internal) return
+      if (ctx.source !== 'chat' && ctx.source !== 'connector') return
+      const agentId = ctx.session.agentId
+      if (!agentId) return
+      const msg = (ctx.message || '').trim()
+      const resp = (ctx.response || '').trim()
+      if (msg.length < 20 || resp.length < 40) return
+      if (/^(ok|okay|cool|thanks|thx|got it|nice)[.! ]*$/i.test(msg)) return
+      if (resp === 'HEARTBEAT_OK') return
+      const now = Date.now()
+      const last = typeof ctx.session.lastAutoMemoryAt === 'number' ? ctx.session.lastAutoMemoryAt : 0
+      if (last > 0 && now - last < 5 * 60 * 1000) return
+      try {
+        const memDb = getMemoryDb()
+        const compactMessage = msg.replace(/\s+/g, ' ').slice(0, 220)
+        const compactResponse = resp.replace(/\s+/g, ' ').slice(0, 700)
+        const autoTitle = `[auto] ${compactMessage.slice(0, 90)}`
+        const content = `source: ${ctx.source}\nuser_request: ${compactMessage}\nassistant_outcome: ${compactResponse}`
+        memDb.add({ agentId, sessionId: ctx.session.id, category: 'execution', title: autoTitle, content })
+        ctx.session.lastAutoMemoryAt = now
+      } catch { /* auto-memory is best-effort */ }
+    },
+    getCapabilityDescription: () => 'I have long-term memory (`memory_tool`) — I can remember things across conversations and recall them when needed.',
+    getOperatingGuidance: () => [
+      'Memory: search before major tasks, store concise notes after meaningful steps. Platform preloads context each turn.',
+      'For open goals, form a hypothesis and execute — do not keep re-asking broad questions.',
+    ],
+  } as PluginHooks,
   tools: [
     {
       name: 'memory_tool',
@@ -155,7 +292,7 @@ const MemoryPlugin: Plugin = {
 getPluginManager().registerBuiltin('memory', MemoryPlugin)
 
 export function buildMemoryTools(bctx: ToolBuildContext) {
-  if (!bctx.hasTool('memory')) return []
+  if (!bctx.hasPlugin('memory')) return []
   
   return [
     tool(

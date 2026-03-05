@@ -4,9 +4,11 @@ import type {
   ProviderInfo, Credential, Credentials, ProviderType, SessionType,
 } from '../types'
 
-export const fetchSessions = () => api<Sessions>('GET', '/sessions')
+export const fetchChats = () => api<Sessions>('GET', '/chats')
+/** @deprecated Use fetchChats */
+export const fetchSessions = fetchChats
 
-export const createSession = (
+export const createChat = (
   name: string,
   cwd: string,
   user: string,
@@ -16,23 +18,29 @@ export const createSession = (
   apiEndpoint?: string | null,
   sessionType?: SessionType,
   agentId?: string | null,
-  tools?: string[],
+  plugins?: string[],
   file?: string | null,
 ) =>
-  api<Session>('POST', '/sessions', {
+  api<Session>('POST', '/chats', {
     name, cwd: cwd || undefined, user,
     provider, model, credentialId, apiEndpoint,
-    sessionType, agentId, tools, file: file || undefined,
+    sessionType, agentId, plugins, file: file || undefined,
   })
+/** @deprecated Use createChat */
+export const createSession = createChat
 
-export const updateSession = (id: string, updates: Partial<Pick<Session, 'name' | 'cwd'>>) =>
-  api<Session>('PUT', `/sessions/${id}`, updates)
+export const updateChat = (id: string, updates: Partial<Pick<Session, 'name' | 'cwd'>>) =>
+  api<Session>('PUT', `/chats/${id}`, updates)
+/** @deprecated Use updateChat */
+export const updateSession = updateChat
 
-export const deleteSession = (id: string) =>
-  api<string>('DELETE', `/sessions/${id}`)
+export const deleteChat = (id: string) =>
+  api<string>('DELETE', `/chats/${id}`)
+/** @deprecated Use deleteChat */
+export const deleteSession = deleteChat
 
 export const fetchMessages = (id: string) =>
-  api<Message[]>('GET', `/sessions/${id}/messages`)
+  api<Message[]>('GET', `/chats/${id}/messages`)
 
 export interface PaginatedMessages {
   messages: Message[]
@@ -42,13 +50,15 @@ export interface PaginatedMessages {
 }
 
 export const fetchMessagesPaginated = (id: string, limit: number = 100) =>
-  api<PaginatedMessages>('GET', `/sessions/${id}/messages?limit=${limit}`)
+  api<PaginatedMessages>('GET', `/chats/${id}/messages?limit=${limit}`)
 
 export const clearMessages = (id: string) =>
-  api<string>('POST', `/sessions/${id}/clear`)
+  api<string>('POST', `/chats/${id}/clear`)
 
-export const stopSession = (id: string) =>
-  api<string>('POST', `/sessions/${id}/stop`)
+export const stopChat = (id: string) =>
+  api<string>('POST', `/chats/${id}/stop`)
+/** @deprecated Use stopChat */
+export const stopSession = stopChat
 
 export const fetchDirs = async () => {
   const data = await api<{ dirs: Directory[] }>('GET', '/dirs')
@@ -56,16 +66,16 @@ export const fetchDirs = async () => {
 }
 
 export const devServer = (id: string, action: 'start' | 'stop' | 'status') =>
-  api<DevServerStatus>('POST', `/sessions/${id}/devserver`, { action })
+  api<DevServerStatus>('POST', `/chats/${id}/devserver`, { action })
 
 export const checkBrowser = (id: string) =>
-  api<{ active: boolean }>('GET', `/sessions/${id}/browser`)
+  api<{ active: boolean }>('GET', `/chats/${id}/browser`)
 
 export const stopBrowser = (id: string) =>
-  api<string>('DELETE', `/sessions/${id}/browser`)
+  api<string>('DELETE', `/chats/${id}/browser`)
 
 export const deploy = (id: string, message: string) =>
-  api<DeployResult>('POST', `/sessions/${id}/deploy`, { message })
+  api<DeployResult>('POST', `/chats/${id}/deploy`, { message })
 
 export const fetchProviders = () => api<ProviderInfo[]>('GET', '/providers')
 

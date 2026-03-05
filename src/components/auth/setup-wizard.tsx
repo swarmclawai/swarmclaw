@@ -315,7 +315,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         provider: provider as ProviderType,
         model: agentModel.trim() || DEFAULT_AGENTS[provider].model,
         credentialId: credentialId || null,
-        tools: DEFAULT_AGENTS[provider].tools,
+        plugins: DEFAULT_AGENTS[provider].tools,
       }
 
       if (supportsEndpoint && endpoint.trim()) {
@@ -340,44 +340,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           await api('PUT', '/agents/default', payload)
         }
 
-        // Create/update __main__ chat for the first provider
+        // Set the default agent and open its thread
         const appState = useAppStore.getState()
-        const currentUser = appState.currentUser
-        if (currentUser && agentId) {
-          const sessionMap = await api<Record<string, { id: string; name: string; user: string }>>('GET', '/sessions')
-          const existingMain = Object.values(sessionMap).find((s) => s.name === '__main__' && s.user === currentUser)
-          const mainId = existingMain?.id || `main-${currentUser}`
-          const selectedModel = (payload.model as string) || DEFAULT_AGENTS[provider].model
-          const selectedEndpoint = supportsEndpoint ? (payload.apiEndpoint as string | undefined) || null : null
-          const selectedTools = Array.isArray(payload.tools) ? payload.tools as string[] : DEFAULT_AGENTS[provider].tools
-
-          if (!existingMain) {
-            await api('POST', '/sessions', {
-              id: mainId,
-              name: '__main__',
-              user: currentUser,
-              agentId,
-              provider,
-              model: selectedModel,
-              credentialId: credentialId || null,
-              apiEndpoint: selectedEndpoint,
-              tools: selectedTools,
-              heartbeatEnabled: true,
-            })
-          }
-
-          await api('PUT', `/sessions/${mainId}`, {
-            agentId,
-            provider,
-            model: selectedModel,
-            credentialId: credentialId || null,
-            apiEndpoint: selectedEndpoint,
-            tools: selectedTools,
-            heartbeatEnabled: true,
-          })
-
-          await appState.loadSessions()
-          appState.setCurrentSession(mainId)
+        if (agentId) {
+          await appState.updateSettings({ defaultAgentId: agentId })
+          await appState.setCurrentAgent(agentId)
         }
       } else {
         // Additional providers just create the agent

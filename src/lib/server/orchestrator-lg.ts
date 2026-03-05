@@ -121,7 +121,7 @@ async function executeSubTaskViaCli(agent: Agent, task: string, parentSessionId:
     sessionType: 'orchestrated' as const,
     agentId: agent.id,
     parentSessionId,
-    tools: agent.tools || [],
+    plugins: agent.plugins || agent.tools || [],
   }
   ss(sessions)
 
@@ -156,9 +156,9 @@ export async function executeLangGraphOrchestrator(
   const agents = agentIds.map((id) => allAgents[id]).filter(Boolean) as Agent[]
   const agentListContext = agents.length
     ? '\n\nAvailable agents:\n' + agents.map((a) => {
-        const tools = a.tools?.length ? ` [tools: ${a.tools.join(', ')}]` : ''
+        const plugins = (a.plugins || a.tools)?.length ? ` [plugins: ${(a.plugins || a.tools)!.join(', ')}]` : ''
         const skills = a.skills?.length ? ` [skills: ${a.skills.join(', ')}]` : ''
-        return `- ${a.name}: ${a.description}${tools}${skills}`
+        return `- ${a.name}: ${a.description}${plugins}${skills}`
       }).join('\n')
     : '\n\n(No agents available for delegation.)'
 

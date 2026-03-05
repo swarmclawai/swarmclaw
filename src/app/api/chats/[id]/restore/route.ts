@@ -5,7 +5,7 @@ import { notify } from '@/lib/server/ws-hub'
 
 export const dynamic = 'force-dynamic'
 
-/** POST /api/sessions/[id]/restore — restores thread to a specific checkpoint */
+/** POST /api/chats/[id]/restore — restores thread to a specific checkpoint */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = await params
   const { checkpointId, timestamp } = await req.json()

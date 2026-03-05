@@ -20,7 +20,7 @@ export function HeartbeatSection({ appSettings, patchSettings, inputClass }: Set
         updatedSessions: number
         cancelledQueued: number
         abortedRunning: number
-      }>('POST', '/sessions/heartbeat', { action: 'disable_all' })
+      }>('POST', '/chats/heartbeat', { action: 'disable_all' })
       await loadSessions()
       setHeartbeatBulkNotice(
         `Stopped heartbeat on ${result.updatedSessions} session(s); cancelled ${result.cancelledQueued} queued run(s), aborted ${result.abortedRunning} running run(s).`,

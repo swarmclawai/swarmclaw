@@ -128,7 +128,7 @@ getPluginManager().registerBuiltin('openclaw_workspace', WorkspacePlugin)
  * Legacy Bridge
  */
 export function buildOpenClawWorkspaceTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('openclaw_workspace')) return []
+  if (!bctx.hasPlugin('openclaw_workspace')) return []
   return [
     tool(
       async (args) => executeWorkspaceAction(args),

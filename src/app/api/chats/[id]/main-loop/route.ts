@@ -14,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const sessions = loadSessions()
   const session = sessions[id]
   if (!session) return new NextResponse('Session not found', { status: 404 })
-  if (!isMainSession(session)) return new NextResponse('Main-loop controls only apply to __main__ sessions', { status: 400 })
+  if (!isMainSession(session)) return new NextResponse('Main-loop controls only apply to agent thread sessions', { status: 400 })
   const state = getMainLoopStateForSession(id)
   return NextResponse.json({ sessionId: id, state })
 }
@@ -27,7 +27,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const sessions = loadSessions()
   const session = sessions[id]
   if (!session) return new NextResponse('Session not found', { status: 404 })
-  if (!isMainSession(session)) return new NextResponse('Main-loop controls only apply to __main__ sessions', { status: 400 })
+  if (!isMainSession(session)) return new NextResponse('Main-loop controls only apply to agent thread sessions', { status: 400 })
 
   if (action === 'pause') {
     const state = setMainLoopStateForSession(id, { paused: true })

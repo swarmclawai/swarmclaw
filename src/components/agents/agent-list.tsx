@@ -2,7 +2,6 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
 import { AgentCard } from './agent-card'
 import { TrashList } from './trash-list'
 import { useApprovalStore } from '@/stores/use-approval-store'
@@ -17,8 +16,6 @@ export function AgentList({ inSidebar }: Props) {
   const agents = useAppStore((s) => s.agents)
   const loadAgents = useAppStore((s) => s.loadAgents)
   const sessions = useAppStore((s) => s.sessions)
-  const currentUser = useAppStore((s) => s.currentUser)
-  const loadSessions = useAppStore((s) => s.loadSessions)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
   const showTrash = useAppStore((s) => s.showTrash)
@@ -37,19 +34,17 @@ export function AgentList({ inSidebar }: Props) {
   const currentSession = currentSessionId ? sessions[currentSessionId] : null
   const selectedAgentId = currentSession?.agentId
 
-  const mainSession = useMemo(() =>
-    Object.values(sessions).find((s: any) => s.name === '__main__' && s.user === currentUser),
-    [sessions, currentUser]
-  )
-  const defaultAgentId = mainSession?.agentId || 'default'
+  const appSettings = useAppStore((s) => s.appSettings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+  const defaultAgentId = (appSettings.defaultAgentId && agents[appSettings.defaultAgentId])
+    ? appSettings.defaultAgentId
+    : Object.values(agents)[0]?.id || 'default'
 
   const handleSetDefault = useCallback(async (agentId: string) => {
-    if (!mainSession) return
     try {
-      await api('PUT', `/sessions/${mainSession.id}`, { agentId })
-      await loadSessions()
+      await updateSettings({ defaultAgentId: agentId })
     } catch { /* ignore */ }
-  }, [mainSession, loadSessions])
+  }, [updateSettings])
 
   const [loaded, setLoaded] = useState(Object.keys(agents).length > 0)
   useEffect(() => { loadAgents().then(() => setLoaded(true)) }, [])
@@ -75,7 +70,7 @@ export function AgentList({ inSidebar }: Props) {
     const ids = new Set<string>()
     const recentThreshold = now - 30 * 60 * 1000
     for (const a of Object.values(agents)) {
-      if (a.heartbeatEnabled === true && (a.tools?.length ?? 0) > 0) { ids.add(a.id); continue }
+      if (a.heartbeatEnabled === true && (a.plugins?.length ?? 0) > 0) { ids.add(a.id); continue }
       // Check if any session for this agent was active in the last 30 minutes
       for (const s of Object.values(sessions)) {
         if (s.agentId === a.id && (s.lastActiveAt ?? 0) > recentThreshold) { ids.add(a.id); break }

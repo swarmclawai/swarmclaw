@@ -162,7 +162,10 @@ async function executeShellAction(args: Record<string, unknown>, bctx: { cwd: st
 const ShellPlugin: Plugin = {
   name: 'Core Shell',
   description: 'Execute shell commands and manage background processes.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can run shell commands (`execute_command`) — servers, installs, scripts, git, builds, anything. I can run things in the background for long-lived processes like dev servers.',
+    getOperatingGuidance: () => ['Shell: use `execute_command` for servers, installs, scripts, git. Use `background=true` for long-lived processes.', 'Verify servers with `process_tool` status/log and liveness probes before claiming success.', 'Resolve IPs/URLs via shell — never use placeholders. Retry path errors without workdir override.'],
+  } as PluginHooks,
   tools: [
     {
       name: 'shell',
@@ -185,7 +188,7 @@ const ShellPlugin: Plugin = {
 getPluginManager().registerBuiltin('shell', ShellPlugin)
 
 export function buildShellTools(bctx: ToolBuildContext) {
-  if (!bctx.hasTool('shell')) return []
+  if (!bctx.hasPlugin('shell')) return []
   return [
     tool(
       async (args) => executeShellAction(args, { ...bctx.ctx, cwd: bctx.cwd }),

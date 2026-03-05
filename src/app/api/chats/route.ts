@@ -7,7 +7,6 @@ import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { notify } from '@/lib/server/ws-hub'
 import { getSessionRunState } from '@/lib/server/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
-import { ensureMainSessionFlag, isProtectedMainSession } from '@/lib/server/main-session'
 export const dynamic = 'force-dynamic'
 
 
@@ -39,7 +38,7 @@ export async function DELETE(req: Request) {
   const sessions = loadSessions()
   let deleted = 0
   for (const id of ids) {
-    if (isProtectedMainSession(sessions[id])) continue
+    if (!sessions[id]) continue
     if (active.has(id)) {
       try { active.get(id).kill() } catch {}
       active.delete(id)
@@ -61,15 +60,15 @@ export async function POST(req: Request) {
   const id = body.id || genId()
   const sessions = loadSessions()
   const agent = body.agentId ? loadAgents()[body.agentId] : null
-  const requestedTools = Array.isArray(body.tools) ? body.tools : null
-  const resolvedTools = requestedTools ?? (Array.isArray(agent?.tools) ? agent.tools : [])
+  const requestedPlugins = Array.isArray(body.plugins) ? body.plugins : (Array.isArray(body.tools) ? body.tools : null)
+  const resolvedPlugins = requestedPlugins ?? (Array.isArray(agent?.plugins) ? agent.plugins : (Array.isArray(agent?.tools) ? agent.tools : []))
 
   // If session with this ID already exists, return it as-is
   if (body.id && sessions[id]) {
     return NextResponse.json(sessions[id])
   }
 
-  const sessionName = body.name || 'New Session'
+  const sessionName = body.name || 'New Chat'
 
   sessions[id] = {
     id, name: sessionName, cwd,
@@ -94,11 +93,10 @@ export async function POST(req: Request) {
     sessionType: body.sessionType || 'human',
     agentId: body.agentId || null,
     parentSessionId: body.parentSessionId || null,
-    tools: resolvedTools,
+    plugins: resolvedPlugins,
     heartbeatEnabled: body.heartbeatEnabled ?? null,
     heartbeatIntervalSec: body.heartbeatIntervalSec ?? null,
   }
-  ensureMainSessionFlag(sessions[id])
   saveSessions(sessions)
   notify('sessions')
   return NextResponse.json(sessions[id])

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-05T00:33:14.193Z",
-  "totalIssues": 524,
-  "uniqueIssues": 192,
+  "generatedAt": "2026-03-05T14:30:30.311Z",
+  "totalIssues": 514,
+  "uniqueIssues": 190,
   "issues": [
     {
       "filePath": "bin/server-cmd.js",
@@ -31,6 +31,20 @@
       "severity": 1,
       "message": "'_req' is defined but never used.",
       "count": 1
+    },
+    {
+      "filePath": "src/app/api/chats/[id]/deploy/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/app/api/chats/[id]/mailbox/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
     },
     {
       "filePath": "src/app/api/claude-skills/route.ts",
@@ -180,20 +194,6 @@
       "count": 1
     },
     {
-      "filePath": "src/app/api/sessions/[id]/deploy/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
-    },
-    {
-      "filePath": "src/app/api/sessions/[id]/mailbox/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
-    },
-    {
       "filePath": "src/app/api/settings/route.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -303,13 +303,6 @@
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
       "message": "React Hook useEffect has a missing dependency: 'loadAgents'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/agents/agent-list.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
       "count": 1
     },
     {
@@ -435,7 +428,14 @@
       "filePath": "src/components/chat/chat-area.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
-      "message": "React Hook useEffect has missing dependencies: 'loadSessions', 'session?.active', 'session?.messages', 'session?.tools', 'setDevServer', and 'setMessages'. Either include them or remove the dependency array.",
+      "message": "React Hook useEffect has missing dependencies: 'loadSessions', 'session?.active', 'session?.messages', 'session?.plugins', 'setDevServer', and 'setMessages'. Either include them or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/chat/chat-list.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -443,13 +443,6 @@
       "ruleId": "@next/next/no-img-element",
       "severity": 1,
       "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/chat/chat-tool-toggles.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'TOOL_LABELS' is defined but never used.",
       "count": 1
     },
     {
@@ -611,13 +604,6 @@
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
       "message": "React Hook useEffect has a missing dependency: 'loadSecrets'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/sessions/session-list.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -968,14 +954,14 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 14
+      "count": 8
     },
     {
       "filePath": "src/lib/server/main-session.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 2
+      "count": 1
     },
     {
       "filePath": "src/lib/server/mcp-client.test.ts",
@@ -1297,7 +1283,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 8
+      "count": 7
     },
     {
       "filePath": "src/lib/server/session-tools/web.ts",

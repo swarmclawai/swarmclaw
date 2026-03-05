@@ -16,7 +16,6 @@ import { EmbeddingSection } from './section-embedding'
 import { MemorySection } from './section-memory'
 import { SecretsSection } from './section-secrets'
 import { ProvidersSection } from './section-providers'
-import { PluginManager } from './plugin-manager'
 
 interface Tab {
   id: string
@@ -53,7 +52,7 @@ const TABS: Tab[] = [
   {
     id: 'integrations',
     label: 'Integrations',
-    keywords: ['provider', 'secret', 'plugin', 'api', 'key', 'openai', 'anthropic', 'ollama', 'credential'],
+    keywords: ['provider', 'secret', 'api', 'key', 'openai', 'anthropic', 'ollama', 'credential'],
     icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2v4m0 12v4M2 12h4m12 0h4" /><circle cx="12" cy="12" r="4" /><path d="M8 8L5.5 5.5M16 8l2.5-2.5M8 16l-2.5 2.5M16 16l2.5 2.5" /></svg>,
   },
 ]
@@ -210,16 +209,6 @@ export function SettingsPage() {
             <>
               <ProvidersSection {...sectionProps} />
               <SecretsSection {...sectionProps} />
-              <div className="mb-10">
-                <h3 className="font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-                  Plugins
-                </h3>
-                <p className="text-[12px] text-text-3 mb-5">
-                  Extend agent behavior with hooks. Install from the marketplace, a URL, or drop .js files into <code className="text-[11px] font-mono text-text-2">data/plugins/</code>.
-                  <span className="text-text-3/70 ml-1">OpenClaw plugins are also supported.</span>
-                </p>
-                <PluginManager />
-              </div>
             </>
           )}
         </div>

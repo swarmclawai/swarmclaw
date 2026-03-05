@@ -43,7 +43,9 @@ async function executeEditFile(args: { filePath: string; oldString: string; newS
 const EditFilePlugin: Plugin = {
   name: 'Core Edit File',
   description: 'Surgical search-and-replace within existing files.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can make precise edits to files (`edit_file`) — surgical find-and-replace without rewriting the whole file.',
+  } as PluginHooks,
   tools: [
     {
       name: 'edit_file',
@@ -68,7 +70,7 @@ getPluginManager().registerBuiltin('edit_file', EditFilePlugin)
  * Legacy Bridge
  */
 export function buildEditFileTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('edit_file')) return []
+  if (!bctx.hasPlugin('edit_file')) return []
   return [
     tool(
       async (args) => executeEditFile(args as any, { cwd: bctx.cwd }),

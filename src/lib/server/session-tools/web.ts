@@ -133,7 +133,9 @@ async function executeWebAction(args: Record<string, unknown>, bctx: any) {
 const WebPlugin: Plugin = {
   name: 'Core Web',
   description: 'Search the web and fetch content from URLs.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can search the web (`web_search`) for research, fact-checking, and discovery.',
+  } as PluginHooks,
   tools: [
     {
       name: 'web',
@@ -162,7 +164,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
   const tools: StructuredToolInterface[] = []
   const { cwd, ctx, cleanupFns } = bctx
 
-  if (bctx.hasTool('web')) {
+  if (bctx.hasPlugin('web')) {
     tools.push(
       tool(
         async (args) => executeWebAction(args, bctx),
@@ -176,7 +178,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
   }
 
   // Browser tool (kept as direct injection for now due to complexity)
-  if (bctx.hasTool('browser')) {
+  if (bctx.hasPlugin('browser')) {
     const sessionKey = ctx?.sessionId || `anon-${Date.now()}`
     let mcpClient: any = null
     let mcpServer: any = null
@@ -309,9 +311,46 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             const { action, ...rest } = params
             const mcpTool = MCP_TOOL_MAP[action]
             if (!mcpTool) return `Unknown browser action: "${action}"`
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const args: Record<string, any> = {}
             for (const [k, v] of Object.entries(rest)) { if (v !== undefined && v !== null && v !== '') args[k] = v }
-            const result = await callMcpTool(mcpTool, args, { saveTo: params.saveTo })
+
+            // If screenshot includes a url, navigate first then capture
+            if (action === 'screenshot' && args.url) {
+              const navUrl = args.url
+              delete args.url
+              await callMcpTool('browser_navigate', { url: navUrl })
+              try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ }
+            }
+
+            // Wait for the page to finish rendering before capturing
+            if (action === 'screenshot') {
+              try {
+                await callMcpTool('browser_evaluate', {
+                  expression: `await new Promise(resolve => {
+                    if (document.readyState === 'complete') {
+                      setTimeout(resolve, 1500);
+                    } else {
+                      window.addEventListener('load', () => setTimeout(resolve, 1500), { once: true });
+                      setTimeout(resolve, 5000);
+                    }
+                  })`,
+                })
+              } catch { /* page may not support evaluate — fall back to a flat delay */
+                await new Promise((r) => setTimeout(r, 2000))
+              }
+            }
+
+            let result = await callMcpTool(mcpTool, args, { saveTo: params.saveTo })
+
+            // Playwright throws ERR_ABORTED on server-side redirects (e.g. Wikipedia Special:Random).
+            // The browser follows the redirect fine — the original navigation just gets "aborted".
+            // Recover by taking a snapshot of the page the browser actually landed on.
+            if (action === 'navigate' && result.includes('ERR_ABORTED')) {
+              await new Promise((r) => setTimeout(r, 1000))
+              result = await callMcpTool('browser_snapshot', {})
+            }
+
             if (action === 'navigate') { try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ } }
             return result
           } catch (err: unknown) { return `Error: ${err instanceof Error ? err.message : String(err)}` }
@@ -332,7 +371,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
 
   // openclaw_browser CLI passthrough
   const openclawPath = findBinaryOnPath('openclaw') || findBinaryOnPath('clawdbot')
-  if (openclawPath && (bctx.hasTool('browser') || bctx.hasTool('openclaw_browser'))) {
+  if (openclawPath && (bctx.hasPlugin('browser') || bctx.hasPlugin('openclaw_browser'))) {
     tools.push(
       tool(
         async (rawArgs) => {

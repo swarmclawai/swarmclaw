@@ -23,12 +23,12 @@ import { buildSessionTools } from './session-tools'
 import type { StructuredToolInterface } from '@langchain/core/tools'
 import type { Session } from '@/types'
 import { stripMainLoopMetaForPersistence } from './main-agent-loop'
+import { getPluginManager } from './plugins'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
-import { getMemoryDb } from './memory-db'
 import { routeTaskIntent } from './capability-router'
 import { notify } from './ws-hub'
 import { resolveConcreteToolPolicyBlock, resolveSessionToolPolicy } from './tool-capability-policy'
-import { toolIdMatches } from './tool-aliases'
+import { pluginIdMatches } from './tool-aliases'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import {
   getCachedLlmResponse,
@@ -39,7 +39,7 @@ import {
 import type { Message, MessageToolEvent, SSEEvent, UsageRecord } from '@/types'
 import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from './provider-health'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
-type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'
+type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
 /** Slice history from the most recent context-clear marker forward */
 function applyContextClearBoundary(messages: Message[]): Message[] {
@@ -50,6 +50,8 @@ function applyContextClearBoundary(messages: Message[]): Message[] {
 }
 
 interface SessionWithTools {
+  plugins?: string[] | null
+  /** @deprecated Use plugins */
   tools?: string[] | null
 }
 
@@ -144,6 +146,7 @@ function requestedToolNamesFromMessage(message: string): string[] {
     'delegate_to_claude_code',
     'delegate_to_codex_cli',
     'delegate_to_opencode_cli',
+    'delegate_to_gemini_cli',
     'connector_message_tool',
     'sessions_tool',
     'whoami_tool',
@@ -326,7 +329,7 @@ function extractDelegationTask(message: string, toolName: string): string | null
 }
 
 function hasToolEnabled(session: SessionWithTools, toolName: string): boolean {
-  return toolIdMatches(session?.tools || [], toolName)
+  return pluginIdMatches(session?.plugins || session?.tools || [], toolName)
 }
 
 function enabledDelegationTools(session: SessionWithTools): DelegateTool[] {
@@ -334,6 +337,7 @@ function enabledDelegationTools(session: SessionWithTools): DelegateTool[] {
   if (hasToolEnabled(session, 'claude_code') || hasToolEnabled(session, 'delegate')) tools.push('delegate_to_claude_code')
   if (hasToolEnabled(session, 'codex_cli')) tools.push('delegate_to_codex_cli')
   if (hasToolEnabled(session, 'opencode_cli')) tools.push('delegate_to_opencode_cli')
+  if (hasToolEnabled(session, 'gemini_cli')) tools.push('delegate_to_gemini_cli')
   return tools
 }
 
@@ -401,8 +405,8 @@ function syncSessionFromAgent(sessionId: string): void {
     const normalized = normalizeProviderEndpoint(agent.provider, agent.apiEndpoint ?? null)
     if (normalized !== session.apiEndpoint) { session.apiEndpoint = normalized; changed = true }
   }
-  if (!Array.isArray(session.tools)) {
-    session.tools = Array.isArray(agent.tools) ? [...agent.tools] : []
+  if (!Array.isArray(session.plugins)) {
+    session.plugins = Array.isArray(agent.plugins) ? [...agent.plugins] : []
     changed = true
   }
 
@@ -529,75 +533,6 @@ function estimateConversationTone(text: string): string {
   return 'neutral'
 }
 
-const AUTO_MEMORY_MIN_INTERVAL_MS = 45 * 60 * 1000
-
-function normalizeMemoryText(value: string): string {
-  return (value || '').replace(/\s+/g, ' ').trim()
-}
-
-function shouldStoreAutoMemoryNote(opts: {
-  session: Session
-  source: string
-  internal: boolean
-  message: string
-  response: string
-  now: number
-}): boolean {
-  const { session, source, internal, message, response, now } = opts
-  if (internal) return false
-  if (source !== 'chat' && source !== 'connector') return false
-  if (!session?.agentId) return false
-  if (!Array.isArray(session.tools) || !session.tools.includes('memory')) return false
-  const msg = (message || '').trim()
-  const resp = (response || '').trim()
-  if (msg.length < 20 || resp.length < 40) return false
-  if (/^(ok|okay|cool|thanks|thx|got it|nice)[.! ]*$/i.test(msg)) return false
-  if (resp === 'HEARTBEAT_OK') return false
-  const last = typeof session.lastAutoMemoryAt === 'number' ? session.lastAutoMemoryAt : 0
-  if (last > 0 && now - last < AUTO_MEMORY_MIN_INTERVAL_MS) return false
-  return true
-}
-
-function storeAutoMemoryNote(opts: {
-  session: Session
-  message: string
-  response: string
-  source: string
-  now: number
-}): string | null {
-  const { session, message, response, source, now } = opts
-  try {
-    const db = getMemoryDb()
-    const compactMessage = message.replace(/\s+/g, ' ').trim().slice(0, 220)
-    const compactResponse = response.replace(/\s+/g, ' ').trim().slice(0, 700)
-    const title = `[auto] ${compactMessage.slice(0, 90)}`
-    const content = [
-      `source: ${source}`,
-      `user_request: ${compactMessage}`,
-      `assistant_outcome: ${compactResponse}`,
-    ].join('\n')
-    const latest = db.getLatestBySessionCategory?.(session.id, 'execution')
-    if (latest) {
-      const sameTitle = normalizeMemoryText(latest.title) === normalizeMemoryText(title)
-      const sameContent = normalizeMemoryText(latest.content) === normalizeMemoryText(content)
-      if (sameTitle && sameContent) {
-        session.lastAutoMemoryAt = now
-        return latest.id
-      }
-    }
-    const created = db.add({
-      agentId: session.agentId as string,
-      sessionId: session.id as string,
-      category: 'execution',
-      title,
-      content,
-    })
-    session.lastAutoMemoryAt = now
-    return created?.id || null
-  } catch {
-    return null
-  }
-}
 
 export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promise<ExecuteChatTurnResult> {
   const { message } = input
@@ -620,29 +555,29 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   if (!session) throw new Error(`Session not found: ${sessionId}`)
 
   const appSettings = loadSettings()
-  const toolPolicy = resolveSessionToolPolicy(session.tools, appSettings)
+  const toolPolicy = resolveSessionToolPolicy(session.plugins, appSettings)
   const isHeartbeatRun = internal && source === 'heartbeat'
   const isAutoRunNoHistory = isHeartbeatRun || (internal && source === 'main-loop-followup')
   const heartbeatStatus = session.mainLoopState?.status || 'idle'
-  const mainLoopIdle = session.name === '__main__'
+  const mainLoopIdle = session.id.startsWith('agent-thread-')
     && (heartbeatStatus === 'ok' || heartbeatStatus === 'idle')
     && !(session.mainLoopState?.pendingEvents?.length > 0)
   const heartbeatStatusOnly = isHeartbeatRun && mainLoopIdle
-  const toolsForRun = heartbeatStatusOnly ? [] : toolPolicy.enabledTools
-  let sessionForRun = toolsForRun === session.tools
+  const pluginsForRun = heartbeatStatusOnly ? [] : toolPolicy.enabledPlugins
+  let sessionForRun = pluginsForRun === session.plugins
     ? session
-    : { ...session, tools: toolsForRun }
+    : { ...session, plugins: pluginsForRun }
 
   // Apply model override for heartbeat runs (cheaper model)
   if (isHeartbeatRun && input.modelOverride) {
     sessionForRun = { ...sessionForRun, model: input.modelOverride }
   }
 
-  if (!heartbeatStatusOnly && toolPolicy.blockedTools.length > 0) {
-    const blockedSummary = toolPolicy.blockedTools
+  if (!heartbeatStatusOnly && toolPolicy.blockedPlugins.length > 0) {
+    const blockedSummary = toolPolicy.blockedPlugins
       .map((entry) => `${entry.tool} (${entry.reason})`)
       .join(', ')
-    onEvent?.({ t: 'err', text: `Capability policy blocked tools for this run: ${blockedSummary}` })
+    onEvent?.({ t: 'err', text: `Capability policy blocked plugins for this run: ${blockedSummary}` })
   }
 
   // --- Agent spend-limit enforcement (hourly/daily/monthly) ---
@@ -861,7 +796,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const responseCacheConfig = resolveLlmResponseCacheConfig(appSettings)
   let responseCacheHit = false
   let responseCacheInput: LlmResponseCacheKeyInput | null = null
-  const hasTools = !!sessionForRun.tools?.length && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
+  const hasPlugins = !!(sessionForRun.plugins?.length || sessionForRun.tools?.length) && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
 
   let durationMs = 0
   const startTs = Date.now()
@@ -873,8 +808,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       ? getSessionMessages(sessionId).slice(-6)
       : undefined
 
-    console.log(`[chat-execution] provider=${providerType}, hasTools=${hasTools}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, tools=${(sessionForRun.tools || []).length}`)
-    if (hasTools) {
+    console.log(`[chat-execution] provider=${providerType}, hasPlugins=${hasPlugins}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, plugins=${(sessionForRun.plugins || sessionForRun.tools || []).length}`)
+    if (hasPlugins) {
       fullResponse = (await streamAgentChat({
         session: sessionForRun,
         message: message,
@@ -967,7 +902,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   // Record usage for the direct (non-tools) streamChat path.
   // streamAgentChat already calls appendUsage internally for the tools path.
-  if (!hasTools && fullResponse && !errorMessage && !responseCacheHit) {
+  if (!hasPlugins && fullResponse && !errorMessage && !responseCacheHit) {
     const inputTokens = directUsage.received ? directUsage.inputTokens : Math.ceil(message.length / 4)
     const outputTokens = directUsage.received ? directUsage.outputTokens : Math.ceil(fullResponse.length / 4)
     const totalTokens = inputTokens + outputTokens
@@ -998,7 +933,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     ? requestedToolNamesFromMessage(message)
     : []
   const routingDecision = (!internal && source === 'chat')
-    ? routeTaskIntent(message, toolsForRun, appSettings)
+    ? routeTaskIntent(message, pluginsForRun, appSettings)
     : null
   const calledNames = new Set((toolEvents || []).map((t) => t.name))
 
@@ -1034,6 +969,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     if (requestedName === 'delegate_to_opencode_cli') {
       return { toolName: 'delegate', args: { ...rawArgs, backend: 'opencode' } }
     }
+    if (requestedName === 'delegate_to_gemini_cli') {
+      return { toolName: 'delegate', args: { ...rawArgs, backend: 'gemini' } }
+    }
 
     const managePrefix = 'manage_'
     if (requestedName.startsWith(managePrefix) && requestedName !== 'manage_platform') {
@@ -1065,7 +1003,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       return false
     }
     const agent = session.agentId ? loadAgents()[session.agentId] : null
-    const { tools, cleanup } = await buildSessionTools(session.cwd, sessionForRun.tools || [], {
+    const { tools, cleanup } = await buildSessionTools(session.cwd, sessionForRun.plugins || sessionForRun.tools || [], {
       agentId: session.agentId || null,
       sessionId,
       platformAssignScope: agent?.platformAssignScope || 'self',
@@ -1109,10 +1047,11 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
   }
 
-  const forcedDelegationTools: Array<'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'> = [
+  const forcedDelegationTools: DelegateTool[] = [
     'delegate_to_claude_code',
     'delegate_to_codex_cli',
     'delegate_to_opencode_cli',
+    'delegate_to_gemini_cli',
   ]
   for (const toolName of forcedDelegationTools) {
     if (!requestedToolNames.includes(toolName)) continue
@@ -1220,7 +1159,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   }
 
   const finalText = (fullResponse || '').trim() || (!internal && errorMessage ? `Error: ${errorMessage}` : '')
-  const textForPersistence = stripMainLoopMetaForPersistence(finalText, internal)
+  const textForPersistence = stripMainLoopMetaForPersistence(finalText)
 
   // Emit status SSE event from [MAIN_LOOP_META] if present
   if (internal && finalText) {
@@ -1391,24 +1330,16 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       }
     }
 
-    const autoMemoryEligible = shouldStoreAutoMemoryNote({
-      session: current,
-      source,
-      internal,
-      message: message,
-      response: textForPersistence,
-      now: Date.now(),
-    })
-    if (autoMemoryEligible) {
-      const storedId = storeAutoMemoryNote({
+    // Fire afterChatTurn hook for all enabled plugins (memory auto-save, logging, etc.)
+    try {
+      await getPluginManager().runHook('afterChatTurn', {
         session: current,
-        message: message,
+        message,
         response: textForPersistence,
         source,
-        now: Date.now(),
+        internal,
       })
-      if (storedId) changed = true
-    }
+    } catch { /* afterChatTurn hooks are non-critical */ }
 
     // Don't extend idle timeout for heartbeat runs — only user-initiated activity counts
     if (source !== 'heartbeat' && source !== 'heartbeat-wake' && source !== 'main-loop-followup') {

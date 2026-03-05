@@ -17,7 +17,7 @@ interface Props {
   onClose: () => void
 }
 
-export function NewSessionSheet({ open, onClose }: Props) {
+export function NewChatSheet({ open, onClose }: Props) {
   const router = useRouter()
   const agents = useAppStore((s) => s.agents)
   const loadSessions = useAppStore((s) => s.loadSessions)
@@ -47,7 +47,7 @@ export function NewSessionSheet({ open, onClose }: Props) {
       const id = genId(8)
       const now = Date.now()
 
-      const agentTools = agent?.tools || (selectedTools.length ? selectedTools : undefined)
+      const agentTools = agent?.plugins || (selectedTools.length ? selectedTools : undefined)
 
       const session = {
         id,
@@ -56,7 +56,7 @@ export function NewSessionSheet({ open, onClose }: Props) {
         model: agent ? agent.model : model,
         apiEndpoint: agent ? agent.apiEndpoint : (endpoint || undefined),
         credentialId: agent ? agent.credentialId : undefined,
-        tools: agentTools || undefined,
+        plugins: agentTools || undefined,
         messages: [],
         createdAt: now,
         updatedAt: now,
@@ -64,7 +64,7 @@ export function NewSessionSheet({ open, onClose }: Props) {
         agentId: selectedAgentId || undefined,
       }
 
-      await api('POST', '/sessions', session)
+      await api('POST', '/chats', session)
       await loadSessions()
       router.push(`/chat?session=${id}`)
       onClose()
@@ -223,10 +223,10 @@ export function NewSessionSheet({ open, onClose }: Props) {
             Using <span className="text-text-2 font-600">{agents[selectedAgentId].provider}</span>
             {' / '}
             <span className="text-text-2 font-600">{agents[selectedAgentId].model}</span>
-            {agents[selectedAgentId].tools?.length ? (
+            {agents[selectedAgentId].plugins?.length ? (
               <>
                 {' + '}
-                {agents[selectedAgentId].tools!.map((tool, i) => (
+                {agents[selectedAgentId].plugins!.map((tool, i) => (
                   <span key={tool}>
                     {i > 0 && ', '}
                     <span className="text-sky-400/70 font-600 cursor-help" title={TOOL_DESCRIPTIONS[tool] || tool}>

@@ -43,7 +43,7 @@ export function streamClaudeCliChat({ session, message, imagePath, systemPrompt,
   }
 
   // Add MCP servers for enabled tools
-  const tools: string[] = session.tools || []
+  const tools: string[] = session.plugins || []
   let mcpConfigPath: string | null = null
   if (tools.includes('browser')) {
     const proxyScript = path.join(process.cwd(), 'src/lib/server/playwright-proxy.mjs')

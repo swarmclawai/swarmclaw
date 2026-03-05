@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getPluginManager } from '@/lib/server/plugins'
+import { notify } from '@/lib/server/ws-hub'
 
 // Ensure all builtin plugins are registered by importing their modules
 import '@/lib/server/session-tools/shell'
@@ -44,6 +45,7 @@ export async function POST(req: Request) {
 
   const manager = getPluginManager()
   manager.setEnabled(filename, enabled)
+  notify('plugins')
 
   return NextResponse.json({ ok: true })
 }
@@ -59,6 +61,7 @@ export async function DELETE(req: Request) {
   if (!deleted) {
     return NextResponse.json({ error: 'Cannot delete built-in or non-existent plugin' }, { status: 400 })
   }
+  notify('plugins')
   return NextResponse.json({ ok: true })
 }
 

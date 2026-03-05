@@ -209,7 +209,7 @@ export function SessionDebugPanel({ messages, open, onClose }: Props) {
            {currentSessionId ? (
              <CheckpointTimeline sessionId={currentSessionId} />
            ) : (
-             <div className="p-12 text-center text-text-3">No active session</div>
+             <div className="p-12 text-center text-text-3">No active chat</div>
            )}
         </div>
       )}

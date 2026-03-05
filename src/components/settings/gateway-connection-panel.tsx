@@ -135,7 +135,7 @@ export function GatewayConnectionPanel() {
 
   const reloadModes: { value: GatewayReloadMode; label: string; desc: string }[] = [
     { value: 'hot', label: 'Hot', desc: 'Only reload changed agents' },
-    { value: 'hybrid', label: 'Hybrid', desc: 'Hot + restart stale sessions' },
+    { value: 'hybrid', label: 'Hybrid', desc: 'Hot + restart stale chats' },
     { value: 'full', label: 'Full', desc: 'Restart all agents on change' },
   ]
 

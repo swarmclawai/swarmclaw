@@ -77,7 +77,6 @@ export function CommandPalette() {
 
     // Chats (sessions)
     for (const session of Object.values(sessions)) {
-      if (session.name === '__main__') continue
       result.push({
         id: `chat:${session.id}`,
         label: session.name || 'Untitled chat',

@@ -171,11 +171,11 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
           </div>
         </div>
       )}
-      {agent.tools && agent.tools.length > 0 && (
+      {agent.plugins && agent.plugins.length > 0 && (
         <div>
           <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Plugins</label>
           <div className="flex flex-wrap gap-1">
-            {agent.tools.map((tool) => (
+            {agent.plugins.map((tool) => (
               <span key={tool} className="px-2 py-0.5 rounded-[6px] text-[11px] font-600 bg-sky-400/[0.08] text-sky-400/70">
                 {tool}
               </span>

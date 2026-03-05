@@ -26,7 +26,7 @@ export function CheckpointTimeline({ sessionId }: Props) {
   const load = async () => {
     setLoading(true)
     try {
-      const data = await api<Checkpoint[]>('GET', `/sessions/${sessionId}/checkpoints`)
+      const data = await api<Checkpoint[]>('GET', `/chats/${sessionId}/checkpoints`)
       setCheckpoints(data)
     } catch (err) {
       console.error('Failed to load checkpoints', err)
@@ -45,7 +45,7 @@ export function CheckpointTimeline({ sessionId }: Props) {
     
     setRestoringId(checkpoint.checkpointId)
     try {
-      await api('POST', `/sessions/${sessionId}/restore`, {
+      await api('POST', `/chats/${sessionId}/restore`, {
         checkpointId: checkpoint.checkpointId,
         timestamp: checkpoint.createdAt
       })
@@ -67,8 +67,8 @@ export function CheckpointTimeline({ sessionId }: Props) {
   if (checkpoints.length === 0) {
     return (
       <div className="p-8 text-center">
-        <p className="text-text-3 text-[13px]">No checkpoints found for this session.</p>
-        <p className="text-[11px] text-text-3/50 mt-1">Only LangGraph-orchestrated sessions support time travel.</p>
+        <p className="text-text-3 text-[13px]">No checkpoints found for this chat.</p>
+        <p className="text-[11px] text-text-3/50 mt-1">Only LangGraph-orchestrated chats support time travel.</p>
       </div>
     )
   }

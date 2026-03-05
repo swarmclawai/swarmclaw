@@ -3,9 +3,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
-import { AVAILABLE_TOOLS, PLATFORM_TOOLS, TOOL_LABELS } from '@/lib/tool-definitions'
+import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
 import type { ToolDefinition } from '@/lib/tool-definitions'
 import type { Session } from '@/types'
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 
 const TOOL_GROUPS: { label: string; tools: ToolDefinition[] }[] = [
   { label: 'Plugins', tools: AVAILABLE_TOOLS },
@@ -26,7 +27,7 @@ export function ChatToolToggles({ session }: Props) {
   const skills = useAppStore((s) => s.skills)
 
   const agent = session.agentId ? agents[session.agentId] : null
-  const sessionTools: string[] = session.tools || []
+  const sessionTools: string[] = session.plugins || []
 
   // Agent's skill IDs
   const agentSkillIds: string[] = agent?.skillIds || []
@@ -44,7 +45,7 @@ export function ChatToolToggles({ session }: Props) {
     const updated = sessionTools.includes(toolId)
       ? sessionTools.filter((t) => t !== toolId)
       : [...sessionTools, toolId]
-    await api('PUT', `/sessions/${session.id}`, { tools: updated })
+    await api('PUT', `/chats/${session.id}`, { plugins: updated })
     loadSessions()
   }
 
@@ -69,26 +70,33 @@ export function ChatToolToggles({ session }: Props) {
       {open && (
         <div className="absolute top-full left-0 mt-1.5 w-[260px] max-h-[420px] overflow-y-auto rounded-[12px] border border-white/[0.08] shadow-xl z-[120] overflow-hidden"
           style={{ animation: 'fade-in 0.15s ease', backgroundColor: '#171a2b' }}>
-
+         <TooltipProvider delayDuration={300}>
           {TOOL_GROUPS.map((group, gi) => (
             <div key={group.label} className={`px-3 pb-1 ${gi === 0 ? 'pt-3' : 'pt-1 border-t border-white/[0.04]'}`}>
               <p className="text-[10px] font-600 text-text-3/60 uppercase tracking-wider mb-2">{group.label}</p>
               {group.tools.map((tool) => {
                 const enabled = sessionTools.includes(tool.id)
                 return (
-                  <label key={tool.id} className="flex items-center gap-2.5 py-1.5 cursor-pointer" title={tool.description}>
-                    <div
-                      onClick={() => toggleTool(tool.id)}
-                      className={`w-8 h-[18px] rounded-full transition-all duration-200 relative cursor-pointer shrink-0
-                        ${enabled ? 'bg-accent-bright' : 'bg-white/[0.12]'}`}
-                    >
-                      <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all duration-200
-                        ${enabled ? 'left-[16px]' : 'left-[2px]'}`} />
-                    </div>
-                    <span className={`text-[12px] ${enabled ? 'text-text-2' : 'text-text-3/70'}`}>
-                      {tool.label}
-                    </span>
-                  </label>
+                  <Tooltip key={tool.id}>
+                    <TooltipTrigger asChild>
+                      <label className="flex items-center gap-2.5 py-1.5 cursor-pointer">
+                        <div
+                          onClick={() => toggleTool(tool.id)}
+                          className={`w-8 h-[18px] rounded-full transition-all duration-200 relative cursor-pointer shrink-0
+                            ${enabled ? 'bg-accent-bright' : 'bg-white/[0.12]'}`}
+                        >
+                          <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all duration-200
+                            ${enabled ? 'left-[16px]' : 'left-[2px]'}`} />
+                        </div>
+                        <span className={`text-[12px] ${enabled ? 'text-text-2' : 'text-text-3/70'}`}>
+                          {tool.label}
+                        </span>
+                      </label>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8} className="max-w-[200px] bg-[#1e2140] text-text-2 border border-white/[0.08] text-[11px] leading-snug px-2.5 py-1.5">
+                      {tool.description}
+                    </TooltipContent>
+                  </Tooltip>
                 )
               })}
             </div>
@@ -110,6 +118,7 @@ export function ChatToolToggles({ session }: Props) {
             </div>
           )}
 
+         </TooltipProvider>
           <div className="px-3 py-2 border-t border-white/[0.04] bg-white/[0.02]">
             <p className="text-[10px] text-text-3/70">Changes apply to the next message</p>
           </div>

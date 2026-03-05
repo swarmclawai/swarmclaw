@@ -243,7 +243,10 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   const delegationSource = !isUser && message.kind === 'system' ? parseDelegationSource(message.text || '') : null
   // Detect task completion system messages (delegated or direct)
   const taskCompletion = !isUser && message.kind === 'system' ? parseTaskCompletion(message.text || '') : null
-  const displayText = delegationSource ? delegationSource.rest : message.text
+  const rawDisplayText = delegationSource ? delegationSource.rest : message.text
+  const displayText = rawDisplayText
+    ? rawDisplayText.split('\n').filter((l) => !/\[(MAIN_LOOP_META|MAIN_LOOP_PLAN|MAIN_LOOP_REVIEW|AGENT_HEARTBEAT_META)\]/.test(l)).join('\n').trim()
+    : ''
 
   const handleCopy = useCallback(() => {
     void copyTextToClipboard(message.text).then((copiedText) => {

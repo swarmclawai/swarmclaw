@@ -5,7 +5,7 @@ import { getPluginManager } from '../plugins'
 import type { Plugin, PluginHooks, ClawHubSkill } from '@/types'
 import { searchClawHub } from '../clawhub-client'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { toolIdMatches } from '../tool-aliases'
+import { pluginIdMatches } from '../tool-aliases'
 import { loadSessions } from '../storage'
 
 /**
@@ -88,7 +88,7 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
         if (bctx?.ctx?.sessionId) {
           const allSessions = loadSessions()
           const currentSession = allSessions[bctx.ctx.sessionId]
-          if (currentSession && toolIdMatches(currentSession.tools, pluginId)) {
+          if (currentSession && pluginIdMatches(currentSession.tools, pluginId)) {
             return JSON.stringify({
               alreadyGranted: true,
               pluginId,

@@ -107,7 +107,9 @@ async function executeChatroomAction(args: Record<string, unknown>, context: { a
 const ChatroomPlugin: Plugin = {
   name: 'Core Chatrooms',
   description: 'Manage SwarmClaw routing rules and multi-agent chatrooms.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () => 'I can create and participate in chatrooms (`manage_chatrooms`) for multi-agent collaboration with @mention-based discussions.',
+  } as PluginHooks,
   tools: [
     {
       name: 'manage_chatrooms',
@@ -134,7 +136,7 @@ getPluginManager().registerBuiltin('chatroom', ChatroomPlugin)
  * Legacy Bridge
  */
 export function buildChatroomTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('manage_chatrooms')) return []
+  if (!bctx.hasPlugin('manage_chatrooms')) return []
   return [
     tool(
       async (args) => executeChatroomAction(args, { agentId: bctx.ctx?.agentId }),

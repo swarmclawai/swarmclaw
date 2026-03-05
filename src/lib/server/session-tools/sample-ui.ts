@@ -80,7 +80,7 @@ const SampleUIPlugin: Plugin = {
 getPluginManager().registerBuiltin('sample_ui', SampleUIPlugin)
 
 export function buildSampleUITools(bctx: any) {
-  if (!bctx.hasTool('sample_ui')) return []
+  if (!bctx.hasPlugin('sample_ui')) return []
   return [
     tool(
       async (args) => SampleUIPlugin.tools![0].execute(args as any, bctx),

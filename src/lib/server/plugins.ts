@@ -3,6 +3,7 @@ import path from 'path'
 import { createRequire } from 'module'
 import type { Plugin, PluginHooks, PluginMeta, PluginToolDef, PluginUIExtension, PluginProviderExtension, PluginConnectorExtension, Session } from '@/types'
 import { DATA_DIR } from './data-dir'
+import { expandPluginIds } from './tool-aliases'
 import { log } from './logger'
 import { createNotification } from './create-notification'
 import { notify } from './ws-hub'
@@ -160,6 +161,7 @@ function normalizePlugin(mod: unknown): Plugin | null {
       'message:inbound': 'transformInboundMessage',
       'message:outbound': 'transformOutboundMessage',
       'command:new': 'beforeAgentStart',
+      'agent:context': 'getAgentContext',
     }
 
     const pluginLogger: PluginLogger = {
@@ -390,7 +392,8 @@ class PluginManager {
 
     // 1. Load Built-ins
     for (const [id, p] of this.builtins.entries()) {
-      const isEnabled = config[id]?.enabled !== false
+      const explicitConfig = config[id]
+      const isEnabled = explicitConfig != null ? explicitConfig.enabled !== false : p.enabledByDefault !== false
       if (isEnabled) {
         this.plugins.set(id, {
           id,
@@ -579,6 +582,102 @@ class PluginManager {
     return currentText
   }
 
+  async collectAgentContext(session: import('@/types').Session, enabledPlugins: string[], message: string, history: import('@/types').Message[]): Promise<string[]> {
+    this.load()
+    const enabledSet = new Set(enabledPlugins)
+    const parts: string[] = []
+
+    for (const [id, p] of this.plugins.entries()) {
+      if (!enabledSet.has(id)) continue
+      const hook = p.hooks.getAgentContext
+      if (!hook) continue
+      try {
+        const result = await hook({ session, enabledPlugins, message, history })
+        if (typeof result === 'string' && result.trim()) {
+          parts.push(result)
+          this.markPluginSuccess(id)
+        }
+      } catch (err: unknown) {
+        log.error('plugins', 'getAgentContext hook failed', {
+          pluginId: id,
+          pluginName: p.meta.name,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        this.markPluginFailure(id, 'hook.getAgentContext', err, true)
+      }
+    }
+
+    return parts
+  }
+
+  /** Collect capability descriptions from all enabled plugins for system prompt */
+  collectCapabilityDescriptions(enabledPlugins: string[]): string[] {
+    this.load()
+    const enabledSet = new Set(expandPluginIds(enabledPlugins))
+    const lines: string[] = []
+
+    for (const [id, p] of this.plugins.entries()) {
+      if (!enabledSet.has(id)) continue
+      const hook = p.hooks.getCapabilityDescription
+      if (!hook) continue
+      try {
+        const result = hook()
+        if (typeof result === 'string' && result.trim()) {
+          lines.push(`- ${result}`)
+        }
+      } catch (err: unknown) {
+        log.error('plugins', 'getCapabilityDescription hook failed', { pluginId: id, error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
+    return lines
+  }
+
+  /** Collect operating guidance from all enabled plugins */
+  collectOperatingGuidance(enabledPlugins: string[]): string[] {
+    this.load()
+    const enabledSet = new Set(expandPluginIds(enabledPlugins))
+    const lines: string[] = []
+
+    for (const [id, p] of this.plugins.entries()) {
+      if (!enabledSet.has(id)) continue
+      const hook = p.hooks.getOperatingGuidance
+      if (!hook) continue
+      try {
+        const result = hook()
+        if (result === null || result === undefined) continue
+        if (typeof result === 'string' && result.trim()) {
+          lines.push(result)
+        } else if (Array.isArray(result)) {
+          for (const line of result) {
+            if (typeof line === 'string' && line.trim()) lines.push(line)
+          }
+        }
+      } catch (err: unknown) {
+        log.error('plugins', 'getOperatingGuidance hook failed', { pluginId: id, error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
+    return lines
+  }
+
+  /** Collect all settings fields declared by enabled plugins */
+  collectSettingsFields(enabledPlugins: string[]): Array<{ pluginId: string; pluginName: string; fields: import('@/types').PluginSettingsField[] }> {
+    this.load()
+    const enabledSet = new Set(expandPluginIds(enabledPlugins))
+    const result: Array<{ pluginId: string; pluginName: string; fields: import('@/types').PluginSettingsField[] }> = []
+
+    for (const [id, p] of this.plugins.entries()) {
+      if (!enabledSet.has(id)) continue
+      const fields = p.ui?.settingsFields
+      if (fields?.length) {
+        result.push({ pluginId: id, pluginName: p.meta.name, fields })
+      }
+    }
+
+    return result
+  }
+
   recordExternalToolFailure(pluginId: string, toolName: string, err: unknown): void {
     this.markPluginFailure(pluginId, `tool.${toolName}`, err, true)
   }
@@ -589,7 +688,11 @@ class PluginManager {
 
   isEnabled(filename: string): boolean {
     const config = this.loadConfig()
-    return config[filename]?.enabled !== false
+    const explicit = config[filename]
+    if (explicit != null) return explicit.enabled !== false
+    const builtin = this.builtins.get(filename)
+    if (builtin) return builtin.enabledByDefault !== false
+    return true
   }
 
   listPlugins(): PluginMeta[] {
@@ -599,25 +702,28 @@ class PluginManager {
       const failures = this.readFailureState()
       const metas: PluginMeta[] = []
 
-      const describeCapabilities = (loaded?: LoadedPlugin, fallback?: Plugin): Pick<PluginMeta, 'toolCount' | 'hookCount' | 'hasUI' | 'providerCount' | 'connectorCount'> => {
+      const describeCapabilities = (loaded?: LoadedPlugin, fallback?: Plugin): Pick<PluginMeta, 'toolCount' | 'hookCount' | 'hasUI' | 'providerCount' | 'connectorCount' | 'settingsFields'> => {
         const tools = loaded?.tools || fallback?.tools || []
         const hooks = loaded?.hooks || fallback?.hooks || {}
         const providers = loaded?.providers || fallback?.providers || []
         const connectors = loaded?.connectors || fallback?.connectors || []
         const hasUi = !!(loaded?.ui || fallback?.ui)
+        const settingsFields = loaded?.ui?.settingsFields || fallback?.ui?.settingsFields
         return {
           toolCount: Array.isArray(tools) ? tools.length : 0,
           hookCount: Object.values(hooks || {}).filter((fn) => typeof fn === 'function').length,
           hasUI: hasUi,
           providerCount: Array.isArray(providers) ? providers.length : 0,
           connectorCount: Array.isArray(connectors) ? connectors.length : 0,
+          settingsFields: settingsFields?.length ? settingsFields : undefined,
         }
       }
 
       // Add all builtins
       for (const [id, p] of this.builtins.entries()) {
         const loaded = this.plugins.get(id)
-        const enabled = config[id]?.enabled !== false
+        const explicitCfg = config[id]
+        const enabled = explicitCfg != null ? explicitCfg.enabled !== false : p.enabledByDefault !== false
         const failure = failures[id]
         const caps = describeCapabilities(loaded, p)
         metas.push({
@@ -625,6 +731,7 @@ class PluginManager {
           description: p.description || '',
           filename: id,
           enabled,
+          author: 'SwarmClaw',
           version: (p as { version?: string }).version || loaded?.meta.version || '1.0.0',
           source: loaded?.meta.source || 'local',
           failureCount: failure?.count,
@@ -649,6 +756,7 @@ class PluginManager {
               name: loaded?.meta.name || f.replace(/\.(js|mjs)$/, ''),
               filename: f,
               enabled,
+              author: loaded?.meta.author,
               version: loaded?.meta.version || '0.0.1',
               source: loaded?.meta.source || 'marketplace',
               createdByAgentId: config[f]?.createdByAgentId || null,

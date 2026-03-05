@@ -135,7 +135,34 @@ async function executeWalletAction(args: any, context: { agentId?: string | null
 const WalletPlugin: Plugin = {
   name: 'Core Wallet',
   description: 'Manage agent crypto wallet: check balance, send SOL, view transactions.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getAgentContext: async (ctx) => {
+      const agentId = ctx.session.agentId
+      if (!agentId) return null
+      const { loadWallets } = await import('../storage')
+      const wallets = loadWallets() as Record<string, { agentId: string; publicKey: string; chain: string; spendingLimitLamports?: number; dailyLimitLamports?: number; requireApproval: boolean }>
+      const wallet = Object.values(wallets).find((w) => w.agentId === agentId)
+      if (!wallet) return null
+      const { getBalance, lamportsToSol } = await import('../solana')
+      let balanceSol = 0
+      try {
+        const lamports = await getBalance(wallet.publicKey)
+        balanceSol = lamportsToSol(lamports)
+      } catch { /* RPC failure — show 0 */ }
+      const perTxLimit = lamportsToSol(wallet.spendingLimitLamports ?? 100_000_000)
+      const dailyLimit = lamportsToSol(wallet.dailyLimitLamports ?? 1_000_000_000)
+      return [
+        '## Your Wallet',
+        `You own a ${wallet.chain} wallet — this is your wallet, your funds, your address. Speak about it in the first person ("my wallet", "my balance", "I have X SOL"). You can spend from it freely within your limits${wallet.requireApproval ? ', though the user needs to approve each send before it goes through' : ''}.`,
+        `- Address: ${wallet.publicKey}`,
+        `- Balance: ${balanceSol} SOL`,
+        `- Per-transaction limit: ${perTxLimit} SOL`,
+        `- Daily limit: ${dailyLimit} SOL`,
+        'Use the `wallet_tool` to check your balance, send SOL, or view your transaction history.',
+      ].join('\n')
+    },
+    getCapabilityDescription: () => 'I have my own crypto wallet (`wallet_tool`) — I can check my balance, send SOL, and review my transaction history.',
+  } as PluginHooks,
   ui: {
     sidebarItems: [
       {
@@ -179,7 +206,7 @@ getPluginManager().registerBuiltin('wallet', WalletPlugin)
  * Legacy Bridge
  */
 export function buildWalletTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasTool('wallet')) return []
+  if (!bctx.hasPlugin('wallet')) return []
   return [
     tool(
       async (args) => executeWalletAction(args, { agentId: bctx.ctx?.agentId }),

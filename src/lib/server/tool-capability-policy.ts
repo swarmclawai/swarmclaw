@@ -8,12 +8,15 @@ export interface CapabilityPolicyBlock {
   source: 'safety' | 'policy'
 }
 
-export interface SessionToolPolicyDecision {
+export interface PluginPolicyDecision {
   mode: CapabilityPolicyMode
-  requestedTools: string[]
-  enabledTools: string[]
-  blockedTools: CapabilityPolicyBlock[]
+  requestedPlugins: string[]
+  enabledPlugins: string[]
+  blockedPlugins: CapabilityPolicyBlock[]
 }
+
+/** @deprecated Use PluginPolicyDecision */
+export type SessionToolPolicyDecision = PluginPolicyDecision
 
 type CapabilityCategory =
   | 'filesystem'
@@ -47,10 +50,11 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   web_search: { categories: ['network'], concreteTools: ['web_search'] },
   web_fetch: { categories: ['network'], concreteTools: ['web_fetch'] },
   browser: { categories: ['browser', 'network'], concreteTools: ['browser', 'openclaw_browser'] },
-  delegate: { categories: ['delegation', 'execution'], concreteTools: ['delegate', 'delegate_to_claude_code', 'delegate_to_codex_cli', 'delegate_to_opencode_cli'] },
+  delegate: { categories: ['delegation', 'execution'], concreteTools: ['delegate', 'delegate_to_claude_code', 'delegate_to_codex_cli', 'delegate_to_opencode_cli', 'delegate_to_gemini_cli'] },
   claude_code: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_claude_code'] },
   codex_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_codex_cli'] },
   opencode_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_opencode_cli'] },
+  gemini_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_gemini_cli'] },
   memory: { categories: ['memory'], concreteTools: ['memory', 'memory_tool', 'context_status', 'context_summarize'] },
   sandbox: { categories: ['execution', 'filesystem'], concreteTools: ['sandbox', 'sandbox_exec', 'sandbox_list_runtimes', 'openclaw_sandbox'] },
   git: { categories: ['execution', 'filesystem'], concreteTools: ['git'] },
@@ -144,6 +148,7 @@ function safetyMatchesTool(safetyBlocked: Set<string>, toolName: string, descrip
   if (toolName === 'claude_code' && safetyBlocked.has('delegate_to_claude_code')) return true
   if (toolName === 'codex_cli' && safetyBlocked.has('delegate_to_codex_cli')) return true
   if (toolName === 'opencode_cli' && safetyBlocked.has('delegate_to_opencode_cli')) return true
+  if (toolName === 'gemini_cli' && safetyBlocked.has('delegate_to_gemini_cli')) return true
   return false
 }
 
@@ -196,51 +201,51 @@ export function resolveSessionToolPolicy(
     blockedCategories,
   } = parsePolicyConfig(normalizedSettings)
 
-  const requestedTools = Array.isArray(sessionTools)
-    ? Array.from(new Set(sessionTools.map((tool) => normalizeName(tool)).filter(Boolean)))
+  const requestedPlugins = Array.isArray(sessionTools)
+    ? Array.from(new Set(sessionTools.map((id) => normalizeName(id)).filter(Boolean)))
     : []
 
-  const enabledTools: string[] = []
-  const blockedTools: CapabilityPolicyBlock[] = []
+  const enabledPlugins: string[] = []
+  const blockedPlugins: CapabilityPolicyBlock[] = []
 
-  for (const toolName of requestedTools) {
-    const descriptor = TOOL_DESCRIPTORS[toolName]
+  for (const pluginName of requestedPlugins) {
+    const descriptor = TOOL_DESCRIPTORS[pluginName]
 
-    if (safetyMatchesTool(safetyBlocked, toolName, descriptor)) {
-      blockedTools.push({ tool: toolName, reason: 'blocked by safety policy', source: 'safety' })
+    if (safetyMatchesTool(safetyBlocked, pluginName, descriptor)) {
+      blockedPlugins.push({ tool: pluginName, reason: 'blocked by safety policy', source: 'safety' })
       continue
     }
 
-    if (policyAllowedNames.has(toolName)) {
-      enabledTools.push(toolName)
+    if (policyAllowedNames.has(pluginName)) {
+      enabledPlugins.push(pluginName)
       continue
     }
 
-    if (policyMatchesTool(policyBlockedNames, toolName, descriptor)) {
-      blockedTools.push({ tool: toolName, reason: 'blocked by explicit policy rule', source: 'policy' })
+    if (policyMatchesTool(policyBlockedNames, pluginName, descriptor)) {
+      blockedPlugins.push({ tool: pluginName, reason: 'blocked by explicit policy rule', source: 'policy' })
       continue
     }
 
     const categoryReason = categoryBlockReason(blockedCategories, descriptor)
     if (categoryReason) {
-      blockedTools.push({ tool: toolName, reason: categoryReason, source: 'policy' })
+      blockedPlugins.push({ tool: pluginName, reason: categoryReason, source: 'policy' })
       continue
     }
 
-    const modeReason = modeBlocksTool(mode, toolName, descriptor)
+    const modeReason = modeBlocksTool(mode, pluginName, descriptor)
     if (modeReason) {
-      blockedTools.push({ tool: toolName, reason: modeReason, source: 'policy' })
+      blockedPlugins.push({ tool: pluginName, reason: modeReason, source: 'policy' })
       continue
     }
 
-    enabledTools.push(toolName)
+    enabledPlugins.push(pluginName)
   }
 
   return {
     mode,
-    requestedTools,
-    enabledTools,
-    blockedTools,
+    requestedPlugins,
+    enabledPlugins,
+    blockedPlugins,
   }
 }
 
@@ -270,11 +275,11 @@ export function resolveConcreteToolPolicyBlock(
   }
 
   if (mappedTool) {
-    const blockedRoot = decision.blockedTools.find((entry) => entry.tool === mappedTool)
+    const blockedRoot = decision.blockedPlugins.find((entry) => entry.tool === mappedTool)
     if (blockedRoot) return blockedRoot.reason
 
-    const enabledRoot = decision.enabledTools.includes(mappedTool)
-    if (!enabledRoot) return `tool family "${mappedTool}" is not enabled for this session`
+    const enabledRoot = decision.enabledPlugins.includes(mappedTool)
+    if (!enabledRoot) return `plugin family "${mappedTool}" is not enabled for this chat`
   }
 
   return null

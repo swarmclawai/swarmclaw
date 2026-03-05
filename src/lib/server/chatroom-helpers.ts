@@ -126,9 +126,9 @@ export function buildChatroomSystemPrompt(chatroom: Chatroom, agents: Record<str
     .map((id) => {
       const a = agents[id]
       if (!a) return null
-      const tools = a.tools?.length ? `Tools: ${a.tools.join(', ')}` : 'No specialized tools'
+      const plugins = (a.plugins || a.tools)?.length ? `Plugins: ${(a.plugins || a.tools)!.join(', ')}` : 'No specialized plugins'
       const desc = a.description || a.soul || 'No description'
-      return `- **${a.name}**: ${desc}\n  ${tools}`
+      return `- **${a.name}**: ${desc}\n  ${plugins}`
     })
     .filter(Boolean)
     .join('\n')
@@ -187,7 +187,7 @@ export function buildSyntheticSession(agent: Agent, chatroomId: string): Session
     messages: [],
     createdAt: Date.now(),
     lastActiveAt: Date.now(),
-    tools: agent.tools || [],
+    plugins: agent.plugins || agent.tools || [],
     agentId: agent.id,
   }
 }

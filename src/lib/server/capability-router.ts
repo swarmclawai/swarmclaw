@@ -12,9 +12,11 @@ export interface CapabilityRoutingDecision {
   intent: TaskIntent
   confidence: number
   preferredTools: string[]
-  preferredDelegates: Array<'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'>
+  preferredDelegates: DelegateTool[]
   primaryUrl?: string
 }
+
+type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
 function findFirstUrl(text: string): string | undefined {
   const m = text.match(/https?:\/\/[^\s<>"')]+/i)
@@ -25,21 +27,21 @@ function containsAny(text: string, terms: string[]): boolean {
   return terms.some((term) => text.includes(term))
 }
 
-function normalizeDelegateOrder(
-  value: unknown,
-): Array<'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'> {
-  const fallback: Array<'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'> = [
+function normalizeDelegateOrder(value: unknown): DelegateTool[] {
+  const fallback: DelegateTool[] = [
     'delegate_to_claude_code',
     'delegate_to_codex_cli',
     'delegate_to_opencode_cli',
+    'delegate_to_gemini_cli',
   ]
   if (!Array.isArray(value) || !value.length) return fallback
 
-  const mapped: Array<'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli'> = []
+  const mapped: DelegateTool[] = []
   for (const raw of value) {
     if (raw === 'claude') mapped.push('delegate_to_claude_code')
     else if (raw === 'codex') mapped.push('delegate_to_codex_cli')
     else if (raw === 'opencode') mapped.push('delegate_to_opencode_cli')
+    else if (raw === 'gemini') mapped.push('delegate_to_gemini_cli')
   }
   if (!mapped.length) return fallback
   const deduped = Array.from(new Set(mapped))
@@ -51,7 +53,7 @@ function normalizeDelegateOrder(
 
 export function routeTaskIntent(
   message: string,
-  enabledTools: string[],
+  enabledPlugins: string[],
   settings?: AppSettings | null,
 ): CapabilityRoutingDecision {
   const text = (message || '').toLowerCase()
@@ -128,7 +130,7 @@ export function routeTaskIntent(
 
   const browsing = !!url && (
     containsAny(text, ['browser', 'click', 'fill form', 'log in', 'screenshot', 'navigate'])
-    || enabledTools.includes('browser')
+    || enabledPlugins.includes('browser')
   )
   if (browsing) {
     return {
