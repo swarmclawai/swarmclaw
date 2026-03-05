@@ -135,7 +135,7 @@ export function StreamingBubble({ text, assistantName, agentAvatarSeed, agentAva
   return (
     <div
       className="flex flex-col items-start relative pl-[44px]"
-      style={{ animation: 'msg-in-left 0.35s cubic-bezier(0.16, 1, 0.3, 1)' }}
+      style={{ animation: 'msg-in-left 0.4s var(--ease-spring) both' }}
     >
       <div className="absolute left-[4px] top-0 relative">
         {agentName ? <AgentAvatar seed={agentAvatarSeed || null} avatarUrl={agentAvatarUrl} name={agentName} size={28} /> : <AiAvatar size="sm" mood={streamPhase === 'tool' ? 'tool' : 'thinking'} />}
@@ -160,13 +160,14 @@ export function StreamingBubble({ text, assistantName, agentAvatarSeed, agentAva
       {text && thinkingText && (
         <div className="max-w-[85%] md:max-w-[72%] mb-2">
           <details className="group rounded-[12px] border border-purple-500/15 bg-purple-500/[0.04]">
-            <summary className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-purple-400/60 shrink-0 transition-transform group-open:rotate-90">
+            <summary className="flex items-center gap-2 px-3.5 py-2.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden relative overflow-hidden group-open:rounded-b-none">
+              <div className="absolute inset-0 bg-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity" style={{ animation: 'pulse-subtle 3s ease-in-out infinite' }} />
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-purple-400/60 shrink-0 transition-transform group-open:rotate-90 relative z-10">
                 <polyline points="9 18 15 12 9 6" />
               </svg>
-              <span className="text-[11px] font-600 text-purple-400/70 uppercase tracking-[0.05em]">Thinking</span>
+              <span className="text-[11px] font-600 text-purple-400/70 uppercase tracking-[0.05em] relative z-10">Thinking</span>
             </summary>
-            <div className="px-3.5 pb-3 pt-1 max-h-[300px] overflow-y-auto">
+            <div className="px-3.5 pb-3 pt-1 max-h-[300px] overflow-y-auto border-t border-white/[0.04]">
               <div className="text-[13px] leading-[1.6] text-text-3/70 whitespace-pre-wrap break-words">
                 {thinkingText}
               </div>

@@ -12,6 +12,7 @@ import { ThinkingIndicator } from './thinking-indicator'
 import { SuggestionsBar } from './suggestions-bar'
 import { ExecApprovalCard } from './exec-approval-card'
 import { TaskApprovalCard } from './task-approval-card'
+import { SessionApprovalCard } from './session-approval-card'
 import { HeartbeatMoment, ActivityMoment, isNotableTool } from './activity-moment'
 import { useApprovalStore } from '@/stores/use-approval-store'
 import { useWs } from '@/hooks/use-ws'
@@ -512,7 +513,14 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
             }
 
             return (
-              <div key={`${msg.time}-${i}`} data-message-index={i}>
+              <div
+                key={`${sessionId}-${msg.time}-${i}`}
+                data-message-index={i}
+                style={{
+                  animation: `${msg.role === 'user' ? 'msg-in-right' : 'msg-in-left'} 0.4s var(--ease-spring) both`,
+                  animationDelay: `${Math.min(i * 0.05, 0.4)}s`
+                }}
+              >
                 {showDateSep && (
                   <div className="flex items-center gap-4 py-2 mb-2">
                     <div className="flex-1 h-px bg-white/[0.06]" />
@@ -576,17 +584,32 @@ function ApprovalCards({ agentId }: { agentId?: string | null }) {
   const approvals = useApprovalStore((s) => s.approvals)
   const tasks = useAppStore((s) => s.tasks)
   const sessionId = useAppStore((s) => s.currentSessionId)
+  const serverApprovals = useAppStore((s) => s.approvals)
 
   const cards = Object.values(approvals).filter((a) => !agentId || a.agentId === agentId)
-  
+
   // Find tasks associated with this session that need approval
   const pendingTasks = Object.values(tasks).filter((t) => {
     if (!t.pendingApproval) return false
-    // Show if matches the current session OR the current agent
     return t.sessionId === sessionId || (agentId && t.agentId === agentId)
   })
 
-  if (!cards.length && !pendingTasks.length) return null
+  // Server-side approvals (tool_access, wallet, plugin) matching this session/agent
+  // Exclude any that overlap with task-based approvals to prevent duplicates
+  const pendingTaskIds = new Set(pendingTasks.map((t) => t.id))
+  const sessionApprovalCards = Object.values(serverApprovals).filter((a) => {
+    if (a.status !== 'pending') return false
+    if (a.category === 'task_tool') return false // Already shown via TaskApprovalCard
+    if (a.category === 'tool_access') return false // Handled inline by ToolRequestBanner (with auto-continue)
+    if (a.taskId && pendingTaskIds.has(a.taskId)) return false // Dedupe with task card
+    return a.sessionId === sessionId || (agentId && a.agentId === agentId)
+  })
+
+  if (!cards.length && !pendingTasks.length && !sessionApprovalCards.length) return null
+
+  const handleSessionApprovalResolved = () => {
+    useAppStore.getState().loadApprovals()
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -595,6 +618,9 @@ function ApprovalCards({ agentId }: { agentId?: string | null }) {
       ))}
       {pendingTasks.map((t) => (
         <TaskApprovalCard key={t.id} task={t} />
+      ))}
+      {sessionApprovalCards.map((a) => (
+        <SessionApprovalCard key={a.id} approval={a} onResolved={handleSessionApprovalResolved} />
       ))}
     </div>
   )

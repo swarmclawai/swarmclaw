@@ -39,11 +39,10 @@ export function UserPicker() {
           }} />
       </div>
 
-      <div className="relative max-w-[420px] w-full text-center"
-        style={{ animation: 'fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+      <div className="relative max-w-[420px] w-full text-center">
 
         {/* Sparkle icon */}
-        <div className="flex justify-center mb-6">
+        <div className="flex justify-center mb-6" style={{ animation: 'spring-in 0.6s var(--ease-spring)' }}>
           <div className="relative w-12 h-12">
             <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className="text-accent-bright"
               style={{ animation: 'sparkle-spin 8s linear infinite' }}>
@@ -54,29 +53,33 @@ export function UserPicker() {
           </div>
         </div>
 
-        <h1 className="font-display text-[42px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
-          Welcome
-        </h1>
-        <p className="text-[15px] text-text-2 mb-10">
-          What should we call you?
-        </p>
+        <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.1s both' }}>
+          <h1 className="font-display text-[42px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
+            Welcome
+          </h1>
+          <p className="text-[15px] text-text-2 mb-10">
+            What should we call you?
+          </p>
+        </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col items-center gap-5">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Your name"
-            autoFocus
-            className="w-full max-w-[280px] px-6 py-4 rounded-[16px] border border-white/[0.08] bg-surface
-              text-text text-[18px] text-center font-display font-600 outline-none
-              transition-all duration-200 placeholder:text-text-3/70
-              focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
-            style={{ fontFamily: 'inherit' }}
-          />
+          <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.2s both', width: '100%', display: 'flex', justifyContent: 'center' }}>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              autoFocus
+              className="w-full max-w-[280px] px-6 py-4 rounded-[16px] border border-white/[0.08] bg-surface
+                text-text text-[18px] text-center font-display font-600 outline-none
+                transition-all duration-200 placeholder:text-text-3/70
+                focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
 
           {/* Avatar picker */}
-          <div className="flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-3" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.3s both' }}>
             <AgentAvatar seed={avatarSeed || null} name={name || '?'} size={64} />
             <div className="flex items-center gap-2">
               <input
@@ -99,16 +102,18 @@ export function UserPicker() {
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={!name.trim()}
-            className="px-12 py-4 rounded-[16px] border-none bg-accent-bright text-white text-[16px] font-display font-600
-              cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
-              shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
-            style={{ fontFamily: 'inherit' }}
-          >
-            Get Started
-          </button>
+          <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.4s both' }}>
+            <button
+              type="submit"
+              disabled={!name.trim()}
+              className="px-12 py-4 rounded-[16px] border-none bg-accent-bright text-white text-[16px] font-display font-600
+                cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
+                shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Get Started
+            </button>
+          </div>
         </form>
       </div>
     </div>

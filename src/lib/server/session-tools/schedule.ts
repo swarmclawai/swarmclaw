@@ -3,41 +3,76 @@ import { z } from 'zod'
 import { enqueueSystemEvent } from '../system-events'
 import { requestHeartbeatNow } from '../heartbeat-wake'
 import type { ToolBuildContext } from './context'
+import type { Plugin, PluginHooks } from '@/types'
+import { getPluginManager } from '../plugins'
+import { normalizeToolInputArgs } from './normalize-tool-args'
 
-export function buildScheduleTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  const tools: StructuredToolInterface[] = []
-  const { ctx, hasTool } = bctx
+/**
+ * Core Schedule Execution Logic
+ */
+async function executeScheduleWake(args: { delayMinutes: number; message: string }, context: { sessionId?: string }) {
+  const normalized = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
+  const delayMinutes = normalized.delayMinutes as number
+  const message = normalized.message as string
+  if (!context.sessionId) return 'Cannot schedule wake: no session context.'
+  if (delayMinutes < 0 || delayMinutes > 1440) return 'delayMinutes must be between 0 and 1440 (24 hours).'
 
-  if (hasTool('schedule_wake')) {
-    tools.push(
-      tool(
-        async ({ delayMinutes, message }) => {
-          if (!ctx?.sessionId) return 'Cannot schedule wake: no session context.'
-          if (delayMinutes <= 0 || delayMinutes > 1440) return 'delayMinutes must be between 1 and 1440 (24 hours).'
-
-          // Non-durable in-memory timeout for conversational wake events
-          // (For durable cron, use manage_schedules)
-          const delayMs = delayMinutes * 60 * 1000
-          setTimeout(() => {
-            if (ctx.sessionId) {
-              enqueueSystemEvent(ctx.sessionId, `[Scheduled Wake Event / Reminder] ${message}`)
-              requestHeartbeatNow({ sessionId: ctx.sessionId, reason: 'scheduled_wake' })
-            }
-          }, delayMs)
-
-          return `Successfully scheduled a wake event in ${delayMinutes} minutes with message: "${message}".`
-        },
-        {
-          name: 'schedule_wake',
-          description: 'Schedule a wake event (reminder) for yourself in this chatroom. Use this to proactively check back on a long-running process or to remind yourself to follow up with the user later.',
-          schema: z.object({
-            delayMinutes: z.number().describe('How many minutes from now to wake up (1-1440).'),
-            message: z.string().describe('The reminder text that will be passed back to you when you wake.'),
-          }),
-        },
-      ),
-    )
+  if (delayMinutes === 0) {
+    enqueueSystemEvent(context.sessionId, `[Scheduled Wake Event / Reminder] ${message}`)
+    requestHeartbeatNow({ sessionId: context.sessionId, reason: 'scheduled_wake' })
+    return 'Successfully scheduled an immediate wake event.'
   }
 
-  return tools
+  const delayMs = delayMinutes * 60 * 1000
+  setTimeout(() => {
+    if (context.sessionId) {
+      enqueueSystemEvent(context.sessionId, `[Scheduled Wake Event / Reminder] ${message}`)
+      requestHeartbeatNow({ sessionId: context.sessionId, reason: 'scheduled_wake' })
+    }
+  }, delayMs)
+
+  return `Successfully scheduled a wake event in ${delayMinutes} minutes.`
+}
+
+/**
+ * Register as a Built-in Plugin
+ */
+const SchedulePlugin: Plugin = {
+  name: 'Core Scheduler',
+  description: 'Schedule wake events and reminders for agents.',
+  hooks: {} as PluginHooks,
+  tools: [
+    {
+      name: 'schedule_wake',
+      description: 'Schedule a wake event (reminder) for yourself in this chatroom.',
+      parameters: {
+        type: 'object',
+        properties: {
+          delayMinutes: { type: 'number' },
+          message: { type: 'string' }
+        },
+        required: ['delayMinutes', 'message']
+      },
+      execute: async (args, context) => executeScheduleWake(args as any, { sessionId: context.session.id })
+    }
+  ]
+}
+
+getPluginManager().registerBuiltin('schedule', SchedulePlugin)
+
+/**
+ * Legacy Bridge
+ */
+export function buildScheduleTools(bctx: ToolBuildContext): StructuredToolInterface[] {
+  if (!bctx.hasTool('schedule_wake')) return []
+  return [
+    tool(
+      async (args) => executeScheduleWake(args as any, { sessionId: bctx.ctx?.sessionId || undefined }),
+      {
+        name: 'schedule_wake',
+        description: SchedulePlugin.tools![0].description,
+        schema: z.object({}).passthrough()
+      }
+    )
+  ]
 }

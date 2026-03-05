@@ -5,7 +5,6 @@ import type { Session } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { IconButton } from '@/components/shared/icon-button'
-import { UsageBadge } from '@/components/shared/usage-badge'
 import { ChatToolToggles } from './chat-tool-toggles'
 import { api } from '@/lib/api-client'
 import {
@@ -17,6 +16,7 @@ import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ModelCombobox } from '@/components/shared/model-combobox'
 import { toast } from 'sonner'
 import type { ProviderType } from '@/types'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import { useWs } from '@/hooks/use-ws'
 
 function shortPath(p: string): string {
@@ -67,7 +67,6 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const toggleSound = useChatStore((s) => s.toggleSound)
   const debugOpen = useChatStore((s) => s.debugOpen)
   const setDebugOpen = useChatStore((s) => s.setDebugOpen)
-  const lastUsage = useChatStore((s) => s.lastUsage)
   const agentStatus = useChatStore((s) => s.agentStatus)
   const agents = useAppStore((s) => s.agents)
   const tasks = useAppStore((s) => s.tasks)
@@ -109,17 +108,49 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const renameContainerRef = useRef<HTMLSpanElement>(null)
   const setWalletPanelAgentId = useAppStore((s) => s.setWalletPanelAgentId)
   const [walletBalance, setWalletBalance] = useState<number | null>(null)
+  const [headerWidgets, setHeaderWidgets] = useState<Array<{ id: string; label: string; icon?: string }>>([])
+
+  useEffect(() => {
+    api<Array<{ id: string; label: string; icon?: string }>>('GET', `/plugins/ui?type=header&sessionId=${session.id}`).then(widgets => {
+      if (Array.isArray(widgets)) setHeaderWidgets(widgets)
+    }).catch(() => {})
+  }, [session.id])
 
   const fetchWalletBalance = useCallback(async () => {
-    if (!agent?.walletId) { setWalletBalance(null); return }
+    if (!agent?.walletId) {
+      setWalletBalance(null)
+      return
+    }
     try {
       const data = await api<{ balanceSol?: number }>('GET', `/wallets/${agent.walletId}`)
       setWalletBalance(data.balanceSol ?? null)
-    } catch { setWalletBalance(null) }
+    } catch {
+      setWalletBalance(null)
+    }
   }, [agent?.walletId])
 
-  useEffect(() => { fetchWalletBalance() }, [fetchWalletBalance])
+  useEffect(() => {
+    void fetchWalletBalance()
+  }, [fetchWalletBalance])
   useWs('wallets', fetchWalletBalance)
+
+
+  const visibleHeaderWidgets = useMemo(() => {
+    const seen = new Set<string>()
+    return headerWidgets.filter((widget) => {
+      const key = widget.id || widget.label
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [headerWidgets])
+
+  const handleHeaderWidgetClick = (widgetId: string) => {
+    if (widgetId === 'wallet-status') {
+      if (agent?.id) setWalletPanelAgentId(agent.id)
+      setActiveView('wallets')
+    }
+  }
 
   // Find linked task for this session
   const linkedTask = useMemo(() => {
@@ -156,9 +187,11 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
 
   const handleCopySessionId = () => {
     if (!resumeHandle) return
-    navigator.clipboard.writeText(resumeHandle.command)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    void copyTextToClipboard(resumeHandle.command).then((copiedCommand) => {
+      if (!copiedCommand) return
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
   }
 
   const handleDismissResumeHandle = async (e: React.MouseEvent) => {
@@ -606,21 +639,37 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
           {/* Metadata tray: wallet · model · path · status */}
           <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
             <span className="text-text-3/10 text-[10px] select-none shrink-0">/</span>
-            {walletBalance !== null && (
-              <>
+            {visibleHeaderWidgets.map((widget) => {
+              const actionable = widget.id === 'wallet-status'
+              const walletLabel = walletBalance !== null
+                ? `${walletBalance.toFixed(3)} SOL`
+                : (widget.label || 'Wallet')
+              return (
                 <button
+                  key={widget.id}
                   type="button"
-                  onClick={() => { setWalletPanelAgentId(agent!.id); setActiveView('wallets') }}
-                  className="inline-flex items-center gap-1 shrink-0 bg-transparent border-none p-0.5 rounded-[4px] cursor-pointer text-[11px] text-text-3/45 font-mono hover:text-text-3/70 hover:bg-white/[0.04] transition-colors"
-                  title="View wallet"
+                  onClick={actionable ? () => handleHeaderWidgetClick(widget.id) : undefined}
+                  className={`inline-flex items-center gap-1 shrink-0 bg-transparent border-none p-0.5 rounded-[4px] text-[11px] font-mono transition-colors ${
+                    actionable ? 'cursor-pointer text-text-3/45 hover:text-text-3/70 hover:bg-white/[0.04]' : 'cursor-default text-text-3/55'
+                  }`}
+                  title={actionable ? 'View wallet' : widget.label}
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <rect x="2" y="6" width="20" height="14" rx="2" /><path d="M22 10H18a2 2 0 0 0 0 4h4" />
-                  </svg>
-                  {walletBalance.toFixed(3)} SOL
+                  {actionable ? (
+                    <>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <rect x="2" y="6" width="20" height="14" rx="2" />
+                        <path d="M22 10H18a2 2 0 0 0 0 4h4" />
+                      </svg>
+                      {walletLabel}
+                    </>
+                  ) : (
+                    widget.label
+                  )}
                 </button>
-                <span className="text-text-3/10 text-[10px] select-none shrink-0">·</span>
-              </>
+              )
+            })}
+            {visibleHeaderWidgets.length > 0 && (
+              <span className="text-text-3/10 text-[10px] select-none shrink-0">·</span>
             )}
             {modelName && (
               <div className="relative shrink-0" ref={modelSwitcherRef}>
@@ -667,12 +716,6 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                   </div>
                 )}
               </div>
-            )}
-            {lastUsage && !streaming && (
-              <>
-                <span className="text-text-3/10 text-[10px] select-none shrink-0">·</span>
-                <UsageBadge {...lastUsage} />
-              </>
             )}
             <button
               type="button"
@@ -855,6 +898,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 <span className={`w-1.5 h-1.5 rounded-full ${missionPaused ? 'bg-amber-300' : 'bg-emerald-400'}`} />
                 {missionPaused ? 'Paused' : 'Live'}
               </button>
+
               <button
                 onClick={handleToggleMissionMode}
                 disabled={mainLoopSaving}

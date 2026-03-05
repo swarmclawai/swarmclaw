@@ -15,6 +15,7 @@ import {
   loadWebhooks, saveWebhooks,
   loadSecrets, saveSecrets,
   loadSessions, saveSessions,
+  loadSettings,
   encryptKey,
   decryptKey,
 } from '../storage'
@@ -22,8 +23,10 @@ import { resolveScheduleName } from '@/lib/schedule-name'
 import { findDuplicateSchedule, type ScheduleLike } from '@/lib/schedule-dedupe'
 import { computeTaskFingerprint, findDuplicateTask } from '@/lib/task-dedupe'
 import { resolveTaskAgentFromDescription } from '@/lib/server/task-mention'
+import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
 import type { ToolBuildContext } from './context'
 import { safePath, findBinaryOnPath } from './context'
+import { normalizeToolInputArgs } from './normalize-tool-args'
 
 // ---------------------------------------------------------------------------
 // Document helpers
@@ -87,6 +90,41 @@ function trimDocumentContent(text: string): string {
   return normalized.slice(0, MAX_DOCUMENT_TEXT_CHARS)
 }
 
+function deriveTaskTitle(input: { title?: unknown; description?: unknown }): string {
+  const explicit = typeof input.title === 'string' ? input.title.replace(/\s+/g, ' ').trim() : ''
+  if (explicit && !/^untitled task$/i.test(explicit)) return explicit.slice(0, 120)
+
+  const description = typeof input.description === 'string'
+    ? input.description.replace(/\s+/g, ' ').trim()
+    : ''
+  if (!description) return ''
+
+  const firstSentence = description.split(/[.!?]\s+/)[0] || description
+  const compact = firstSentence
+    .replace(/^please\s+/i, '')
+    .replace(/^(create|make|build|implement|write)\s+/i, '')
+    .trim()
+  if (!compact) return ''
+  return compact.slice(0, 120)
+}
+
+const TASK_STATUS_VALUES = new Set([
+  'backlog',
+  'queued',
+  'running',
+  'completed',
+  'failed',
+  'archived',
+])
+
+function normalizeTaskStatusInput(status: unknown, prevStatus?: string): string | null {
+  if (typeof status !== 'string') return null
+  const normalized = status.trim().toLowerCase()
+  if (!TASK_STATUS_VALUES.has(normalized)) return null
+  if (normalized === 'running' && prevStatus !== 'running') return 'queued'
+  return normalized
+}
+
 // ---------------------------------------------------------------------------
 // RESOURCE_DEFAULTS
 // ---------------------------------------------------------------------------
@@ -107,7 +145,7 @@ const RESOURCE_DEFAULTS: Record<string, (parsed: any) => any> = {
     ...p,
   }),
   manage_tasks: (p) => ({
-    title: p.title || 'Untitled Task',
+    title: deriveTaskTitle(p) || 'Untitled Task',
     description: p.description || '',
     status: p.status || 'backlog',
     agentId: p.agentId || null,
@@ -218,9 +256,9 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
     let description = `Manage SwarmClaw ${res.label}. ${res.readOnly ? 'List and get only.' : 'List, get, create, update, or delete.'} Returns JSON.`
     if (toolKey === 'manage_tasks') {
       if (assignScope === 'self') {
-        description += `\n\nSet "agentId" to assign a task to yourself ("${ctx?.agentId || 'unknown'}") or leave it null. You can only assign tasks to yourself. Valid statuses: backlog, queued, running, completed, failed.`
+        description += `\n\nSet "agentId" to assign a task to yourself ("${ctx?.agentId || 'unknown'}") or leave it null. You can only assign tasks to yourself. Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.`
       } else {
-        description += `\n\nSet "agentId" to assign a task to an agent (including yourself: "${ctx?.agentId || 'unknown'}"). Valid statuses: backlog, queued, running, completed, failed.` + agentSummary
+        description += `\n\nSet "agentId" to assign a task to an agent (including yourself: "${ctx?.agentId || 'unknown'}"). Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.` + agentSummary
       }
     } else if (toolKey === 'manage_agents') {
       description += `\n\nAgents may self-edit their own soul. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field.`
@@ -236,7 +274,11 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
 
     tools.push(
       tool(
-        async ({ action, id, data }) => {
+        async (rawArgs) => {
+          const normalized = normalizeToolInputArgs((rawArgs ?? {}) as Record<string, unknown>)
+          const action = normalized.action as string | undefined
+          const id = normalized.id as string | undefined
+          const data = normalized.data as string | undefined
           const canAccessSecret = (secret: any): boolean => {
             if (!secret) return false
             if (secret.scope !== 'agent') return true
@@ -354,6 +396,20 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   agents,
                 )
               }
+              if (toolKey === 'manage_tasks') {
+                parsed.title = deriveTaskTitle(parsed)
+                if (!parsed.title || /^untitled task$/i.test(parsed.title)) {
+                  return 'Error: manage_tasks create requires a specific title or a meaningful description.'
+                }
+                parsed.status = normalizeTaskStatusInput(parsed.status) || 'backlog'
+                if (!parsed.cwd && cwd) parsed.cwd = cwd
+                if (Object.prototype.hasOwnProperty.call(parsed, 'qualityGate')) {
+                  const settings = loadSettings()
+                  parsed.qualityGate = parsed.qualityGate
+                    ? normalizeTaskQualityGate(parsed.qualityGate, settings)
+                    : null
+                }
+              }
               // Task dedup
               if (toolKey === 'manage_tasks') {
                 const fp = computeTaskFingerprint(parsed.title || 'Untitled Task', parsed.agentId || ctx?.agentId || '')
@@ -400,9 +456,10 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
               if (toolKey === 'manage_tasks' && entry.status === 'completed') {
                 const { formatValidationFailure, validateTaskCompletion } = await import('../task-validation')
                 const { ensureTaskCompletionReport } = await import('../task-reports')
+                const settings = loadSettings()
                 const report = ensureTaskCompletionReport(entry as any)
                 if (report?.relativePath) (entry as any).completionReportPath = report.relativePath
-                const validation = validateTaskCompletion(entry as any, { report })
+                const validation = validateTaskCompletion(entry as any, { report, settings })
                 ;(entry as any).validation = validation
                 if (!validation.ok) {
                   entry.status = 'failed'
@@ -431,6 +488,17 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
               if (!all[id]) return `Not found: ${res.label} "${id}"`
               const parsed = data ? JSON.parse(data) : {}
               const prevStatus = all[id]?.status
+              if (toolKey === 'manage_tasks' && Object.prototype.hasOwnProperty.call(parsed, 'status')) {
+                const normalized = normalizeTaskStatusInput(parsed.status, prevStatus)
+                if (normalized) parsed.status = normalized
+                else delete parsed.status
+              }
+              if (toolKey === 'manage_tasks' && Object.prototype.hasOwnProperty.call(parsed, 'qualityGate')) {
+                const settings = loadSettings()
+                parsed.qualityGate = parsed.qualityGate
+                  ? normalizeTaskQualityGate(parsed.qualityGate, settings)
+                  : null
+              }
               // Enforce assignment scope for tasks and schedules
               if (assignScope === 'self' && (toolKey === 'manage_tasks' || toolKey === 'manage_schedules')) {
                 if (parsed.agentId && parsed.agentId !== ctx?.agentId) {
@@ -468,9 +536,10 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
               if (toolKey === 'manage_tasks' && all[id].status === 'completed') {
                 const { formatValidationFailure, validateTaskCompletion } = await import('../task-validation')
                 const { ensureTaskCompletionReport } = await import('../task-reports')
+                const settings = loadSettings()
                 const report = ensureTaskCompletionReport(all[id] as any)
                 if (report?.relativePath) (all[id] as any).completionReportPath = report.relativePath
-                const validation = validateTaskCompletion(all[id] as any, { report })
+                const validation = validateTaskCompletion(all[id] as any, { report, settings })
                 ;(all[id] as any).validation = validation
                 if (!validation.ok) {
                   all[id].status = 'failed'
@@ -532,7 +601,15 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
   if (hasTool('manage_documents')) {
     tools.push(
       tool(
-        async ({ action, id, filePath, query, limit, metadata, title }) => {
+        async (rawArgs) => {
+          const normalized = normalizeToolInputArgs((rawArgs ?? {}) as Record<string, unknown>)
+          const action = normalized.action as string | undefined
+          const id = normalized.id as string | undefined
+          const filePath = (normalized.filePath ?? normalized.path) as string | undefined
+          const query = normalized.query as string | undefined
+          const limit = normalized.limit as number | undefined
+          const metadata = normalized.metadata as string | undefined
+          const title = normalized.title as string | undefined
           try {
             const documents = loadDocuments()
 

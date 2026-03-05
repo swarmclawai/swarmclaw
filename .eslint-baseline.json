@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-04T16:48:17.467Z",
-  "totalIssues": 555,
-  "uniqueIssues": 195,
+  "generatedAt": "2026-03-05T00:33:14.193Z",
+  "totalIssues": 524,
+  "uniqueIssues": 192,
   "issues": [
     {
       "filePath": "bin/server-cmd.js",
@@ -37,13 +37,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_req' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/api/clawhub/install/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
       "count": 1
     },
     {
@@ -122,20 +115,6 @@
       "severity": 1,
       "message": "'_req' is defined but never used.",
       "count": 1
-    },
-    {
-      "filePath": "src/app/api/plugins/marketplace/route.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_req' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/api/plugins/marketplace/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
     },
     {
       "filePath": "src/app/api/plugins/route.ts",
@@ -229,13 +208,6 @@
       "count": 4
     },
     {
-      "filePath": "src/app/api/setup/doctor/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
-    },
-    {
       "filePath": "src/app/api/setup/openclaw-device/route.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -254,13 +226,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_req' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/api/tasks/[id]/approve/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
       "count": 1
     },
     {
@@ -380,7 +345,7 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'err' is defined but never used.",
-      "count": 1
+      "count": 2
     },
     {
       "filePath": "src/components/agents/agent-sheet.tsx",
@@ -495,13 +460,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/chat/exec-approval-card.tsx",
-      "ruleId": "react-hooks/purity",
-      "severity": 2,
-      "message": "Error: Cannot call impure function during render `Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).",
-      "count": 1
-    },
-    {
       "filePath": "src/components/chat/message-bubble.tsx",
       "ruleId": "@next/next/no-img-element",
       "severity": 1,
@@ -607,48 +565,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/plugins/plugin-list.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has a missing dependency: 'loadPlugins'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/plugins/plugin-list.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/plugins/plugin-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'PluginMeta' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/plugins/plugin-sheet.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has a missing dependency: 'loadMarketplace'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/plugins/plugin-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/plugins/plugin-sheet.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
-      "count": 1
-    },
-    {
       "filePath": "src/components/providers/provider-list.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
@@ -698,27 +614,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/sessions/new-session-sheet.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has missing dependencies: 'agents', 'loadAgents', 'loadCredentials', and 'loadProviders'. Either include them or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/sessions/new-session-sheet.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has missing dependencies: 'currentProvider.defaultEndpoint', 'currentProvider.models', 'currentProvider?.requiresApiKey', and 'providerCredentials'. Either include them or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/sessions/new-session-sheet.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
-      "count": 2
-    },
-    {
       "filePath": "src/components/sessions/session-list.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
@@ -745,34 +640,6 @@
       "severity": 1,
       "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
       "count": 1
-    },
-    {
-      "filePath": "src/components/shared/settings/plugin-manager.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has a missing dependency: 'loadMarketplace'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/shared/settings/plugin-manager.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has a missing dependency: 'loadPlugins'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/shared/settings/plugin-manager.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/shared/settings/plugin-manager.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
-      "count": 2
     },
     {
       "filePath": "src/components/shared/settings/section-heartbeat.tsx",
@@ -901,20 +768,6 @@
       "count": 1
     },
     {
-      "filePath": "src/lib/providers/index.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 7
-    },
-    {
-      "filePath": "src/lib/providers/index.ts",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 3
-    },
-    {
       "filePath": "src/lib/providers/ollama.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -961,20 +814,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'changed' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/chat-execution.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 20
-    },
-    {
-      "filePath": "src/lib/server/chat-execution.ts",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
       "count": 1
     },
     {
@@ -1280,52 +1119,185 @@
     },
     {
       "filePath": "src/lib/server/session-tools/delegate.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_computeDelegationDepth' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/edit_file.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 9
-    },
-    {
-      "filePath": "src/lib/server/session-tools/file.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'MAX_OUTPUT' is defined but never used.",
-      "count": 1
+      "count": 3
     },
     {
       "filePath": "src/lib/server/session-tools/index.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 4
+      "count": 5
+    },
+    {
+      "filePath": "src/lib/server/session-tools/memory.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'depth' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/memory.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'linkedLimit' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/memory.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'tags' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/memory.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'targetIds' is assigned a value but never used.",
+      "count": 1
     },
     {
       "filePath": "src/lib/server/session-tools/memory.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 8
+      "count": 6
     },
     {
-      "filePath": "src/lib/server/session-tools/session-info.ts",
+      "filePath": "src/lib/server/session-tools/monitor.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'limit' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/monitor.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'path' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/monitor.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'threshold' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/monitor.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 14
+      "count": 3
     },
     {
-      "filePath": "src/lib/server/session-tools/shell.ts",
+      "filePath": "src/lib/server/session-tools/openclaw-nodes.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 2
     },
     {
+      "filePath": "src/lib/server/session-tools/openclaw-workspace.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'truncate' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/openclaw-workspace.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/lib/server/session-tools/platform.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/lib/server/session-tools/sample-ui.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/lib/server/session-tools/sandbox.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 7
+    },
+    {
+      "filePath": "src/lib/server/session-tools/schedule.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/lib/server/session-tools/session-info.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'message' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/session-info.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "filePath": "src/lib/server/session-tools/subagent.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'log' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/subagent.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "filePath": "src/lib/server/session-tools/wallet.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/web.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'withRetry' is defined but never used.",
+      "count": 1
+    },
+    {
       "filePath": "src/lib/server/session-tools/web.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 6
+      "count": 8
     },
     {
       "filePath": "src/lib/server/session-tools/web.ts",
@@ -1346,7 +1318,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 50
+      "count": 52
     },
     {
       "filePath": "src/lib/server/stream-agent-chat.ts",
@@ -1360,7 +1332,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 4
+      "count": 3
     },
     {
       "filePath": "src/lib/server/ws-hub.ts",
@@ -1368,6 +1340,13 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 2
+    },
+    {
+      "filePath": "src/types/index.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
     }
   ]
 }

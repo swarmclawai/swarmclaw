@@ -80,7 +80,7 @@ export function MemoryList({ inSidebar: _inSidebar, onSelect }: Props) {
   return (
     <div className="flex-1 flex flex-col overflow-y-auto">
       {/* Search */}
-      <div className="px-3 py-2 shrink-0">
+      <div className="px-3 py-2 shrink-0" style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
         <input
           type="text"
           value={search}
@@ -94,7 +94,7 @@ export function MemoryList({ inSidebar: _inSidebar, onSelect }: Props) {
 
       {/* Agent filter tabs */}
       {entries.length > 0 && hasMultipleAgents && (
-        <div className="px-3 pb-1.5 shrink-0">
+        <div className="px-3 pb-1.5 shrink-0" style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.05s both' }}>
           <div className="flex gap-1 flex-wrap">
             <button
               onClick={() => setMemoryAgentFilter(null)}
@@ -125,7 +125,7 @@ export function MemoryList({ inSidebar: _inSidebar, onSelect }: Props) {
 
       {/* Category filter */}
       {entries.length > 0 && uniqueCategories.length > 1 && (
-        <div className="px-3 pb-1.5 shrink-0">
+        <div className="px-3 pb-1.5 shrink-0" style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.1s both' }}>
           <div className="flex gap-1 flex-wrap">
             <button
               onClick={() => setCategoryFilter('')}
@@ -153,21 +153,28 @@ export function MemoryList({ inSidebar: _inSidebar, onSelect }: Props) {
       {/* Memory cards */}
       {filtered.length > 0 ? (
         <div className="flex flex-col gap-0.5 px-2 pb-4">
-          {filtered.map((e) => (
-            <MemoryCard
+          {filtered.map((e, idx) => (
+            <div
               key={e.id}
-              entry={e}
-              active={e.id === selectedMemoryId}
-              agentName={e.agentId ? (agents[e.agentId]?.name || null) : null}
-              onClick={() => {
-                setSelectedMemoryId(e.id)
-                onSelect?.()
+              style={{
+                animation: 'fade-up 0.4s var(--ease-spring) both',
+                animationDelay: `${0.15 + idx * 0.02}s`
               }}
-            />
+            >
+              <MemoryCard
+                entry={e}
+                active={e.id === selectedMemoryId}
+                agentName={e.agentId ? (agents[e.agentId]?.name || null) : null}
+                onClick={() => {
+                  setSelectedMemoryId(e.id)
+                  onSelect?.()
+                }}
+              />
+            </div>
           ))}
         </div>
       ) : error ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-3 p-8 text-center">
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-3 p-8 text-center" style={{ animation: 'fade-up 0.5s var(--ease-spring)' }}>
           <p className="font-display text-[14px] font-600 text-text-2">Couldn&apos;t load memories</p>
           <p className="text-[12px] text-text-3/60">{error}</p>
           <button

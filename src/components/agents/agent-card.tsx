@@ -45,6 +45,22 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
   const approvals = useApprovalStore((s) => s.approvals)
   const pendingApprovalCount = Object.values(approvals).filter((a) => a.agentId === agent.id).length
   const [heartbeatPulse, setHeartbeatPulse] = useState(false)
+  const monthlyBudget = typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0
+    ? agent.monthlyBudget
+    : null
+  const hasMonthlyBudget = monthlyBudget !== null
+  const spendWindows = [
+    {
+      key: '1h',
+      spend: agent.hourlySpend ?? 0,
+      budget: typeof agent.hourlyBudget === 'number' && agent.hourlyBudget > 0 ? agent.hourlyBudget : null,
+    },
+    {
+      key: '24h',
+      spend: agent.dailySpend ?? 0,
+      budget: typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0 ? agent.dailyBudget : null,
+    },
+  ].filter((entry) => entry.budget !== null)
   useWs(`heartbeat:agent:${agent.id}`, () => {
     setHeartbeatPulse(true)
     setTimeout(() => setHeartbeatPulse(false), 1500)
@@ -226,26 +242,56 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
             <span>Cost: ${agent.totalCost.toFixed(2)}</span>
           )}
         </div>
-        {typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0 && (
+        {hasMonthlyBudget && (
           <div className="mt-2">
             <div className="flex items-center justify-between text-[10px] text-text-3/60 mb-1">
-              <span>${(agent.monthlySpend ?? 0).toFixed(2)} / ${agent.monthlyBudget.toFixed(2)}</span>
-              <span className={`font-600 ${(agent.monthlySpend ?? 0) >= agent.monthlyBudget ? 'text-red-400' : 'text-text-3/50'}`}>
+              <span>${(agent.monthlySpend ?? 0).toFixed(2)} / ${monthlyBudget.toFixed(2)}</span>
+              <span className={`font-600 ${(agent.monthlySpend ?? 0) >= monthlyBudget ? 'text-red-400' : 'text-text-3/50'}`}>
                 {agent.budgetAction === 'block' ? 'hard cap' : 'soft cap'}
               </span>
             </div>
-            <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
+            <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden relative">
               <div
-                className={`h-full rounded-full transition-all duration-300 ${
-                  (agent.monthlySpend ?? 0) >= agent.monthlyBudget
+                className={`h-full rounded-full transition-all duration-300 relative ${
+                  (agent.monthlySpend ?? 0) >= monthlyBudget
                     ? 'bg-red-400'
-                    : (agent.monthlySpend ?? 0) >= agent.monthlyBudget * 0.8
+                    : (agent.monthlySpend ?? 0) >= monthlyBudget * 0.8
                       ? 'bg-amber-400'
                       : 'bg-accent'
                 }`}
-                style={{ width: `${Math.min(100, ((agent.monthlySpend ?? 0) / agent.monthlyBudget) * 100)}%` }}
-              />
+                style={{ width: `${Math.min(100, ((agent.monthlySpend ?? 0) / monthlyBudget) * 100)}%` }}
+              >
+                {/* Shimmer overlay for active feel */}
+                <div
+                  className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                  style={{ animation: 'shimmer-bar 2s linear infinite' }}
+                />
+              </div>
             </div>
+          </div>
+        )}
+        {spendWindows.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {spendWindows.map((entry) => {
+              const budget = entry.budget as number
+              const ratio = budget > 0 ? (entry.spend / budget) : 0
+              const overCap = ratio >= 1
+              const nearCap = !overCap && ratio >= 0.8
+              return (
+                <span
+                  key={entry.key}
+                  className={`text-[10px] px-2 py-0.5 rounded-[6px] border ${
+                    overCap
+                      ? 'text-red-400 border-red-400/25 bg-red-400/[0.06]'
+                      : nearCap
+                        ? 'text-amber-400 border-amber-400/20 bg-amber-400/[0.06]'
+                        : 'text-text-3/70 border-white/[0.08] bg-white/[0.03]'
+                  }`}
+                >
+                  {entry.key}: ${entry.spend.toFixed(2)} / ${budget.toFixed(2)}
+                </span>
+              )
+            })}
           </div>
         )}
       </div>

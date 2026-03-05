@@ -1,8 +1,8 @@
 import { genId } from '@/lib/id'
 import { NextResponse } from 'next/server'
-import { loadTasks, saveTasks, logActivity } from '@/lib/server/storage'
+import { loadTasks, saveTasks, logActivity, loadSettings } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
-import { disableSessionHeartbeat, enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
+import { disableSessionHeartbeat, enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
@@ -12,10 +12,12 @@ import { enqueueSystemEvent } from '@/lib/server/system-events'
 import { requestHeartbeatNow } from '@/lib/server/heartbeat-wake'
 import { validateDag, cascadeUnblock } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
+import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Keep completed queue integrity even if daemon is not running.
   validateCompletedTasksQueue()
+  recoverStalledRunningTasks()
 
   const { id } = await params
   const tasks = loadTasks()
@@ -26,6 +28,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json()
+  const settings = loadSettings()
   const tasks = loadTasks()
   if (!tasks[id]) return notFound()
 
@@ -48,6 +51,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     tasks[id].comments.push(body.appendComment)
     tasks[id].updatedAt = Date.now()
   } else {
+    if (Object.prototype.hasOwnProperty.call(body, 'qualityGate')) {
+      body.qualityGate = body.qualityGate
+        ? normalizeTaskQualityGate(body.qualityGate, settings)
+        : null
+    }
     Object.assign(tasks[id], body, { updatedAt: Date.now() })
     // Explicitly clear nullable fields when sent as null (Object.assign copies null but not undefined)
     if (body.projectId === null) delete tasks[id].projectId
@@ -63,7 +71,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (tasks[id].status === 'completed') {
     const report = ensureTaskCompletionReport(tasks[id])
     if (report?.relativePath) tasks[id].completionReportPath = report.relativePath
-    const validation = validateTaskCompletion(tasks[id], { report })
+    const validation = validateTaskCompletion(tasks[id], { report, settings })
     tasks[id].validation = validation
     if (validation.ok) {
       tasks[id].completedAt = tasks[id].completedAt || Date.now()

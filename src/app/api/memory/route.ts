@@ -1,7 +1,16 @@
 import { genId } from '@/lib/id'
 import fs from 'fs'
 import { NextResponse } from 'next/server'
-import { getMemoryDb, getMemoryLookupLimits, storeMemoryImageAsset, storeMemoryImageFromDataUrl } from '@/lib/server/memory-db'
+import {
+  filterMemoriesByScope,
+  getMemoryDb,
+  getMemoryLookupLimits,
+  normalizeMemoryScopeMode,
+  storeMemoryImageAsset,
+  storeMemoryImageFromDataUrl,
+  type MemoryRerankMode,
+  type MemoryScopeFilter,
+} from '@/lib/server/memory-db'
 import { resolveLookupRequest } from '@/lib/server/memory-graph'
 import type { MemoryReference, FileReference, MemoryImage } from '@/types'
 
@@ -21,10 +30,16 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const q = searchParams.get('q')
   const agentId = searchParams.get('agentId')
+  const rawScope = searchParams.get('scope')
   const envelope = searchParams.get('envelope') === 'true'
   const requestedDepth = parseOptionalInt(searchParams.get('depth'))
   const requestedLimit = parseOptionalInt(searchParams.get('limit'))
   const requestedLinkedLimit = parseOptionalInt(searchParams.get('linkedLimit'))
+  const scopeMode = normalizeMemoryScopeMode(rawScope ?? (agentId ? 'agent' : 'all'))
+  const scopeSessionId = searchParams.get('scopeSessionId')
+  const scopeProjectRoot = searchParams.get('projectRoot')
+  const rerankRaw = searchParams.get('rerank')
+  const rerankMode: MemoryRerankMode = rerankRaw === 'semantic' || rerankRaw === 'lexical' ? rerankRaw : 'balanced'
 
   const counts = searchParams.get('counts') === 'true'
   const db = getMemoryDb()
@@ -39,14 +54,27 @@ export async function GET(req: Request) {
     limit: requestedLimit,
     linkedLimit: requestedLinkedLimit,
   })
+  const scopeFilter: MemoryScopeFilter = {
+    mode: scopeMode,
+    agentId: agentId || null,
+    sessionId: scopeSessionId || null,
+    projectRoot: scopeProjectRoot || null,
+  }
 
   if (q) {
     if (limits.maxDepth > 0) {
-      const result = db.searchWithLinked(q, agentId || undefined, limits.maxDepth, limits.maxPerLookup, limits.maxLinkedExpansion)
+      const result = db.searchWithLinked(
+        q,
+        agentId || undefined,
+        limits.maxDepth,
+        limits.maxPerLookup,
+        limits.maxLinkedExpansion,
+        { scope: scopeFilter, rerankMode },
+      )
       if (envelope) return NextResponse.json(result)
       return NextResponse.json(result.entries)
     }
-    const base = db.search(q, agentId || undefined)
+    const base = db.search(q, agentId || undefined, { scope: scopeFilter, rerankMode })
     const entries = base.slice(0, limits.maxPerLookup)
     if (envelope) {
       return NextResponse.json({
@@ -59,11 +87,14 @@ export async function GET(req: Request) {
     return NextResponse.json(entries)
   }
 
-  const entries = db.list(agentId || undefined, limits.maxPerLookup)
+  const scanLimit = Math.max(limits.maxPerLookup, 200)
+  const listed = db.list(undefined, scanLimit)
+  const filtered = filterMemoriesByScope(listed, scopeFilter)
+  const entries = filtered.slice(0, limits.maxPerLookup)
   if (envelope) {
     return NextResponse.json({
       entries,
-      truncated: false,
+      truncated: filtered.length > entries.length,
       expandedLinkedCount: 0,
       limits,
     })

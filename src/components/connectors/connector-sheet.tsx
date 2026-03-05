@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { api } from '@/lib/api-client'
@@ -242,6 +242,29 @@ const COMMON_CONFIG_FIELDS: { key: string; label: string; placeholder: string; h
 export function ConnectorSheet() {
   const open = useAppStore((s) => s.connectorSheetOpen)
   const setOpen = useAppStore((s) => s.setConnectorSheetOpen)
+  // ... (existing state)
+  const [dynamicPlatforms, setDynamicPlatforms] = useState<Array<{ id: string; name: string; description?: string }>>([])
+
+  useEffect(() => {
+    if (open) {
+      api<Array<{ id: string; name: string; description?: string }>>('GET', '/plugins/ui?type=connectors').then(list => {
+        setDynamicPlatforms(list || [])
+      }).catch(() => {})
+    }
+  }, [open])
+
+  const ALL_PLATFORMS = useMemo(() => {
+    const plugins = dynamicPlatforms.map(p => ({
+      id: p.id,
+      label: p.name,
+      color: '#10B981',
+      setupSteps: [p.description || 'Follow the plugin instructions for setup.'],
+      tokenLabel: 'Plugin Token',
+      tokenHelp: 'Secret key required by this plugin connector.',
+      configFields: [],
+    }))
+    return [...PLATFORMS, ...plugins]
+  }, [dynamicPlatforms])
   const editingId = useAppStore((s) => s.editingConnectorId)
   const setEditingId = useAppStore((s) => s.setEditingConnectorId)
   const connectors = useAppStore((s) => s.connectors)
@@ -393,7 +416,7 @@ export function ConnectorSheet() {
     setEditingId(null)
   }
 
-  const platformConfig = PLATFORMS.find((p) => p.id === platform)!
+  const platformConfig = ALL_PLATFORMS.find((p) => p.id === platform) || ALL_PLATFORMS[0]
   const agentList = Object.values(agents).sort((a, b) => a.name.localeCompare(b.name))
   const credList = Object.values(credentials)
 
@@ -413,17 +436,17 @@ export function ConnectorSheet() {
         <div className="mb-8">
           <SectionLabel>Platform</SectionLabel>
           <div className="grid grid-cols-2 gap-3">
-            {PLATFORMS.map((p) => (
+            {ALL_PLATFORMS.map((p) => (
               <button
                 key={p.id}
-                onClick={() => { setPlatform(p.id); setShowSetup(false) }}
+                onClick={() => { setPlatform(p.id as ConnectorPlatform); setShowSetup(false) }}
                 className={`flex items-center gap-3 p-4 rounded-[14px] cursor-pointer transition-all duration-200 border text-left
                   ${platform === p.id
                     ? 'bg-white/[0.04] border-white/[0.15] shadow-[0_0_20px_rgba(255,255,255,0.02)]'
                     : 'bg-transparent border-white/[0.04] hover:border-white/[0.08] hover:bg-white/[0.01]'}`}
                 style={{ fontFamily: 'inherit' }}
               >
-                <ConnectorPlatformBadge platform={p.id} size={40} iconSize={18} />
+                <ConnectorPlatformBadge platform={p.id as ConnectorPlatform} size={40} iconSize={18} />
                 <div>
                   <div className={`text-[14px] font-600 ${platform === p.id ? 'text-text' : 'text-text-2'}`}>{p.label}</div>
                   <div className="text-[11px] text-text-3 mt-0.5">
@@ -439,7 +462,7 @@ export function ConnectorSheet() {
       {/* Editing: show platform badge */}
       {editing && (
         <div className="mb-6 flex items-center gap-3">
-          <ConnectorPlatformBadge platform={platformConfig.id} size={40} iconSize={18} />
+          <ConnectorPlatformBadge platform={platformConfig.id as ConnectorPlatform} size={40} iconSize={18} />
           <div>
             <div className="text-[14px] font-600 text-text">{platformConfig.label}</div>
             <div className="flex items-center gap-2 mt-0.5">

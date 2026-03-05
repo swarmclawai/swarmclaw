@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { loadAgents, saveAgents, logActivity } from '@/lib/server/storage'
+import { loadAgents, loadSessions, loadUsage, saveAgents, logActivity } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { notify } from '@/lib/server/ws-hub'
-import { getAgentMonthlySpend } from '@/lib/server/cost'
+import { getAgentSpendWindows } from '@/lib/server/cost'
 import { AgentCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
 export const dynamic = 'force-dynamic'
@@ -11,10 +11,19 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
   const agents = loadAgents()
-  // Enrich agents that have a monthly budget with current spend
+  const sessions = loadSessions()
+  const usage = loadUsage()
+  // Enrich agents that have spend limits with current spend windows
   for (const agent of Object.values(agents)) {
-    if (typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0) {
-      agent.monthlySpend = getAgentMonthlySpend(agent.id)
+    if (
+      (typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0)
+      || (typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0)
+      || (typeof agent.hourlyBudget === 'number' && agent.hourlyBudget > 0)
+    ) {
+      const spend = getAgentSpendWindows(agent.id, Date.now(), { sessions, usage })
+      if (typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0) agent.monthlySpend = spend.monthly
+      if (typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0) agent.dailySpend = spend.daily
+      if (typeof agent.hourlyBudget === 'number' && agent.hourlyBudget > 0) agent.hourlySpend = spend.hourly
     }
   }
 
@@ -54,6 +63,10 @@ export async function POST(req: Request) {
     capabilities: body.capabilities,
     thinkingLevel: body.thinkingLevel || undefined,
     autoRecovery: body.autoRecovery || false,
+    monthlyBudget: body.monthlyBudget ?? null,
+    dailyBudget: body.dailyBudget ?? null,
+    hourlyBudget: body.hourlyBudget ?? null,
+    budgetAction: body.budgetAction || 'warn',
     soul: body.soul || undefined,
     createdAt: now,
     updatedAt: now,

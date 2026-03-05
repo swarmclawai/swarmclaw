@@ -2,7 +2,9 @@
 
 import { useState, useCallback } from 'react'
 import { api } from '@/lib/api-client'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import type { AgentWallet, WalletChain } from '@/types'
+import { toast } from 'sonner'
 
 interface WalletSectionProps {
   agentId: string
@@ -20,17 +22,21 @@ export function WalletSection({ agentId, wallet, onWalletCreated }: WalletSectio
     setError(null)
     try {
       await api('POST', '/wallets', { agentId, chain: 'solana' as WalletChain })
+      toast.success('Agent wallet created successfully')
       onWalletCreated()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg)
+      toast.error(msg)
     } finally {
       setCreating(false)
     }
   }, [agentId, onWalletCreated])
 
-  const copyAddress = useCallback(() => {
+  const copyAddress = useCallback(async () => {
     if (!wallet) return
-    navigator.clipboard.writeText(wallet.publicKey)
+    const copiedValue = await copyTextToClipboard(wallet.publicKey)
+    if (!copiedValue) return
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [wallet])

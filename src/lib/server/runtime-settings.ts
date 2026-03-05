@@ -3,6 +3,7 @@ import {
   DEFAULT_AGENT_LOOP_RECURSION_LIMIT,
   DEFAULT_CLAUDE_CODE_TIMEOUT_SEC,
   DEFAULT_CLI_PROCESS_TIMEOUT_SEC,
+  DEFAULT_DELEGATION_MAX_DEPTH,
   DEFAULT_LEGACY_ORCHESTRATOR_MAX_TURNS,
   DEFAULT_LOOP_MODE,
   DEFAULT_ONGOING_LOOP_MAX_ITERATIONS,
@@ -17,6 +18,7 @@ export interface RuntimeSettings {
   agentLoopRecursionLimit: number
   orchestratorLoopRecursionLimit: number
   legacyOrchestratorMaxTurns: number
+  delegationMaxDepth: number
   ongoingLoopMaxIterations: number
   ongoingLoopMaxRuntimeMs: number | null
   shellCommandTimeoutMs: number
@@ -61,6 +63,12 @@ export function loadRuntimeSettings(): RuntimeSettings {
     1,
     300,
   )
+  const delegationMaxDepth = parseIntSetting(
+    settings.delegationMaxDepth,
+    DEFAULT_DELEGATION_MAX_DEPTH,
+    1,
+    12,
+  )
   const ongoingLoopMaxIterations = parseIntSetting(
     settings.ongoingLoopMaxIterations,
     DEFAULT_ONGOING_LOOP_MAX_ITERATIONS,
@@ -98,6 +106,7 @@ export function loadRuntimeSettings(): RuntimeSettings {
     agentLoopRecursionLimit,
     orchestratorLoopRecursionLimit,
     legacyOrchestratorMaxTurns,
+    delegationMaxDepth,
     ongoingLoopMaxIterations,
     ongoingLoopMaxRuntimeMs: ongoingLoopMaxRuntimeMinutes > 0 ? ongoingLoopMaxRuntimeMinutes * 60_000 : null,
     shellCommandTimeoutMs: shellCommandTimeoutSec * 1000,

@@ -10,6 +10,7 @@ import { loadRuntimeSettings, getAgentLoopRecursionLimit } from './runtime-setti
 import { getMemoryDb } from './memory-db'
 import { logExecution } from './execution-log'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
+import { expandToolIds } from './tool-aliases'
 import type { Session, Message, UsageRecord } from '@/types'
 import { extractSuggestions } from './suggestions'
 
@@ -111,115 +112,65 @@ function buildAgenticExecutionPolicy(opts: {
 }) {
   const hasTooling = opts.enabledTools.length > 0
   const toolLines = buildToolCapabilityLines(opts.enabledTools, { platformAssignScope: opts.platformAssignScope })
-  const delegationOrder = [
-    opts.enabledTools.includes('claude_code') ? '`delegate_to_claude_code`' : null,
-    opts.enabledTools.includes('codex_cli') ? '`delegate_to_codex_cli`' : null,
-    opts.enabledTools.includes('opencode_cli') ? '`delegate_to_opencode_cli`' : null,
-  ].filter(Boolean) as string[]
-  const hasDelegationTool = delegationOrder.length > 0
-  return [
+  const has = (t: string) => opts.enabledTools.includes(t)
+  const hasDelegationTool = has('claude_code') || has('codex_cli') || has('opencode_cli')
+
+  const parts: string[] = []
+
+  // Core execution philosophy
+  parts.push(
     '## How I Work',
-    'I take initiative. When there\'s work to do, I do it — I use my tools to research, build, and make real progress rather than just talking about it.',
     hasTooling
-      ? 'For open-ended requests, run an action loop: plan briefly, execute tools, evaluate results, then continue until meaningful progress is achieved.'
-      : 'This session has no tools enabled, so be explicit about what tool access is needed for deeper execution.',
-    'Do not stop at generic advice when the request implies action (research, coding, setup, business ideas, optimization, automation, or platform operations).',
-    'For multi-step work, keep the user informed with short progress updates tied to real actions (what you are doing now, what finished, and what is next).',
-    'If you state an intention to do research/build/execute, immediately follow through with tool calls in the same run.',
-    'Never claim completed research/build results without tool evidence. If a tool fails or returns empty results, say that clearly and retry with another approach.',
-    'If the user names a tool explicitly (for example "call connector_message_tool"), you must actually invoke that tool instead of simulating or paraphrasing its result.',
-    'Before finalizing: verify key claims with concrete outputs from tools whenever tools are available.',
+      ? 'I take initiative — plan briefly, execute tools, evaluate, iterate until done. Never stop at advice when action is implied.'
+      : 'No tools enabled. Be explicit about what tool access is needed.',
+    'Follow through on stated intentions with tool calls. Never claim results without tool evidence.',
+    'If a tool is named explicitly, invoke it. Short progress updates between steps.',
     opts.loopMode === 'ongoing'
-      ? 'Loop mode is ONGOING: prefer continued execution and progress tracking over one-shot replies; keep iterating until done, blocked, or safety/runtime limits are reached.'
-      : 'Loop mode is BOUNDED: still execute multiple steps when needed, but finish within the recursion budget.',
-    opts.enabledTools.includes('manage_tasks')
-      ? 'When goals are long-lived, create/update tasks in the task board so progress is trackable over time.'
-      : '',
-    opts.enabledTools.includes('manage_schedules')
-      ? 'When goals require follow-up, create schedules for recurring checks or future actions instead of waiting for manual prompts.'
-      : '',
-    opts.enabledTools.includes('manage_schedules')
-      ? 'Before creating a schedule, first inspect existing schedules (list/get) and reuse or update a matching one instead of creating duplicates.'
-      : '',
-    opts.enabledTools.includes('manage_agents')
-      ? 'If a specialist would improve output, create or configure a focused agent and assign work accordingly.'
-      : '',
-    opts.enabledTools.includes('manage_documents')
-      ? 'For substantial context, store source documents and retrieve them with manage_documents search/get instead of relying on short memory snippets alone.'
-      : '',
-    opts.enabledTools.includes('manage_webhooks')
-      ? 'For event-driven workflows, register webhooks and let external triggers enqueue follow-up work automatically.'
-      : '',
-    opts.enabledTools.includes('manage_connectors')
-      ? 'If the user wants proactive outreach (e.g., WhatsApp updates), configure connectors and pair with schedules/tasks to deliver status updates.'
-      : '',
-    opts.enabledTools.includes('manage_connectors')
-      ? 'Autonomous outreach is allowed for significant events (completed/failed tasks, blockers, deadlines, meaningful reminders from memory). Avoid casual or repetitive check-ins.'
-      : '',
-    opts.enabledTools.includes('manage_connectors')
-      ? 'When you proactively message through connectors, keep it concise and purposeful, and avoid sending duplicate updates about the same event.'
-      : '',
-    opts.enabledTools.includes('manage_sessions')
-      ? 'When coordinating platform work, inspect existing sessions and avoid duplicating active efforts.'
-      : '',
-    hasDelegationTool
-      ? 'CRITICAL — tool selection: ALWAYS use `execute_command` for running servers, dev servers, HTTP servers, installing dependencies, running scripts, git operations, process management, starting/stopping services, or any command the user wants to "run". Delegation tools (Claude/Codex/OpenCode) CANNOT keep a server running — their session ends and the process dies. `execute_command` with background=true is the ONLY way to run persistent processes.'
-      : '',
-    opts.enabledTools.includes('shell')
-      ? 'When the user asks for an IP address or network URL, execute shell commands to resolve it and return the concrete value. Never reply with placeholders like `<your-local-ip>` and never tell the user to run `ifconfig`/`ipconfig` themselves unless shell access is unavailable.'
-      : '',
-    opts.enabledTools.includes('shell')
-      ? 'For long-lived servers/processes: start with `execute_command` using `background=true`, capture the returned processId, then verify with `process_tool` status/log before claiming success. If the process exits or crashes, retry with a corrected command and report what changed.'
-      : '',
-    opts.enabledTools.includes('shell')
-      ? 'Do not claim a server is running unless there is direct tool evidence (process status/log output).'
-      : '',
-    opts.enabledTools.includes('shell')
-      ? 'If `execute_command` fails due workdir/path traversal, retry without a workdir override or use a safe relative path under the current session cwd.'
-      : '',
-    hasDelegationTool
-      ? `Only use CLI delegation (${delegationOrder.join(' -> ')}) for tasks that need deep code understanding across multiple files: large refactors, complex debugging, multi-file code generation, or test suites. Never delegate when the user says "run", "start", "serve", "execute", or "test it locally".`
-      : '',
-    opts.enabledTools.includes('memory')
-      ? 'Memory is active and required for long-horizon work: before major tasks, run memory_tool search/list for relevant prior work; after each meaningful step, store concise reusable notes (what changed, where it lives, constraints, next step). Treat memory as shared context plus your own agent notes, not as user-owned personal profile data.'
-      : '',
-    opts.enabledTools.includes('memory')
-      ? 'The platform preloads relevant memory context each turn. Use memory_tool for deeper lookup, explicit recall requests, and durable storage.'
-      : '',
-    opts.enabledTools.includes('memory')
-      ? 'If the user gives an open goal (e.g. "go make money"), do not keep re-asking broad clarifying questions. Form a hypothesis, execute a concrete step, then adapt using memory + evidence.'
-      : '',
-    '## Knowing When Not to Reply',
-    'Real conversations have natural pauses. Not every message needs a response — sometimes the most human thing is comfortable silence.',
-    'Reply with exactly "NO_MESSAGE" (nothing else) to suppress outbound delivery when replying would feel unnatural.',
-    'Think about what a thoughtful friend would do:',
-    '- "okay" / "alright" / "cool" / "got it" / "sounds good" → they\'re just acknowledging, not expecting a reply back',
-    '- "thanks" / "thx" / "ty" after you\'ve helped → the conversation is wrapping up naturally',
-    '- thumbs up, emoji reactions, read receipts → these are closers, not openers',
-    '- "night" / "ttyl" / "bye" / "gotta go" → they\'re leaving, let them go',
-    '- "haha" / "lol" / "lmao" → they appreciated something, no follow-up needed',
-    '- forwarded content or status updates with no question → they\'re sharing, not asking',
-    'Always reply when:',
-    '- There is a question, even an implied one ("I wonder if...")',
-    '- They give you a task or instruction',
-    '- They share something emotional or personal — silence here feels cold',
-    '- They say "thanks" with a follow-up context ("thanks, what about X?") or in a tone that expects "you\'re welcome"',
-    '- You have something genuinely useful to add',
-    'The test: if you saw this message from a friend, would you feel compelled to type something back? If not, NO_MESSAGE.',
-    'Ask for confirmation only for high-risk or irreversible actions. For normal low-risk research/build steps, proceed autonomously.',
-    'Default behavior is execution, not interrogation: do not ask exploratory clarification questions when a safe next action exists.',
-    'Do not end every response with a question. Use declarative completion statements by default, and only ask a question when a concrete missing detail blocks the next action.',
-    'Do not pause for a "continue" confirmation after the user has already asked you to execute a goal. Keep moving until blocked by permissions, missing credentials, or hard tool failures.',
-    'Never repeat one-time side effects that are already complete (for example creating the same schedule/task again). Verify state first, then either continue execution or reply HEARTBEAT_OK.',
-    'For main-loop tick messages that begin with "SWARM_MAIN_MISSION_TICK" or "SWARM_MAIN_AUTO_FOLLOWUP", follow that response contract exactly and include one valid [MAIN_LOOP_META] JSON line when you are not returning HEARTBEAT_OK.',
-    `Heartbeat protocol: if the user message is exactly "${opts.heartbeatPrompt}", reply exactly "HEARTBEAT_OK" when there is nothing important to report; otherwise reply with a concise progress update and immediate next step.`,
-    opts.heartbeatIntervalSec > 0
-      ? `Expected heartbeat cadence is roughly every ${opts.heartbeatIntervalSec} seconds while ongoing work is active.`
-      : '',
-    toolLines.length ? 'What I can do:\n' + toolLines.join('\n') : '',
-    // Inject goal decomposition instructions for broad goals without existing plans
-    (opts.userMessage && !opts.hasExistingPlan && isBroadGoal(opts.userMessage)) ? GOAL_DECOMPOSITION_BLOCK : '',
-  ].filter(Boolean).join('\n')
+      ? 'Loop: ONGOING — keep iterating until done, blocked, or limits reached.'
+      : 'Loop: BOUNDED — execute multiple steps but finish within recursion budget.',
+  )
+
+  // Tool-specific guidance (consolidated)
+  if (has('shell')) {
+    parts.push(
+      'Shell: use `execute_command` for servers, installs, scripts, git. Use `background=true` for long-lived processes.',
+      'Verify servers with `process_tool` status/log and liveness probes before claiming success.',
+      'Resolve IPs/URLs via shell — never use placeholders. Retry path errors without workdir override.',
+    )
+  }
+  if (hasDelegationTool) {
+    parts.push(
+      'CRITICAL: `execute_command` (not delegation) for running servers, installs, scripts. Delegation sessions end and kill processes.',
+      'Delegate only for deep multi-file code work: refactors, debugging, generation, test suites.',
+    )
+  }
+  if (has('memory')) {
+    parts.push(
+      'Memory: search before major tasks, store concise notes after meaningful steps. Platform preloads context each turn.',
+      'For open goals, form a hypothesis and execute — do not keep re-asking broad questions.',
+    )
+  }
+  if (has('manage_tasks')) parts.push('Create/update tasks for long-lived goals to track progress.')
+  if (has('manage_schedules')) parts.push('Use schedules for follow-ups. Check existing schedules before creating new ones.')
+  if (has('manage_connectors')) parts.push('Connectors: proactive outreach for significant events only. Keep messages concise, no duplicates.')
+  if (has('manage_sessions')) parts.push('Inspect existing chats before creating duplicates.')
+
+  // Response behavior
+  parts.push(
+    '## Response Rules',
+    'NO_MESSAGE: reply with exactly this to suppress delivery for pure acknowledgments (ok/thanks/bye/emoji/lol).',
+    'Always reply to: questions, tasks, emotional sharing, or when you have something useful to add.',
+    'Execute by default — only ask for confirmation on high-risk/irreversible actions. Do not end every response with a question.',
+    'Never repeat completed side effects. Verify state first.',
+    `Heartbeat: if message is "${opts.heartbeatPrompt}", reply "HEARTBEAT_OK" unless you have a progress update.`,
+    opts.heartbeatIntervalSec > 0 ? `Heartbeat cadence: ~${opts.heartbeatIntervalSec}s.` : '',
+    'For SWARM_MAIN_MISSION_TICK / SWARM_MAIN_AUTO_FOLLOWUP messages, follow the response contract and include [MAIN_LOOP_META] JSON.',
+  )
+
+  if (toolLines.length) parts.push('What I can do:\n' + toolLines.join('\n'))
+  if (opts.userMessage && !opts.hasExistingPlan && isBroadGoal(opts.userMessage)) parts.push(GOAL_DECOMPOSITION_BLOCK)
+
+  return parts.filter(Boolean).join('\n')
 }
 
 export interface StreamAgentChatResult {
@@ -233,10 +184,12 @@ export interface StreamAgentChatResult {
 export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<StreamAgentChatResult> {
   const startTs = Date.now()
   const { session, message, imagePath, attachedFiles, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
-  const sessionToolsWithImplicitProcess = Array.from(new Set([
-    ...(session.tools || []),
-    ...((session.tools || []).includes('shell') ? ['process'] : []),
-  ]))
+  const rawTools = Array.isArray(session.tools) ? session.tools : []
+  const hasShellCapability = rawTools.some((toolId) => ['shell', 'execute_command'].includes(String(toolId)))
+  const sessionToolsWithImplicitProcess = expandToolIds([
+    ...rawTools,
+    ...(hasShellCapability ? ['process'] : []),
+  ])
 
   // fallbackCredentialIds is intentionally accepted for compatibility with caller signatures.
   void fallbackCredentialIds
@@ -413,17 +366,14 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         '- When I learn something that corrects old knowledge, update or remove the old memory',
       ].join('\n'))
 
-      // Pre-compaction memory flush & Personality Evolution: nudge agent to reflect when conversation is long
+      // Pre-compaction memory flush: nudge agent to save important context before it's lost
       const msgCount = history.filter(m => m.role === 'user' || m.role === 'assistant').length
       if (msgCount > 20) {
-        const canEditSelf = (session.tools || []).includes('manage_agents')
         stateModifierParts.push([
           '## Reflection & Consolidation Reminder',
           'This conversation is getting long and I might lose older context soon.',
-          '1. **Memory:** I should save anything important I\'ve learned, decided, or discovered to my memory now. Only what matters, not every detail.',
-          canEditSelf ? `2. **Personality Evolution:** I should reflect on this conversation. Have my boundaries, tone, or relationship with the user evolved? If so, I MUST use \`manage_agents\` (action: update, id: "${session.agentId}") to update my \`soul\` field with these new learnings.` : '',
-          'If there\'s nothing worth saving or updating, carry on.',
-        ].filter(Boolean).join('\n'))
+          'Save anything important I\'ve learned, decided, or discovered to memory now. Only what matters, not every detail.',
+        ].join('\n'))
       }
     } catch {
       // If memory context fails to load, continue without blocking the run.
@@ -471,25 +421,43 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     }
   }
 
-  // Tell the LLM about tools it could use but doesn't have enabled
+  // Tell the LLM about available plugins and their access status
   {
-    const enabledSet = new Set(sessionToolsWithImplicitProcess)
-    const allToolIds = [
-      'shell', 'files', 'copy_file', 'move_file', 'delete_file', 'edit_file', 'process',
-      'web_search', 'web_fetch', 'browser', 'memory',
-      'claude_code', 'codex_cli', 'opencode_cli',
-      'sandbox', 'create_document', 'create_spreadsheet', 'http_request', 'git', 'wallet',
-      'manage_agents', 'manage_tasks', 'manage_schedules', 'schedule_wake', 'manage_skills',
-      'manage_documents', 'manage_webhooks', 'manage_connectors', 'manage_sessions', 'manage_secrets',
-    ]
-    const disabled = allToolIds.filter((t) => !enabledSet.has(t))
+    const agentEnabledSet = new Set(sessionToolsWithImplicitProcess)
+    const { getPluginManager } = await import('./plugins')
+    const allPlugins = getPluginManager().listPlugins()
     const mcpDisabled = agentMcpDisabledTools ?? []
-    const allDisabled = [...disabled, ...mcpDisabled]
-    if (allDisabled.length > 0) {
-      stateModifierParts.push(
-        `## Tools I Don't Have Yet\nI don't currently have access to: ${allDisabled.join(', ')}.\n` +
-        'If I need any of these for a task, I can ask the user to enable them with `request_tool_access`.',
+
+    // Categorize plugins
+    const globallyDisabled: string[] = [] // Disabled site-wide by admin
+    const enabledButNoAccess: string[] = [] // Enabled globally but agent doesn't have access
+    const agentHasAccess: string[] = [] // Agent can use these
+
+    for (const p of allPlugins) {
+      if (!p.enabled) {
+        globallyDisabled.push(`${p.name} (${p.filename})`)
+      } else if (!agentEnabledSet.has(p.filename)) {
+        enabledButNoAccess.push(`${p.name} (${p.filename})`)
+      } else {
+        agentHasAccess.push(p.filename)
+      }
+    }
+
+    const parts: string[] = []
+    if (enabledButNoAccess.length > 0) {
+      parts.push(
+        `**Available but not assigned to me:** ${enabledButNoAccess.join(', ')}\n` +
+        'I can request access using `manage_capabilities` with action "request_access" or `request_tool_access`.',
       )
+    }
+    if (globallyDisabled.length > 0) {
+      parts.push(`**Disabled site-wide:** ${globallyDisabled.join(', ')} — ask the user to enable these in Settings > Plugins first.`)
+    }
+    if (mcpDisabled.length > 0) {
+      parts.push(`**MCP tools not available:** ${mcpDisabled.join(', ')}`)
+    }
+    if (parts.length > 0) {
+      stateModifierParts.push(`## Plugin Access\n${parts.join('\n')}`)
     }
   }
 
@@ -672,7 +640,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   const postClearHistory = effectiveHistory.slice(contextStart)
 
   const langchainMessages: Array<HumanMessage | AIMessage> = []
-  for (const m of postClearHistory.slice(-20)) {
+  for (const m of postClearHistory.slice(-30)) {
     if (m.role === 'user') {
       langchainMessages.push(new HumanMessage({ content: await buildLangChainContent(m.text, m.imagePath, m.attachedFiles) }))
     } else {
@@ -687,6 +655,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   let fullText = ''
   let lastSegment = ''
   let hasToolCalls = false
+  let needsTextSeparator = false
   let totalInputTokens = 0
   let totalOutputTokens = 0
   let lastToolInput: unknown = null
@@ -710,135 +679,223 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       }, runtime.ongoingLoopMaxRuntimeMs)
     : null
 
+  const MAX_AUTO_CONTINUES = 3
+  const MAX_TRANSIENT_RETRIES = 2
+  let autoContinueCount = 0
+  let transientRetryCount = 0
+
   try {
-    const eventStream = agent.streamEvents(
-      { messages: langchainMessages },
-      { version: 'v2', recursionLimit, signal: abortController.signal },
-    )
+    const maxIterations = MAX_AUTO_CONTINUES + MAX_TRANSIENT_RETRIES
+    for (let iteration = 0; iteration <= maxIterations; iteration++) {
+      let shouldContinue: 'recursion' | 'transient' | false = false
 
-    for await (const event of eventStream) {
-      const kind = event.event
+      // Fresh per-iteration controller so an internal LangGraph abort doesn't poison subsequent iterations.
+      // Linked to the parent so client disconnect / timeout still propagates.
+      const iterationController = new AbortController()
+      const onParentAbort = () => iterationController.abort()
+      if (abortController.signal.aborted) iterationController.abort()
+      else abortController.signal.addEventListener('abort', onParentAbort)
 
-      if (kind === 'on_chat_model_stream') {
-        const chunk = event.data?.chunk
-        if (chunk?.content) {
-          // content can be string or array of content blocks
-          if (Array.isArray(chunk.content)) {
-            for (const block of chunk.content) {
-              // Anthropic extended thinking blocks
-              if (block.type === 'thinking' && block.thinking) {
-                accumulatedThinking += block.thinking
-                write(`data: ${JSON.stringify({ t: 'thinking', text: block.thinking })}\n\n`)
-              // OpenClaw [[thinking]] prefix convention
-              } else if (typeof block.text === 'string' && block.text.startsWith('[[thinking]]')) {
-                accumulatedThinking += block.text.slice(12)
-                write(`data: ${JSON.stringify({ t: 'thinking', text: block.text.slice(12) })}\n\n`)
-              } else if (block.text) {
-                fullText += block.text
-                lastSegment += block.text
-                write(`data: ${JSON.stringify({ t: 'd', text: block.text })}\n\n`)
+      try {
+        const eventStream = agent.streamEvents(
+          { messages: langchainMessages },
+          { version: 'v2', recursionLimit, signal: iterationController.signal },
+        )
+
+        for await (const event of eventStream) {
+          const kind = event.event
+
+          if (kind === 'on_chat_model_stream') {
+            const chunk = event.data?.chunk
+            if (chunk?.content) {
+              // content can be string or array of content blocks
+              if (Array.isArray(chunk.content)) {
+                for (const block of chunk.content) {
+                  // Anthropic extended thinking blocks
+                  if (block.type === 'thinking' && block.thinking) {
+                    accumulatedThinking += block.thinking
+                    write(`data: ${JSON.stringify({ t: 'thinking', text: block.thinking })}\n\n`)
+                  // OpenClaw [[thinking]] prefix convention
+                  } else if (typeof block.text === 'string' && block.text.startsWith('[[thinking]]')) {
+                    accumulatedThinking += block.text.slice(12)
+                    write(`data: ${JSON.stringify({ t: 'thinking', text: block.text.slice(12) })}\n\n`)
+                  } else if (block.text) {
+                    if (needsTextSeparator && fullText.length > 0) {
+                      fullText += '\n\n'
+                      write(`data: ${JSON.stringify({ t: 'd', text: '\n\n' })}\n\n`)
+                      needsTextSeparator = false
+                    }
+                    fullText += block.text
+                    lastSegment += block.text
+                    write(`data: ${JSON.stringify({ t: 'd', text: block.text })}\n\n`)
+                  }
+                }
+              } else {
+                const text = typeof chunk.content === 'string' ? chunk.content : ''
+                if (text) {
+                  if (needsTextSeparator && fullText.length > 0) {
+                    fullText += '\n\n'
+                    write(`data: ${JSON.stringify({ t: 'd', text: '\n\n' })}\n\n`)
+                    needsTextSeparator = false
+                  }
+                  fullText += text
+                  lastSegment += text
+                  write(`data: ${JSON.stringify({ t: 'd', text })}\n\n`)
+                }
               }
             }
-          } else {
-            const text = typeof chunk.content === 'string' ? chunk.content : ''
-            if (text) {
-              fullText += text
-              lastSegment += text
-              write(`data: ${JSON.stringify({ t: 'd', text })}\n\n`)
+          } else if (kind === 'on_llm_end') {
+            // Track token usage from LLM responses — check all known LangChain event shapes
+            const output = event.data?.output
+            const usage = output?.llmOutput?.tokenUsage
+              || output?.llmOutput?.usage
+              || output?.usage_metadata
+              || output?.response_metadata?.usage
+              || output?.response_metadata?.tokenUsage
+            if (usage) {
+              totalInputTokens += usage.promptTokens || usage.input_tokens || usage.prompt_tokens || 0
+              totalOutputTokens += usage.completionTokens || usage.output_tokens || usage.completion_tokens || 0
             }
-          }
-        }
-      } else if (kind === 'on_llm_end') {
-        // Track token usage from LLM responses — check all known LangChain event shapes
-        const output = event.data?.output
-        const usage = output?.llmOutput?.tokenUsage
-          || output?.llmOutput?.usage
-          || output?.usage_metadata
-          || output?.response_metadata?.usage
-          || output?.response_metadata?.tokenUsage
-        if (usage) {
-          totalInputTokens += usage.promptTokens || usage.input_tokens || usage.prompt_tokens || 0
-          totalOutputTokens += usage.completionTokens || usage.output_tokens || usage.completion_tokens || 0
-        }
-      } else if (kind === 'on_tool_start') {
-        hasToolCalls = true
-        lastSegment = ''
-        const toolName = event.name || 'unknown'
-        const input = event.data?.input
-        lastToolInput = input
-        // Plugin hooks: beforeToolExec
-        await pluginMgr.runHook('beforeToolExec', { toolName, input })
-        const inputStr = typeof input === 'string' ? input : JSON.stringify(input)
-        logExecution(session.id, 'tool_call', `${toolName} invoked`, {
-          agentId: session.agentId,
-          detail: { toolName, input: inputStr?.slice(0, 4000) },
-        })
-        write(`data: ${JSON.stringify({
-          t: 'tool_call',
-          toolName,
-          toolInput: inputStr,
-        })}\n\n`)
-      } else if (kind === 'on_tool_end') {
-        const toolName = event.name || 'unknown'
-        const output = event.data?.output
-        const outputStr = typeof output === 'string'
-          ? output
-          : output?.content
-            ? String(output.content)
-            : JSON.stringify(output)
-        // Plugin hooks: afterToolExec
-        await pluginMgr.runHook('afterToolExec', { toolName, input: null, output: outputStr })
-        // Event-driven memory breadcrumbs
-        if (session.agentId && (session.tools || []).includes('memory')) {
-          try {
-            const breadcrumbTitle = extractBreadcrumbTitle(toolName, lastToolInput, outputStr)
-            if (breadcrumbTitle) {
-              const memDb = getMemoryDb()
-              memDb.add({
+          } else if (kind === 'on_tool_start') {
+            hasToolCalls = true
+            needsTextSeparator = true
+            lastSegment = ''
+            const toolName = event.name || 'unknown'
+            const input = event.data?.input
+            lastToolInput = input
+            // Plugin hooks: beforeToolExec
+            await pluginMgr.runHook('beforeToolExec', { toolName, input })
+            const inputStr = typeof input === 'string' ? input : JSON.stringify(input)
+            logExecution(session.id, 'tool_call', `${toolName} invoked`, {
+              agentId: session.agentId,
+              detail: { toolName, input: inputStr?.slice(0, 4000) },
+            })
+            write(`data: ${JSON.stringify({
+              t: 'tool_call',
+              toolName,
+              toolInput: inputStr,
+            })}\n\n`)
+          } else if (kind === 'on_tool_end') {
+            const toolName = event.name || 'unknown'
+            const output = event.data?.output
+            const outputStr = typeof output === 'string'
+              ? output
+              : output?.content
+                ? String(output.content)
+                : JSON.stringify(output)
+            // Plugin hooks: afterToolExec
+            await pluginMgr.runHook('afterToolExec', { toolName, input: null, output: outputStr })
+            // Event-driven memory breadcrumbs
+            if (session.agentId && (session.tools || []).includes('memory')) {
+              try {
+                const breadcrumbTitle = extractBreadcrumbTitle(toolName, lastToolInput, outputStr)
+                if (breadcrumbTitle) {
+                  const memDb = getMemoryDb()
+                  memDb.add({
+                    agentId: session.agentId,
+                    sessionId: session.id,
+                    category: 'breadcrumb',
+                    title: breadcrumbTitle,
+                    content: '',
+                  })
+                }
+              } catch { /* breadcrumbs are best-effort */ }
+            }
+            lastToolInput = null
+            logExecution(session.id, 'tool_result', `${toolName} returned`, {
+              agentId: session.agentId,
+              detail: { toolName, output: outputStr?.slice(0, 4000), error: /^(Error:|error:)/i.test((outputStr || '').trim()) || undefined },
+            })
+            // Enriched file_op logging for file-mutating tools
+            if (['write_file', 'edit_file', 'copy_file', 'move_file', 'delete_file'].includes(toolName)) {
+              const inputData = event.data?.input
+              const inputObj = typeof inputData === 'object' ? inputData : {}
+              logExecution(session.id, 'file_op', `${toolName}: ${inputObj?.filePath || inputObj?.sourcePath || 'unknown'}`, {
                 agentId: session.agentId,
-                sessionId: session.id,
-                category: 'breadcrumb',
-                title: breadcrumbTitle,
-                content: '',
+                detail: { toolName, filePath: inputObj?.filePath, sourcePath: inputObj?.sourcePath, destinationPath: inputObj?.destinationPath, success: !/^Error/i.test((outputStr || '').trim()) },
               })
             }
-          } catch { /* breadcrumbs are best-effort */ }
-        }
-        lastToolInput = null
-        logExecution(session.id, 'tool_result', `${toolName} returned`, {
-          agentId: session.agentId,
-          detail: { toolName, output: outputStr?.slice(0, 4000), error: /^(Error:|error:)/i.test((outputStr || '').trim()) || undefined },
-        })
-        // Enriched file_op logging for file-mutating tools
-        if (['write_file', 'edit_file', 'copy_file', 'move_file', 'delete_file'].includes(toolName)) {
-          const inputData = event.data?.input
-          const inputObj = typeof inputData === 'object' ? inputData : {}
-          logExecution(session.id, 'file_op', `${toolName}: ${inputObj?.filePath || inputObj?.sourcePath || 'unknown'}`, {
-            agentId: session.agentId,
-            detail: { toolName, filePath: inputObj?.filePath, sourcePath: inputObj?.sourcePath, destinationPath: inputObj?.destinationPath, success: !/^Error/i.test((outputStr || '').trim()) },
-          })
-        }
-        // Enriched commit logging for git operations
-        if (toolName === 'execute_command' && outputStr) {
-          const commitMatch = outputStr.match(/\[[\w/-]+\s+([a-f0-9]{7,40})\]/)
-          if (commitMatch) {
-            logExecution(session.id, 'commit', `git commit ${commitMatch[1]}`, {
-              agentId: session.agentId,
-              detail: { commitId: commitMatch[1], outputPreview: outputStr.slice(0, 500) },
-            })
+            // Enriched commit logging for git operations
+            if (toolName === 'execute_command' && outputStr) {
+              const commitMatch = outputStr.match(/\[[\w/-]+\s+([a-f0-9]{7,40})\]/)
+              if (commitMatch) {
+                logExecution(session.id, 'commit', `git commit ${commitMatch[1]}`, {
+                  agentId: session.agentId,
+                  detail: { commitId: commitMatch[1], outputPreview: outputStr.slice(0, 500) },
+                })
+              }
+            }
+            write(`data: ${JSON.stringify({
+              t: 'tool_result',
+              toolName,
+              toolOutput: outputStr?.slice(0, 2000),
+            })}\n\n`)
           }
         }
-        write(`data: ${JSON.stringify({
-          t: 'tool_result',
-          toolName,
-          toolOutput: outputStr?.slice(0, 2000),
-        })}\n\n`)
+      } catch (innerErr: unknown) {
+        const errName = innerErr instanceof Error ? innerErr.constructor.name : ''
+        const errMsg = innerErr instanceof Error ? innerErr.message : String(innerErr)
+        const errStack = innerErr instanceof Error ? innerErr.stack?.slice(0, 500) : undefined
+
+        // Classify the error:
+        // 1. GraphRecursionError — explicit or wrapped as abort (LangGraph aborts internally on limit)
+        // 2. Transient abort/timeout — LLM API failure, not from client disconnect
+        const isRecursionError = errName === 'GraphRecursionError'
+          || /recursion limit|maximum recursion/i.test(errMsg)
+        const isTransientAbort = !isRecursionError
+          && /abort|timed?\s*out|ECONNRESET|ECONNREFUSED|socket hang up|network/i.test(errMsg)
+          && !abortController.signal.aborted
+
+        // Log diagnostic details for every error so we can trace root causes
+        console.error(`[stream-agent-chat] Error in streamEvents iteration=${iteration}`, {
+          errName, errMsg, errStack,
+          isRecursionError, isTransientAbort,
+          hasToolCalls, fullTextLen: fullText.length,
+          parentAborted: abortController.signal.aborted,
+        })
+
+        if (isRecursionError && autoContinueCount < MAX_AUTO_CONTINUES && !abortController.signal.aborted) {
+          shouldContinue = 'recursion'
+          autoContinueCount++
+          logExecution(session.id, 'decision', `Recursion limit hit, auto-continuing (${autoContinueCount}/${MAX_AUTO_CONTINUES})`, {
+            agentId: session.agentId,
+            detail: { errName, errMsg },
+          })
+          write(`data: ${JSON.stringify({ t: 'status', text: JSON.stringify({ autoContinue: autoContinueCount, maxContinues: MAX_AUTO_CONTINUES }) })}\n\n`)
+        } else if (isTransientAbort && transientRetryCount < MAX_TRANSIENT_RETRIES && !abortController.signal.aborted) {
+          shouldContinue = 'transient'
+          transientRetryCount++
+          logExecution(session.id, 'decision', `Transient error, retrying (${transientRetryCount}/${MAX_TRANSIENT_RETRIES}): ${errMsg}`, {
+            agentId: session.agentId,
+            detail: { errName, errMsg },
+          })
+          write(`data: ${JSON.stringify({ t: 'status', text: JSON.stringify({ transientRetry: transientRetryCount, maxRetries: MAX_TRANSIENT_RETRIES, error: errMsg }) })}\n\n`)
+        } else {
+          // Non-retryable error or exhausted retries — rethrow to outer catch
+          throw innerErr
+        }
+      } finally {
+        abortController.signal.removeEventListener('abort', onParentAbort)
+      }
+
+      if (!shouldContinue) break
+
+      if (shouldContinue === 'recursion') {
+        // Append accumulated text and a continue prompt
+        if (fullText.trim()) {
+          langchainMessages.push(new AIMessage({ content: fullText }))
+        }
+        langchainMessages.push(new HumanMessage({ content: 'Continue where you left off. Complete the remaining steps of the objective.' }))
+        lastSegment = ''
+      } else if (shouldContinue === 'transient') {
+        // Short delay before retrying transient errors (API timeout, rate limit, etc.)
+        await new Promise((r) => setTimeout(r, 2000 * transientRetryCount))
       }
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     const errMsg = timedOut
       ? 'Ongoing loop stopped after reaching the configured runtime limit.'
-      : err.message || String(err)
+      : err instanceof Error ? err.message : String(err)
     logExecution(session.id, 'error', errMsg, { agentId: session.agentId, detail: { timedOut } })
     write(`data: ${JSON.stringify({ t: 'err', text: errMsg })}\n\n`)
   } finally {

@@ -23,6 +23,7 @@ interface SearchResponse {
   skills: ClawHubSkill[]
   total: number
   page: number
+  nextCursor?: string | null
 }
 
 interface ClawHubBrowserProps {

@@ -67,11 +67,9 @@ function formatDuration(ms: number): string {
 
 function formatBucketLabel(bucket: string, range: Range): string {
   if (range === '24h') {
-    // "2026-03-01T14" → "14:00"
     const hour = bucket.split('T')[1]
     return hour ? `${hour}:00` : bucket
   }
-  // "2026-03-01" → "Mar 1"
   const parts = bucket.split('-')
   if (parts.length === 3) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -119,11 +117,8 @@ export function MetricsDashboard() {
     try {
       const res = await api<UsageResponse>('GET', `/usage?range=${range}`)
       setData(res)
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false)
-    }
+    } catch { /* ignore */ }
+    setLoading(false)
   }, [range])
 
   useEffect(() => {
@@ -136,7 +131,6 @@ export function MetricsDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // --- Task metrics ---
   const [taskMetrics, setTaskMetrics] = useState<{
     wip: number; completedCount: number; avgCycleMs: number
     velocity: { bucket: string; count: number }[]
@@ -157,7 +151,6 @@ export function MetricsDashboard() {
 
   const completionRate = computeCompletionRate(tasks)
 
-  // Prepare chart data
   const timeSeriesFormatted = (data?.timeSeries ?? []).map((pt) => ({
     ...pt,
     label: formatBucketLabel(pt.bucket, range),
@@ -191,13 +184,13 @@ export function MetricsDashboard() {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-y-auto">
-      <div className="px-8 pt-6 pb-4 shrink-0">
+      <div className="px-8 pt-6 pb-4 shrink-0" style={{ animation: 'fade-up 0.5s var(--ease-spring)' }}>
         <h1 className="font-display text-[28px] font-700 tracking-[-0.03em]">Usage</h1>
         <p className="text-[13px] text-text-3 mt-1">Token usage, cost tracking &amp; agent performance</p>
       </div>
 
       {/* Range tabs */}
-      <div className="px-8 pb-4 shrink-0">
+      <div className="px-8 pb-4 shrink-0" style={{ animation: 'fade-up 0.5s var(--ease-spring) 0.05s both' }}>
         <div className="flex gap-1 bg-surface-2 rounded-[10px] p-1 w-fit">
           {RANGES.map((r) => (
             <button
@@ -208,6 +201,7 @@ export function MetricsDashboard() {
                   ? 'bg-accent-soft text-accent-bright'
                   : 'text-text-3 hover:text-text-2'
               }`}
+              style={range === r ? { animation: 'spring-in 0.3s var(--ease-spring)' } : undefined}
             >
               {RANGE_LABELS[r]}
             </button>
@@ -226,31 +220,33 @@ export function MetricsDashboard() {
         <div className="px-8 pb-8 space-y-6">
           {/* Stats cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard label="Total Tokens" value={formatTokens(data?.totalTokens ?? 0)} />
-            <StatCard label="Total Cost" value={formatCost(data?.totalCost ?? 0)} />
-            <StatCard label="Requests" value={String(data?.records.length ?? 0)} />
-            <StatCard label="Completion Rate" value={`${completionRate}%`} />
+            <StatCard label="Total Tokens" value={formatTokens(data?.totalTokens ?? 0)} index={0} />
+            <StatCard label="Total Cost" value={formatCost(data?.totalCost ?? 0)} index={1} />
+            <StatCard label="Requests" value={String(data?.records.length ?? 0)} index={2} />
+            <StatCard label="Completion Rate" value={`${completionRate}%`} index={3} />
           </div>
 
           {/* Token usage over time */}
-          <ChartCard title="Token Usage Over Time">
-            {timeSeriesFormatted.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={timeSeriesFormatted} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis dataKey="label" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={formatTokens} />
-                  <Tooltip {...tooltipStyle} formatter={(value: number | undefined) => [formatTokens(value ?? 0), 'Tokens']} />
-                  <Line type="monotone" dataKey="tokens" stroke="#818CF8" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#818CF8' }} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyChart />
-            )}
-          </ChartCard>
+          <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.2s both' }}>
+            <ChartCard title="Token Usage Over Time">
+              {timeSeriesFormatted.length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={timeSeriesFormatted} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                    <XAxis dataKey="label" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={formatTokens} />
+                    <Tooltip {...tooltipStyle} formatter={(value: number | undefined) => [formatTokens(value ?? 0), 'Tokens']} />
+                    <Line type="monotone" dataKey="tokens" stroke="#818CF8" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#818CF8' }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyChart />
+              )}
+            </ChartCard>
+          </div>
 
           {/* Cost by provider + cost by agent */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.25s both' }}>
             <ChartCard title="Cost by Provider">
               {providerData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={280}>
@@ -294,16 +290,16 @@ export function MetricsDashboard() {
 
           {/* Task KPIs */}
           {taskMetrics && (
-            <>
+            <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.3s both' }}>
               <h3 className="font-display text-[16px] font-700 text-text mt-2">Task Performance</h3>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard label="Tasks Completed" value={String(taskMetrics.completedCount)} />
-                <StatCard label="Avg Cycle Time" value={formatDuration(taskMetrics.avgCycleMs)} />
-                <StatCard label="WIP" value={String(taskMetrics.wip)} />
-                <StatCard label="Completion Rate" value={`${completionRate}%`} />
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                <StatCard label="Tasks Completed" value={String(taskMetrics.completedCount)} index={0} />
+                <StatCard label="Avg Cycle Time" value={formatDuration(taskMetrics.avgCycleMs)} index={1} />
+                <StatCard label="WIP" value={String(taskMetrics.wip)} index={2} />
+                <StatCard label="Completion Rate" value={`${completionRate}%`} index={3} />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
                 <ChartCard title="Task Velocity">
                   {taskMetrics.velocity.length > 0 ? (
                     <ResponsiveContainer width="100%" height={280}>
@@ -346,41 +342,44 @@ export function MetricsDashboard() {
                   )}
                 </ChartCard>
               </div>
-            </>
+            </div>
           )}
 
           {/* Latency by Provider */}
-          <ChartCard title="Average Latency by Provider (ms)">
-            {providerData.some(p => (data?.providerHealth?.[p.name]?.avgLatencyMs ?? 0) > 0) ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={providerData.map(p => ({ ...p, latency: Math.round(data?.providerHealth?.[p.name]?.avgLatencyMs || 0) }))} layout="vertical" margin={{ top: 5, right: 30, bottom: 5, left: 40 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
-                  <XAxis type="number" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis dataKey="name" type="category" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
-                  <Tooltip {...tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                  <Bar dataKey="latency" radius={[0, 4, 4, 0]}>
-                    {providerData.map((_entry, index) => (
-                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyChart />
-            )}
-          </ChartCard>
+          <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.35s both' }}>
+            <ChartCard title="Average Latency by Provider (ms)">
+              {providerData.some(p => (data?.providerHealth?.[p.name]?.avgLatencyMs ?? 0) > 0) ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={providerData.map(p => ({ ...p, latency: Math.round(data?.providerHealth?.[p.name]?.avgLatencyMs || 0) }))} layout="vertical" margin={{ top: 5, right: 30, bottom: 5, left: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
+                    <XAxis type="number" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis dataKey="name" type="category" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
+                    <Tooltip {...tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                    <Bar dataKey="latency" radius={[0, 4, 4, 0]}>
+                      {providerData.map((_entry, index) => (
+                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyChart />
+              )}
+            </ChartCard>
+          </div>
 
           {/* Provider Health */}
           {data?.providerHealth && Object.keys(data.providerHealth).length > 0 && (
-            <div>
+            <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.4s both' }}>
               <h3 className="font-display text-[14px] font-600 text-text-2 mb-3 flex items-center gap-2">Provider Health <HintTip text="API reliability and performance across your configured providers" /></h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Object.entries(data.providerHealth)
                   .sort(([, a], [, b]) => b.totalRequests - a.totalRequests)
-                  .map(([name, h]) => (
+                  .map(([name, h], idx) => (
                     <div
                       key={name}
-                      className="bg-surface-2 rounded-[12px] p-4 border border-white/[0.04] flex flex-col gap-3"
+                      className="bg-surface-2 rounded-[12px] p-4 border border-white/[0.04] flex flex-col gap-3 hover:bg-surface transition-all hover:scale-[1.02]"
+                      style={{ animation: 'spring-in 0.5s var(--ease-spring) both', animationDelay: `${0.45 + idx * 0.03}s` }}
                     >
                       <div className="flex items-center justify-between">
                         <p className="text-[14px] font-600 text-text">{name}</p>
@@ -423,9 +422,12 @@ export function MetricsDashboard() {
   )
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value, index = 0 }: { label: string; value: string; index?: number }) {
   return (
-    <div className="bg-surface-2 rounded-[12px] p-4 border border-white/[0.04]">
+    <div
+      className="bg-surface-2 rounded-[12px] p-4 border border-white/[0.04] hover:bg-surface transition-all hover:scale-[1.02]"
+      style={{ animation: 'spring-in 0.6s var(--ease-spring) both', animationDelay: `${0.1 + index * 0.05}s` }}
+    >
       <p className="text-[11px] font-500 text-text-3 uppercase tracking-[0.05em] mb-1">{label}</p>
       <p className="text-[22px] font-display font-700 tracking-[-0.02em] text-text">{value}</p>
     </div>
@@ -434,7 +436,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-surface-2 rounded-[12px] p-5 border border-white/[0.04]">
+    <div className="bg-surface-2 rounded-[12px] p-5 border border-white/[0.04] hover:border-white/[0.1] transition-colors">
       <h3 className="font-display text-[14px] font-600 text-text-2 mb-4">{title}</h3>
       {children}
     </div>

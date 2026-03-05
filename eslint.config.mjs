@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Agent-generated workspace and runtime data
+    "data/**",
+    "artifacts/**",
   ]),
 ]);
 

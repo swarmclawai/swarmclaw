@@ -21,6 +21,7 @@ import { HeartbeatHistoryPanel } from './heartbeat-history-panel'
 import { Dropdown, DropdownItem } from '@/components/shared/dropdown'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { speak } from '@/lib/tts'
+import { api } from '@/lib/api-client'
 
 const PROMPT_SUGGESTIONS = [
   { text: 'What can you help me with?', icon: 'book', gradient: 'from-[#6366F1]/10 to-[#818CF8]/5' },
@@ -66,6 +67,15 @@ export function ChatArea() {
   const [heartbeatHistoryOpen, setHeartbeatHistoryOpen] = useState(false)
   const [messagesLoading, setMessagesLoading] = useState(true)
   const [connectorFilter, setConnectorFilter] = useState<string | null>(null)
+  const [pluginChatActions, setPluginChatActions] = useState<Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>>([])
+
+  useEffect(() => {
+    if (sessionId) {
+      api<Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>>('GET', '/plugins/ui?type=chat_actions').then(actions => {
+        if (Array.isArray(actions)) setPluginChatActions(actions)
+      }).catch(() => {})
+    }
+  }, [sessionId])
 
   // Collect unique connector sources from messages for filter UI
   const { connectorSources, hasDirectMessages } = useMemo(() => {
@@ -421,6 +431,7 @@ export function ChatArea() {
         streaming={streamingForThisSession}
         onSend={sendMessage}
         onStop={stopStreaming}
+        pluginChatActions={pluginChatActions}
       />
 
       <Dropdown open={menuOpen} onClose={() => setMenuOpen(false)}>

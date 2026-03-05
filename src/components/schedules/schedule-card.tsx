@@ -27,9 +27,10 @@ function formatNext(ts?: number): string {
 interface Props {
   schedule: Schedule
   inSidebar?: boolean
+  index?: number
 }
 
-export function ScheduleCard({ schedule, inSidebar }: Props) {
+export function ScheduleCard({ schedule, inSidebar, index = 0 }: Props) {
   const setEditingScheduleId = useAppStore((s) => s.setEditingScheduleId)
   const setScheduleSheetOpen = useAppStore((s) => s.setScheduleSheetOpen)
   const loadSchedules = useAppStore((s) => s.loadSchedules)
@@ -62,7 +63,11 @@ export function ScheduleCard({ schedule, inSidebar }: Props) {
       onClick={handleClick}
       className="relative py-3.5 px-4 cursor-pointer rounded-[14px]
         transition-all duration-200 active:scale-[0.98]
-        bg-transparent border border-transparent hover:bg-white/[0.02] hover:border-white/[0.03]"
+        bg-transparent border border-transparent hover:bg-white/[0.02] hover:border-white/[0.03] hover:scale-[1.01]"
+      style={{
+        animation: 'spring-in 0.5s var(--ease-spring) both',
+        animationDelay: `${Math.min(index * 0.05, 0.4)}s`
+      }}
     >
       <div className="flex items-center gap-2.5">
         <span className="font-display text-[14px] font-600 truncate flex-1 tracking-[-0.01em]">{schedule.name}</span>
@@ -74,7 +79,9 @@ export function ScheduleCard({ schedule, inSidebar }: Props) {
                 ${schedule.status === 'active' ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
             >
               <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all
-                ${schedule.status === 'active' ? 'left-[18px]' : 'left-0.5'}`} />
+                ${schedule.status === 'active' ? 'left-[18px]' : 'left-0.5'}`}
+                style={schedule.status === 'active' ? { animation: 'spring-in 0.3s var(--ease-spring)' } : undefined}
+              />
             </div>
           )}
           <span className={`text-[10px] font-600 uppercase tracking-wider px-2 py-0.5 rounded-[6px] ${statusClass}`}>

@@ -3,7 +3,7 @@ import { genId } from '@/lib/id'
 import { loadTasks, saveTasks, loadSettings, loadAgents, logActivity } from '@/lib/server/storage'
 import { TaskCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
-import { enqueueTask, validateCompletedTasksQueue } from '@/lib/server/queue'
+import { enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
 import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
@@ -12,10 +12,12 @@ import { computeTaskFingerprint, findDuplicateTask } from '@/lib/task-dedupe'
 import { resolveTaskAgentFromDescription } from '@/lib/server/task-mention'
 import { validateDag } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
+import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
 
 export async function GET(req: Request) {
   // Keep completed queue integrity even if daemon is not running.
   validateCompletedTasksQueue()
+  recoverStalledRunningTasks()
 
   const { searchParams } = new URL(req.url)
   const includeArchived = searchParams.get('includeArchived') === 'true'
@@ -69,6 +71,9 @@ export async function POST(req: Request) {
   const now = Date.now()
   const tasks = loadTasks()
   const settings = loadSettings()
+  const normalizedQualityGate = body.qualityGate
+    ? normalizeTaskQualityGate(body.qualityGate, settings)
+    : null
   const maxAttempts = Number.isFinite(Number(body.maxAttempts))
     ? Math.max(1, Math.min(20, Math.trunc(Number(body.maxAttempts))))
     : Math.max(1, Math.min(20, Math.trunc(Number(settings.defaultTaskMaxAttempts ?? 3))))
@@ -147,6 +152,7 @@ export async function POST(req: Request) {
     customFields: body.customFields && typeof body.customFields === 'object' ? body.customFields : undefined,
     priority: ['low', 'medium', 'high', 'critical'].includes(body.priority) ? body.priority : undefined,
     fingerprint: computeTaskFingerprint(body.title || 'Untitled Task', body.agentId || ''),
+    qualityGate: normalizedQualityGate,
   }
 
   // Dedup: if a non-terminal task with same fingerprint exists, return it
@@ -158,7 +164,7 @@ export async function POST(req: Request) {
   if (tasks[id].status === 'completed') {
     const report = ensureTaskCompletionReport(tasks[id])
     if (report?.relativePath) tasks[id].completionReportPath = report.relativePath
-    const validation = validateTaskCompletion(tasks[id], { report })
+    const validation = validateTaskCompletion(tasks[id], { report, settings })
     tasks[id].validation = validation
     if (validation.ok) {
       tasks[id].completedAt = Date.now()

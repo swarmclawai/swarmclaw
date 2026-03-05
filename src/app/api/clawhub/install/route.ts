@@ -11,9 +11,9 @@ export async function POST(req: Request) {
   if (!content) {
     try {
       content = await fetchSkillContent(url)
-    } catch (err: any) {
+    } catch (err: unknown) {
       return NextResponse.json(
-        { error: err.message || 'Failed to fetch skill content' },
+        { error: err instanceof Error ? err.message : 'Failed to fetch skill content' },
         { status: 502 }
       )
     }

@@ -1,341 +1,163 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useAppStore } from '@/stores/use-app-store'
-import { useChatStore } from '@/stores/use-chat-store'
-import { createSession, createCredential } from '@/lib/sessions'
+import { useState, useMemo } from 'react'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
-import { DirBrowser } from '@/components/shared/dir-browser'
-import { TOOL_LABELS, TOOL_DESCRIPTIONS } from '@/components/chat/tool-call-bubble'
-import { ModelCombobox } from '@/components/shared/model-combobox'
-import { AgentPickerList } from '@/components/shared/agent-picker-list'
-import { SheetFooter } from '@/components/shared/sheet-footer'
-import { inputClass } from '@/components/shared/form-styles'
-import type { ProviderType, SessionTool } from '@/types'
 import { SectionLabel } from '@/components/shared/section-label'
-import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
+import { useAppStore } from '@/stores/use-app-store'
+import { api } from '@/lib/api-client'
+import { PROVIDERS } from '@/lib/providers'
+import { TOOL_LABELS, TOOL_DESCRIPTIONS } from '@/components/chat/tool-call-bubble'
+import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
+import { genId } from '@/lib/id'
+import type { ProviderType, SessionTool } from '@/types'
 
-export function NewSessionSheet() {
-  const open = useAppStore((s) => s.newSessionOpen)
-  const setOpen = useAppStore((s) => s.setNewSessionOpen)
+interface Props {
+  open: boolean
+  onClose: () => void
+}
 
-  const [name, setName] = useState('')
-  const [selectedDir, setSelectedDir] = useState<string | null>(null)
-  const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  const [provider, setProvider] = useState<ProviderType>('claude-cli')
-  const [model, setModel] = useState('')
-  const [credentialId, setCredentialId] = useState<string | null>(null)
-  const [endpoint, setEndpoint] = useState('http://localhost:11434')
-  const [addingKey, setAddingKey] = useState(false)
-  const [newKeyName, setNewKeyName] = useState('')
-  const [newKeyValue, setNewKeyValue] = useState('')
-  const [ollamaMode, setOllamaMode] = useState<'local' | 'cloud'>('local')
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
-  const [selectedTools, setSelectedTools] = useState<SessionTool[]>([])
-
-  const providers = useAppStore((s) => s.providers)
-  const loadProviders = useAppStore((s) => s.loadProviders)
-  const credentials = useAppStore((s) => s.credentials)
-  const loadCredentials = useAppStore((s) => s.loadCredentials)
+export function NewSessionSheet({ open, onClose }: Props) {
+  const router = useRouter()
   const agents = useAppStore((s) => s.agents)
-  const loadAgents = useAppStore((s) => s.loadAgents)
-  const currentUser = useAppStore((s) => s.currentUser)
-  const updateSessionInStore = useAppStore((s) => s.updateSessionInStore)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
-  const setMessages = useChatStore((s) => s.setMessages)
+  const loadSessions = useAppStore((s) => s.loadSessions)
 
-  const currentProvider = providers.find((p) => p.id === provider)
-  const providerCredentials = Object.values(credentials).filter((c) => c.provider === provider)
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('')
+  const [provider, setProvider] = useState<ProviderType>('openai')
+  const [model, setModel] = useState<string>('')
+  const [endpoint, setEndpoint] = useState('')
+  const [selectedTools, setSelectedTools] = useState<SessionTool[]>([])
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    if (open) {
-      loadProviders()
-      loadCredentials()
-      loadAgents()
-      setName('')
-      setSelectedDir(null)
-      setSelectedFile(null)
-      setProvider('claude-cli')
-      setModel('')
-      setCredentialId(null)
-      setEndpoint('http://localhost:11434')
-      setAddingKey(false)
-      setNewKeyName('')
-      setNewKeyValue('')
-      setOllamaMode('local')
-      // Auto-select last used agent, or default agent if no history
-      const agentsList = Object.values(agents)
-      const lastAgentId = safeStorageGet('swarmclaw-last-agent')
-      const lastAgent = lastAgentId ? agentsList.find((a) => a.id === lastAgentId) : null
-      const defaultAgent = lastAgent || agentsList.find((a) => a.id === 'default') || agentsList[0]
-      if (defaultAgent) {
-        setSelectedAgentId(defaultAgent.id)
-        setProvider(defaultAgent.provider || 'claude-cli')
-        setModel(defaultAgent.model || '')
-        setCredentialId(defaultAgent.credentialId || null)
-        if (defaultAgent.apiEndpoint) setEndpoint(defaultAgent.apiEndpoint)
-      } else {
-        setSelectedAgentId(null)
-      }
-      setSelectedTools([])
-    }
-  }, [open])
+  const agentList = useMemo(() => Object.values(agents).sort((a, b) => b.updatedAt - a.updatedAt), [agents])
+  const currentProvider = PROVIDERS[provider]
 
-  // Derive model, endpoint, and credential from provider + ollamaMode (consolidated)
-  useEffect(() => {
-    // Set model from provider defaults
-    if (currentProvider?.models.length) {
-      setModel(currentProvider.models[0])
-    }
-
-    // Reset ollama mode for non-ollama providers
-    if (provider !== 'ollama') {
-      setOllamaMode('local')
-    }
-
-    // Derive endpoint
-    if (provider === 'ollama') {
-      setEndpoint(ollamaMode === 'local' ? 'http://localhost:11434' : '')
-    } else if (currentProvider?.defaultEndpoint) {
-      setEndpoint(currentProvider.defaultEndpoint)
-    }
-
-    // Derive credential
-    const needsKey = currentProvider?.requiresApiKey || (provider === 'ollama' && ollamaMode === 'cloud')
-    if (needsKey && providerCredentials.length > 0) {
-      setCredentialId(providerCredentials[0].id)
-    } else {
-      setCredentialId(null)
-    }
-  }, [provider, providers, ollamaMode, providerCredentials.length])
-
-  const handleAddKey = async () => {
-    if (!newKeyValue.trim()) return
-    const cred = await createCredential(provider, newKeyName || `${provider} key`, newKeyValue)
-    await loadCredentials()
-    setCredentialId(cred.id)
-    setAddingKey(false)
-    setNewKeyName('')
-    setNewKeyValue('')
-  }
-
-  const onClose = () => setOpen(false)
-
-  const handleSelectAgent = (agentId: string | null) => {
-    setSelectedAgentId(agentId)
-    if (agentId && agents[agentId]) {
-      const p = agents[agentId]
-      setProvider(p.provider)
-      setModel(p.model)
-      setCredentialId(p.credentialId || null)
-      if (p.apiEndpoint) setEndpoint(p.apiEndpoint)
-      if (!name) setName(p.name)
-    }
+  const reset = () => {
+    setSelectedAgentId('')
+    setProvider('openai')
+    setModel('')
+    setEndpoint('')
+    setSelectedTools([])
   }
 
   const handleCreate = async () => {
-    const sessionName = name.trim() || 'New Chat'
-    const cwd = selectedDir || ''
-    const resolvedCredentialId = currentProvider?.requiresApiKey
-      ? credentialId
-      : (currentProvider?.optionalApiKey && ollamaMode === 'cloud') ? credentialId : null
-    const agent = selectedAgentId ? agents[selectedAgentId] : null
-    const agentTools = agent?.tools || (selectedTools.length ? selectedTools : undefined)
-    const s = await createSession(
-      sessionName, cwd || (agent ? '~' : ''), currentUser!,
-      agent?.provider || provider,
-      agent?.model || model || undefined,
-      agent?.credentialId || resolvedCredentialId,
-      selectedAgentId ? (agent?.apiEndpoint || null) : (currentProvider?.requiresEndpoint ? endpoint : null),
-      selectedAgentId ? 'human' : undefined,
-      selectedAgentId,
-      agentTools || undefined,
-      selectedFile,
-    )
-    // Remember agent selection for next time
-    if (selectedAgentId) {
-      safeStorageSet('swarmclaw-last-agent', selectedAgentId)
-    } else {
-      safeStorageRemove('swarmclaw-last-agent')
+    setLoading(true)
+    try {
+      const agent = selectedAgentId ? agents[selectedAgentId] : null
+      const id = genId(8)
+      const now = Date.now()
+
+      const agentTools = agent?.tools || (selectedTools.length ? selectedTools : undefined)
+
+      const session = {
+        id,
+        name: agent ? `Chat with ${agent.name}` : `New Session (${model || provider})`,
+        provider: agent ? agent.provider : provider,
+        model: agent ? agent.model : model,
+        apiEndpoint: agent ? agent.apiEndpoint : (endpoint || undefined),
+        credentialId: agent ? agent.credentialId : undefined,
+        tools: agentTools || undefined,
+        messages: [],
+        createdAt: now,
+        updatedAt: now,
+        active: true,
+        agentId: selectedAgentId || undefined,
+      }
+
+      await api('POST', '/sessions', session)
+      await loadSessions()
+      router.push(`/chat?session=${id}`)
+      onClose()
+      reset()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create session')
+    } finally {
+      setLoading(false)
     }
-    updateSessionInStore(s)
-    setCurrentSession(s.id)
-    setMessages([])
-    onClose()
   }
 
-  const canCreate = () => {
-    if (!selectedAgentId) {
-      if (currentProvider?.requiresApiKey && !credentialId) return false
-      if (provider === 'ollama' && ollamaMode === 'cloud' && !credentialId) return false
-      if (provider === 'claude-cli' && !selectedDir) return false
-    }
-    return true
-  }
+  const inputClass = "w-full py-3 px-4 rounded-[14px] bg-surface border border-white/[0.06] text-text placeholder:text-text-3/50 outline-none focus:border-accent-bright/30 transition-all"
 
   return (
-    <BottomSheet open={open} onClose={onClose} wide>
-      {/* Header */}
+    <BottomSheet open={open} onClose={onClose}>
       <div className="mb-10">
-        <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">New Chat</h2>
-        <p className="text-[14px] text-text-3">Configure your AI chat</p>
+        <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">New Session</h2>
+        <p className="text-[14px] text-text-3">Start a new conversation with an agent or a direct model.</p>
       </div>
 
-      {/* Name */}
       <div className="mb-8">
-        <SectionLabel>Chat Name</SectionLabel>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Fix login bug"
-          className={inputClass}
-          style={{ fontFamily: 'inherit' }}
-        />
+        <SectionLabel>Select Agent</SectionLabel>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <button
+            onClick={() => setSelectedAgentId('')}
+            className={`flex flex-col items-center justify-center gap-2 p-4 rounded-[18px] border transition-all duration-200 cursor-pointer
+              ${!selectedAgentId 
+                ? 'bg-accent-soft border-accent-bright/25 text-accent-bright shadow-[0_0_25px_rgba(99,102,241,0.12)]' 
+                : 'bg-surface border-white/[0.06] text-text-3 hover:bg-surface-2 hover:border-white/[0.08]'}`}
+          >
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${!selectedAgentId ? 'bg-accent-bright/20' : 'bg-white/[0.04]'}`}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+              </svg>
+            </div>
+            <span className="text-[13px] font-600">Direct Model</span>
+          </button>
+
+          {agentList.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setSelectedAgentId(a.id)}
+              className={`flex flex-col items-center justify-center gap-2 p-4 rounded-[18px] border transition-all duration-200 cursor-pointer
+                ${selectedAgentId === a.id 
+                  ? 'bg-accent-soft border-accent-bright/25 text-accent-bright shadow-[0_0_25px_rgba(99,102,241,0.12)]' 
+                  : 'bg-surface border-white/[0.06] text-text-3 hover:bg-surface-2 hover:border-white/[0.08]'}`}
+            >
+              <div className="w-10 h-10 rounded-full bg-accent-bright/10 overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${a.avatarSeed || a.id}`} alt="" />
+              </div>
+              <span className="text-[13px] font-600 truncate w-full text-center px-1">{a.name}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Agent (optional) */}
-      {Object.keys(agents).length > 0 && (
-        <div className="mb-8">
-          <SectionLabel>Agent <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span></SectionLabel>
-          <AgentPickerList
-            agents={Object.values(agents).sort((a, b) => a.name.localeCompare(b.name))}
-            selected={selectedAgentId || ''}
-            onSelect={(id) => handleSelectAgent(id)}
-            noneOption={{ label: 'None — manual config', onSelect: () => handleSelectAgent(null) }}
-            showOrchBadge={true}
-          />
-        </div>
-      )}
-
-      {/* Provider/Model/Key/Endpoint — only show when no agent selected */}
       {!selectedAgentId && (
         <>
-          {/* Provider */}
-          <div className="mb-8">
-            <SectionLabel>Provider</SectionLabel>
-            <div className="grid grid-cols-3 gap-3">
-              {providers.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setProvider(p.id)}
-                  className={`py-3.5 px-4 rounded-[14px] text-center cursor-pointer transition-all duration-200
-                    active:scale-[0.97] text-[14px] font-600 border
-                    ${provider === p.id
-                      ? 'bg-accent-soft border-accent-bright/25 text-accent-bright shadow-[0_0_20px_rgba(99,102,241,0.1)]'
-                      : 'bg-surface border-white/[0.06] text-text-2 hover:bg-surface-2 hover:border-white/[0.08]'}`}
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  {p.name}
-                </button>
-              ))}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div>
+              <SectionLabel>Provider</SectionLabel>
+              <select
+                value={provider}
+                onChange={(e) => {
+                  const p = e.target.value as ProviderType
+                  setProvider(p)
+                  setModel(PROVIDERS[p].models[0])
+                }}
+                className={`${inputClass} appearance-none cursor-pointer`}
+                style={{ fontFamily: 'inherit' }}
+              >
+                {Object.values(PROVIDERS).map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <SectionLabel>Model</SectionLabel>
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className={`${inputClass} appearance-none cursor-pointer`}
+                style={{ fontFamily: 'inherit' }}
+              >
+                {currentProvider.models.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Ollama Mode Toggle */}
-          {provider === 'ollama' && (
-            <div className="mb-8">
-              <SectionLabel>Mode</SectionLabel>
-              <div className="flex p-1 rounded-[14px] bg-surface border border-white/[0.06]">
-                {(['local', 'cloud'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setOllamaMode(mode)}
-                    className={`flex-1 py-3 rounded-[12px] text-center cursor-pointer transition-all duration-200
-                      text-[14px] font-600 capitalize
-                      ${ollamaMode === mode
-                        ? 'bg-accent-soft text-accent-bright shadow-[0_0_20px_rgba(99,102,241,0.1)]'
-                        : 'bg-transparent text-text-3 hover:text-text-2'}`}
-                    style={{ fontFamily: 'inherit' }}
-                  >
-                    {mode}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Model */}
-          {currentProvider && currentProvider.models.length > 0 && (
-            <div className="mb-8">
-              <SectionLabel>Model</SectionLabel>
-              <ModelCombobox
-                providerId={currentProvider.id}
-                value={model}
-                onChange={setModel}
-                models={currentProvider.models}
-                defaultModels={currentProvider.defaultModels}
-                className={`${inputClass} cursor-pointer`}
-              />
-            </div>
-          )}
-
-          {/* API Key */}
-          {(currentProvider?.requiresApiKey || (currentProvider?.optionalApiKey && ollamaMode === 'cloud')) && (
-            <div className="mb-8">
-              <SectionLabel>API Key</SectionLabel>
-              {providerCredentials.length > 0 && !addingKey ? (
-                <select
-                  value={credentialId || ''}
-                  onChange={(e) => {
-                    if (e.target.value === '__add__') {
-                      setAddingKey(true)
-                    } else {
-                      setCredentialId(e.target.value)
-                    }
-                  }}
-                  className={`${inputClass} appearance-none cursor-pointer`}
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  {providerCredentials.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                  <option value="__add__">+ Add new key...</option>
-                </select>
-              ) : (
-                <div className="space-y-3 p-5 rounded-[16px] bg-surface-2 border border-white/[0.06]">
-                  <input
-                    type="text"
-                    value={newKeyName}
-                    onChange={(e) => setNewKeyName(e.target.value)}
-                    placeholder="Key name (optional)"
-                    className={inputClass}
-                    style={{ fontFamily: 'inherit' }}
-                  />
-                  <input
-                    type="password"
-                    value={newKeyValue}
-                    onChange={(e) => setNewKeyValue(e.target.value)}
-                    placeholder="sk-..."
-                    className={inputClass}
-                    style={{ fontFamily: 'inherit' }}
-                  />
-                  <div className="flex gap-3 pt-2">
-                    {providerCredentials.length > 0 && (
-                      <button
-                        onClick={() => setAddingKey(false)}
-                        className="flex-1 py-3 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[14px] font-600 cursor-pointer hover:bg-surface-2 transition-colors"
-                        style={{ fontFamily: 'inherit' }}
-                      >
-                        Cancel
-                      </button>
-                    )}
-                    <button
-                      onClick={handleAddKey}
-                      disabled={!newKeyValue.trim()}
-                      className="flex-1 py-3 rounded-[14px] border-none bg-accent-bright text-white text-[14px] font-600 cursor-pointer disabled:opacity-30 transition-all hover:brightness-110"
-                      style={{ fontFamily: 'inherit' }}
-                    >
-                      Save Key
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Endpoint — show for providers that require it (Ollama local, OpenClaw) */}
-          {currentProvider?.requiresEndpoint && (provider === 'openclaw' || (provider === 'ollama' && ollamaMode === 'local')) && (
+          {currentProvider.requiresEndpoint && (
             <div className="mb-8">
               <SectionLabel>{provider === 'openclaw' ? 'OpenClaw Endpoint' : 'Endpoint'}</SectionLabel>
               <input
@@ -352,46 +174,45 @@ export function NewSessionSheet() {
               )}
             </div>
           )}
-          {/* Tools */}
-          {provider !== 'claude-cli' && (
-            <div className="mb-8">
-              <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-                Tools <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
-              </label>
-              <p className="text-[12px] text-text-3/60 mb-3">Allow this model to execute commands and access files in the working directory.</p>
-              <div className="flex flex-wrap gap-2.5">
-                {([
-                  { id: 'shell' as SessionTool, label: 'Shell' },
-                  { id: 'files' as SessionTool, label: 'Files' },
-                  { id: 'edit_file' as SessionTool, label: 'Edit File' },
-                  { id: 'web_search' as SessionTool, label: 'Web Search' },
-                  { id: 'web_fetch' as SessionTool, label: 'Web Fetch' },
-                  { id: 'claude_code' as SessionTool, label: 'Claude Code' },
-                  { id: 'codex_cli' as SessionTool, label: 'Codex CLI' },
-                  { id: 'opencode_cli' as SessionTool, label: 'OpenCode CLI' },
-                ]).map(({ id, label }) => {
-                  const active = selectedTools.includes(id)
-                  return (
-                    <button
-                      key={id}
-                      onClick={() => {
-                        setSelectedTools((prev) =>
-                          active ? prev.filter((t) => t !== id) : [...prev, id],
-                        )
-                      }}
-                      className={`px-4 py-2.5 rounded-[12px] text-[13px] font-600 border cursor-pointer transition-all duration-200 active:scale-[0.97]
-                        ${active
-                          ? 'bg-accent-soft border-accent-bright/25 text-accent-bright shadow-[0_0_20px_rgba(99,102,241,0.1)]'
-                          : 'bg-surface border-white/[0.06] text-text-3 hover:bg-surface-2 hover:border-white/[0.08]'}`}
-                      style={{ fontFamily: 'inherit' }}
-                    >
-                      {label}
-                    </button>
-                  )
-                })}
-              </div>
+
+          {/* Plugins (Capability enablement) */}
+          <div className="mb-8">
+            <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">
+              Plugins <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+            </label>
+            <p className="text-[12px] text-text-3/60 mb-3">Allow this model to execute commands and access files.</p>
+            <div className="flex flex-wrap gap-2.5">
+              {([
+                { id: 'shell' as SessionTool, label: 'Shell' },
+                { id: 'files' as SessionTool, label: 'Files' },
+                { id: 'edit_file' as SessionTool, label: 'Edit File' },
+                { id: 'web_search' as SessionTool, label: 'Web Search' },
+                { id: 'web_fetch' as SessionTool, label: 'Web Fetch' },
+                { id: 'claude_code' as SessionTool, label: 'Claude Code' },
+                { id: 'codex_cli' as SessionTool, label: 'Codex CLI' },
+                { id: 'opencode_cli' as SessionTool, label: 'OpenCode CLI' },
+              ]).map(({ id, label }) => {
+                const active = selectedTools.includes(id)
+                return (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      setSelectedTools((prev) =>
+                        active ? prev.filter((t) => t !== id) : [...prev, id],
+                      )
+                    }}
+                    className={`px-4 py-2.5 rounded-[12px] text-[13px] font-600 border cursor-pointer transition-all duration-200 active:scale-[0.97]
+                      ${active
+                        ? 'bg-accent-soft border-accent-bright/25 text-accent-bright shadow-[0_0_20px_rgba(99,102,241,0.1)]'
+                        : 'bg-surface border-white/[0.06] text-text-3 hover:bg-surface-2 hover:border-white/[0.08]'}`}
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
             </div>
-          )}
+          </div>
         </>
       )}
 
@@ -403,44 +224,30 @@ export function NewSessionSheet() {
             {' / '}
             <span className="text-text-2 font-600">{agents[selectedAgentId].model}</span>
             {agents[selectedAgentId].tools?.length ? (
-              <> + {agents[selectedAgentId].tools!.map((tool, i) => (
-                <span key={tool}>
-                  {i > 0 && ', '}
-                  <span className="text-sky-400/70 font-600 cursor-help" title={TOOL_DESCRIPTIONS[tool] || tool}>
-                    {TOOL_LABELS[tool] || tool.replace(/_/g, ' ')}
+              <>
+                {' + '}
+                {agents[selectedAgentId].tools!.map((tool, i) => (
+                  <span key={tool}>
+                    {i > 0 && ', '}
+                    <span className="text-sky-400/70 font-600 cursor-help" title={TOOL_DESCRIPTIONS[tool] || tool}>
+                      {TOOL_LABELS[tool] || tool.replace(/_/g, ' ')}
+                    </span>
                   </span>
-                </span>
-              ))}</>
+                ))}
+              </>
             ) : null}
           </span>
         </div>
       )}
 
-      {/* Project */}
-      <div className="mb-10">
-        <SectionLabel>Directory {provider !== 'claude-cli' && <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>}</SectionLabel>
-        <DirBrowser
-          value={selectedDir}
-          file={selectedFile}
-          onChange={(dir, file) => {
-            setSelectedDir(dir)
-            setSelectedFile(file ?? null)
-            if (!name) {
-              const dirName = dir.split('/').pop() || ''
-              setName(dirName)
-            }
-          }}
-          onClear={() => { setSelectedDir(null); setSelectedFile(null) }}
-        />
-      </div>
-
-      {/* Actions */}
-      <SheetFooter
-        onCancel={onClose}
-        onSave={handleCreate}
-        saveLabel="Create Chat"
-        saveDisabled={!canCreate()}
-      />
+      <button
+        onClick={handleCreate}
+        disabled={loading || (!selectedAgentId && !model)}
+        className="w-full py-4 rounded-[18px] bg-accent-bright text-white font-display text-[15px] font-700 shadow-[0_0_30px_rgba(56,189,248,0.3)] hover:shadow-[0_0_40px_rgba(56,189,248,0.45)] hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:shadow-none"
+        style={{ fontFamily: 'inherit' }}
+      >
+        {loading ? 'Creating...' : 'Start Session'}
+      </button>
     </BottomSheet>
   )
 }

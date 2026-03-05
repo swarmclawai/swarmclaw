@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { api } from '@/lib/api-client'
+import { toast } from 'sonner'
 import type { McpServerConfig, McpTransport } from '@/types'
 
 function McpServerForm({ editing, onClose, loadMcpServers }: {
@@ -58,20 +59,31 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
     } else {
       data.url = url.trim()
     }
-    if (editing) {
-      await api('PUT', `/mcp-servers/${editing.id}`, data)
-    } else {
-      await api('POST', '/mcp-servers', data)
+    try {
+      if (editing) {
+        await api('PUT', `/mcp-servers/${editing.id}`, data)
+        toast.success('MCP server updated')
+      } else {
+        await api('POST', '/mcp-servers', data)
+        toast.success('MCP server created')
+      }
+      await loadMcpServers()
+      onClose()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save server')
     }
-    await loadMcpServers()
-    onClose()
   }
 
   const handleDelete = async () => {
-    if (editing) {
+    if (!editing) return
+    if (!confirm('Delete this MCP server?')) return
+    try {
       await api('DELETE', `/mcp-servers/${editing.id}`)
+      toast.success('MCP server deleted')
       await loadMcpServers()
       onClose()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete server')
     }
   }
 
@@ -82,8 +94,12 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
     try {
       const result = await api<{ ok: boolean; tools?: string[]; error?: string }>('POST', `/mcp-servers/${editing.id}/test`)
       setTestResult(result)
+      if (result.ok) toast.success('Connection test passed')
+      else toast.error(result.error || 'Connection test failed')
     } catch (err: unknown) {
-      setTestResult({ ok: false, error: err instanceof Error ? err.message : 'Test failed' })
+      const msg = err instanceof Error ? err.message : 'Test failed'
+      setTestResult({ ok: false, error: msg })
+      toast.error(msg)
     }
     setTesting(false)
   }
@@ -99,7 +115,7 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
         <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
           {editing ? 'Edit MCP Server' : 'New MCP Server'}
         </h2>
-        <p className="text-[14px] text-text-3">Configure an MCP server to provide tools to agents</p>
+        <p className="text-[14px] text-text-3">Configure an MCP server to provide plugins to agents</p>
       </div>
 
       <div className="mb-8">

@@ -77,13 +77,14 @@ export async function executeOrchestrator(
 
   // claude-cli fallback (no structured tool calling)
   console.warn(`[orchestrator] Using legacy regex-based engine for ${orchestrator.name} (claude-cli)`)
-  return executeOrchestratorLegacy(orchestrator, task, sessionId)
+  return executeOrchestratorLegacy(orchestrator, task, sessionId, taskId)
 }
 
 async function executeOrchestratorLegacy(
   orchestrator: Agent,
   task: string,
   sessionId: string,
+  taskId?: string,
 ): Promise<string> {
   const allAgents = loadAgents()
   const sessions = loadSessions()
@@ -240,7 +241,7 @@ async function executeOrchestratorLegacy(
 
       if (cmd.done) {
         result = cmd.summary || fullText
-        return result
+        return `${result}\n\n[MAIN_LOOP_META] {"status":"ok", "follow_up":false, "summary":${JSON.stringify(result.slice(0, 300))}, "mission_task_id":${JSON.stringify(taskId || null)}}`
       }
     }
 
@@ -255,7 +256,7 @@ async function executeOrchestratorLegacy(
     result = `Loop stopped after reaching max turns (${maxTurns}).`
   }
 
-  return result
+  return `${result}\n\n[MAIN_LOOP_META] {"status":"ok", "follow_up":false, "summary":${JSON.stringify(result.slice(0, 300))}, "mission_task_id":${JSON.stringify(taskId || null)}}`
 }
 
 async function executeSubTask(

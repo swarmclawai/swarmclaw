@@ -203,7 +203,7 @@ function scheduleMainLoopFollowup(sessionId: string, followup: MainLoopFollowupR
     try {
       const sessions = loadSessions()
       const session = sessions[sessionId]
-      if (!session || session.name !== '__main__') return
+      if (!session || !isMainMissionSession(session)) return
       enqueueSessionRun({
         sessionId,
         message: followup.message,
@@ -216,6 +216,16 @@ function scheduleMainLoopFollowup(sessionId: string, followup: MainLoopFollowupR
       log.warn('session-run', `Failed to enqueue main-loop followup for ${sessionId}`, err?.message || String(err))
     }
   }, delayMs)
+}
+
+export function isMainMissionSession(session: Record<string, unknown>): boolean {
+  const id = typeof session.id === 'string' ? session.id.trim() : ''
+  const name = typeof session.name === 'string' ? session.name.trim() : ''
+  const sessionType = typeof session.sessionType === 'string' ? session.sessionType : ''
+  if (id.startsWith('main-') || name === '__main__') return true
+  // Only orchestrated thread sessions should receive autonomous main-loop followups.
+  if (sessionType === 'orchestrated') return true
+  return false
 }
 
 async function drainExecution(executionKey: string): Promise<void> {

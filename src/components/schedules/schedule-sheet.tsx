@@ -11,6 +11,7 @@ import cronstrue from 'cronstrue'
 import { SectionLabel } from '@/components/shared/section-label'
 import { SCHEDULE_TEMPLATES, type ScheduleTemplate } from '@/lib/schedule-templates'
 import { HintTip } from '@/components/shared/hint-tip'
+import { toast } from 'sonner'
 import {
   Newspaper, BarChart3, HeartPulse, PenLine, Trash2,
   Activity, ShieldCheck, DatabaseBackup, FileText,
@@ -177,20 +178,31 @@ export function ScheduleSheet() {
       runAt: scheduleType === 'once' ? Date.now() + intervalMs : undefined,
       status,
     }
-    if (editing) {
-      await updateSchedule(editing.id, data)
-    } else {
-      await createSchedule(data)
+    try {
+      if (editing) {
+        await updateSchedule(editing.id, data)
+        toast.success('Schedule updated successfully')
+      } else {
+        await createSchedule(data)
+        toast.success('Schedule created successfully')
+      }
+      await loadSchedules()
+      onClose()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save schedule')
     }
-    await loadSchedules()
-    onClose()
   }
 
   const handleDelete = async () => {
-    if (editing) {
+    if (!editing) return
+    if (!confirm(`Delete schedule "${editing.name}"?`)) return
+    try {
       await deleteSchedule(editing.id)
+      toast.success('Schedule deleted')
       await loadSchedules()
       onClose()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete schedule')
     }
   }
 

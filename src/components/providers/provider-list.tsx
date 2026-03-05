@@ -75,12 +75,24 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
   return (
     <div className={`flex-1 overflow-y-auto ${inSidebar ? 'px-3 pb-4' : 'px-5 pb-6'}`}>
       <div className={inSidebar ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'}>
-        {allItems.map((item) => (
-          <button
+        {allItems.map((item, idx) => (
+          <div
             key={item.id}
+            role="button"
+            tabIndex={0}
             onClick={() => handleEdit(item.id)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                handleEdit(item.id)
+              }
+            }}
             className="w-full text-left p-4 rounded-[14px] border transition-all duration-200
-              cursor-pointer hover:bg-surface-2 bg-surface border-white/[0.06]"
+              cursor-pointer hover:bg-white/[0.02] bg-surface border-white/[0.06] hover:border-white/[0.12] hover:scale-[1.01]"
+            style={{
+              animation: 'spring-in 0.5s var(--ease-spring) both',
+              animationDelay: `${idx * 0.05}s`
+            }}
           >
             <div className="flex items-center justify-between mb-1.5">
               <span className="font-display text-[14px] font-600 text-text truncate">{item.name}</span>
@@ -97,7 +109,9 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
                         ${item.isEnabled ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
                     >
                       <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all
-                        ${item.isEnabled ? 'left-[18px]' : 'left-0.5'}`} />
+                        ${item.isEnabled ? 'left-[18px]' : 'left-0.5'}`}
+                        style={item.isEnabled ? { animation: 'spring-in 0.3s var(--ease-spring)' } : undefined}
+                      />
                     </div>
                     <button
                       onClick={(e) => handleDelete(e, item.id)}
@@ -110,7 +124,8 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
                     </button>
                   </>
                 )}
-                <span className={`w-2 h-2 rounded-full ${item.isConnected ? 'bg-emerald-400' : 'bg-white/10'}`} />
+                <span className={`w-2 h-2 rounded-full ${item.isConnected ? 'bg-emerald-400' : 'bg-white/10'}`}
+                  style={item.isConnected ? { animation: 'pulse-subtle 2s infinite' } : undefined} />
               </div>
             </div>
             <div className="text-[12px] text-text-3/60 font-mono truncate">
@@ -121,7 +136,7 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
                 </>
               )}
             </div>
-          </button>
+          </div>
         ))}
       </div>
     </div>

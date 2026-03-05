@@ -34,6 +34,140 @@ export const MEMORY_FTS_STOP_WORDS = new Set([
   'you', 'your',
 ])
 
+export type MemoryScopeMode = 'auto' | 'all' | 'global' | 'agent' | 'session' | 'project'
+export type MemoryRerankMode = 'balanced' | 'semantic' | 'lexical'
+
+export interface MemoryScopeFilter {
+  mode: MemoryScopeMode
+  agentId?: string | null
+  sessionId?: string | null
+  projectRoot?: string | null
+}
+
+export interface MemorySearchOptions {
+  scope?: MemoryScopeFilter
+  rerankMode?: MemoryRerankMode
+}
+
+function normalizeScopeIdentifier(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+function normalizePathForScope(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  return path.normalize(trimmed).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function memorySearchText(entry: MemoryEntry): string {
+  const refs = Array.isArray(entry.references)
+    ? entry.references.map((ref) => `${ref.type} ${ref.path || ''} ${ref.title || ''} ${ref.note || ''}`).join(' ')
+    : ''
+  return `${entry.title || ''} ${entry.content || ''} ${refs}`.toLowerCase()
+}
+
+function tokenizeForRerank(input: string): string[] {
+  const raw = String(input || '').toLowerCase().match(/[a-z0-9][a-z0-9._:/-]*/g) || []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const token of raw) {
+    if (token.length < 2) continue
+    if (MEMORY_FTS_STOP_WORDS.has(token)) continue
+    if (seen.has(token)) continue
+    seen.add(token)
+    out.push(token)
+  }
+  return out
+}
+
+function keywordOverlapScore(queryTokens: string[], entryText: string): number {
+  if (!queryTokens.length) return 0
+  const corpus = entryText.toLowerCase()
+  let matched = 0
+  for (const token of queryTokens) {
+    if (token.length < 3) continue
+    if (corpus.includes(token)) matched++
+  }
+  return matched / queryTokens.length
+}
+
+function entryRootsForScope(entry: MemoryEntry): string[] {
+  const roots = new Set<string>()
+  const add = (raw: unknown) => {
+    const normalized = normalizePathForScope(raw)
+    if (normalized) roots.add(normalized)
+  }
+
+  add((entry.metadata as Record<string, unknown> | undefined)?.projectRoot)
+
+  if (Array.isArray(entry.references)) {
+    for (const ref of entry.references) {
+      add(ref.projectRoot)
+      if (ref.type === 'project') add(ref.path)
+      if (ref.type === 'folder' || ref.type === 'file') add(ref.path)
+    }
+  }
+
+  if (Array.isArray(entry.filePaths)) {
+    for (const ref of entry.filePaths) {
+      add(ref.projectRoot)
+      add(ref.path)
+    }
+  }
+
+  return [...roots]
+}
+
+function scopeAllowsAgentAccess(entry: MemoryEntry, agentId: string): boolean {
+  if (entry.agentId === agentId) return true
+  if (Array.isArray(entry.sharedWith) && entry.sharedWith.includes(agentId)) return true
+  return false
+}
+
+export function normalizeMemoryScopeMode(raw: unknown): MemoryScopeMode {
+  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  if (value === 'shared') return 'global'
+  if (value === 'all' || value === 'global' || value === 'agent' || value === 'session' || value === 'project') return value
+  return 'auto'
+}
+
+export function filterMemoriesByScope(entries: MemoryEntry[], scope?: MemoryScopeFilter): MemoryEntry[] {
+  if (!scope || scope.mode === 'all') return entries
+  const mode = normalizeMemoryScopeMode(scope.mode)
+  const agentId = normalizeScopeIdentifier(scope.agentId)
+  const sessionId = normalizeScopeIdentifier(scope.sessionId)
+  const projectRoot = normalizePathForScope(scope.projectRoot)
+
+  if (mode === 'global') {
+    return entries.filter((entry) => !entry.agentId)
+  }
+
+  if (mode === 'agent') {
+    if (!agentId) return []
+    return entries.filter((entry) => scopeAllowsAgentAccess(entry, agentId))
+  }
+
+  if (mode === 'session') {
+    if (!sessionId) return []
+    return entries.filter((entry) => entry.sessionId === sessionId)
+  }
+
+  if (mode === 'project') {
+    if (!projectRoot) return []
+    return entries.filter((entry) => {
+      const roots = entryRootsForScope(entry)
+      return roots.some((root) => root === projectRoot || root.startsWith(`${projectRoot}/`))
+    })
+  }
+
+  // auto
+  if (!agentId) return entries
+  return entries.filter((entry) => !entry.agentId || scopeAllowsAgentAccess(entry, agentId))
+}
+
 function computeContentHash(category: string, content: string): string {
   const normalized = `${category}|${content.toLowerCase().trim()}`
   return createHash('sha256').update(normalized).digest('hex').slice(0, 16)
@@ -612,8 +746,8 @@ function initDb() {
   const getAllWithEmbeddings = db.prepare(
     `SELECT * FROM memories WHERE embedding IS NOT NULL`
   )
-  const getAllWithEmbeddingsByAgent = db.prepare(
-    `SELECT * FROM memories WHERE embedding IS NOT NULL AND agentId = ?`
+  const getAllWithEmbeddingsByAgentOrShared = db.prepare(
+    `SELECT * FROM memories WHERE embedding IS NOT NULL AND (agentId = ? OR sharedWith LIKE ?)`
   )
 
   return {
@@ -852,17 +986,35 @@ function initDb() {
       return this.get(id)
     },
 
-    search(query: string, agentId?: string): MemoryEntry[] {
+    search(query: string, agentId?: string, options: MemorySearchOptions = {}): MemoryEntry[] {
       if (shouldSkipSearchQuery(query)) return []
       const startedAt = Date.now()
+      const normalizedAgentId = normalizeScopeIdentifier(agentId)
+      const rerankMode: MemoryRerankMode = options.rerankMode === 'semantic' || options.rerankMode === 'lexical'
+        ? options.rerankMode
+        : 'balanced'
+      const scopeMode = options.scope
+        ? normalizeMemoryScopeMode(options.scope.mode)
+        : (normalizedAgentId ? 'agent' : 'all')
+      const scopeFilter: MemoryScopeFilter | undefined = scopeMode === 'all'
+        ? undefined
+        : {
+            mode: scopeMode,
+            agentId: options.scope?.agentId ?? normalizedAgentId,
+            sessionId: options.scope?.sessionId,
+            projectRoot: options.scope?.projectRoot,
+          }
+
       // FTS keyword search (includes memories shared with this agent)
       const ftsQuery = buildFtsQuery(query)
+      const fastAgentOnlyScope = scopeMode === 'agent' && !!normalizedAgentId
       const ftsResults: MemoryEntry[] = ftsQuery
-        ? (agentId
-            ? stmts.searchByAgentOrShared.all(ftsQuery, agentId, `%"${agentId}"%`) as any[]
+        ? (fastAgentOnlyScope
+            ? stmts.searchByAgentOrShared.all(ftsQuery, normalizedAgentId, `%"${normalizedAgentId}"%`) as any[]
             : stmts.search.all(ftsQuery) as any[]
           ).map(rowToEntry)
         : []
+      const ftsHitIds = new Set<string>(ftsResults.map((entry) => entry.id))
 
       // Attempt vector search (synchronous — uses cached embedding if available)
       const vectorSimilarityScores = new Map<string, number>()
@@ -873,8 +1025,8 @@ function initDb() {
         const queryEmbedding = getEmbeddingSync(query)
         queryEmbeddingResult = queryEmbedding || undefined
         if (queryEmbedding) {
-          const rows = agentId
-            ? getAllWithEmbeddingsByAgent.all(agentId) as any[]
+          const rows = fastAgentOnlyScope
+            ? getAllWithEmbeddingsByAgentOrShared.all(normalizedAgentId, `%"${normalizedAgentId}"%`) as any[]
             : getAllWithEmbeddings.all() as any[]
 
           const scored = rows
@@ -907,24 +1059,34 @@ function initDb() {
           merged.push(entry)
         }
       }
+      const scopedMerged = scopeFilter ? filterMemoriesByScope(merged, scopeFilter) : merged
 
-      // Apply salience scoring: similarity * recencyDecay * reinforcement * pinnedBoost
+      // Retrieval v2 rerank: hybrid relevance (semantic + lexical + FTS signal), then salience decay/boosting.
+      const queryTokens = tokenizeForRerank(query)
       const now = Date.now()
       const HALF_LIFE_DAYS = 30
-      const salienceScored = merged.map((entry) => {
-        const similarity = vectorSimilarityScores.get(entry.id) ?? 0.5
+      const salienceScored = scopedMerged.map((entry) => {
+        const semantic = vectorSimilarityScores.get(entry.id) ?? (ftsHitIds.has(entry.id) ? 0.42 : 0.18)
+        const lexical = keywordOverlapScore(queryTokens, memorySearchText(entry))
+        const ftsSignal = ftsHitIds.has(entry.id) ? 1 : 0
+        const relevance = rerankMode === 'semantic'
+          ? (semantic * 0.78 + ftsSignal * 0.22)
+          : rerankMode === 'lexical'
+            ? (lexical * 0.78 + ftsSignal * 0.22)
+            : (semantic * 0.50 + lexical * 0.35 + ftsSignal * 0.15)
         const daysSinceAccess = (now - (entry.lastAccessedAt || entry.updatedAt)) / 86_400_000
         const recencyDecay = Math.exp(-0.693 * daysSinceAccess / HALF_LIFE_DAYS)
         const reinforcement = Math.log((entry.reinforcementCount || 0) + 1) + 1
         const pinnedBoost = entry.pinned ? 1.5 : 1.0
-        const salience = similarity * recencyDecay * reinforcement * pinnedBoost
+        const salience = Math.max(0.0001, relevance) * recencyDecay * reinforcement * pinnedBoost
         return { entry, salience, embedding: rawEmbeddings.get(entry.id) }
       })
-      
-      // Apply MMR if we have a query embedding, otherwise standard sort
+
+      // Apply MMR when semantic reranking is enabled and query embeddings are available.
       let out: MemoryEntry[] = []
-      if (queryEmbeddingResult) {
-        out = applyMMR(queryEmbeddingResult, salienceScored, MAX_MERGED_RESULTS, 0.6) // Lambda 0.6 = favor relevance slightly over diversity
+      const useMmr = !!queryEmbeddingResult && rerankMode !== 'lexical'
+      if (useMmr && queryEmbeddingResult) {
+        out = applyMMR(queryEmbeddingResult, salienceScored, MAX_MERGED_RESULTS, 0.6)
       } else {
         salienceScored.sort((a, b) => b.salience - a.salience)
         out = salienceScored.slice(0, MAX_MERGED_RESULTS).map((s) => s.entry)
@@ -944,7 +1106,7 @@ function initDb() {
       const elapsed = Date.now() - startedAt
       if (elapsed > 1200) {
         console.warn(
-          `[memory-db] Slow search ${elapsed}ms (agent=${agentId || 'all'}, rawLen=${String(query || '').length}, fts="${ftsQuery.slice(0, 180)}")`,
+          `[memory-db] Slow search ${elapsed}ms (scope=${scopeMode}, rerank=${rerankMode}, rawLen=${String(query || '').length}, fts="${ftsQuery.slice(0, 180)}")`,
         )
       }
       return out
@@ -957,8 +1119,9 @@ function initDb() {
       maxDepth?: number,
       maxResults?: number,
       maxLinkedExpansion?: number,
+      options: MemorySearchOptions = {},
     ): { entries: MemoryEntry[]; truncated: boolean; expandedLinkedCount: number; limits: MemoryLookupLimits } {
-      const baseResults = this.search(query, agentId)
+      const baseResults = this.search(query, agentId, options)
       const defaults = getMemoryLookupLimits()
       const limits = resolveLookupRequest(defaults, {
         depth: maxDepth ?? defaults.maxDepth,

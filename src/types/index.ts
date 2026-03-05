@@ -14,12 +14,14 @@ export interface Message {
   attachedFiles?: string[]
   toolEvents?: MessageToolEvent[]
   thinking?: string
-  kind?: 'chat' | 'heartbeat' | 'system' | 'context-clear'
+  kind?: 'chat' | 'heartbeat' | 'system' | 'context-clear' | 'plugin-ui'
   suppressed?: boolean
   bookmarked?: boolean
   suggestions?: string[]
   replyToId?: string
   source?: MessageSource
+  /** True while the message is still being streamed — cleared on final persist. */
+  streaming?: boolean
 }
 
 export type ProviderType = 'claude-cli' | 'codex-cli' | 'opencode-cli' | 'openai' | 'ollama' | 'anthropic' | 'openclaw' | 'google' | 'deepseek' | 'groq' | 'together' | 'mistral' | 'xai' | 'fireworks'
@@ -145,7 +147,25 @@ export type SessionTool =
   | 'http_request'
   | 'git'
 
-// --- Cost Tracking ---
+// --- Approvals ---
+
+export type ApprovalCategory = 'tool_access' | 'wallet_transfer' | 'plugin_scaffold' | 'plugin_install' | 'task_tool'
+
+export interface ApprovalRequest {
+  id: string
+  category: ApprovalCategory
+  agentId?: string | null
+  sessionId?: string | null
+  taskId?: string | null
+  title: string
+  description?: string
+  data: Record<string, unknown>
+  createdAt: number
+  updatedAt: number
+  status: 'pending' | 'approved' | 'rejected'
+}
+
+export type Approvals = Record<string, ApprovalRequest>
 
 export interface UsageRecord {
   sessionId: string
@@ -172,6 +192,10 @@ export interface PluginHooks {
   // Orchestration & Swarm Hooks
   onTaskComplete?: (ctx: { taskId: string; result: unknown }) => Promise<void> | void
   onAgentDelegation?: (ctx: { sourceAgentId: string; targetAgentId: string; task: string }) => Promise<void> | void
+
+  // Chat Middleware (Transform messages)
+  transformInboundMessage?: (ctx: { session: Session; text: string }) => Promise<string> | string
+  transformOutboundMessage?: (ctx: { session: Session; text: string }) => Promise<string> | string
 }
 
 export interface PluginToolDef {
@@ -181,11 +205,58 @@ export interface PluginToolDef {
   execute: (args: Record<string, unknown>, ctx: { session: Session; message: string }) => Promise<string | object> | string | object
 }
 
+export interface PluginUIExtension {
+  sidebarItems?: Array<{
+    id: string
+    label: string
+    icon?: string
+    href: string
+    position?: 'top' | 'bottom'
+  }>
+  headerWidgets?: Array<{
+    id: string
+    label: string
+    icon?: string
+  }>
+  chatInputActions?: Array<{
+    id: string
+    label: string
+    icon?: string
+    tooltip?: string
+    action: 'message' | 'link' | 'tool'
+    value: string
+  }>
+}
+
+export interface PluginProviderExtension {
+  id: string
+  name: string
+  models: string[]
+  requiresApiKey: boolean
+  requiresEndpoint: boolean
+  defaultEndpoint?: string
+  streamChat: (opts: any) => Promise<string>
+}
+
+export interface PluginConnectorExtension {
+  id: string
+  name: string
+  description: string
+  // For sending outbound
+  sendMessage?: (params: any) => Promise<any>
+  // For polling/listening
+  startListener?: (onMessage: (msg: any) => void) => Promise<() => void>
+}
+
 export interface Plugin {
   name: string
+  version?: string
   description?: string
-  hooks: PluginHooks
+  hooks?: PluginHooks
   tools?: PluginToolDef[]
+  ui?: PluginUIExtension
+  providers?: PluginProviderExtension[]
+  connectors?: PluginConnectorExtension[]
 }
 
 export interface PluginMeta {
@@ -197,8 +268,18 @@ export interface PluginMeta {
   version?: string
   source?: 'local' | 'marketplace'
   openclaw?: boolean
+  failureCount?: number
+  lastFailureAt?: number
+  lastFailureStage?: string
+  lastFailureError?: string
+  autoDisabled?: boolean
+  toolCount?: number
+  hookCount?: number
+  hasUI?: boolean
+  providerCount?: number
+  connectorCount?: number
+  createdByAgentId?: string | null
 }
-
 export interface MarketplacePlugin {
   id: string
   name: string
@@ -206,9 +287,10 @@ export interface MarketplacePlugin {
   author: string
   version: string
   url: string
-  tags: string[]
-  openclaw: boolean
-  downloads: number
+  source?: 'swarmclaw' | 'clawhub'
+  tags?: string[]
+  openclaw?: boolean
+  downloads?: number
 }
 
 export interface SSEEvent {
@@ -300,11 +382,17 @@ export interface Agent {
   openclawAllowedSkills?: string[]
   walletId?: string | null
   monthlyBudget?: number | null
+  dailyBudget?: number | null
+  hourlyBudget?: number | null
   autoRecovery?: boolean
 
   budgetAction?: 'warn' | 'block'
   /** Runtime-enriched: current month's spend. Populated by GET /api/agents when monthlyBudget is set. */
   monthlySpend?: number
+  /** Runtime-enriched: current day's spend. Populated by GET /api/agents when dailyBudget is set. */
+  dailySpend?: number
+  /** Runtime-enriched: trailing 1-hour spend. Populated by GET /api/agents when hourlyBudget is set. */
+  hourlySpend?: number
   maxFollowupChain?: number
   createdAt: number
   updatedAt: number
@@ -609,6 +697,7 @@ export interface AppSettings {
   agentLoopRecursionLimit?: number
   orchestratorLoopRecursionLimit?: number
   legacyOrchestratorMaxTurns?: number
+  delegationMaxDepth?: number
   ongoingLoopMaxIterations?: number
   ongoingLoopMaxRuntimeMinutes?: number
   maxFollowupChain?: number
@@ -682,6 +771,19 @@ export interface AppSettings {
   alertWebhookUrl?: string | null
   alertWebhookType?: 'discord' | 'slack' | 'custom' | null
   alertWebhookEvents?: ('error' | 'warning')[]
+  // Deterministic LLM response cache
+  responseCacheEnabled?: boolean
+  responseCacheTtlSec?: number
+  responseCacheMaxEntries?: number
+  // Task quality gate defaults
+  taskQualityGateEnabled?: boolean
+  taskQualityGateMinResultChars?: number
+  taskQualityGateMinEvidenceItems?: number
+  taskQualityGateRequireVerification?: boolean
+  taskQualityGateRequireArtifact?: boolean
+  taskQualityGateRequireReport?: boolean
+  // Integrity monitor
+  integrityMonitorEnabled?: boolean
 }
 
 // --- Orchestrator Secrets ---
@@ -707,6 +809,15 @@ export interface TaskComment {
   agentId?: string     // if from an orchestrator
   text: string
   createdAt: number
+}
+
+export interface TaskQualityGateConfig {
+  enabled?: boolean
+  minResultChars?: number
+  minEvidenceItems?: number
+  requireVerification?: boolean
+  requireArtifact?: boolean
+  requireReport?: boolean
 }
 
 // --- Custom Providers ---
@@ -840,6 +951,8 @@ export interface BoardTask {
   createdByAgentId?: string | null
   createdInSessionId?: string | null
   delegatedByAgentId?: string | null
+  delegatedFromTaskId?: string | null
+  delegationDepth?: number | null
   createdAt: number
   updatedAt: number
   queuedAt?: number | null
@@ -893,6 +1006,7 @@ export interface BoardTask {
   priority?: 'low' | 'medium' | 'high' | 'critical'
   // Dedup fingerprint
   fingerprint?: string
+  qualityGate?: TaskQualityGateConfig | null
 }
 
 // --- MCP Servers ---

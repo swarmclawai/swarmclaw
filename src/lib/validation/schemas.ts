@@ -15,6 +15,10 @@ export const AgentCreateSchema = z.object({
   thinkingLevel: z.string().optional(),
   soul: z.string().optional(),
   autoRecovery: z.boolean().optional().default(false),
+  monthlyBudget: z.number().positive().nullable().optional().default(null),
+  dailyBudget: z.number().positive().nullable().optional().default(null),
+  hourlyBudget: z.number().positive().nullable().optional().default(null),
+  budgetAction: z.enum(['warn', 'block']).optional().default('warn'),
 })
 
 export const ConnectorCreateSchema = z.object({
@@ -46,6 +50,14 @@ export const TaskCreateSchema = z.object({
   retryBackoffSec: z.number().optional(),
   priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
   dueAt: z.number().nullable().optional(),
+  qualityGate: z.object({
+    enabled: z.boolean().optional(),
+    minResultChars: z.number().optional(),
+    minEvidenceItems: z.number().optional(),
+    requireVerification: z.boolean().optional(),
+    requireArtifact: z.boolean().optional(),
+    requireReport: z.boolean().optional(),
+  }).nullable().optional(),
 })
 
 export const ChatroomCreateSchema = z.object({

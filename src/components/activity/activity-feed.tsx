@@ -65,8 +65,15 @@ export function ActivityFeed() {
           <div className="text-center text-text-3 text-[14px] mt-16">No activity yet</div>
         ) : (
           <div className="space-y-1">
-            {entries.map((entry: ActivityEntry) => (
-              <div key={entry.id} className="flex items-start gap-3 py-3 border-b border-white/[0.04]">
+            {entries.map((entry: ActivityEntry, idx: number) => (
+              <div
+                key={entry.id}
+                className="flex items-start gap-3 py-3 border-b border-white/[0.04]"
+                style={{
+                  animation: 'fade-up 0.5s var(--ease-spring) both',
+                  animationDelay: `${Math.min(idx * 0.03, 0.5)}s`
+                }}
+              >
                 <div className="w-8 h-8 rounded-[8px] bg-surface-2 flex items-center justify-center text-[12px] font-700 text-text-3 shrink-0">
                   {ENTITY_ICONS[entry.entityType] || '?'}
                 </div>

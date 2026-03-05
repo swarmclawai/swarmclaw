@@ -68,7 +68,7 @@ export function TaskColumn({ status, tasks, onDrop, selectionMode, selectedIds, 
 
   return (
     <div
-      className={`flex-1 min-w-[240px] max-w-[320px] flex flex-col rounded-[16px] transition-colors duration-150 ${
+      className={`flex-1 min-w-[240px] max-w-[320px] min-h-0 flex flex-col rounded-[16px] transition-colors duration-150 ${
         dragOver ? 'bg-accent-bright/[0.04] ring-1 ring-accent-bright/20' : ''
       }`}
       onDragOver={handleDragOver}
@@ -109,11 +109,12 @@ export function TaskColumn({ status, tasks, onDrop, selectionMode, selectedIds, 
         </div>
       )}
 
-      <div className="flex flex-col gap-3 flex-1 overflow-y-auto pr-1 px-1 pb-2">
-        {tasks.map((task) => (
+      <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y pr-1 px-1 pb-2">
+        {tasks.map((task, idx) => (
           <TaskCard
             key={task.id}
             task={task}
+            index={idx}
             selectionMode={selectionMode}
             selected={selectedIds?.has(task.id)}
             onToggleSelect={onToggleSelect}

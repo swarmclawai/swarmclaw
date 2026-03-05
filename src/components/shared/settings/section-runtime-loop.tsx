@@ -4,6 +4,7 @@ import {
   DEFAULT_AGENT_LOOP_RECURSION_LIMIT,
   DEFAULT_CLAUDE_CODE_TIMEOUT_SEC,
   DEFAULT_CLI_PROCESS_TIMEOUT_SEC,
+  DEFAULT_DELEGATION_MAX_DEPTH,
   DEFAULT_LEGACY_ORCHESTRATOR_MAX_TURNS,
   DEFAULT_ONGOING_LOOP_MAX_ITERATIONS,
   DEFAULT_ONGOING_LOOP_MAX_RUNTIME_MINUTES,
@@ -130,6 +131,24 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
           </div>
         )}
 
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+          <div>
+            <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Delegation Depth <HintTip text="Maximum delegation chain depth for delegate_to_agent and spawn_subagent to prevent runaway fan-out" /></label>
+            <input
+              type="number"
+              min={1}
+              max={12}
+              value={appSettings.delegationMaxDepth ?? DEFAULT_DELEGATION_MAX_DEPTH}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10)
+                patchSettings({ delegationMaxDepth: Number.isFinite(n) ? n : DEFAULT_DELEGATION_MAX_DEPTH })
+              }}
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+        </div>
+
         <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Execution Timeouts (Seconds)</label>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
@@ -177,6 +196,131 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
               style={{ fontFamily: 'inherit' }}
             />
           </div>
+        </div>
+
+        <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mt-6 mb-3">LLM Response Cache</label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+          <div className="md:col-span-3 flex items-center gap-3">
+            <button
+              onClick={() => patchSettings({ responseCacheEnabled: !(appSettings.responseCacheEnabled ?? true) })}
+              className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${(appSettings.responseCacheEnabled ?? true) ? 'bg-accent' : 'bg-white/[0.12]'}`}
+            >
+              <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${(appSettings.responseCacheEnabled ?? true) ? 'translate-x-[18px]' : ''}`} />
+            </button>
+            <span className="text-[12px] text-text-2">Enable deterministic cache (TTL + LRU) for non-tool model responses</span>
+          </div>
+          <div>
+            <label className="block text-[11px] text-text-3 mb-2">TTL (seconds)</label>
+            <input
+              type="number"
+              min={5}
+              max={604800}
+              value={appSettings.responseCacheTtlSec ?? 900}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10)
+                patchSettings({ responseCacheTtlSec: Number.isFinite(n) ? n : 900 })
+              }}
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] text-text-3 mb-2">Max Entries</label>
+            <input
+              type="number"
+              min={1}
+              max={20000}
+              value={appSettings.responseCacheMaxEntries ?? 500}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10)
+                patchSettings({ responseCacheMaxEntries: Number.isFinite(n) ? n : 500 })
+              }}
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+        </div>
+
+        <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Task Quality Gate Defaults</label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+          <div className="md:col-span-3 flex items-center gap-3">
+            <button
+              onClick={() => patchSettings({ taskQualityGateEnabled: !(appSettings.taskQualityGateEnabled ?? true) })}
+              className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${(appSettings.taskQualityGateEnabled ?? true) ? 'bg-accent' : 'bg-white/[0.12]'}`}
+            >
+              <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${(appSettings.taskQualityGateEnabled ?? true) ? 'translate-x-[18px]' : ''}`} />
+            </button>
+            <span className="text-[12px] text-text-2">Enable quality gate checks before tasks can be marked complete</span>
+          </div>
+          <div>
+            <label className="block text-[11px] text-text-3 mb-2">Min Result Chars</label>
+            <input
+              type="number"
+              min={10}
+              max={2000}
+              value={appSettings.taskQualityGateMinResultChars ?? 80}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10)
+                patchSettings({ taskQualityGateMinResultChars: Number.isFinite(n) ? n : 80 })
+              }}
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] text-text-3 mb-2">Min Evidence Signals</label>
+            <input
+              type="number"
+              min={0}
+              max={8}
+              value={appSettings.taskQualityGateMinEvidenceItems ?? 2}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10)
+                patchSettings({ taskQualityGateMinEvidenceItems: Number.isFinite(n) ? n : 2 })
+              }}
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+          <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+            <label className="flex items-center gap-2 text-[12px] text-text-2">
+              <input
+                type="checkbox"
+                checked={appSettings.taskQualityGateRequireVerification ?? false}
+                onChange={(e) => patchSettings({ taskQualityGateRequireVerification: e.target.checked })}
+              />
+              Require verification evidence
+            </label>
+            <label className="flex items-center gap-2 text-[12px] text-text-2">
+              <input
+                type="checkbox"
+                checked={appSettings.taskQualityGateRequireArtifact ?? false}
+                onChange={(e) => patchSettings({ taskQualityGateRequireArtifact: e.target.checked })}
+              />
+              Require artifact evidence
+            </label>
+            <label className="flex items-center gap-2 text-[12px] text-text-2">
+              <input
+                type="checkbox"
+                checked={appSettings.taskQualityGateRequireReport ?? false}
+                onChange={(e) => patchSettings({ taskQualityGateRequireReport: e.target.checked })}
+              />
+              Require task report
+            </label>
+          </div>
+        </div>
+
+        <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Integrity Monitor</label>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => patchSettings({ integrityMonitorEnabled: !(appSettings.integrityMonitorEnabled ?? true) })}
+            className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${(appSettings.integrityMonitorEnabled ?? true) ? 'bg-accent' : 'bg-white/[0.12]'}`}
+          >
+            <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${(appSettings.integrityMonitorEnabled ?? true) ? 'translate-x-[18px]' : ''}`} />
+          </button>
+          <span className="text-[12px] text-text-2">
+            Watch critical identity/config files for drift and raise alerts.
+          </span>
         </div>
       </div>
     </div>

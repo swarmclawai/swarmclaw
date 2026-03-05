@@ -335,6 +335,7 @@ export function isCurrentGeneration(connectorId: string, gen: number): boolean {
 
 /** Get platform implementation lazily */
 export async function getPlatform(platform: string) {
+  // 1. Check Built-ins
   switch (platform) {
     case 'discord':  return (await import('./discord')).default
     case 'telegram': return (await import('./telegram')).default
@@ -347,8 +348,33 @@ export async function getPlatform(platform: string) {
     case 'googlechat': return (await import('./googlechat')).default
     case 'matrix':    return (await import('./matrix')).default
     case 'email':     return (await import('./email')).default
-    default: throw new Error(`Unknown platform: ${platform}`)
   }
+
+  // 2. Check Plugin-provided connectors
+  try {
+    const { getPluginManager } = await import('../plugins')
+    const manager = getPluginManager()
+    const pluginConnectors = manager.getConnectors()
+    const found = pluginConnectors.find(c => c.id === platform)
+    
+    if (found) {
+      return {
+        start: async (connector: Connector, token: string, onMessage: (msg: InboundMessage) => Promise<string>) => {
+          const stop = found.startListener ? await found.startListener(onMessage) : () => {}
+          return {
+            connector,
+            stop: async () => { if (stop) await stop() },
+            sendMessage: found.sendMessage,
+            authenticated: true,
+          }
+        }
+      }
+    }
+  } catch (err: unknown) {
+    console.warn(`[connector] Failed to check plugins for platform "${platform}":`, err instanceof Error ? err.message : String(err))
+  }
+
+  throw new Error(`Unknown platform: ${platform}`)
 }
 
 export function formatMediaLine(media: InboundMedia): string {

@@ -32,11 +32,13 @@ export function streamClaudeCliChat({ session, message, imagePath, systemPrompt,
   }
 
   const args = ['--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions']
-  if (session.claudeSessionId) args.push('--resume', session.claudeSessionId)
-  if (session.model) args.push('--model', session.model)
+  const resumeSessionId = typeof session.claudeSessionId === 'string' ? session.claudeSessionId : ''
+  const selectedModel = typeof session.model === 'string' ? session.model : ''
+  if (resumeSessionId) args.push('--resume', resumeSessionId)
+  if (selectedModel) args.push('--model', selectedModel)
 
   // Inject agent system prompt
-  if (systemPrompt && !session.claudeSessionId) {
+  if (systemPrompt && !resumeSessionId) {
     args.push('--system-prompt', systemPrompt)
   }
 

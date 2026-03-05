@@ -202,13 +202,15 @@ export function ChatroomSheet() {
       }
       if (editing) {
         await updateChatroom(editing.id, payload)
-        toast.success('Chatroom saved')
+        toast.success('Chatroom updated successfully')
       } else {
         const chatroom = await createChatroom(payload)
         setCurrentChatroom(chatroom.id)
-        toast.success('Chatroom created')
+        toast.success('Chatroom created successfully')
       }
       setChatroomSheetOpen(false)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save chatroom')
     } finally {
       setSaving(false)
     }
@@ -216,11 +218,14 @@ export function ChatroomSheet() {
 
   const handleDelete = async () => {
     if (!editing || saving) return
+    if (!confirm(`Delete chatroom "${editing.name}"?`)) return
     setSaving(true)
     try {
       await deleteChatroom(editing.id)
       toast.success('Chatroom deleted')
       setChatroomSheetOpen(false)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete chatroom')
     } finally {
       setSaving(false)
     }

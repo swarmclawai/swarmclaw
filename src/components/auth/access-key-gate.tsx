@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { setStoredAccessKey } from '@/lib/api-client'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 interface AccessKeyGateProps {
   onAuthenticated: () => void
@@ -42,7 +43,8 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
 
   const handleCopyKey = async () => {
     try {
-      await navigator.clipboard.writeText(generatedKey)
+      const copiedKey = await copyTextToClipboard(generatedKey)
+      if (!copiedKey) return
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
@@ -121,12 +123,9 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
         />
       </div>
 
-      <div
-        className="relative max-w-[440px] w-full text-center"
-        style={{ animation: 'fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1)' }}
-      >
+      <div className="relative max-w-[440px] w-full text-center">
         {/* Lock / Key icon */}
-        <div className="flex justify-center mb-6">
+        <div className="flex justify-center mb-6" style={{ animation: 'spring-in 0.6s var(--ease-spring)' }}>
           <div className="relative w-12 h-12 flex items-center justify-center">
             <svg
               width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -151,15 +150,17 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
         {firstTime ? (
           /* ── First-time setup: show the generated key ── */
           <>
-            <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
-              Your Access Key
-            </h1>
-            <p className="text-[14px] text-text-2 mb-8">
-              This key was generated for your server. Copy it somewhere safe — you&apos;ll need it to connect from other devices.
-            </p>
+            <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.1s both' }}>
+              <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
+                Your Access Key
+              </h1>
+              <p className="text-[14px] text-text-2 mb-8">
+                This key was generated for your server. Copy it somewhere safe — you&apos;ll need it to connect from other devices.
+              </p>
+            </div>
 
             {/* Key display */}
-            <div className="mb-3">
+            <div className="mb-3" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.2s both' }}>
               <div
                 className="inline-flex items-center gap-3 px-5 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface
                   cursor-pointer hover:border-accent-bright/20 transition-all duration-200"
@@ -185,7 +186,7 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
               </div>
             </div>
 
-            <div className="relative h-5 mb-8">
+            <div className="relative h-5 mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.3s both' }}>
               <p
                 className="absolute inset-x-0 text-[12px] transition-all duration-300"
                 style={{
@@ -207,56 +208,64 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
               </p>
             </div>
 
-            <button
-              onClick={handleClaimKey}
-              disabled={loading}
-              className="px-12 py-4 rounded-[16px] border-none bg-accent-bright text-white text-[16px] font-display font-600
-                cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
-                shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
-            >
-              {loading ? 'Connecting...' : 'Continue'}
-            </button>
-          </>
-        ) : (
-          /* ── Returning user: enter key ── */
-          <>
-            <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
-              Connect
-            </h1>
-            <p className="text-[14px] text-text-2 mb-2">
-              Enter the access key to connect to this server.
-            </p>
-            <p className="text-[12px] text-text-3 mb-8">
-              You can find it in <code className="text-text-2">.env.local</code> in the project root.
-            </p>
-
-            <form onSubmit={handleSubmit} className="flex flex-col items-center gap-4">
-              <input
-                type="password"
-                value={key}
-                onChange={(e) => { setKey(e.target.value); setError('') }}
-                placeholder="Access key"
-                autoFocus
-                autoComplete="off"
-                className="w-full max-w-[320px] px-6 py-4 rounded-[16px] border border-white/[0.08] bg-surface
-                  text-text text-[16px] text-center font-mono outline-none
-                  transition-all duration-200 placeholder:text-text-3/70
-                  focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
-              />
-
-              {error && (
-                <p className="text-[13px] text-red-400">{error}</p>
-              )}
-
+            <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.4s both' }}>
               <button
-                type="submit"
-                disabled={!key.trim() || loading}
+                onClick={handleClaimKey}
+                disabled={loading}
                 className="px-12 py-4 rounded-[16px] border-none bg-accent-bright text-white text-[16px] font-display font-600
                   cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
                   shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
               >
-                {loading ? 'Connecting...' : 'Connect'}
+                {loading ? 'Connecting...' : 'Continue'}
               </button>
+            </div>
+          </>
+        ) : (
+          /* ── Returning user: enter key ── */
+          <>
+            <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.1s both' }}>
+              <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
+                Connect
+              </h1>
+              <p className="text-[14px] text-text-2 mb-2">
+                Enter the access key to connect to this server.
+              </p>
+              <p className="text-[12px] text-text-3 mb-8">
+                You can find it in <code className="text-text-2">.env.local</code> in the project root.
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="flex flex-col items-center gap-4">
+              <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.2s both', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                <input
+                  type="password"
+                  value={key}
+                  onChange={(e) => { setKey(e.target.value); setError('') }}
+                  placeholder="Access key"
+                  autoFocus
+                  autoComplete="off"
+                  className="w-full max-w-[320px] px-6 py-4 rounded-[16px] border border-white/[0.08] bg-surface
+                    text-text text-[16px] text-center font-mono outline-none
+                    transition-all duration-200 placeholder:text-text-3/70
+                    focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                />
+              </div>
+
+              {error && (
+                <p className="text-[13px] text-red-400" style={{ animation: 'ai-shake 0.5s' }}>{error}</p>
+              )}
+
+              <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.3s both' }}>
+                <button
+                  type="submit"
+                  disabled={!key.trim() || loading}
+                  className="px-12 py-4 rounded-[16px] border-none bg-accent-bright text-white text-[16px] font-display font-600
+                    cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
+                    shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
+                >
+                  {loading ? 'Connecting...' : 'Connect'}
+                </button>
+              </div>
             </form>
           </>
         )}

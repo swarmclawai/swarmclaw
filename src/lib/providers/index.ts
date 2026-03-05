@@ -5,7 +5,7 @@ import { streamOpenAiChat } from './openai'
 import { streamOllamaChat } from './ollama'
 import { streamAnthropicChat } from './anthropic'
 import { streamOpenClawChat } from './openclaw'
-import type { ProviderInfo, ProviderConfig as CustomProviderConfig } from '../../types'
+import type { ProviderInfo, ProviderConfig as CustomProviderConfig, ProviderType } from '../../types'
 
 const RETRYABLE_STATUS_CODES = [401, 429, 500, 502, 503]
 
@@ -19,14 +19,16 @@ export interface StreamChatUsage {
 }
 
 export interface StreamChatOptions {
-  session: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  session: Record<string, any> & { id: string }
   message: string
   imagePath?: string
   imageUrl?: string
   apiKey?: string | null
   systemPrompt?: string
   write: (data: string) => void
-  active: Map<string, any>
+  active: Map<string, unknown>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   loadHistory: (sessionId: string) => any[]
   onUsage?: (usage: StreamChatUsage) => void
   /** Abort signal from the caller — providers should use this to cancel in-flight requests. */
@@ -37,7 +39,7 @@ interface BuiltinProviderConfig extends ProviderInfo {
   handler: ProviderHandler
 }
 
-const PROVIDERS: Record<string, BuiltinProviderConfig> = {
+export const PROVIDERS: Record<string, BuiltinProviderConfig> = {
   'claude-cli': {
     id: 'claude-cli',
     name: 'Claude Code CLI',
@@ -232,6 +234,7 @@ const PROVIDERS: Record<string, BuiltinProviderConfig> = {
 /** Merge built-in providers with custom providers from storage */
 function getCustomProviders(): Record<string, CustomProviderConfig> {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { loadProviderConfigs } = require('../server/storage')
     return loadProviderConfigs() as Record<string, CustomProviderConfig>
   } catch {
@@ -241,6 +244,7 @@ function getCustomProviders(): Record<string, CustomProviderConfig> {
 
 function getModelOverrides(): Record<string, string[]> {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { loadModelOverrides } = require('../server/storage')
     return loadModelOverrides()
   } catch {
@@ -257,41 +261,80 @@ export function getProviderList(): ProviderInfo[] {
       models: overrides[info.id] || info.models,
       defaultModels: info.models,
     }))
-  const customs = Object.values(getCustomProviders())
+  
+  const customs: ProviderInfo[] = Object.values(getCustomProviders())
     .filter((c) => c.isEnabled)
     .map((c) => ({
-      id: c.id as any,
+      id: c.id as ProviderType,
       name: c.name,
       models: c.models,
       defaultModels: c.models,
       requiresApiKey: c.requiresApiKey,
-      requiresEndpoint: false,
+      requiresEndpoint: false as boolean,
       defaultEndpoint: c.baseUrl,
     }))
-  return [...builtins, ...customs]
+
+  let pluginProviders: ProviderInfo[] = []
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getPluginManager } = require('../server/plugins')
+    pluginProviders = getPluginManager().getProviders().map((p: Record<string, unknown>) => ({
+      id: String(p.id) as ProviderType,
+      name: String(p.name),
+      models: p.models as string[],
+      defaultModels: p.models as string[],
+      requiresApiKey: Boolean(p.requiresApiKey),
+      requiresEndpoint: Boolean(p.requiresEndpoint),
+      defaultEndpoint: p.defaultEndpoint as string | undefined,
+    }))
+  } catch { /* ignore if running somewhere plugins aren't available */ }
+
+  return [...builtins, ...customs, ...pluginProviders]
 }
 
 export function getProvider(id: string): BuiltinProviderConfig | null {
   if (PROVIDERS[id]) return PROVIDERS[id]
-  // Check custom providers — they use OpenAI-compatible handler with custom baseUrl
+  
+  // Check custom providers
   const customs = getCustomProviders()
   const custom = customs[id]
   if (custom?.isEnabled) {
     return {
-      id: custom.id as any,
+      id: custom.id as ProviderType,
       name: custom.name,
       models: custom.models,
       requiresApiKey: custom.requiresApiKey,
       requiresEndpoint: false,
       handler: {
-        streamChat: (opts) => {
-          // Custom providers use OpenAI handler with custom baseUrl
+        streamChat: async (opts) => {
           const patchedSession = { ...opts.session, apiEndpoint: custom.baseUrl }
+          const { streamOpenAiChat } = await import('./openai')
           return streamOpenAiChat({ ...opts, session: patchedSession })
         },
       },
     }
   }
+
+  // Check Plugin Providers
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getPluginManager } = require('../server/plugins')
+    const pluginProviders = getPluginManager().getProviders()
+    const found = pluginProviders.find((p: Record<string, unknown>) => p.id === id)
+    if (found) {
+      return {
+        id: found.id as ProviderType,
+        name: found.name,
+        models: found.models,
+        requiresApiKey: found.requiresApiKey,
+        requiresEndpoint: found.requiresEndpoint,
+        handler: {
+          streamChat: found.streamChat
+        }
+      }
+    }
+  } catch { /* ignore */ }
+
   return null
 }
 
@@ -315,7 +358,7 @@ export async function streamChatWithFailover(
     return provider.handler.streamChat(opts)
   }
 
-  let lastError: any = null
+  let lastError: unknown = null
 
   for (let i = 0; i < credentialIds.length; i++) {
     const credId = credentialIds[i]
@@ -324,6 +367,7 @@ export async function streamChatWithFailover(
       let apiKey: string | null = opts.apiKey || null
       if (credId && i > 0) {
         // Need to decrypt fallback credential
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { loadCredentials, decryptKey } = require('../server/storage')
         const creds = loadCredentials()
         const cred = creds[credId]
@@ -337,21 +381,23 @@ export async function streamChatWithFailover(
         apiKey,
       })
       return result // success
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err
-      const statusCode = err.status || err.statusCode || 0
+      const errObj = err as Record<string, unknown>
+      const statusCode = (typeof errObj?.status === 'number' ? errObj.status : typeof errObj?.statusCode === 'number' ? errObj.statusCode : 0) as number
+      const errMessage = err instanceof Error ? err.message : String(err)
       const isRetryable = RETRYABLE_STATUS_CODES.includes(statusCode)
-        || err.message?.includes('rate limit')
-        || err.message?.includes('Rate limit')
-        || err.message?.includes('429')
-        || err.message?.includes('401')
+        || errMessage?.includes('rate limit')
+        || errMessage?.includes('Rate limit')
+        || errMessage?.includes('429')
+        || errMessage?.includes('401')
 
       if (isRetryable && i < credentialIds.length - 1) {
-        console.log(`[failover] Credential ${credId} failed (${statusCode || err.message}), trying fallback...`)
+        console.log(`[failover] Credential ${credId} failed (${statusCode || errMessage}), trying fallback...`)
         // Send a metadata event to inform the client
         opts.write(`data: ${JSON.stringify({
           t: 'md',
-          text: JSON.stringify({ failover: { from: credId, reason: err.message?.slice(0, 100) } }),
+          text: JSON.stringify({ failover: { from: credId, reason: errMessage?.slice(0, 100) } }),
         })}\n\n`)
         // Exponential backoff for rate-limit / server errors (skip for auth rotation)
         if (statusCode !== 401) {

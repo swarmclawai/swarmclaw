@@ -37,6 +37,11 @@ jobs:
       - name: Test OpenClaw
         run: npm run test:openclaw
 
+      - name: MCP Conformance
+        run: npm run test:mcp:conformance
+        env:
+          SWARMCLAW_MCP_CONFORMANCE_REQUIRED: "0"
+
       - name: Build
         run: npm run build:ci
 

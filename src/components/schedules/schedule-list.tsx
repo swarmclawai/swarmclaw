@@ -118,8 +118,8 @@ export function ScheduleList({ inSidebar }: Props) {
           ? 'flex flex-col gap-1 px-2 pb-4'
           : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 px-5 pb-6'
         }>
-        {filtered.map((s) => (
-          <ScheduleCard key={s.id} schedule={s} inSidebar={inSidebar} />
+        {filtered.map((s, idx) => (
+          <ScheduleCard key={s.id} schedule={s} inSidebar={inSidebar} index={idx} />
         ))}
       </div>
     </div>

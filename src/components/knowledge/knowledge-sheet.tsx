@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import type { MemoryEntry } from '@/types'
+import { toast } from 'sonner'
 
 const ACCEPTED_TYPES = '.txt,.md,.csv,.json,.jsonl,.html,.xml,.yaml,.yml,.toml,.py,.js,.ts,.tsx,.jsx,.go,.rs,.java,.c,.cpp,.h,.rb,.php,.sh,.sql,.log,.pdf'
 
@@ -91,21 +92,22 @@ export function KnowledgeSheet() {
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Upload failed' }))
-        console.error('Upload failed:', err.error)
+        toast.error(err.error || 'Upload failed')
         return
       }
       const result: UploadResult = await res.json()
       if (!title.trim()) setTitle(result.title)
       setContent(result.content)
       setUploadedFile({ name: result.filename, url: result.url, size: result.size })
+      toast.success('Document content extracted')
 
       // Auto-tag based on file extension
       const ext = file.name.split('.').pop()?.toLowerCase() || ''
       if (ext && !tags.includes(ext)) {
         setTags((prev) => prev ? `${prev}, ${ext}` : ext)
       }
-    } catch (err) {
-      console.error('Upload error:', err)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setUploading(false)
     }
@@ -168,13 +170,15 @@ export function KnowledgeSheet() {
 
       if (editingId) {
         await api('PUT', `/knowledge/${editingId}`, payload)
+        toast.success('Knowledge entry updated')
       } else {
         await api('POST', '/knowledge', payload)
+        toast.success('Knowledge entry created')
       }
 
       onClose()
-    } catch {
-      // silent
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save knowledge')
     } finally {
       setSaving(false)
     }

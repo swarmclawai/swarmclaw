@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter, ActivityEntry, AppNotification } from '../types'
+import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter, ActivityEntry, AppNotification, ApprovalRequest } from '../types'
 import { fetchSessions, fetchDirs, fetchProviders, fetchCredentials } from '../lib/sessions'
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
@@ -197,6 +197,11 @@ interface AppState {
   // Unread tracking (localStorage-backed)
   lastReadTimestamps: Record<string, number>
   markChatRead: (id: string) => void
+
+  // Approvals
+  approvals: Record<string, ApprovalRequest>
+  loadApprovals: () => Promise<void>
+  submitApprovalDecision: (id: string, approved: boolean) => Promise<void>
 
   // Notifications
   notifications: AppNotification[]
@@ -641,6 +646,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ts = { ...get().lastReadTimestamps, [id]: Date.now() }
     set({ lastReadTimestamps: ts })
     safeStorageSet('sc_last_read', JSON.stringify(ts))
+  },
+
+  // Approvals
+  approvals: {},
+  loadApprovals: async () => {
+    try {
+      const list = await api<ApprovalRequest[]>('GET', '/approvals')
+      const approvals: Record<string, ApprovalRequest> = {}
+      for (const a of list) approvals[a.id] = a
+      set({ approvals })
+    } catch { /* ignore */ }
+  },
+  submitApprovalDecision: async (id, approved) => {
+    try {
+      await api('POST', '/approvals', { id, approved })
+      await get().loadApprovals()
+    } catch { /* ignore */ }
   },
 
   // Notifications

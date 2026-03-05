@@ -1,6 +1,6 @@
 'use client'
 
-import { Component, useState, useEffect, useCallback } from 'react'
+import { Component, useState, useEffect, useCallback, useMemo } from 'react'
 import type { ReactNode, ErrorInfo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
@@ -63,6 +63,8 @@ import { CanvasPanel } from '@/components/canvas/canvas-panel'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { api } from '@/lib/api-client'
 import { safeStorageGet, safeStorageSet } from '@/lib/safe-storage'
+import { useApprovalStore } from '@/stores/use-approval-store'
+import { useWs } from '@/hooks/use-ws'
 import type { AppView } from '@/types'
 
 const RAIL_EXPANDED_KEY = 'sc_rail_expanded'
@@ -90,9 +92,37 @@ export function AppLayout() {
   const setPluginSheetOpen = useAppStore((s) => s.setPluginSheetOpen)
   const setProjectSheetOpen = useAppStore((s) => s.setProjectSheetOpen)
   const tasks = useAppStore((s) => s.tasks)
+  const approvals = useAppStore((s) => s.approvals)
+  const loadApprovals = useAppStore((s) => s.loadApprovals)
+  const execApprovals = useApprovalStore((s) => s.approvals)
+  const loadExecApprovals = useApprovalStore((s) => s.loadApprovals)
+  const pruneExecApprovals = useApprovalStore((s) => s.pruneExpired)
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const hasSelectedSession = !!(currentSessionId && sessions[currentSessionId])
-  const pendingApprovalCount = Object.values(tasks).filter((t) => t.pendingApproval).length
+  
+  const pendingApprovalCount = useMemo(() => {
+    const taskCount = Object.values(tasks).filter((t) => t.pendingApproval).length
+    const sessionCount = Object.values(approvals).filter((a) => a.status === 'pending').length
+    const execCount = Object.keys(execApprovals).length
+    return taskCount + sessionCount + execCount
+  }, [tasks, approvals, execApprovals])
+
+  useEffect(() => {
+    loadApprovals()
+    void loadExecApprovals()
+    const interval = setInterval(() => {
+      loadApprovals()
+      void loadExecApprovals()
+      pruneExecApprovals()
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [loadApprovals, loadExecApprovals, pruneExecApprovals])
+
+  useWs('approvals', loadApprovals, 10000)
+  useWs('openclaw:approvals', () => {
+    void loadExecApprovals()
+    pruneExecApprovals()
+  }, 10000)
 
   const appSettings = useAppStore((s) => s.appSettings)
   const [agentViewMode, setAgentViewMode] = useState<'chat' | 'config'>('chat')
@@ -145,6 +175,14 @@ export function AppLayout() {
       document.documentElement.style.setProperty('--neutral-tint', hue)
     }
   }, [appSettings.themeHue])
+
+  const [pluginSidebarItems, setPluginSidebarItems] = useState<Array<{ id: string; label: string; href: string }>>([])
+
+  useEffect(() => {
+    api<Array<{ id: string; label: string; href: string }>>('GET', '/plugins/ui?type=sidebar').then(items => {
+      if (Array.isArray(items)) setPluginSidebarItems(items)
+    }).catch(() => {})
+  }, [])
 
   const [railExpanded, setRailExpanded] = useState(() => {
     const stored = safeStorageGet(RAIL_EXPANDED_KEY)
@@ -199,10 +237,11 @@ export function AppLayout() {
 
   const swipeHandlers = useSwipe({
     onSwipe: (dir) => {
+      if (isDesktop) return
       if (dir === 'right') setSidebarOpen(true)
       else setSidebarOpen(false)
     },
-    leftSwipeEnabled: sidebarOpen,
+    leftSwipeEnabled: !isDesktop && sidebarOpen,
   })
 
   const currentSession = currentSessionId ? sessions[currentSessionId] : null
@@ -223,15 +262,15 @@ export function AppLayout() {
   return (
     <div
       className="h-full flex overflow-hidden"
-      onTouchStart={swipeHandlers.onTouchStart}
-      onTouchMove={swipeHandlers.onTouchMove}
-      onTouchEnd={swipeHandlers.onTouchEnd}
+      onTouchStart={isDesktop ? undefined : swipeHandlers.onTouchStart}
+      onTouchMove={isDesktop ? undefined : swipeHandlers.onTouchMove}
+      onTouchEnd={isDesktop ? undefined : swipeHandlers.onTouchEnd}
     >
       {/* Desktop: Navigation rail (expandable) */}
       {isDesktop && (
         <div
-          className="shrink-0 bg-raised border-r border-white/[0.04] flex flex-col py-4 transition-all duration-200 overflow-visible"
-          style={{ width: railExpanded ? 180 : 60 }}
+          className="shrink-0 bg-raised border-r border-white/[0.04] flex flex-col py-4 min-h-0 transition-all duration-300 overflow-visible"
+          style={{ width: railExpanded ? 180 : 60, transitionTimingFunction: 'var(--ease-spring)' }}
         >
           {/* Logo + collapse toggle */}
           <div className={`flex items-center mb-4 shrink-0 ${railExpanded ? 'px-4 gap-3' : 'justify-center'}`}>
@@ -332,8 +371,9 @@ export function AppLayout() {
             </RailTooltip>
           )}
 
-          {/* Nav items */}
-          <div className={`flex flex-col gap-0.5 ${railExpanded ? 'px-3' : 'items-center'}`}>
+          <div className="flex-1 min-h-0 flex flex-col overflow-y-auto overscroll-contain touch-pan-y">
+            {/* Nav items */}
+            <div className={`flex flex-col gap-0.5 ${railExpanded ? 'px-3' : 'items-center'}`}>
             <NavItem view="home" label="Home" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('home')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
@@ -441,12 +481,12 @@ export function AppLayout() {
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
               </svg>
             </NavItem>
-          </div>
+            </div>
 
-          <div className="flex-1" />
+            <div className="flex-1" />
 
-          {/* Bottom: Docs + Daemon + Settings + User */}
-          <div className={`flex flex-col gap-1 ${railExpanded ? 'px-3' : 'items-center'}`}>
+            {/* Bottom: Docs + Daemon + Settings + User */}
+            <div className={`flex flex-col gap-1 ${railExpanded ? 'px-3' : 'items-center'}`}>
             {railExpanded ? (
               <a
                 href="https://swarmclaw.ai/docs"
@@ -543,19 +583,20 @@ export function AppLayout() {
                 </button>
               </RailTooltip>
             )}
+            </div>
           </div>
         </div>
       )}
 
       {/* Desktop: Side panel (wallets has its own built-in sidebar) */}
-      {isDesktop && sidebarOpen && activeView !== 'wallets' && (
+      {isDesktop && sidebarOpen && activeView !== 'wallets' && activeView !== 'approvals' && (
         <div
-          className="w-[280px] shrink-0 bg-raised border-r border-white/[0.04] flex flex-col h-full"
-          style={{ animation: 'panel-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)' }}
+          className="w-[280px] shrink-0 bg-raised border-r border-white/[0.04] flex flex-col h-full min-h-0 overflow-hidden touch-pan-y"
+          style={{ animation: 'panel-in 0.3s var(--ease-spring)' }}
         >
           <div className="flex items-center px-5 pt-5 pb-3 shrink-0">
             <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">{activeView}</h2>
-            {activeView === 'logs' || activeView === 'usage' || activeView === 'runs' || activeView === 'approvals' ? null : activeView === 'memory' ? (
+            {activeView === 'logs' || activeView === 'usage' || activeView === 'runs' ? null : activeView === 'memory' ? (
               <button
                 onClick={() => useAppStore.getState().setMemorySheetOpen(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 text-accent-bright bg-accent-soft hover:bg-accent-bright/15 transition-all cursor-pointer"
@@ -618,7 +659,7 @@ export function AppLayout() {
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
           <div
-            className="absolute inset-y-0 left-0 w-[300px] bg-raised shadow-[4px_0_60px_rgba(0,0,0,0.7)] flex flex-col"
+            className="absolute inset-y-0 left-0 w-[300px] bg-raised shadow-[4px_0_60px_rgba(0,0,0,0.7)] flex flex-col min-h-0 overflow-hidden touch-pan-y"
             style={{ animation: 'slide-in-left 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
           >
             <div className="flex items-center gap-3 px-5 py-4 shrink-0">
@@ -659,8 +700,19 @@ export function AppLayout() {
                   {v}
                 </button>
               ))}
+              {/* Dynamic Plugin Items */}
+              {pluginSidebarItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => window.open(item.href, '_blank')}
+                  className="py-2 px-2.5 rounded-[10px] text-[11px] font-600 capitalize cursor-pointer transition-all bg-emerald-500/[0.05] text-emerald-400/80 hover:text-emerald-400 border border-emerald-400/10"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
-            {activeView !== 'logs' && activeView !== 'usage' && activeView !== 'runs' && activeView !== 'settings' && activeView !== 'approvals' && (
+            {activeView !== 'logs' && activeView !== 'usage' && activeView !== 'runs' && activeView !== 'settings' && (
             <div className="px-4 py-2.5 shrink-0">
               <button
                 onClick={() => {
@@ -1170,7 +1222,7 @@ function NavItem({ view, label, expanded, active, sidebarOpen, onClick, badge, c
             </span>
           )}
         </span>
-        <span className="truncate">{label}</span>
+        <span className="truncate" style={{ animation: 'spring-in 0.4s var(--ease-spring)' }}>{label}</span>
       </button>
     )
   }

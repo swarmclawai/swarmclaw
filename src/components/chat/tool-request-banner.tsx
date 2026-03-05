@@ -15,22 +15,36 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
   const loadSessions = useAppStore((s) => s.loadSessions)
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const sessions = useAppStore((s) => s.sessions)
+  const serverApprovals = useAppStore((s) => s.approvals)
+  const loadApprovals = useAppStore((s) => s.loadApprovals)
   const [granted, setGranted] = useState<Set<string>>(new Set())
   const [denied, setDenied] = useState<Set<string>>(new Set())
   const continueSentRef = useRef(false)
 
-  const toolRequests: { toolId: string; reason: string }[] = []
+  // Resolve matching server-side tool_access approval when user grants/denies inline
+  const resolveMatchingApproval = (toolId: string, approved: boolean) => {
+    const match = Object.values(serverApprovals).find(
+      (a) => a.status === 'pending' && a.category === 'tool_access'
+        && (a.data?.toolId === toolId || a.data?.pluginId === toolId)
+    )
+    if (match) {
+      api('POST', '/approvals', { id: match.id, approved }).then(() => loadApprovals()).catch(() => { /* best effort */ })
+    }
+  }
+
+  const pluginRequests: { pluginId: string; reason: string }[] = []
   const seen = new Set<string>()
 
   function extractFromText(t: string) {
     try {
-      const jsonMatches = t.match(/\{"type"\s*:\s*"tool_request"[^}]*\}/g)
+      const jsonMatches = t.match(/\{"type"\s*:\s*"(?:tool_request|plugin_request)"[^}]*\}/g)
       if (jsonMatches) {
         for (const jm of jsonMatches) {
           const parsed = JSON.parse(jm)
-          if (parsed.type === 'tool_request' && parsed.toolId && !seen.has(parsed.toolId)) {
-            seen.add(parsed.toolId)
-            toolRequests.push({ toolId: parsed.toolId, reason: parsed.reason || '' })
+          const pluginId = parsed.pluginId || parsed.toolId
+          if ((parsed.type === 'tool_request' || parsed.type === 'plugin_request') && pluginId && !seen.has(pluginId)) {
+            seen.add(pluginId)
+            pluginRequests.push({ pluginId, reason: parsed.reason || '' })
           }
         }
       }
@@ -41,7 +55,7 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
   extractFromText(text)
   for (const output of toolOutputs) extractFromText(output)
 
-  if (toolRequests.length === 0) return null
+  if (pluginRequests.length === 0) return null
 
   const sid = currentSessionId
   const session = sid ? sessions[sid] : null
@@ -59,17 +73,20 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
     const newGranted = new Set(granted).add(toolId)
     setGranted(newGranted)
 
-    // Auto-continue: once all requested tools are granted, send a follow-up message
-    const allGranted = toolRequests.every(
-      (r) => newGranted.has(r.toolId) || updated.includes(r.toolId),
+    // Resolve matching server-side approval so approvals page stays in sync
+    resolveMatchingApproval(toolId, true)
+
+    // Notify agent that access was granted with a precise message (not a vague "Continue")
+    const allGranted = pluginRequests.every(
+      (r) => newGranted.has(r.pluginId) || updated.includes(r.pluginId),
     )
     if (allGranted && !continueSentRef.current) {
       continueSentRef.current = true
-      // Small delay to let the session update propagate
+      const grantedNames = pluginRequests.map((r) => TOOL_LABELS[r.pluginId] || r.pluginId).join(', ')
       setTimeout(() => {
         const { streaming, sendMessage } = useChatStore.getState()
         if (!streaming) {
-          sendMessage('Continue')
+          sendMessage(`Access granted for: ${grantedNames}. You now have these tools available — proceed with your task.`)
         }
       }, 300)
     }
@@ -77,24 +94,26 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
 
   const handleDeny = (toolId: string) => {
     setDenied((prev) => new Set(prev).add(toolId))
+    // Resolve matching server-side approval
+    resolveMatchingApproval(toolId, false)
     const label = TOOL_LABELS[toolId] || toolId
     setTimeout(() => {
       const { streaming, sendMessage } = useChatStore.getState()
       if (!streaming) {
-        sendMessage(`Tool access denied for ${label} — proceed without it.`)
+        sendMessage(`Plugin access denied for ${label} — proceed without it.`)
       }
     }, 200)
   }
 
   return (
     <div className="max-w-[85%] md:max-w-[72%] flex flex-col gap-2 mt-2">
-      {toolRequests.map(({ toolId, reason }) => {
-        const isGranted = granted.has(toolId) || (session?.tools || []).includes(toolId)
-        const isDenied = denied.has(toolId)
-        const label = TOOL_LABELS[toolId] || toolId
+      {pluginRequests.map(({ pluginId, reason }) => {
+        const isGranted = granted.has(pluginId) || (session?.tools || []).includes(pluginId)
+        const isDenied = denied.has(pluginId)
+        const label = TOOL_LABELS[pluginId] || pluginId
         return (
           <div
-            key={toolId}
+            key={pluginId}
             className="flex items-center gap-3 px-4 py-3 rounded-[12px] border border-amber-500/20 bg-amber-500/[0.06]"
             style={{ animation: 'fade-in 0.2s ease' }}
           >
@@ -103,7 +122,7 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
             </svg>
             <div className="flex-1 min-w-0">
               <p className="text-[12px] text-text-2 font-600">
-                Requesting access to <span className="text-amber-400">{label}</span>
+                Requesting plugin access to <span className="text-amber-400">{label}</span>
               </p>
               {reason && <p className="text-[11px] text-text-3/60 mt-0.5 truncate">{reason}</p>}
             </div>
@@ -114,14 +133,14 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
             ) : (
               <div className="flex gap-1.5 shrink-0">
                 <button
-                  onClick={() => handleGrant(toolId)}
+                  onClick={() => handleGrant(pluginId)}
                   className="px-3 py-1.5 rounded-[8px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-600 border-none cursor-pointer transition-colors"
                   style={{ fontFamily: 'inherit' }}
                 >
                   Grant
                 </button>
                 <button
-                  onClick={() => handleDeny(toolId)}
+                  onClick={() => handleDeny(pluginId)}
                   className="px-3 py-1.5 rounded-[8px] bg-red-500/15 hover:bg-red-500/25 text-red-400 text-[11px] font-600 border-none cursor-pointer transition-colors"
                   style={{ fontFamily: 'inherit' }}
                 >

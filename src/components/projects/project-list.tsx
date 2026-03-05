@@ -88,7 +88,7 @@ export function ProjectList() {
 
   if (!filtered.length && !search) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-3 p-8 text-center">
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-3 p-8 text-center" style={{ animation: 'fade-up 0.5s var(--ease-spring)' }}>
         <div className="w-14 h-14 rounded-[16px] bg-accent-soft flex items-center justify-center mb-1">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-accent-bright">
             <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7-7H4a2 2 0 0 0-2 2v17Z" />
@@ -117,7 +117,7 @@ export function ProjectList() {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Header with search and new button */}
-      <div className="px-5 pt-5 pb-3 shrink-0">
+      <div className="px-5 pt-5 pb-3 shrink-0" style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-display text-[20px] font-700 text-text tracking-[-0.02em]">Projects</h2>
@@ -159,7 +159,7 @@ export function ProjectList() {
       {/* Project cards */}
       <div className="flex-1 overflow-y-auto px-5 pb-5">
         <div className="grid gap-3">
-          {filtered.map((project) => {
+          {filtered.map((project, idx) => {
             const stats = statsMap[project.id] || { agents: 0, tasks: 0, completedTasks: 0, schedules: 0, lastActivity: project.updatedAt }
             const isActive = activeProjectFilter === project.id
             const progressPct = stats.tasks > 0 ? Math.round((stats.completedTasks / stats.tasks) * 100) : 0
@@ -170,11 +170,15 @@ export function ProjectList() {
                 className={`group relative rounded-[14px] border transition-all duration-200 cursor-pointer overflow-hidden
                   ${isActive
                     ? 'bg-white/[0.06] border-accent-bright/30 shadow-[0_0_20px_rgba(99,102,241,0.08)]'
-                    : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.05] hover:border-white/[0.1]'}`}
+                    : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.05] hover:border-white/[0.1] hover:scale-[1.01]'}`}
                 onClick={() => setActiveProjectFilter(isActive ? null : project.id)}
+                style={{
+                  animation: 'fade-up 0.4s var(--ease-spring) both',
+                  animationDelay: `${0.1 + idx * 0.03}s`
+                }}
               >
                 {/* Color accent stripe */}
-                <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-[14px]" style={{ backgroundColor: project.color || '#6B7280' }} />
+                <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-[14px]" style={{ backgroundColor: project.color || '#6B7280', animation: 'spring-in 0.6s var(--ease-spring)' }} />
 
                 <div className="pl-5 pr-4 py-4">
                   <div className="flex items-start justify-between gap-3">
@@ -182,7 +186,7 @@ export function ProjectList() {
                       <div className="flex items-center gap-2">
                         <h3 className="font-display text-[14px] font-600 text-text truncate">{project.name}</h3>
                         {isActive && (
-                          <span className="shrink-0 text-[9px] font-700 uppercase tracking-wider text-accent-bright bg-accent-soft px-1.5 py-0.5 rounded-[5px]">
+                          <span className="shrink-0 text-[9px] font-700 uppercase tracking-wider text-accent-bright bg-accent-soft px-1.5 py-0.5 rounded-[5px]" style={{ animation: 'spring-in 0.3s var(--ease-spring)' }}>
                             active filter
                           </span>
                         )}
@@ -234,14 +238,18 @@ export function ProjectList() {
                   {/* Progress bar */}
                   {stats.tasks > 0 && (
                     <div className="mt-3 flex items-center gap-2.5">
-                      <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                      <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden relative">
                         <div
-                          className="h-full rounded-full transition-all duration-500"
+                          className="h-full rounded-full transition-all duration-500 relative"
                           style={{
                             width: `${progressPct}%`,
                             backgroundColor: progressPct === 100 ? '#22C55E' : (project.color || '#6366F1'),
                           }}
-                        />
+                        >
+                          {isActive && progressPct < 100 && (
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full animate-[shimmer-bar_2s_infinite]" />
+                          )}
+                        </div>
                       </div>
                       <span className={`text-[10px] font-mono font-600 ${progressPct === 100 ? 'text-emerald-400' : 'text-text-3/50'}`}>
                         {progressPct}%

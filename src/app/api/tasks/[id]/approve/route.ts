@@ -58,11 +58,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         saveTasks(t2)
         notify('tasks')
       }
-    } catch (err: any) {
-      console.error(`[approve] Resume failed for task ${id}:`, err.message)
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      console.error(`[approve] Resume failed for task ${id}:`, errMsg)
       const t2 = loadTasks()
       if (t2[id]) {
-        t2[id].error = err.message || String(err)
+        t2[id].error = errMsg
         t2[id].updatedAt = Date.now()
         saveTasks(t2)
         notify('tasks')

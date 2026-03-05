@@ -43,6 +43,14 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'approvals',
+    description: 'Manage runtime approvals',
+    commands: [
+      cmd('list', 'GET', '/approvals', 'List pending approvals'),
+      cmd('resolve', 'POST', '/approvals', 'Approve/reject a pending approval', { expectsJsonBody: true }),
+    ],
+  },
+  {
     name: 'claude-skills',
     description: 'Read local Claude skills directory metadata',
     commands: [
@@ -251,6 +259,8 @@ const COMMAND_GROUPS = [
       cmd('delete', 'DELETE', '/mcp-servers/:id', 'Delete MCP server'),
       cmd('test', 'POST', '/mcp-servers/:id/test', 'Test MCP server connection'),
       cmd('tools', 'GET', '/mcp-servers/:id/tools', 'List tools available on an MCP server'),
+      cmd('conformance', 'POST', '/mcp-servers/:id/conformance', 'Run MCP conformance checks for a server', { expectsJsonBody: true }),
+      cmd('invoke', 'POST', '/mcp-servers/:id/invoke', 'Invoke an MCP tool on a server', { expectsJsonBody: true }),
     ],
   },
   {
@@ -331,8 +341,11 @@ const COMMAND_GROUPS = [
     commands: [
       cmd('list', 'GET', '/plugins', 'List installed plugins'),
       cmd('set', 'POST', '/plugins', 'Enable/disable plugin', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/plugins', 'Delete an external plugin (use --query filename=plugin.js)'),
+      cmd('update', 'PATCH', '/plugins', 'Update a plugin (use --query id=plugin.js or --query all=true)'),
       cmd('install', 'POST', '/plugins/install', 'Install plugin from URL', { expectsJsonBody: true }),
       cmd('marketplace', 'GET', '/plugins/marketplace', 'Get marketplace catalog'),
+      cmd('ui', 'GET', '/plugins/ui', 'List plugin UI extensions (use --query type=sidebar|header|chat_actions|connectors)'),
     ],
   },
   {

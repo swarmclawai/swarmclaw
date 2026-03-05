@@ -43,14 +43,12 @@ export function RunList() {
     try {
       const res = await api<SessionRunRecord[]>('GET', '/runs?limit=200')
       setRuns(Array.isArray(res) ? res : [])
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false)
-    }
+    } catch { /* ignore */ }
+    setLoading(false)
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchRuns()
   }, [fetchRuns])
 
@@ -61,6 +59,7 @@ export function RunList() {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-3 text-[13px]">
+        <span className="w-4 h-4 rounded-full border-2 border-text-3/20 border-t-text-3/60 animate-spin mr-2" />
         Loading runs...
       </div>
     )
@@ -69,7 +68,7 @@ export function RunList() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Controls */}
-      <div className="px-5 py-2 space-y-2 shrink-0">
+      <div className="px-5 py-2 space-y-2 shrink-0" style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
         {/* Status filter + auto-refresh */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
@@ -94,33 +93,38 @@ export function RunList() {
           <div className="flex-1" />
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-2 py-1 rounded-[6px] text-[10px] font-600 cursor-pointer transition-all border-none ${
+            className={`px-2 py-1 rounded-[6px] text-[10px] font-600 cursor-pointer transition-all border-none flex items-center gap-1.5 ${
               autoRefresh ? 'bg-green-500/10 text-green-400' : 'bg-white/[0.04] text-text-3'
             }`}
           >
+            {autoRefresh && <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />}
             {autoRefresh ? 'LIVE' : 'PAUSED'}
           </button>
         </div>
       </div>
 
       {/* Count */}
-      <div className="px-5 py-1 text-[10px] text-text-3/60">
+      <div className="px-5 py-1 text-[10px] text-text-3/60" style={{ animation: 'fade-in 0.6s ease 0.1s both' }}>
         {filtered.length} run{filtered.length !== 1 ? 's' : ''}
       </div>
 
       {/* Run list */}
       <div className="flex-1 overflow-y-auto px-4 pb-8">
         {filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-text-3 text-[12px]">
+          <div className="flex items-center justify-center h-32 text-text-3 text-[12px]" style={{ animation: 'fade-up 0.5s var(--ease-spring)' }}>
             No runs found
           </div>
         ) : (
           <div className="space-y-1">
-            {filtered.map((run) => (
+            {filtered.map((run, idx) => (
               <button
                 key={run.id}
                 onClick={() => setSelected(run)}
-                className="w-full text-left p-3 rounded-[10px] border border-white/[0.06] bg-surface hover:bg-surface-2 transition-all cursor-pointer block"
+                className="w-full text-left p-3 rounded-[10px] border border-white/[0.06] bg-surface hover:bg-surface-2 transition-all cursor-pointer block hover:scale-[1.01] active:scale-[0.99]"
+                style={{
+                  animation: 'fade-up 0.4s var(--ease-spring) both',
+                  animationDelay: `${0.1 + idx * 0.02}s`
+                }}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className={`text-[9px] font-700 uppercase tracking-wider px-1.5 py-0.5 rounded-[4px] ${STATUS_COLORS[run.status].bg} ${STATUS_COLORS[run.status].text}`}>
@@ -144,7 +148,7 @@ export function RunList() {
       {/* Detail Sheet */}
       <BottomSheet open={!!selected} onClose={() => setSelected(null)}>
         {selected && (
-          <>
+          <div style={{ animation: 'fade-in 0.3s ease' }}>
             <div className="mb-6">
               <div className="flex items-center gap-3 mb-3">
                 <span className={`text-[11px] font-700 uppercase tracking-wider px-2.5 py-1 rounded-[6px] ${STATUS_COLORS[selected.status].bg} ${STATUS_COLORS[selected.status].text}`}>
@@ -214,7 +218,7 @@ export function RunList() {
                 </pre>
               </div>
             )}
-          </>
+          </div>
         )}
       </BottomSheet>
     </div>

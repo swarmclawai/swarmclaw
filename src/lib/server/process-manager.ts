@@ -5,6 +5,7 @@ const MAX_LOG_CHARS = 200_000
 const DEFAULT_BACKGROUND_YIELD_MS = 10_000
 const DEFAULT_TIMEOUT_MS = 30 * 60_000
 const DEFAULT_TTL_MS = 30 * 60_000
+const BACKGROUND_STARTUP_GRACE_MS = 500
 
 export type ProcessStatus = 'running' | 'exited' | 'killed' | 'failed' | 'timeout'
 
@@ -170,6 +171,23 @@ export async function startManagedProcess(opts: StartProcessOptions): Promise<St
   state.exitWaiters.set(id, exitPromise)
 
   if (opts.background) {
+    // Give background processes a brief grace window so immediate crashes
+    // (e.g., bind/permission errors) are surfaced instead of misreported as running.
+    const startupWaitMs = Math.min(
+      Math.max(100, BACKGROUND_STARTUP_GRACE_MS),
+      Math.max(200, timeoutMs),
+    )
+    await wait(startupWaitMs)
+    const rec = state.records.get(id)
+    if (rec && rec.status !== 'running') {
+      return {
+        status: 'completed',
+        processId: id,
+        output: rec.log,
+        exitCode: rec.exitCode,
+        signal: rec.signal,
+      }
+    }
     return {
       status: 'running',
       processId: id,

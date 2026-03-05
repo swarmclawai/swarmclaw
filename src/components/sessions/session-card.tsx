@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { ConnectorPlatformBadge, getSessionConnector } from '@/components/shared/connector-platform-icon'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { toast } from 'sonner'
 
 function timeAgo(ts: number): string {
   if (!ts) return ''
@@ -46,8 +47,15 @@ export function SessionCard({ session, active, onClick }: Props) {
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    await api('DELETE', `/sessions/${session.id}`)
-    removeSession(session.id)
+    if (!confirm(`Delete chat session "${session.name}"?`)) return
+    
+    try {
+      await api('DELETE', `/sessions/${session.id}`)
+      removeSession(session.id)
+      toast.success('Session deleted')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete session')
+    }
   }
 
   const last = session.messages?.length

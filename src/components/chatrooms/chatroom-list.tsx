@@ -63,7 +63,7 @@ export function ChatroomList() {
       ) : (
         <div className="p-3 space-y-1">
           {sorted.length > 2 && (
-            <div className="flex items-center gap-1 px-1 pb-2">
+            <div className="flex items-center gap-1 px-1 pb-2" style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
               {(['all', 'active', 'recent'] as const).map((f) => (
                 <button
                   key={f}
@@ -79,7 +79,7 @@ export function ChatroomList() {
               ))}
             </div>
           )}
-          {filtered.map((chatroom) => {
+          {filtered.map((chatroom, idx) => {
             const isActive = chatroom.id === currentChatroomId
             const memberNames = chatroom.agentIds
               .map((id) => agents[id]?.name)
@@ -91,11 +91,15 @@ export function ChatroomList() {
               <button
                 key={chatroom.id}
                 onClick={() => setCurrentChatroom(chatroom.id)}
-                className={`w-full text-left py-3.5 px-4 rounded-[14px] transition-all cursor-pointer group border border-transparent ${
+                className={`w-full text-left py-3.5 px-4 rounded-[14px] transition-all cursor-pointer group border border-transparent relative overflow-hidden ${
                   isActive
                     ? 'bg-accent-soft/60'
-                    : 'hover:bg-white/[0.04]'
+                    : 'hover:bg-white/[0.04] hover:scale-[1.01]'
                 }`}
+                style={{
+                  animation: 'fade-up 0.4s var(--ease-spring) both',
+                  animationDelay: `${idx * 0.03}s`
+                }}
               >
                 <div className="flex items-center gap-2 mb-0.5">
                   <div className="w-7 h-7 rounded-full bg-accent-soft flex items-center justify-center shrink-0">
@@ -106,6 +110,9 @@ export function ChatroomList() {
                   <span className={`text-[13px] font-600 truncate ${isActive ? 'text-accent-bright' : 'text-text'}`}>
                     {chatroom.name}
                   </span>
+                  {isActive && (
+                    <div className="absolute left-0 top-3 bottom-3 w-1 rounded-r-full bg-accent-bright" style={{ animation: 'spring-in 0.3s var(--ease-spring)' }} />
+                  )}
                   <span className="label-mono ml-auto shrink-0">
                     {chatroom.agentIds.length} agents
                   </span>

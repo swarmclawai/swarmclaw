@@ -38,7 +38,11 @@ export function AgentAvatar({ seed, avatarUrl, name, size = 32, className = '', 
   const dot = status && status !== 'idle' ? (
     <span
       className={`absolute -bottom-0.5 -right-0.5 rounded-full ${STATUS_COLORS[status]} ring-2 ring-[#0f0f1a]`}
-      style={{ width: dotSize, height: dotSize }}
+      style={{
+        width: dotSize,
+        height: dotSize,
+        animation: status === 'online' ? 'pulse-subtle 2s ease-in-out infinite' : undefined
+      }}
       title={status === 'busy' ? 'Busy' : 'Online'}
     />
   ) : null

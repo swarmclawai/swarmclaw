@@ -9,7 +9,7 @@ export function CapabilityPolicySection({ appSettings, patchSettings, inputClass
         Capability Policy
       </h3>
       <p className="text-[12px] text-text-3 mb-5">
-        Centralized guardrails for agent tool families. Applies to direct tool calls and forced auto-routing.
+        Centralized guardrails for agent plugin families. Applies to direct plugin calls and forced auto-routing.
       </p>
       <div className="p-6 rounded-[18px] bg-surface border border-white/[0.06]">
         <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Policy Mode</label>
@@ -53,7 +53,7 @@ export function CapabilityPolicySection({ appSettings, patchSettings, inputClass
           </div>
 
           <div>
-            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Blocked Tools</label>
+            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Blocked Plugins</label>
             <input
               type="text"
               value={(appSettings.capabilityBlockedTools || []).join(', ')}
@@ -70,7 +70,7 @@ export function CapabilityPolicySection({ appSettings, patchSettings, inputClass
           </div>
 
           <div>
-            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Allowed Tools (Override)</label>
+            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Allowed Plugins (Override)</label>
             <input
               type="text"
               value={(appSettings.capabilityAllowedTools || []).join(', ')}

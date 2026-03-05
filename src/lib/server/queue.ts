@@ -23,12 +23,14 @@ interface SessionMessageLike {
   role?: string
   text?: string
   time?: number
-  kind?: 'chat' | 'heartbeat' | 'system' | 'context-clear'
+  kind?: string
   source?: {
     connectorId?: string
     channelId?: string
   }
   toolEvents?: Array<{ name?: string; output?: string }>
+  streaming?: boolean
+  imageUrl?: string
 }
 
 interface SessionLike {
@@ -95,6 +97,181 @@ function applyTaskPolicyDefaults(task: BoardTask): void {
   task.retryBackoffSec = policy.backoffSec
   if (task.retryScheduledAt === undefined) task.retryScheduledAt = null
   if (task.deadLetteredAt === undefined) task.deadLetteredAt = null
+}
+
+const DEV_TASK_HINT = /\b(dev(?:\s+server)?|start(?:ing)?\s+(?:the\s+)?server|run(?:ning)?\s+(?:the\s+)?(?:app|project|site)|serve|localhost|http\s+server|web\s+server|npm\b|pnpm\b|yarn\b|bun\b|vite|next(?:\.js)?|react|build|compile)\b/i
+const TASK_CWD_NOISE_DIRS = new Set([
+  'uploads',
+  'data',
+  'projects',
+  'tasks',
+  '.swarm-data-test',
+  '.git',
+  '.next',
+  'node_modules',
+])
+const PROJECT_MARKER_FILES = ['package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', '.git']
+const SOURCE_MARKER_DIRS = ['src', 'app', 'public', 'pages']
+const WORKSPACE_PROJECTS_DIR = path.join(WORKSPACE_DIR, 'projects')
+
+interface WorkspaceDirCandidate {
+  dir: string
+  name: string
+  hasProjectMarker: boolean
+  hasSourceMarker: boolean
+}
+
+let workspaceDirCache: { expiresAt: number; candidates: WorkspaceDirCandidate[] } | null = null
+
+function isExistingDirectory(dirPath: string): boolean {
+  try {
+    return fs.statSync(dirPath).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+function isWithinDirectory(parent: string, child: string): boolean {
+  const parentResolved = path.resolve(parent)
+  const childResolved = path.resolve(child)
+  const rel = path.relative(parentResolved, childResolved)
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+}
+
+function normalizeForMatch(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function hasAnyMarker(dirPath: string, markers: string[]): boolean {
+  return markers.some((marker) => fs.existsSync(path.join(dirPath, marker)))
+}
+
+function normalizeDirCandidate(raw: unknown, baseDir: string): string | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const homeDir = process.env.HOME || ''
+  const expanded = trimmed === '~'
+    ? homeDir
+    : trimmed.startsWith('~/')
+      ? path.join(homeDir, trimmed.slice(2))
+      : trimmed
+  const resolved = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(baseDir, expanded)
+  return isExistingDirectory(resolved) ? resolved : null
+}
+
+function looksLikeDevTask(task: Pick<BoardTask, 'title' | 'description'>): boolean {
+  const text = `${task.title || ''} ${task.description || ''}`.trim()
+  return DEV_TASK_HINT.test(text)
+}
+
+function listWorkspaceDirCandidates(): WorkspaceDirCandidate[] {
+  const now = Date.now()
+  if (workspaceDirCache && workspaceDirCache.expiresAt > now) return workspaceDirCache.candidates
+
+  const candidates: WorkspaceDirCandidate[] = []
+  const seen = new Set<string>()
+  const roots = [WORKSPACE_DIR, WORKSPACE_PROJECTS_DIR]
+
+  for (const root of roots) {
+    if (!isExistingDirectory(root)) continue
+    let entries: fs.Dirent[] = []
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const name = entry.name
+      if (!name || name.startsWith('.')) continue
+      if (TASK_CWD_NOISE_DIRS.has(name)) continue
+      const dir = path.join(root, name)
+      const key = path.resolve(dir)
+      if (seen.has(key)) continue
+      seen.add(key)
+      candidates.push({
+        dir: key,
+        name,
+        hasProjectMarker: hasAnyMarker(key, PROJECT_MARKER_FILES),
+        hasSourceMarker: hasAnyMarker(key, SOURCE_MARKER_DIRS),
+      })
+    }
+  }
+
+  candidates.sort((a, b) => a.name.localeCompare(b.name))
+  workspaceDirCache = {
+    expiresAt: now + 15_000,
+    candidates,
+  }
+  return candidates
+}
+
+function inferWorkspaceProjectCwd(task: Pick<BoardTask, 'title' | 'description' | 'file'>): string | null {
+  const candidates = listWorkspaceDirCandidates()
+  if (!candidates.length) return null
+
+  const taskText = normalizeForMatch(`${task.title || ''} ${task.description || ''} ${task.file || ''}`)
+  const devTask = looksLikeDevTask(task)
+  const markerCandidates = candidates.filter((candidate) => candidate.hasProjectMarker)
+
+  let best: { dir: string; score: number } | null = null
+  for (const candidate of candidates) {
+    const nameNorm = normalizeForMatch(candidate.name)
+    if (!nameNorm) continue
+    let score = 0
+    if (taskText.includes(nameNorm)) score += 8
+    for (const token of nameNorm.split(' ')) {
+      if (token.length < 3) continue
+      if (taskText.includes(token)) score += 1
+    }
+    if (candidate.hasProjectMarker) score += devTask ? 3 : 1
+    if (candidate.hasSourceMarker) score += 1
+    if (!best || score > best.score) best = { dir: candidate.dir, score }
+  }
+
+  if (best && best.score >= 4) return best.dir
+  if (devTask && markerCandidates.length === 1) return markerCandidates[0].dir
+  return null
+}
+
+function resolveTaskExecutionCwd(task: ScheduleTaskMeta, sessions: Record<string, SessionLike>): string {
+  const workspaceRoot = path.resolve(WORKSPACE_DIR)
+
+  const explicitCwd = normalizeDirCandidate(task.cwd, workspaceRoot)
+  if (explicitCwd) return explicitCwd
+
+  const projectId = typeof task.projectId === 'string' ? task.projectId.trim() : ''
+  if (projectId) {
+    const projectDir = path.join(WORKSPACE_PROJECTS_DIR, projectId)
+    if (isExistingDirectory(projectDir)) return projectDir
+  }
+
+  const fileRef = typeof task.file === 'string' ? task.file.trim() : ''
+  if (fileRef) {
+    const filePath = path.isAbsolute(fileRef) ? fileRef : path.resolve(workspaceRoot, fileRef)
+    const fileDir = isExistingDirectory(filePath) ? filePath : path.dirname(filePath)
+    if (isExistingDirectory(fileDir) && isWithinDirectory(workspaceRoot, fileDir)) return fileDir
+  }
+
+  const inferredCwd = inferWorkspaceProjectCwd(task)
+  if (inferredCwd) return inferredCwd
+
+  const sourceSessionId = typeof task.createdInSessionId === 'string' ? task.createdInSessionId.trim() : ''
+  const sourceSessionCwd = sourceSessionId
+    ? normalizeDirCandidate(sessions[sourceSessionId]?.cwd, workspaceRoot)
+    : null
+  if (sourceSessionCwd && path.resolve(sourceSessionCwd) !== workspaceRoot) return sourceSessionCwd
+
+  const runSessionId = typeof task.sessionId === 'string' ? task.sessionId.trim() : ''
+  const runSessionCwd = runSessionId
+    ? normalizeDirCandidate(sessions[runSessionId]?.cwd, workspaceRoot)
+    : null
+  if (runSessionCwd && path.resolve(runSessionCwd) !== workspaceRoot) return runSessionCwd
+
+  const sandboxDir = path.join(workspaceRoot, 'tasks', task.id)
+  fs.mkdirSync(sandboxDir, { recursive: true })
+  return sandboxDir
 }
 
 function queueContains(queue: string[], id: string): boolean {
@@ -316,12 +493,34 @@ export function resolveTaskOriginConnectorFollowupTarget(params: {
 // Task result extraction now uses Zod-validated structured data
 // from ./task-result.ts (extractTaskResult, formatResultBody)
 
+/** Check if a task result looks incomplete (agent stopped mid-objective). */
+function looksIncomplete(text: string): boolean {
+  if (!text) return false
+  const trimmed = text.trim()
+  // Ends with ellipsis or continuation signal
+  if (trimmed.endsWith('...') || trimmed.endsWith('…')) return true
+  // Ends with a step/phase header (agent was listing next steps)
+  if (/(?:^|\n)#{1,3}\s+(?:Step|Phase|Next)\s+\d/i.test(trimmed.slice(-200))) return true
+  // Contains forward-looking language at the end
+  const lastChunk = trimmed.slice(-300).toLowerCase()
+  if (/\b(?:next i(?:'ll| will)|now i(?:'ll| will)|let me (?:now|next)|moving on to|proceeding to)\b/.test(lastChunk)) return true
+  return false
+}
+
 async function executeTaskRun(
   task: BoardTask,
   agent: Agent,
   sessionId: string,
 ): Promise<string> {
-  const prompt = task.description || task.title
+  const basePrompt = task.description || task.title
+  const prompt = [
+    basePrompt,
+    '',
+    'Completion requirements:',
+    '- Execute the task before replying; do not reply with only a plan.',
+    '- Include concrete evidence in your final summary: changed file paths, commands run, and verification results.',
+    '- If blocked, state the blocker explicitly and what input or permission is missing.',
+  ].join('\n')
   if (agent?.isOrchestrator) {
     return executeOrchestrator(agent, prompt, sessionId, task.id)
   }
@@ -331,11 +530,24 @@ async function executeTaskRun(
     message: prompt,
     internal: false,
     source: 'task',
+    runId: task.id,
   })
-  const text = typeof run.text === 'string' ? run.text.trim() : ''
-  if (text) return text
-  if (run.error) return `Error: ${run.error}`
-  return ''
+  let text = typeof run.text === 'string' ? run.text.trim() : ''
+  if (run.error) return text ? text : `Error: ${run.error}`
+
+  // Auto-continue if the result looks incomplete
+  if (text && looksIncomplete(text)) {
+    const followUp = await executeSessionChatTurn({
+      sessionId,
+      message: 'Continue and complete the remaining steps. Provide a final summary when done.',
+      internal: false,
+      source: 'task',
+    })
+    const contText = typeof followUp.text === 'string' ? followUp.text.trim() : ''
+    if (contText) text = contText
+  }
+
+  return text
 }
 
 function notifyMainChatScheduleResult(task: BoardTask): void {
@@ -378,8 +590,8 @@ function notifyMainChatScheduleResult(task: BoardTask): void {
   const now = Date.now()
   let changed = false
 
-  const buildMsg = (): Message => {
-    const msg: Message = { role: 'assistant', text: body, time: now, kind: 'system' }
+  const buildMsg = (): SessionMessageLike => {
+    const msg: SessionMessageLike = { role: 'assistant', text: body, time: now, kind: 'system' }
     if (firstImage) msg.imageUrl = firstImage.url
     return msg
   }
@@ -702,6 +914,7 @@ export function enqueueTask(taskId: string) {
 export function validateCompletedTasksQueue() {
   const tasks = loadTasks()
   const sessions = loadSessions()
+  const settings = loadSettings()
   const now = Date.now()
   let checked = 0
   let demoted = 0
@@ -718,7 +931,7 @@ export function validateCompletedTasksQueue() {
       tasksDirty = true
     }
 
-    const validation = validateTaskCompletion(task, { report })
+    const validation = validateTaskCompletion(task, { report, settings })
     const prevValidation = task.validation || null
     const validationChanged = !prevValidation
       || prevValidation.ok !== validation.ok
@@ -930,7 +1143,9 @@ export async function processNext() {
       task.validation = null
       task.updatedAt = Date.now()
 
-      const taskCwd = task.cwd || WORKSPACE_DIR
+      const sessionsForCwd = loadSessions() as Record<string, SessionLike>
+      const taskCwd = resolveTaskExecutionCwd(task as ScheduleTaskMeta, sessionsForCwd)
+      task.cwd = taskCwd
       let sessionId = ''
       const scheduleTask = task as ScheduleTaskMeta
       const isScheduleTask = scheduleTask.sourceType === 'schedule'
@@ -1029,6 +1244,7 @@ export async function processNext() {
       try {
         const result = await executeTaskRun(task, agent, sessionId)
         const t2 = loadTasks()
+        const settings = loadSettings()
         if (t2[taskId]) {
           applyTaskPolicyDefaults(t2[taskId])
           // Structured extraction: Zod-validated result with typed artifacts
@@ -1045,7 +1261,7 @@ export async function processNext() {
           t2[taskId].updatedAt = Date.now()
           const report = ensureTaskCompletionReport(t2[taskId])
           if (report?.relativePath) t2[taskId].completionReportPath = report.relativePath
-          const validation = validateTaskCompletion(t2[taskId], { report })
+          const validation = validateTaskCompletion(t2[taskId], { report, settings })
           t2[taskId].validation = validation
 
           const now = Date.now()
@@ -1260,6 +1476,29 @@ export function recoverStalledRunningTasks(): { recovered: number; deadLettered:
 
   for (const task of Object.values(tasks) as BoardTask[]) {
     if (task.status !== 'running') continue
+    if (!task.startedAt) {
+      const recoveredAt = Date.now()
+      task.status = 'queued'
+      task.queuedAt = task.queuedAt || recoveredAt
+      task.retryScheduledAt = null
+      task.updatedAt = recoveredAt
+      task.error = 'Recovered inconsistent running state (missing startedAt); requeued.'
+      if (!task.comments) task.comments = []
+      task.comments.push({
+        id: genId(),
+        author: 'System',
+        text: 'Recovered inconsistent running state (missing startedAt). Task requeued.',
+        createdAt: recoveredAt,
+      })
+      pushQueueUnique(queue, task.id)
+      recovered++
+      changed = true
+      pushMainLoopEventToMainSessions({
+        type: 'task_stall_recovered',
+        text: `Recovered inconsistent running task "${task.title}" (${task.id}) and requeued it.`,
+      })
+      continue
+    }
     const since = Math.max(task.updatedAt || 0, task.startedAt || 0)
     if (!since || (now - since) < staleMs) continue
 
@@ -1286,6 +1525,9 @@ export function recoverStalledRunningTasks(): { recovered: number; deadLettered:
   if (changed) {
     saveTasks(tasks)
     saveQueue(queue)
+    if (recovered > 0) {
+      setTimeout(() => processNext(), 250)
+    }
   }
 
   return { recovered, deadLettered }

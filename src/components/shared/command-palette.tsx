@@ -172,11 +172,16 @@ export function CommandPalette() {
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setOpen(false)} />
       <div
         className="relative w-full max-w-[520px] mx-4 bg-raised rounded-[16px] border border-white/[0.08] shadow-[0_24px_80px_rgba(0,0,0,0.6)] overflow-hidden"
-        style={{ animation: 'fade-in 0.15s ease' }}
+        style={{ animation: 'modal-in 0.3s var(--ease-spring)' }}
       >
+        {/* Breathing glow effect */}
+        <div className="absolute inset-0 pointer-events-none opacity-20" style={{ animation: 'glow-pulse 4s ease-in-out infinite' }}>
+          <div className="absolute inset-0 bg-gradient-to-b from-accent-bright/20 to-transparent" />
+        </div>
         {/* Search input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06]">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3 shrink-0">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] relative overflow-hidden">
+          <div className="absolute bottom-0 left-0 h-[1px] w-full bg-gradient-to-r from-transparent via-accent-bright/40 to-transparent" style={{ animation: 'glow-line 3s linear infinite' }} />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3 shrink-0 relative z-10">
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
           <input
@@ -208,10 +213,13 @@ export function CommandPalette() {
                     <button
                       key={item.id}
                       onClick={item.onSelect}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left border-none cursor-pointer transition-colors
-                        ${idx === selectedIndex ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-2 hover:bg-white/[0.04]'}`}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left border-none cursor-pointer transition-all relative z-10
+                        ${idx === selectedIndex ? 'bg-accent-soft text-accent-bright pl-6 scale-[1.01]' : 'bg-transparent text-text-2 hover:bg-white/[0.04]'}`}
                       style={{ fontFamily: 'inherit' }}
                     >
+                      {idx === selectedIndex && (
+                        <div className="absolute left-0 top-1 bottom-1 w-1 rounded-r-full bg-accent-bright" style={{ animation: 'spring-in 0.3s var(--ease-spring)' }} />
+                      )}
                       <span className="shrink-0 text-text-3">{categoryIcon[item.category as keyof typeof categoryIcon]}</span>
                       <span className="text-[13px] font-500 truncate">{item.label}</span>
                     </button>

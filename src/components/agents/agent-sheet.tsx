@@ -14,6 +14,7 @@ import { NATIVE_CAPABILITY_PROVIDER_IDS, NON_LANGGRAPH_PROVIDER_IDS } from '@/li
 import { AgentAvatar } from './agent-avatar'
 import { AgentPickerList } from '@/components/shared/agent-picker-list'
 import { randomSoul } from '@/lib/soul-suggestions'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import { SectionLabel } from '@/components/shared/section-label'
 import { SoulLibraryPicker } from './soul-library-picker'
 import { HintTip } from '@/components/shared/hint-tip'
@@ -117,6 +118,8 @@ export function AgentSheet() {
   const [heartbeatModel, setHeartbeatModel] = useState('')
   const [heartbeatPrompt, setHeartbeatPrompt] = useState('')
   const [budgetEnabled, setBudgetEnabled] = useState(false)
+  const [hourlyBudget, setHourlyBudget] = useState('')
+  const [dailyBudget, setDailyBudget] = useState('')
   const [monthlyBudget, setMonthlyBudget] = useState('')
   const [budgetAction, setBudgetAction] = useState<'warn' | 'block'>('warn')
   const [agentWallet, setAgentWallet] = useState<(Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }) | null>(null)
@@ -201,7 +204,13 @@ export function AgentSheet() {
         setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
         setHeartbeatModel(editing.heartbeatModel || '')
         setHeartbeatPrompt(editing.heartbeatPrompt || '')
-        setBudgetEnabled(typeof editing.monthlyBudget === 'number' && editing.monthlyBudget > 0)
+        setBudgetEnabled(
+          (typeof editing.hourlyBudget === 'number' && editing.hourlyBudget > 0)
+          || (typeof editing.dailyBudget === 'number' && editing.dailyBudget > 0)
+          || (typeof editing.monthlyBudget === 'number' && editing.monthlyBudget > 0),
+        )
+        setHourlyBudget(typeof editing.hourlyBudget === 'number' && editing.hourlyBudget > 0 ? String(editing.hourlyBudget) : '')
+        setDailyBudget(typeof editing.dailyBudget === 'number' && editing.dailyBudget > 0 ? String(editing.dailyBudget) : '')
         setMonthlyBudget(typeof editing.monthlyBudget === 'number' && editing.monthlyBudget > 0 ? String(editing.monthlyBudget) : '')
         setBudgetAction(editing.budgetAction || 'warn')
         // Load wallet if agent has one
@@ -245,6 +254,8 @@ export function AgentSheet() {
         setHeartbeatModel('')
         setHeartbeatPrompt('')
         setBudgetEnabled(false)
+        setHourlyBudget('')
+        setDailyBudget('')
         setMonthlyBudget('')
         setBudgetAction('warn')
       }
@@ -315,6 +326,9 @@ export function AgentSheet() {
       const url = normalizedEndpoint.trim().replace(/\/+$/, '')
       normalizedEndpoint = /^(https?|wss?):\/\//i.test(url) ? url : `http://${url}`
     }
+    const parsedHourlyBudget = budgetEnabled && hourlyBudget ? Number(hourlyBudget) : null
+    const parsedDailyBudget = budgetEnabled && dailyBudget ? Number(dailyBudget) : null
+    const parsedMonthlyBudget = budgetEnabled && monthlyBudget ? Number(monthlyBudget) : null
     const data = {
       name: name.trim() || 'Unnamed Agent',
       description,
@@ -345,7 +359,9 @@ export function AgentSheet() {
       heartbeatIntervalSec: heartbeatIntervalSec ? Number(heartbeatIntervalSec) : null,
       heartbeatModel: heartbeatModel.trim() || null,
       heartbeatPrompt: heartbeatPrompt.trim() || null,
-      monthlyBudget: budgetEnabled && monthlyBudget ? Number(monthlyBudget) : null,
+      hourlyBudget: parsedHourlyBudget && parsedHourlyBudget > 0 ? parsedHourlyBudget : null,
+      dailyBudget: parsedDailyBudget && parsedDailyBudget > 0 ? parsedDailyBudget : null,
+      monthlyBudget: parsedMonthlyBudget && parsedMonthlyBudget > 0 ? parsedMonthlyBudget : null,
       budgetAction: budgetEnabled ? budgetAction : undefined,
     }
     if (editing) {
@@ -425,11 +441,14 @@ export function AgentSheet() {
         setTestStatus('fail')
         setTestMessage(result.message)
         setTestErrorCode(result.errorCode || null)
+        toast.error(result.message || 'Connection test failed')
         return false
       }
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Connection test failed'
       setTestStatus('fail')
-      setTestMessage(err instanceof Error ? err.message : 'Connection test failed')
+      setTestMessage(msg)
+      toast.error(msg)
       return false
     }
   }
@@ -537,7 +556,10 @@ export function AgentSheet() {
                       if (data.url) {
                         setAvatarUrl(data.url)
                         setAvatarSeed('')
+                        toast.success('Avatar image uploaded')
                       }
+                    } catch (err: unknown) {
+                      toast.error('Failed to upload image')
                     } finally {
                       setUploading(false)
                       e.target.value = ''
@@ -763,10 +785,10 @@ export function AgentSheet() {
         <p className="text-[11px] text-text-3/70 mt-1.5">Periodic check-in runs on idle sessions using this agent. Processes pending events and monitors status.</p>
       </div>
 
-      {/* Monthly Budget */}
+      {/* Spend Limits */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
-          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Monthly Budget <HintTip text="Set a spending limit for this agent's API usage" /></label>
+          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Spend Limits <HintTip text="Set hourly, daily, and monthly API spend limits for this agent" /></label>
           <button
             type="button"
             onClick={() => setBudgetEnabled(!budgetEnabled)}
@@ -777,20 +799,54 @@ export function AgentSheet() {
         </div>
         {budgetEnabled && (
           <div className="space-y-4 mt-3">
-            <div>
-              <label className="block text-[12px] text-text-3/70 mb-1.5">Budget cap (USD)</label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-3/50 text-[14px]">$</span>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={monthlyBudget}
-                  onChange={(e) => setMonthlyBudget(e.target.value)}
-                  placeholder="10.00"
-                  className={`${inputClass} pl-7`}
-                  style={{ fontFamily: 'inherit' }}
-                />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[12px] text-text-3/70 mb-1.5">Hourly cap (USD)</label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-3/50 text-[14px]">$</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={hourlyBudget}
+                    onChange={(e) => setHourlyBudget(e.target.value)}
+                    placeholder="0.50"
+                    className={`${inputClass} pl-7`}
+                    style={{ fontFamily: 'inherit' }}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[12px] text-text-3/70 mb-1.5">Daily cap (USD)</label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-3/50 text-[14px]">$</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={dailyBudget}
+                    onChange={(e) => setDailyBudget(e.target.value)}
+                    placeholder="5.00"
+                    className={`${inputClass} pl-7`}
+                    style={{ fontFamily: 'inherit' }}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[12px] text-text-3/70 mb-1.5">Monthly cap (USD)</label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-3/50 text-[14px]">$</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={monthlyBudget}
+                    onChange={(e) => setMonthlyBudget(e.target.value)}
+                    placeholder="20.00"
+                    className={`${inputClass} pl-7`}
+                    style={{ fontFamily: 'inherit' }}
+                  />
+                </div>
               </div>
             </div>
             <div>
@@ -826,8 +882,8 @@ export function AgentSheet() {
         )}
         <p className="text-[11px] text-text-3/70 mt-1.5">
           {budgetAction === 'block'
-            ? 'Cap monthly spend for this agent. When exceeded, chat runs are blocked until the next month.'
-            : 'Cap monthly spend for this agent. When exceeded, a warning is shown but runs continue.'}
+            ? 'When any configured cap is exceeded, runs are blocked until spend drops below that cap window.'
+            : 'When a configured cap is exceeded, a warning is shown but runs continue.'}
         </p>
       </div>
 
@@ -1101,9 +1157,11 @@ export function AgentSheet() {
                     <button
                       type="button"
                       onClick={() => {
-                        navigator.clipboard.writeText((testDeviceId || openclawDeviceId)!)
-                        setConfigCopied(true)
-                        setTimeout(() => setConfigCopied(false), 2000)
+                        void copyTextToClipboard((testDeviceId || openclawDeviceId)!).then((copiedId) => {
+                          if (!copiedId) return
+                          setConfigCopied(true)
+                          setTimeout(() => setConfigCopied(false), 2000)
+                        })
                       }}
                       className="text-[12px] text-text-3/60 hover:text-text-3/80 transition-colors cursor-pointer bg-transparent border-none"
                     >
@@ -1307,11 +1365,11 @@ export function AgentSheet() {
         </div>
       )}
 
-      {/* Tools — hidden for providers that manage capabilities outside LangGraph */}
+      {/* Plugins — hidden for providers that manage capabilities outside LangGraph */}
       {!hasNativeCapabilities && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Tools</label>
-          <p className="text-[12px] text-text-3/60 mb-3">Enable tools for LangGraph agent sessions.</p>
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Plugins</label>
+          <p className="text-[12px] text-text-3/60 mb-3">Enable capabilities and plugins for this agent.</p>
           <div className="space-y-3">
             {AVAILABLE_TOOLS.map((t) => (
               <label key={t.id} className="flex items-center gap-3 cursor-pointer">
@@ -1334,7 +1392,7 @@ export function AgentSheet() {
       {/* Platform — hidden for providers that manage capabilities outside LangGraph */}
       {!hasNativeCapabilities && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Platform</label>
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Platform Plugins</label>
           <p className="text-[12px] text-text-3/60 mb-3">Allow this agent to manage platform resources directly.</p>
           <div className="space-y-3">
             {PLATFORM_TOOLS.map((t) => (
@@ -1622,4 +1680,3 @@ export function AgentSheet() {
     </>
   )
 }
-

@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "0.6.8",
+  "version": "0.7.0",
   "description": "Self-hosted AI agent orchestration dashboard — manage LLM providers, orchestrate agent swarms, schedule tasks, and bridge agents to chat platforms.",
   "license": "MIT",
   "repository": {
@@ -52,7 +52,8 @@
     "lint:baseline:update": "node ./scripts/lint-baseline.mjs update",
     "cli": "node ./bin/swarmclaw.js",
     "test:cli": "node --test src/cli/index.test.js",
-    "test:openclaw": "tsx --test src/lib/server/connectors/openclaw.test.ts src/lib/openclaw-endpoint.test.ts src/lib/server/gateway/protocol.test.ts src/lib/server/tool-capability-policy.test.ts",
+    "test:openclaw": "tsx --test src/lib/server/connectors/openclaw.test.ts src/lib/openclaw-endpoint.test.ts src/lib/server/gateway/protocol.test.ts src/lib/server/tool-capability-policy.test.ts src/lib/server/task-validation.test.ts src/lib/server/task-quality-gate.test.ts src/lib/server/llm-response-cache.test.ts src/lib/server/mcp-conformance.test.ts",
+    "test:mcp:conformance": "node --import tsx ./scripts/mcp-conformance-check.ts",
     "postinstall": "node ./scripts/postinstall.mjs"
   },
   "dependencies": {

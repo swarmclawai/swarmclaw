@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { api } from '@/lib/api-client'
+import { toast } from 'sonner'
 
 export function SkillSheet() {
   const open = useAppStore((s) => s.skillSheetOpen)
@@ -121,20 +122,32 @@ export function SkillSheet() {
       scope,
       agentIds: scope === 'agent' ? agentIds : [],
     }
-    if (editing) {
-      await api('PUT', `/skills/${editing.id}`, data)
-    } else {
-      await api('POST', '/skills', data)
+    try {
+      if (editing) {
+        await api('PUT', `/skills/${editing.id}`, data)
+        toast.success('Skill updated successfully')
+      } else {
+        await api('POST', '/skills', data)
+        toast.success('Skill created successfully')
+      }
+      await loadSkills()
+      onClose()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save skill')
     }
-    await loadSkills()
-    onClose()
   }
 
   const handleDelete = async () => {
-    if (editing) {
+    if (!editing) return
+    if (!confirm(`Delete skill "${editing.name}"? This will remove it from all assigned agents.`)) return
+    
+    try {
       await api('DELETE', `/skills/${editing.id}`)
+      toast.success('Skill deleted')
       await loadSkills()
       onClose()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete skill')
     }
   }
 

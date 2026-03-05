@@ -10,81 +10,56 @@ import { safePath, truncate, MAX_OUTPUT, findBinaryOnPath } from './context'
 import { getSearchProvider } from './search-providers'
 import { dedupeScreenshotMarkdownLines } from './web-output'
 import { withRetry } from '../tool-retry'
+import type { Plugin, PluginHooks } from '@/types'
+import { getPluginManager } from '../plugins'
+import { normalizeToolInputArgs } from './normalize-tool-args'
 
-// ---------------------------------------------------------------------------
-// Search result compression — summarize verbose results before injecting into context
-// ---------------------------------------------------------------------------
-
-async function compressSearchResults(
-  results: Array<{ title?: string; url?: string; snippet?: string }>,
-  query: string,
-  bctx: ToolBuildContext,
-): Promise<string | null> {
+// --- Search result compression logic ---
+async function compressSearchResults(results: any[], query: string, bctx: any): Promise<string | null> {
   const session = bctx.resolveCurrentSession?.()
   if (!session?.provider || !session?.model) return null
-
   const { getProvider } = await import('@/lib/providers')
   const { loadCredentials, decryptKey } = await import('../storage')
   const providerEntry = getProvider(session.provider)
   if (!providerEntry?.handler?.streamChat) return null
-
-  // Resolve API key
   let apiKey: string | undefined
   if (session.credentialId) {
     const creds = loadCredentials()
     const cred = creds[session.credentialId]
     if (cred) apiKey = decryptKey(cred.encryptedKey)
   }
-
   const systemPrompt = 'You are a search result summarizer. Condense search results into a concise reference. Keep key facts, URLs, and data points. Remove filler and redundancy. Output plain text, not JSON.'
   const message = `Query: "${query}"\n\nResults:\n${JSON.stringify(results, null, 1)}\n\nSummarize these results concisely.`
-
   let compressed = ''
   await providerEntry.handler.streamChat({
-    session: { ...session, messages: [] },
-    message,
-    apiKey,
-    systemPrompt,
+    session: { ...session, messages: [] }, message, apiKey, systemPrompt,
     write: (raw: string) => {
-      // Extract text data from SSE lines
       const lines = raw.split('\n').filter(Boolean)
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue
         try {
           const ev = JSON.parse(line.slice(6))
           if (ev.t === 'd' && ev.text) compressed += ev.text
-        } catch { /* skip */ }
+        } catch { /* ignore */ }
       }
     },
-    active: new Map(),
-    loadHistory: () => [],
+    active: new Map(), loadHistory: () => [],
   })
-
   return compressed.trim() || null
 }
 
-// ---------------------------------------------------------------------------
-// Global registry of active browser instances for cleanup sweeps
-// ---------------------------------------------------------------------------
-
 export const activeBrowsers = new Map<string, { client: any; server: any; createdAt: number }>()
-
-/** Kill all browser instances that have been alive longer than maxAge (default 30 min) */
 export function sweepOrphanedBrowsers(maxAgeMs = 30 * 60 * 1000): number {
-  const now = Date.now()
-  let cleaned = 0
+  const now = Date.now(); let cleaned = 0
   for (const [key, entry] of activeBrowsers) {
     if (now - entry.createdAt > maxAgeMs) {
       try { entry.client?.close?.() } catch { /* ignore */ }
       try { entry.server?.close?.() } catch { /* ignore */ }
-      activeBrowsers.delete(key)
-      cleaned++
+      activeBrowsers.delete(key); cleaned++
     }
   }
   return cleaned
 }
-
-/** Kill a specific session's browser instance */
 export function cleanupSessionBrowser(sessionId: string): void {
   const entry = activeBrowsers.get(sessionId)
   if (entry) {
@@ -93,129 +68,115 @@ export function cleanupSessionBrowser(sessionId: string): void {
     activeBrowsers.delete(sessionId)
   }
 }
+export function getActiveBrowserCount(): number { return activeBrowsers.size }
+export function hasActiveBrowser(sessionId: string): boolean { return activeBrowsers.has(sessionId) }
 
-/** Get count of active browser instances */
-export function getActiveBrowserCount(): number {
-  return activeBrowsers.size
+/**
+ * Unified Web Execution Logic
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function executeWebAction(args: Record<string, unknown>, bctx: any) {
+  const normalized = normalizeToolInputArgs(args)
+  const { action, query, url, maxResults } = normalized as { action: string; query?: string; url?: string; maxResults?: number }
+  try {
+    if (action === 'search') {
+      const searchQuery = query || url
+      if (!searchQuery) return 'Error: "query" is required for search action.'
+      const limit = Math.min(maxResults || 5, 10)
+      const { loadSettings } = await import('../storage')
+      const settings = loadSettings()
+      const provider = await getSearchProvider(settings)
+      const results = await provider.search(searchQuery, limit)
+      if (results.length === 0) return 'No results found.'
+      const raw = JSON.stringify(results, null, 2)
+      if (raw.length > 2000) {
+        const compressed = await compressSearchResults(results, searchQuery, bctx)
+        if (compressed) return compressed
+      }
+      return raw
+    } else if (action === 'fetch') {
+      const fetchUrl = url || query
+      if (!fetchUrl) return 'Error: "url" is required for fetch action.'
+      const res = await fetch(fetchUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SwarmClaw/1.0)' },
+        signal: AbortSignal.timeout(15000),
+      })
+      if (!res.ok) return `HTTP ${res.status}: ${res.statusText}`
+      const contentType = res.headers.get('content-type') || ''
+      if (contentType.includes('application/pdf')) {
+        try {
+          const pdfMod = await import(/* webpackIgnore: true */ 'pdf-parse')
+          const pdfParse = ((pdfMod as Record<string, unknown>).default ?? pdfMod) as (buf: Buffer) => Promise<{ text: string }>
+          const arrayBuffer = await res.arrayBuffer()
+          const result = await pdfParse(Buffer.from(arrayBuffer))
+          return truncate(result.text, MAX_OUTPUT)
+        } catch (err: unknown) {
+          return `Error parsing PDF: ${err instanceof Error ? err.message : String(err)}`
+        }
+      }
+      const html = await res.text()
+      const $ = cheerio.load(html)
+      $('script, style, noscript, nav, footer, header').remove()
+      const main = $('article, main, [role="main"]').first()
+      const text = (main.length ? main.text() : $('body').text()).replace(/\s+/g, ' ').trim()
+      return truncate(text, MAX_OUTPUT)
+    }
+    return `Error: Unknown action "${action}"`
+  } catch (err: unknown) {
+    return `Error: ${err instanceof Error ? err.message : String(err)}`
+  }
 }
 
-/** Check if a specific session has an active browser */
-export function hasActiveBrowser(sessionId: string): boolean {
-  return activeBrowsers.has(sessionId)
+/**
+ * Register as a Built-in Plugin
+ */
+const WebPlugin: Plugin = {
+  name: 'Core Web',
+  description: 'Search the web and fetch content from URLs.',
+  hooks: {} as PluginHooks,
+  tools: [
+    {
+      name: 'web',
+      description: 'Unified web access tool. Actions: search, fetch.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['search', 'fetch'] },
+          query: { type: 'string' },
+          url: { type: 'string' },
+          maxResults: { type: 'number' }
+        },
+        required: ['action']
+      },
+      execute: async (args, context) => executeWebAction(args, { ...context.session, resolveCurrentSession: () => context.session })
+    }
+  ]
 }
 
-// ---------------------------------------------------------------------------
-// buildWebTools
-// ---------------------------------------------------------------------------
+getPluginManager().registerBuiltin('web', WebPlugin)
 
+/**
+ * Legacy Bridge
+ */
 export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[] {
   const tools: StructuredToolInterface[] = []
   const { cwd, ctx, cleanupFns } = bctx
 
-  // ---- web_search --------------------------------------------------------
-
-  if (bctx.hasTool('web_search')) {
+  if (bctx.hasTool('web')) {
     tools.push(
       tool(
-        ({ query, maxResults }) => withRetry(async (_args: { query: string; maxResults?: number }) => {
-          try {
-            const limit = Math.min(_args.maxResults || 5, 10)
-            const { loadSettings } = await import('../storage')
-            const settings = loadSettings()
-            const provider = await getSearchProvider(settings)
-            const results = await provider.search(_args.query, limit)
-            if (results.length === 0) return 'No results found.'
-            const raw = JSON.stringify(results, null, 2)
-            // Compress search results if they exceed 2000 chars
-            if (raw.length > 2000) {
-              try {
-                const compressed = await compressSearchResults(results, _args.query, bctx)
-                if (compressed) return compressed
-              } catch {
-                // Compression failed — fall through to raw results
-              }
-            }
-            return raw
-          } catch (err: unknown) {
-            return `Error searching web: ${err instanceof Error ? err.message : String(err)}`
-          }
-        }, { query, maxResults }),
+        async (args) => executeWebAction(args, bctx),
         {
-          name: 'web_search',
-          description: 'Search the web for information. Returns results with title, url, and snippet.',
-          schema: z.object({
-            query: z.string().describe('Search query'),
-            maxResults: z.number().optional().describe('Maximum results to return (default 5, max 10)'),
-          }),
-        },
-      ),
+          name: 'web',
+          description: WebPlugin.tools![0].description,
+          schema: z.object({}).passthrough()
+        }
+      )
     )
   }
 
-  // ---- web_fetch ---------------------------------------------------------
-
-  if (bctx.hasTool('web_fetch')) {
-    tools.push(
-      tool(
-        ({ url }) => withRetry(async (_args: { url: string }) => {
-          try {
-            const res = await fetch(_args.url, {
-              headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SwarmClaw/1.0)' },
-              signal: AbortSignal.timeout(15000),
-            })
-            if (!res.ok) return `HTTP ${res.status}: ${res.statusText}`
-            
-            const contentType = res.headers.get('content-type') || ''
-            if (contentType.includes('application/pdf')) {
-              try {
-                // @ts-expect-error pdf-parse has no type declarations
-                const pdfParse = (await import(/* webpackIgnore: true */ 'pdf-parse')).default
-                const arrayBuffer = await res.arrayBuffer()
-                const result = await pdfParse(Buffer.from(arrayBuffer))
-                return truncate(result.text, MAX_OUTPUT)
-              } catch (err: unknown) {
-                return `Error parsing PDF: ${err instanceof Error ? err.message : String(err)}`
-              }
-            }
-
-            const html = await res.text()
-            
-            // Basic YouTube extraction (title and description)
-            if (_args.url.includes('youtube.com/watch') || _args.url.includes('youtu.be/')) {
-               const $ = cheerio.load(html)
-               const title = $('meta[property="og:title"]').attr('content') || $('title').text()
-               const description = $('meta[property="og:description"]').attr('content') || ''
-               return truncate(`YouTube Video: ${title}\n\nDescription:\n${description}\n\n(Transcript extraction requires a specialized tool or API)`, MAX_OUTPUT)
-            }
-
-            // Use cheerio for robust HTML text extraction
-            const $ = cheerio.load(html)
-            $('script, style, noscript, nav, footer, header').remove()
-            // Prefer article/main content if available
-            const main = $('article, main, [role="main"]').first()
-            const text = (main.length ? main.text() : $('body').text())
-              .replace(/\s+/g, ' ')
-              .trim()
-            return truncate(text, MAX_OUTPUT)
-          } catch (err: unknown) {
-            return `Error fetching URL: ${err instanceof Error ? err.message : String(err)}`
-          }
-        }, { url }),
-        {
-          name: 'web_fetch',
-          description: 'Fetch a URL and read its content. Supports HTML web pages and direct PDF links. Provides basic metadata for YouTube videos.',
-          schema: z.object({
-            url: z.string().describe('The URL to fetch'),
-          }),
-        },
-      ),
-    )
-  }
-
-  // ---- browser -----------------------------------------------------------
-
+  // Browser tool (kept as direct injection for now due to complexity)
   if (bctx.hasTool('browser')) {
-    // In-process Playwright MCP client via @playwright/mcp programmatic API
     const sessionKey = ctx?.sessionId || `anon-${Date.now()}`
     let mcpClient: any = null
     let mcpServer: any = null
@@ -228,206 +189,111 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         const { createConnection } = await import('@playwright/mcp')
         const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
         const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js')
-
         const server = await createConnection({
-          browser: {
-            launchOptions: { headless: true },
-            isolated: true,
-          },
-          imageResponses: 'allow',
-          capabilities: ['core', 'pdf', 'vision', 'network'],
+          browser: { launchOptions: { headless: true }, isolated: true },
+          imageResponses: 'allow', capabilities: ['core', 'pdf', 'vision', 'network'],
         })
         const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
         const client = new Client({ name: 'swarmclaw', version: '1.0' })
-        await Promise.all([
-          client.connect(clientTransport),
-          server.connect(serverTransport),
-        ])
-        mcpClient = client
-        mcpServer = server
-        // Register in global tracker
+        await Promise.all([client.connect(clientTransport), server.connect(serverTransport)])
+        mcpClient = client; mcpServer = server
         activeBrowsers.set(sessionKey, { client, server, createdAt: Date.now() })
       })()
       return mcpInitializing
     }
 
-    // Register cleanup for this session's browser
     cleanupFns.push(async () => {
       try { mcpClient?.close?.() } catch { /* ignore */ }
       try { mcpServer?.close?.() } catch { /* ignore */ }
       activeBrowsers.delete(sessionKey)
-      mcpClient = null
-      mcpServer = null
+      mcpClient = null; mcpServer = null
     })
 
-    /** Strip Playwright debug noise — keep page context for the LLM */
     const cleanPlaywrightOutput = (text: string): string => {
-      // Remove "### Ran Playwright code" blocks (internal debug)
       text = text.replace(/### Ran Playwright code[\s\S]*?(?=###|$)/g, '')
-      // Truncate snapshot to first 40 lines so LLM has page context without flooding
       text = text.replace(/### Snapshot\n([\s\S]*?)(?=###|$)/g, (_match, snapshot) => {
         const lines = (snapshot as string).split('\n')
-        if (lines.length > 40) {
-          return 'Page elements:\n' + lines.slice(0, 40).join('\n') + '\n... (truncated)\n'
-        }
+        if (lines.length > 40) return 'Page elements:\n' + lines.slice(0, 40).join('\n') + '\n... (truncated)\n'
         return 'Page elements:\n' + snapshot
       })
-      // Clean headers
-      text = text.replace(/^### Result\n/gm, '')
-      text = text.replace(/^### Page\n/gm, '')
+      text = text.replace(/^### Result\n/gm, ''); text = text.replace(/^### Page\n/gm, '')
       return text.replace(/\n{3,}/g, '\n').trim()
     }
 
-    const callMcpTool = async (
-      toolName: string,
-      args: Record<string, any>,
-      options?: { saveTo?: string },
-    ): Promise<string> => {
+    const callMcpTool = async (toolName: string, args: Record<string, any>, options?: { saveTo?: string }): Promise<string> => {
       await ensureMcp()
       const result = await mcpClient.callTool({ name: toolName, arguments: args })
-      const isError = result?.isError === true
-      const content = result?.content
-      const savedPaths: string[] = []
-
+      const isError = result?.isError === true; const content = result?.content; const savedPaths: string[] = []
       const saveArtifact = (buffer: Buffer, suggestedExt: string): void => {
         const rawSaveTo = options?.saveTo?.trim()
         if (!rawSaveTo) return
         let resolved = safePath(cwd, rawSaveTo)
-        if (!path.extname(resolved) && suggestedExt) {
-          resolved = `${resolved}.${suggestedExt}`
-        }
-        fs.mkdirSync(path.dirname(resolved), { recursive: true })
-        fs.writeFileSync(resolved, buffer)
+        if (!path.extname(resolved) && suggestedExt) resolved = `${resolved}.${suggestedExt}`
+        fs.mkdirSync(path.dirname(resolved), { recursive: true }); fs.writeFileSync(resolved, buffer)
         savedPaths.push(resolved)
       }
-
       if (Array.isArray(content)) {
         let parts: string[] = []
         const isScreenshotTool = toolName === 'browser_take_screenshot'
         const contentHasBinaryImage = content.some((c) => c.type === 'image' && !!c.data)
         for (const c of content) {
           if (c.type === 'image' && c.data) {
-            const imageBuffer = Buffer.from(c.data, 'base64')
-            const filename = `screenshot-${Date.now()}.png`
-            const filepath = path.join(UPLOAD_DIR, filename)
-            fs.writeFileSync(filepath, imageBuffer)
-            saveArtifact(imageBuffer, 'png')
-            parts.push(`![Screenshot](/api/uploads/${filename})`)
+            const imageBuffer = Buffer.from(c.data, 'base64'); const filename = `screenshot-${Date.now()}.png`
+            const filepath = path.join(UPLOAD_DIR, filename); fs.writeFileSync(filepath, imageBuffer)
+            saveArtifact(imageBuffer, 'png'); parts.push(`![Screenshot](/api/uploads/${filename})`)
           } else if (c.type === 'resource' && c.resource?.blob) {
             const ext = c.resource.mimeType?.includes('pdf') ? 'pdf' : 'bin'
-            const resourceBuffer = Buffer.from(c.resource.blob, 'base64')
-            const filename = `browser-${Date.now()}.${ext}`
-            const filepath = path.join(UPLOAD_DIR, filename)
-            fs.writeFileSync(filepath, resourceBuffer)
-            saveArtifact(resourceBuffer, ext)
-            parts.push(`[Download ${filename}](/api/uploads/${filename})`)
+            const resourceBuffer = Buffer.from(c.resource.blob, 'base64'); const filename = `browser-${Date.now()}.${ext}`
+            const filepath = path.join(UPLOAD_DIR, filename); fs.writeFileSync(filepath, resourceBuffer)
+            saveArtifact(resourceBuffer, ext); parts.push(`[Download ${filename}](/api/uploads/${filename})`)
           } else {
             let text = c.text || ''
-            // Detect file paths in output (e.g. PDF save returns a local path)
             const fileMatch = text.match(/\]\((\.\.\/[^\s)]+|\/[^\s)]+\.(pdf|png|jpg|jpeg|gif|webp|html|mp4|webm))\)/)
             if (fileMatch) {
-              const rawPath = fileMatch[1]
-              const srcPath = rawPath.startsWith('/') ? rawPath : path.resolve(process.cwd(), rawPath)
+              const rawPath = fileMatch[1]; const srcPath = rawPath.startsWith('/') ? rawPath : path.resolve(process.cwd(), rawPath)
               if (fs.existsSync(srcPath)) {
-                const ext = path.extname(srcPath).slice(1).toLowerCase()
-                const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp']
-                // Skip file-path images whenever MCP already returned image binary payloads.
-                if (IMAGE_EXTS.includes(ext) && contentHasBinaryImage) {
-                  parts.push(isError ? text : cleanPlaywrightOutput(text))
-                } else {
-                  const filename = `browser-${Date.now()}.${ext}`
-                  const destPath = path.join(UPLOAD_DIR, filename)
-                  fs.copyFileSync(srcPath, destPath)
+                const ext = path.extname(srcPath).slice(1).toLowerCase(); const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp']
+                if (IMAGE_EXTS.includes(ext) && contentHasBinaryImage) parts.push(isError ? text : cleanPlaywrightOutput(text))
+                else {
+                  const filename = `browser-${Date.now()}.${ext}`; const destPath = path.join(UPLOAD_DIR, filename); fs.copyFileSync(srcPath, destPath)
                   if (options?.saveTo?.trim()) {
-                    const raw = options.saveTo.trim()
-                    let targetPath = safePath(cwd, raw)
+                    let targetPath = safePath(cwd, options.saveTo.trim())
                     if (!path.extname(targetPath)) targetPath = `${targetPath}.${ext}`
-                    fs.mkdirSync(path.dirname(targetPath), { recursive: true })
-                    fs.copyFileSync(srcPath, targetPath)
+                    fs.mkdirSync(path.dirname(targetPath), { recursive: true }); fs.copyFileSync(srcPath, targetPath)
                     savedPaths.push(targetPath)
                   }
-                  if (IMAGE_EXTS.includes(ext)) {
-                    parts.push(`![Screenshot](/api/uploads/${filename})`)
-                  } else {
-                    parts.push(`[Download ${filename}](/api/uploads/${filename})`)
-                  }
+                  parts.push(IMAGE_EXTS.includes(ext) ? `![Screenshot](/api/uploads/${filename})` : `[Download ${filename}](/api/uploads/${filename})`)
                 }
-              } else {
-                parts.push(isError ? text : cleanPlaywrightOutput(text))
-              }
-            } else {
-              parts.push(isError ? text : cleanPlaywrightOutput(text))
-            }
+              } else parts.push(isError ? text : cleanPlaywrightOutput(text))
+            } else parts.push(isError ? text : cleanPlaywrightOutput(text))
           }
         }
         if (isScreenshotTool) parts = dedupeScreenshotMarkdownLines(parts)
-
         if (savedPaths.length > 0) {
           const unique = Array.from(new Set(savedPaths))
-          const rendered = unique.map((p) => path.relative(cwd, p) || '.').join(', ')
-          parts.push(`Saved to: ${rendered}`)
+          parts.push(`Saved to: ${unique.map((p) => path.relative(cwd, p) || '.').join(', ')}`)
         }
         return parts.join('\n')
       }
       return JSON.stringify(result)
     }
 
-    // Best-effort cookie/consent banner dismissal after navigation
-    const dismissCookieBanners = async (
-      mcpCall: (toolName: string, args: Record<string, unknown>) => Promise<string>,
-    ) => {
-      // Wait briefly for consent overlays to appear
+    const dismissCookieBanners = async (mcpCall: (toolName: string, args: Record<string, unknown>) => Promise<string>) => {
       await new Promise((r) => setTimeout(r, 1500))
-      const js = `
-        (() => {
-          const sel = [
-            // Common "Reject" / "Reject all" / "Decline" buttons
-            'button[id*="reject" i]', 'button[class*="reject" i]',
-            'a[id*="reject" i]', 'a[class*="reject" i]',
-            '[data-testid*="reject" i]', '[data-action="reject"]',
-            // OneTrust
-            '#onetrust-reject-all-handler',
-            // Cookiebot
-            '#CybotCookiebotDialogBodyButtonDecline',
-            // Didomi
-            '#didomi-notice-disagree-button',
-            // Quantcast / IAB TCF
-            '.qc-cmp2-summary-buttons button:first-child',
-            'button.sp_choice_type_12',
-            // Generic patterns
-            'button[aria-label*="reject" i]', 'button[aria-label*="decline" i]',
-            'button[aria-label*="deny" i]', 'button[aria-label*="refuse" i]',
-          ];
-          for (const s of sel) {
-            const el = document.querySelector(s);
-            if (el && el.offsetParent !== null) { el.click(); return 'dismissed:' + s; }
-          }
-          // Fallback: find buttons by visible text
-          const btns = [...document.querySelectorAll('button, a[role="button"], [class*="cookie"] button, [class*="consent"] button, [id*="cookie"] button')];
-          const rejectRe = /^(reject|reject all|decline|deny|refuse|no,? thanks|only necessary|necessary only)$/i;
-          for (const b of btns) {
-            const txt = (b.textContent || '').trim();
-            if (rejectRe.test(txt) && b.offsetParent !== null) { b.click(); return 'dismissed:text=' + txt; }
-          }
-          return 'none';
-        })()
-      `
+      const js = `(() => {
+        const sel = ['button[id*="reject" i]', 'button[class*="reject" i]', 'a[id*="reject" i]', 'a[class*="reject" i]', '#onetrust-reject-all-handler', '#CybotCookiebotDialogBodyButtonDecline', '#didomi-notice-disagree-button', '.qc-cmp2-summary-buttons button:first-child', 'button.sp_choice_type_12'];
+        for (const s of sel) { const el = document.querySelector(s); if (el && el.offsetParent !== null) { el.click(); return 'dismissed:' + s; } }
+        const btns = [...document.querySelectorAll('button, a[role="button"]')]; const rejectRe = /^(reject|reject all|decline|deny|refuse|no,? thanks|only necessary|necessary only)$/i;
+        for (const b of btns) { const txt = (b.textContent || '').trim(); if (rejectRe.test(txt) && b.offsetParent !== null) { b.click(); return 'dismissed:text=' + txt; } }
+        return 'none';
+      })()`
       await mcpCall('browser_evaluate', { expression: js })
     }
 
-    // Action-to-MCP tool mapping
     const MCP_TOOL_MAP: Record<string, string> = {
-      navigate: 'browser_navigate',
-      screenshot: 'browser_take_screenshot',
-      snapshot: 'browser_snapshot',
-      click: 'browser_click',
-      type: 'browser_type',
-      press_key: 'browser_press_key',
-      select: 'browser_select_option',
-      evaluate: 'browser_evaluate',
-      pdf: 'browser_pdf_save',
-      upload: 'browser_file_upload',
-      wait: 'browser_wait_for',
+      navigate: 'browser_navigate', screenshot: 'browser_take_screenshot', snapshot: 'browser_snapshot', click: 'browser_click',
+      type: 'browser_type', press_key: 'browser_press_key', select: 'browser_select_option', evaluate: 'browser_evaluate',
+      pdf: 'browser_pdf_save', upload: 'browser_file_upload', wait: 'browser_wait_for',
     }
 
     tools.push(
@@ -435,92 +301,56 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         async (params) => {
           try {
             const { action, ...rest } = params
-            // Build MCP args based on action
             const mcpTool = MCP_TOOL_MAP[action]
-            if (!mcpTool) return `Unknown browser action: "${action}". Valid: ${Object.keys(MCP_TOOL_MAP).join(', ')}`
-            // Pass only defined (non-undefined) params to MCP
+            if (!mcpTool) return `Unknown browser action: "${action}"`
             const args: Record<string, any> = {}
-            for (const [k, v] of Object.entries(rest)) {
-              if (v !== undefined && v !== null && v !== '') args[k] = v
-            }
-            const saveTo = typeof params.saveTo === 'string' && params.saveTo.trim()
-              ? params.saveTo.trim()
-              : undefined
-            const result = await callMcpTool(mcpTool, args, { saveTo })
-
-            // After navigation, attempt to dismiss cookie consent banners
-            if (action === 'navigate') {
-              try { await dismissCookieBanners(callMcpTool) } catch { /* best-effort */ }
-            }
-
+            for (const [k, v] of Object.entries(rest)) { if (v !== undefined && v !== null && v !== '') args[k] = v }
+            const result = await callMcpTool(mcpTool, args, { saveTo: params.saveTo })
+            if (action === 'navigate') { try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ } }
             return result
-          } catch (err: unknown) {
-            return `Error: ${err instanceof Error ? err.message : String(err)}`
-          }
+          } catch (err: unknown) { return `Error: ${err instanceof Error ? err.message : String(err)}` }
         },
         {
           name: 'browser',
-          description: [
-            'Control the browser. Use action to specify what to do.',
-            'Actions: navigate (url), screenshot, snapshot (get page elements), click (element/ref), type (element/ref, text), press_key (key), select (element/ref, option), evaluate (expression), pdf, upload (paths, ref), wait (text/timeout).',
-            'Workflow: use snapshot to see the page and get element refs, then use click/type/select with those refs.',
-            'Screenshots are returned as images visible to the user. Use saveTo to persist screenshot/PDF artifacts to disk.',
-          ].join(' '),
+          description: 'Control the browser. Actions: navigate, screenshot, snapshot, click, type, press_key, select, evaluate, pdf, upload, wait.',
           schema: z.object({
-            action: z.enum(['navigate', 'screenshot', 'snapshot', 'click', 'type', 'press_key', 'select', 'evaluate', 'pdf', 'upload', 'wait']).describe('The browser action to perform'),
-            url: z.string().optional().describe('URL to navigate to (for navigate action)'),
-            element: z.string().optional().describe('CSS selector or description of an element (for click/type/select)'),
-            ref: z.string().optional().describe('Element reference from a previous snapshot (for click/type/select/upload)'),
-            text: z.string().optional().describe('Text to type (for type action) or text to wait for (for wait action)'),
-            key: z.string().optional().describe('Key to press, e.g. Enter, Tab, Escape (for press_key action)'),
-            option: z.string().optional().describe('Option value or label to select (for select action)'),
-            expression: z.string().optional().describe('JavaScript expression to evaluate (for evaluate action)'),
-            paths: z.array(z.string()).optional().describe('File paths to upload (for upload action)'),
-            timeout: z.number().optional().describe('Timeout in milliseconds (for wait action, default 30000)'),
-            saveTo: z.string().optional().describe('Optional output path for screenshot/pdf artifacts (relative to working directory).'),
+            action: z.enum(['navigate', 'screenshot', 'snapshot', 'click', 'type', 'press_key', 'select', 'evaluate', 'pdf', 'upload', 'wait']),
+            url: z.string().optional(), element: z.string().optional(), ref: z.string().optional(), text: z.string().optional(),
+            key: z.string().optional(), option: z.string().optional(), expression: z.string().optional(),
+            paths: z.array(z.string()).optional(), timeout: z.number().optional(), saveTo: z.string().optional(),
           }),
         },
       ),
     )
   }
 
-  // ---- openclaw_browser (CLI passthrough) -----------------------------------
-
-  if (bctx.hasTool('browser') || bctx.hasTool('openclaw_browser')) {
-    const openclawPath = findBinaryOnPath('openclaw') || findBinaryOnPath('clawdbot')
-    if (openclawPath) {
-      tools.push(
-        tool(
-          async ({ command, args: cmdArgs }) => {
-            try {
-              const spawnArgs = ['browser', command, '--json']
-              if (cmdArgs) spawnArgs.push(...cmdArgs.split(/\s+/).filter(Boolean))
-              const result = spawnSync(openclawPath, spawnArgs, {
-                encoding: 'utf-8',
-                timeout: 60_000,
-                maxBuffer: MAX_OUTPUT,
-              })
-              const stdout = (result.stdout || '').trim()
-              const stderr = (result.stderr || '').trim()
-              if (result.status !== 0) {
-                return `Error (exit ${result.status}): ${stderr || stdout || 'unknown error'}`
-              }
-              return truncate(stdout || '(no output)', MAX_OUTPUT)
-            } catch (err: unknown) {
-              return `Error: ${err instanceof Error ? err.message : String(err)}`
-            }
-          },
-          {
-            name: 'openclaw_browser',
-            description: 'Control a browser through the OpenClaw CLI. Requires openclaw/clawdbot CLI on PATH. Passes through to `openclaw browser <command> --json`.',
-            schema: z.object({
-              command: z.string().describe('Browser command (navigate, screenshot, click, type, evaluate, etc.)'),
-              args: z.string().optional().describe('Additional arguments as a space-separated string'),
-            }),
-          },
-        ),
-      )
-    }
+  // openclaw_browser CLI passthrough
+  const openclawPath = findBinaryOnPath('openclaw') || findBinaryOnPath('clawdbot')
+  if (openclawPath && (bctx.hasTool('browser') || bctx.hasTool('openclaw_browser'))) {
+    tools.push(
+      tool(
+        async (rawArgs) => {
+          const normalized = normalizeToolInputArgs((rawArgs ?? {}) as Record<string, unknown>)
+          const command = normalized.command as string | undefined
+          const cmdArgs = (normalized.args ?? normalized.arguments) as string | undefined
+          try {
+            if (!command) return 'Error: command is required.'
+            const spawnArgs = ['browser', command, '--json']
+            if (cmdArgs) spawnArgs.push(...cmdArgs.split(/\s+/).filter(Boolean))
+            const result = spawnSync(openclawPath, spawnArgs, { encoding: 'utf-8', timeout: 60_000, maxBuffer: MAX_OUTPUT })
+            if (result.status !== 0) return `Error (exit ${result.status}): ${result.stderr || result.stdout || 'unknown'}`
+            return truncate(result.stdout || '(no output)', MAX_OUTPUT)
+          } catch (err: unknown) { return `Error: ${err instanceof Error ? err.message : String(err)}` }
+        },
+        {
+          name: 'openclaw_browser',
+          description: 'Control a browser through the OpenClaw CLI.',
+          schema: z.object({
+            command: z.string(), args: z.string().optional(),
+          }),
+        },
+      ),
+    )
   }
 
   return tools

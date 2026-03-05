@@ -163,10 +163,14 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
 
         {hubSkills.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {hubSkills.map((skill) => (
+            {hubSkills.map((skill, idx) => (
               <div
                 key={skill.id}
-                className="p-4 rounded-[14px] border border-white/[0.06] bg-surface"
+                className="p-4 rounded-[14px] border border-white/[0.06] bg-surface hover:border-white/[0.12] transition-all hover:scale-[1.01]"
+                style={{
+                  animation: 'spring-in 0.5s var(--ease-spring) both',
+                  animationDelay: `${idx * 0.03}s`
+                }}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
@@ -225,21 +229,22 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
     <div className={`flex-1 overflow-y-auto ${inSidebar ? 'px-3 pb-4' : 'px-5 pb-6'}`}>
       {/* Sidebar: ClawHub button + Sheet */}
       {inSidebar && (
-        <>
+        <div style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
           <button
             onClick={() => setClawHubOpen(true)}
-            className="w-full mb-3 py-2.5 px-4 rounded-[12px] border border-dashed border-white/[0.1] text-[13px] font-600 text-text-3 hover:text-accent-bright hover:border-accent-bright/30 transition-all cursor-pointer bg-transparent"
+            className="w-full mb-3 py-2.5 px-4 rounded-[12px] border border-dashed border-white/[0.1] text-[13px] font-600 text-text-3 hover:text-accent-bright hover:border-accent-bright/30 transition-all cursor-pointer bg-transparent relative overflow-hidden group/hub"
             style={{ fontFamily: 'inherit' }}
           >
-            Browse ClawHub Skills
+            <span className="relative z-10">Browse ClawHub Skills</span>
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover/hub:animate-[shimmer-bar_2s_infinite]" />
           </button>
           <ClawHubBrowser open={clawHubOpen} onOpenChange={setClawHubOpen} onInstalled={() => loadSkills()} />
-        </>
+        </div>
       )}
 
       {/* Full-width: tabs */}
       {!inSidebar && (
-        <div className="flex gap-1 mb-4">
+        <div className="flex gap-1 mb-4" style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
           <button onClick={() => setTab('skills')} className={tabClass('skills')} style={{ fontFamily: 'inherit' }}>
             My Skills
           </button>
@@ -251,7 +256,7 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
 
       {(!inSidebar && tab === 'clawhub') ? renderClawHub() : (
         skillList.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="text-center py-12" style={{ animation: 'fade-up 0.5s var(--ease-spring)' }}>
             <p className="text-[13px] text-text-3/60">No skills yet</p>
             <button
               onClick={() => setSkillSheetOpen(true)}
@@ -263,7 +268,7 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
           </div>
         ) : (
           <div className={inSidebar ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'}>
-            {skillList.map((skill) => {
+            {skillList.map((skill, idx) => {
               const skillScope = skill.scope || 'global'
               const skillAgentIds = skill.agentIds || []
               const scopeLabel = skillScope === 'global' ? 'Global' : `${skillAgentIds.length} agent(s)`
@@ -271,10 +276,23 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
                 ? skillAgentIds.map((id) => agents[id]).filter(Boolean)
                 : []
               return (
-                <button
+                <div
                   key={skill.id}
                   onClick={() => handleEdit(skill.id)}
-                  className="w-full text-left p-4 rounded-[14px] border border-white/[0.06] bg-surface hover:bg-surface-2 transition-all cursor-pointer"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      handleEdit(skill.id)
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className="w-full text-left p-4 rounded-[14px] border border-white/[0.06] bg-surface hover:bg-surface-2 transition-all cursor-pointer hover:border-white/[0.12] hover:scale-[1.01]"
+                  style={{
+                    fontFamily: 'inherit',
+                    animation: 'spring-in 0.5s var(--ease-spring) both',
+                    animationDelay: `${idx * 0.05}s`
+                  }}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-display text-[14px] font-600 text-text truncate">{skill.name}</span>
@@ -282,6 +300,7 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
                       <span className="text-[10px] font-mono text-text-3/50">{skill.filename}</span>
                       {!inSidebar && (
                         <button
+                          type="button"
                           onClick={(e) => handleDelete(e, skill.id)}
                           className="text-text-3/40 hover:text-red-400 transition-colors p-0.5"
                           title="Delete"
@@ -317,7 +336,7 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
                       )}
                     </div>
                   )}
-                </button>
+                </div>
               )
             })}
           </div>

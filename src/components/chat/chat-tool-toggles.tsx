@@ -8,8 +8,8 @@ import type { ToolDefinition } from '@/lib/tool-definitions'
 import type { Session } from '@/types'
 
 const TOOL_GROUPS: { label: string; tools: ToolDefinition[] }[] = [
-  { label: 'Tools', tools: AVAILABLE_TOOLS },
-  { label: 'Platform', tools: PLATFORM_TOOLS },
+  { label: 'Plugins', tools: AVAILABLE_TOOLS },
+  { label: 'Platform Plugins', tools: PLATFORM_TOOLS },
 ]
 
 const TOTAL_TOOL_COUNT = AVAILABLE_TOOLS.length + PLATFORM_TOOLS.length

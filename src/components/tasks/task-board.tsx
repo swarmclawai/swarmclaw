@@ -231,7 +231,7 @@ export function TaskBoard() {
   }, [selectionMode])
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden">
+    <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-8 pt-6 pb-4 shrink-0">
         <div>
           <h1 className="font-display text-[28px] font-800 tracking-[-0.03em]">Task Board</h1>
@@ -399,7 +399,7 @@ export function TaskBoard() {
         </div>
       )}
 
-      <div className="flex-1 flex gap-5 px-8 pb-6 overflow-x-auto overflow-y-hidden">
+      <div className="flex-1 min-h-0 flex gap-5 px-8 pb-6 overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x">
         {!loaded ? (
           ACTIVE_COLUMNS.map((status) => (
             <div key={status} className="flex flex-col gap-3 min-w-[260px] flex-1">
@@ -410,17 +410,25 @@ export function TaskBoard() {
             </div>
           ))
         ) : (
-          columns.map((status) => (
-            <TaskColumn
+          columns.map((status, idx) => (
+            <div
               key={status}
-              status={status}
-              tasks={tasksByStatus(status)}
-              onDrop={handleDrop}
-              selectionMode={selectionMode}
-              selectedIds={selectedIds}
-              onToggleSelect={toggleSelect}
-              onSelectAll={() => selectAllInColumn(status)}
-            />
+              className="flex flex-col gap-3 min-w-[260px] flex-1"
+              style={{
+                animation: 'fade-up 0.6s var(--ease-spring) both',
+                animationDelay: `${idx * 0.1}s`
+              }}
+            >
+              <TaskColumn
+                status={status}
+                tasks={tasksByStatus(status)}
+                onDrop={handleDrop}
+                selectionMode={selectionMode}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                onSelectAll={() => selectAllInColumn(status)}
+              />
+            </div>
           ))
         )}
       </div>

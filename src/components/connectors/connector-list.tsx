@@ -31,6 +31,10 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
   const [reconnecting, setReconnecting] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const openConnector = useCallback((id: string | null) => {
+    setEditingConnectorId(id)
+    setConnectorSheetOpen(true)
+  }, [setEditingConnectorId, setConnectorSheetOpen])
 
   const refresh = useCallback(async () => {
     await Promise.all([loadConnectors(), loadAgents(), loadChatrooms()])
@@ -95,7 +99,7 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 text-center">
         <p className="text-[13px] text-text-3">No connectors configured yet.</p>
         <button
-          onClick={() => { setEditingConnectorId(null); setConnectorSheetOpen(true) }}
+          onClick={() => openConnector(null)}
           className="mt-3 text-[13px] text-accent-bright hover:underline cursor-pointer bg-transparent border-none"
         >
           + Add Connector
@@ -113,7 +117,7 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
             {error}
           </div>
         )}
-        {list.map((c) => {
+        {list.map((c, idx) => {
           const agent = c.agentId ? agents[c.agentId] : null
           const chatroom = c.chatroomId ? chatrooms[c.chatroomId] : null
           const isRunning = c.status === 'running'
@@ -121,8 +125,12 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
           return (
             <button
               key={c.id}
-              onClick={() => { setEditingConnectorId(c.id); setConnectorSheetOpen(true) }}
+              onClick={() => openConnector(c.id)}
               className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-white/[0.02] transition-colors cursor-pointer bg-transparent border-none text-left"
+              style={{
+                animation: 'fade-up 0.4s var(--ease-spring) both',
+                animationDelay: `${idx * 0.03}s`
+              }}
             >
               <ConnectorPlatformIcon platform={c.platform} size={16} />
               <div className="flex-1 min-w-0">
@@ -133,7 +141,8 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
               </div>
               <span className={`shrink-0 w-2 h-2 rounded-full ${
                 isRunning ? 'bg-green-400' : c.status === 'error' ? 'bg-red-400' : 'bg-white/20'
-              }`} />
+              }`}
+              style={isRunning ? { animation: 'pulse-subtle 2s infinite' } : undefined} />
             </button>
           )
         })}
@@ -150,7 +159,7 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
         </div>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {list.map((c) => {
+        {list.map((c, idx) => {
           const platformLabel = getConnectorPlatformLabel(c.platform)
           const agent = c.agentId ? agents[c.agentId] : null
           const chatroom = c.chatroomId ? chatrooms[c.chatroomId] : null
@@ -164,11 +173,23 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
           const lastMsg = c.presence?.lastMessageAt
 
           return (
-            <button
+            <div
               key={c.id}
-              onClick={() => { setEditingConnectorId(c.id); setConnectorSheetOpen(true) }}
-              className="group relative flex flex-col rounded-[14px] border border-white/[0.06] bg-surface p-4 cursor-pointer transition-all hover:border-white/[0.12] hover:bg-white/[0.02] text-left w-full"
-              style={{ fontFamily: 'inherit' }}
+              role="button"
+              tabIndex={0}
+              onClick={() => openConnector(c.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  openConnector(c.id)
+                }
+              }}
+              className="group relative flex flex-col rounded-[14px] border border-white/[0.06] bg-surface p-4 cursor-pointer transition-all hover:border-white/[0.12] hover:bg-white/[0.02] hover:scale-[1.01] text-left w-full"
+              style={{
+                fontFamily: 'inherit',
+                animation: 'spring-in 0.5s var(--ease-spring) both',
+                animationDelay: `${idx * 0.05}s`
+              }}
             >
               {/* Header: platform badge + status */}
               <div className="flex items-center gap-3 mb-3">
@@ -178,7 +199,8 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
                     <span className="text-[14px] font-600 text-text truncate">{c.name}</span>
                     <span className={`shrink-0 w-2 h-2 rounded-full ${
                       isRunning ? 'bg-green-400' : c.status === 'error' ? 'bg-red-400' : 'bg-white/20'
-                    }`} />
+                    }`}
+                    style={isRunning ? { animation: 'pulse-subtle 2s infinite' } : c.status === 'error' ? { animation: 'ai-shake 0.5s' } : undefined} />
                   </div>
                   <span className="text-[11px] text-text-3 block">
                     {isRunning ? 'Connected' : c.status === 'error' ? 'Error' : 'Stopped'}
@@ -264,7 +286,7 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
                   )}
                 </div>
               </div>
-            </button>
+            </div>
           )
         })}
       </div>

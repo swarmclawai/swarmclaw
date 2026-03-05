@@ -15,13 +15,14 @@ interface Props {
   streaming: boolean
   onSend: (text: string) => void
   onStop: () => void
+  pluginChatActions?: Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>
 }
 
 // FilePreview is now imported from @/components/shared/file-preview
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 
-export function ChatInput({ streaming, onSend, onStop }: Props) {
+export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }: Props) {
   const [value, setValue] = useState('')
   const { ref: textareaRef, resize } = useAutoResize()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -218,6 +219,26 @@ export function ChatInput({ streaming, onSend, onStop }: Props) {
               </svg>
               <span className="hidden sm:inline">Image</span>
             </button>
+
+            {/* Plugin Chat Actions */}
+            {pluginChatActions.map((action) => (
+              <Tooltip key={action.id}>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => {
+                      if (action.action === 'message') onSend(action.value)
+                      else if (action.action === 'link') window.open(action.value, '_blank')
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-[10px] border-none bg-emerald-500/[0.05]
+                      text-emerald-400 text-[13px] cursor-pointer hover:text-emerald-300 hover:bg-emerald-500/[0.1] transition-all duration-200"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    {action.label}
+                  </button>
+                </TooltipTrigger>
+                {action.tooltip && <TooltipContent>{action.tooltip}</TooltipContent>}
+              </Tooltip>
+            ))}
 
             {micSupported && (
               <button

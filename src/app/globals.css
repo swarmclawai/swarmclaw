@@ -171,6 +171,12 @@ textarea::-webkit-scrollbar { width: 0; }
 textarea:hover { scrollbar-width: thin; }
 textarea:hover::-webkit-scrollbar { width: 6px; }
 
+/* Improve scroll behavior on iOS/iPadOS nested panes */
+.overflow-y-auto,
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Selection */
 ::selection { background: rgba(99,102,241,0.3); }
 
@@ -250,12 +256,33 @@ textarea:hover::-webkit-scrollbar { width: 6px; }
   0% { background-position: -200% center; }
   100% { background-position: 200% center; }
 }
+@keyframes shimmer-bar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes spring-in {
+  0% { transform: scale(0.9) translateY(10px); opacity: 0; }
+  70% { transform: scale(1.02) translateY(-2px); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.02); }
+}
+@keyframes glow-line {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
 @keyframes gradient-drift {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
 @keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-up {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }

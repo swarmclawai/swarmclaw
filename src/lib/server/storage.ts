@@ -142,6 +142,7 @@ const COLLECTIONS = [
   'webhooks',
   'model_overrides',
   'mcp_servers',
+  'integrity_baselines',
   'webhook_logs',
   'projects',
   'activity',
@@ -155,6 +156,7 @@ const COLLECTIONS = [
   'connector_health',
   'souls',
   'benchmarks',
+  'approvals',
 ] as const
 
 for (const table of COLLECTIONS) {
@@ -859,6 +861,15 @@ export function saveMcpServers(m: Record<string, any>) {
 
 export function deleteMcpServer(id: string) { deleteCollectionItem('mcp_servers', id) }
 
+// --- Integrity Monitor Baselines ---
+export function loadIntegrityBaselines(): Record<string, any> {
+  return loadCollection('integrity_baselines')
+}
+
+export function saveIntegrityBaselines(entries: Record<string, any>) {
+  saveCollection('integrity_baselines', entries)
+}
+
 // --- Webhook Logs ---
 export function loadWebhookLogs(): Record<string, any> {
   return loadCollection('webhook_logs')
@@ -988,6 +999,19 @@ export function loadConnectorHealth(): Record<string, unknown> {
 
 export function upsertConnectorHealthEvent(id: string, event: unknown) {
   upsertCollectionItem('connector_health', id, event)
+}
+
+// --- Approvals ---
+export function loadApprovals(): Record<string, unknown> {
+  return loadCollection('approvals')
+}
+
+export function upsertApproval(id: string, approval: unknown) {
+  upsertCollectionItem('approvals', id, approval)
+}
+
+export function deleteApproval(id: string) {
+  deleteCollectionItem('approvals', id)
 }
 
 export function getSessionMessages(sessionId: string): Message[] {

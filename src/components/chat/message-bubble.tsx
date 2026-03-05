@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import type { Message } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
+import { useChatStore } from '@/stores/use-chat-store'
 import { AiAvatar } from '@/components/shared/avatar'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { CodeBlock } from './code-block'
@@ -17,6 +18,7 @@ import { FilePathChip, FILE_PATH_RE, DIR_PATH_RE } from './file-path-chip'
 import { TransferAgentPicker } from './transfer-agent-picker'
 import { DelegationBanner, DelegationSourceBanner, TaskCompletionCard, parseTaskCompletion } from './delegation-banner'
 import { ConnectorPlatformIcon, CONNECTOR_PLATFORM_META } from '@/components/shared/connector-platform-icon'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 /** Parse delegation-source metadata prefix from system messages */
 const DELEGATION_SOURCE_RE = /^\[delegation-source:([^:]*):([^:]*):([^\]]*)\]/
@@ -151,6 +153,33 @@ interface Props {
 export const MessageBubble = memo(function MessageBubble({ message, assistantName, agentAvatarSeed, agentAvatarUrl, agentName, isLast, onRetry, messageIndex, onToggleBookmark, onEditResend, onFork, onTransferToAgent, momentOverlay }: Props) {
   const isUser = message.role === 'user'
   const isHeartbeat = !isUser && (message.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(message.text || ''))
+  const isPluginUI = !isUser && message.kind === 'plugin-ui'
+  const scaffoldRequest = useMemo(() => {
+    if (isUser) return null
+    try {
+      const data = JSON.parse(message.text)
+      if (data.type === 'plugin_scaffold_request') return data
+    } catch { /* ignore */ }
+    return null
+  }, [message.text, isUser])
+
+  const installRequest = useMemo(() => {
+    if (isUser) return null
+    try {
+      const data = JSON.parse(message.text)
+      if (data.type === 'plugin_install_request') return data
+    } catch { /* ignore */ }
+    return null
+  }, [message.text, isUser])
+
+  const walletRequest = useMemo(() => {
+    if (isUser) return null
+    try {
+      const data = JSON.parse(message.text)
+      if (data.type === 'plugin_wallet_transfer_request') return data
+    } catch { /* ignore */ }
+    return null
+  }, [message.text, isUser])
   const currentUser = useAppStore((s) => s.currentUser)
   const [copied, setCopied] = useState(false)
   const [heartbeatExpanded, setHeartbeatExpanded] = useState(false)
@@ -217,7 +246,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   const displayText = delegationSource ? delegationSource.rest : message.text
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(message.text).then(() => {
+    void copyTextToClipboard(message.text).then((copiedText) => {
+      if (!copiedText) return
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
@@ -226,7 +256,6 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   return (
     <div
       className={`group ${isUser ? 'flex flex-col items-end' : 'flex flex-col items-start relative pl-[44px]'}`}
-      style={{ animation: `${isUser ? 'msg-in-right' : 'msg-in-left'} 0.35s cubic-bezier(0.16, 1, 0.3, 1)` }}
     >
       {/* Avatar on spine (assistant) */}
       {!isUser && (
@@ -447,7 +476,138 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
       <div className={`${isStructured ? 'max-w-[92%] md:max-w-[85%]' : 'max-w-[85%] md:max-w-[72%]'} ${isUser ? 'bubble-user px-5 py-3.5' : isHeartbeat ? 'bubble-ai px-4 py-3' : 'bubble-ai px-5 py-3.5'}`}>
         {renderAttachments(message)}
 
-        {isHeartbeat ? (
+        {walletRequest ? (
+          <div className="flex flex-col gap-3 p-4 rounded-[18px] bg-sky-500/[0.03] border border-sky-500/20 shadow-[0_0_20px_rgba(14,165,233,0.05)]">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-5 h-5 rounded-full bg-sky-500/20 flex items-center justify-center text-sky-400">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                </svg>
+              </div>
+              <span className="text-[11px] font-700 uppercase tracking-wider text-sky-400/80">Wallet Transfer Request</span>
+            </div>
+            <p className="text-[13px] text-text-2/90 leading-relaxed">{walletRequest.message}</p>
+            <div className="p-3 rounded-[12px] bg-black/40 border border-white/5 flex flex-col gap-2">
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] text-text-3/60 font-600 uppercase">Amount</span>
+                <span className="text-[13px] font-700 text-sky-400">{walletRequest.amountSol} SOL</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] text-text-3/60 font-600 uppercase">To Address</span>
+                <span className="text-[11px] font-mono text-text-2/70 break-all">{walletRequest.toAddress}</span>
+              </div>
+              {walletRequest.memo && (
+                <div className="flex flex-col gap-1 border-t border-white/5 pt-2">
+                  <span className="text-[11px] text-text-3/60 font-600 uppercase">Memo</span>
+                  <span className="text-[12px] text-text-3/80 italic">&quot;{walletRequest.memo}&quot;</span>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={() => useChatStore.getState().sendMessage(`I approve this transfer of ${walletRequest.amountSol} SOL to ${walletRequest.toAddress}. Proceed with wallet_tool and set approved=true.`)}
+                className="px-4 py-2 rounded-[12px] bg-sky-500 text-black text-[13px] font-700 hover:bg-sky-400 transition-all active:scale-[0.98]"
+              >
+                Approve & Send
+              </button>
+              <button
+                onClick={() => useChatStore.getState().sendMessage(`I do not approve this transaction. Cancel it.`)}
+                className="px-4 py-2 rounded-[12px] bg-white/[0.05] hover:bg-white/[0.1] text-text-2 text-[13px] font-600 transition-all border border-white/10"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ) : installRequest ? (
+          <div className="flex flex-col gap-3 p-4 rounded-[18px] bg-emerald-500/[0.03] border border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+              </div>
+              <span className="text-[11px] font-700 uppercase tracking-wider text-emerald-400/80">Plugin Install Request</span>
+            </div>
+            <p className="text-[13px] text-text-2/90 leading-relaxed">{installRequest.message}</p>
+            <div className="p-3 rounded-[12px] bg-black/40 border border-white/5 flex flex-col gap-1">
+              <div className="text-[11px] text-text-3/60 font-600 uppercase tracking-tight">Source URL</div>
+              <div className="text-[12px] font-mono text-emerald-200/70 truncate">{installRequest.url}</div>
+            </div>
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={() => useChatStore.getState().sendMessage(`I approve the installation of the plugin from ${installRequest.url}. Proceed with install_request and set approved=true.`)}
+                className="px-4 py-2 rounded-[12px] bg-emerald-500 text-black text-[13px] font-700 hover:bg-emerald-400 transition-all active:scale-[0.98]"
+              >
+                Approve & Install
+              </button>
+              <button
+                onClick={() => useChatStore.getState().sendMessage(`I do not approve this plugin installation. Please stop.`)}
+                className="px-4 py-2 rounded-[12px] bg-white/[0.05] hover:bg-white/[0.1] text-text-2 text-[13px] font-600 transition-all border border-white/10"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ) : scaffoldRequest ? (
+          <div className="flex flex-col gap-3 p-4 rounded-[18px] bg-amber-500/[0.03] border border-amber-500/20 shadow-[0_0_20px_rgba(245,158,11,0.05)]">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+              </div>
+              <span className="text-[11px] font-700 uppercase tracking-wider text-amber-400/80">Plugin Creation Request</span>
+            </div>
+            <p className="text-[13px] text-text-2/90 leading-relaxed">{scaffoldRequest.message}</p>
+            <div className="p-3 rounded-[12px] bg-black/40 border border-white/5">
+              <div className="text-[11px] font-mono text-text-3/60 mb-2 border-b border-white/5 pb-1">filename: {scaffoldRequest.filename}</div>
+              <div className="text-[12px] font-mono text-amber-200/70 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-all">
+                {scaffoldRequest.code}
+              </div>
+            </div>
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={() => useChatStore.getState().sendMessage(`I approve the creation of the plugin ${scaffoldRequest.filename}. Proceed with scaffold and set approved=true.`)}
+                className="px-4 py-2 rounded-[12px] bg-amber-500 text-black text-[13px] font-700 hover:bg-amber-400 transition-all active:scale-[0.98]"
+              >
+                Approve & Install
+              </button>
+              <button
+                onClick={() => useChatStore.getState().sendMessage(`I do not approve the creation of this plugin. Please find another way or stop.`)}
+                className="px-4 py-2 rounded-[12px] bg-white/[0.05] hover:bg-white/[0.1] text-text-2 text-[13px] font-600 transition-all border border-white/10"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ) : isPluginUI ? (
+          <div className="flex flex-col gap-2 p-4 rounded-[18px] bg-emerald-500/[0.03] border border-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2.5">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+              </div>
+              <span className="text-[11px] font-700 uppercase tracking-wider text-emerald-400/80">Plugin UI Extension</span>
+            </div>
+            <div className="text-[14px] text-text-2/90 leading-relaxed">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
+            </div>
+            <div className="flex gap-2 mt-2">
+              {tryParseJson(message.text)?.actions ? (tryParseJson(message.text)!.actions as Array<{ id: string; href: string; label: string }>).map((action) => (
+                <button
+                  key={action.id}
+                  onClick={() => window.open(action.href, '_blank')}
+                  className="px-3 py-1.5 rounded-[10px] bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-600 transition-all border border-emerald-500/10"
+                >
+                  {action.label}
+                </button>
+              )) : null}
+            </div>
+          </div>
+        ) : isHeartbeat ? (
           <div className="flex flex-col gap-2">
             <button
               type="button"
@@ -660,7 +820,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
       )}
 
       {/* Action buttons */}
-      <div className={`flex items-center gap-1 mt-1.5 px-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 ${isUser ? 'justify-end' : ''}`}>
+      <div className={`flex items-center gap-1 mt-1.5 px-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-200 translate-y-2 md:group-hover:translate-y-0 ${isUser ? 'justify-end' : ''}`}>
         <button
           onClick={handleCopy}
           aria-label="Copy message"

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { updateTask, archiveTask } from '@/lib/tasks'
@@ -20,9 +20,10 @@ interface TaskCardProps {
   selectionMode?: boolean
   selected?: boolean
   onToggleSelect?: (id: string) => void
+  index?: number
 }
 
-export function TaskCard({ task, selectionMode, selected, onToggleSelect }: TaskCardProps) {
+export function TaskCard({ task, selectionMode, selected, onToggleSelect, index = 0 }: TaskCardProps) {
   const agents = useAppStore((s) => s.agents)
   const projects = useAppStore((s) => s.projects)
   const setEditingTaskId = useAppStore((s) => s.setEditingTaskId)
@@ -32,6 +33,15 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
   const setActiveView = useAppStore((s) => s.setActiveView)
   const [dragging, setDragging] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
+  const [allowDrag, setAllowDrag] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const isCoarsePointer = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(pointer: coarse)').matches
+      : 'ontouchstart' in window
+    setAllowDrag(!isCoarsePointer)
+  }, [])
 
   const tasks = useAppStore((s) => s.tasks)
   const agent = agents[task.agentId]
@@ -85,9 +95,9 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
 
   return (
     <div
-      draggable={!selectionMode}
-      onDragStart={selectionMode ? undefined : handleDragStart}
-      onDragEnd={selectionMode ? undefined : handleDragEnd}
+      draggable={!selectionMode && allowDrag}
+      onDragStart={selectionMode || !allowDrag ? undefined : handleDragStart}
+      onDragEnd={selectionMode || !allowDrag ? undefined : handleDragEnd}
       onClick={(e) => {
         if (selectionMode && onToggleSelect) {
           e.stopPropagation()
@@ -98,9 +108,13 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect }: Task
         }
       }}
       className={`py-3 px-4 rounded-[14px] border border-l-[3px] ${borderColor} bg-surface hover:bg-surface-2 transition-all group
-        ${selectionMode ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'}
+        ${selectionMode || !allowDrag ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} touch-pan-y
         ${dragging ? 'opacity-40 scale-[0.97]' : ''}
-        ${selected ? 'border-accent-bright/40 bg-accent-bright/[0.04] ring-1 ring-accent-bright/20' : 'border-white/[0.06]'}`}
+        ${selected ? 'border-accent-bright/40 bg-accent-bright/[0.04] ring-1 ring-accent-bright/20 shadow-lg' : 'border-white/[0.06] hover:border-white/[0.12] hover:scale-[1.01] hover:shadow-md'}`}
+      style={{
+        animation: 'spring-in 0.5s var(--ease-spring) both',
+        animationDelay: `${Math.min(index * 0.05, 0.4)}s`
+      }}
     >
       <div className="flex items-start gap-3 mb-3">
         {/* Selection checkbox */}

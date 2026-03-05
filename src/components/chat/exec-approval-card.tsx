@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import type { PendingExecApproval, ExecApprovalDecision } from '@/types'
 import { useApprovalStore } from '@/stores/use-approval-store'
 
@@ -9,13 +10,19 @@ interface Props {
 
 export function ExecApprovalCard({ approval }: Props) {
   const resolveApproval = useApprovalStore((s) => s.resolveApproval)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 5000)
+    return () => clearInterval(timer)
+  }, [])
 
   const handleResolve = (decision: ExecApprovalDecision) => {
     resolveApproval(approval.id, decision)
   }
 
   const alreadyResolved = approval.error?.includes('Already resolved') ?? false
-  const expired = approval.expiresAtMs < Date.now()
+  const expired = approval.expiresAtMs < now
   const disabled = !!approval.resolving || expired || alreadyResolved
 
   return (

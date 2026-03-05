@@ -4,40 +4,39 @@ export interface ToolDefinition {
   description: string
 }
 
+/** 
+ * Standard dynamic tools. 
+ * Many granular tools (read_file, write_file, etc.) are now unified under 'files'.
+ */
 export const AVAILABLE_TOOLS: ToolDefinition[] = [
-  { id: 'shell', label: 'Shell', description: 'Execute commands in the working directory' },
-  { id: 'files', label: 'Files', description: 'Read, write, list, move, copy, and send files' },
-  { id: 'copy_file', label: 'Copy File', description: 'Copy files within the working directory' },
-  { id: 'move_file', label: 'Move File', description: 'Move/rename files within the working directory' },
-  { id: 'delete_file', label: 'Delete File', description: 'Delete files/directories (disabled by default)' },
-  { id: 'edit_file', label: 'Edit File', description: 'Search-and-replace editing within files' },
-  { id: 'process', label: 'Process', description: 'Monitor and control long-running shell commands' },
-  { id: 'web_search', label: 'Web Search', description: 'Search the web via DuckDuckGo' },
-  { id: 'web_fetch', label: 'Web Fetch', description: 'Fetch and extract text from URLs' },
-  { id: 'claude_code', label: 'Claude Code', description: 'Delegate complex tasks to Claude Code CLI' },
-  { id: 'codex_cli', label: 'Codex CLI', description: 'Delegate complex tasks to OpenAI Codex CLI' },
-  { id: 'opencode_cli', label: 'OpenCode CLI', description: 'Delegate complex tasks to OpenCode CLI' },
+  { id: 'shell', label: 'Shell', description: 'Execute commands in the working directory and manage background processes' },
+  { id: 'files', label: 'Files', description: 'Complete file management: read, write, list, move, copy, delete, and send' },
+  { id: 'edit_file', label: 'Edit File', description: 'Surgical search-and-replace within files' },
+  { id: 'web', label: 'Web', description: 'Search the web via DuckDuckGo and fetch text from URLs' },
+  { id: 'delegate', label: 'Delegate', description: 'Delegate complex tasks to specialized backends (Claude Code, Codex, OpenCode)' },
   { id: 'browser', label: 'Browser', description: 'Playwright — browse, scrape, interact with web pages' },
   { id: 'memory', label: 'Memory', description: 'Store and retrieve long-term memories across conversations' },
-  { id: 'sandbox', label: 'Sandbox', description: 'Run JS/TS/Python code in an isolated Deno sandbox' },
+  { id: 'sandbox', label: 'Sandbox', description: 'Secure isolated code execution for JS, TS, and Python' },
   { id: 'create_document', label: 'Create Document', description: 'Render markdown to PDF, HTML, or image' },
   { id: 'create_spreadsheet', label: 'Create Spreadsheet', description: 'Create Excel or CSV files from structured data' },
-  { id: 'http_request', label: 'HTTP Request', description: 'Make HTTP API calls (GET, POST, PUT, DELETE, etc.)' },
+  { id: 'http_request', label: 'HTTP Request', description: 'Make direct HTTP API calls with custom methods, headers, and bodies' },
   { id: 'git', label: 'Git', description: 'Run structured git operations (status, commit, push, diff, etc.)' },
   { id: 'wallet', label: 'Wallet', description: 'Manage agent crypto wallet — check balance, send SOL, view transactions' },
+  { id: 'monitor', label: 'Monitor', description: 'System observability: check resource usage, watch logs, and ping endpoints' },
+  { id: 'plugin_creator', label: 'Plugin Creator', description: 'Design, write, and test custom SwarmClaw plugins dynamically' },
+  { id: 'sample_ui', label: 'Sample UI', description: 'Demonstration of dynamic UI injection into Sidebar and Chat Header' },
 ]
 
+/**
+ * Platform capability tools.
+ * Granular CRUD tools are now unified under 'manage_platform'.
+ */
 export const PLATFORM_TOOLS: ToolDefinition[] = [
-  { id: 'manage_agents', label: 'Agents', description: 'Create, edit, and delete agents' },
-  { id: 'manage_tasks', label: 'Tasks', description: 'Create, edit, and delete tasks' },
-  { id: 'manage_schedules', label: 'Schedules', description: 'Create, edit, and delete schedules' },
+  { id: 'manage_platform', label: 'Platform', description: 'Unified management of agents, tasks, schedules, skills, documents, and secrets' },
+  { id: 'manage_connectors', label: 'Connectors', description: 'Manage chat platform bridges and send outbound messages' },
+  { id: 'manage_chatrooms', label: 'Chatrooms', description: 'Manage SwarmClaw routing rules and multi-agent chatrooms' },
+  { id: 'delegate_to_agent', label: 'Assign Agent', description: 'Delegate a task to another specific agent' },
   { id: 'schedule_wake', label: 'Reminders', description: 'Schedule a proactive wake event in the current chat' },
-  { id: 'manage_skills', label: 'Skills', description: 'Create, edit, and delete skills' },
-  { id: 'manage_documents', label: 'Documents', description: 'Upload, search, and delete indexed documents' },
-  { id: 'manage_webhooks', label: 'Webhooks', description: 'Register webhooks that trigger agent workflows' },
-  { id: 'manage_connectors', label: 'Connectors', description: 'Create, edit, and delete connectors' },
-  { id: 'manage_sessions', label: 'Chats', description: 'List chats, send messages, and spawn agent work' },
-  { id: 'manage_secrets', label: 'Secrets', description: 'Store and retrieve encrypted service secrets' },
 ]
 
 export const ALL_TOOLS: ToolDefinition[] = [...AVAILABLE_TOOLS, ...PLATFORM_TOOLS]
@@ -46,3 +45,4 @@ export const ALL_TOOLS: ToolDefinition[] = [...AVAILABLE_TOOLS, ...PLATFORM_TOOL
 export const TOOL_LABELS: Record<string, string> = Object.fromEntries(
   ALL_TOOLS.map((t) => [t.id, t.label]),
 )
+

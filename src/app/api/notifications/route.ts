@@ -13,6 +13,9 @@ export async function GET(req: Request) {
   const all = loadNotifications()
   let entries = Object.values(all) as AppNotification[]
 
+  // Approval requests now have a dedicated Approvals view/badge; keep notifications focused on ops/events.
+  entries = entries.filter((e) => e.entityType !== 'approval')
+
   if (unreadOnly) {
     entries = entries.filter((e) => !e.read)
   }

@@ -120,13 +120,17 @@ export function ProviderSheet() {
       if (result.ok) {
         setTestStatus('pass')
         setTestMessage(result.message)
+        toast.success('Connection successful')
       } else {
         setTestStatus('fail')
         setTestMessage(result.message)
+        toast.error(result.message || 'Connection failed')
       }
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Connection test failed'
       setTestStatus('fail')
-      setTestMessage(err instanceof Error ? err.message : 'Connection test failed')
+      setTestMessage(msg)
+      toast.error(msg)
     }
   }
 
@@ -136,37 +140,50 @@ export function ProviderSheet() {
   }
 
   const handleSave = async () => {
-    if (isBuiltin) {
-      // Save model overrides for built-in providers
+    try {
+      if (isBuiltin) {
+        // Save model overrides for built-in providers
+        const modelList = models.split(',').map((m) => m.trim()).filter(Boolean)
+        await api('PUT', `/providers/${editingId}/models`, { models: modelList })
+        toast.success('Built-in provider models updated')
+        await loadProviders()
+        onClose()
+        return
+      }
       const modelList = models.split(',').map((m) => m.trim()).filter(Boolean)
-      await api('PUT', `/providers/${editingId}/models`, { models: modelList })
-      await loadProviders()
+      const data = {
+        name: name.trim() || 'Custom Provider',
+        baseUrl: baseUrl.trim(),
+        models: modelList,
+        requiresApiKey,
+        credentialId,
+        isEnabled,
+      }
+      if (editingCustom) {
+        await updateProviderConfig(editingCustom.id, data)
+        toast.success('Provider updated')
+      } else {
+        await createProviderConfig(data)
+        toast.success('Provider created')
+      }
+      await loadProviderConfigs()
       onClose()
-      return
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save provider')
     }
-    const modelList = models.split(',').map((m) => m.trim()).filter(Boolean)
-    const data = {
-      name: name.trim() || 'Custom Provider',
-      baseUrl: baseUrl.trim(),
-      models: modelList,
-      requiresApiKey,
-      credentialId,
-      isEnabled,
-    }
-    if (editingCustom) {
-      await updateProviderConfig(editingCustom.id, data)
-    } else {
-      await createProviderConfig(data)
-    }
-    await loadProviderConfigs()
-    onClose()
   }
 
   const handleDelete = async () => {
     if (editingCustom) {
-      await deleteProviderConfig(editingCustom.id)
-      await loadProviderConfigs()
-      onClose()
+      if (!confirm(`Delete custom provider "${editingCustom.name}"?`)) return
+      try {
+        await deleteProviderConfig(editingCustom.id)
+        toast.success('Provider deleted')
+        await loadProviderConfigs()
+        onClose()
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : 'Failed to delete provider')
+      }
     }
   }
 

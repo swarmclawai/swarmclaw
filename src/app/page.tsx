@@ -92,14 +92,14 @@ function FullScreenLoader() {
           background: 'linear-gradient(135deg, rgba(255,255,255,0.6), rgba(129, 140, 248, 0.8))',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          animation: 'sc-text-fade 2s ease-in-out infinite alternate',
+          animation: 'sc-text-fade 2s ease-in-out infinite alternate, fade-up 0.6s var(--ease-spring) 0.2s both',
         }}
       >
         SwarmClaw
       </div>
 
       {/* Loading bar */}
-      <div className="mt-4 w-[100px] h-[2px] rounded-full bg-white/[0.06] overflow-hidden">
+      <div className="mt-4 w-[100px] h-[2px] rounded-full bg-white/[0.06] overflow-hidden" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.3s both' }}>
         <div
           className="h-full rounded-full bg-accent-bright/60"
           style={{ animation: 'sc-progress 1.5s ease-in-out infinite' }}
@@ -150,7 +150,10 @@ export default function Home() {
 
   const [authChecked, setAuthChecked] = useState(false)
   const [authenticated, setAuthenticated] = useState(false)
-  const [setupDone, setSetupDone] = useState<boolean | null>(null)
+  const [setupDone, setSetupDone] = useState<boolean | null>(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('sc_setup_done') === '1') return true
+    return null
+  })
 
   const checkAuth = useCallback(async () => {
     const key = getStoredAccessKey()
@@ -252,7 +255,9 @@ export default function Home() {
         ])
         if (cancelled) return
         const hasCreds = Object.keys(creds).length > 0
-        setSetupDone(settings.setupCompleted === true || hasCreds)
+        const done = settings.setupCompleted === true || hasCreds
+        if (done) localStorage.setItem('sc_setup_done', '1')
+        setSetupDone(done)
       } catch {
         if (!cancelled) setSetupDone(true) // on error, skip wizard
       }
@@ -285,6 +290,6 @@ export default function Home() {
   if (!authenticated) return <AccessKeyGate onAuthenticated={() => setAuthenticated(true)} />
   if (!currentUser) return <UserPicker />
   if (setupDone === null || !agentReady) return <FullScreenLoader />
-  if (!setupDone) return <SetupWizard onComplete={() => setSetupDone(true)} />
+  if (!setupDone) return <SetupWizard onComplete={() => { localStorage.setItem('sc_setup_done', '1'); setSetupDone(true) }} />
   return <AppLayout />
 }

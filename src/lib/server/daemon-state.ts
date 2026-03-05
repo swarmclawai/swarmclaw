@@ -17,9 +17,11 @@ import { hasOpenClawAgents, ensureGatewayConnected, disconnectGateway, getGatewa
 import { enqueueSessionRun } from './session-run-manager'
 import { WORKSPACE_DIR } from './data-dir'
 import { genId } from '@/lib/id'
+import path from 'node:path'
 import type { WebhookRetryEntry } from '@/types'
 import { createNotification } from '@/lib/server/create-notification'
 import { pingProvider, OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
+import { runIntegrityMonitor } from '@/lib/server/integrity-monitor'
 
 const QUEUE_CHECK_INTERVAL = 30_000 // 30 seconds
 const BROWSER_SWEEP_INTERVAL = 60_000 // 60 seconds
@@ -88,6 +90,8 @@ const ds: {
   openclawDownAgentIds: Set<string>
   /** Per-agent auto-repair state for OpenClaw gateways. */
   openclawRepairState: Map<string, { attempts: number; lastAttemptAt: number; cooldownUntil: number }>
+  lastIntegrityCheckAt: number | null
+  lastIntegrityDriftCount: number
   manualStopRequested: boolean
   running: boolean
   lastProcessedAt: number | null
@@ -103,6 +107,8 @@ const ds: {
   connectorRestartState: new Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>(),
   openclawDownAgentIds: new Set<string>(),
   openclawRepairState: new Map<string, { attempts: number; lastAttemptAt: number; cooldownUntil: number }>(),
+  lastIntegrityCheckAt: null,
+  lastIntegrityDriftCount: 0,
   manualStopRequested: false,
   running: false,
   lastProcessedAt: null,
@@ -113,6 +119,8 @@ if (!ds.staleSessionIds) ds.staleSessionIds = new Set<string>()
 if (!ds.connectorRestartState) ds.connectorRestartState = new Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>()
 if (!ds.openclawDownAgentIds) ds.openclawDownAgentIds = new Set<string>()
 if (!ds.openclawRepairState) ds.openclawRepairState = new Map<string, { attempts: number; lastAttemptAt: number; cooldownUntil: number }>()
+if (ds.lastIntegrityCheckAt === undefined) ds.lastIntegrityCheckAt = null
+if (ds.lastIntegrityDriftCount === undefined) ds.lastIntegrityDriftCount = 0
 // Migrate from old issueLastAlertAt map if present (HMR across code versions)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 if ((ds as any).issueLastAlertAt) delete (ds as any).issueLastAlertAt
@@ -731,6 +739,35 @@ async function runHealthChecks() {
     console.error('[daemon] OpenClaw gateway health check failed:', err instanceof Error ? err.message : String(err))
   }
 
+  // Integrity drift monitoring for identity/config/plugin files.
+  try {
+    const integrity = runIntegrityMonitor(loadSettings())
+    ds.lastIntegrityCheckAt = integrity.checkedAt
+    ds.lastIntegrityDriftCount = integrity.drifts.length
+    if (integrity.drifts.length > 0) {
+      for (const drift of integrity.drifts) {
+        const rel = path.relative(process.cwd(), drift.filePath)
+        const shortPath = rel && !rel.startsWith('..') ? rel : drift.filePath
+        const action = drift.type === 'created'
+          ? 'created'
+          : drift.type === 'deleted'
+            ? 'deleted'
+            : 'modified'
+        createNotification({
+          type: drift.type === 'deleted' ? 'error' : 'warning',
+          title: `Integrity drift detected (${drift.kind})`,
+          message: `${shortPath} was ${action}.`,
+          dedupKey: `integrity:${drift.id}:${drift.nextHash || 'missing'}`,
+          entityType: 'session',
+          entityId: drift.id,
+        })
+      }
+      await sendHealthAlert(`Integrity monitor detected ${integrity.drifts.length} file drift event(s).`)
+    }
+  } catch (err: unknown) {
+    console.error('[daemon] Integrity monitor check failed:', err instanceof Error ? err.message : String(err))
+  }
+
   // Process webhook retry queue
   try {
     await processWebhookRetries()
@@ -892,6 +929,11 @@ export function getDaemonStatus() {
       staleSessions: ds.staleSessionIds.size,
       connectorsInBackoff: ds.connectorRestartState.size,
       checkIntervalSec: Math.trunc(HEALTH_CHECK_INTERVAL / 1000),
+      integrity: {
+        enabled: loadSettings().integrityMonitorEnabled !== false,
+        lastCheckedAt: ds.lastIntegrityCheckAt,
+        lastDriftCount: ds.lastIntegrityDriftCount,
+      },
     },
     webhookRetry: {
       pendingRetries,

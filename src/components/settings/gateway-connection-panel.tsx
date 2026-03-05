@@ -143,7 +143,7 @@ export function GatewayConnectionPanel() {
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
         <span className={`w-2 h-2 rounded-full ${dotColor}`} />
         <span className="text-[13px] font-600 text-text capitalize">{status}</span>
         {actionableIssues.length > 0 && (
@@ -153,7 +153,7 @@ export function GatewayConnectionPanel() {
         )}
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2" style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.05s both' }}>
         <label className="text-[11px] font-600 uppercase tracking-wider text-text-3/50">Gateway URL</label>
         <input
           type="text"
@@ -164,7 +164,7 @@ export function GatewayConnectionPanel() {
         />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2" style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.1s both' }}>
         <label className="text-[11px] font-600 uppercase tracking-wider text-text-3/50">Token (optional)</label>
         <input
           type="password"
@@ -175,7 +175,7 @@ export function GatewayConnectionPanel() {
         />
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2" style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.15s both' }}>
         {status !== 'connected' ? (
           <button
             onClick={handleConnect}
@@ -204,12 +204,12 @@ export function GatewayConnectionPanel() {
       </div>
 
       {error && (
-        <p className="text-[12px] text-red-400">{error}</p>
+        <p className="text-[12px] text-red-400" style={{ animation: 'ai-shake 0.5s' }}>{error}</p>
       )}
 
       {/* Reload Mode Toggle (F21) */}
       {status === 'connected' && (
-        <div className="flex flex-col gap-2 pt-2 border-t border-white/[0.04]">
+        <div className="flex flex-col gap-2 pt-2 border-t border-white/[0.04]" style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.2s both' }}>
           <label className="text-[11px] font-600 uppercase tracking-wider text-text-3/50">Reload Mode</label>
           <div className="flex gap-1">
             {reloadModes.map((rm) => (
@@ -237,9 +237,9 @@ export function GatewayConnectionPanel() {
 
       {/* Config Issues (F19) */}
       {actionableIssues.length > 0 && (
-        <div className="flex flex-col gap-2 pt-2 border-t border-white/[0.04]">
+        <div className="flex flex-col gap-2 pt-2 border-t border-white/[0.04]" style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.25s both' }}>
           <label className="text-[11px] font-600 uppercase tracking-wider text-text-3/50">Config Issues</label>
-          {actionableIssues.map((issue) => (
+          {actionableIssues.map((issue, idx) => (
             <div
               key={issue.id}
               className={`flex items-start gap-3 p-3 rounded-[10px] border ${
@@ -247,6 +247,7 @@ export function GatewayConnectionPanel() {
                   ? 'bg-red-400/[0.04] border-red-400/20'
                   : 'bg-amber-400/[0.04] border-amber-400/20'
               }`}
+              style={{ animation: 'spring-in 0.4s var(--ease-spring) both', animationDelay: `${0.3 + idx * 0.05}s` }}
             >
               <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${
                 issue.severity === 'error' ? 'bg-red-400' : 'bg-amber-400'

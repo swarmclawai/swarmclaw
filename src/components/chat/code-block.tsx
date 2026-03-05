@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useState, type ReactNode } from 'react'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 function extractText(node: ReactNode): string {
   if (typeof node === 'string') return node
@@ -29,7 +30,8 @@ export function CodeBlock({ children, className }: Props) {
   const getText = useCallback(() => extractText(children), [children])
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(getText()).then(() => {
+    void copyTextToClipboard(getText()).then((copiedText) => {
+      if (!copiedText) return
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })

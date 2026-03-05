@@ -192,7 +192,7 @@ export function HomeView() {
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-[800px] mx-auto px-6 py-10">
         {/* Header */}
-        <div className="mb-10">
+        <div className="mb-10" style={{ animation: 'spring-in 0.6s var(--ease-spring)' }}>
           <h1 className="font-display text-[28px] font-700 text-text tracking-[-0.03em]">
             SwarmClaw
           </h1>
@@ -203,15 +203,15 @@ export function HomeView() {
 
         {/* Quick Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <StatCard label="Agents" value={String(agentCount)} hint="Total active agents configured in your dashboard" />
-          <StatCard label="Active Tasks" value={String(activeTaskCount)} accent={activeTaskCount > 0} hint="Tasks currently running or queued for execution" />
-          <StatCard label="Today's Cost" value={`$${todayCost.toFixed(2)}`} hint="Estimated API cost for today across all providers" />
-          <StatCard label="Connectors" value={`${activeConnectorCount}/${allConnectors.length}`} accent={activeConnectorCount > 0} hint="Active bridges to chat platforms (Discord, Slack, etc.)" />
+          <StatCard label="Agents" value={String(agentCount)} hint="Total active agents configured in your dashboard" index={0} />
+          <StatCard label="Active Tasks" value={String(activeTaskCount)} accent={activeTaskCount > 0} hint="Tasks currently running or queued for execution" index={1} />
+          <StatCard label="Today's Cost" value={`$${todayCost.toFixed(2)}`} hint="Estimated API cost for today across all providers" index={2} />
+          <StatCard label="Connectors" value={`${activeConnectorCount}/${allConnectors.length}`} accent={activeConnectorCount > 0} hint="Active bridges to chat platforms (Discord, Slack, etc.)" index={3} />
         </div>
 
         {/* Cost trend sparkline */}
         {costTrend.length > 1 && (
-          <div className="mb-10 px-1">
+          <div className="mb-10 px-1" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.3s both' }}>
             <p className="text-[10px] text-text-3/50 uppercase tracking-wider mb-1 flex items-center gap-1.5">
               7-day cost trend <HintTip text="Daily API spend over the past week — hover for details" />
             </p>
@@ -247,7 +247,7 @@ export function HomeView() {
 
         {/* Notifications banner */}
         {unreadNotifications.length > 0 && (
-          <section className="mb-8">
+          <section className="mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.35s both' }}>
             <div className="rounded-[14px] border border-amber-400/20 bg-amber-400/[0.04] overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-amber-400/10">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-amber-400">
@@ -283,7 +283,7 @@ export function HomeView() {
         )}
 
         {/* Connector Status */}
-        <section className="mb-8">
+        <section className="mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.4s both' }}>
           <SectionHeader label="Connectors" onViewAll={allConnectors.length > 0 ? () => setActiveView('connectors') : undefined} />
           {allConnectors.length > 0 ? (
             <div className="flex gap-2 flex-wrap">
@@ -307,7 +307,7 @@ export function HomeView() {
         </section>
 
         {/* Two-column layout: Running Tasks + Upcoming Schedules */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.45s both' }}>
           {/* Running Tasks */}
           <section>
             <SectionHeader label="Running Tasks" onViewAll={runningTasks.length > 0 ? () => setActiveView('tasks') : undefined} />
@@ -373,7 +373,7 @@ export function HomeView() {
         </div>
 
         {/* Pinned Agents */}
-        <section className="mb-8">
+        <section className="mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.5s both' }}>
           <SectionHeader label="Pinned Agents" />
           {pinnedAgents.length > 0 ? (
             <div className="flex gap-3 overflow-x-auto pb-2">
@@ -438,7 +438,7 @@ export function HomeView() {
         </section>
 
         {/* Recent Chats */}
-        <section className="mb-8">
+        <section className="mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.55s both' }}>
           <SectionHeader label="Recent Chats" />
           {recentChats.length > 0 ? (
             <div className="flex flex-col gap-1">
@@ -486,7 +486,7 @@ export function HomeView() {
 
         {/* Activity Feed */}
         {recentActivity.length > 0 && (
-          <section className="mb-10">
+          <section className="mb-10" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.6s both' }}>
             <SectionHeader label="Recent Activity" />
             <div className="flex flex-col gap-0.5">
               {recentActivity.map((entry) => (
@@ -526,9 +526,15 @@ function SectionHeader({ label, onViewAll }: { label: string; onViewAll?: () => 
   )
 }
 
-function StatCard({ label, value, accent, hint }: { label: string; value: string; accent?: boolean; hint?: string }) {
+function StatCard({ label, value, accent, hint, index = 0 }: { label: string; value: string; accent?: boolean; hint?: string; index?: number }) {
   return (
-    <div className="px-4 py-3 rounded-[12px] bg-white/[0.03] border border-white/[0.06]">
+    <div
+      className="px-4 py-3 rounded-[12px] bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.05] transition-all hover:scale-[1.02] active:scale-[0.98] cursor-default"
+      style={{
+        animation: 'spring-in 0.6s var(--ease-spring) both',
+        animationDelay: `${0.1 + index * 0.05}s`
+      }}
+    >
       <p className="text-[11px] font-600 text-text-3/60 uppercase tracking-wider mb-1 flex items-center gap-1.5">
         {label}
         {hint && <HintTip text={hint} />}

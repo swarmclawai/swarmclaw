@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { api } from '@/lib/api-client'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
 import { WalletApprovalDialog } from './wallet-approval-dialog'
@@ -11,19 +12,24 @@ import type { AgentWallet, WalletTransaction, WalletBalanceSnapshot, Agent } fro
 
 type SafeWallet = Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }
 
-function SolanaIcon({ size = 12, className = '' }: { size?: number; className?: string }) {
+function SolanaIcon({ size = 12, className = '', shimmer = false }: { size?: number; className?: string; shimmer?: boolean }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 128 128" className={className}>
-      <defs>
-        <linearGradient id="sol-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#00FFA3" />
-          <stop offset="100%" stopColor="#DC1FFF" />
-        </linearGradient>
-      </defs>
-      <path d="M25.5 100.5a4.3 4.3 0 0 1 3-1.3h93.2a2.2 2.2 0 0 1 1.5 3.7l-17.7 17.8a4.3 4.3 0 0 1-3 1.3H9.3a2.2 2.2 0 0 1-1.5-3.7l17.7-17.8z" fill="url(#sol-grad)" />
-      <path d="M25.5 7.3a4.4 4.4 0 0 1 3-1.3h93.2a2.2 2.2 0 0 1 1.5 3.7L105.5 27.5a4.3 4.3 0 0 1-3 1.3H9.3a2.2 2.2 0 0 1-1.5-3.7L25.5 7.3z" fill="url(#sol-grad)" />
-      <path d="M105.5 53.7a4.3 4.3 0 0 0-3-1.3H9.3a2.2 2.2 0 0 0-1.5 3.7l17.7 17.8a4.3 4.3 0 0 0 3 1.3h93.2a2.2 2.2 0 0 0 1.5-3.7L105.5 53.7z" fill="url(#sol-grad)" />
-    </svg>
+    <div className={`relative flex items-center justify-center ${className}`}>
+      <svg width={size} height={size} viewBox="0 0 128 128" className="relative z-10">
+        <defs>
+          <linearGradient id="sol-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#00FFA3" />
+            <stop offset="100%" stopColor="#DC1FFF" />
+          </linearGradient>
+        </defs>
+        <path d="M25.5 100.5a4.3 4.3 0 0 1 3-1.3h93.2a2.2 2.2 0 0 1 1.5 3.7l-17.7 17.8a4.3 4.3 0 0 1-3 1.3H9.3a2.2 2.2 0 0 1-1.5-3.7l17.7-17.8z" fill="url(#sol-grad)" />
+        <path d="M25.5 7.3a4.4 4.4 0 0 1 3-1.3h93.2a2.2 2.2 0 0 1 1.5 3.7L105.5 27.5a4.3 4.3 0 0 1-3 1.3H9.3a2.2 2.2 0 0 1-1.5-3.7L25.5 7.3z" fill="url(#sol-grad)" />
+        <path d="M105.5 53.7a4.3 4.3 0 0 0-3-1.3H9.3a2.2 2.2 0 0 0-1.5 3.7l17.7 17.8a4.3 4.3 0 0 0 3 1.3h93.2a2.2 2.2 0 0 0 1.5-3.7L105.5 53.7z" fill="url(#sol-grad)" />
+      </svg>
+      {shimmer && (
+        <div className="absolute inset-0 bg-accent-bright/20 blur-md rounded-full animate-pulse" />
+      )}
+    </div>
   )
 }
 
@@ -139,9 +145,10 @@ export function WalletPanel() {
   }, [selectedWalletId, loadWallets])
 
   const [copied, setCopied] = useState(false)
-  const copyAddress = useCallback(() => {
+  const copyAddress = useCallback(async () => {
     if (!selectedWallet) return
-    navigator.clipboard.writeText(selectedWallet.publicKey)
+    const copiedValue = await copyTextToClipboard(selectedWallet.publicKey)
+    if (!copiedValue) return
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [selectedWallet])
@@ -179,7 +186,7 @@ export function WalletPanel() {
   if (walletList.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="text-center max-w-sm">
+        <div className="text-center max-w-sm" style={{ animation: 'fade-up 0.5s var(--ease-spring)' }}>
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-4 text-text-3/30">
             <rect x="2" y="6" width="20" height="14" rx="2" /><path d="M22 10H18a2 2 0 0 0 0 4h4" /><path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
           </svg>
@@ -233,7 +240,8 @@ export function WalletPanel() {
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-4">
           {showCreateForm && (
-            <div className="mx-1 mb-2 p-2.5 rounded-[8px] border border-accent/20 bg-accent-soft/10 space-y-2">
+            <div className="mx-1 mb-2 p-2.5 rounded-[8px] border border-accent/20 bg-accent-soft/10 space-y-2"
+              style={{ animation: 'spring-in 0.4s var(--ease-spring)' }}>
               <AgentPickerList
                 agents={agentsWithoutWallets}
                 selected={createAgentId}
@@ -262,15 +270,19 @@ export function WalletPanel() {
               {createError && <p className="text-[10px] text-red-400">{createError}</p>}
             </div>
           )}
-          {walletList.map((w) => {
+          {walletList.map((w, idx) => {
             const a = agents[w.agentId] as Agent | undefined
             return (
               <button
                 key={w.id}
                 onClick={() => { setSelectedWalletId(w.id); setWalletPanelAgentId(w.agentId) }}
-                className={`w-full text-left px-3 py-2.5 rounded-[8px] mb-1 transition-colors cursor-pointer flex items-center gap-2.5 ${
+                className={`w-full text-left px-3 py-2.5 rounded-[8px] mb-1 transition-all cursor-pointer flex items-center gap-2.5 hover:scale-[1.02] ${
                   selectedWalletId === w.id ? 'bg-accent-soft/30 text-text-1' : 'text-text-3 hover:bg-white/[0.04]'
                 }`}
+                style={{
+                  animation: 'fade-up 0.4s var(--ease-spring) both',
+                  animationDelay: `${idx * 0.03}s`
+                }}
               >
                 <AgentAvatar seed={a?.avatarSeed || null} avatarUrl={a?.avatarUrl} name={a?.name || '?'} size={28} />
                 <div className="flex-1 min-w-0">
@@ -291,9 +303,10 @@ export function WalletPanel() {
 
       {/* Main detail area */}
       {selectedWallet ? (
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6" key={selectedWallet.id}>
           {/* Warning banner */}
-          <div className="flex items-start gap-3 p-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20">
+          <div className="flex items-start gap-3 p-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20"
+            style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-400 shrink-0 mt-0.5">
               <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
               <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
@@ -304,7 +317,7 @@ export function WalletPanel() {
           </div>
 
           {/* Agent & Address */}
-          <div>
+          <div style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.05s both' }}>
             <div className="flex items-center gap-2 mb-2">
               {(() => {
                 const a = agents[selectedWallet.agentId] as Agent | undefined
@@ -337,7 +350,7 @@ export function WalletPanel() {
               </button>
             </div>
             {reassigning && (
-              <div className="mb-2 space-y-2">
+              <div className="mb-2 space-y-2" style={{ animation: 'spring-in 0.4s var(--ease-spring)' }}>
                 <p className="text-[11px] text-text-3/60">Select a new agent to control this wallet:</p>
                 <AgentPickerList
                   agents={agentsWithoutWallets}
@@ -350,7 +363,7 @@ export function WalletPanel() {
                       setReassigning(false)
                       loadWallets()
                     } catch (err: unknown) {
-                      setReassignError(err instanceof Error ? err.message : String(err))
+                      setReassignError(err instanceof Error ? err.message : String(err) || 'Reassign failed')
                     }
                     setReassignSaving(false)
                   }}
@@ -376,15 +389,22 @@ export function WalletPanel() {
           </div>
 
           {/* Balance card */}
-          <div className="p-5 rounded-[14px] border border-white/[0.06] bg-surface-2/50">
+          <div className="p-5 rounded-[14px] border border-white/[0.06] bg-surface-2/50"
+            style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.1s both' }}>
             <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600 mb-2">Balance</div>
-            <div className="text-[28px] font-600 text-text-1 tracking-tight">
-              {(selectedWallet.balanceSol ?? 0).toFixed(4)} <span className="text-[14px] text-text-3/60">SOL</span>
+            <div className="flex items-baseline gap-3">
+              <div className="text-[28px] font-600 text-text-1 tracking-tight">
+                {(selectedWallet.balanceSol ?? 0).toFixed(4)} <span className="text-[14px] text-text-3/60 font-mono">SOL</span>
+              </div>
+              {selectedWallet.chain === 'solana' && (
+                <SolanaIcon size={16} shimmer className="opacity-80" />
+              )}
             </div>
           </div>
 
           {/* Funding help */}
-          <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface-2/50">
+          <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface-2/50"
+            style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.15s both' }}>
             <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600 mb-2">How to Fund This Wallet</div>
             <div className="space-y-2 text-[12px] text-text-3/70 leading-relaxed">
               <p>Send SOL to the wallet address above from any Solana wallet (Phantom, Solflare, an exchange, etc.). Copy the address and use it as the recipient.</p>
@@ -395,7 +415,8 @@ export function WalletPanel() {
 
           {/* Balance history chart (simple) */}
           {balanceHistory.length > 1 && (
-            <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface-2/50">
+            <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface-2/50"
+              style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.2s both' }}>
               <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600 mb-3">Balance Over Time</div>
               <div className="h-[120px] flex items-end gap-[2px]">
                 {(() => {
@@ -403,8 +424,8 @@ export function WalletPanel() {
                   return balanceHistory.slice(-60).map((s, i) => (
                     <div
                       key={s.id || i}
-                      className="flex-1 bg-accent/40 rounded-t-[2px] min-w-[3px]"
-                      style={{ height: `${Math.max(2, (s.balanceLamports / max) * 100)}%` }}
+                      className="flex-1 bg-accent/40 rounded-t-[2px] min-w-[3px] transition-all hover:bg-accent hover:scale-y-110"
+                      style={{ height: `${Math.max(2, (s.balanceLamports / max) * 100)}%`, transitionDelay: `${i * 10}ms` }}
                       title={`${(s.balanceLamports / 1e9).toFixed(4)} SOL — ${new Date(s.timestamp).toLocaleString()}`}
                     />
                   ))
@@ -414,7 +435,8 @@ export function WalletPanel() {
           )}
 
           {/* Spending config */}
-          <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface-2/50">
+          <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface-2/50"
+            style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.25s both' }}>
             <div className="flex items-center justify-between mb-3">
               <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600">Spending Limits</div>
               {!editingLimits && (
@@ -430,7 +452,7 @@ export function WalletPanel() {
             </div>
 
             {editingLimits ? (
-              <div className="space-y-3">
+              <div className="space-y-3" style={{ animation: 'fade-in 0.3s ease' }}>
                 <div>
                   <label className="block text-[11px] text-text-3/70 mb-1">Per-transaction limit (SOL)</label>
                   <input
@@ -502,14 +524,15 @@ export function WalletPanel() {
           </div>
 
           {/* Transaction history */}
-          <div>
+          <div style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.3s both' }}>
             <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600 mb-3">Transactions</div>
             {transactions.length === 0 ? (
               <p className="text-[12px] text-text-3/50">No transactions yet.</p>
             ) : (
               <div className="space-y-2">
-                {transactions.map((tx) => (
-                  <div key={tx.id} className="flex items-center gap-3 p-3 rounded-[10px] border border-white/[0.06] bg-surface-2/30">
+                {transactions.map((tx, idx) => (
+                  <div key={tx.id} className="flex items-center gap-3 p-3 rounded-[10px] border border-white/[0.06] bg-surface-2/30 transition-all hover:bg-surface-2/50"
+                    style={{ animation: 'fade-up 0.4s var(--ease-spring) both', animationDelay: `${0.35 + idx * 0.03}s` }}>
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[12px] ${
                       tx.type === 'send' ? 'bg-red-500/15 text-red-400' :
                       tx.type === 'receive' ? 'bg-green-500/15 text-green-400' :
@@ -524,7 +547,7 @@ export function WalletPanel() {
                         </span>
                         <span className={`px-1.5 py-0.5 rounded-[4px] text-[9px] font-600 uppercase ${
                           tx.status === 'confirmed' ? 'bg-green-500/15 text-green-400' :
-                          tx.status === 'pending_approval' ? 'bg-amber-500/15 text-amber-400' :
+                          tx.status === 'pending_approval' ? 'bg-amber-500/15 text-amber-400 animate-pulse' :
                           tx.status === 'failed' ? 'bg-red-500/15 text-red-400' :
                           tx.status === 'denied' ? 'bg-red-500/15 text-red-400' :
                           'bg-blue-500/15 text-blue-400'
@@ -544,8 +567,8 @@ export function WalletPanel() {
                       <button
                         type="button"
                         onClick={() => setPendingApproval(tx)}
-                        className="shrink-0 px-2 py-1 rounded-[6px] bg-amber-500/15 text-amber-400 text-[10px] font-600 hover:bg-amber-500/25 cursor-pointer transition-colors"
-                        style={{ fontFamily: 'inherit' }}
+                        className="shrink-0 px-2 py-1 rounded-[6px] bg-amber-500/15 text-amber-400 text-[10px] font-600 hover:bg-amber-500/25 cursor-pointer transition-all hover:scale-[1.05]"
+                        style={{ fontFamily: 'inherit', animation: 'spring-in 0.4s var(--ease-spring)' }}
                       >
                         Review
                       </button>
@@ -557,10 +580,11 @@ export function WalletPanel() {
           </div>
 
           {/* Danger zone */}
-          <div className="p-4 rounded-[14px] border border-red-500/15 bg-red-500/5">
+          <div className="p-4 rounded-[14px] border border-red-500/15 bg-red-500/5"
+            style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.4s both' }}>
             <div className="text-[11px] text-red-400/80 uppercase tracking-wide font-600 mb-2">Danger Zone</div>
             {confirmDelete ? (
-              <div className="space-y-2">
+              <div className="space-y-2" style={{ animation: 'spring-in 0.3s var(--ease-spring)' }}>
                 <p className="text-[11px] text-text-3/70">
                   This will permanently delete the wallet and its private key. Any remaining balance will be inaccessible. This cannot be undone.
                 </p>
@@ -598,7 +622,7 @@ export function WalletPanel() {
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-[12px] text-text-3/50">Select a wallet to view details</p>
+          <p className="text-[12px] text-text-3/50" style={{ animation: 'fade-in 1s ease' }}>Select a wallet to view details</p>
         </div>
       )}
 

@@ -935,7 +935,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   const sessions = loadSessions()
   const session = sessions[input.sessionId]
   if (!session) return null
-  if (!isMainSession(session)) return handleAgentHeartbeatResult(session, input)
+  if (!isProtectedMainSession(session)) return handleAgentHeartbeatResult(session, input)
 
   const now = Date.now()
   const state = normalizeState(session.mainLoopState, now)

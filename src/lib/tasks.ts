@@ -4,7 +4,13 @@ import type { BoardTask } from '../types'
 export const fetchTasks = (includeArchived = false) =>
   api<Record<string, BoardTask>>('GET', `/tasks${includeArchived ? '?includeArchived=true' : ''}`)
 
-export const createTask = (data: { title: string; description: string; agentId: string; status?: string }) =>
+export const createTask = (data: {
+  title: string
+  description: string
+  agentId: string
+  status?: string
+  qualityGate?: BoardTask['qualityGate']
+}) =>
   api<BoardTask>('POST', '/tasks', data)
 
 export const updateTask = (id: string, data: Partial<BoardTask>) =>

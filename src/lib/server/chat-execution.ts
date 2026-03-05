@@ -14,19 +14,28 @@ import {
   active,
 } from './storage'
 import { getProvider } from '@/lib/providers'
-import { estimateCost, checkBudget } from './cost'
+import { estimateCost, checkAgentBudgetLimits } from './cost'
 import { log } from './logger'
 import { logExecution } from './execution-log'
 import { streamAgentChat } from './stream-agent-chat'
 import { runLinkUnderstanding } from './link-understanding'
 import { buildSessionTools } from './session-tools'
+import type { StructuredToolInterface } from '@langchain/core/tools'
+import type { Session } from '@/types'
 import { stripMainLoopMetaForPersistence } from './main-agent-loop'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { getMemoryDb } from './memory-db'
 import { routeTaskIntent } from './capability-router'
 import { notify } from './ws-hub'
 import { resolveConcreteToolPolicyBlock, resolveSessionToolPolicy } from './tool-capability-policy'
+import { toolIdMatches } from './tool-aliases'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
+import {
+  getCachedLlmResponse,
+  resolveLlmResponseCacheConfig,
+  setCachedLlmResponse,
+  type LlmResponseCacheKeyInput,
+} from './llm-response-cache'
 import type { Message, MessageToolEvent, SSEEvent, UsageRecord } from '@/types'
 import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from './provider-health'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
@@ -148,20 +157,32 @@ function requestedToolNamesFromMessage(message: string): string[] {
     'manage_connectors',
     'manage_sessions',
     'manage_secrets',
+    'manage_capabilities',
+    'manage_platform',
+    'manage_chatrooms',
+    'search_marketplace',
+    'monitor_tool',
+    'plugin_creator_tool',
     'memory_tool',
-    'browser',
-    'web_search',
-    'web_fetch',
-    'execute_command',
-    'read_file',
-    'write_file',
-    'list_files',
-    'copy_file',
-    'move_file',
-    'delete_file',
-    'edit_file',
+    'wallet_tool',
+    'http_request',
     'send_file',
-    'process_tool',
+    'browser',
+    'web',
+    'shell',
+    'files',
+    'edit_file',
+    'sandbox_exec',
+    'sandbox_list_runtimes',
+    'git',
+    'canvas',
+    'delegate',
+    'schedule_wake',
+    'spawn_subagent',
+    'context_status',
+    'context_summarize',
+    'openclaw_nodes',
+    'openclaw_workspace',
   ]
   return candidates.filter((name) => lower.includes(name.toLowerCase()))
 }
@@ -305,12 +326,12 @@ function extractDelegationTask(message: string, toolName: string): string | null
 }
 
 function hasToolEnabled(session: SessionWithTools, toolName: string): boolean {
-  return Array.isArray(session?.tools) && session.tools.includes(toolName)
+  return toolIdMatches(session?.tools || [], toolName)
 }
 
 function enabledDelegationTools(session: SessionWithTools): DelegateTool[] {
   const tools: DelegateTool[] = []
-  if (hasToolEnabled(session, 'claude_code')) tools.push('delegate_to_claude_code')
+  if (hasToolEnabled(session, 'claude_code') || hasToolEnabled(session, 'delegate')) tools.push('delegate_to_claude_code')
   if (hasToolEnabled(session, 'codex_cli')) tools.push('delegate_to_codex_cli')
   if (hasToolEnabled(session, 'opencode_cli')) tools.push('delegate_to_opencode_cli')
   return tools
@@ -334,9 +355,10 @@ function getTodaySpendUsd(): number {
   let total = 0
   for (const records of Object.values(usage)) {
     for (const record of records || []) {
-      const ts = typeof (record as any)?.timestamp === 'number' ? (record as any).timestamp : 0
+      const rec = record as Record<string, unknown>
+      const ts = typeof rec?.timestamp === 'number' ? rec.timestamp : 0
       if (ts < minTs) continue
-      const cost = typeof (record as any)?.estimatedCost === 'number' ? (record as any).estimatedCost : 0
+      const cost = typeof rec?.estimatedCost === 'number' ? rec.estimatedCost : 0
       if (Number.isFinite(cost) && cost > 0) total += cost
     }
   }
@@ -390,7 +412,7 @@ function syncSessionFromAgent(sessionId: string): void {
   }
 }
 
-function buildAgentSystemPrompt(session: any): string | undefined {
+function buildAgentSystemPrompt(session: Session): string | undefined {
   if (!session.agentId) return undefined
   const agents = loadAgents()
   const agent = agents[session.agentId]
@@ -514,7 +536,7 @@ function normalizeMemoryText(value: string): string {
 }
 
 function shouldStoreAutoMemoryNote(opts: {
-  session: any
+  session: Session
   source: string
   internal: boolean
   message: string
@@ -537,7 +559,7 @@ function shouldStoreAutoMemoryNote(opts: {
 }
 
 function storeAutoMemoryNote(opts: {
-  session: any
+  session: Session
   message: string
   response: string
   source: string
@@ -564,12 +586,12 @@ function storeAutoMemoryNote(opts: {
       }
     }
     const created = db.add({
-      agentId: session.agentId,
-      sessionId: session.id,
+      agentId: session.agentId as string,
+      sessionId: session.id as string,
       category: 'execution',
       title,
       content,
-    } as any)
+    })
     session.lastAutoMemoryAt = now
     return created?.id || null
   } catch {
@@ -578,9 +600,9 @@ function storeAutoMemoryNote(opts: {
 }
 
 export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promise<ExecuteChatTurnResult> {
+  const { message } = input
   const {
     sessionId,
-    message,
     imagePath,
     imageUrl,
     attachedFiles,
@@ -623,16 +645,17 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     onEvent?.({ t: 'err', text: `Capability policy blocked tools for this run: ${blockedSummary}` })
   }
 
-  // --- Agent monthly budget enforcement ---
+  // --- Agent spend-limit enforcement (hourly/daily/monthly) ---
   if (session.agentId) {
     const agentsMap = loadAgents()
     const agent = agentsMap[session.agentId]
-    if (agent?.monthlyBudget && agent.monthlyBudget > 0) {
-      const budgetResult = checkBudget(agent)
-      if (!budgetResult.ok) {
-        const action = agent.budgetAction || 'warn'
+    if (agent) {
+      const budgetCheck = checkAgentBudgetLimits(agent)
+      const action = agent.budgetAction || 'warn'
+
+      if (budgetCheck.exceeded.length > 0) {
+        const budgetError = budgetCheck.exceeded.map((entry) => entry.message).join(' ')
         if (action === 'block') {
-          const budgetError = budgetResult.message || `Agent budget exceeded: $${budgetResult.spend.toFixed(4)} / $${budgetResult.budget.toFixed(2)}`
           onEvent?.({ t: 'err', text: budgetError })
 
           let persisted = false
@@ -657,7 +680,10 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           }
         }
         // budgetAction === 'warn': emit a warning but continue
-        onEvent?.({ t: 'status', text: JSON.stringify({ budgetWarning: budgetResult.message }) })
+        onEvent?.({ t: 'status', text: JSON.stringify({ budgetWarning: budgetError }) })
+      } else if (budgetCheck.warnings.length > 0) {
+        const warningText = budgetCheck.warnings.map((entry) => entry.message).join(' ')
+        onEvent?.({ t: 'status', text: JSON.stringify({ budgetWarning: warningText }) })
       }
     }
   }
@@ -745,7 +771,11 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const accumulatedUsage = { inputTokens: 0, outputTokens: 0, estimatedCost: 0 }
 
   let thinkingText = ''
+  let streamingPartialText = ''
   const emit = (ev: SSEEvent) => {
+    if (ev.t === 'd' && typeof ev.text === 'string') {
+      streamingPartialText += ev.text
+    }
     if (ev.t === 'err' && typeof ev.text === 'string') {
       const trimmed = ev.text.trim()
       if (trimmed) {
@@ -770,6 +800,36 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     collectToolEvent(ev, toolEvents)
     onEvent?.(ev)
   }
+
+  // Periodic partial save so a browser refresh doesn't lose the in-flight response.
+  let lastPartialSaveLen = 0
+  const PARTIAL_SAVE_INTERVAL_MS = 5000
+  const partialSaveTimer = setInterval(() => {
+    if (streamingPartialText.length > lastPartialSaveLen) {
+      lastPartialSaveLen = streamingPartialText.length
+      try {
+        const fresh = loadSessions()
+        const current = fresh[sessionId]
+        if (!current) return
+        const partialMsg: Message = {
+          role: 'assistant',
+          text: streamingPartialText,
+          time: Date.now(),
+          streaming: true,
+          toolEvents: toolEvents.length ? [...toolEvents] : undefined,
+        }
+        const lastMsg = current.messages.at(-1)
+        if (lastMsg?.streaming) {
+          current.messages[current.messages.length - 1] = partialMsg
+        } else {
+          current.messages.push(partialMsg)
+        }
+        fresh[sessionId] = current
+        saveSessions(fresh)
+        notify(`messages:${sessionId}`)
+      } catch { /* partial save is best-effort */ }
+    }
+  }, PARTIAL_SAVE_INTERVAL_MS)
 
   const parseAndEmit = (raw: string) => {
     const lines = raw.split('\n').filter(Boolean)
@@ -798,6 +858,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   // Capture provider-reported usage for the direct (non-tools) path.
   // Uses a mutable object because TS can't track callback mutations on plain variables.
   const directUsage = { inputTokens: 0, outputTokens: 0, received: false }
+  const responseCacheConfig = resolveLlmResponseCacheConfig(appSettings)
+  let responseCacheHit = false
+  let responseCacheInput: LlmResponseCacheKeyInput | null = null
   const hasTools = !!sessionForRun.tools?.length && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
 
   let durationMs = 0
@@ -811,30 +874,75 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       : undefined
 
     console.log(`[chat-execution] provider=${providerType}, hasTools=${hasTools}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, tools=${(sessionForRun.tools || []).length}`)
-    fullResponse = hasTools
-      ? (await streamAgentChat({
+    if (hasTools) {
+      fullResponse = (await streamAgentChat({
+        session: sessionForRun,
+        message: message,
+        imagePath,
+        attachedFiles,
+        apiKey,
+        systemPrompt,
+        write: (raw) => parseAndEmit(raw),
+        history: heartbeatHistory ?? applyContextClearBoundary(getSessionMessages(sessionId)),
+        signal: abortController.signal,
+      })).fullText
+    } else {
+      const directHistorySnapshot = isAutoRunNoHistory
+        ? getSessionMessages(sessionId).slice(-6)
+        : applyContextClearBoundary(getSessionMessages(sessionId))
+      responseCacheInput = {
+        provider: providerType,
+        model: sessionForRun.model,
+        apiEndpoint: sessionForRun.apiEndpoint || '',
+        systemPrompt,
+        message: message,
+        imagePath,
+        imageUrl,
+        attachedFiles,
+        history: directHistorySnapshot,
+      }
+      const canUseResponseCache = !internal && responseCacheConfig.enabled
+      const cached = canUseResponseCache
+        ? getCachedLlmResponse(responseCacheInput, responseCacheConfig)
+        : null
+      if (cached) {
+        responseCacheHit = true
+        fullResponse = cached.text
+        emit({
+          t: 'md',
+          text: JSON.stringify({
+            cache: {
+              hit: true,
+              ageMs: cached.ageMs,
+              provider: cached.provider,
+              model: cached.model,
+            },
+          }),
+        })
+        emit({ t: 'd', text: cached.text })
+      } else {
+        fullResponse = await provider.handler.streamChat({
           session: sessionForRun,
-          message,
-          imagePath,
-          attachedFiles,
-          apiKey,
-          systemPrompt,
-          write: (raw) => parseAndEmit(raw),
-          history: heartbeatHistory ?? applyContextClearBoundary(getSessionMessages(sessionId)),
-          signal: abortController.signal,
-        })).fullText
-      : await provider.handler.streamChat({
-          session: sessionForRun,
-          message,
+          message: message,
           imagePath,
           apiKey,
           systemPrompt,
           write: (raw: string) => parseAndEmit(raw),
           active,
-          loadHistory: isAutoRunNoHistory ? () => getSessionMessages(sessionId).slice(-6) : (sid: string) => applyContextClearBoundary(getSessionMessages(sid)),
+          loadHistory: (sid: string) => {
+            if (sid === sessionId) return directHistorySnapshot
+            return isAutoRunNoHistory
+              ? getSessionMessages(sid).slice(-6)
+              : applyContextClearBoundary(getSessionMessages(sid))
+          },
           onUsage: (u) => { directUsage.inputTokens = u.inputTokens; directUsage.outputTokens = u.outputTokens; directUsage.received = true },
           signal: abortController.signal,
         })
+        if (canUseResponseCache && responseCacheInput && fullResponse) {
+          setCachedLlmResponse(responseCacheInput, fullResponse, responseCacheConfig)
+        }
+      }
+    }
     durationMs = Date.now() - startTs
   } catch (err: unknown) {
     errorMessage = err instanceof Error ? err.message : String(err)
@@ -848,6 +956,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       error: failureText,
     })
   } finally {
+    clearInterval(partialSaveTimer)
     active.delete(sessionId)
     if (signal) signal.removeEventListener('abort', abortFromOutside)
   }
@@ -858,7 +967,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   // Record usage for the direct (non-tools) streamChat path.
   // streamAgentChat already calls appendUsage internally for the tools path.
-  if (!hasTools && fullResponse && !errorMessage) {
+  if (!hasTools && fullResponse && !errorMessage && !responseCacheHit) {
     const inputTokens = directUsage.received ? directUsage.inputTokens : Math.ceil(message.length / 4)
     const outputTokens = directUsage.received ? directUsage.outputTokens : Math.ceil(fullResponse.length / 4)
     const totalTokens = inputTokens + outputTokens
@@ -893,6 +1002,54 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     : null
   const calledNames = new Set((toolEvents || []).map((t) => t.name))
 
+  const translateToolInvocation = (
+    requestedName: string,
+    rawArgs: Record<string, unknown>,
+  ): { toolName: string; args: Record<string, unknown> } => {
+    if (requestedName === 'web_search') {
+      return {
+        toolName: 'web',
+        args: {
+          action: 'search',
+          query: typeof rawArgs.query === 'string' ? rawArgs.query : message.trim(),
+          maxResults: typeof rawArgs.maxResults === 'number' ? rawArgs.maxResults : 5,
+        },
+      }
+    }
+    if (requestedName === 'web_fetch') {
+      return {
+        toolName: 'web',
+        args: {
+          action: 'fetch',
+          url: rawArgs.url,
+        },
+      }
+    }
+    if (requestedName === 'delegate_to_claude_code') {
+      return { toolName: 'delegate', args: { ...rawArgs, backend: 'claude' } }
+    }
+    if (requestedName === 'delegate_to_codex_cli') {
+      return { toolName: 'delegate', args: { ...rawArgs, backend: 'codex' } }
+    }
+    if (requestedName === 'delegate_to_opencode_cli') {
+      return { toolName: 'delegate', args: { ...rawArgs, backend: 'opencode' } }
+    }
+
+    const managePrefix = 'manage_'
+    if (requestedName.startsWith(managePrefix) && requestedName !== 'manage_platform') {
+      const resource = requestedName.slice(managePrefix.length)
+      if (resource) {
+        const { action, id, data, ...rest } = rawArgs
+        return {
+          toolName: 'manage_platform',
+          args: { resource, action, id, data, ...rest },
+        }
+      }
+    }
+
+    return { toolName: requestedName, args: rawArgs }
+  }
+
   const invokeSessionTool = async (toolName: string, args: Record<string, unknown>, failurePrefix: string): Promise<boolean> => {
     const blockedReason = resolveConcreteToolPolicyBlock(toolName, toolPolicy, appSettings)
     if (blockedReason) {
@@ -916,11 +1073,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       mcpDisabledTools: agent?.mcpDisabledTools,
     })
     try {
-      const selectedTool = tools.find((t: any) => t?.name === toolName) as any
+      const translated = translateToolInvocation(toolName, args)
+      const selectedTool = tools.find((t) => t?.name === translated.toolName) as StructuredToolInterface | undefined
       if (!selectedTool?.invoke) return false
-      const toolInput = JSON.stringify(args)
+      const toolInput = JSON.stringify(translated.args)
       emit({ t: 'tool_call', toolName, toolInput })
-      const toolOutput = await selectedTool.invoke(args)
+      const toolOutput = await selectedTool.invoke(translated.args)
       const outputText = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
       emit({ t: 'tool_result', toolName, toolOutput: outputText })
       // Don't overwrite fullResponse with raw tool output — it's already captured
@@ -932,8 +1090,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       }
       calledNames.add(toolName)
       return true
-    } catch (forceErr: any) {
-      emit({ t: 'err', text: `${failurePrefix}: ${forceErr?.message || String(forceErr)}` })
+    } catch (forceErr: unknown) {
+      emit({ t: 'err', text: `${failurePrefix}: ${forceErr instanceof Error ? forceErr.message : String(forceErr)}` })
       return false
     } finally {
       await cleanup()
@@ -1120,8 +1278,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     let changed = false
     const persistField = (key: string, value: unknown) => {
       const normalized = normalizeResumeId(value)
-      if ((current as any)[key] !== normalized) {
-        ;(current as any)[key] = normalized
+      if ((current as Record<string, unknown>)[key] !== normalized) {
+        ;(current as Record<string, unknown>)[key] = normalized
         changed = true
       }
     }
@@ -1135,10 +1293,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       const currentResume = (current.delegateResumeIds && typeof current.delegateResumeIds === 'object')
         ? current.delegateResumeIds
         : {}
+      const sr = sourceResume as Record<string, unknown>
+      const cr = currentResume as Record<string, unknown>
       const nextResume = {
-        claudeCode: normalizeResumeId((sourceResume as any).claudeCode ?? (currentResume as any).claudeCode),
-        codex: normalizeResumeId((sourceResume as any).codex ?? (currentResume as any).codex),
-        opencode: normalizeResumeId((sourceResume as any).opencode ?? (currentResume as any).opencode),
+        claudeCode: normalizeResumeId(sr.claudeCode ?? cr.claudeCode),
+        codex: normalizeResumeId(sr.codex ?? cr.codex),
+        opencode: normalizeResumeId(sr.opencode ?? cr.opencode),
       }
       if (JSON.stringify(currentResume) !== JSON.stringify(nextResume)) {
         current.delegateResumeIds = nextResume
@@ -1147,7 +1307,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
 
     if (shouldPersistAssistant) {
-      const persistedKind = internal && source !== 'session-awakening' ? 'heartbeat' : 'chat'
+      const persistedKind = internal && source === 'heartbeat' ? 'heartbeat' : 'chat'
       const persistedText = heartbeatClassification === 'strip'
         ? textForPersistence.replace(/HEARTBEAT_OK/gi, '').trim()
         : textForPersistence
@@ -1161,7 +1321,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         kind: persistedKind,
       }
       const previous = current.messages.at(-1)
-      if (shouldReplaceRecentAssistantMessage({
+      if (previous?.streaming || shouldReplaceRecentAssistantMessage({
         previous,
         nextToolEvents: toolEvents,
         nextKind: persistedKind,
@@ -1188,12 +1348,13 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       // Target routing for non-suppressed heartbeat alerts
       if (isHeartbeatRun && heartbeatConfig?.target && heartbeatConfig.target !== 'none' && heartbeatConfig.showAlerts !== false) {
         try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { listRunningConnectors, sendConnectorMessage } = require('./connectors/manager')
           let connectorId: string | undefined
           let channelId: string | undefined
           if (heartbeatConfig.target === 'last') {
             const running = listRunningConnectors()
-            const first = running.find((c: any) => c.recentChannelId)
+            const first = running.find((c: { recentChannelId?: string }) => c.recentChannelId)
             if (first) {
               connectorId = first.id
               channelId = first.recentChannelId
@@ -1234,14 +1395,14 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       session: current,
       source,
       internal,
-      message,
+      message: message,
       response: textForPersistence,
       now: Date.now(),
     })
     if (autoMemoryEligible) {
       const storedId = storeAutoMemoryNote({
         session: current,
-        message,
+        message: message,
         response: textForPersistence,
         source,
         now: Date.now(),
@@ -1250,7 +1411,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
 
     // Don't extend idle timeout for heartbeat runs — only user-initiated activity counts
-    if (source !== 'heartbeat' && source !== 'main-loop-followup') {
+    if (source !== 'heartbeat' && source !== 'heartbeat-wake' && source !== 'main-loop-followup') {
       current.lastActiveAt = Date.now()
     }
     fresh[sessionId] = current

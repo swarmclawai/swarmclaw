@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { api } from '@/lib/api-client'
+import { toast } from 'sonner'
 
 const inputClass = 'w-full px-4 py-3 rounded-[14px] bg-bg border border-white/[0.06] text-text text-[14px] outline-none focus:border-accent-bright/40 transition-colors placeholder:text-text-3/70'
 
@@ -64,6 +65,7 @@ export function SecretSheet() {
           scope,
           agentIds: scope === 'agent' ? agentIds : [],
         })
+        toast.success('Secret updated')
       } else {
         await api('POST', '/secrets', {
           name: name.trim(),
@@ -72,11 +74,12 @@ export function SecretSheet() {
           scope,
           agentIds: scope === 'agent' ? agentIds : [],
         })
+        toast.success('Secret created')
       }
       await loadSecrets()
       handleClose()
     } catch (err: unknown) {
-      console.error('Failed to save secret:', err instanceof Error ? err.message : String(err))
+      toast.error(err instanceof Error ? err.message : 'Failed to save secret')
     } finally {
       setSaving(false)
     }
@@ -84,12 +87,14 @@ export function SecretSheet() {
 
   const handleDelete = async () => {
     if (!editing) return
+    if (!confirm(`Delete secret "${editing.name}"?`)) return
     try {
       await api('DELETE', `/secrets/${editing.id}`)
+      toast.success('Secret deleted')
       await loadSecrets()
       handleClose()
     } catch (err: unknown) {
-      console.error('Failed to delete secret:', err instanceof Error ? err.message : String(err))
+      toast.error(err instanceof Error ? err.message : 'Failed to delete secret')
     }
   }
 

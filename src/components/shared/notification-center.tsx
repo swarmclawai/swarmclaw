@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import type { CSSProperties } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
 import type { AppNotification } from '@/types'
@@ -34,6 +36,9 @@ const TYPE_ICON_COLORS: Record<AppNotification['type'], string> = {
   error: 'text-red-400',
 }
 
+const PANEL_WIDTH = 340
+const PANEL_MARGIN = 8
+
 function resolveHttpUrl(raw: string | undefined): string | null {
   if (!raw) return null
   try {
@@ -56,6 +61,10 @@ export function NotificationCenter({
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({
+    left: PANEL_MARGIN,
+    top: PANEL_MARGIN,
+  })
 
   const notifications = useAppStore((s) => s.notifications)
   const unreadCount = useAppStore((s) => s.unreadNotificationCount)
@@ -102,8 +111,130 @@ export function NotificationCenter({
   }
 
   const isRow = variant === 'row'
-  const panelAlignClass = align === 'left' ? 'left-0' : 'right-0'
-  const panelDirectionClass = direction === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'
+
+  const updatePanelPosition = useCallback(() => {
+    if (typeof window === 'undefined' || !buttonRef.current) return
+
+    const rect = buttonRef.current.getBoundingClientRect()
+    const maxLeft = Math.max(PANEL_MARGIN, window.innerWidth - PANEL_WIDTH - PANEL_MARGIN)
+    const preferredLeft = align === 'left' ? rect.left : rect.right - PANEL_WIDTH
+    const clampedLeft = Math.max(PANEL_MARGIN, Math.min(preferredLeft, maxLeft))
+
+    if (direction === 'up') {
+      setPanelStyle({
+        left: clampedLeft,
+        bottom: Math.max(PANEL_MARGIN, window.innerHeight - rect.top + PANEL_MARGIN),
+        top: undefined,
+      })
+      return
+    }
+
+    setPanelStyle({
+      left: clampedLeft,
+      top: Math.max(PANEL_MARGIN, rect.bottom + PANEL_MARGIN),
+      bottom: undefined,
+    })
+  }, [align, direction])
+
+  useEffect(() => {
+    if (!open) return
+    updatePanelPosition()
+
+    const handler = () => updatePanelPosition()
+    window.addEventListener('resize', handler)
+    window.addEventListener('scroll', handler, true)
+    return () => {
+      window.removeEventListener('resize', handler)
+      window.removeEventListener('scroll', handler, true)
+    }
+  }, [open, updatePanelPosition])
+
+  const panelNode = open ? (
+    <div
+      ref={panelRef}
+      className="fixed w-[340px] max-h-[460px] bg-raised border border-white/[0.06] rounded-[14px] shadow-[0_16px_64px_rgba(0,0,0,0.6)] backdrop-blur-xl z-[1200] flex flex-col overflow-hidden"
+      style={{
+        ...panelStyle,
+        animation: 'fade-in 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04] shrink-0">
+        <span className="text-[13px] font-600 text-text">Notifications</span>
+        <div className="flex items-center gap-2">
+          {unreadCount > 0 && (
+            <button
+              onClick={markAllRead}
+              className="text-[11px] font-500 text-text-3 hover:text-text cursor-pointer bg-transparent border-none transition-colors"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Mark all read
+            </button>
+          )}
+          {notifications.some((n) => n.read) && (
+            <button
+              onClick={clearRead}
+              className="text-[11px] font-500 text-text-3 hover:text-text cursor-pointer bg-transparent border-none transition-colors"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Clear read
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto">
+        {notifications.length === 0 ? (
+          <div className="flex items-center justify-center py-10 text-[13px] text-text-3/50">
+            No notifications
+          </div>
+        ) : (
+          notifications.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => handleNotificationClick(n)}
+              className={`w-full text-left px-4 py-3 border-l-[3px] border-b border-b-white/[0.03] bg-transparent
+                hover:bg-white/[0.03] transition-colors cursor-pointer border-t-0 border-r-0
+                ${TYPE_COLORS[n.type]}
+                ${n.read ? 'opacity-50' : ''}`}
+              style={{ fontFamily: 'inherit' }}
+            >
+              <div className="flex items-start gap-2.5">
+                <span className={`text-[12px] font-700 mt-0.5 shrink-0 w-4 text-center ${TYPE_ICON_COLORS[n.type]}`}>
+                  {TYPE_ICONS[n.type]}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] font-600 text-text truncate flex-1">{n.title}</span>
+                    <span className="text-[10px] text-text-3/50 shrink-0">{timeAgo(n.createdAt)}</span>
+                  </div>
+                  {n.message && (
+                    <p className="text-[11px] text-text-3 mt-0.5 leading-relaxed line-clamp-2 m-0">
+                      {n.message}
+                    </p>
+                  )}
+                  {resolveHttpUrl(n.actionUrl) && (
+                    <span className="inline-block mt-1 text-[11px] text-accent-bright/90">
+                      {n.actionLabel || 'Open link'}
+                    </span>
+                  )}
+                  {n.entityType && (
+                    <span className="inline-block mt-1 text-[10px] text-text-3/40 font-mono">
+                      {n.entityType}{n.entityId ? `:${n.entityId.slice(0, 8)}` : ''}
+                    </span>
+                  )}
+                </div>
+                {!n.read && (
+                  <span className="w-2 h-2 rounded-full bg-blue-400 mt-1.5 shrink-0" />
+                )}
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  ) : null
 
   return (
     <div className="relative">
@@ -134,90 +265,7 @@ export function NotificationCenter({
           </span>
         )}
       </button>
-
-      {open && (
-        <div
-          ref={panelRef}
-          className={`absolute ${panelAlignClass} ${panelDirectionClass} w-[340px] max-h-[460px] bg-raised border border-white/[0.06] rounded-[14px] shadow-[0_16px_64px_rgba(0,0,0,0.6)] backdrop-blur-xl z-90 flex flex-col overflow-hidden`}
-          style={{ animation: 'fade-in 0.15s cubic-bezier(0.16, 1, 0.3, 1)' }}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04] shrink-0">
-            <span className="text-[13px] font-600 text-text">Notifications</span>
-            <div className="flex items-center gap-2">
-              {unreadCount > 0 && (
-                <button
-                  onClick={markAllRead}
-                  className="text-[11px] font-500 text-text-3 hover:text-text cursor-pointer bg-transparent border-none transition-colors"
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  Mark all read
-                </button>
-              )}
-              {notifications.some((n) => n.read) && (
-                <button
-                  onClick={clearRead}
-                  className="text-[11px] font-500 text-text-3 hover:text-text cursor-pointer bg-transparent border-none transition-colors"
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  Clear read
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* List */}
-          <div className="flex-1 overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="flex items-center justify-center py-10 text-[13px] text-text-3/50">
-                No notifications
-              </div>
-            ) : (
-              notifications.map((n) => (
-                <button
-                  key={n.id}
-                  onClick={() => handleNotificationClick(n)}
-                  className={`w-full text-left px-4 py-3 border-l-[3px] border-b border-b-white/[0.03] bg-transparent
-                    hover:bg-white/[0.03] transition-colors cursor-pointer border-t-0 border-r-0
-                    ${TYPE_COLORS[n.type]}
-                    ${n.read ? 'opacity-50' : ''}`}
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  <div className="flex items-start gap-2.5">
-                    <span className={`text-[12px] font-700 mt-0.5 shrink-0 w-4 text-center ${TYPE_ICON_COLORS[n.type]}`}>
-                      {TYPE_ICONS[n.type]}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-600 text-text truncate flex-1">{n.title}</span>
-                        <span className="text-[10px] text-text-3/50 shrink-0">{timeAgo(n.createdAt)}</span>
-                      </div>
-                      {n.message && (
-                        <p className="text-[11px] text-text-3 mt-0.5 leading-relaxed line-clamp-2 m-0">
-                          {n.message}
-                        </p>
-                      )}
-                      {resolveHttpUrl(n.actionUrl) && (
-                        <span className="inline-block mt-1 text-[11px] text-accent-bright/90">
-                          {n.actionLabel || 'Open link'}
-                        </span>
-                      )}
-                      {n.entityType && (
-                        <span className="inline-block mt-1 text-[10px] text-text-3/40 font-mono">
-                          {n.entityType}{n.entityId ? `:${n.entityId.slice(0, 8)}` : ''}
-                        </span>
-                      )}
-                    </div>
-                    {!n.read && (
-                      <span className="w-2 h-2 rounded-full bg-blue-400 mt-1.5 shrink-0" />
-                    )}
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      {panelNode && typeof document !== 'undefined' ? createPortal(panelNode, document.body) : panelNode}
     </div>
   )
 }

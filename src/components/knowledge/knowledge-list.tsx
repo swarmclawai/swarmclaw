@@ -5,6 +5,7 @@ import { api } from '@/lib/api-client'
 import { useAppStore } from '@/stores/use-app-store'
 import { Badge } from '@/components/ui/badge'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { EmptyState } from '@/components/shared/empty-state'
 import type { MemoryEntry } from '@/types'
 
 export function KnowledgeList() {
@@ -81,7 +82,7 @@ export function KnowledgeList() {
     <div className="flex-1 flex flex-col overflow-y-auto">
       {/* Search — only show when there are entries */}
       {entries.length > 0 && (
-        <div className="px-5 py-2 shrink-0">
+        <div className="px-5 py-2 shrink-0" style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
           <input
             type="text"
             value={search}
@@ -96,7 +97,7 @@ export function KnowledgeList() {
 
       {/* Tag filters */}
       {uniqueTags.length > 0 && (
-        <div className="px-5 pb-1.5 shrink-0">
+        <div className="px-5 pb-1.5 shrink-0" style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.05s both' }}>
           <div className="flex gap-1 flex-wrap">
             <button
               onClick={() => setActiveTag(null)}
@@ -124,7 +125,7 @@ export function KnowledgeList() {
       {/* Entries */}
       {entries.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 px-5 pb-6">
-          {entries.map((entry) => {
+          {entries.map((entry, idx) => {
             const meta = entry.metadata as { tags?: string[]; scope?: 'global' | 'agent'; agentIds?: string[] } | undefined
             const tags = meta?.tags || []
             const entryScope = meta?.scope || 'global'
@@ -136,7 +137,11 @@ export function KnowledgeList() {
             return (
               <div
                 key={entry.id}
-                className="p-3 rounded-[12px] border border-white/[0.04] bg-transparent hover:bg-surface-2 transition-all relative group"
+                className="p-3 rounded-[12px] border border-white/[0.04] bg-transparent hover:bg-surface-2 transition-all relative group hover:scale-[1.01] hover:border-white/[0.1]"
+                style={{
+                  animation: 'spring-in 0.5s var(--ease-spring) both',
+                  animationDelay: `${0.1 + idx * 0.03}s`
+                }}
               >
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <span className="font-display text-[13px] font-600 text-text truncate">{entry.title}</span>
@@ -197,7 +202,7 @@ export function KnowledgeList() {
           })}
         </div>
       ) : error ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-3 p-8 text-center">
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-3 p-8 text-center" style={{ animation: 'fade-up 0.5s var(--ease-spring)' }}>
           <p className="font-display text-[14px] font-600 text-text-2">Couldn&apos;t load knowledge</p>
           <p className="text-[12px] text-text-3/60">{error}</p>
           <button
@@ -209,23 +214,17 @@ export function KnowledgeList() {
           </button>
         </div>
       ) : loaded ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-3 p-8 text-center">
-          <div className="w-12 h-12 rounded-[14px] bg-accent-soft flex items-center justify-center mb-1">
+        <EmptyState
+          icon={
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-accent-bright">
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
             </svg>
-          </div>
-          <p className="font-display text-[15px] font-600 text-text-2">No knowledge entries yet</p>
-          <p className="text-[13px] text-text-3/50">Add shared knowledge for your agents</p>
-          <button
-            onClick={() => openSheet()}
-            className="mt-1 px-4 py-2 rounded-[10px] bg-transparent text-accent-bright text-[13px] font-600 cursor-pointer border border-accent-bright/20 hover:bg-accent-soft transition-all"
-            style={{ fontFamily: 'inherit' }}
-          >
-            + Add Knowledge
-          </button>
-        </div>
+          }
+          title="No knowledge entries yet"
+          subtitle="Add shared knowledge for your agents"
+          action={{ label: '+ Add Knowledge', onClick: () => openSheet() }}
+        />
       ) : null}
     </div>
   )

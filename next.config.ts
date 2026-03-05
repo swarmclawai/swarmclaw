@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 import { execSync } from "child_process";
+import { networkInterfaces } from "os";
+import { DIRECT_NAV_SEGMENTS } from "./view-route-paths";
 
 function getGitSha(): string {
   try {
@@ -7,6 +9,33 @@ function getGitSha(): string {
   } catch {
     return 'unknown'
   }
+}
+
+function getAllowedDevOrigins(): string[] {
+  const allowed = new Set<string>([
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+  ])
+
+  // Include all active local IPv4 interfaces so LAN devices can load /_next assets in dev.
+  for (const interfaces of Object.values(networkInterfaces())) {
+    for (const iface of interfaces ?? []) {
+      if ((iface.family === 'IPv4' || (iface.family as string | number) === 4) && !iface.internal) {
+        allowed.add(iface.address)
+      }
+    }
+  }
+
+  // Optional override for custom origins/hosts, e.g. `NEXT_ALLOWED_DEV_ORIGINS=host1,host2`.
+  const extra = (process.env.NEXT_ALLOWED_DEV_ORIGINS ?? '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .map((v) => v.replace(/^https?:\/\//, '').replace(/\/$/, ''))
+  for (const host of extra) allowed.add(host)
+
+  return [...allowed]
 }
 
 const nextConfig: NextConfig = {
@@ -35,13 +64,9 @@ const nextConfig: NextConfig = {
     '@whiskeysockets/baileys',
     'qrcode',
   ],
-  allowedDevOrigins: [
-    'localhost',
-    '127.0.0.1',
-    '0.0.0.0',
-  ],
+  allowedDevOrigins: getAllowedDevOrigins(),
   async rewrites() {
-    const views = 'agents|chatrooms|schedules|memory|tasks|secrets|providers|skills|connectors|webhooks|mcp-servers|knowledge|plugins|usage|runs|logs|settings|projects|activity'
+    const views = DIRECT_NAV_SEGMENTS.join('|')
     return [
       {
         source: `/:view(${views})`,

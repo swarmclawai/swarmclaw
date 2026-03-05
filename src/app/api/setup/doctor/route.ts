@@ -37,8 +37,9 @@ function run(command: string, args: string[], timeoutMs = 8_000): CommandResult 
       return { ok: false, output: '', error: err || `exit ${result.status}` }
     }
     return { ok: true, output: (result.stdout || '').trim() }
-  } catch (err: any) {
-    return { ok: false, output: '', error: err?.message || String(err) }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { ok: false, output: '', error: message }
   }
 }
 
@@ -75,8 +76,9 @@ function testDataWriteAccess(dataDir: string): { ok: boolean; error?: string } {
     fs.writeFileSync(probe, 'ok', 'utf8')
     fs.unlinkSync(probe)
     return { ok: true }
-  } catch (err: any) {
-    return { ok: false, error: err?.message || String(err) }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { ok: false, error: message }
   }
 }
 
@@ -102,6 +104,22 @@ export async function GET(req: Request) {
   } else {
     pushCheck(checks, 'npm', 'npm availability', 'fail', npmCheck.error || 'npm was not found in PATH.', true)
     actions.push('Install npm and rerun `npm run setup:easy`.')
+  }
+
+  const denoCheck = run('deno', ['--version'], 5_000)
+  if (denoCheck.ok) {
+    const denoVersion = denoCheck.output.split('\n').map((line) => line.trim()).find(Boolean) || denoCheck.output
+    pushCheck(checks, 'deno', 'Deno (sandbox runtime)', 'pass', `${denoVersion} is available.`, true)
+  } else {
+    pushCheck(
+      checks,
+      'deno',
+      'Deno (sandbox runtime)',
+      'fail',
+      denoCheck.error || 'Deno was not found in PATH.',
+      true,
+    )
+    actions.push('Run `npm run setup:easy` to install Deno automatically, or install Deno from https://deno.land/#installation.')
   }
 
   const dataDir = path.join(process.cwd(), 'data')
@@ -165,7 +183,6 @@ export async function GET(req: Request) {
     { id: 'claude-cli', label: 'Claude Code CLI', command: 'claude' },
     { id: 'codex-cli', label: 'OpenAI Codex CLI', command: 'codex' },
     { id: 'opencode-cli', label: 'OpenCode CLI', command: 'opencode' },
-    { id: 'deno', label: 'Deno (sandbox runtime)', command: 'deno' },
   ]
 
   for (const binary of optionalBinaries) {

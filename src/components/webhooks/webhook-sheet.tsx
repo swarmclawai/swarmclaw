@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { api } from '@/lib/api-client'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import type { Webhook, WebhookLogEntry } from '@/types'
+import { toast } from 'sonner'
 
 type WebhookApiResponse = Webhook | { error: string }
 type DeleteWebhookResponse = { ok: boolean } | { error: string }
@@ -114,7 +116,8 @@ export function WebhookSheet() {
   const copyText = async (type: 'endpoint' | 'secret', value: string) => {
     if (!value) return
     try {
-      await navigator.clipboard.writeText(value)
+      const copied = await copyTextToClipboard(value)
+      if (!copied) return
       setCopied(type)
       setTimeout(() => setCopied((prev) => (prev === type ? null : prev)), 1500)
     } catch {
@@ -143,14 +146,18 @@ export function WebhookSheet() {
       if (editing) {
         const updated = await api<WebhookApiResponse>('PUT', `/webhooks/${editing.id}`, payload)
         if ('error' in updated && updated.error) throw new Error(updated.error)
+        toast.success('Webhook updated successfully')
       } else {
         const created = await api<WebhookApiResponse>('POST', '/webhooks', payload)
         if ('error' in created && created.error) throw new Error(created.error)
+        toast.success('Webhook created successfully')
       }
       await loadWebhooks()
       handleClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save webhook')
+      const msg = err instanceof Error ? err.message : 'Failed to save webhook'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
@@ -161,10 +168,13 @@ export function WebhookSheet() {
     try {
       const res = await api<DeleteWebhookResponse>('DELETE', `/webhooks/${editing.id}`)
       if ('error' in res && res.error) throw new Error(res.error)
+      toast.success('Webhook deleted')
       await loadWebhooks()
       handleClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to delete webhook')
+      const msg = err instanceof Error ? err.message : 'Failed to delete webhook'
+      setError(msg)
+      toast.error(msg)
     }
   }
 

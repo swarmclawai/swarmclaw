@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { api } from '@/lib/api-client'
+import { toast } from 'sonner'
 
 interface Props {
   open: boolean
@@ -39,7 +40,10 @@ export function ProfileSheet({ open, onClose }: Props) {
       })
       setUser(trimmed.toLowerCase())
       await loadSettings()
+      toast.success('Profile updated')
       onClose()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update profile')
     } finally {
       setSaving(false)
     }

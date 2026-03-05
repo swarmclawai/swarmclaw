@@ -10,7 +10,7 @@ import { AgentPickerList } from '@/components/shared/agent-picker-list'
 import { DirBrowser } from '@/components/shared/dir-browser'
 import { SheetFooter } from '@/components/shared/sheet-footer'
 import { inputClass } from '@/components/shared/form-styles'
-import type { BoardTask, TaskComment } from '@/types'
+import type { BoardTask, TaskComment, TaskQualityGateConfig } from '@/types'
 import { SectionLabel } from '@/components/shared/section-label'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 
@@ -20,6 +20,16 @@ function fmtTime(ts: number) {
   const isToday = d.toDateString() === now.toDateString()
   if (isToday) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function normalizeGateNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number.parseInt(value, 10)
+      : Number.NaN
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, Math.trunc(parsed)))
 }
 
 export function TaskSheet() {
@@ -59,6 +69,12 @@ export function TaskSheet() {
   const [dueAt, setDueAt] = useState<string>('')
   const [customFields, setCustomFields] = useState<Record<string, string | number | boolean>>({})
   const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical' | ''>('')
+  const [qualityGateEnabled, setQualityGateEnabled] = useState(true)
+  const [qualityGateMinResultChars, setQualityGateMinResultChars] = useState(80)
+  const [qualityGateMinEvidenceItems, setQualityGateMinEvidenceItems] = useState(2)
+  const [qualityGateRequireVerification, setQualityGateRequireVerification] = useState(false)
+  const [qualityGateRequireArtifact, setQualityGateRequireArtifact] = useState(false)
+  const [qualityGateRequireReport, setQualityGateRequireReport] = useState(false)
 
   const editing = editingId ? tasks[editingId] : null
   const agentList = Object.values(agents).sort((a, b) => a.name.localeCompare(b.name))
@@ -68,6 +84,12 @@ export function TaskSheet() {
       loadAgents()
       loadProjects()
       loadSettings()
+      const defaultGateEnabled = appSettings.taskQualityGateEnabled ?? true
+      const defaultGateMinResult = normalizeGateNumber(appSettings.taskQualityGateMinResultChars, 80, 10, 2000)
+      const defaultGateMinEvidence = normalizeGateNumber(appSettings.taskQualityGateMinEvidenceItems, 2, 0, 8)
+      const defaultGateRequireVerification = appSettings.taskQualityGateRequireVerification ?? false
+      const defaultGateRequireArtifact = appSettings.taskQualityGateRequireArtifact ?? false
+      const defaultGateRequireReport = appSettings.taskQualityGateRequireReport ?? false
       if (editing) {
         setTitle(editing.title)
         setDescription(editing.description)
@@ -83,6 +105,13 @@ export function TaskSheet() {
         setDueAt(editing.dueAt ? new Date(editing.dueAt).toISOString().slice(0, 10) : '')
         setCustomFields(editing.customFields || {})
         setPriority(editing.priority || '')
+        const gate = (editing.qualityGate || null) as TaskQualityGateConfig | null
+        setQualityGateEnabled(gate?.enabled ?? defaultGateEnabled)
+        setQualityGateMinResultChars(normalizeGateNumber(gate?.minResultChars, defaultGateMinResult, 10, 2000))
+        setQualityGateMinEvidenceItems(normalizeGateNumber(gate?.minEvidenceItems, defaultGateMinEvidence, 0, 8))
+        setQualityGateRequireVerification(gate?.requireVerification ?? defaultGateRequireVerification)
+        setQualityGateRequireArtifact(gate?.requireArtifact ?? defaultGateRequireArtifact)
+        setQualityGateRequireReport(gate?.requireReport ?? defaultGateRequireReport)
       } else {
         setTitle('')
         setDescription('')
@@ -98,6 +127,12 @@ export function TaskSheet() {
         setDueAt('')
         setCustomFields({})
         setPriority('')
+        setQualityGateEnabled(defaultGateEnabled)
+        setQualityGateMinResultChars(defaultGateMinResult)
+        setQualityGateMinEvidenceItems(defaultGateMinEvidence)
+        setQualityGateRequireVerification(defaultGateRequireVerification)
+        setQualityGateRequireArtifact(defaultGateRequireArtifact)
+        setQualityGateRequireReport(defaultGateRequireReport)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,6 +151,17 @@ export function TaskSheet() {
   }
 
   const handleSave = async () => {
+    const qualityGate: TaskQualityGateConfig | null = qualityGateEnabled
+      ? {
+          enabled: true,
+          minResultChars: qualityGateMinResultChars,
+          minEvidenceItems: qualityGateMinEvidenceItems,
+          requireVerification: qualityGateRequireVerification,
+          requireArtifact: qualityGateRequireArtifact,
+          requireReport: qualityGateRequireReport,
+        }
+      : null
+
     // projectId uses null (not undefined) so the API can distinguish "clear" from "not sent"
     // projectId uses null (not undefined) so the API can distinguish "clear" from "not sent"
     const payload = {
@@ -124,6 +170,7 @@ export function TaskSheet() {
       tags, blockedBy, dueAt: dueAt ? new Date(dueAt).getTime() : null,
       customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
       priority: priority || undefined,
+      qualityGate,
     } as Partial<BoardTask> & { title: string; description: string; agentId: string }
     try {
       if (editing) {
@@ -359,6 +406,19 @@ export function TaskSheet() {
                   </div>
                 )
               })}
+            </div>
+          </div>
+        )}
+
+        {editing.qualityGate?.enabled && (
+          <div className="mb-8">
+            <SectionLabel>Quality Gate</SectionLabel>
+            <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface space-y-1.5 text-[12px] text-text-2">
+              <p>Min result chars: {editing.qualityGate.minResultChars ?? 80}</p>
+              <p>Min evidence signals: {editing.qualityGate.minEvidenceItems ?? 2}</p>
+              <p>Verification required: {(editing.qualityGate.requireVerification ?? false) ? 'Yes' : 'No'}</p>
+              <p>Artifact required: {(editing.qualityGate.requireArtifact ?? false) ? 'Yes' : 'No'}</p>
+              <p>Task report required: {(editing.qualityGate.requireReport ?? false) ? 'Yes' : 'No'}</p>
             </div>
           </div>
         )}
@@ -795,6 +855,75 @@ export function TaskSheet() {
           className={`${inputClass} appearance-none`}
           style={{ fontFamily: 'inherit', colorScheme: 'dark' }}
         />
+      </div>
+
+      <div className="mb-8">
+        <SectionLabel>Quality Gate</SectionLabel>
+        <p className="text-[12px] text-text-3 mb-3">
+          Checks that must pass before this task can be marked completed.
+        </p>
+        <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface">
+          <button
+            onClick={() => setQualityGateEnabled((prev) => !prev)}
+            className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${qualityGateEnabled ? 'bg-accent' : 'bg-white/[0.12]'}`}
+          >
+            <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${qualityGateEnabled ? 'translate-x-[18px]' : ''}`} />
+          </button>
+          <span className="ml-2 text-[12px] text-text-2">{qualityGateEnabled ? 'Enabled' : 'Disabled'}</span>
+
+          {qualityGateEnabled && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+              <div>
+                <label className="block text-[11px] text-text-3 mb-1.5">Min Result Chars</label>
+                <input
+                  type="number"
+                  min={10}
+                  max={2000}
+                  value={qualityGateMinResultChars}
+                  onChange={(e) => setQualityGateMinResultChars(normalizeGateNumber(e.target.value, 80, 10, 2000))}
+                  className={inputClass}
+                  style={{ fontFamily: 'inherit' }}
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-text-3 mb-1.5">Min Evidence Signals</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={8}
+                  value={qualityGateMinEvidenceItems}
+                  onChange={(e) => setQualityGateMinEvidenceItems(normalizeGateNumber(e.target.value, 2, 0, 8))}
+                  className={inputClass}
+                  style={{ fontFamily: 'inherit' }}
+                />
+              </div>
+              <label className="flex items-center gap-2 text-[12px] text-text-2">
+                <input
+                  type="checkbox"
+                  checked={qualityGateRequireVerification}
+                  onChange={(e) => setQualityGateRequireVerification(e.target.checked)}
+                />
+                Require verification evidence (tests/lint/build)
+              </label>
+              <label className="flex items-center gap-2 text-[12px] text-text-2">
+                <input
+                  type="checkbox"
+                  checked={qualityGateRequireArtifact}
+                  onChange={(e) => setQualityGateRequireArtifact(e.target.checked)}
+                />
+                Require artifact evidence (upload URL or task artifacts)
+              </label>
+              <label className="flex items-center gap-2 text-[12px] text-text-2 md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={qualityGateRequireReport}
+                  onChange={(e) => setQualityGateRequireReport(e.target.checked)}
+                />
+                Require generated task report
+              </label>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Custom Fields */}
