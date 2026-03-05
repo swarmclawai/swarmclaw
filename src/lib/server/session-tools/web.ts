@@ -220,9 +220,15 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       return text.replace(/\n{3,}/g, '\n').trim()
     }
 
+    const MCP_CALL_TIMEOUT_MS = 30000 // 30s timeout per browser action
     const callMcpTool = async (toolName: string, args: Record<string, any>, options?: { saveTo?: string }): Promise<string> => {
       await ensureMcp()
-      const result = await mcpClient.callTool({ name: toolName, arguments: args })
+      const result = await Promise.race([
+        mcpClient.callTool({ name: toolName, arguments: args }),
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(() => reject(new Error(`Browser action "${toolName}" timed out after ${MCP_CALL_TIMEOUT_MS / 1000}s`)), MCP_CALL_TIMEOUT_MS)
+        ),
+      ])
       const isError = result?.isError === true; const content = result?.content; const savedPaths: string[] = []
       const saveArtifact = (buffer: Buffer, suggestedExt: string): void => {
         const rawSaveTo = options?.saveTo?.trim()
