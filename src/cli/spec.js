@@ -228,6 +228,8 @@ const COMMAND_GROUPS = {
       update: { description: 'Enable/disable plugin (body: {"filename":"x.js","enabled":true})', method: 'POST', path: '/plugins' },
       marketplace: { description: 'Get plugin marketplace registry', method: 'GET', path: '/plugins/marketplace' },
       install: { description: 'Install plugin by URL', method: 'POST', path: '/plugins/install' },
+      'settings-get': { description: 'Read plugin settings (supports --query pluginId=...)', method: 'GET', path: '/plugins/settings' },
+      'settings-set': { description: 'Write plugin settings (supports --query pluginId=... and --data JSON)', method: 'PUT', path: '/plugins/settings' },
     },
   },
   providers: {
