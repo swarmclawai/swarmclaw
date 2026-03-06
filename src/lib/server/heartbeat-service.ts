@@ -127,9 +127,13 @@ export interface HeartbeatConfig {
   target: string | null
 }
 
+interface HeartbeatFileSession {
+  cwd?: string | null
+}
+
 const DEFAULT_HEARTBEAT_PROMPT = 'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.'
 
-function readHeartbeatFile(session: any): string {
+function readHeartbeatFile(session: HeartbeatFileSession): string {
   try {
     const filePath = path.join(session.cwd || WORKSPACE_DIR, 'HEARTBEAT.md')
     if (fs.existsSync(filePath)) {
