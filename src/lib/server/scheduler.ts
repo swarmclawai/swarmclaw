@@ -6,6 +6,7 @@ import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { getScheduleSignatureKey } from '@/lib/schedule-dedupe'
 import { enqueueSystemEvent } from './system-events'
 import { requestHeartbeatNow } from './heartbeat-wake'
+import { processDueWatchJobs } from './watch-jobs'
 
 const TICK_INTERVAL = 60_000 // 60 seconds
 let intervalId: ReturnType<typeof setInterval> | null = null
@@ -73,6 +74,7 @@ function computeNextRuns() {
 
 async function tick() {
   const now = Date.now()
+  await processDueWatchJobs(now)
   const schedules = loadSchedules()
   const agents = loadAgents()
   const tasks = loadTasks()

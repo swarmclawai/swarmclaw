@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage } from 'http'
 import { validateAccessKey } from './storage'
+import { AUTH_COOKIE_NAME, getCookieValue } from '@/lib/auth'
 
 interface WsClient {
   ws: WebSocket
@@ -29,9 +30,10 @@ export function initWsServer() {
   ;(globalThis as any)[GK] = hub
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    // Auth: validate ?key= from upgrade URL
-    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
-    const key = url.searchParams.get('key') || ''
+    const headerKey = req.headers['x-access-key']
+    const key = (Array.isArray(headerKey) ? headerKey[0] : headerKey)
+      || getCookieValue(req.headers.cookie, AUTH_COOKIE_NAME)
+      || ''
     if (!validateAccessKey(key)) {
       ws.close(4001, 'Unauthorized')
       return

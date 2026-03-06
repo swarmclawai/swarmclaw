@@ -11,17 +11,43 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const body = await req.json()
   const result = mutateItem(ops, id, (agent) => {
     Object.assign(agent, body, { updatedAt: Date.now() })
+    if (body.platformAssignScope === 'all' || body.platformAssignScope === 'self') {
+      agent.platformAssignScope = body.platformAssignScope
+      agent.isOrchestrator = body.platformAssignScope === 'all'
+    } else if (agent.platformAssignScope === 'all' || agent.platformAssignScope === 'self') {
+      agent.isOrchestrator = agent.platformAssignScope === 'all'
+    }
     if (body.apiEndpoint !== undefined) {
       agent.apiEndpoint = normalizeProviderEndpoint(
         body.provider || agent.provider,
         body.apiEndpoint,
       )
     }
+    delete (agent as Record<string, unknown>).isOrchestrator
+    agent.isOrchestrator = agent.platformAssignScope === 'all'
     delete (agent as Record<string, unknown>).id
     agent.id = id
     return agent
   })
   if (!result) return notFound()
+
+  if (result.threadSessionId) {
+    const sessions = loadSessions()
+    const shortcut = sessions[result.threadSessionId]
+    if (shortcut) {
+      let changed = false
+      if (shortcut.name !== result.name) {
+        shortcut.name = result.name
+        changed = true
+      }
+      if (shortcut.shortcutForAgentId !== id) {
+        shortcut.shortcutForAgentId = id
+        changed = true
+      }
+      if (changed) saveSessions(sessions)
+    }
+  }
+
   logActivity({ entityType: 'agent', entityId: id, action: 'updated', actor: 'user', summary: `Agent updated: "${result.name}"` })
   return NextResponse.json(result)
 }

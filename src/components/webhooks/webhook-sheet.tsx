@@ -64,8 +64,8 @@ export function WebhookSheet() {
 
   const editing = editingId ? (webhooks[editingId] as Webhook | undefined) : null
   const endpoint = editing ? webhookUrl(editing.id) : ''
-  const orchestrators = useMemo(
-    () => Object.values(agents).filter((a) => a.isOrchestrator),
+  const eligibleAgents = useMemo(
+    () => Object.values(agents),
     [agents]
   )
 
@@ -127,7 +127,7 @@ export function WebhookSheet() {
 
   const handleSave = async () => {
     if (!agentId) {
-      setError('An orchestrator agent is required.')
+      setError('Choose an eligible agent to handle this webhook.')
       return
     }
 
@@ -185,7 +185,7 @@ export function WebhookSheet() {
           <h2 className="font-display text-[24px] font-700 tracking-[-0.02em] mb-1">
             {editing ? 'Edit Webhook' : 'New Webhook'}
           </h2>
-          <p className="text-[13px] text-text-3">Create an inbound endpoint that triggers an orchestrator</p>
+          <p className="text-[13px] text-text-3">Create an inbound endpoint that launches an agent workflow</p>
         </div>
 
         {editing && (
@@ -294,15 +294,15 @@ export function WebhookSheet() {
         </div>
 
         <div>
-          <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Route to Orchestrator</label>
+          <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Route to Agent</label>
           <select
             value={agentId}
             onChange={(e) => setAgentId(e.target.value)}
             className={`${inputClass} appearance-none cursor-pointer`}
             style={{ fontFamily: 'inherit' }}
           >
-            <option value="">Select orchestrator...</option>
-            {orchestrators.map((agent) => (
+            <option value="">Select agent...</option>
+            {eligibleAgents.map((agent) => (
               <option key={agent.id} value={agent.id}>{agent.name}</option>
             ))}
           </select>

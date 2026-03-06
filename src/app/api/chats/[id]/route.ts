@@ -45,6 +45,24 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
   if (updates.heartbeatEnabled !== undefined) sessions[id].heartbeatEnabled = updates.heartbeatEnabled
   if (updates.heartbeatIntervalSec !== undefined) sessions[id].heartbeatIntervalSec = updates.heartbeatIntervalSec
+  if (updates.sessionResetMode !== undefined) sessions[id].sessionResetMode = updates.sessionResetMode
+  if (updates.sessionIdleTimeoutSec !== undefined) sessions[id].sessionIdleTimeoutSec = updates.sessionIdleTimeoutSec
+  if (updates.sessionMaxAgeSec !== undefined) sessions[id].sessionMaxAgeSec = updates.sessionMaxAgeSec
+  if (updates.sessionDailyResetAt !== undefined) sessions[id].sessionDailyResetAt = updates.sessionDailyResetAt
+  if (updates.sessionResetTimezone !== undefined) sessions[id].sessionResetTimezone = updates.sessionResetTimezone
+  if (updates.thinkingLevel !== undefined) sessions[id].thinkingLevel = updates.thinkingLevel
+  if (updates.connectorThinkLevel !== undefined) sessions[id].connectorThinkLevel = updates.connectorThinkLevel
+  if (updates.connectorSessionScope !== undefined) sessions[id].connectorSessionScope = updates.connectorSessionScope
+  if (updates.connectorReplyMode !== undefined) sessions[id].connectorReplyMode = updates.connectorReplyMode
+  if (updates.connectorThreadBinding !== undefined) sessions[id].connectorThreadBinding = updates.connectorThreadBinding
+  if (updates.connectorGroupPolicy !== undefined) sessions[id].connectorGroupPolicy = updates.connectorGroupPolicy
+  if (updates.connectorIdleTimeoutSec !== undefined) sessions[id].connectorIdleTimeoutSec = updates.connectorIdleTimeoutSec
+  if (updates.connectorMaxAgeSec !== undefined) sessions[id].connectorMaxAgeSec = updates.connectorMaxAgeSec
+  if (updates.connectorContext !== undefined) sessions[id].connectorContext = updates.connectorContext
+  if (updates.identityState !== undefined) sessions[id].identityState = updates.identityState
+  if (updates.sessionArchiveState !== undefined) sessions[id].sessionArchiveState = updates.sessionArchiveState
+  if (updates.lastSessionResetAt !== undefined) sessions[id].lastSessionResetAt = updates.lastSessionResetAt
+  if (updates.lastSessionResetReason !== undefined) sessions[id].lastSessionResetReason = updates.lastSessionResetReason
   if (updates.pinned !== undefined) sessions[id].pinned = !!updates.pinned
   if (updates.claudeSessionId !== undefined) sessions[id].claudeSessionId = updates.claudeSessionId
   if (updates.codexThreadId !== undefined) sessions[id].codexThreadId = updates.codexThreadId

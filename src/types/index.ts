@@ -24,6 +24,27 @@ export interface Message {
   streaming?: boolean
 }
 
+export type SessionResetMode = 'idle' | 'daily'
+export type SessionResetType = 'direct' | 'group' | 'thread' | 'main'
+
+export interface IdentityContinuityState {
+  selfSummary?: string | null
+  relationshipSummary?: string | null
+  personaLabel?: string | null
+  toneStyle?: string | null
+  boundaries?: string[]
+  continuityNotes?: string[]
+  updatedAt?: number | null
+}
+
+export interface SessionArchiveState {
+  memoryId?: string | null
+  lastSyncedAt?: number | null
+  lastHash?: string | null
+  messageCount?: number
+  exportPath?: string | null
+}
+
 export type ProviderType = 'claude-cli' | 'codex-cli' | 'opencode-cli' | 'openai' | 'ollama' | 'anthropic' | 'openclaw' | 'google' | 'deepseek' | 'groq' | 'together' | 'mistral' | 'xai' | 'fireworks'
 
 export interface ProviderInfo {
@@ -49,6 +70,7 @@ export type Credentials = Record<string, Credential>
 export interface Session {
   id: string
   name: string
+  shortcutForAgentId?: string | null
   cwd: string
   user: string
   provider: ProviderType
@@ -78,47 +100,55 @@ export interface Session {
   heartbeatEnabled?: boolean | null
   heartbeatIntervalSec?: number | null
   heartbeatTarget?: 'last' | 'none' | string | null
+  sessionResetMode?: SessionResetMode | null
+  sessionIdleTimeoutSec?: number | null
+  sessionMaxAgeSec?: number | null
+  sessionDailyResetAt?: string | null
+  sessionResetTimezone?: string | null
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
+  browserProfileId?: string | null
+  connectorThinkLevel?: 'minimal' | 'low' | 'medium' | 'high'
+  connectorSessionScope?: 'main' | 'channel' | 'peer' | 'channel-peer' | 'thread'
+  connectorReplyMode?: 'off' | 'first' | 'all'
+  connectorThreadBinding?: 'off' | 'prefer' | 'strict'
+  connectorGroupPolicy?: 'open' | 'mention' | 'reply-or-mention' | 'disabled'
+  connectorIdleTimeoutSec?: number | null
+  connectorMaxAgeSec?: number | null
+  mailbox?: MailboxEnvelope[] | null
+  connectorContext?: {
+    connectorId?: string | null
+    platform?: ConnectorPlatform | null
+    channelId?: string | null
+    senderId?: string | null
+    senderName?: string | null
+    sessionKey?: string | null
+    peerKey?: string | null
+    scope?: 'main' | 'channel' | 'peer' | 'channel-peer' | 'thread' | null
+    replyMode?: 'off' | 'first' | 'all' | null
+    threadBinding?: 'off' | 'prefer' | 'strict' | null
+    groupPolicy?: 'open' | 'mention' | 'reply-or-mention' | 'disabled' | null
+    threadId?: string | null
+    threadTitle?: string | null
+    threadPersonaLabel?: string | null
+    threadParentChannelId?: string | null
+    threadParentChannelName?: string | null
+    isGroup?: boolean
+    lastInboundAt?: number | null
+    lastInboundMessageId?: string | null
+    lastInboundReplyToMessageId?: string | null
+    lastInboundThreadId?: string | null
+    lastOutboundAt?: number | null
+    lastOutboundMessageId?: string | null
+    lastResetAt?: number | null
+    lastResetReason?: string | null
+  }
   lastAutoMemoryAt?: number | null
   lastHeartbeatText?: string | null
   lastHeartbeatSentAt?: number | null
-  mainLoopState?: {
-    goal?: string | null
-    goalContract?: GoalContract | null
-    status?: 'idle' | 'progress' | 'blocked' | 'ok'
-    summary?: string | null
-    nextAction?: string | null
-    planSteps?: string[]
-    currentPlanStep?: string | null
-    reviewNote?: string | null
-    reviewConfidence?: number | null
-    missionTaskId?: string | null
-    momentumScore?: number
-    paused?: boolean
-    autonomyMode?: 'assist' | 'autonomous'
-    pendingEvents?: Array<{
-      id: string
-      type: string
-      text: string
-      createdAt: number
-    }>
-    timeline?: Array<{
-      id: string
-      at: number
-      source: string
-      note: string
-      status?: 'idle' | 'progress' | 'blocked' | 'ok'
-    }>
-    missionTokens?: number
-    missionCostUsd?: number
-    followupChainCount?: number
-    metaMissCount?: number
-    workingMemoryNotes?: string[]
-    lastMemoryNoteAt?: number | null
-    lastPlannedAt?: number | null
-    lastReviewedAt?: number | null
-    lastTickAt?: number | null
-    updatedAt?: number
-  }
+  lastSessionResetAt?: number | null
+  lastSessionResetReason?: string | null
+  identityState?: IdentityContinuityState | null
+  sessionArchiveState?: SessionArchiveState | null
   pinned?: boolean
   file?: string | null
   queuedCount?: number
@@ -148,10 +178,16 @@ export type SessionTool =
   | 'canvas'
   | 'http_request'
   | 'git'
+  | 'mailbox'
+  | 'ask_human'
+  | 'document'
+  | 'extract'
+  | 'table'
+  | 'crawl'
 
 // --- Approvals ---
 
-export type ApprovalCategory = 'tool_access' | 'wallet_transfer' | 'plugin_scaffold' | 'plugin_install' | 'task_tool'
+export type ApprovalCategory = 'tool_access' | 'wallet_transfer' | 'plugin_scaffold' | 'plugin_install' | 'task_tool' | 'human_loop'
 
 export interface ApprovalRequest {
   id: string
@@ -165,9 +201,35 @@ export interface ApprovalRequest {
   createdAt: number
   updatedAt: number
   status: 'pending' | 'approved' | 'rejected'
+  connectorNotification?: {
+    attemptedAt?: number | null
+    sentAt?: number | null
+    connectorId?: string | null
+    channelId?: string | null
+    threadId?: string | null
+    messageId?: string | null
+    lastError?: string | null
+  } | null
 }
 
 export type Approvals = Record<string, ApprovalRequest>
+
+export type MailboxStatus = 'new' | 'ack'
+
+export interface MailboxEnvelope {
+  id: string
+  type: string
+  payload: string
+  fromSessionId?: string | null
+  fromAgentId?: string | null
+  toSessionId: string
+  toAgentId?: string | null
+  correlationId?: string | null
+  status: MailboxStatus
+  createdAt: number
+  expiresAt?: number | null
+  ackAt?: number | null
+}
 
 export interface PluginInvocationRecord {
   pluginId: string
@@ -307,6 +369,8 @@ export interface Plugin {
   name: string
   version?: string
   description?: string
+  author?: string
+  openclaw?: boolean
   enabledByDefault?: boolean
   hooks?: PluginHooks
   tools?: PluginToolDef[]
@@ -320,6 +384,7 @@ export interface PluginMeta {
   description?: string
   filename: string
   enabled: boolean
+  isBuiltin?: boolean
   author?: string
   version?: string
   source?: 'local' | 'marketplace'
@@ -336,7 +401,18 @@ export interface PluginMeta {
   connectorCount?: number
   createdByAgentId?: string | null
   settingsFields?: PluginSettingsField[]
+  hasDependencyManifest?: boolean
+  dependencyCount?: number
+  devDependencyCount?: number
+  packageManager?: PluginPackageManager
+  dependencyInstallStatus?: PluginDependencyInstallStatus
+  dependencyInstallError?: string
+  dependencyInstalledAt?: number
 }
+
+export type PluginPackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
+export type PluginDependencyInstallStatus = 'none' | 'ready' | 'installing' | 'installed' | 'error'
+
 export interface MarketplacePlugin {
   id: string
   name: string
@@ -394,6 +470,7 @@ export interface Agent {
   name: string
   description: string
   soul?: string
+  identityState?: IdentityContinuityState | null
   emoji?: string
   creature?: string
   vibe?: string
@@ -415,7 +492,7 @@ export interface Agent {
   mcpServerIds?: string[]       // IDs of configured MCP servers to inject tools from
   mcpDisabledTools?: string[]   // MCP tool names disabled for this agent (denylist)
   capabilities?: string[]       // e.g. ['frontend', 'screenshots', 'research', 'devops']
-  threadSessionId?: string | null  // persistent chat thread session for agent-centric UI
+  threadSessionId?: string | null  // persistent shortcut chat session for agent-centric UI
   platformAssignScope?: 'self' | 'all'  // defaults to 'self'
   heartbeatEnabled?: boolean
   heartbeatIntervalSec?: number | null
@@ -428,6 +505,11 @@ export interface Agent {
   heartbeatTarget?: 'last' | 'none' | string | null
   heartbeatGoal?: string | null
   heartbeatNextAction?: string | null
+  sessionResetMode?: SessionResetMode | null
+  sessionIdleTimeoutSec?: number | null
+  sessionMaxAgeSec?: number | null
+  sessionDailyResetAt?: string | null
+  sessionResetTimezone?: string | null
   thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
   elevenLabsVoiceId?: string | null
   projectId?: string
@@ -532,6 +614,152 @@ export interface Schedule {
   createdAt: number
 }
 
+export type BrowserSessionStatus = 'active' | 'idle' | 'closed' | 'error'
+
+export interface BrowserSessionTab {
+  index: number
+  title?: string | null
+  url?: string | null
+}
+
+export interface BrowserSessionArtifact {
+  kind: 'snapshot' | 'screenshot' | 'download' | 'pdf'
+  path: string
+  url?: string | null
+  filename?: string | null
+  createdAt: number
+}
+
+export interface BrowserObservationLink {
+  text: string
+  href: string
+}
+
+export interface BrowserObservationFormField {
+  name?: string | null
+  label?: string | null
+  type: string
+  required?: boolean
+}
+
+export interface BrowserObservationForm {
+  index: number
+  action?: string | null
+  method?: string | null
+  fields: BrowserObservationFormField[]
+}
+
+export interface BrowserObservationTable {
+  index: number
+  headers: string[]
+  rowCount: number
+  rows?: string[][]
+}
+
+export interface BrowserObservation {
+  capturedAt: number
+  url?: string | null
+  title?: string | null
+  textPreview?: string | null
+  activeTabIndex?: number | null
+  tabs?: BrowserSessionTab[]
+  links?: BrowserObservationLink[]
+  forms?: BrowserObservationForm[]
+  tables?: BrowserObservationTable[]
+  errors?: string[]
+}
+
+export interface BrowserSessionRecord {
+  id: string
+  sessionId: string
+  profileId: string
+  profileDir: string
+  status: BrowserSessionStatus
+  inheritedFromSessionId?: string | null
+  currentUrl?: string | null
+  pageTitle?: string | null
+  activeTabIndex?: number | null
+  tabs?: BrowserSessionTab[]
+  lastAction?: string | null
+  lastError?: string | null
+  lastObservation?: BrowserObservation | null
+  artifacts?: BrowserSessionArtifact[]
+  createdAt: number
+  updatedAt: number
+  lastUsedAt: number
+}
+
+export type WatchJobType = 'time' | 'http' | 'file' | 'task' | 'webhook' | 'page' | 'email' | 'mailbox' | 'approval'
+export type WatchJobStatus = 'active' | 'triggered' | 'failed' | 'cancelled'
+
+export interface WatchJob {
+  id: string
+  type: WatchJobType
+  status: WatchJobStatus
+  description?: string | null
+  sessionId?: string | null
+  agentId?: string | null
+  createdByAgentId?: string | null
+  browserProfileId?: string | null
+  resumeMessage: string
+  target: Record<string, unknown>
+  condition: Record<string, unknown>
+  runAt?: number | null
+  nextCheckAt?: number | null
+  intervalMs?: number | null
+  timeoutAt?: number | null
+  lastCheckedAt?: number | null
+  lastTriggeredAt?: number | null
+  lastError?: string | null
+  result?: Record<string, unknown> | null
+  createdAt: number
+  updatedAt: number
+}
+
+export type DelegationJobKind = 'subagent' | 'delegate'
+export type DelegationJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface DelegationJobCheckpoint {
+  at: number
+  note: string
+  status?: DelegationJobStatus
+}
+
+export interface DelegationJobArtifact {
+  type: 'text' | 'file' | 'image' | 'link'
+  value: string
+  label?: string | null
+}
+
+export interface DelegationJobRecord {
+  id: string
+  kind: DelegationJobKind
+  status: DelegationJobStatus
+  backend?: 'claude' | 'codex' | 'opencode' | 'gemini' | null
+  parentSessionId?: string | null
+  childSessionId?: string | null
+  agentId?: string | null
+  agentName?: string | null
+  cwd?: string | null
+  task: string
+  result?: string | null
+  resultPreview?: string | null
+  error?: string | null
+  checkpoints?: DelegationJobCheckpoint[]
+  artifacts?: DelegationJobArtifact[]
+  resumeId?: string | null
+  resumeIds?: {
+    claudeCode?: string | null
+    codex?: string | null
+    opencode?: string | null
+    gemini?: string | null
+  }
+  createdAt: number
+  updatedAt: number
+  startedAt?: number | null
+  completedAt?: number | null
+}
+
 export interface FileReference {
   path: string
   contextSnippet?: string
@@ -584,7 +812,7 @@ export interface MemoryEntry {
   updatedAt: number
 }
 
-export type SessionType = 'human' | 'orchestrated'
+export type SessionType = 'human'
 export type AppView = 'home' | 'agents' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'approvals' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'wallets' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
 
 // --- Chatrooms ---
@@ -766,10 +994,13 @@ export interface AppSettings {
   userAvatarSeed?: string
   elevenLabsEnabled?: boolean
   elevenLabsApiKey?: string | null
+  elevenLabsApiKeyConfigured?: boolean
   elevenLabsVoiceId?: string | null
   speechRecognitionLang?: string | null
   tavilyApiKey?: string | null
+  tavilyApiKeyConfigured?: boolean
   braveApiKey?: string | null
+  braveApiKeyConfigured?: boolean
   heartbeatPrompt?: string | null
   heartbeatIntervalSec?: number | null
   heartbeatInterval?: string | number | null
@@ -781,12 +1012,21 @@ export interface AppSettings {
   heartbeatActiveStart?: string | null
   heartbeatActiveEnd?: string | null
   heartbeatTimezone?: string | null
+  sessionResetMode?: SessionResetMode | null
+  sessionIdleTimeoutSec?: number | null
+  sessionMaxAgeSec?: number | null
+  sessionDailyResetAt?: string | null
+  sessionResetTimezone?: string | null
   // Task resiliency and supervision
   defaultTaskMaxAttempts?: number
   taskRetryBackoffSec?: number
   taskStallTimeoutMin?: number
   // Safety rails
+  approvalsEnabled?: boolean
   safetyRequireApprovalForOutbound?: boolean
+  approvalAutoApproveCategories?: ApprovalCategory[]
+  approvalConnectorNotifyEnabled?: boolean
+  approvalConnectorNotifyDelaySec?: number | null
   safetyMaxDailySpendUsd?: number | null
   safetyBlockedTools?: string[]
   capabilityPolicyMode?: 'permissive' | 'balanced' | 'strict'
@@ -847,7 +1087,7 @@ export interface AppSettings {
   pluginSettings?: Record<string, Record<string, unknown>>
 }
 
-// --- Orchestrator Secrets ---
+// --- Agent Secrets ---
 
 export interface OrchestratorSecret {
   id: string
@@ -855,7 +1095,7 @@ export interface OrchestratorSecret {
   service: string           // e.g. 'gmail', 'ahrefs', 'custom'
   encryptedValue: string
   scope: 'global' | 'agent'
-  agentIds: string[]      // if scope === 'agent', which orchestrators can use it
+  agentIds: string[]      // if scope === 'agent', which agents can use it
   createdAt: number
   updatedAt: number
 }
@@ -867,7 +1107,7 @@ export type BoardTaskStatus = 'backlog' | 'queued' | 'running' | 'completed' | '
 export interface TaskComment {
   id: string
   author: string         // agent name or 'user'
-  agentId?: string     // if from an orchestrator
+  agentId?: string     // if from an agent
   text: string
   createdAt: number
 }
@@ -937,6 +1177,9 @@ export interface MessageSource {
   channelId?: string
   senderId?: string
   senderName?: string
+  messageId?: string
+  replyToMessageId?: string
+  threadId?: string
 }
 
 export interface Connector {

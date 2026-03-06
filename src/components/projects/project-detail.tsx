@@ -102,6 +102,7 @@ export function ProjectDetail() {
   const setScheduleSheetOpen = useAppStore((s) => s.setScheduleSheetOpen)
 
   const [assignPickerOpen, setAssignPickerOpen] = useState(false)
+  const now = Date.now()
 
   const project = activeProjectFilter ? projects[activeProjectFilter] : null
 
@@ -149,6 +150,93 @@ export function ProjectDetail() {
     }
     return items.sort((a, b) => b.time - a.time).slice(0, 12)
   }, [projectTasks, projectSchedules, projectAgents])
+
+  const approvalTasks = useMemo(
+    () => projectTasks.filter((task) => !!task.pendingApproval),
+    [projectTasks],
+  )
+
+  const blockedTasks = useMemo(
+    () => projectTasks.filter((task) => (task.blockedBy?.length || 0) > 0),
+    [projectTasks],
+  )
+
+  const overdueTasks = useMemo(
+    () => projectTasks.filter((task) => !!task.dueAt && task.dueAt < now && task.status !== 'completed' && task.status !== 'archived'),
+    [now, projectTasks],
+  )
+
+  const staleTasks = useMemo(
+    () => projectTasks.filter((task) => task.status !== 'completed' && task.status !== 'archived' && now - task.updatedAt > 3 * 24 * 60 * 60 * 1000),
+    [now, projectTasks],
+  )
+
+  const overdueSchedules = useMemo(
+    () => projectSchedules.filter((schedule) => schedule.status === 'active' && !!schedule.nextRunAt && schedule.nextRunAt < now),
+    [now, projectSchedules],
+  )
+
+  const nextScheduledRun = useMemo(
+    () => projectSchedules
+      .filter((schedule) => schedule.status === 'active' && !!schedule.nextRunAt && schedule.nextRunAt >= now)
+      .sort((a, b) => (a.nextRunAt || 0) - (b.nextRunAt || 0))[0] || null,
+    [now, projectSchedules],
+  )
+
+  const busiestAgent = useMemo(() => {
+    return projectAgents
+      .map((agent) => ({
+        agent,
+        taskCount: projectTasks.filter((task) => task.agentId === agent.id && task.status !== 'completed' && task.status !== 'archived').length,
+      }))
+      .sort((a, b) => b.taskCount - a.taskCount)[0] || null
+  }, [projectAgents, projectTasks])
+
+  const attentionItems = useMemo(() => {
+    const seen = new Set<string>()
+    const items: Array<{ id: string; label: string; detail: string; tone: string; onClick: () => void }> = []
+    for (const task of approvalTasks.slice(0, 2)) {
+      seen.add(task.id)
+      items.push({
+        id: `approval-${task.id}`,
+        label: task.title,
+        detail: 'Awaiting tool approval',
+        tone: 'text-amber-400',
+        onClick: () => { setEditingTaskId(task.id); setTaskSheetOpen(true) },
+      })
+    }
+    for (const task of blockedTasks.slice(0, 2)) {
+      if (seen.has(task.id)) continue
+      seen.add(task.id)
+      items.push({
+        id: `blocked-${task.id}`,
+        label: task.title,
+        detail: `${task.blockedBy?.length || 0} blocker${task.blockedBy?.length === 1 ? '' : 's'}`,
+        tone: 'text-rose-400',
+        onClick: () => { setEditingTaskId(task.id); setTaskSheetOpen(true) },
+      })
+    }
+    if (staleTasks[0] && !seen.has(staleTasks[0].id)) {
+      seen.add(staleTasks[0].id)
+      items.push({
+        id: `stale-${staleTasks[0].id}`,
+        label: staleTasks[0].title,
+        detail: 'No recent progress in 3+ days',
+        tone: 'text-sky-400',
+        onClick: () => { setEditingTaskId(staleTasks[0].id); setTaskSheetOpen(true) },
+      })
+    }
+    if (overdueSchedules[0]) {
+      items.push({
+        id: `schedule-${overdueSchedules[0].id}`,
+        label: overdueSchedules[0].name,
+        detail: 'Schedule missed its next run',
+        tone: 'text-red-400',
+        onClick: () => { setEditingScheduleId(overdueSchedules[0].id); setScheduleSheetOpen(true) },
+      })
+    }
+    return items.slice(0, 5)
+  }, [approvalTasks, blockedTasks, overdueSchedules, setEditingScheduleId, setEditingTaskId, setScheduleSheetOpen, setTaskSheetOpen, staleTasks])
 
   const handleUnassignAgent = async (agentId: string) => {
     await updateAgent(agentId, { projectId: undefined })
@@ -209,6 +297,101 @@ export function ProjectDetail() {
             <p className="text-[11px] text-text-3/40 mt-2">
               Created {relativeDate(project.createdAt)} &middot; Updated {relativeDate(project.updatedAt)}
             </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-4 mb-8">
+          <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] px-5 py-5">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <div>
+                <h2 className="font-display text-[18px] font-700 tracking-[-0.02em] text-text">Project Health</h2>
+                <p className="text-[12px] text-text-3/60 mt-1">Surface blockers and the next useful action before digging into the full history.</p>
+              </div>
+              <button
+                onClick={() => setActiveView('tasks')}
+                className="shrink-0 px-3 py-2 rounded-[10px] bg-white/[0.04] text-[12px] font-600 text-text-2 hover:bg-white/[0.08] transition-all cursor-pointer border-none"
+                style={{ fontFamily: 'inherit' }}
+              >
+                Open Task Board
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { label: 'Awaiting Approval', value: approvalTasks.length, tone: 'text-amber-400', hint: 'Tasks paused on approval' },
+                { label: 'Blocked', value: blockedTasks.length, tone: 'text-rose-400', hint: 'Tasks waiting on dependencies' },
+                { label: 'Overdue', value: overdueTasks.length + overdueSchedules.length, tone: 'text-red-400', hint: 'Tasks or schedules behind plan' },
+                { label: 'Stale Tasks', value: staleTasks.length, tone: 'text-sky-400', hint: 'No meaningful progress in 3+ days' },
+              ].map((item) => (
+                <div key={item.label} className="rounded-[12px] border border-white/[0.06] bg-surface/60 px-4 py-3">
+                  <div className={`text-[22px] font-display font-700 tracking-[-0.02em] ${item.tone}`}>{item.value}</div>
+                  <div className="text-[11px] font-600 text-text-2 mt-0.5">{item.label}</div>
+                  <p className="text-[10px] text-text-3/45 mt-1 leading-relaxed">{item.hint}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-4">
+              {busiestAgent?.agent && (
+                <button
+                  onClick={() => { setCurrentAgent(busiestAgent.agent.id); setActiveView('agents') }}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-[10px] bg-accent-soft text-[12px] font-600 text-accent-bright hover:bg-accent-bright/15 transition-all cursor-pointer border-none"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <AgentAvatar seed={busiestAgent.agent.avatarSeed} avatarUrl={busiestAgent.agent.avatarUrl} name={busiestAgent.agent.name} size={18} />
+                  Open busiest agent
+                </button>
+              )}
+              {(approvalTasks[0] || blockedTasks[0] || overdueTasks[0]) && (
+                <button
+                  onClick={() => {
+                    const nextTask = approvalTasks[0] || blockedTasks[0] || overdueTasks[0]
+                    if (!nextTask) return
+                    setEditingTaskId(nextTask.id)
+                    setTaskSheetOpen(true)
+                  }}
+                  className="px-3 py-2 rounded-[10px] bg-white/[0.04] text-[12px] font-600 text-text-2 hover:bg-white/[0.08] transition-all cursor-pointer border-none"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  Review next task
+                </button>
+              )}
+              {nextScheduledRun && (
+                <button
+                  onClick={() => { setEditingScheduleId(nextScheduledRun.id); setScheduleSheetOpen(true) }}
+                  className="px-3 py-2 rounded-[10px] bg-white/[0.04] text-[12px] font-600 text-text-2 hover:bg-white/[0.08] transition-all cursor-pointer border-none"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  Next run {relativeDate(nextScheduledRun.nextRunAt || now)}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] px-5 py-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Needs Attention</h3>
+              <span className="text-[11px] text-text-3/40">{attentionItems.length || 0} items</span>
+            </div>
+            {attentionItems.length === 0 ? (
+              <div className="rounded-[12px] border border-dashed border-white/[0.08] px-4 py-6 text-center">
+                <p className="text-[12px] text-text-3/45">No urgent blockers right now.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {attentionItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={item.onClick}
+                    className="w-full rounded-[12px] border border-white/[0.06] bg-surface/60 px-3.5 py-3 text-left hover:bg-white/[0.04] transition-all cursor-pointer"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <div className={`text-[11px] font-700 uppercase tracking-[0.08em] ${item.tone}`}>{item.detail}</div>
+                    <div className="text-[13px] font-600 text-text mt-1 line-clamp-2">{item.label}</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

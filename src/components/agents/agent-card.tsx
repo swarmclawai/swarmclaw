@@ -37,6 +37,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const setActiveView = useAppStore((s) => s.setActiveView)
   const setMessages = useChatStore((s) => s.setMessages)
+  const sendMessage = useChatStore((s) => s.sendMessage)
   const togglePinAgent = useAppStore((s) => s.togglePinAgent)
   const [running, setRunning] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -61,6 +62,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
       budget: typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0 ? agent.dailyBudget : null,
     },
   ].filter((entry) => entry.budget !== null)
+  const canDelegateToAgents = agent.platformAssignScope === 'all'
   useWs(`heartbeat:agent:${agent.id}`, () => {
     setHeartbeatPulse(true)
     setTimeout(() => setHeartbeatPulse(false), 1500)
@@ -78,19 +80,20 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
   }
 
   const handleConfirmRun = async () => {
-    if (!taskInput.trim()) return
+    const task = taskInput.trim()
+    if (!task) return
     setDialogOpen(false)
     setRunning(true)
     try {
-      const result = await api<{ ok: boolean; sessionId: string }>('POST', '/orchestrator/run', { agentId: agent.id, task: taskInput })
-      if (result.sessionId) {
-        await loadSessions()
-        setMessages([])
-        setCurrentSession(result.sessionId)
-        setActiveView('agents')
-      }
+      const session = await api<{ id: string }>('POST', `/agents/${agent.id}/thread`, { user: 'default' })
+      if (!session?.id) throw new Error('Agent thread not available')
+      await loadSessions()
+      setMessages([])
+      setCurrentSession(session.id)
+      setActiveView('agents')
+      await sendMessage(task)
     } catch (err) {
-      console.error('Orchestrator run failed:', err)
+      console.error('Agent task run failed:', err)
     }
     setRunning(false)
   }
@@ -199,7 +202,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
               default
             </span>
           )}
-          {agent.isOrchestrator && (
+          {canDelegateToAgents && (
             <button
               onClick={handleRunClick}
               disabled={running}
@@ -210,7 +213,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
               {running ? '...' : 'Run'}
             </button>
           )}
-          {agent.isOrchestrator && (
+          {canDelegateToAgents && (
             <span className="shrink-0 text-[10px] font-600 uppercase tracking-wider text-amber-400/80 bg-amber-400/[0.08] px-2 py-0.5 rounded-[6px] flex items-center gap-1">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg>
               delegates
@@ -299,7 +302,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
-            <DialogTitle>Run Orchestrator</DialogTitle>
+            <DialogTitle>Run Agent</DialogTitle>
           </DialogHeader>
           <div className="py-3">
             <label className="block text-[12px] font-600 text-text-3 mb-2">Task for {agent.name}</label>

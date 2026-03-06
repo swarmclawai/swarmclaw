@@ -4,11 +4,12 @@ import path from 'path'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundMediaType } from './types'
 import { downloadInboundMediaToUpload, inferInboundMediaType, mimeFromPath, isImageMime, isAudioMime } from './media'
-import { isNoMessage } from './manager'
+import { getConnectorReplySendOptions, isNoMessage, recordConnectorOutboundDelivery } from './manager'
 
 const telegram: PlatformConnector = {
   async start(connector, botToken, onMessage): Promise<ConnectorInstance> {
     const bot = new Bot(botToken)
+    let botUsername = ''
 
     // Optional: restrict to specific chat IDs
     const allowedChats = connector.config.chatIds
@@ -140,6 +141,11 @@ const telegram: PlatformConnector = {
         senderId: String(ctx.from.id),
         senderName: ctx.from.first_name + (ctx.from.last_name ? ` ${ctx.from.last_name}` : ''),
         text: text || (media.length > 0 ? '(media message)' : ''),
+        isGroup: ctx.chat.type !== 'private',
+        messageId: String(raw.message_id),
+        replyToMessageId: raw.reply_to_message?.message_id ? String(raw.reply_to_message.message_id) : undefined,
+        threadId: raw.message_thread_id ? String(raw.message_thread_id) : undefined,
+        mentionsBot: !!(botUsername && text && new RegExp(`@${botUsername}\\b`, 'i').test(String(text))),
         imageUrl: media.find((m) => m.type === 'image')?.url,
         media,
       }
@@ -150,15 +156,34 @@ const telegram: PlatformConnector = {
 
         if (isNoMessage(response)) return
 
+        const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
+        const baseOptions: Record<string, unknown> = {}
+        if (replyOptions.replyToMessageId) {
+          baseOptions.reply_parameters = { message_id: Number(replyOptions.replyToMessageId) }
+        }
+        if (replyOptions.threadId) {
+          baseOptions.message_thread_id = Number(replyOptions.threadId)
+        }
+
+        let lastMessageId: string | undefined
+
         // Telegram has a 4096 char limit
         if (response.length <= 4096) {
-          await ctx.reply(response)
+          const sent = await ctx.api.sendMessage(ctx.chat.id, response, baseOptions as any)
+          lastMessageId = String(sent.message_id)
         } else {
           const chunks = response.match(/[\s\S]{1,4090}/g) || [response]
-          for (const chunk of chunks) {
-            await ctx.api.sendMessage(ctx.chat.id, chunk)
+          for (let i = 0; i < chunks.length; i += 1) {
+            const sent = await ctx.api.sendMessage(ctx.chat.id, chunks[i], (i === 0 ? baseOptions : {}) as any)
+            lastMessageId = String(sent.message_id)
           }
         }
+        await recordConnectorOutboundDelivery({
+          connectorId: connector.id,
+          inbound,
+          messageId: lastMessageId,
+          state: 'sent',
+        })
       } catch (err: any) {
         console.error(`[telegram] Error handling message:`, err.message)
         try {
@@ -174,6 +199,7 @@ const telegram: PlatformConnector = {
     bot.start({
       allowed_updates: ['message', 'edited_message'],
       onStart: (botInfo) => {
+        botUsername = botInfo.username || ''
         console.log(`[telegram] Bot started as @${botInfo.username} — polling for updates`)
       },
     }).catch((err) => {
@@ -189,6 +215,13 @@ const telegram: PlatformConnector = {
       async sendMessage(channelId, text, options) {
         const chatId = channelId
         const caption = options?.caption || text || undefined
+        const extra: Record<string, unknown> = {}
+        if (options?.replyToMessageId) {
+          extra.reply_parameters = { message_id: Number(options.replyToMessageId) }
+        }
+        if (options?.threadId) {
+          extra.message_thread_id = Number(options.threadId)
+        }
 
         // Local file
         if (options?.mediaPath) {
@@ -196,21 +229,21 @@ const telegram: PlatformConnector = {
           const mime = options.mimeType || mimeFromPath(options.mediaPath)
           const inputFile = new InputFile(options.mediaPath, options.fileName || path.basename(options.mediaPath))
           if (isImageMime(mime)) {
-            const msg = await bot.api.sendPhoto(chatId, inputFile, { caption })
+            const msg = await bot.api.sendPhoto(chatId, inputFile, { caption, ...(extra as any) })
             return { messageId: String(msg.message_id) }
           } else if (isAudioMime(mime)) {
             const msg = options?.ptt
-              ? await bot.api.sendVoice(chatId, inputFile, { caption })
-              : await bot.api.sendAudio(chatId, inputFile, { caption })
+              ? await bot.api.sendVoice(chatId, inputFile, { caption, ...(extra as any) })
+              : await bot.api.sendAudio(chatId, inputFile, { caption, ...(extra as any) })
             return { messageId: String(msg.message_id) }
           } else {
-            const msg = await bot.api.sendDocument(chatId, inputFile, { caption })
+            const msg = await bot.api.sendDocument(chatId, inputFile, { caption, ...(extra as any) })
             return { messageId: String(msg.message_id) }
           }
         }
         // URL-based image
         if (options?.imageUrl) {
-          const msg = await bot.api.sendPhoto(chatId, options.imageUrl, { caption })
+          const msg = await bot.api.sendPhoto(chatId, options.imageUrl, { caption, ...(extra as any) })
           return { messageId: String(msg.message_id) }
         }
         // URL-based file
@@ -218,24 +251,41 @@ const telegram: PlatformConnector = {
           const mime = options.mimeType || ''
           const msg = isAudioMime(mime)
             ? options?.ptt
-              ? await bot.api.sendVoice(chatId, options.fileUrl, { caption })
-              : await bot.api.sendAudio(chatId, options.fileUrl, { caption })
-            : await bot.api.sendDocument(chatId, options.fileUrl, { caption })
+              ? await bot.api.sendVoice(chatId, options.fileUrl, { caption, ...(extra as any) })
+              : await bot.api.sendAudio(chatId, options.fileUrl, { caption, ...(extra as any) })
+            : await bot.api.sendDocument(chatId, options.fileUrl, { caption, ...(extra as any) })
           return { messageId: String(msg.message_id) }
         }
         // Text only
         const payload = text || caption || ''
         if (payload.length <= 4096) {
-          const msg = await bot.api.sendMessage(chatId, payload)
+          const msg = await bot.api.sendMessage(chatId, payload, extra as any)
           return { messageId: String(msg.message_id) }
         }
         const chunks = payload.match(/[\s\S]{1,4090}/g) || [payload]
         let lastId: string | undefined
-        for (const chunk of chunks) {
-          const msg = await bot.api.sendMessage(chatId, chunk)
+        for (let i = 0; i < chunks.length; i += 1) {
+          const msg = await bot.api.sendMessage(chatId, chunks[i], (i === 0 ? extra : {}) as any)
           lastId = String(msg.message_id)
         }
         return { messageId: lastId }
+      },
+      async sendReaction(channelId, messageId, emoji) {
+        const fn = (bot.api as any).setMessageReaction
+        if (typeof fn !== 'function') return
+        await fn.call(bot.api, channelId, Number(messageId), [{ type: 'emoji', emoji }])
+      },
+      async editMessage(channelId, messageId, newText) {
+        await bot.api.editMessageText(channelId, Number(messageId), newText)
+      },
+      async deleteMessage(channelId, messageId) {
+        await bot.api.deleteMessage(channelId, Number(messageId))
+      },
+      async pinMessage(channelId, messageId) {
+        await bot.api.pinChatMessage(channelId, Number(messageId))
+      },
+      async sendTyping(channelId) {
+        await bot.api.sendChatAction(channelId, 'typing')
       },
       async stop() {
         botRunning = false

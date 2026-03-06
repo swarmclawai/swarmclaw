@@ -22,12 +22,20 @@ import { Dropdown, DropdownItem } from '@/components/shared/dropdown'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { speak } from '@/lib/tts'
 import { api } from '@/lib/api-client'
+import { messagesDiffer } from '@/lib/chat-streaming-state'
 
-const PROMPT_SUGGESTIONS = [
+const DIRECT_PROMPT_SUGGESTIONS = [
   { text: 'What can you help me with?', icon: 'book', gradient: 'from-[#6366F1]/10 to-[#818CF8]/5' },
+  { text: 'Help me choose the right agent for this', icon: 'bot', gradient: 'from-[#34D399]/10 to-[#6EE7B7]/5' },
   { text: 'Help me set up a new connector', icon: 'link', gradient: 'from-[#EC4899]/10 to-[#F472B6]/5' },
-  { text: 'Create a new agent for me', icon: 'bot', gradient: 'from-[#34D399]/10 to-[#6EE7B7]/5' },
-  { text: 'Schedule a recurring task', icon: 'check', gradient: 'from-[#F59E0B]/10 to-[#FBBF24]/5' },
+  { text: 'Summarize what needs attention in this workspace', icon: 'check', gradient: 'from-[#F59E0B]/10 to-[#FBBF24]/5' },
+]
+
+const AGENT_PROMPT_SUGGESTIONS = [
+  { text: 'Give me a quick overview of what you can help with', icon: 'book', gradient: 'from-[#6366F1]/10 to-[#818CF8]/5' },
+  { text: 'Review what needs attention right now', icon: 'check', gradient: 'from-[#F59E0B]/10 to-[#FBBF24]/5' },
+  { text: 'Summarize our recent context before we continue', icon: 'link', gradient: 'from-[#EC4899]/10 to-[#F472B6]/5' },
+  { text: 'Help me map the next best step', icon: 'bot', gradient: 'from-[#34D399]/10 to-[#6EE7B7]/5' },
 ]
 
 export function ChatArea() {
@@ -52,6 +60,10 @@ export function ChatArea() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const currentAgent = session?.agentId ? agents[session.agentId] ?? null : null
+  const promptSuggestions = useMemo(
+    () => (currentAgent ? AGENT_PROMPT_SUGGESTIONS : DIRECT_PROMPT_SUGGESTIONS),
+    [currentAgent],
+  )
 
   const voice = useVoiceConversation()
   const handleVoiceToggle = useCallback(() => {
@@ -140,13 +152,12 @@ export function ChatArea() {
     }
   }, [sessionId])
 
-  // Auto-poll messages for orchestrated or server-active sessions
-  const isOrchestrated = session?.sessionType === 'orchestrated'
+  // Auto-poll messages for sessions that are actively running on the server
   const isServerActive = session?.active === true
   const isOngoingMonitored = appSettings.loopMode === 'ongoing' && !!session?.plugins?.length
-  const shouldPollMessages = !!sessionId && (isOrchestrated || isServerActive || isOngoingMonitored)
-  const messagesLenRef = useRef(messages.length)
-  messagesLenRef.current = messages.length
+  const shouldPollMessages = !!sessionId && (isServerActive || isOngoingMonitored)
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
   const isServerActiveRef = useRef(isServerActive)
   isServerActiveRef.current = isServerActive
   const ttsEnabledRef = useRef(ttsEnabled)
@@ -156,8 +167,9 @@ export function ChatArea() {
     if (!sessionId) return
     try {
       const msgs = await fetchMessages(sessionId)
-      if (msgs.length !== messagesLenRef.current) {
-        const newMsgs = msgs.length > messagesLenRef.current ? msgs.slice(messagesLenRef.current) : []
+      const previous = messagesRef.current
+      if (messagesDiffer(msgs, previous)) {
+        const newMsgs = msgs.length > previous.length ? msgs.slice(previous.length) : []
         setMessages(msgs)
         if (ttsEnabledRef.current && typeof document !== 'undefined' && document.visibilityState === 'visible') {
           const latestAssistant = [...newMsgs].reverse().find((m) => {
@@ -385,15 +397,19 @@ export function ChatArea() {
             <h1 className="font-display text-[28px] md:text-[36px] font-800 leading-[1.1] tracking-[-0.04em] mb-3">
               Hi{currentUser ? ', ' : ' '}<span className="text-accent-bright">{currentUser || 'there'}</span>
               <br />
-              <span className="text-text-2">How can I help?</span>
+              <span className="text-text-2">
+                {currentAgent ? `Start with ${currentAgent.name}` : 'Start the conversation'}
+              </span>
             </h1>
             <p className="text-[13px] text-text-3 mt-2">
-              Pick a prompt or type your own below
+              {currentAgent
+                ? `Ask ${currentAgent.name} anything, hand over work, or start with one of these openers.`
+                : 'Pick a prompt or type your own below.'}
             </p>
           </div>
 
           <div className="relative grid grid-cols-2 md:grid-cols-4 gap-3 max-w-[640px] w-full mb-6">
-            {PROMPT_SUGGESTIONS.map((prompt, i) => (
+            {promptSuggestions.map((prompt, i) => (
               <button
                 key={prompt.text}
                 onClick={() => handlePrompt(prompt.text)}

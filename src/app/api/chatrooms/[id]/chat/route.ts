@@ -8,6 +8,8 @@ import { getProvider } from '@/lib/providers'
 import {
   resolveApiKey,
   parseMentions,
+  resolveReplyTargetAgentId,
+  resolveAgentApiEndpoint,
   compactChatroomMessages,
   buildChatroomSystemPrompt,
   buildSyntheticSession,
@@ -50,7 +52,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Persist incoming message
   const senderName = senderId === 'user' ? 'You' : (agents[senderId]?.name || senderId)
-  let mentions = parseMentions(text, agents, chatroom.agentIds)
+  const replyTargetAgentId = resolveReplyTargetAgentId(replyToId, chatroom.messages, chatroom.agentIds)
+  let mentions = parseMentions(text, agents, chatroom.agentIds, { replyTargetAgentId })
   // Routing rules: if no explicit mentions, evaluate keyword/capability rules
   if (mentions.length === 0 && chatroom.routingRules?.length) {
     const agentList = chatroom.agentIds.map((aid) => agents[aid]).filter(Boolean)
@@ -149,13 +152,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           // Pre-flight: check if the agent's provider is usable before attempting to stream
           const providerInfo = getProvider(agent.provider)
           const apiKey = resolveApiKey(agent.credentialId)
+          const resolvedEndpoint = resolveAgentApiEndpoint(agent)
           if (providerInfo?.requiresApiKey && !apiKey) {
             writeEvent({ t: 'cr_agent_start', agentId: agent.id, agentName: agent.name })
             writeEvent({ t: 'err', text: `${agent.name} has no API credentials configured`, agentId: agent.id, agentName: agent.name })
             writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })
             return []
           }
-          if (providerInfo?.requiresEndpoint && !agent.apiEndpoint) {
+          if (providerInfo?.requiresEndpoint && !resolvedEndpoint) {
             writeEvent({ t: 'cr_agent_start', agentId: agent.id, agentName: agent.name })
             writeEvent({ t: 'err', text: `${agent.name} has no endpoint configured`, agentId: agent.id, agentName: agent.name })
             writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })
@@ -174,6 +178,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             }
 
             const syntheticSession = buildSyntheticSession(agent, id)
+            syntheticSession.apiEndpoint = resolvedEndpoint
             const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent)
             const chatroomContext = buildChatroomSystemPrompt(freshChatroom, agents, agent.id)
             const fullSystemPrompt = [agentSystemPrompt, chatroomContext].filter(Boolean).join('\n\n')

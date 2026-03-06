@@ -62,8 +62,8 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
   }, [tab, inSidebar, loadMarketplace])
 
   const pluginList = Object.values(plugins)
-  const corePlugins = useMemo(() => pluginList.filter((p) => p.source === 'local'), [pluginList])
-  const extensionPlugins = useMemo(() => pluginList.filter((p) => p.source !== 'local'), [pluginList])
+  const corePlugins = useMemo(() => pluginList.filter((p) => p.isBuiltin), [pluginList])
+  const extensionPlugins = useMemo(() => pluginList.filter((p) => !p.isBuiltin), [pluginList])
 
   // Search filtering for installed plugins
   const filterInstalled = useCallback((list: PluginMeta[]) => {
@@ -293,7 +293,7 @@ function TabButton({ active, onClick, count, children }: {
 function pluginDescription(plugin: PluginMeta): string {
   const raw = (plugin.description || '').trim()
   if (raw) return raw
-  const sourceLabel = plugin.source === 'local' ? 'core plugin' : 'installed plugin'
+  const sourceLabel = plugin.isBuiltin ? 'core plugin' : 'installed plugin'
   return `No description provided. Click to view metadata and controls for this ${sourceLabel}.`
 }
 
@@ -304,6 +304,7 @@ function pluginCapabilityBadges(plugin: PluginMeta): string[] {
   if (plugin.hasUI) badges.push('UI')
   if (plugin.providerCount && plugin.providerCount > 0) badges.push(`${plugin.providerCount} provider${plugin.providerCount === 1 ? '' : 's'}`)
   if (plugin.connectorCount && plugin.connectorCount > 0) badges.push(`${plugin.connectorCount} connector${plugin.connectorCount === 1 ? '' : 's'}`)
+  if (plugin.hasDependencyManifest) badges.push(`${plugin.dependencyCount ?? 0} dep${plugin.dependencyCount === 1 ? '' : 's'}`)
   return badges
 }
 
@@ -446,6 +447,17 @@ function PluginCard({ plugin, allowDelete, agents, onEdit, onToggle, onDelete, o
             {badge}
           </span>
         ))}
+        {plugin.hasDependencyManifest && (
+          <span className={`text-[10px] font-700 px-1.5 py-0.5 rounded-full ${
+            plugin.dependencyInstallStatus === 'installed'
+              ? 'text-emerald-400 bg-emerald-500/10'
+              : plugin.dependencyInstallStatus === 'error'
+                ? 'text-red-400 bg-red-500/10'
+                : 'text-amber-400 bg-amber-500/10'
+          }`}>
+            deps {plugin.dependencyInstallStatus || 'ready'}
+          </span>
+        )}
         {plugin.author && (
           <span className="text-[10px] text-text-3/40 ml-auto">
             {plugin.author}

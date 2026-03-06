@@ -158,8 +158,15 @@ export default function Home() {
   const checkAuth = useCallback(async () => {
     const key = getStoredAccessKey()
     if (!key) {
-      setAuthChecked(true)
-      setAuthenticated(false)
+      try {
+        const res = await fetchWithTimeout('/api/auth', {}, AUTH_CHECK_TIMEOUT_MS)
+        const data = await res.json().catch(() => ({}))
+        setAuthenticated(data?.authenticated === true)
+      } catch {
+        setAuthenticated(false)
+      } finally {
+        setAuthChecked(true)
+      }
       return
     }
 

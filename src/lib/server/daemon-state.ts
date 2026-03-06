@@ -22,6 +22,12 @@ import type { WebhookRetryEntry } from '@/types'
 import { createNotification } from '@/lib/server/create-notification'
 import { pingProvider, OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
 import { runIntegrityMonitor } from '@/lib/server/integrity-monitor'
+import { recoverStaleDelegationJobs } from './delegation-jobs'
+import {
+  listPendingApprovalsNeedingConnectorNotification,
+  markApprovalConnectorNotificationAttempt,
+  markApprovalConnectorNotificationSent,
+} from './approvals'
 
 const QUEUE_CHECK_INTERVAL = 30_000 // 30 seconds
 const BROWSER_SWEEP_INTERVAL = 60_000 // 60 seconds
@@ -161,6 +167,7 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
   try {
     validateCompletedTasksQueue()
     cleanupFinishedTaskSessions()
+    recoverStaleDelegationJobs()
     startScheduler()
     startQueueProcessor()
     startBrowserSweep()
@@ -417,7 +424,7 @@ async function processWebhookRetries() {
         messages: [],
         createdAt: ts,
         lastActiveAt: ts,
-        sessionType: 'orchestrated',
+        sessionType: 'human',
         agentId: agent.id,
         parentSessionId: null,
         plugins: agent.plugins || agent.tools || [],
@@ -664,6 +671,51 @@ async function runOpenClawGatewayHealthChecks() {
   }
 }
 
+async function runPendingApprovalConnectorNotifications(now: number) {
+  const running = listRunningConnectors()
+  const pending = listPendingApprovalsNeedingConnectorNotification({
+    now,
+    runningConnectors: running,
+  })
+  if (!pending.length) return
+
+  for (const reminder of pending) {
+    try {
+      const result = await sendConnectorMessage({
+        connectorId: reminder.connectorId,
+        channelId: reminder.channelId,
+        text: reminder.text,
+        threadId: reminder.threadId || undefined,
+      })
+      markApprovalConnectorNotificationSent(reminder.approvalId, {
+        at: now,
+        connectorId: result.connectorId,
+        channelId: result.channelId,
+        threadId: reminder.threadId || null,
+        messageId: result.messageId || null,
+      })
+      createNotification({
+        type: 'info',
+        title: 'Approval reminder sent',
+        message: 'A pending approval reminder was delivered over an active connector.',
+        dedupKey: `approval-connector-reminder:${reminder.approvalId}`,
+        entityType: 'approval',
+        entityId: reminder.approvalId,
+      })
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      markApprovalConnectorNotificationAttempt(reminder.approvalId, {
+        at: now,
+        connectorId: reminder.connectorId,
+        channelId: reminder.channelId,
+        threadId: reminder.threadId || null,
+        lastError: errorMsg,
+      })
+      console.warn(`[daemon] Approval connector reminder failed for ${reminder.approvalId}: ${errorMsg}`)
+    }
+  }
+}
+
 async function runHealthChecks() {
   // Continuously keep the completed queue honest.
   validateCompletedTasksQueue()
@@ -737,6 +789,12 @@ async function runHealthChecks() {
     await runOpenClawGatewayHealthChecks()
   } catch (err: unknown) {
     console.error('[daemon] OpenClaw gateway health check failed:', err instanceof Error ? err.message : String(err))
+  }
+
+  try {
+    await runPendingApprovalConnectorNotifications(now)
+  } catch (err: unknown) {
+    console.error('[daemon] Approval connector reminder check failed:', err instanceof Error ? err.message : String(err))
   }
 
   // Integrity drift monitoring for identity/config/plugin files.

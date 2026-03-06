@@ -5,6 +5,7 @@ import type { Message } from '@/types'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
+import { shouldHidePersistedStreamingAssistantMessage } from '@/lib/chat-streaming-state'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { MessageBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
@@ -164,6 +165,7 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
 
   const displayedMessages: Message[] = []
   for (const msg of messages) {
+    if (shouldHidePersistedStreamingAssistantMessage(msg, { localStreaming: streaming, displayText })) continue
     const isHeartbeat = isHeartbeatMessage(msg)
 
     // Visibility filtering based on settings
@@ -514,7 +516,7 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
 
             return (
               <div
-                key={`${sessionId}-${msg.time}-${i}`}
+                key={`${sessionId}-${msg.role}-${originalIndex >= 0 ? originalIndex : i}`}
                 data-message-index={i}
                 style={{
                   animation: `${msg.role === 'user' ? 'msg-in-right' : 'msg-in-left'} 0.4s var(--ease-spring) both`,

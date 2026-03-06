@@ -1,4 +1,5 @@
 export type ToolArgsRecord = Record<string, unknown>
+const NESTED_WRAPPER_KEYS = ['input', 'args', 'arguments', 'payload', 'parameters'] as const
 
 function parseRecordCandidate(value: unknown): ToolArgsRecord | null {
   if (!value) return null
@@ -26,22 +27,24 @@ function parseRecordCandidate(value: unknown): ToolArgsRecord | null {
  * as either objects or JSON strings.
  */
 export function normalizeToolInputArgs(rawArgs: ToolArgsRecord): ToolArgsRecord {
-  const nestedSources: Array<ToolArgsRecord | null> = [
-    parseRecordCandidate(rawArgs.input),
-    parseRecordCandidate(rawArgs.args),
-    parseRecordCandidate(rawArgs.arguments),
-    parseRecordCandidate(rawArgs.payload),
-  ]
-
   const normalized: ToolArgsRecord = {}
-  for (const nested of nestedSources) {
-    if (!nested) continue
-    Object.assign(normalized, nested)
-  }
+  const queue: ToolArgsRecord[] = [rawArgs]
+  const visited = new Set<ToolArgsRecord>()
 
-  for (const [key, value] of Object.entries(rawArgs)) {
-    if (value === undefined || value === null) continue
-    normalized[key] = value
+  while (queue.length > 0) {
+    const current = queue.shift()
+    if (!current || visited.has(current)) continue
+    visited.add(current)
+
+    for (const key of NESTED_WRAPPER_KEYS) {
+      const nested = parseRecordCandidate(current[key])
+      if (nested) queue.push(nested)
+    }
+
+    for (const [key, value] of Object.entries(current)) {
+      if (value === undefined || value === null) continue
+      normalized[key] = value
+    }
   }
 
   return normalized

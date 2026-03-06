@@ -3,9 +3,9 @@ import path from 'path'
 import { loadAgents, loadSessions, loadSettings } from './storage'
 import { enqueueSessionRun, getSessionRunState } from './session-run-manager'
 import { log } from './logger'
-import { buildMainLoopHeartbeatPrompt, getMainLoopStateForSession, isMainSession } from './main-agent-loop'
 import { WORKSPACE_DIR } from './data-dir'
 import { drainSystemEvents } from './system-events'
+import { buildIdentityContinuityContext } from './identity-continuity'
 
 const HEARTBEAT_TICK_MS = 5_000
 
@@ -188,6 +188,7 @@ function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: str
   if (!agent) return fallbackPrompt
 
   const identityContext = buildIdentityContext(session, agent)
+  const continuityContext = buildIdentityContinuityContext(session, agent)
   // Drain system events accumulated since last heartbeat
   const events = drainSystemEvents(session.id)
   const eventBlock = events.length > 0
@@ -219,6 +220,7 @@ function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: str
     'AGENT_HEARTBEAT_TICK',
     `Time: ${new Date().toISOString()}`,
     identityContext,
+    continuityContext,
     description ? `Description: ${description}` : '',
     eventBlock ? `Events since last heartbeat:\n${eventBlock}` : '',
     dynamicGoal
@@ -240,14 +242,6 @@ function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: str
     '[AGENT_HEARTBEAT_META]{"goal": "your evolved goal", "status": "progress", "next_action": "what you plan to do next"}',
     'You can evolve your goal as you learn more. Set status to "progress" while working, "ok" when done, "idle" when waiting.',
   ].filter(Boolean).join('\n')
-}
-
-function applyMomentumMultiplier(intervalSec: number, momentumScore: number): number {
-  let multiplier = 1.0
-  if (momentumScore >= 80) multiplier = 0.5
-  else if (momentumScore < 40) multiplier = 2.0
-  const adjusted = Math.round(intervalSec * multiplier)
-  return Math.max(30, Math.min(7200, adjusted))
 }
 
 function resolveInterval(obj: Record<string, any>, currentSec: number): number {
@@ -378,7 +372,7 @@ async function tickHeartbeats() {
   for (const session of Object.values(sessions) as any[]) {
     if (!session?.id) continue
     if (!Array.isArray(session.plugins) || session.plugins.length === 0) continue
-    if (session.sessionType && session.sessionType !== 'human' && session.sessionType !== 'orchestrated') continue
+    if (session.sessionType && session.sessionType !== 'human') continue
 
     // Check if this session or its agent has explicit heartbeat opt-in
     const agent = session.agentId ? agents[session.agentId] : null
@@ -395,10 +389,6 @@ async function tickHeartbeats() {
     const cfg = heartbeatConfigForSession(session, settings, agents)
     if (!cfg.enabled) continue
 
-    // Apply momentum-based multiplier to heartbeat interval
-    const momentumScore = session.mainLoopState?.momentumScore ?? 40
-    cfg.intervalSec = applyMomentumMultiplier(cfg.intervalSec, momentumScore)
-
     // For sessions with explicit opt-in, use a shorter idle threshold (just intervalSec * 2).
     // For inherited/global heartbeats, keep the 180s minimum to avoid noisy auto-fire.
     const defaultIdleSec = explicitOptIn
@@ -410,38 +400,22 @@ async function tickHeartbeats() {
     const idleMs = now - lastUserAt
     if (idleMs < userIdleThresholdSec * 1000) continue
 
-    if (isMainSession(session)) {
-      const loopState = getMainLoopStateForSession(session.id)
-      if (loopState?.paused) continue
-      // Only suppress idle main sessions when heartbeat is inherited (not explicitly enabled)
-      if (!explicitOptIn) {
-        const loopStatus = loopState?.status || 'idle'
-        const pendingEvents = loopState?.pendingEvents?.length || 0
-        if ((loopStatus === 'ok' || loopStatus === 'idle') && pendingEvents === 0) continue
-      }
-    }
-
     const last = state.lastBySession.get(session.id) || 0
     if (now - last < cfg.intervalSec * 1000) continue
 
     const runState = getSessionRunState(session.id)
     if (runState.runningRunId) continue
 
-    let heartbeatMessage: string
-    if (isMainSession(session)) {
-      heartbeatMessage = buildMainLoopHeartbeatPrompt(session, cfg.prompt)
-    } else {
-      const rawHeartbeatFileContent = readHeartbeatFile(session)
-      const heartbeatFileContent = isHeartbeatContentEffectivelyEmpty(rawHeartbeatFileContent) ? '' : rawHeartbeatFileContent
-      const hasGoal = !!(agent?.heartbeatGoal || agent?.description || agent?.systemPrompt || agent?.soul)
-      const hasCustomPrompt = cfg.prompt !== DEFAULT_HEARTBEAT_PROMPT
-      // Skip heartbeat only if there's truly nothing to drive it:
-      // no agent goal, no HEARTBEAT.md content, AND no custom prompt configured
-      if (!hasGoal && !heartbeatFileContent && !hasCustomPrompt) {
-        continue
-      }
-      heartbeatMessage = buildAgentHeartbeatPrompt(session, agent, cfg.prompt, heartbeatFileContent)
+    const rawHeartbeatFileContent = readHeartbeatFile(session)
+    const heartbeatFileContent = isHeartbeatContentEffectivelyEmpty(rawHeartbeatFileContent) ? '' : rawHeartbeatFileContent
+    const hasGoal = !!(agent?.heartbeatGoal || agent?.description || agent?.systemPrompt || agent?.soul)
+    const hasCustomPrompt = cfg.prompt !== DEFAULT_HEARTBEAT_PROMPT
+    // Skip heartbeat only if there's truly nothing to drive it:
+    // no agent goal, no HEARTBEAT.md content, AND no custom prompt configured
+    if (!hasGoal && !heartbeatFileContent && !hasCustomPrompt) {
+      continue
     }
+    const heartbeatMessage = buildAgentHeartbeatPrompt(session, agent, cfg.prompt, heartbeatFileContent)
 
     const enqueue = enqueueSessionRun({
       sessionId: session.id,

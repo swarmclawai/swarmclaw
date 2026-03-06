@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { Agent } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
+import { AgentAvatar } from './agent-avatar'
 import { AgentFilesEditor } from './agent-files-editor'
 import { OpenClawSkillsPanel } from './openclaw-skills-panel'
 import { PermissionPresetSelector } from './permission-preset-selector'
@@ -28,6 +29,24 @@ const TABS: { id: InspectorTab; label: string; openclawOnly?: boolean }[] = [
   { id: 'automations', label: 'Automations' },
   { id: 'advanced', label: 'Advanced' },
 ]
+
+const PROVIDER_LABELS: Record<string, string> = {
+  'claude-cli': 'Claude CLI',
+  'codex-cli': 'Codex CLI',
+  'opencode-cli': 'OpenCode CLI',
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  openclaw: 'OpenClaw',
+  ollama: 'Ollama',
+}
+
+function panelCardClass(className = '') {
+  return `rounded-[16px] border border-white/[0.06] bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${className}`.trim()
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <label className="block text-[11px] font-700 uppercase tracking-[0.16em] text-text-3/45 mb-2">{children}</label>
+}
 
 export function InspectorPanel({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDeleteChat, isMainChat }: Props) {
   const inspectorTab = useAppStore((s) => s.inspectorTab)
@@ -55,15 +74,40 @@ export function InspectorPanel({ agent, onEditAgent, onClearHistory, onDeleteAge
   }, [setInspectorOpen])
 
   const agentSchedules = Object.values(schedules).filter((s) => s.agentId === agent.id)
+  const providerLabel = PROVIDER_LABELS[agent.provider] || agent.provider.replace(/-/g, ' ')
 
   return (
-    <div className="w-[400px] shrink-0 border-l border-white/[0.06] bg-bg flex flex-col h-full overflow-hidden fade-up-delay">
+    <div className="w-[420px] shrink-0 border-l border-white/[0.06] bg-bg flex flex-col h-full overflow-hidden fade-up-delay"
+      style={{ background: 'radial-gradient(circle at top right, rgba(66, 211, 255, 0.06), transparent 30%), linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] shrink-0">
-        <h3 className="font-display text-[14px] font-600 text-text truncate">{agent.name}</h3>
+      <div className="px-4 pt-4 pb-3 border-b border-white/[0.06] shrink-0 bg-black/[0.12]">
+        <div className="flex items-start gap-3">
+          <AgentAvatar seed={agent.avatarSeed || null} avatarUrl={agent.avatarUrl} name={agent.name} size={40} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="font-display text-[16px] font-700 text-text truncate tracking-[-0.02em]">{agent.name}</h3>
+              {agent.heartbeatEnabled && (
+                <span className="inline-flex items-center gap-1 rounded-[7px] border border-emerald-400/15 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-emerald-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  Heartbeat
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center rounded-[8px] border border-white/[0.06] bg-white/[0.03] px-2 py-1 text-[10px] font-600 text-text-3/70">
+                {providerLabel}
+              </span>
+              <span className="inline-flex max-w-[180px] items-center rounded-[8px] border border-white/[0.06] bg-white/[0.03] px-2 py-1 text-[10px] font-mono text-text-3/70 truncate">
+                {agent.model || 'Default model'}
+              </span>
+              <span className="inline-flex items-center rounded-[8px] border border-white/[0.06] bg-white/[0.03] px-2 py-1 text-[10px] font-600 text-text-3/70">
+                {(agent.plugins?.length ?? 0)} plugins
+              </span>
+            </div>
+          </div>
         <button
           onClick={() => setInspectorOpen(false)}
-          className="p-1 rounded-[6px] text-text-3/50 hover:text-text-3 bg-transparent border-none cursor-pointer transition-all hover:bg-white/[0.04]"
+          className="p-1.5 rounded-[8px] text-text-3/50 hover:text-text-3 bg-transparent border-none cursor-pointer transition-all hover:bg-white/[0.04]"
           aria-label="Close inspector"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -71,25 +115,28 @@ export function InspectorPanel({ agent, onEditAgent, onClearHistory, onDeleteAge
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
+        </div>
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-0.5 px-3 pt-2 pb-1 overflow-x-auto shrink-0" role="tablist">
+      <div className="px-4 py-3 shrink-0">
+      <div className="flex gap-1 rounded-[12px] border border-white/[0.06] bg-black/[0.12] p-1 overflow-x-auto" role="tablist">
         {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             role="tab"
             onClick={() => setInspectorTab(tab.id)}
             aria-selected={inspectorTab === tab.id}
-            className={`px-2.5 py-1.5 rounded-[8px] text-[11px] font-600 cursor-pointer transition-all whitespace-nowrap focus-visible:ring-1 focus-visible:ring-accent-bright/50
+            className={`px-3 py-1.5 rounded-[9px] text-[11px] font-700 cursor-pointer transition-all whitespace-nowrap focus-visible:ring-1 focus-visible:ring-accent-bright/50
               ${inspectorTab === tab.id
-                ? 'bg-accent-soft text-accent-bright'
-                : 'bg-transparent text-text-3 hover:text-text-2'}`}
+                ? 'bg-white/[0.08] text-text'
+                : 'bg-transparent text-text-3/65 hover:text-text-2'}`}
             style={{ fontFamily: 'inherit' }}
           >
             {tab.label}
           </button>
         ))}
+      </div>
       </div>
 
       {/* Tab content */}
@@ -141,30 +188,43 @@ interface OverviewTabProps {
 }
 
 function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDeleteChat, isMainChat }: OverviewTabProps) {
+  const summaryStats = [
+    { label: 'Provider', value: PROVIDER_LABELS[agent.provider] || agent.provider.replace(/-/g, ' ') },
+    { label: 'Model', value: agent.model || 'Default' },
+    { label: 'Plugins', value: String(agent.plugins?.length ?? 0) },
+    { label: 'Heartbeat', value: agent.heartbeatEnabled ? `Every ${agent.heartbeatIntervalSec ?? 120}s` : 'Off' },
+  ]
+
   return (
     <div className="p-4 flex flex-col gap-4">
-      <div>
-        <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Description</label>
-        <p className="text-[13px] text-text-2">{agent.description || 'No description'}</p>
-      </div>
-      <div>
-        <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Provider / Model</label>
-        <p className="text-[13px] text-text-2 font-mono">{agent.provider} / {agent.model || 'default'}</p>
+      <div className={panelCardClass('p-4 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))]')}>
+        <SectionLabel>Overview</SectionLabel>
+        <p className="text-[14px] text-text-2 leading-relaxed">
+          {agent.description || 'No description yet. Use the agent editor to define what this agent is for.'}
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {summaryStats.map((item) => (
+            <div key={item.label} className="rounded-[12px] border border-white/[0.06] bg-black/[0.14] px-3 py-2.5">
+              <div className="text-[10px] font-700 uppercase tracking-[0.14em] text-text-3/45">{item.label}</div>
+              <div className="mt-1 text-[12px] text-text-2 font-medium break-words">{item.value}</div>
+            </div>
+          ))}
+        </div>
       </div>
       {agent.systemPrompt && (
-        <div>
-          <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">System Prompt</label>
-          <p className="text-[12px] text-text-3 bg-white/[0.02] rounded-[8px] p-2.5 border border-white/[0.04] max-h-[200px] overflow-y-auto whitespace-pre-wrap font-mono">
+        <div className={panelCardClass('p-4')}>
+          <SectionLabel>System Prompt</SectionLabel>
+          <p className="text-[12px] text-text-3 bg-black/[0.14] rounded-[12px] p-3 border border-white/[0.04] max-h-[220px] overflow-y-auto whitespace-pre-wrap font-mono leading-relaxed">
             {agent.systemPrompt}
           </p>
         </div>
       )}
       {agent.capabilities && agent.capabilities.length > 0 && (
-        <div>
-          <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Capabilities</label>
-          <div className="flex flex-wrap gap-1">
+        <div className={panelCardClass('p-4')}>
+          <SectionLabel>Capabilities</SectionLabel>
+          <div className="flex flex-wrap gap-1.5">
             {agent.capabilities.map((cap) => (
-              <span key={cap} className="px-2 py-0.5 rounded-[6px] text-[11px] font-600 bg-accent-soft text-accent-bright">
+              <span key={cap} className="px-2.5 py-1 rounded-[8px] text-[11px] font-700 bg-accent-soft/70 text-accent-bright border border-accent-bright/10">
                 {cap}
               </span>
             ))}
@@ -172,11 +232,11 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
         </div>
       )}
       {agent.plugins && agent.plugins.length > 0 && (
-        <div>
-          <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Plugins</label>
-          <div className="flex flex-wrap gap-1">
+        <div className={panelCardClass('p-4')}>
+          <SectionLabel>Plugins</SectionLabel>
+          <div className="flex flex-wrap gap-1.5">
             {agent.plugins.map((tool) => (
-              <span key={tool} className="px-2 py-0.5 rounded-[6px] text-[11px] font-600 bg-sky-400/[0.08] text-sky-400/70">
+              <span key={tool} className="px-2.5 py-1 rounded-[8px] text-[11px] font-700 bg-sky-400/[0.08] text-sky-300 border border-sky-400/[0.08]">
                 {tool}
               </span>
             ))}
@@ -186,13 +246,13 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
 
       {/* Actions */}
       {(onEditAgent || onClearHistory || onDeleteAgent || onDeleteChat) && (
-        <>
-          <div className="border-t border-white/[0.06] mt-2" />
+        <div className={panelCardClass('p-4')}>
+          <SectionLabel>Actions</SectionLabel>
           <div className="flex flex-col gap-2">
             {onEditAgent && (
               <button
                 onClick={onEditAgent}
-                className="w-full px-3 py-2 rounded-[8px] text-[12px] font-600 text-accent-bright bg-accent-soft/50 border border-accent-bright/10 cursor-pointer transition-all hover:bg-accent-soft"
+                className="w-full px-3 py-2.5 rounded-[10px] text-[12px] font-700 text-accent-bright bg-accent-soft/50 border border-accent-bright/10 cursor-pointer transition-all hover:bg-accent-soft text-left"
                 style={{ fontFamily: 'inherit' }}
               >
                 Edit Agent
@@ -200,12 +260,12 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
             )}
             {(onClearHistory || onDeleteAgent || onDeleteChat) && (
               <>
-                <label className="block text-[11px] font-600 uppercase tracking-wider text-red-400/50 mt-2">Danger Zone</label>
+                <SectionLabel>Danger Zone</SectionLabel>
                 <div className="flex flex-col gap-1.5">
                   {onClearHistory && (
                     <button
                       onClick={onClearHistory}
-                      className="w-full px-3 py-2 rounded-[8px] text-[12px] font-600 text-red-400/80 bg-red-400/[0.04] border border-red-400/[0.08] cursor-pointer transition-all hover:bg-red-400/[0.08] hover:text-red-400 text-left"
+                      className="w-full px-3 py-2.5 rounded-[10px] text-[12px] font-700 text-red-400/80 bg-red-400/[0.04] border border-red-400/[0.08] cursor-pointer transition-all hover:bg-red-400/[0.08] hover:text-red-400 text-left"
                       style={{ fontFamily: 'inherit' }}
                     >
                       Clear History
@@ -214,7 +274,7 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
                   {onDeleteAgent && !isMainChat && (
                     <button
                       onClick={onDeleteAgent}
-                      className="w-full px-3 py-2 rounded-[8px] text-[12px] font-600 text-red-400/80 bg-red-400/[0.04] border border-red-400/[0.08] cursor-pointer transition-all hover:bg-red-400/[0.08] hover:text-red-400 text-left"
+                      className="w-full px-3 py-2.5 rounded-[10px] text-[12px] font-700 text-red-400/80 bg-red-400/[0.04] border border-red-400/[0.08] cursor-pointer transition-all hover:bg-red-400/[0.08] hover:text-red-400 text-left"
                       style={{ fontFamily: 'inherit' }}
                     >
                       Delete Agent
@@ -223,7 +283,7 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
                   {onDeleteChat && !isMainChat && (
                     <button
                       onClick={onDeleteChat}
-                      className="w-full px-3 py-2 rounded-[8px] text-[12px] font-600 text-red-400/80 bg-red-400/[0.04] border border-red-400/[0.08] cursor-pointer transition-all hover:bg-red-400/[0.08] hover:text-red-400 text-left"
+                      className="w-full px-3 py-2.5 rounded-[10px] text-[12px] font-700 text-red-400/80 bg-red-400/[0.04] border border-red-400/[0.08] cursor-pointer transition-all hover:bg-red-400/[0.08] hover:text-red-400 text-left"
                       style={{ fontFamily: 'inherit' }}
                     >
                       Delete Chat
@@ -233,7 +293,7 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
               </>
             )}
           </div>
-        </>
+        </div>
       )}
     </div>
   )
@@ -277,7 +337,7 @@ function AutomationsTab({ schedules, agent }: { schedules: Array<{ id: string; n
     <div className="p-4 flex flex-col gap-3">
       {/* Local schedules */}
       {schedules.map((s) => (
-        <div key={s.id} className="py-2 px-3 rounded-[10px] bg-white/[0.02] border border-white/[0.04]">
+        <div key={s.id} className={panelCardClass('py-2.5 px-3.5')}>
           <div className="flex items-center gap-2">
             <span className="text-[13px] font-600 text-text truncate flex-1">{s.name}</span>
             <span className={`text-[10px] font-600 uppercase tracking-wider px-1.5 py-0.5 rounded-[4px]
@@ -296,7 +356,7 @@ function AutomationsTab({ schedules, agent }: { schedules: Array<{ id: string; n
         <>
           {cronLoading && <div className="text-[12px] text-text-3/50">Loading gateway crons...</div>}
           {gatewayCrons.map((c) => (
-            <div key={c.id} className="py-2 px-3 rounded-[10px] bg-white/[0.02] border border-white/[0.04]">
+            <div key={c.id} className={panelCardClass('py-2.5 px-3.5')}>
               <div className="flex items-center gap-2">
                 <span className="text-[13px] font-600 text-text truncate flex-1">{c.name}</span>
                 <span className={`text-[10px] font-600 uppercase tracking-wider px-1.5 py-0.5 rounded-[4px]
@@ -329,7 +389,7 @@ function AutomationsTab({ schedules, agent }: { schedules: Array<{ id: string; n
       )}
 
       {!schedules.length && !gatewayCrons.length && !cronLoading && !showCronForm && (
-        <div className="text-[13px] text-text-3/50">No automations linked to this agent.</div>
+        <div className={panelCardClass('p-4 text-[13px] text-text-3/50')}>No automations linked to this agent.</div>
       )}
     </div>
   )
@@ -354,8 +414,8 @@ function AdvancedTab({ agent }: { agent: Agent }) {
       )}
 
       {agent.heartbeatEnabled && (
-        <div>
-          <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Heartbeat</label>
+        <div className={panelCardClass('p-4')}>
+          <SectionLabel>Heartbeat</SectionLabel>
           <p className="text-[13px] text-text-2">
             Every {agent.heartbeatIntervalSec ?? 120}s
             {agent.heartbeatModel && ` (${agent.heartbeatModel})`}
@@ -363,21 +423,21 @@ function AdvancedTab({ agent }: { agent: Agent }) {
         </div>
       )}
       {agent.thinkingLevel && (
-        <div>
-          <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Thinking Level</label>
+        <div className={panelCardClass('p-4')}>
+          <SectionLabel>Thinking Level</SectionLabel>
           <p className="text-[13px] text-text-2 capitalize">{agent.thinkingLevel}</p>
         </div>
       )}
-      <div>
-        <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Agent ID</label>
+      <div className={panelCardClass('p-4')}>
+        <SectionLabel>Agent ID</SectionLabel>
         <p className="text-[12px] text-text-3 font-mono select-all">{agent.id}</p>
       </div>
-      <div>
-        <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Created</label>
+      <div className={panelCardClass('p-4')}>
+        <SectionLabel>Created</SectionLabel>
         <p className="text-[12px] text-text-3">{new Date(agent.createdAt).toLocaleString()}</p>
       </div>
-      <div>
-        <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50 mb-1">Updated</label>
+      <div className={panelCardClass('p-4')}>
+        <SectionLabel>Updated</SectionLabel>
         <p className="text-[12px] text-text-3">{new Date(agent.updatedAt).toLocaleString()}</p>
       </div>
     </div>

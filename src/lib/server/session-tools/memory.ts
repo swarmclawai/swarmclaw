@@ -15,6 +15,8 @@ import type { MemoryEntry, Plugin, PluginHooks } from '@/types'
 import type { ToolBuildContext } from './context'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { partitionMemoriesByTier } from '../memory-tiers'
+import { syncSessionArchiveMemory } from '../session-archive-memory'
 
 /**
  * Advanced Database-Backed Memory logic.
@@ -34,6 +36,12 @@ async function executeMemoryAction(input: any, ctx: any) {
   
   const memDb = getMemoryDb()
   const currentAgentId = ctx?.agentId || null
+  const currentSessionId = typeof ctx?.sessionId === 'string'
+    ? ctx.sessionId
+    : typeof ctx?.id === 'string'
+      ? ctx.id
+      : null
+  const currentSession = ctx && typeof ctx === 'object' && Array.isArray(ctx.messages) ? ctx : null
   const rawScope = typeof scope === 'string' ? scope : 'auto'
   const scopeMode = normalizeMemoryScopeMode(rawScope === 'shared' ? 'global' : rawScope)
   const rerankMode = rerank === 'semantic' || rerank === 'lexical' ? rerank : 'balanced'
@@ -41,7 +49,7 @@ async function executeMemoryAction(input: any, ctx: any) {
   const scopeFilter = {
     mode: scopeMode,
     agentId: currentAgentId,
-    sessionId: (typeof scopeSessionId === 'string' && scopeSessionId.trim()) ? scopeSessionId.trim() : (ctx?.sessionId || null),
+    sessionId: (typeof scopeSessionId === 'string' && scopeSessionId.trim()) ? scopeSessionId.trim() : currentSessionId,
     projectRoot: (typeof projectRoot === 'string' && projectRoot.trim()) ? projectRoot.trim() : ((project && typeof project === 'object' && 'rootPath' in project && typeof (project as Record<string, unknown>).rootPath === 'string') ? (project as Record<string, unknown>).rootPath as string : null),
   }
   
@@ -51,6 +59,10 @@ async function executeMemoryAction(input: any, ctx: any) {
 
   const limits = getMemoryLookupLimits(loadSettings())
   const maxPerLookup = limits.maxPerLookup
+
+  if ((action === 'search' || action === 'list') && currentSession) {
+    try { syncSessionArchiveMemory(currentSession) } catch { /* archive sync is best-effort */ }
+  }
 
   const formatEntry = (m: any) => {
     let line = `[${m.id}] (${m.agentId ? `agent:${m.agentId}` : 'shared'}) ${m.category}/${m.title}: ${m.content}`
@@ -132,6 +144,8 @@ const MemoryPlugin: Plugin = {
       const agentId = ctx.session.agentId
       if (!agentId) return null
 
+      try { syncSessionArchiveMemory(ctx.session) } catch { /* archive sync is best-effort */ }
+
       const memDb = getMemoryDb()
       const memoryQuerySeed = [
         ctx.message,
@@ -159,12 +173,22 @@ const MemoryPlugin: Plugin = {
       const relevantLookup = memDb.searchWithLinked(memoryQuerySeed, agentId, 1, 10, 14)
       const relevant = relevantLookup.entries.slice(0, relevantSlice)
       const recent = memDb.list(agentId, 12).slice(0, 6)
+      const relevantByTier = partitionMemoriesByTier(relevant)
+      const recentByTier = partitionMemoriesByTier(recent)
 
-      const relevantLines = relevant
+      const relevantLines = relevantByTier.durable
         .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
         .map(formatMemoryLine)
 
-      const recentLines = recent
+      const archiveLines = relevantByTier.archive
+        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
+        .map(formatMemoryLine)
+
+      const recentLines = recentByTier.durable
+        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
+        .map(formatMemoryLine)
+
+      const recentArchiveLines = recentByTier.archive
         .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
         .map(formatMemoryLine)
 
@@ -175,14 +199,21 @@ const MemoryPlugin: Plugin = {
       if (relevantLines.length) {
         parts.push(['## Relevant Memory Hits', 'These memories were retrieved by relevance for the current objective.', ...relevantLines].join('\n'))
       }
+      if (archiveLines.length) {
+        parts.push(['## Session Archive Hits', 'Past conversation snapshots that may restore context from older chats.', ...archiveLines].join('\n'))
+      }
       if (recentLines.length) {
         parts.push(['## Recent Memory Notes', 'Recent durable notes that may still apply.', ...recentLines].join('\n'))
+      }
+      if (recentArchiveLines.length) {
+        parts.push(['## Recent Session Archives', 'Recently synced conversation archives you can search instead of relying on stale live context.', ...recentArchiveLines].join('\n'))
       }
 
       // Memory Policy
       parts.push([
         '## My Memory',
         'I have long-term memory that persists across conversations. I use it naturally — I don\'t wait to be asked to remember things.',
+        'Memory tiers: working memory is short-lived, durable memory stores stable facts and decisions, and session archives capture older conversation context for search.',
         '',
         '**Things worth remembering:**',
         '- What the user likes, dislikes, or has corrected me on',
@@ -201,6 +232,7 @@ const MemoryPlugin: Plugin = {
         '**Good habits:**',
         '- Give memories clear titles ("User prefers dark mode" not "Note 1")',
         '- Use categories: preference, fact, learning, project, identity, decision',
+        '- Search session archives before assuming older conversation context is still in the live chat history',
         '- Check what I already know before storing something new',
         '- When I learn something that corrects old knowledge, update or remove the old memory',
       ].join('\n'))

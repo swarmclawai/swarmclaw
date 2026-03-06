@@ -43,9 +43,6 @@ interface AppState {
   settingsOpen: boolean
   setSettingsOpen: (open: boolean) => void
 
-  newSessionOpen: boolean
-  setNewSessionOpen: (open: boolean) => void
-
   activeView: AppView
   setActiveView: (view: AppView) => void
 
@@ -324,9 +321,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   settingsOpen: false,
   setSettingsOpen: (open) => set({ settingsOpen: open }),
-
-  newSessionOpen: false,
-  setNewSessionOpen: (open) => set({ newSessionOpen: open }),
 
   activeView: 'home',
   setActiveView: (view) => set({ activeView: view }),

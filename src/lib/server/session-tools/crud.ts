@@ -22,7 +22,13 @@ import {
 import { resolveScheduleName } from '@/lib/schedule-name'
 import { findDuplicateSchedule, type ScheduleLike } from '@/lib/schedule-dedupe'
 import { computeTaskFingerprint, findDuplicateTask } from '@/lib/task-dedupe'
-import { resolveTaskAgentFromDescription } from '@/lib/server/task-mention'
+import {
+  hasManagedAgentAssignmentInput,
+  isDelegationTaskPayload,
+  resolveDelegatorAgentId,
+  resolveManagedAgentAssignment,
+  validateManagedAgentAssignment,
+} from '@/lib/server/agent-assignment'
 import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
 import type { ToolBuildContext } from './context'
 import { safePath, findBinaryOnPath } from './context'
@@ -137,7 +143,8 @@ const RESOURCE_DEFAULTS: Record<string, (parsed: any) => any> = {
     soul: p.soul || '',
     provider: p.provider || 'claude-cli',
     model: p.model || '',
-    isOrchestrator: p.isOrchestrator || false,
+    platformAssignScope: p.platformAssignScope === 'all' ? 'all' : 'self',
+    isOrchestrator: p.platformAssignScope === 'all',
     tools: p.tools || [],
     skills: p.skills || [],
     skillIds: p.skillIds || [],
@@ -256,12 +263,12 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
     let description = `Manage SwarmClaw ${res.label}. ${res.readOnly ? 'List and get only.' : 'List, get, create, update, or delete.'} Returns JSON.`
     if (toolKey === 'manage_tasks') {
       if (assignScope === 'self') {
-        description += `\n\nDo NOT create tasks for yourself — just do the work directly. Tasks are for delegating work to other agents or for user-created work items. You can only list, get, update status, or complete tasks assigned to you ("${ctx?.agentId || 'unknown'}"). Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.`
+        description += `\n\nYou may create tasks for yourself ("${ctx?.agentId || 'unknown'}") or leave them unassigned to track multi-step work. You cannot assign tasks to other agents unless a user enables "Assign to Other Agents" in your agent settings. Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.`
       } else {
-        description += `\n\nDo NOT create tasks for yourself — just do the work directly. Only create tasks to delegate work to OTHER agents. Your agent ID is "${ctx?.agentId || 'unknown'}". Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.` + agentSummary
+        description += `\n\nYou may create tasks for yourself, leave them unassigned, or delegate them to other agents. Your agent ID is "${ctx?.agentId || 'unknown'}". When delegating, set a target agent using "agentId", "assignee", "agent", "assignedAgentId", or "assigned_agent_id". Use the target agent's exact ID when possible. Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.` + agentSummary
       }
     } else if (toolKey === 'manage_agents') {
-      description += `\n\nAgents may self-edit their own soul. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field.`
+      description += `\n\nAgents may self-edit their own soul. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field. Set "platformAssignScope":"all" to let an agent delegate work across the fleet; use "self" for solo execution.`
     } else if (toolKey === 'manage_schedules') {
       if (assignScope === 'self') {
         description += `\n\nSet "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}") or leave it null. You can only assign schedules to yourself. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Set taskPrompt for what the agent should do. Before create, call list/get to avoid duplicate schedules. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true).`
@@ -337,13 +344,30 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
               if (parsed && typeof parsed === 'object' && 'id' in parsed) {
                 delete (parsed as Record<string, unknown>).id
               }
-              // Enforce assignment scope for tasks and schedules
-              if (assignScope === 'self' && (toolKey === 'manage_tasks' || toolKey === 'manage_schedules')) {
-                if (parsed.agentId && parsed.agentId !== ctx?.agentId) {
-                  return `Error: You can only assign ${res.label} to yourself ("${ctx?.agentId}"). To assign to other agents, ask a user to enable "Assign to Other Agents" in your agent settings.`
-                }
-              }
               const now = Date.now()
+              if (toolKey === 'manage_tasks' || toolKey === 'manage_schedules') {
+                const agents = loadAgents()
+                const resolution = resolveManagedAgentAssignment(
+                  parsed as Record<string, unknown>,
+                  agents,
+                  toolKey === 'manage_tasks' ? (parsed.agentId || ctx?.agentId || null) : null,
+                  { allowDescription: toolKey === 'manage_tasks' },
+                )
+                const assignmentError = validateManagedAgentAssignment({
+                  resourceLabel: res.label,
+                  agents,
+                  assignScope,
+                  currentAgentId: ctx?.agentId || null,
+                  targetAgentId: resolution.agentId,
+                  unresolvedReference: resolution.unresolvedReference,
+                  isDelegation: toolKey === 'manage_tasks' ? isDelegationTaskPayload(parsed as Record<string, unknown>) : false,
+                  delegatorAgentId: toolKey === 'manage_tasks'
+                    ? resolveDelegatorAgentId(parsed as Record<string, unknown>, agents, ctx?.agentId || null)
+                    : null,
+                })
+                if (assignmentError) return assignmentError
+                parsed.agentId = resolution.agentId
+              }
               if (toolKey === 'manage_schedules') {
                 const duplicate = findDuplicateSchedule(all as Record<string, ScheduleLike>, {
                   agentId: parsed.agentId || null,
@@ -385,23 +409,6 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                     ...duplicate,
                     deduplicated: true,
                   })
-                }
-              }
-              // @mention agent resolution for tasks
-              if (toolKey === 'manage_tasks' && parsed.description) {
-                const agents = loadAgents()
-                parsed.agentId = resolveTaskAgentFromDescription(
-                  parsed.description,
-                  parsed.agentId || ctx?.agentId || '',
-                  agents,
-                )
-              }
-              // Agents cannot create tasks for themselves — just do the work directly.
-              // Tasks are for delegating to other agents or user-created work items.
-              if (toolKey === 'manage_tasks' && ctx?.agentId) {
-                const resolvedAgentId = parsed.agentId || ctx.agentId
-                if (resolvedAgentId === ctx.agentId) {
-                  return 'Error: You cannot create tasks for yourself — just do the work directly. Tasks are for delegating work to other agents. If you need to track progress, use memory instead.'
                 }
               }
               if (toolKey === 'manage_tasks') {
@@ -507,10 +514,41 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   ? normalizeTaskQualityGate(parsed.qualityGate, settings)
                   : null
               }
-              // Enforce assignment scope for tasks and schedules
-              if (assignScope === 'self' && (toolKey === 'manage_tasks' || toolKey === 'manage_schedules')) {
-                if (parsed.agentId && parsed.agentId !== ctx?.agentId) {
-                  return `Error: You can only assign ${res.label} to yourself ("${ctx?.agentId}"). To assign to other agents, ask a user to enable "Assign to Other Agents" in your agent settings.`
+              if (toolKey === 'manage_tasks' || toolKey === 'manage_schedules') {
+                const agents = loadAgents()
+                const requestedClear = Object.prototype.hasOwnProperty.call(parsed, 'agentId') && parsed.agentId == null
+                const shouldResolveAssignment = requestedClear
+                  || hasManagedAgentAssignmentInput(parsed as Record<string, unknown>)
+                if (shouldResolveAssignment) {
+                  const resolution = resolveManagedAgentAssignment(
+                    parsed as Record<string, unknown>,
+                    agents,
+                    null,
+                    { allowDescription: false },
+                  )
+                  const assignmentError = validateManagedAgentAssignment({
+                    resourceLabel: res.label,
+                    agents,
+                    assignScope,
+                    currentAgentId: ctx?.agentId || null,
+                    targetAgentId: requestedClear ? null : resolution.agentId,
+                    unresolvedReference: requestedClear ? null : resolution.unresolvedReference,
+                    isDelegation: toolKey === 'manage_tasks'
+                      ? isDelegationTaskPayload({
+                          ...all[id],
+                          ...parsed,
+                          agentId: requestedClear ? null : resolution.agentId,
+                        } as Record<string, unknown>)
+                      : false,
+                    delegatorAgentId: toolKey === 'manage_tasks'
+                      ? resolveDelegatorAgentId({
+                          ...all[id],
+                          ...parsed,
+                        } as Record<string, unknown>, agents, ctx?.agentId || null)
+                      : null,
+                  })
+                  if (assignmentError) return assignmentError
+                  if (!requestedClear) parsed.agentId = resolution.agentId
                 }
               }
               all[id] = { ...all[id], ...parsed, updatedAt: Date.now() }

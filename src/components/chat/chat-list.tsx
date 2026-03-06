@@ -14,7 +14,7 @@ interface Props {
   onSelect?: () => void
 }
 
-type SessionFilter = 'all' | 'active' | 'human' | 'orchestrated'
+type SessionFilter = 'all' | 'active'
 type SortMode = 'lastActive' | 'name' | 'messages'
 
 export function ChatList({ inSidebar, onSelect }: Props) {
@@ -24,7 +24,7 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const loadSessions = useAppStore((s) => s.loadSessions)
   const loadConnectors = useAppStore((s) => s.loadConnectors)
-  const setNewSessionOpen = useAppStore((s) => s.setNewSessionOpen)
+  const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const clearSessions = useAppStore((s) => s.clearSessions)
   const togglePinSession = useAppStore((s) => s.togglePinSession)
   const markChatRead = useAppStore((s) => s.markChatRead)
@@ -58,8 +58,6 @@ export function ChatList({ inSidebar, onSelect }: Props) {
       .filter((s) => {
         if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false
         if (typeFilter === 'active' && !s.active) return false
-        if (typeFilter === 'human' && s.sessionType === 'orchestrated') return false
-        if (typeFilter === 'orchestrated' && s.sessionType !== 'orchestrated') return false
         return true
       })
       .sort((a, b) => {
@@ -115,8 +113,8 @@ export function ChatList({ inSidebar, onSelect }: Props) {
           </svg>
         }
         title="No chats yet"
-        subtitle="Create one to start chatting"
-        action={!inSidebar ? { label: '+ New Chat', onClick: () => setNewSessionOpen(true) } : undefined}
+        subtitle="Create an agent to open its persistent thread"
+        action={!inSidebar ? { label: '+ New Agent', onClick: () => setAgentSheetOpen(true) } : undefined}
       />
     )
   }
@@ -125,7 +123,7 @@ export function ChatList({ inSidebar, onSelect }: Props) {
     <div className="flex-1 flex flex-col overflow-y-auto">
       {/* Filter tabs — always visible when sessions exist */}
       <div className="flex items-center gap-1 px-4 pt-2 pb-1 shrink-0">
-        {(['all', 'active', 'human', 'orchestrated'] as SessionFilter[]).map((f) => (
+        {(['all', 'active'] as SessionFilter[]).map((f) => (
           <button
             key={f}
             onClick={() => setTypeFilter(f)}
@@ -133,7 +131,7 @@ export function ChatList({ inSidebar, onSelect }: Props) {
               ${typeFilter === f ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
             style={{ fontFamily: 'inherit' }}
           >
-            {f === 'all' ? 'All' : f === 'active' ? 'Active' : f === 'human' ? 'Human' : 'AI'}
+            {f === 'all' ? 'All' : 'Active'}
           </button>
         ))}
         {filtered.length > 0 && (
@@ -209,7 +207,7 @@ export function ChatList({ inSidebar, onSelect }: Props) {
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-3 p-8 text-center">
           <p className="text-[13px] text-text-3/50">
-            No {typeFilter === 'orchestrated' ? 'AI' : typeFilter === 'active' ? 'active' : typeFilter} chats{search ? ` matching "${search}"` : ''}
+            No {typeFilter === 'active' ? 'active' : typeFilter} chats{search ? ` matching "${search}"` : ''}
           </p>
         </div>
       )}

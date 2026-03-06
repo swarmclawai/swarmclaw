@@ -2,9 +2,104 @@ import { App, LogLevel } from '@slack/bolt'
 import fs from 'fs'
 import path from 'path'
 import type { Connector } from '@/types'
-import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
+import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundThreadHistoryEntry } from './types'
 import { downloadInboundMediaToUpload, inferInboundMediaType, mimeFromPath, isImageMime } from './media'
-import { isNoMessage } from './manager'
+import { getConnectorReplySendOptions, isNoMessage, recordConnectorOutboundDelivery } from './manager'
+
+function normalizeSlackEmoji(input: string): string {
+  const raw = input.trim().replace(/^:|:$/g, '')
+  if (!raw) return 'eyes'
+  if (raw === '👀') return 'eyes'
+  if (raw === '✅') return 'white_check_mark'
+  if (raw === '🤐') return 'zipper_mouth_face'
+  return raw
+}
+
+function parseSlackTimestamp(raw: unknown): number {
+  const value = typeof raw === 'string' ? Number.parseFloat(raw) : typeof raw === 'number' ? raw : Number.NaN
+  return Number.isFinite(value) ? value : 0
+}
+
+async function resolveSlackUserDisplayName(client: any, userId?: string): Promise<string | undefined> {
+  if (!userId) return undefined
+  try {
+    const userInfo = await client.users.info({ user: userId })
+    return userInfo.user?.real_name || userInfo.user?.name || userId
+  } catch {
+    return userId
+  }
+}
+
+function buildSlackThreadTitle(channelName: string, starterText: string, fallbackTs: string): string {
+  const snippet = starterText.replace(/\s+/g, ' ').trim().slice(0, 56)
+  if (snippet) return `${channelName} · ${snippet}`
+  return `${channelName} thread ${fallbackTs}`
+}
+
+async function hydrateSlackThreadContext(params: {
+  client: any
+  inbound: InboundMessage
+  currentTs?: string
+  botUserId?: string
+}): Promise<void> {
+  const threadTs = params.inbound.threadId
+  if (!threadTs) return
+  try {
+    const result = await params.client.conversations.replies({
+      channel: params.inbound.channelId,
+      ts: threadTs,
+      limit: 12,
+      inclusive: true,
+    })
+    const messages = Array.isArray((result as any)?.messages) ? (result as any).messages as any[] : []
+    if (!messages.length) return
+
+    const userIds = [...new Set(messages.map((message) => typeof message?.user === 'string' ? message.user : '').filter(Boolean))]
+    const nameMap = new Map<string, string>()
+    await Promise.all(userIds.map(async (userId) => {
+      const name = await resolveSlackUserDisplayName(params.client, userId)
+      if (name) nameMap.set(userId, name)
+    }))
+
+    const starter = messages[0]
+    const starterText = typeof starter?.text === 'string' ? starter.text.trim() : ''
+    const starterSenderName = nameMap.get(starter?.user)
+      || starter?.username
+      || starter?.user
+      || (starter?.bot_id ? 'Slack Bot' : '')
+    const currentTsValue = parseSlackTimestamp(params.currentTs)
+    const history: InboundThreadHistoryEntry[] = messages
+      .filter((message) => {
+        const tsValue = parseSlackTimestamp(message?.ts)
+        if (!tsValue) return false
+        if (String(message?.ts) === String(threadTs)) return false
+        if (currentTsValue && tsValue >= currentTsValue) return false
+        return true
+      })
+      .slice(-6)
+      .map((message) => ({
+        role: (message?.bot_id || (params.botUserId && message?.user === params.botUserId) ? 'assistant' : 'user') as 'assistant' | 'user',
+        senderName: nameMap.get(message?.user) || message?.username || message?.user || (message?.bot_id ? 'Slack Bot' : 'Unknown'),
+        text: typeof message?.text === 'string' ? message.text : '',
+        messageId: typeof message?.ts === 'string' ? message.ts : undefined,
+      }))
+      .filter((entry) => entry.text.trim().length > 0)
+
+    params.inbound.threadParentChannelId = params.inbound.channelId
+    params.inbound.threadParentChannelName = params.inbound.channelName || params.inbound.channelId
+    params.inbound.threadStarterText = starterText || undefined
+    params.inbound.threadStarterSenderName = starterSenderName || undefined
+    params.inbound.threadTitle = buildSlackThreadTitle(
+      params.inbound.channelName || params.inbound.channelId,
+      starterText,
+      threadTs,
+    )
+    params.inbound.threadPersonaLabel = params.inbound.threadTitle
+    params.inbound.threadHistory = history.length ? history : undefined
+  } catch (err: unknown) {
+    console.warn(`[slack] Thread context bootstrap failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
 
 const slack: PlatformConnector = {
   async start(connector, botToken, onMessage): Promise<ConnectorInstance> {
@@ -136,24 +231,50 @@ const slack: PlatformConnector = {
         senderId: msg.user,
         senderName,
         text: msg.text || (media.length > 0 ? '(media message)' : ''),
+        isGroup: !String(channelId).startsWith('D'),
+        messageId: msg.ts || undefined,
+        replyToMessageId: msg.thread_ts && msg.thread_ts !== msg.ts ? msg.thread_ts : undefined,
+        threadId: msg.thread_ts || undefined,
+        mentionsBot: !!(botUserId && typeof msg.text === 'string' && msg.text.includes(`<@${botUserId}>`)),
         imageUrl: media.find((m) => m.type === 'image')?.url,
         media,
       }
+      await hydrateSlackThreadContext({ client, inbound, currentTs: msg.ts || undefined, botUserId })
 
       try {
         const response = await onMessage(inbound)
 
         if (isNoMessage(response)) return
 
+        const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
+        const threadTs = replyOptions.threadId || replyOptions.replyToMessageId
+        let lastMessageId: string | undefined
+
         // Slack has a 4000 char limit for messages
         if (response.length <= 4000) {
-          await say(response)
+          const sent = await client.chat.postMessage({
+            channel: channelId,
+            text: response,
+            thread_ts: threadTs,
+          })
+          lastMessageId = sent.ts || undefined
         } else {
           const chunks = response.match(/[\s\S]{1,3990}/g) || [response]
           for (const chunk of chunks) {
-            await say(chunk)
+            const sent = await client.chat.postMessage({
+              channel: channelId,
+              text: chunk,
+              thread_ts: threadTs,
+            })
+            lastMessageId = sent.ts || undefined
           }
         }
+        await recordConnectorOutboundDelivery({
+          connectorId: connector.id,
+          inbound,
+          messageId: lastMessageId,
+          state: 'sent',
+        })
       } catch (err: any) {
         console.error(`[slack] Error handling message:`, err.message)
         try {
@@ -179,12 +300,36 @@ const slack: PlatformConnector = {
         senderId: event.user || 'unknown',
         senderName,
         text: event.text.replace(/<@[^>]+>/g, '').trim(), // Strip @mentions
+        isGroup: !String(event.channel).startsWith('D'),
+        messageId: (event as any).ts || undefined,
+        replyToMessageId: (event as any).thread_ts && (event as any).thread_ts !== (event as any).ts
+          ? (event as any).thread_ts
+          : undefined,
+        threadId: (event as any).thread_ts || undefined,
+        mentionsBot: true,
       }
+      await hydrateSlackThreadContext({
+        client,
+        inbound,
+        currentTs: (event as any).ts || undefined,
+        botUserId,
+      })
 
       try {
         const response = await onMessage(inbound)
         if (isNoMessage(response)) return
-        await say(response)
+        const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
+        const sent = await client.chat.postMessage({
+          channel: event.channel,
+          text: response,
+          thread_ts: replyOptions.threadId || replyOptions.replyToMessageId,
+        })
+        await recordConnectorOutboundDelivery({
+          connectorId: connector.id,
+          inbound,
+          messageId: sent.ts || undefined,
+          state: 'sent',
+        })
       } catch (err: any) {
         console.error(`[slack] Error handling mention:`, err.message)
       }
@@ -202,6 +347,7 @@ const slack: PlatformConnector = {
       },
       async sendMessage(channelId, text, options) {
         const webClient = app.client
+        const threadTs = options?.threadId?.trim() || options?.replyToMessageId?.trim() || undefined
 
         // File upload (local path or URL)
         const hasMedia = options?.mediaPath || options?.imageUrl || options?.fileUrl
@@ -219,18 +365,25 @@ const slack: PlatformConnector = {
           }
 
           if (fileContent) {
-            const result = await webClient.filesUploadV2({
+            const uploadArgsBase = {
               channel_id: channelId,
               file: fileContent,
               filename: fileName,
               initial_comment: options?.caption || text || undefined,
-            })
+            }
+            const result = threadTs
+              ? await webClient.filesUploadV2({
+                  ...uploadArgsBase,
+                  thread_ts: threadTs,
+                })
+              : await webClient.filesUploadV2(uploadArgsBase)
             return { messageId: (result as any)?.files?.[0]?.id }
           } else if (fileUrl) {
             // Send URL as message with unfurl
             const msg = await webClient.chat.postMessage({
               channel: channelId,
               text: `${options?.caption || text || ''}\n${fileUrl}`.trim(),
+              thread_ts: threadTs,
               unfurl_links: true,
               unfurl_media: true,
             })
@@ -241,16 +394,42 @@ const slack: PlatformConnector = {
         // Text only
         const payload = text || options?.caption || ''
         if (payload.length <= 4000) {
-          const msg = await webClient.chat.postMessage({ channel: channelId, text: payload })
+          const msg = await webClient.chat.postMessage({ channel: channelId, text: payload, thread_ts: threadTs })
           return { messageId: msg.ts || undefined }
         }
         const chunks = payload.match(/[\s\S]{1,3990}/g) || [payload]
         let lastTs: string | undefined
         for (const chunk of chunks) {
-          const msg = await webClient.chat.postMessage({ channel: channelId, text: chunk })
+          const msg = await webClient.chat.postMessage({ channel: channelId, text: chunk, thread_ts: threadTs })
           lastTs = msg.ts || undefined
         }
         return { messageId: lastTs }
+      },
+      async sendReaction(channelId, messageId, emoji) {
+        await app.client.reactions.add({
+          channel: channelId,
+          timestamp: messageId,
+          name: normalizeSlackEmoji(emoji),
+        })
+      },
+      async editMessage(channelId, messageId, newText) {
+        await app.client.chat.update({
+          channel: channelId,
+          ts: messageId,
+          text: newText,
+        })
+      },
+      async deleteMessage(channelId, messageId) {
+        await app.client.chat.delete({
+          channel: channelId,
+          ts: messageId,
+        })
+      },
+      async pinMessage(channelId, messageId) {
+        await app.client.pins.add({
+          channel: channelId,
+          timestamp: messageId,
+        })
       },
       async stop() {
         appStopped = true

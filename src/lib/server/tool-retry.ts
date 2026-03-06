@@ -6,6 +6,7 @@ export interface RetryOptions {
   maxAttempts?: number
   backoffMs?: number
   retryable?: RegExp[]
+  onRetry?: (attempt: number, lastResult: string) => Promise<void> | void
 }
 
 const DEFAULT_RETRYABLE: RegExp[] = [
@@ -49,6 +50,7 @@ export async function withRetry<TArgs>(
 
     // Only retry if the result looks like a retryable error
     if (attempt < maxAttempts && isRetryableError(lastResult, retryable)) {
+      await opts?.onRetry?.(attempt, lastResult)
       const delay = backoffMs * Math.pow(2, attempt - 1)
       console.warn(
         `[tool-retry] Attempt ${attempt}/${maxAttempts} matched retryable pattern, retrying in ${delay}ms`,

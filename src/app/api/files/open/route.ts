@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { exec } from 'child_process'
+import { spawn } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 
@@ -19,25 +19,27 @@ export async function POST(req: Request) {
   const isDir = fs.statSync(resolved).isDirectory()
   const platform = process.platform
 
-  // Determine the command to reveal in the OS file manager
-  let cmd: string
+  let command: string
+  let args: string[]
   if (platform === 'darwin') {
-    // macOS: -R reveals in Finder (selects the item), for dirs just open the dir
-    cmd = isDir ? `open "${resolved}"` : `open -R "${resolved}"`
+    command = 'open'
+    args = isDir ? [resolved] : ['-R', resolved]
   } else if (platform === 'win32') {
-    cmd = isDir ? `explorer "${resolved}"` : `explorer /select,"${resolved}"`
+    command = 'explorer'
+    args = isDir ? [resolved] : [`/select,${resolved}`]
   } else {
-    // Linux: xdg-open on the directory containing the file
-    cmd = `xdg-open "${isDir ? resolved : path.dirname(resolved)}"`
+    command = 'xdg-open'
+    args = [isDir ? resolved : path.dirname(resolved)]
   }
 
   return new Promise<NextResponse>((resolve) => {
-    exec(cmd, (err) => {
-      if (err) {
-        resolve(NextResponse.json({ error: err.message }, { status: 500 }))
-      } else {
-        resolve(NextResponse.json({ ok: true }))
-      }
+    const child = spawn(command, args, { stdio: 'ignore' })
+    child.once('error', (err) => {
+      resolve(NextResponse.json({ error: err.message }, { status: 500 }))
+    })
+    child.once('spawn', () => {
+      child.unref()
+      resolve(NextResponse.json({ ok: true }))
     })
   })
 }

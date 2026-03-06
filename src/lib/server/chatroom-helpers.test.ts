@@ -1,7 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Agent, Chatroom } from '@/types'
-import { parseMentions, compactChatroomMessages, buildHistoryForAgent } from './chatroom-helpers'
+import {
+  parseMentions,
+  compactChatroomMessages,
+  buildHistoryForAgent,
+  buildSyntheticSession,
+  resolveAgentApiEndpoint,
+  resolveReplyTargetAgentId,
+} from './chatroom-helpers'
 
 function makeAgents(): Record<string, Agent> {
   const now = Date.now()
@@ -35,6 +42,48 @@ describe('chatroom-helpers', () => {
     const memberIds = ['default', 'agent_analyst']
     const mentions = parseMentions('Hey @Assistant, can @agent_analyst review this?', agents, memberIds)
     assert.deepEqual(mentions, ['default', 'agent_analyst'])
+  })
+
+  it('routes reply-only messages back to the replied-to agent', () => {
+    const agents = makeAgents()
+    const memberIds = ['default', 'agent_analyst']
+    const replyTargetAgentId = resolveReplyTargetAgentId('agent-msg', [
+      {
+        id: 'agent-msg',
+        senderId: 'default',
+        senderName: 'Assistant',
+        role: 'assistant',
+        text: 'Here is the previous answer.',
+        mentions: [],
+        reactions: [],
+        time: Date.now(),
+      },
+    ], memberIds)
+    const mentions = parseMentions('Can you expand on that?', agents, memberIds, { replyTargetAgentId })
+    assert.deepEqual(mentions, ['default'])
+  })
+
+  it('keeps explicit mentions ahead of reply-based implicit targeting', () => {
+    const agents = makeAgents()
+    const memberIds = ['default', 'agent_analyst']
+    const mentions = parseMentions('Actually @Analyst should take this one.', agents, memberIds, { replyTargetAgentId: 'default' })
+    assert.deepEqual(mentions, ['agent_analyst'])
+  })
+
+  it('ignores replies to non-agent messages', () => {
+    const replyTargetAgentId = resolveReplyTargetAgentId('user-msg', [
+      {
+        id: 'user-msg',
+        senderId: 'user',
+        senderName: 'You',
+        role: 'user',
+        text: 'Question',
+        mentions: [],
+        reactions: [],
+        time: Date.now(),
+      },
+    ], ['default', 'agent_analyst'])
+    assert.equal(replyTargetAgentId, null)
   })
 
   it('compacts long chatrooms with a persisted summary message', () => {
@@ -90,5 +139,21 @@ describe('chatroom-helpers', () => {
     const attachmentMarkers = history.filter((msg) => msg.text.includes('[Attached:')).length
     assert.ok(attachmentMarkers <= 6)
   })
-})
 
+  it('resolves default provider endpoints for chatroom sessions', () => {
+    const now = Date.now()
+    const agent: Agent = {
+      id: 'agent_writer',
+      name: 'Writer',
+      description: '',
+      systemPrompt: '',
+      provider: 'ollama',
+      model: 'glm-5:cloud',
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    assert.equal(resolveAgentApiEndpoint(agent), 'http://localhost:11434')
+    assert.equal(buildSyntheticSession(agent, 'room-1').apiEndpoint, 'http://localhost:11434')
+  })
+})

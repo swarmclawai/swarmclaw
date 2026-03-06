@@ -27,6 +27,8 @@ async function executePluginCreatorAction(args: Record<string, unknown>, ctxOrBc
   const action = normalized.action as string | undefined
   const filename = (normalized.filename ?? normalized.fileName) as string | undefined
   const code = (normalized.code ?? normalized.content) as string | undefined
+  const packageJson = normalized.packageJson ?? normalized.package_json ?? normalized.manifest
+  const packageManager = typeof normalized.packageManager === 'string' ? normalized.packageManager : undefined
   const approved = normalized.approved as boolean | undefined
 
   try {
@@ -40,15 +42,23 @@ async function executePluginCreatorAction(args: Record<string, unknown>, ctxOrBc
 
       // REQUIRE USER APPROVAL
       if (approved !== true) {
-        const { requestApproval } = await import('../approvals')
-        requestApproval({
+        const { requestApprovalMaybeAutoApprove } = await import('../approvals')
+        const approval = await requestApprovalMaybeAutoApprove({
           category: 'plugin_scaffold',
           title: `Scaffold Plugin: ${filename}`,
           description: `Create new plugin file with ${code.length} chars of code.`,
-          data: { filename, code, createdByAgentId: pctx.agentId || null },
+          data: { filename, code, packageJson, packageManager, createdByAgentId: pctx.agentId || null },
           agentId: pctx.agentId,
           sessionId: pctx.sessionId,
         })
+        if (approval.status === 'approved') {
+          return JSON.stringify({
+            type: 'plugin_scaffold_request',
+            filename,
+            autoApproved: true,
+            message: `Plugin "${filename}" was auto-approved and scaffolded. It is now available in this chat.`,
+          })
+        }
         return JSON.stringify({
           type: 'plugin_scaffold_request',
           filename,
@@ -56,12 +66,13 @@ async function executePluginCreatorAction(args: Record<string, unknown>, ctxOrBc
         })
       }
 
-      const filePath = path.join(PLUGINS_DIR, filename)
-      fs.writeFileSync(filePath, code, 'utf8')
-
-      // Reload the plugin manager so the new plugin is discovered
       const manager = getPluginManager()
-      manager.reload()
+      await manager.savePluginSource(filename, code, {
+        packageJson,
+        packageManager,
+        installDependencies: packageJson !== undefined,
+      })
+      const filePath = path.join(PLUGINS_DIR, filename)
 
       // Auto-enable the plugin for the agent that created it
       if (pctx.agentId && pctx.sessionId) {
@@ -82,10 +93,53 @@ async function executePluginCreatorAction(args: Record<string, unknown>, ctxOrBc
       return `Plugin saved to ${filePath} and PluginManager reloaded. It is now enabled for this chat.`
     }
 
+    if (action === 'install_dependencies') {
+      if (!filename) return 'Error: filename is required for install_dependencies.'
+
+      if (approved !== true) {
+        const { requestApprovalMaybeAutoApprove } = await import('../approvals')
+        const approval = await requestApprovalMaybeAutoApprove({
+          category: 'plugin_install',
+          title: `Install Plugin Dependencies: ${filename}`,
+          description: `Install package dependencies for plugin ${filename}${packageManager ? ` using ${packageManager}` : ''}.`,
+          data: { filename, packageJson, packageManager, createdByAgentId: pctx.agentId || null },
+          agentId: pctx.agentId,
+          sessionId: pctx.sessionId,
+        })
+        if (approval.status === 'approved') {
+          return JSON.stringify({
+            type: 'plugin_install_request',
+            filename,
+            autoApproved: true,
+            message: `Dependencies for "${filename}" were auto-approved and are being installed.`,
+          })
+        }
+        return JSON.stringify({
+          type: 'plugin_install_request',
+          filename,
+          message: `I've requested approval to install dependencies for "${filename}". Once approved, the plugin manager will run the selected package manager automatically.`,
+        })
+      }
+
+      const manager = getPluginManager()
+      if (packageJson !== undefined) {
+        const source = manager.readPluginSource(filename)
+        await manager.savePluginSource(filename, source, {
+          packageJson,
+          packageManager,
+          installDependencies: false,
+        })
+      }
+      const result = await manager.installPluginDependencies(filename, {
+        packageManager: packageManager as import('@/types').PluginPackageManager | undefined,
+      })
+      return `Dependencies installed for ${filename} using ${result.packageManager || packageManager || 'npm'}.`
+    }
+
     if (action === 'get_spec') {
       return `
 SwarmClaw Plugin Specification:
-A plugin is a CommonJS module (.js) that must be DUAL-COMPATIBLE with both SwarmClaw and OpenClaw platforms.
+A plugin is a JavaScript module (.js or .mjs) that can be dual-compatible with both SwarmClaw and OpenClaw platforms.
 
 \`\`\`js
 module.exports = {
@@ -100,10 +154,11 @@ module.exports = {
   hooks: {
     beforeAgentStart: async ({ session, message }) => {},
     afterAgentComplete: async ({ session, response }) => {},
-    beforeToolExec: async ({ session, toolName, args }) => {},
-    afterToolExec: async ({ session, toolName, result }) => {},
+    beforeToolExec: async ({ toolName, input }) => input,
+    afterToolExec: async ({ session, toolName, input, output }) => {},
     transformInboundMessage: async ({ session, text }) => { return text; },
     transformOutboundMessage: async ({ session, text }) => { return text; },
+    afterChatTurn: async ({ session, message, response, source, internal }) => {},
   },
 
   tools: [
@@ -140,27 +195,31 @@ module.exports = {
 \`\`\`
 
 Key rules:
-- Export BOTH SwarmClaw hooks/tools AND a register(api) method for cross-platform compatibility
-- SwarmClaw checks for hooks/tools first; OpenClaw checks for register()
+- Export SwarmClaw hooks/tools. Add register(api) too if you want OpenClaw compatibility.
+- SwarmClaw checks hooks/tools first; OpenClaw checks register()
 - Tools must have name, description, parameters (JSON Schema), and execute function
 - Hooks are optional — only include the ones you need
+- If your plugin needs npm/pnpm/yarn/bun packages, include a packageJson object during scaffold or call install_dependencies later.
+- Dependency installs are run by the plugin manager inside a per-plugin workspace using the selected package manager with scripts disabled.
+- Plugin settings are declared through ui.settingsFields and stored per plugin ID
 - Keep plugins focused: one clear purpose per plugin
 `
     }
 
     if (action === 'read') {
       if (!filename) return 'Error: filename required.'
-      const filePath = path.join(PLUGINS_DIR, filename)
-      if (!fs.existsSync(filePath)) return `File not found: ${filename}`
-      return fs.readFileSync(filePath, 'utf8')
+      return getPluginManager().readPluginSource(filename)
     }
 
     if (action === 'edit') {
       if (!filename || !code) return 'Error: filename and code are required for edit.'
-      const filePath = path.join(PLUGINS_DIR, filename)
-      if (!fs.existsSync(filePath)) return `File not found: ${filename}. Use scaffold to create new plugins.`
-      fs.writeFileSync(filePath, code, 'utf8')
-      getPluginManager().reload()
+      const manager = getPluginManager()
+      try {
+        manager.readPluginSource(filename)
+      } catch {
+        return `File not found: ${filename}. Use scaffold to create new plugins.`
+      }
+      await manager.savePluginSource(filename, code)
       return `Updated ${filename} and reloaded plugin manager.`
     }
 
@@ -175,7 +234,7 @@ Key rules:
       return `File not found: ${filename}`
     }
 
-    return `Unknown action "${action}". Valid actions: get_spec, scaffold, read, edit, delete`
+    return `Unknown action "${action}". Valid actions: get_spec, scaffold, read, edit, delete, install_dependencies`
   } catch (err: unknown) {
     return `Error: ${err instanceof Error ? err.message : String(err)}`
   }
@@ -195,9 +254,11 @@ const PluginCreatorPlugin: Plugin = {
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['get_spec', 'scaffold', 'read', 'edit', 'delete'], description: 'get_spec: learn format. scaffold: create (needs approval). read: view code. edit: update existing. delete: remove.' },
+          action: { type: 'string', enum: ['get_spec', 'scaffold', 'read', 'edit', 'delete', 'install_dependencies'], description: 'get_spec: learn format. scaffold: create (needs approval). read: view code. edit: update existing. delete: remove. install_dependencies: write/read package.json and install runtime deps.' },
           filename: { type: 'string', description: 'Plugin filename, e.g. my-plugin.js. Required for scaffold and delete.' },
           code: { type: 'string', description: 'The raw JavaScript code for the plugin. Required for scaffold.' },
+          packageJson: { type: 'object', description: 'Optional package.json object for dependency-aware plugins. Use with scaffold or install_dependencies.' },
+          packageManager: { type: 'string', enum: ['npm', 'pnpm', 'yarn', 'bun'], description: 'Optional package manager to use for dependency installs.' },
           approved: { type: 'boolean', description: 'Internal flag — do NOT set this. The approval system handles it automatically.' }
         },
         required: ['action']
@@ -228,9 +289,11 @@ export function buildPluginCreatorTools(bctx: ToolBuildContext): StructuredToolI
         name: 'plugin_creator_tool',
         description: PluginCreatorPlugin.tools![0].description,
         schema: z.object({
-          action: z.enum(['get_spec', 'scaffold', 'read', 'edit', 'delete']),
+          action: z.enum(['get_spec', 'scaffold', 'read', 'edit', 'delete', 'install_dependencies']),
           filename: z.string().optional(),
           code: z.string().optional(),
+          packageJson: z.record(z.string(), z.any()).optional(),
+          packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun']).optional(),
           approved: z.boolean().optional()
         })
       }

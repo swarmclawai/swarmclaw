@@ -13,6 +13,7 @@ import { notify } from './ws-hub'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import { getPluginManager } from './plugins'
+import './builtin-plugins'
 import { genId } from '@/lib/id'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 import type { Agent, TaskComment, MessageToolEvent } from '@/types'
@@ -118,7 +119,7 @@ async function executeSubTaskViaCli(agent: Agent, task: string, parentSessionId:
     messages: [],
     createdAt: Date.now(),
     lastActiveAt: Date.now(),
-    sessionType: 'orchestrated' as const,
+    sessionType: 'human' as const,
     agentId: agent.id,
     parentSessionId,
     plugins: agent.plugins || agent.tools || [],
@@ -177,7 +178,11 @@ export async function executeLangGraphOrchestrator(
         return `Agent "${agentName}" not found. Available: ${agents.map((a) => a.name).join(', ')}`
       }
       console.log(`[orchestrator-lg] Delegating to ${agent.name}: ${agentTask.slice(0, 80)}`)
-      getPluginManager().runHook('onAgentDelegation', { sourceAgentId: orchestrator.id, targetAgentId: agent.id, task: agentTask })
+      getPluginManager().runHook(
+        'onAgentDelegation',
+        { sourceAgentId: orchestrator.id, targetAgentId: agent.id, task: agentTask },
+        { enabledIds: orchestrator.plugins || [] },
+      )
       const result = await executeSubTaskViaCli(agent, agentTask, sessionId)
       saveMessage(sessionId, 'assistant', `Delegated to ${agent.name}: ${agentTask.slice(0, 100)}`, [{
         name: 'delegate_to_agent',
@@ -393,6 +398,7 @@ export async function executeLangGraphOrchestrator(
 
   const checkpointSaver = getCheckpointSaver()
   const isStrictMode = settings.capabilityPolicyMode === 'strict'
+  const approvalInterruptsEnabled = isStrictMode && settings.approvalsEnabled !== false
   const allTools = [delegateTool, storeMemoryTool, searchMemoryTool, getSecretTool, commentOnTaskTool, createTaskTool, markCompleteTool]
   const llmWithTools = llm.bindTools(allTools)
   const toolNode = new ToolNode(allTools)
@@ -472,7 +478,7 @@ export async function executeLangGraphOrchestrator(
 
   const compiledGraph = graph.compile({
     checkpointer: checkpointSaver,
-    ...(isStrictMode ? { interruptBefore: ['tools'] } : {}),
+    ...(approvalInterruptsEnabled ? { interruptBefore: ['tools'] } : {}),
   })
 
   // Export graph structure for introspection
@@ -534,7 +540,7 @@ export async function executeLangGraphOrchestrator(
     }
 
     // Check for interrupt (paused before tool execution in strict mode)
-    if (isStrictMode && taskId) {
+    if (approvalInterruptsEnabled && taskId) {
       const state = await compiledGraph.getState({ configurable: { thread_id: threadId } })
       const nextNodes = state?.next || []
       if (nextNodes.includes('tools')) {
@@ -628,7 +634,11 @@ export async function resumeLangGraphOrchestrator(
     async ({ agentName, task: agentTask }) => {
       const agent = agents.find((a) => a.name.toLowerCase() === agentName.toLowerCase())
       if (!agent) return `Agent "${agentName}" not found. Available: ${agents.map((a) => a.name).join(', ')}`
-      getPluginManager().runHook('onAgentDelegation', { sourceAgentId: orchestrator.id, targetAgentId: agent.id, task: agentTask })
+      getPluginManager().runHook(
+        'onAgentDelegation',
+        { sourceAgentId: orchestrator.id, targetAgentId: agent.id, task: agentTask },
+        { enabledIds: orchestrator.plugins || [] },
+      )
       const result = await executeSubTaskViaCli(agent, agentTask, sessionId)
       saveMessage(sessionId, 'assistant', `Delegated to ${agent.name}: ${agentTask.slice(0, 100)}`, [{
         name: 'delegate_to_agent',
@@ -753,6 +763,7 @@ export async function resumeLangGraphOrchestrator(
   const checkpointSaver = getCheckpointSaver()
   const settings = loadSettings()
   const isStrictMode = settings.capabilityPolicyMode === 'strict'
+  const approvalInterruptsEnabled = isStrictMode && settings.approvalsEnabled !== false
 
   const allTools = [delegateTool, storeMemoryTool, searchMemoryTool, getSecretTool, commentOnTaskTool, createTaskTool, markCompleteTool]
   const llmWithTools = llm.bindTools(allTools)
@@ -782,7 +793,7 @@ export async function resumeLangGraphOrchestrator(
     .addEdge('router', 'agent')
     .compile({
       checkpointer: checkpointSaver,
-      ...(isStrictMode ? { interruptBefore: ['tools'] } : {}),
+      ...(approvalInterruptsEnabled ? { interruptBefore: ['tools'] } : {}),
     })
 
   let finalResult = ''

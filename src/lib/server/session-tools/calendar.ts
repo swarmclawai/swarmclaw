@@ -3,7 +3,6 @@ import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { loadSettings } from '../storage'
 import type { ToolBuildContext } from './context'
 
 type CalendarProvider = 'google' | 'outlook'
@@ -18,8 +17,7 @@ interface CalendarConfig {
 }
 
 function getConfig(): CalendarConfig {
-  const settings = loadSettings()
-  const ps = (settings.pluginSettings as Record<string, Record<string, unknown>> | undefined)?.calendar ?? {}
+  const ps = getPluginManager().getPluginSettings('calendar')
   return {
     provider: (ps.provider as CalendarProvider) || 'google',
     accessToken: (ps.accessToken as string) || '',
@@ -49,15 +47,7 @@ async function refreshGoogleToken(cfg: CalendarConfig): Promise<string | null> {
     const data = await res.json()
     const newToken = data?.access_token as string | undefined
     if (newToken) {
-      // Persist the refreshed token
-      const settings = loadSettings()
-      const pluginSettings = (settings.pluginSettings as Record<string, Record<string, unknown>> | undefined) ?? {}
-      const calSettings = pluginSettings.calendar ?? {}
-      calSettings.accessToken = newToken
-      pluginSettings.calendar = calSettings
-      settings.pluginSettings = pluginSettings
-      const { saveSettings } = await import('../storage')
-      saveSettings(settings)
+      getPluginManager().setPluginSettings('calendar', { ...cfg, accessToken: newToken })
     }
     return newToken || null
   } catch {

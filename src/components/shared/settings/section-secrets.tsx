@@ -53,7 +53,7 @@ export function SecretsSection({ appSettings, inputClass }: SettingsSectionProps
     }
   }
 
-  const orchestrators = Object.values(agents).filter((p) => p.isOrchestrator)
+  const selectableAgents = Object.values(agents)
   const secretList = Object.entries(secrets).map(([rowId, secret]) => ({ ...secret, rowId }))
 
   return (
@@ -62,7 +62,7 @@ export function SecretsSection({ appSettings, inputClass }: SettingsSectionProps
         Service Credentials
       </h3>
       <p className="text-[12px] text-text-3 mb-5">
-        Credentials for external services (Gmail, APIs, etc.) that orchestrators can use during task execution.
+        Credentials for external services (Gmail, APIs, etc.) that agents can use during task execution.
       </p>
 
       {secretList.length > 0 && (
@@ -78,7 +78,7 @@ export function SecretsSection({ appSettings, inputClass }: SettingsSectionProps
                       ? 'bg-emerald-500/10 text-emerald-400'
                       : 'bg-amber-500/10 text-amber-400'
                   }`}>
-                    {secret.scope === 'global' ? 'All orchestrators' : `${secret.agentIds.length} orchestrator(s)`}
+                    {secret.scope === 'global' ? 'All eligible agents' : `${secret.agentIds.length} agent(s)`}
                   </span>
                 </div>
               </div>
@@ -106,14 +106,14 @@ export function SecretsSection({ appSettings, inputClass }: SettingsSectionProps
             <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Scope</label>
             <div className="flex p-1 rounded-[12px] bg-bg border border-white/[0.06]">
               {(['global', 'agent'] as const).map((s) => (
-                <button key={s} onClick={() => setSecretScope(s)} className={`flex-1 py-2.5 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 capitalize ${secretScope === s ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`} style={{ fontFamily: 'inherit' }}>{s === 'global' ? 'All Orchestrators' : 'Specific'}</button>
+                <button key={s} onClick={() => setSecretScope(s)} className={`flex-1 py-2.5 rounded-[10px] text-center cursor-pointer transition-all text-[13px] font-600 capitalize ${secretScope === s ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`} style={{ fontFamily: 'inherit' }}>{s === 'global' ? 'All Eligible Agents' : 'Specific Agents'}</button>
               ))}
             </div>
           </div>
 
-          {secretScope === 'agent' && orchestrators.length > 0 && (
+          {secretScope === 'agent' && selectableAgents.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {orchestrators.map((p) => (
+              {selectableAgents.map((p) => (
                 <button key={p.id} onClick={() => setSecretAgentIds((prev) => prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id])} className={`px-3 py-2 rounded-[10px] text-[12px] font-600 cursor-pointer transition-all border ${secretAgentIds.includes(p.id) ? 'bg-accent-soft border-accent-bright/25 text-accent-bright' : 'bg-bg border-white/[0.06] text-text-3 hover:text-text-2'}`} style={{ fontFamily: 'inherit' }}>{p.name}</button>
               ))}
             </div>

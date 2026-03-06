@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { loadSettings, saveSettings } from '@/lib/server/storage'
+import { getPluginManager } from '@/lib/server/plugins'
+import '@/lib/server/builtin-plugins'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,9 +12,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'pluginId required' }, { status: 400 })
   }
 
-  const settings = loadSettings()
-  const pluginSettings = (settings.pluginSettings as Record<string, Record<string, unknown>> | undefined) ?? {}
-  return NextResponse.json(pluginSettings[pluginId] ?? {})
+  return NextResponse.json(getPluginManager().getPublicPluginSettings(pluginId))
 }
 
 /** PUT /api/plugins/settings?pluginId=X — write per-plugin settings */
@@ -24,12 +23,18 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'pluginId required' }, { status: 400 })
   }
 
-  const body = await req.json() as Record<string, unknown>
-  const settings = loadSettings()
-  const pluginSettings = (settings.pluginSettings as Record<string, Record<string, unknown>> | undefined) ?? {}
-  pluginSettings[pluginId] = body
-  settings.pluginSettings = pluginSettings
-  saveSettings(settings)
-
-  return NextResponse.json({ ok: true })
+  try {
+    const body = await req.json() as Record<string, unknown>
+    const saved = getPluginManager().setPluginSettings(pluginId, body)
+    return NextResponse.json({
+      ok: true,
+      values: saved,
+      configuredSecretFields: getPluginManager().getPublicPluginSettings(pluginId).configuredSecretFields,
+    })
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 400 },
+    )
+  }
 }

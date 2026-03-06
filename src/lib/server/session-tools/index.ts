@@ -37,6 +37,12 @@ import { buildImageGenTools } from './image-gen'
 import { buildEmailTools } from './email'
 import { buildCalendarTools } from './calendar'
 import { buildReplicateTools } from './replicate'
+import { buildMailboxTools } from './mailbox'
+import { buildHumanLoopTools } from './human-loop'
+import { buildDocumentTools } from './document'
+import { buildExtractTools } from './extract'
+import { buildTableTools } from './table'
+import { buildCrawlTools } from './crawl'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 
 import { getPluginManager } from '../plugins'
@@ -157,6 +163,12 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       ['email', buildEmailTools],
       ['calendar', buildCalendarTools],
       ['replicate', buildReplicateTools],
+      ['mailbox', buildMailboxTools],
+      ['ask_human', buildHumanLoopTools],
+      ['document', buildDocumentTools],
+      ['extract', buildExtractTools],
+      ['table', buildTableTools],
+      ['crawl', buildCrawlTools],
     ]
 
     for (const [pluginId, builder] of nativeBuilders) {
@@ -272,8 +284,51 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       ),
     )
 
+    const buildFallbackHookSession = (): Session => ({
+      id: ctx?.sessionId || 'plugin-hook-session',
+      name: 'Plugin Hook Session',
+      cwd,
+      user: 'system',
+      provider: 'openai',
+      model: 'unknown',
+      claudeSessionId: null,
+      messages: [],
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      agentId: ctx?.agentId || null,
+      plugins: [...activePlugins],
+    })
+
+    const wrappedTools = tools.map((candidate) => {
+      const schema = (candidate as unknown as { schema?: z.ZodTypeAny }).schema || z.object({}).passthrough()
+      return tool(
+        async (args) => {
+          const normalizedArgs = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
+          const nextArgs = await pluginManager.runBeforeToolExec(
+            { toolName: candidate.name, input: normalizedArgs },
+            { enabledIds: activePlugins },
+          )
+          const effectiveArgs = nextArgs ?? normalizedArgs
+          const result = await candidate.invoke(effectiveArgs)
+          const outputText = typeof result === 'string' ? result : JSON.stringify(result)
+          const hookSession = resolveCurrentSession() || buildFallbackHookSession()
+          await pluginManager.runHook(
+            'afterToolExec',
+            { session: hookSession, toolName: candidate.name, input: effectiveArgs, output: outputText },
+            { enabledIds: activePlugins },
+          )
+          return outputText
+        },
+        {
+          name: candidate.name,
+          description: candidate.description,
+          schema,
+        },
+      )
+    })
+
     return {
-      tools,
+      tools: wrappedTools,
       cleanup: async () => {
         for (const fn of cleanupFns) {
           try { await fn() } catch { /* ignore */ }

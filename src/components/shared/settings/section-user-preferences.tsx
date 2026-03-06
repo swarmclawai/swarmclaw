@@ -47,7 +47,7 @@ export function UserPreferencesSection({ appSettings, patchSettings, inputClass 
       <div className="mt-6">
         <label className="text-[12px] font-600 text-text-2 block mb-1.5">Default Agent</label>
         <p className="text-[11px] text-text-3/60 mb-2">
-          The agent that opens automatically when you start the app or click Main Chat.
+          The agent that opens automatically when you start the app or use the default-agent shortcut.
         </p>
         <div className="flex flex-wrap gap-2">
           <button

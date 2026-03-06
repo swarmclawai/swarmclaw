@@ -11,7 +11,7 @@ import type { PluginMeta, PluginSettingsField, MarketplacePlugin } from '@/types
 function pluginDescription(plugin: PluginMeta): string {
   const raw = (plugin.description || '').trim()
   if (raw) return raw
-  const sourceLabel = plugin.source === 'local' ? 'core plugin' : 'installed plugin'
+  const sourceLabel = plugin.isBuiltin ? 'core plugin' : 'installed plugin'
   return `No description provided. This ${sourceLabel} is available and can be configured from this panel.`
 }
 
@@ -22,6 +22,7 @@ function pluginCapabilityBadges(plugin: PluginMeta): string[] {
   if (plugin.hasUI) badges.push('UI extension')
   if (plugin.providerCount && plugin.providerCount > 0) badges.push(`${plugin.providerCount} provider${plugin.providerCount === 1 ? '' : 's'}`)
   if (plugin.connectorCount && plugin.connectorCount > 0) badges.push(`${plugin.connectorCount} connector${plugin.connectorCount === 1 ? '' : 's'}`)
+  if (plugin.hasDependencyManifest) badges.push(`${plugin.dependencyCount ?? 0} dep${plugin.dependencyCount === 1 ? '' : 's'}`)
   return badges
 }
 
@@ -46,8 +47,10 @@ export function PluginSheet() {
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [sort, setSort] = useState<'name' | 'downloads'>('downloads')
   const [pluginSettingsValues, setPluginSettingsValues] = useState<Record<string, unknown>>({})
+  const [configuredSecretFields, setConfiguredSecretFields] = useState<string[]>([])
   const [pluginSettingsLoading, setPluginSettingsLoading] = useState(false)
   const [pluginSettingsSaving, setPluginSettingsSaving] = useState(false)
+  const [dependencyInstalling, setDependencyInstalling] = useState(false)
 
   const editing = editingFilename ? plugins[editingFilename] : null
 
@@ -55,12 +58,19 @@ export function PluginSheet() {
   useEffect(() => {
     if (!editing?.settingsFields?.length) {
       setPluginSettingsValues({})
+      setConfiguredSecretFields([])
       return
     }
     setPluginSettingsLoading(true)
-    api<Record<string, unknown>>('GET', `/plugins/settings?pluginId=${encodeURIComponent(editing.filename)}`)
-      .then((data) => setPluginSettingsValues(data ?? {}))
-      .catch(() => setPluginSettingsValues({}))
+    api<{ values?: Record<string, unknown>; configuredSecretFields?: string[] }>('GET', `/plugins/settings?pluginId=${encodeURIComponent(editing.filename)}`)
+      .then((data) => {
+        setPluginSettingsValues(data?.values ?? {})
+        setConfiguredSecretFields(Array.isArray(data?.configuredSecretFields) ? data.configuredSecretFields : [])
+      })
+      .catch(() => {
+        setPluginSettingsValues({})
+        setConfiguredSecretFields([])
+      })
       .finally(() => setPluginSettingsLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingFilename])
@@ -69,7 +79,24 @@ export function PluginSheet() {
     if (!editing) return
     setPluginSettingsSaving(true)
     try {
-      await api('PUT', `/plugins/settings?pluginId=${encodeURIComponent(editing.filename)}`, pluginSettingsValues)
+      const secretFieldSet = new Set(
+        (editing.settingsFields || [])
+          .filter((field) => field.type === 'secret')
+          .map((field) => field.key),
+      )
+      const payload = Object.fromEntries(
+        Object.entries(pluginSettingsValues).filter(([key, value]) => {
+          if (!secretFieldSet.has(key)) return true
+          return value !== undefined && value !== ''
+        }),
+      )
+      const response = await api<{ values?: Record<string, unknown>; configuredSecretFields?: string[] }>(
+        'PUT',
+        `/plugins/settings?pluginId=${encodeURIComponent(editing.filename)}`,
+        payload,
+      )
+      setPluginSettingsValues(response?.values ?? {})
+      setConfiguredSecretFields(Array.isArray(response?.configuredSecretFields) ? response.configuredSecretFields : [])
       toast.success('Plugin settings saved')
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to save settings')
@@ -125,6 +152,24 @@ export function PluginSheet() {
     }
     setDeleting(false)
   }
+
+  const installDependencies = useCallback(async () => {
+    if (!editing?.filename) return
+    setDependencyInstalling(true)
+    try {
+      const response = await api<{ ok: boolean }>('POST', '/plugins/dependencies', {
+        filename: editing.filename,
+        packageManager: editing.packageManager,
+      })
+      if (response?.ok) {
+        await loadPlugins()
+        toast.success('Plugin dependencies installed')
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to install plugin dependencies')
+    }
+    setDependencyInstalling(false)
+  }, [editing?.filename, editing?.packageManager, loadPlugins])
 
   const installFromMarketplace = async (p: MarketplacePlugin) => {
     setInstalling(p.id)
@@ -189,7 +234,9 @@ export function PluginSheet() {
             <div className="grid grid-cols-2 gap-2 mt-3">
               <div className="rounded-[10px] bg-bg/50 border border-white/[0.05] px-2.5 py-2">
                 <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60 mb-0.5">Source</div>
-                <div className="text-[11px] text-text-2">{editing.source === 'local' ? 'Core Platform' : 'Extension'}</div>
+                <div className="text-[11px] text-text-2">
+                  {editing.isBuiltin ? 'Core Platform' : editing.source === 'marketplace' ? 'Marketplace Extension' : 'Local Extension'}
+                </div>
               </div>
               <div className="rounded-[10px] bg-bg/50 border border-white/[0.05] px-2.5 py-2">
                 <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60 mb-0.5">Author</div>
@@ -219,6 +266,54 @@ export function PluginSheet() {
             )}
           </div>
 
+          {(editing.hasDependencyManifest || !editing.isBuiltin) && (
+            <div className="py-4 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[13px] font-600 text-text">Dependencies</div>
+                  <p className="text-[11px] text-text-3/60 mt-1">
+                    {editing.hasDependencyManifest
+                      ? `Managed in a per-plugin workspace${editing.packageManager ? ` via ${editing.packageManager}` : ''}.`
+                      : 'No package.json manifest is currently attached to this plugin.'}
+                  </p>
+                </div>
+                {editing.hasDependencyManifest && (
+                  <button
+                    onClick={() => { void installDependencies() }}
+                    disabled={dependencyInstalling}
+                    className="px-3 py-2 rounded-[10px] bg-accent-soft text-[11px] font-700 text-accent-bright hover:bg-accent-bright/15 transition-all cursor-pointer border-none disabled:opacity-50"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    {dependencyInstalling ? 'Installing…' : 'Install / Refresh'}
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <div className="rounded-[10px] bg-bg/50 border border-white/[0.05] px-2.5 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60 mb-0.5">Runtime deps</div>
+                  <div className="text-[11px] text-text-2">{editing.dependencyCount ?? 0}</div>
+                </div>
+                <div className="rounded-[10px] bg-bg/50 border border-white/[0.05] px-2.5 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60 mb-0.5">Status</div>
+                  <div className="text-[11px] text-text-2">{editing.dependencyInstallStatus || 'none'}</div>
+                </div>
+              </div>
+
+              {editing.dependencyInstallError && (
+                <div className="mt-3 p-2.5 rounded-[10px] bg-red-500/[0.08] border border-red-500/20 text-[11px] text-red-300/90">
+                  {editing.dependencyInstallError}
+                </div>
+              )}
+
+              {editing.dependencyInstalledAt && (
+                <p className="text-[10px] text-text-3/45 mt-3">
+                  Last installed {new Date(editing.dependencyInstalledAt).toLocaleString()}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between py-3 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
             <div>
               <span className="text-[13px] font-600 text-text block">Enabled</span>
@@ -246,6 +341,7 @@ export function PluginSheet() {
                       key={field.key}
                       field={field}
                       value={pluginSettingsValues[field.key]}
+                      configured={configuredSecretFields.includes(field.key)}
                       onChange={(v) => setPluginSettingsValues((prev) => ({ ...prev, [field.key]: v }))}
                     />
                   ))}
@@ -442,7 +538,7 @@ export function PluginSheet() {
                 </p>
               )}
               <p className="text-[10px] text-text-3/60 mt-3">
-                Works with SwarmClaw and OpenClaw plugin formats. URL must be HTTPS.
+                Works with `.js` / `.mjs` SwarmClaw and OpenClaw plugin formats. URL must be HTTPS.
               </p>
             </div>
           )}
@@ -465,7 +561,17 @@ export function PluginSheet() {
   )
 }
 
-function PluginSettingRow({ field, value, onChange }: { field: PluginSettingsField; value: unknown; onChange: (v: unknown) => void }) {
+function PluginSettingRow({
+  field,
+  value,
+  configured,
+  onChange,
+}: {
+  field: PluginSettingsField
+  value: unknown
+  configured: boolean
+  onChange: (v: unknown) => void
+}) {
   const inputCls = 'w-full py-2 px-3 rounded-[8px] text-[12px] bg-bg border border-white/[0.06] text-text placeholder:text-text-3/50 outline-none focus:border-accent-bright/30'
 
   return (
@@ -509,10 +615,13 @@ function PluginSettingRow({ field, value, onChange }: { field: PluginSettingsFie
           type={field.type === 'secret' ? 'password' : 'text'}
           value={String(value ?? field.defaultValue ?? '')}
           onChange={(e) => onChange(e.target.value || undefined)}
-          placeholder={field.placeholder}
+          placeholder={field.type === 'secret' && configured ? 'Stored securely. Enter a new value to replace it.' : field.placeholder}
           className={inputCls}
           style={{ fontFamily: 'inherit' }}
         />
+      )}
+      {field.type === 'secret' && configured && (
+        <p className="text-[10px] text-emerald-400/90 mt-1">Stored securely. Leave blank to keep the current value.</p>
       )}
       {field.help && <p className="text-[10px] text-text-3/60 mt-1">{field.help}</p>}
     </div>

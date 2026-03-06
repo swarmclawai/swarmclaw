@@ -5,7 +5,6 @@ import path from 'path'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { loadSettings } from '../storage'
 import { UPLOAD_DIR } from '../storage'
 import type { ToolBuildContext } from './context'
 
@@ -20,8 +19,7 @@ interface PluginConfig {
 }
 
 function getConfig(): PluginConfig {
-  const settings = loadSettings()
-  const ps = (settings.pluginSettings as Record<string, Record<string, unknown>> | undefined)?.image_gen ?? {}
+  const ps = getPluginManager().getPluginSettings('image_gen')
   return {
     provider: (ps.provider as ImageProvider) || 'openai',
     apiKey: (ps.apiKey as string) || '',

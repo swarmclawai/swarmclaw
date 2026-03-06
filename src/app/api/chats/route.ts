@@ -96,6 +96,22 @@ export async function POST(req: Request) {
     plugins: resolvedPlugins,
     heartbeatEnabled: body.heartbeatEnabled ?? null,
     heartbeatIntervalSec: body.heartbeatIntervalSec ?? null,
+    sessionResetMode: body.sessionResetMode ?? agent?.sessionResetMode ?? null,
+    sessionIdleTimeoutSec: body.sessionIdleTimeoutSec ?? agent?.sessionIdleTimeoutSec ?? null,
+    sessionMaxAgeSec: body.sessionMaxAgeSec ?? agent?.sessionMaxAgeSec ?? null,
+    sessionDailyResetAt: body.sessionDailyResetAt ?? agent?.sessionDailyResetAt ?? null,
+    sessionResetTimezone: body.sessionResetTimezone ?? agent?.sessionResetTimezone ?? null,
+    thinkingLevel: body.thinkingLevel ?? null,
+    connectorThinkLevel: body.connectorThinkLevel ?? null,
+    connectorSessionScope: body.connectorSessionScope ?? null,
+    connectorReplyMode: body.connectorReplyMode ?? null,
+    connectorThreadBinding: body.connectorThreadBinding ?? null,
+    connectorGroupPolicy: body.connectorGroupPolicy ?? null,
+    connectorIdleTimeoutSec: body.connectorIdleTimeoutSec ?? null,
+    connectorMaxAgeSec: body.connectorMaxAgeSec ?? null,
+    connectorContext: body.connectorContext ?? null,
+    identityState: body.identityState ?? agent?.identityState ?? null,
+    sessionArchiveState: body.sessionArchiveState ?? null,
   }
   saveSessions(sessions)
   notify('sessions')

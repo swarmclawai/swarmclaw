@@ -7,12 +7,12 @@ const DEFAULT_CONFIG: ExecApprovalConfig = {
   patterns: [],
 }
 
-/** Fetch exec approval config from gateway for a given agent */
-export async function getExecConfig(agentId: string): Promise<ExecApprovalSnapshot> {
+/** Fetch the gateway's global exec approval config. */
+export async function getExecConfig(_agentId?: string): Promise<ExecApprovalSnapshot> {
   const gw = await ensureGatewayConnected()
   if (!gw) throw new Error('Gateway not connected')
 
-  const result = await gw.rpc('exec.approvals.get', { agentId }) as ExecApprovalSnapshot | undefined
+  const result = await gw.rpc('exec.approvals.get', {}) as ExecApprovalSnapshot | undefined
   if (!result) {
     return { path: '', exists: false, hash: '', file: { ...DEFAULT_CONFIG } }
   }
@@ -21,7 +21,7 @@ export async function getExecConfig(agentId: string): Promise<ExecApprovalSnapsh
 
 /** Save exec approval config with hash-based conflict retry (up to 3 attempts) */
 export async function setExecConfig(
-  agentId: string,
+  _agentId: string,
   config: ExecApprovalConfig,
   baseHash: string,
 ): Promise<{ ok: boolean; hash: string }> {
@@ -32,7 +32,6 @@ export async function setExecConfig(
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const result = await gw.rpc('exec.approvals.set', {
-        agentId,
         file: config,
         baseHash: currentHash,
       }) as { hash?: string } | undefined
@@ -41,7 +40,7 @@ export async function setExecConfig(
       const msg = err instanceof Error ? err.message : String(err)
       if (msg.includes('conflict') && attempt < 2) {
         // Re-fetch to get fresh hash
-        const fresh = await getExecConfig(agentId)
+        const fresh = await getExecConfig()
         currentHash = fresh.hash
         continue
       }

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { DATA_DIR } from './data-dir'
+import { normalizeOpenClawAgentId } from '@/lib/openclaw-agent-id'
 import { loadSettings, loadAgents, saveAgents, loadSchedules, saveSchedules, loadCredentials, decryptKey, encryptKey } from './storage'
 import { getMemoryDb } from './memory-db'
 import type { AppSettings, MemoryEntry, Schedule } from '@/types'
@@ -182,7 +183,7 @@ export function pushAgentToOpenClaw(agentId: string): { written: string[] } {
   const agent = agents[agentId]
   if (!agent) throw new Error(`Agent not found: ${agentId}`)
 
-  const agentDir = path.join(config.workspacePath, 'agents', agent.name.toLowerCase().replace(/\s+/g, '-'))
+  const agentDir = path.join(config.workspacePath, 'agents', normalizeOpenClawAgentId(agent.name))
   ensureDir(agentDir)
 
   const written: string[] = []
@@ -214,7 +215,7 @@ export function pullAgentFromOpenClaw(agentId: string): { updated: string[] } {
   const agent = agents[agentId]
   if (!agent) throw new Error(`Agent not found: ${agentId}`)
 
-  const agentDir = path.join(config.workspacePath, 'agents', agent.name.toLowerCase().replace(/\s+/g, '-'))
+  const agentDir = path.join(config.workspacePath, 'agents', normalizeOpenClawAgentId(agent.name))
   const updated: string[] = []
 
   const soulPath = path.join(agentDir, 'SOUL.md')

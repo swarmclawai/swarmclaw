@@ -1,8 +1,20 @@
 'use client'
 
+import type { ApprovalCategory } from '@/types'
 import type { SettingsSectionProps } from './types'
 
+const APPROVAL_CATEGORY_OPTIONS: Array<{ id: ApprovalCategory; label: string; description: string }> = [
+  { id: 'tool_access', label: 'Plugin Access', description: 'Auto-enable requested plugins for a chat.' },
+  { id: 'plugin_scaffold', label: 'Plugin Scaffold', description: 'Auto-create plugin files requested by agents.' },
+  { id: 'plugin_install', label: 'Plugin Install', description: 'Auto-install plugins from approved URLs.' },
+  { id: 'human_loop', label: 'Human Approval Requests', description: 'Auto-approve ask-human approval prompts.' },
+  { id: 'wallet_transfer', label: 'Wallet Transfers', description: 'Auto-approve wallet send requests. High risk.' },
+  { id: 'task_tool', label: 'Task Tool Calls', description: 'Reserved for task-level approval flows.' },
+]
+
 export function CapabilityPolicySection({ appSettings, patchSettings, inputClass }: SettingsSectionProps) {
+  const autoApproved = new Set(appSettings.approvalAutoApproveCategories || [])
+
   return (
     <div className="mb-10">
       <h3 className="font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
@@ -34,6 +46,24 @@ export function CapabilityPolicySection({ appSettings, patchSettings, inputClass
         </div>
 
         <div className="grid grid-cols-1 gap-4">
+          <div className="rounded-[12px] border border-white/[0.06] bg-bg px-4 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-[12px] font-600 text-text-2">Platform Approvals</div>
+                <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">
+                  Turn this off to auto-approve every approval request across the platform for maximum autonomy. Audit records are still kept.
+                </p>
+              </div>
+              <button
+                onClick={() => patchSettings({ approvalsEnabled: !(appSettings.approvalsEnabled ?? true) })}
+                className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${(appSettings.approvalsEnabled ?? true) ? 'bg-accent' : 'bg-white/[0.12]'}`}
+                aria-label="Toggle platform approvals"
+              >
+                <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${(appSettings.approvalsEnabled ?? true) ? 'translate-x-[18px]' : ''}`} />
+              </button>
+            </div>
+          </div>
+
           <div>
             <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Blocked Categories</label>
             <input
@@ -85,6 +115,81 @@ export function CapabilityPolicySection({ appSettings, patchSettings, inputClass
               style={{ fontFamily: 'inherit' }}
             />
             <p className="text-[11px] text-text-3/60 mt-2">Use this to re-allow specific tool families when running in strict mode.</p>
+          </div>
+
+          <div>
+            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Auto-Approve Workflow Requests</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {APPROVAL_CATEGORY_OPTIONS.map((option) => {
+                const checked = autoApproved.has(option.id)
+                return (
+                  <label
+                    key={option.id}
+                    className={`rounded-[12px] border px-3 py-3 cursor-pointer transition-all ${
+                      checked
+                        ? 'border-accent-bright/30 bg-accent-soft/60'
+                        : 'border-white/[0.06] bg-bg hover:bg-surface-2'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const next = new Set(appSettings.approvalAutoApproveCategories || [])
+                          if (e.target.checked) next.add(option.id)
+                          else next.delete(option.id)
+                          patchSettings({ approvalAutoApproveCategories: [...next] })
+                        }}
+                        className="mt-0.5"
+                      />
+                      <div>
+                        <div className="text-[12px] font-600 text-text-2">{option.label}</div>
+                        <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">{option.description}</p>
+                      </div>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+            <p className="text-[11px] text-text-3/60 mt-2">
+              Auto-approved categories execute immediately instead of waiting in the Approvals queue. Leave high-risk categories off unless the user explicitly wants fully autonomous execution.
+            </p>
+          </div>
+
+          <div className="rounded-[12px] border border-white/[0.06] bg-bg px-4 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-[12px] font-600 text-text-2">Connector Approval Reminders</div>
+                <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">
+                  If an approval sits too long, let the agent send a one-time reminder over an active connector conversation it already has access to.
+                </p>
+              </div>
+              <button
+                onClick={() => patchSettings({ approvalConnectorNotifyEnabled: !(appSettings.approvalConnectorNotifyEnabled ?? true) })}
+                className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${(appSettings.approvalConnectorNotifyEnabled ?? true) ? 'bg-accent' : 'bg-white/[0.12]'}`}
+                aria-label="Toggle connector approval reminders"
+              >
+                <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${(appSettings.approvalConnectorNotifyEnabled ?? true) ? 'translate-x-[18px]' : ''}`} />
+              </button>
+            </div>
+            <div className="mt-4 max-w-[220px]">
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Reminder Delay (Sec)</label>
+              <input
+                type="number"
+                min={30}
+                max={86400}
+                value={appSettings.approvalConnectorNotifyDelaySec ?? 300}
+                onChange={(e) => {
+                  const next = Number.parseInt(e.target.value, 10)
+                  patchSettings({
+                    approvalConnectorNotifyDelaySec: Number.isFinite(next) ? Math.max(30, Math.min(86400, next)) : 300,
+                  })
+                }}
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
           </div>
         </div>
       </div>

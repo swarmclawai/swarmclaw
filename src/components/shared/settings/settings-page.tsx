@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import type { ReactNode } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { inputClass } from './utils'
 import { UserPreferencesSection } from './section-user-preferences'
@@ -20,15 +21,29 @@ import { ProvidersSection } from './section-providers'
 interface Tab {
   id: string
   label: string
-  icon: React.ReactNode
+  icon: ReactNode
   keywords: string[]
+}
+
+interface SettingsSectionDef {
+  id: string
+  tabId: string
+  title: string
+  description: string
+  keywords: string[]
+  render: () => ReactNode
+}
+
+interface SettingsFocusDetail {
+  tabId?: string
+  sectionId?: string
 }
 
 const TABS: Tab[] = [
   {
     id: 'general',
     label: 'General',
-    keywords: ['preferences', 'user', 'language', 'default', 'capability', 'policy', 'permissions', 'tools', 'storage', 'uploads', 'disk', 'files', 'cleanup'],
+    keywords: ['preferences', 'user', 'language', 'default', 'default agent', 'shortcut', 'capability', 'policy', 'permissions', 'tools', 'storage', 'uploads', 'disk', 'files', 'cleanup'],
     icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   },
   {
@@ -39,8 +54,8 @@ const TABS: Tab[] = [
   },
   {
     id: 'agents',
-    label: 'Agents & Loops',
-    keywords: ['orchestrator', 'runtime', 'loop', 'heartbeat', 'delegation', 'agent', 'swarm', 'turns'],
+    label: 'Agents & Automation',
+    keywords: ['orchestrator', 'runtime', 'loop', 'automation', 'heartbeat', 'delegation', 'agent', 'swarm', 'turns'],
     icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>,
   },
   {
@@ -74,6 +89,8 @@ export function SettingsPage() {
     return tab && validTabIds.includes(tab) ? tab : 'general'
   })
   const contentRef = useRef<HTMLDivElement>(null)
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const [pendingSectionId, setPendingSectionId] = useState<string | null>(null)
 
   const setActiveTab = useCallback((tab: string) => {
     setActiveTabRaw(tab)
@@ -101,12 +118,145 @@ export function SettingsPage() {
   const credList = Object.values(credentials)
   const patchSettings = updateSettings
   const sectionProps = { appSettings, patchSettings, inputClass }
+  const sections = useMemo<SettingsSectionDef[]>(() => [
+    {
+      id: 'user-preferences',
+      tabId: 'general',
+      title: 'Profile & Default Chat',
+      description: 'User identity, language, and which agent your sidebar shortcut opens.',
+      keywords: ['profile', 'default chat', 'default agent', 'shortcut', 'user', 'language', 'main chat'],
+      render: () => <UserPreferencesSection {...sectionProps} />,
+    },
+    {
+      id: 'capability-policy',
+      tabId: 'general',
+      title: 'Capabilities & Permissions',
+      description: 'Global controls for tool use, permissions, and execution policy.',
+      keywords: ['tools', 'permissions', 'capability', 'policy', 'security', 'approvals'],
+      render: () => <CapabilityPolicySection {...sectionProps} />,
+    },
+    {
+      id: 'storage',
+      tabId: 'general',
+      title: 'Storage & Uploads',
+      description: 'Manage upload retention, cleanup, and file storage behavior.',
+      keywords: ['storage', 'uploads', 'disk', 'cleanup', 'files'],
+      render: () => <StorageSection {...sectionProps} />,
+    },
+    {
+      id: 'theme',
+      tabId: 'appearance',
+      title: 'Theme',
+      description: 'Adjust theme hue and interface styling.',
+      keywords: ['theme', 'appearance', 'color', 'hue'],
+      render: () => <ThemeSection {...sectionProps} />,
+    },
+    {
+      id: 'coordination-engine',
+      tabId: 'agents',
+      title: 'Coordination Engine',
+      description: 'Choose the model settings used for delegation-heavy agent work.',
+      keywords: ['coordination', 'delegation', 'engine', 'orchestrator'],
+      render: () => <OrchestratorSection {...sectionProps} />,
+    },
+    {
+      id: 'runtime-loop',
+      tabId: 'agents',
+      title: 'Automation Limits',
+      description: 'Control how far agents can run, recurse, and delegate on their own.',
+      keywords: ['automation', 'loop', 'runtime', 'turns', 'autonomy', 'heartbeat'],
+      render: () => <RuntimeLoopSection {...sectionProps} />,
+    },
+    {
+      id: 'heartbeat',
+      tabId: 'agents',
+      title: 'Heartbeat',
+      description: 'Configure automatic follow-up checks for active agent chats.',
+      keywords: ['heartbeat', 'follow up', 'interval', 'ongoing'],
+      render: () => <HeartbeatSection {...sectionProps} />,
+    },
+    {
+      id: 'embedding',
+      tabId: 'memory',
+      title: 'Embeddings',
+      description: 'Configure providers for embeddings and vector-backed features.',
+      keywords: ['embedding', 'vector', 'provider', 'semantic'],
+      render: () => <EmbeddingSection {...sectionProps} credList={credList} />,
+    },
+    {
+      id: 'memory',
+      tabId: 'memory',
+      title: 'Memory Governance',
+      description: 'Tune how memory is stored, consolidated, and retrieved.',
+      keywords: ['memory', 'consolidation', 'retention', 'governance'],
+      render: () => <MemorySection {...sectionProps} />,
+    },
+    {
+      id: 'voice',
+      tabId: 'memory',
+      title: 'Voice',
+      description: 'Control speech output and voice provider settings.',
+      keywords: ['voice', 'speech', 'tts', 'audio'],
+      render: () => <VoiceSection {...sectionProps} />,
+    },
+    {
+      id: 'web-search',
+      tabId: 'memory',
+      title: 'Web Search',
+      description: 'Set defaults for search providers and browsing behavior.',
+      keywords: ['web search', 'browse', 'internet', 'search'],
+      render: () => <WebSearchSection {...sectionProps} />,
+    },
+    {
+      id: 'providers',
+      tabId: 'integrations',
+      title: 'Providers',
+      description: 'Manage model providers, endpoints, and credentials.',
+      keywords: ['providers', 'endpoints', 'openai', 'anthropic', 'ollama', 'models'],
+      render: () => <ProvidersSection {...sectionProps} />,
+    },
+    {
+      id: 'secrets',
+      tabId: 'integrations',
+      title: 'Secrets',
+      description: 'Store encrypted credentials for agents and integrations.',
+      keywords: ['secrets', 'credentials', 'api keys', 'tokens'],
+      render: () => <SecretsSection {...sectionProps} />,
+    },
+  ], [credList, sectionProps])
+  const sectionsByTab = useMemo(() => {
+    const map = new Map<string, SettingsSectionDef[]>()
+    for (const section of sections) {
+      const group = map.get(section.tabId) || []
+      group.push(section)
+      map.set(section.tabId, group)
+    }
+    return map
+  }, [sections])
+  const setSectionRef = useCallback((id: string, node: HTMLDivElement | null) => {
+    sectionRefs.current[id] = node
+  }, [])
+  const focusSection = useCallback((sectionId: string, tabId?: string) => {
+    if (tabId && tabId !== activeTab) {
+      setPendingSectionId(sectionId)
+      setActiveTab(tabId)
+      return
+    }
+    sectionRefs.current[sectionId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [activeTab, setActiveTab])
+
+  const matchingSections = useMemo(() => {
+    if (!searchQuery.trim()) return sections
+    const q = searchQuery.toLowerCase()
+    return sections.filter((section) =>
+      section.title.toLowerCase().includes(q)
+      || section.description.toLowerCase().includes(q)
+      || section.keywords.some((keyword) => keyword.toLowerCase().includes(q)),
+    )
+  }, [searchQuery, sections])
 
   const matchingTabIds = searchQuery
-    ? new Set(TABS.filter((t) => {
-        const q = searchQuery.toLowerCase()
-        return t.label.toLowerCase().includes(q) || t.keywords.some((k) => k.includes(q))
-      }).map((t) => t.id))
+    ? new Set(matchingSections.map((section) => section.tabId))
     : null
 
   // Auto-switch to first matching tab when searching
@@ -117,6 +267,31 @@ export function SettingsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery])
+
+  useEffect(() => {
+    if (!pendingSectionId) return
+    const frame = window.requestAnimationFrame(() => {
+      sectionRefs.current[pendingSectionId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setPendingSectionId(null)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [activeTab, pendingSectionId])
+
+  useEffect(() => {
+    const handleFocus = (event: Event) => {
+      const detail = (event as CustomEvent<SettingsFocusDetail>).detail
+      if (!detail) return
+      if (detail.sectionId) {
+        focusSection(detail.sectionId, detail.tabId)
+        return
+      }
+      if (detail.tabId) setActiveTab(detail.tabId)
+    }
+    window.addEventListener('swarmclaw:settings-focus', handleFocus as EventListener)
+    return () => window.removeEventListener('swarmclaw:settings-focus', handleFocus as EventListener)
+  }, [focusSection, setActiveTab])
+
+  const visibleSections = sectionsByTab.get(activeTab) || []
 
   return (
     <div className="flex-1 flex h-full min-w-0">
@@ -133,7 +308,7 @@ export function SettingsPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search settings..."
+              placeholder="Search settings or jump to a section..."
               className="w-full pl-8 pr-2 py-1.5 text-[12px] bg-white/[0.04] rounded-[8px] border border-white/[0.06] text-text placeholder:text-text-3/40 outline-none focus:border-white/[0.12] transition-colors"
               style={{ fontFamily: 'inherit' }}
             />
@@ -168,49 +343,73 @@ export function SettingsPage() {
               {TABS.find((t) => t.id === activeTab)?.label}
             </h3>
             <p className="text-[13px] text-text-3 mt-1">
-              {activeTab === 'general' && 'User preferences and global behavior settings.'}
+              {activeTab === 'general' && 'User preferences, default-chat behavior, and global controls.'}
               {activeTab === 'appearance' && 'Customize the look and feel of the interface.'}
-              {activeTab === 'agents' && 'Orchestrator, runtime loops, capabilities and heartbeat.'}
+              {activeTab === 'agents' && 'Agent coordination, autonomy, delegation, and heartbeat.'}
               {activeTab === 'memory' && 'Embedding, memory governance, voice and web search.'}
-              {activeTab === 'integrations' && 'Providers, secrets and plugins.'}
+              {activeTab === 'integrations' && 'Providers, endpoints, and encrypted credentials.'}
             </p>
           </div>
 
-          {activeTab === 'general' && (
-            <>
-              <UserPreferencesSection {...sectionProps} />
-              <CapabilityPolicySection {...sectionProps} />
-              <StorageSection {...sectionProps} />
-            </>
+          {searchQuery && (
+            <div className="mb-8 rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-[12px] font-600 text-text-2">
+                    {matchingSections.length > 0 ? `${matchingSections.length} matching section${matchingSections.length === 1 ? '' : 's'}` : 'No direct section matches'}
+                  </p>
+                  <p className="text-[11px] text-text-3/60">
+                    Search now lands on individual settings sections instead of only tab names.
+                  </p>
+                </div>
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="px-2.5 py-1.5 rounded-[8px] bg-white/[0.04] text-[11px] text-text-3 hover:text-text hover:bg-white/[0.08] transition-colors border-none cursor-pointer"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {matchingSections.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {matchingSections.slice(0, 8).map((section) => (
+                    <button
+                      key={section.id}
+                      onClick={() => focusSection(section.id, section.tabId)}
+                      className="px-3 py-2 rounded-[10px] border border-white/[0.06] bg-transparent text-left hover:bg-white/[0.04] transition-colors cursor-pointer"
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      <div className="text-[12px] font-600 text-text">{section.title}</div>
+                      <div className="text-[10px] text-text-3/60">{TABS.find((tab) => tab.id === section.tabId)?.label}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
-          {activeTab === 'appearance' && (
-            <ThemeSection {...sectionProps} />
-          )}
-
-          {activeTab === 'agents' && (
-            <>
-              <OrchestratorSection {...sectionProps} />
-              <RuntimeLoopSection {...sectionProps} />
-              <HeartbeatSection {...sectionProps} />
-            </>
-          )}
-
-          {activeTab === 'memory' && (
-            <>
-              <EmbeddingSection {...sectionProps} credList={credList} />
-              <MemorySection {...sectionProps} />
-              <VoiceSection {...sectionProps} />
-              <WebSearchSection {...sectionProps} />
-            </>
-          )}
-
-          {activeTab === 'integrations' && (
-            <>
-              <ProvidersSection {...sectionProps} />
-              <SecretsSection {...sectionProps} />
-            </>
-          )}
+          {visibleSections.map((section) => (
+            <div
+              key={section.id}
+              ref={(node) => setSectionRef(section.id, node)}
+              className="mb-10 scroll-mt-6 last:mb-0"
+            >
+              <div className="mb-4">
+                <div className="text-[11px] uppercase tracking-[0.08em] text-text-3/45 mb-1">
+                  {TABS.find((tab) => tab.id === section.tabId)?.label}
+                </div>
+                <h4 className="font-display text-[18px] font-700 tracking-[-0.02em] text-text">
+                  {section.title}
+                </h4>
+                <p className="text-[12px] text-text-3 mt-1">
+                  {section.description}
+                </p>
+              </div>
+              {section.render()}
+            </div>
+          ))}
         </div>
       </div>
     </div>

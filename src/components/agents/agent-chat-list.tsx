@@ -135,6 +135,17 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
     })
   }, [sortedAgents, chatFilter, sessions, runningAgentIds, streamingSessionId, chatroomActiveAgentIds])
 
+  const defaultAgent = useMemo(() => {
+    const id = appSettings.defaultAgentId
+    return id ? agents[id] || null : null
+  }, [appSettings.defaultAgentId, agents])
+
+  const defaultAgentVisible = !!defaultAgent && filteredAgents.some((agent) => agent.id === defaultAgent.id)
+  const listAgents = useMemo(
+    () => (defaultAgentVisible ? filteredAgents.filter((agent) => agent.id !== defaultAgent?.id) : filteredAgents),
+    [defaultAgent?.id, defaultAgentVisible, filteredAgents],
+  )
+
   // FLIP: animate row position changes
   useLayoutEffect(() => {
     const prevTop = previousTopRef.current
@@ -258,7 +269,91 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
         </div>
       )}
       <div className="flex flex-col gap-0.5 px-2 pb-4">
-        {filteredAgents.map((agent) => {
+        {defaultAgentVisible && defaultAgent && (() => {
+          const threadSession = defaultAgent.threadSessionId ? sessions[defaultAgent.threadSessionId] as Session | undefined : undefined
+          const lastMsg = threadSession?.messages?.at(-1)
+          const heartbeatOn = defaultAgent.heartbeatEnabled === true && (defaultAgent.plugins?.length ?? 0) > 0
+          const recentlyActive = (threadSession?.lastActiveAt ?? 0) > Date.now() - 30 * 60 * 1000
+          const isWorking = runningAgentIds.has(defaultAgent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(defaultAgent.id)
+          const isTyping = streamingSessionId === defaultAgent.threadSessionId
+          const preview = lastMsg?.text?.slice(0, 100)?.replace(/\n/g, ' ') || 'Your primary shortcut chat.'
+          const isActive = currentAgentId === defaultAgent.id
+
+          return (
+            <div className="mb-2 px-2">
+              <div className="px-2 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-accent-bright/65">
+                Default Agent
+              </div>
+              <div
+                className={`group/row relative w-full text-left py-3.5 px-4 rounded-[14px] cursor-pointer transition-all duration-150 border
+                  ${isActive
+                    ? 'bg-accent-soft border-accent-bright/25'
+                    : 'bg-accent-soft/40 border-accent-bright/15 hover:bg-accent-soft/55'}`}
+                onClick={() => bulkMode ? toggleSelected(defaultAgent.id) : handleSelect(defaultAgent)}
+              >
+                <div className="flex items-center gap-3">
+                  {bulkMode && (
+                    <div className={`w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 transition-colors
+                      ${selectedIds.has(defaultAgent.id) ? 'bg-accent-bright border-accent-bright' : 'border-white/20 bg-transparent'}`}>
+                      {selectedIds.has(defaultAgent.id) && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </div>
+                  )}
+                  <div className="relative shrink-0">
+                    <AgentAvatar seed={defaultAgent.avatarSeed || null} avatarUrl={defaultAgent.avatarUrl} name={defaultAgent.name} size={38} />
+                    <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg ${
+                      isWorking ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.4)]' : 'bg-text-3/30'
+                    }`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-display text-[14px] font-700 truncate text-text tracking-[-0.01em]">
+                        {defaultAgent.name}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded-[6px] bg-accent-bright/12 text-accent-bright text-[9px] font-700 uppercase tracking-[0.08em]">
+                        Shortcut
+                      </span>
+                    </div>
+                    {isTyping ? (
+                      <div className="text-[12px] text-accent-bright/80 mt-1 flex items-center gap-1.5">
+                        <span className="flex gap-0.5">
+                          <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:0ms]" />
+                          <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:150ms]" />
+                          <span className="w-1 h-1 rounded-full bg-accent-bright/70 animate-bounce [animation-delay:300ms]" />
+                        </span>
+                        Typing...
+                      </div>
+                    ) : (
+                      <div className="text-[12px] text-text-3/70 mt-1 truncate">
+                        {preview}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation()
+                      await updateSettings({ defaultAgentId: null })
+                      toast.success('Default agent cleared')
+                    }}
+                    aria-label="Remove as default agent"
+                    title="Default agent — click to clear"
+                    className="shrink-0 p-1 rounded-[6px] transition-all bg-transparent border-none cursor-pointer hover:bg-white/[0.06] text-accent-bright"
+                    style={{ fontFamily: 'inherit' }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <path d="M9 22V12h6v10" fill="rgba(0,0,0,0.3)" stroke="none" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+        {listAgents.map((agent) => {
           const threadSession = agent.threadSessionId ? sessions[agent.threadSessionId] as Session | undefined : undefined
           const lastMsg = threadSession?.messages?.at(-1)
           const isActive = currentAgentId === agent.id
@@ -300,6 +395,11 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
                     <span className="font-display text-[13.5px] font-600 truncate flex-1 tracking-[-0.01em]">
                       {agent.name}
                     </span>
+                    {appSettings.defaultAgentId === agent.id && (
+                      <span className="px-1.5 py-0.5 rounded-[6px] bg-accent-bright/10 text-accent-bright text-[9px] font-700 uppercase tracking-[0.08em] shrink-0">
+                        Default
+                      </span>
+                    )}
                     <span className="text-[10px] text-text-3/60 font-mono shrink-0">
                       {(threadSession?.model || agent.model)
                         ? (threadSession?.model || agent.model)!.split('/').pop()?.split(':')[0]

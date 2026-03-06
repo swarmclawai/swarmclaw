@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { AUTH_COOKIE_NAME } from '@/lib/auth'
 
 /* ------------------------------------------------------------------ */
 /*  Rate-limit state — HMR-safe via globalThis                        */
@@ -44,7 +45,7 @@ function getClientIp(request: NextRequest): string {
 /* ------------------------------------------------------------------ */
 
 /** Access key auth proxy with brute-force rate limiting.
- *  Checks X-Access-Key header or ?key= param on all /api/ routes except /api/auth.
+ *  Checks X-Access-Key header or auth cookie on all /api/ routes except /api/auth.
  *  The key is validated against the ACCESS_KEY env var.
  *  After 5 failed attempts from a single IP the client is locked out for 15 minutes.
  */
@@ -55,11 +56,10 @@ export function proxy(request: NextRequest) {
   const isConnectorWebhook = request.method === 'POST'
     && /^\/api\/connectors\/[^/]+\/webhook\/?$/.test(pathname)
 
-  // Only protect API routes (not auth, uploads served as static assets, or inbound webhooks)
+  // Only protect API routes (not auth or inbound webhooks)
   if (
     !pathname.startsWith('/api/')
     || pathname === '/api/auth'
-    || pathname.startsWith('/api/uploads/')
     || isWebhookTrigger
     || isConnectorWebhook
   ) {
@@ -88,8 +88,8 @@ export function proxy(request: NextRequest) {
   }
 
   const providedKey =
-    request.headers.get('x-access-key')
-    || request.nextUrl.searchParams.get('key')
+    request.headers.get('x-access-key')?.trim()
+    || request.cookies.get(AUTH_COOKIE_NAME)?.value?.trim()
     || ''
 
   if (providedKey !== accessKey) {

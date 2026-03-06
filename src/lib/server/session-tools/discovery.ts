@@ -96,8 +96,8 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
             })
           }
         }
-        const { requestApproval } = await import('../approvals')
-        requestApproval({
+        const { requestApprovalMaybeAutoApprove } = await import('../approvals')
+        const approval = await requestApprovalMaybeAutoApprove({
           category: 'tool_access',
           title: `Enable Plugin: ${pluginId}`,
           description: reason || `Agent is requesting access to the "${pluginId}" plugin.`,
@@ -105,6 +105,15 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
           agentId: bctx?.ctx?.agentId,
           sessionId: bctx?.ctx?.sessionId,
         })
+        if (approval.status === 'approved') {
+          return JSON.stringify({
+            alreadyGranted: true,
+            pluginId,
+            toolId: pluginId,
+            autoApproved: true,
+            message: `Access to "${pluginId}" was auto-approved and granted. Proceed to use it directly.`,
+          })
+        }
         return JSON.stringify({
           type: 'plugin_request',
           pluginId,
@@ -118,8 +127,8 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
           return JSON.stringify({ error: 'url is required for install_request.' })
         }
         if (approved !== true) {
-          const { requestApproval } = await import('../approvals')
-          requestApproval({
+          const { requestApprovalMaybeAutoApprove } = await import('../approvals')
+          const approval = await requestApprovalMaybeAutoApprove({
             category: 'plugin_install',
             title: `Install Plugin${pluginId ? `: ${pluginId}` : ' from URL'}`,
             description: reason || `Agent wants to install a plugin${url ? ` from ${url}` : ''}.`,
@@ -127,6 +136,15 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
             agentId: bctx?.ctx?.agentId,
             sessionId: bctx?.ctx?.sessionId,
           })
+          if (approval.status === 'approved') {
+            return JSON.stringify({
+              type: 'plugin_install_request',
+              url,
+              pluginId,
+              autoApproved: true,
+              message: `Plugin install from ${url} was auto-approved and has been applied.`,
+            })
+          }
           return JSON.stringify({
             type: 'plugin_install_request',
             url,

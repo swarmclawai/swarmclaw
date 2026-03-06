@@ -33,6 +33,7 @@ async function executeSessionsAction(args: any, context: { sessionId?: string; a
   const limit = normalized.limit as number | undefined
   const agentId = (normalized.agentId ?? normalized.agent_id) as string | undefined
   const name = normalized.name as string | undefined
+  const updates = normalized.updates as Record<string, unknown> | undefined
   try {
     const sessions = loadSessions()
     if (action === 'list') {
@@ -53,11 +54,42 @@ async function executeSessionsAction(args: any, context: { sessionId?: string; a
       sessions[id] = {
         id, name: (name || `${agent.name} Chat`).trim(), cwd: context.cwd, user: 'system',
         provider: agent.provider, model: agent.model, credentialId: agent.credentialId || null,
-        messages: [], createdAt: now, lastActiveAt: now, sessionType: 'orchestrated',
+        messages: [], createdAt: now, lastActiveAt: now, sessionType: 'human',
         agentId: agent.id, parentSessionId: context.sessionId || undefined, plugins: agent.plugins || agent.tools || [],
       }
       saveSessions(sessions)
       return JSON.stringify({ sessionId: id, name: agent.name })
+    }
+    if (action === 'update') {
+      const targetId = sessionId || context.sessionId || ''
+      if (!targetId) return 'sessionId required.'
+      const target = sessions[targetId]
+      if (!target) return 'Not found.'
+      const allowedKeys = new Set([
+        'thinkingLevel',
+        'connectorThinkLevel',
+        'sessionResetMode',
+        'sessionIdleTimeoutSec',
+        'sessionMaxAgeSec',
+        'sessionDailyResetAt',
+        'sessionResetTimezone',
+        'connectorSessionScope',
+        'connectorReplyMode',
+        'connectorThreadBinding',
+        'connectorGroupPolicy',
+        'connectorIdleTimeoutSec',
+        'connectorMaxAgeSec',
+        'identityState',
+        'provider',
+        'model',
+      ])
+      const patch = updates && typeof updates === 'object' ? updates : {}
+      for (const [key, value] of Object.entries(patch)) {
+        if (!allowedKeys.has(key)) continue
+        target[key] = value
+      }
+      saveSessions(sessions)
+      return JSON.stringify({ sessionId: targetId, updated: Object.keys(patch).filter((key) => allowedKeys.has(key)) })
     }
     return `Unknown action "${action}".`
   } catch (err: any) { return `Error: ${err.message}` }
@@ -86,11 +118,12 @@ const SessionInfoPlugin: Plugin = {
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['list', 'history', 'spawn', 'status', 'stop'] },
+          action: { type: 'string', enum: ['list', 'history', 'spawn', 'status', 'stop', 'update'] },
           sessionId: { type: 'string' },
           agentId: { type: 'string' },
           message: { type: 'string' },
-          limit: { type: 'number' }
+          limit: { type: 'number' },
+          updates: { type: 'object' },
         },
         required: ['action']
       },

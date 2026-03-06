@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { setStoredAccessKey } from '@/lib/api-client'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
-import { copyTextToClipboard } from '@/lib/clipboard'
 
 interface AccessKeyGateProps {
   onAuthenticated: () => void
@@ -19,8 +18,6 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
 
   // First-time setup state
   const [firstTime, setFirstTime] = useState(false)
-  const [generatedKey, setGeneratedKey] = useState('')
-  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -28,9 +25,8 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
       try {
         const res = await fetchWithTimeout('/api/auth', {}, AUTH_CHECK_TIMEOUT_MS)
         const data = await res.json().catch(() => ({}))
-        if (!cancelled && data.firstTime && data.key) {
+        if (!cancelled && data.firstTime) {
           setFirstTime(true)
-          setGeneratedKey(data.key)
         }
       } catch (err) {
         console.error('Auth check failed:', err)
@@ -40,38 +36,6 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
     })()
     return () => { cancelled = true }
   }, [])
-
-  const handleCopyKey = async () => {
-    try {
-      const copiedKey = await copyTextToClipboard(generatedKey)
-      if (!copiedKey) return
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // Fallback: select the text
-    }
-  }
-
-  const handleClaimKey = async () => {
-    setLoading(true)
-    try {
-      const res = await fetchWithTimeout('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: generatedKey }),
-      }, AUTH_CHECK_TIMEOUT_MS)
-      if (res.ok) {
-        setStoredAccessKey(generatedKey)
-        onAuthenticated()
-      } else {
-        setError('Invalid access key')
-      }
-    } catch {
-      setError('Connection failed')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -148,77 +112,52 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
         </div>
 
         {firstTime ? (
-          /* ── First-time setup: show the generated key ── */
+          /* ── First-time setup: prompt for the key without disclosing it over HTTP ── */
           <>
             <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.1s both' }}>
               <h1 className="font-display text-[36px] font-800 leading-[1.05] tracking-[-0.04em] mb-3">
-                Your Access Key
+                First-Time Setup
               </h1>
               <p className="text-[14px] text-text-2 mb-8">
-                This key was generated for your server. Copy it somewhere safe — you&apos;ll need it to connect from other devices.
+                Enter the access key generated for this server. It is shown in the terminal on first launch and stored in <code className="text-text-2">.env.local</code>.
               </p>
             </div>
-
-            {/* Key display */}
-            <div className="mb-3" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.2s both' }}>
-              <div
-                className="inline-flex items-center gap-3 px-5 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface
-                  cursor-pointer hover:border-accent-bright/20 transition-all duration-200"
-                onClick={handleCopyKey}
-              >
-                <code className="text-[15px] font-mono text-accent-bright tracking-wide select-all">
-                  {generatedKey}
-                </code>
-                <svg
-                  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  className="text-text-3 shrink-0"
-                >
-                  {copied ? (
-                    <path d="M20 6L9 17l-5-5" />
-                  ) : (
-                    <>
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                    </>
-                  )}
-                </svg>
+            <form onSubmit={handleSubmit} className="flex flex-col items-center gap-4">
+              <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.2s both', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                <input
+                  type="password"
+                  value={key}
+                  onChange={(e) => { setKey(e.target.value); setError('') }}
+                  placeholder="Paste access key"
+                  autoFocus
+                  autoComplete="off"
+                  className="w-full max-w-[320px] px-6 py-4 rounded-[16px] border border-white/[0.08] bg-surface
+                    text-text text-[16px] text-center font-mono outline-none
+                    transition-all duration-200 placeholder:text-text-3/70
+                    focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
+                />
               </div>
-            </div>
 
-            <div className="relative h-5 mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.3s both' }}>
-              <p
-                className="absolute inset-x-0 text-[12px] transition-all duration-300"
-                style={{
-                  opacity: copied ? 0 : 1,
-                  transform: copied ? 'translateY(-4px)' : 'translateY(0)',
-                }}
-              >
-                <span className="text-text-3">Click to copy &middot; Also saved in </span>
-                <code className="text-text-2">.env.local</code>
-              </p>
-              <p
-                className="absolute inset-x-0 text-[12px] text-emerald-400 font-medium transition-all duration-300"
-                style={{
-                  opacity: copied ? 1 : 0,
-                  transform: copied ? 'translateY(0)' : 'translateY(4px)',
-                }}
-              >
-                Key copied to clipboard
-              </p>
-            </div>
+              {error && (
+                <p className="text-[13px] text-red-400" style={{ animation: 'ai-shake 0.5s' }}>{error}</p>
+              )}
 
-            <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.4s both' }}>
-              <button
-                onClick={handleClaimKey}
-                disabled={loading}
-                className="px-12 py-4 rounded-[16px] border-none bg-accent-bright text-white text-[16px] font-display font-600
-                  cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
-                  shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
-              >
-                {loading ? 'Connecting...' : 'Continue'}
-              </button>
-            </div>
+              <p className="text-[12px] text-text-3 max-w-[340px]" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.3s both' }}>
+                The key is never sent back by the server over unauthenticated HTTP anymore. Read it from the launch terminal, or open <code className="text-text-2">.env.local</code> locally.
+              </p>
+
+              <div style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.4s both' }}>
+                <button
+                  type="submit"
+                  disabled={loading || !key.trim()}
+                  className="px-12 py-4 rounded-[16px] border-none bg-accent-bright text-white text-[16px] font-display font-600
+                    cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
+                    shadow-[0_6px_28px_rgba(99,102,241,0.3)] disabled:opacity-30"
+                >
+                  {loading ? 'Connecting...' : 'Connect'}
+                </button>
+              </div>
+            </form>
           </>
         ) : (
           /* ── Returning user: enter key ── */

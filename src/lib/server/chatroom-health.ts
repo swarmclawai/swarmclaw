@@ -1,6 +1,6 @@
 import { getProvider } from '@/lib/providers'
 import type { Agent } from '@/types'
-import { resolveApiKey } from './chatroom-helpers'
+import { resolveAgentApiEndpoint, resolveApiKey } from './chatroom-helpers'
 import { isProviderCoolingDown } from './provider-health'
 
 export interface ChatroomAgentHealthSkip {
@@ -47,7 +47,7 @@ export function filterHealthyChatroomAgents(
       skipped.push({ agentId, reason: 'missing_api_credentials' })
       continue
     }
-    if (providerInfo.requiresEndpoint && !agent.apiEndpoint) {
+    if (providerInfo.requiresEndpoint && !resolveAgentApiEndpoint(agent)) {
       skipped.push({ agentId, reason: 'missing_api_endpoint' })
       continue
     }
@@ -57,4 +57,3 @@ export function filterHealthyChatroomAgents(
 
   return { healthyAgentIds, skipped }
 }
-

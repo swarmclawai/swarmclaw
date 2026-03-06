@@ -1,17 +1,26 @@
 import { NextResponse } from 'next/server'
-import { loadSessions, saveSessions } from '@/lib/server/storage'
+import { active, loadStoredItem, upsertStoredItem } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
+import { getSessionRunState } from '@/lib/server/session-run-manager'
+import { pruneStreamingAssistantArtifacts } from '@/lib/chat-streaming-state'
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const sessions = loadSessions()
-  if (!sessions[id]) return notFound()
+  const session = loadStoredItem('sessions', id)
+  if (!session) return notFound()
+  session.messages = Array.isArray(session.messages) ? session.messages : []
+
+  const run = getSessionRunState(id)
+  const hasLiveRun = active.has(id) || !!run.runningRunId
+  if (!hasLiveRun && pruneStreamingAssistantArtifacts(session.messages)) {
+    upsertStoredItem('sessions', id, session)
+  }
 
   const url = new URL(req.url)
   const limitParam = url.searchParams.get('limit')
   const beforeParam = url.searchParams.get('before')
 
-  const allMessages = sessions[id].messages
+  const allMessages = Array.isArray(session.messages) ? session.messages : []
   const total = allMessages.length
 
   // If no limit param, return all messages (backward compatible)
@@ -41,8 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (body.kind !== 'context-clear') {
     return NextResponse.json({ error: 'Only context-clear kind is supported' }, { status: 400 })
   }
-  const sessions = loadSessions()
-  const session = sessions[id]
+  const session = loadStoredItem('sessions', id)
   if (!session) return notFound()
 
   session.messages.push({
@@ -51,15 +59,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     kind: 'context-clear',
     time: Date.now(),
   })
-  saveSessions(sessions)
+  upsertStoredItem('sessions', id, session)
   return NextResponse.json({ ok: true })
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json() as { messageIndex: number; bookmarked: boolean }
-  const sessions = loadSessions()
-  const session = sessions[id]
+  const session = loadStoredItem('sessions', id)
   if (!session) return notFound()
 
   const { messageIndex, bookmarked } = body
@@ -68,15 +75,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   session.messages[messageIndex].bookmarked = bookmarked
-  saveSessions(sessions)
+  upsertStoredItem('sessions', id, session)
   return NextResponse.json(session.messages[messageIndex])
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json() as { messageIndex: number }
-  const sessions = loadSessions()
-  const session = sessions[id]
+  const session = loadStoredItem('sessions', id)
   if (!session) return notFound()
 
   const { messageIndex } = body
@@ -90,6 +96,6 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   session.messages.splice(messageIndex, 1)
-  saveSessions(sessions)
+  upsertStoredItem('sessions', id, session)
   return NextResponse.json({ ok: true })
 }

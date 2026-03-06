@@ -1,8 +1,11 @@
 import os from 'os'
 import { loadSettings, loadSkills, loadCredentials, decryptKey } from './storage'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
+import { buildIdentityContinuityContext } from './identity-continuity'
 import { genId } from '@/lib/id'
-import type { Chatroom, ChatroomMember, Agent, Session, Message } from '@/types'
+import { getProvider } from '@/lib/providers'
+import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import type { Chatroom, ChatroomMember, Agent, Session, Message, ChatroomMessage } from '@/types'
 
 /** Resolve API key from an agent's credentialId */
 export function resolveApiKey(credentialId: string | null | undefined): string | null {
@@ -34,6 +37,14 @@ export function isMuted(chatroom: Chatroom, agentId: string): boolean {
   return new Date(member.mutedUntil).getTime() > Date.now()
 }
 
+export function resolveAgentApiEndpoint(agent: Agent): string | null {
+  const explicit = normalizeProviderEndpoint(agent.provider, agent.apiEndpoint ?? null)
+  if (explicit) return explicit
+  const provider = getProvider(agent.provider)
+  if (!provider?.defaultEndpoint) return null
+  return normalizeProviderEndpoint(agent.provider, provider.defaultEndpoint) || provider.defaultEndpoint.replace(/\/+$/, '')
+}
+
 const COMPACTION_PREFIX = '[Conversation summary]'
 
 function normalizeMentionToken(raw: string): string {
@@ -53,7 +64,12 @@ function truncateText(text: string, max: number): string {
 import { isImplicitlyMentioned } from './chatroom-orchestration'
 
 /** Parse @mentions from message text, returns matching agentIds */
-export function parseMentions(text: string, agents: Record<string, Agent>, memberIds: string[]): string[] {
+export function parseMentions(
+  text: string,
+  agents: Record<string, Agent>,
+  memberIds: string[],
+  opts?: { replyTargetAgentId?: string | null },
+): string[] {
   if (/@all\b/i.test(text)) return [...memberIds]
   const mentionPattern = /(?:^|[\s(])@([a-zA-Z0-9._-]+)/g
   const mentioned: string[] = []
@@ -73,8 +89,17 @@ export function parseMentions(text: string, agents: Record<string, Agent>, membe
     }
   }
 
-  // 2. Implicit mentions (OpenClaw Style - Reading the room)
-  // Only if no explicit mentions found yet
+  // 2. Reply-based implicit mention
+  // Only if no explicit mentions were found.
+  if (mentioned.length === 0) {
+    const replyTargetAgentId = opts?.replyTargetAgentId
+    if (replyTargetAgentId && memberIds.includes(replyTargetAgentId)) {
+      mentioned.push(replyTargetAgentId)
+    }
+  }
+
+  // 3. Implicit mentions (OpenClaw Style - Reading the room)
+  // Only if no explicit mentions were found.
   if (mentioned.length === 0) {
     for (const id of memberIds) {
       const agent = agents[id]
@@ -85,6 +110,19 @@ export function parseMentions(text: string, agents: Record<string, Agent>, membe
   }
 
   return mentioned
+}
+
+export function resolveReplyTargetAgentId(
+  replyToId: string | undefined,
+  messages: ChatroomMessage[],
+  memberIds: string[],
+): string | null {
+  if (!replyToId) return null
+  const replyMsg = messages.find((m) => m.id === replyToId)
+  if (!replyMsg) return null
+  if (replyMsg.role !== 'assistant') return null
+  if (!memberIds.includes(replyMsg.senderId)) return null
+  return replyMsg.senderId
 }
 
 /**
@@ -182,7 +220,7 @@ export function buildSyntheticSession(agent: Agent, chatroomId: string): Session
     model: agent.model,
     credentialId: agent.credentialId ?? null,
     fallbackCredentialIds: agent.fallbackCredentialIds,
-    apiEndpoint: agent.apiEndpoint ?? null,
+    apiEndpoint: resolveAgentApiEndpoint(agent),
     claudeSessionId: null,
     messages: [],
     createdAt: Date.now(),
@@ -207,6 +245,8 @@ export function buildAgentSystemPromptForChatroom(agent: Agent): string {
   if (agent.description) identityLines.push(`Description: ${agent.description}`)
   identityLines.push('I should always embody this identity in the group chat. I am a persistent companion with my own soul and presence.')
   parts.push(identityLines.join('\n'))
+  const continuityBlock = buildIdentityContinuityContext(null, agent)
+  if (continuityBlock) parts.push(continuityBlock)
 
   // 2. Runtime & Capabilities (OpenClaw Style)
   const runtimeLines = [

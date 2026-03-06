@@ -11,7 +11,6 @@ import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { executeSessionChatTurn } from './chat-execution'
 import { extractTaskResult, formatResultBody } from './task-result'
 import { getCheckpointSaver } from './langgraph-checkpoint'
-import { isMainLoopSession } from './main-session'
 import { cascadeUnblock } from './dag-validation'
 import { performGuardianRollback } from './guardian'
 import type { Agent, BoardTask, Connector, Message } from '@/types'
@@ -280,10 +279,6 @@ function queueContains(queue: string[], id: string): boolean {
 
 function pushQueueUnique(queue: string[], id: string): void {
   if (!queueContains(queue, id)) queue.push(id)
-}
-
-function isMainSession(session: SessionLike | null | undefined): boolean {
-  return isMainLoopSession(session)
 }
 
 function resolveTaskOwnerUser(task: ScheduleTaskMeta, sessions: Record<string, SessionLike>): string | null {
@@ -594,18 +589,7 @@ function notifyMainChatScheduleResult(task: BoardTask): void {
     return msg
   }
 
-  for (const session of Object.values(sessions) as SessionLike[]) {
-    if (!isMainSession(session)) continue
-    if (ownerUser && session?.user && session.user !== ownerUser) continue
-    const last = Array.isArray(session.messages) ? session.messages.at(-1) : null
-    if (last?.role === 'assistant' && last?.text === body && typeof last?.time === 'number' && now - last.time < 30_000) continue
-    if (!Array.isArray(session.messages)) session.messages = []
-    session.messages.push(buildMsg())
-    session.lastActiveAt = now
-    changed = true
-  }
-
-  // Also push to the agent's persistent thread session
+  // Push to the agent's shortcut chat session.
   try {
     const agents = loadAgents()
     const agent = agents[task.agentId]
@@ -830,13 +814,12 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
     }
 
     // Push to delegating agent's active user-facing chat sessions
-    // so the result is visible in the chat the user is looking at
+    // so the result is visible in the chat the user is looking at.
     if (delegator) {
       for (const session of Object.values(sessions)) {
         if (!session || session.agentId !== delegatedBy) continue
-        // Skip thread sessions and orchestrated/subagent sessions
+        // Skip the agent shortcut session itself.
         if (session.id === delegator.threadSessionId) continue
-        if (session.sessionType === 'orchestrated') continue
         // Only push to recently-active sessions (within last 30 minutes)
         const lastActive = typeof session.lastActiveAt === 'number' ? session.lastActiveAt : 0
         if (now - lastActive > 30 * 60_000) continue

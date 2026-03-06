@@ -34,9 +34,21 @@ export interface ToolBuildContext {
   activePlugins: string[]
 }
 
+function normalizeWorkspaceAlias(cwd: string, filePath: string): string {
+  const trimmed = filePath.trim()
+  if (!trimmed) return trimmed
+  if (trimmed === '/workspace' || trimmed === 'workspace') return cwd
+  if (trimmed.startsWith('/workspace/')) return trimmed.slice('/workspace/'.length)
+  if (trimmed.startsWith('workspace/')) return trimmed.slice('workspace/'.length)
+  return trimmed
+}
+
 export function safePath(cwd: string, filePath: string): string {
-  const resolved = require('path').resolve(cwd, filePath)
-  if (!resolved.startsWith(require('path').resolve(cwd))) {
+  const path = require('path')
+  const normalized = normalizeWorkspaceAlias(cwd, filePath)
+  const resolvedRoot = path.resolve(cwd)
+  const resolved = path.resolve(resolvedRoot, normalized)
+  if (!resolved.startsWith(resolvedRoot)) {
     throw new Error('Path traversal not allowed')
   }
   return resolved

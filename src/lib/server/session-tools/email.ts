@@ -3,7 +3,6 @@ import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { loadSettings } from '../storage'
 import type { ToolBuildContext } from './context'
 
 interface SmtpConfig {
@@ -17,8 +16,7 @@ interface SmtpConfig {
 }
 
 function getSmtpConfig(): SmtpConfig {
-  const settings = loadSettings()
-  const ps = (settings.pluginSettings as Record<string, Record<string, unknown>> | undefined)?.email ?? {}
+  const ps = getPluginManager().getPluginSettings('email')
   return {
     host: (ps.host as string) || '',
     port: Number(ps.port) || 587,

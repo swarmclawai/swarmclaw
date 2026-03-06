@@ -197,12 +197,120 @@ export function HomeView() {
             SwarmClaw
           </h1>
           <p className="text-[14px] text-text-3 mt-1">
-            Your AI agent orchestration dashboard
+            Workspace overview for your agent chats, tasks, and automations
           </p>
         </div>
 
+        {/* Quick actions / triage */}
+        <section className="mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.15s both' }}>
+          <SectionHeader
+            label="Needs Attention"
+            actionLabel="Open Tasks"
+            onViewAll={activeTaskCount > 0 ? () => setActiveView('tasks') : undefined}
+          />
+          <div className="rounded-[18px] border border-white/[0.06] bg-white/[0.025] p-4">
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <StatusPill label={`${allTasks.filter((task) => task.status === 'failed').length} failed task${allTasks.filter((task) => task.status === 'failed').length === 1 ? '' : 's'}`} tone={allTasks.some((task) => task.status === 'failed') ? 'danger' : 'neutral'} />
+              <StatusPill label={`${allTasks.filter((task) => task.pendingApproval).length} awaiting approval`} tone={allTasks.some((task) => task.pendingApproval) ? 'warning' : 'neutral'} />
+              <StatusPill label={`${allConnectors.filter((connector) => connector.status === 'error').length} connector issue${allConnectors.filter((connector) => connector.status === 'error').length === 1 ? '' : 's'}`} tone={allConnectors.some((connector) => connector.status === 'error') ? 'danger' : 'neutral'} />
+              <StatusPill label={`${runningAgentIds.size} active agent${runningAgentIds.size === 1 ? '' : 's'}`} tone={runningAgentIds.size > 0 ? 'success' : 'neutral'} />
+            </div>
+
+            {(() => {
+              const now = Date.now()
+              const items = [
+                ...allTasks
+                  .filter((task) => task.pendingApproval)
+                  .slice(0, 2)
+                  .map((task) => ({
+                    id: `approval:${task.id}`,
+                    tone: 'warning' as const,
+                    label: task.title,
+                    meta: `${task.agentId && agents[task.agentId] ? agents[task.agentId]!.name : 'Task'} is waiting for approval`,
+                    onClick: () => handleTaskClick(task),
+                  })),
+                ...allTasks
+                  .filter((task) => task.status === 'failed')
+                  .slice(0, 2)
+                  .map((task) => ({
+                    id: `failed:${task.id}`,
+                    tone: 'danger' as const,
+                    label: task.title,
+                    meta: `Failed ${timeAgo(task.updatedAt || task.createdAt)}`,
+                    onClick: () => handleTaskClick(task),
+                  })),
+                ...allConnectors
+                  .filter((connector) => connector.status === 'error')
+                  .slice(0, 2)
+                  .map((connector) => ({
+                    id: `connector:${connector.id}`,
+                    tone: 'danger' as const,
+                    label: connector.name,
+                    meta: `${PLATFORM_LABELS[connector.platform] || connector.platform} connector needs attention`,
+                    onClick: () => setActiveView('connectors'),
+                  })),
+                ...Object.values(schedules)
+                  .filter((schedule) => schedule.status === 'active' && schedule.nextRunAt && schedule.nextRunAt < now)
+                  .slice(0, 2)
+                  .map((schedule) => ({
+                    id: `schedule:${schedule.id}`,
+                    tone: 'warning' as const,
+                    label: schedule.name,
+                    meta: 'Schedule missed its expected run window',
+                    onClick: () => setActiveView('schedules'),
+                  })),
+                ...unreadNotifications
+                  .slice(0, 2)
+                  .map((notification) => ({
+                    id: `notification:${notification.id}`,
+                    tone: 'info' as const,
+                    label: notification.title,
+                    meta: notification.message || 'Unread notification',
+                    onClick: () => handleNotificationClick(notification),
+                  })),
+              ].slice(0, 6)
+
+              if (items.length === 0) {
+                return (
+                  <div className="rounded-[14px] border border-dashed border-white/[0.06] bg-white/[0.02] px-4 py-5">
+                    <p className="text-[13px] font-600 text-text">Everything looks stable.</p>
+                    <p className="text-[12px] text-text-3/60 mt-1">
+                      No failed tasks, no waiting approvals, and no connector issues right now.
+                    </p>
+                  </div>
+                )
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {items.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={item.onClick}
+                      className="flex items-start gap-3 rounded-[14px] border border-white/[0.06] bg-transparent px-4 py-3 text-left hover:bg-white/[0.04] transition-colors cursor-pointer"
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      <div className={`mt-0.5 h-2.5 w-2.5 rounded-full shrink-0 ${
+                        item.tone === 'danger'
+                          ? 'bg-red-400'
+                          : item.tone === 'warning'
+                            ? 'bg-amber-400'
+                            : 'bg-sky-400'
+                      }`} />
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-600 text-text truncate">{item.label}</div>
+                        <div className="text-[11px] text-text-3/65 mt-1">{item.meta}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+        </section>
+
         {/* Quick Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
           <StatCard label="Agents" value={String(agentCount)} hint="Total active agents configured in your dashboard" index={0} />
           <StatCard label="Active Tasks" value={String(activeTaskCount)} accent={activeTaskCount > 0} hint="Tasks currently running or queued for execution" index={1} />
           <StatCard label="Today's Cost" value={`$${todayCost.toFixed(2)}`} hint="Estimated API cost for today across all providers" index={2} />
@@ -507,7 +615,7 @@ export function HomeView() {
   )
 }
 
-function SectionHeader({ label, onViewAll }: { label: string; onViewAll?: () => void }) {
+function SectionHeader({ label, onViewAll, actionLabel = 'View all →' }: { label: string; onViewAll?: () => void; actionLabel?: string }) {
   return (
     <div className="flex items-center justify-between mb-3">
       <h2 className="font-display text-[13px] font-600 text-text-2 uppercase tracking-[0.08em]">
@@ -519,9 +627,25 @@ function SectionHeader({ label, onViewAll }: { label: string; onViewAll?: () => 
           className="text-[11px] text-text-3/50 hover:text-text-3 transition-colors bg-transparent border-none cursor-pointer"
           style={{ fontFamily: 'inherit' }}
         >
-          View all →
+          {actionLabel}
         </button>
       )}
+    </div>
+  )
+}
+
+function StatusPill({ label, tone }: { label: string; tone: 'neutral' | 'warning' | 'danger' | 'success' }) {
+  const toneClasses = tone === 'danger'
+    ? 'border-red-400/20 bg-red-400/[0.05] text-red-300/85'
+    : tone === 'warning'
+      ? 'border-amber-400/20 bg-amber-400/[0.05] text-amber-300/85'
+      : tone === 'success'
+        ? 'border-emerald-400/20 bg-emerald-400/[0.05] text-emerald-300/85'
+        : 'border-white/[0.06] bg-white/[0.03] text-text-3/75'
+
+  return (
+    <div className={`rounded-[999px] border px-3 py-1.5 text-[11px] font-600 ${toneClasses}`}>
+      {label}
     </div>
   )
 }

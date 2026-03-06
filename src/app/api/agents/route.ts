@@ -13,6 +13,9 @@ export async function GET(req: Request) {
   const agents = loadAgents()
   const sessions = loadSessions()
   const usage = loadUsage()
+  for (const agent of Object.values(agents)) {
+    agent.isOrchestrator = agent.platformAssignScope === 'all'
+  }
   // Enrich agents that have spend limits with current spend windows
   for (const agent of Object.values(agents)) {
     if (
@@ -48,6 +51,7 @@ export async function POST(req: Request) {
   const id = genId()
   const now = Date.now()
   const agents = loadAgents()
+  const platformAssignScope = body.platformAssignScope
   agents[id] = {
     id,
     name: body.name,
@@ -57,7 +61,8 @@ export async function POST(req: Request) {
     model: body.model,
     credentialId: body.credentialId,
     apiEndpoint: normalizeProviderEndpoint(body.provider, body.apiEndpoint || null),
-    isOrchestrator: body.isOrchestrator,
+    isOrchestrator: platformAssignScope === 'all',
+    platformAssignScope,
     subAgentIds: body.subAgentIds,
     plugins: body.plugins?.length ? body.plugins : (body.tools || []),
     capabilities: body.capabilities,
@@ -68,6 +73,12 @@ export async function POST(req: Request) {
     hourlyBudget: body.hourlyBudget ?? null,
     budgetAction: body.budgetAction || 'warn',
     soul: body.soul || undefined,
+    identityState: body.identityState ?? null,
+    sessionResetMode: body.sessionResetMode ?? null,
+    sessionIdleTimeoutSec: body.sessionIdleTimeoutSec ?? null,
+    sessionMaxAgeSec: body.sessionMaxAgeSec ?? null,
+    sessionDailyResetAt: body.sessionDailyResetAt ?? null,
+    sessionResetTimezone: body.sessionResetTimezone ?? null,
     createdAt: now,
     updatedAt: now,
   }

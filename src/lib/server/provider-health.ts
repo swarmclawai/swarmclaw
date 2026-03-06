@@ -15,6 +15,7 @@ const states: Map<string, ProviderHealthState> =
   (globalThis as any)[gk] ?? ((globalThis as any)[gk] = new Map<string, ProviderHealthState>())
 
 const cliCheckCache = new Map<string, { at: number; ok: boolean }>()
+const delegateReadyCache = new Map<string, { at: number; ok: boolean }>()
 const CLI_CHECK_TTL_MS = 30_000
 
 function commandExists(binary: string): boolean {
@@ -70,6 +71,35 @@ function delegateBinary(delegateTool: DelegateTool): string {
   return 'opencode'
 }
 
+function delegateToolReady(delegateTool: DelegateTool): boolean {
+  const now = Date.now()
+  const cached = delegateReadyCache.get(delegateTool)
+  if (cached && now - cached.at < CLI_CHECK_TTL_MS) return cached.ok
+
+  const binary = delegateBinary(delegateTool)
+  let ok = commandExists(binary)
+  if (ok && delegateTool === 'delegate_to_claude_code') {
+    const probe = spawnSync(binary, ['auth', 'status'], { encoding: 'utf-8', timeout: 8000 })
+    if ((probe.status ?? 1) !== 0) {
+      let loggedIn = false
+      try {
+        const parsed = JSON.parse(probe.stdout || '{}') as { loggedIn?: boolean }
+        loggedIn = parsed.loggedIn === true
+      } catch {
+        loggedIn = false
+      }
+      ok = loggedIn
+    }
+  } else if (ok && delegateTool === 'delegate_to_codex_cli') {
+    const probe = spawnSync(binary, ['login', 'status'], { encoding: 'utf-8', timeout: 8000 })
+    const probeText = `${probe.stdout || ''}\n${probe.stderr || ''}`.toLowerCase()
+    ok = (probe.status ?? 1) === 0 && probeText.includes('logged in')
+  }
+
+  delegateReadyCache.set(delegateTool, { at: now, ok })
+  return ok
+}
+
 function delegateProviderId(delegateTool: DelegateTool): string {
   if (delegateTool === 'delegate_to_claude_code') return 'claude-cli'
   if (delegateTool === 'delegate_to_codex_cli') return 'codex-cli'
@@ -85,9 +115,9 @@ export function rankDelegatesByHealth(order: DelegateTool[]): DelegateTool[] {
     return true
   })
   return deduped.sort((a, b) => {
-    const aBinOk = commandExists(delegateBinary(a))
-    const bBinOk = commandExists(delegateBinary(b))
-    if (aBinOk !== bBinOk) return aBinOk ? -1 : 1
+    const aReady = delegateToolReady(a)
+    const bReady = delegateToolReady(b)
+    if (aReady !== bReady) return aReady ? -1 : 1
 
     const aCool = isProviderCoolingDown(delegateProviderId(a))
     const bCool = isProviderCoolingDown(delegateProviderId(b))

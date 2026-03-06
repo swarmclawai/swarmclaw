@@ -9,18 +9,57 @@ const DEFAULT_BASE_URL = process.env.SWARMCLAW_URL || 'http://localhost:3456'
 const DEFAULT_OUT_DIR = path.join(process.cwd(), 'data', 'autonomy-benchmarks')
 const DEFAULT_MIN_SCORE = Number.parseFloat(process.env.AUTONOMY_BENCH_MIN_SCORE || '70')
 
+const TOOL_ALIAS_GROUPS = [
+  ['shell', 'execute_command', 'process_tool', 'process'],
+  ['files', 'read_file', 'write_file', 'list_files', 'copy_file', 'move_file', 'delete_file', 'send_file'],
+  ['edit_file'],
+  ['web', 'web_search', 'web_fetch'],
+  ['browser', 'openclaw_browser'],
+  ['delegate', 'claude_code', 'codex_cli', 'opencode_cli', 'gemini_cli', 'delegate_to_claude_code', 'delegate_to_codex_cli', 'delegate_to_opencode_cli', 'delegate_to_gemini_cli'],
+  ['manage_platform', 'manage_agents', 'manage_tasks', 'manage_schedules', 'manage_skills', 'manage_documents', 'manage_webhooks', 'manage_secrets', 'manage_sessions'],
+  ['manage_connectors', 'connectors', 'connector_message_tool'],
+  ['manage_chatrooms', 'chatroom'],
+  ['spawn_subagent', 'subagent', 'delegate_to_agent'],
+  ['manage_sessions', 'session_info', 'sessions_tool', 'whoami_tool', 'search_history_tool'],
+  ['schedule', 'schedule_wake'],
+  ['http', 'http_request'],
+  ['memory', 'memory_tool'],
+  ['sandbox', 'sandbox_exec', 'sandbox_list_runtimes', 'openclaw_sandbox'],
+  ['wallet', 'wallet_tool'],
+  ['monitor', 'monitor_tool'],
+  ['sample_ui', 'show_plugin_card'],
+  ['context_mgmt', 'context_status', 'context_summarize'],
+  ['openclaw_workspace'],
+  ['openclaw_nodes'],
+  ['image_gen', 'generate_image'],
+  ['email', 'send_email'],
+  ['calendar', 'calendar_events'],
+  ['replicate', 'replicate_run', 'replicate_models'],
+]
+
+const TOOL_CANONICAL_MAP = (() => {
+  const map = new Map()
+  for (const group of TOOL_ALIAS_GROUPS) {
+    const normalized = group.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean)
+    const canonical = normalized[0]
+    if (!canonical) continue
+    for (const entry of normalized) map.set(entry, canonical)
+  }
+  return map
+})()
+
 const PROBE_TOOLS = [
   'shell',
   'process',
   'files',
-  'web_search',
-  'web_fetch',
-  'manage_tasks',
-  'manage_schedules',
+  'edit_file',
+  'web',
+  'manage_platform',
   'manage_connectors',
   'manage_sessions',
   'memory',
   'browser',
+  'delegate',
   'claude_code',
   'codex_cli',
   'opencode_cli',
@@ -160,6 +199,27 @@ function sleep(ms) {
 
 function round1(value) {
   return Math.round(value * 10) / 10
+}
+
+function normalizeToolName(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+function canonicalizeToolName(value) {
+  const normalized = normalizeToolName(value)
+  if (!normalized) return ''
+  return TOOL_CANONICAL_MAP.get(normalized) || normalized
+}
+
+function canonicalizeToolList(values) {
+  if (!Array.isArray(values)) return []
+  return [...new Set(values.map((value) => canonicalizeToolName(value)).filter(Boolean))]
+}
+
+function getAgentTools(agent) {
+  if (Array.isArray(agent?.plugins) && agent.plugins.length > 0) return agent.plugins
+  if (Array.isArray(agent?.tools) && agent.tools.length > 0) return agent.tools
+  return []
 }
 
 function ensureDir(dir) {
@@ -388,7 +448,7 @@ function countMemoriesContaining(needle) {
   }
 }
 
-function buildSessionScenarios(runTag, probePort) {
+function buildSessionScenarios(runTag, probePort, delegateAgentId) {
   const probeDir = `autonomy-probe-${runTag}`
   const moneyTaskPrefix = `[Autonomy Probe ${runTag}] money-`
   const iosTaskTitle = `[Autonomy Probe ${runTag}] ios-mvp`
@@ -402,7 +462,7 @@ function buildSessionScenarios(runTag, probePort) {
       weight: 5,
       timeoutMs: 120_000,
       requiresTool: true,
-      expectedTools: ['write_file', 'read_file'],
+      expectedTools: ['files'],
       prompt: `Create "${probeDir}/note.txt" with exactly "probe ok". Then read it back and tell me the first line.`,
       semanticCheck: (result) => /probe ok/i.test(result.response),
     },
@@ -412,7 +472,7 @@ function buildSessionScenarios(runTag, probePort) {
       weight: 5,
       timeoutMs: 180_000,
       requiresTool: true,
-      expectedTools: ['web_search', 'write_file'],
+      expectedTools: ['web', 'files'],
       prompt: `Use web search to find one recent fact about Next.js 16, write it to "${probeDir}/research.md" with a source URL, then tell me the file path and the fact.`,
       semanticCheck: (result) => /research\.md/i.test(result.response) && /https?:\/\//i.test(result.response),
     },
@@ -422,10 +482,13 @@ function buildSessionScenarios(runTag, probePort) {
       weight: 8,
       timeoutMs: 220_000,
       requiresTool: true,
-      expectedTools: ['web_search', 'manage_tasks', 'write_file'],
+      expectedTools: ['web', 'manage_platform', 'files'],
       prompt: [
         'A user says: "I want you to help me make money legally."',
-        `Do one concrete research step, create exactly two backlog tasks (not queued) titled "${moneyTaskPrefix}research" and "${moneyTaskPrefix}mvp",`,
+        'Do one concrete research step.',
+        `Create exactly two backlog tasks (not queued) titled "${moneyTaskPrefix}research" and "${moneyTaskPrefix}mvp" using the task-management capability.`,
+        `Assign both tasks to agent "${delegateAgentId}" instead of yourself.`,
+        'If you use manage_platform, set resource to "tasks" and action to "create".',
         `write a short plan to "${probeDir}/money-plan.md", and then confirm task IDs and file path.`,
       ].join(' '),
       semanticCheck: (result) =>
@@ -449,8 +512,8 @@ function buildSessionScenarios(runTag, probePort) {
       weight: 8,
       timeoutMs: 180_000,
       requiresTool: true,
-      expectedTools: [],
-      prompt: `Start \`python3 -m http.server ${probePort}\` in the background, verify it is listening, and report a reachable URL using this machine IP (not localhost).`,
+      expectedTools: ['shell'],
+      prompt: `Use the shell tool with action "execute" and background=true to start \`python3 -m http.server ${probePort}\`. Then verify it is listening and report a reachable URL using this machine IP (not localhost).`,
       semanticCheck: (result) => hasNonLoopbackUrl(result.response, probePort),
       externalCheckWeight: 0.35,
       postRunCheck: async () => {
@@ -470,10 +533,12 @@ function buildSessionScenarios(runTag, probePort) {
       weight: 5,
       timeoutMs: 180_000,
       requiresTool: true,
-      expectedTools: ['write_file', 'manage_tasks'],
+      expectedTools: ['manage_platform', 'files'],
       prompt: [
         'User asks: "Help me build an iOS app MVP."',
-        `Create one backlog task (not queued) titled "${iosTaskTitle}",`,
+        `Create one backlog task (not queued) titled "${iosTaskTitle}" using the task-management capability.`,
+        `Assign the task to agent "${delegateAgentId}" instead of yourself.`,
+        'If you use manage_platform, set resource to "tasks" and action to "create".',
         `create "${probeDir}/ios-mvp-plan.md" with milestones for week 1, and confirm the task id plus file path.`,
       ].join(' '),
       semanticCheck: (result) =>
@@ -496,8 +561,8 @@ function buildSessionScenarios(runTag, probePort) {
       weight: 4,
       timeoutMs: 120_000,
       requiresTool: true,
-      expectedTools: ['connector_message_tool'],
-      prompt: 'List active connectors with platform, id, and outbound-send support. If none are active, explicitly say "none active".',
+      expectedTools: ['manage_connectors'],
+      prompt: 'List active connectors with platform, id, and outbound-send support using the connector-management capability. If you use manage_platform, set resource to "connectors". If none are active, explicitly say "none active".',
       semanticCheck: (result) => /(platform|none active|outbound|no active connectors|none running)/i.test(result.response),
     },
     {
@@ -521,26 +586,17 @@ function buildSessionScenarios(runTag, probePort) {
       semanticCheck: (result) => containsEmpathy(result.response) && containsActionableStep(result.response),
     },
     {
-      id: 'heartbeat_10min_config',
-      skill: 'heartbeat_control',
+      id: 'session_history_recall',
+      skill: 'session_management',
       weight: 8,
       timeoutMs: 140_000,
       requiresTool: true,
-      expectedTools: ['sessions_tool'],
-      prompt: 'Use the session-management tool to set heartbeat enabled with a 10-minute interval (600 seconds) for this current session. Then confirm the exact heartbeat status and interval.',
-      semanticCheck: (result) => /\b(600|10-?minute|10 minute)\b/i.test(result.response) && /\bheartbeat\b/i.test(result.response),
-      externalCheckWeight: 0.35,
-      postRunCheck: async ({ client, sessionId }) => {
-        const sessions = await fetchJson(client, 'GET', '/api/sessions')
-        const current = sessions?.[sessionId]
-        const enabled = current?.heartbeatEnabled !== false
-        const interval = Number(current?.heartbeatIntervalSec)
-        return {
-          name: 'heartbeat_interval_600',
-          passed: enabled && interval === 600,
-          details: { enabled, interval, expectedInterval: 600 },
-        }
-      },
+      expectedTools: ['manage_sessions'],
+      prompt: 'Use the session-management tool to inspect the recent history of this current session. Then tell me the exact money-plan file path and the exact iOS MVP plan file path created earlier in this chat, and mention that you checked session history.',
+      semanticCheck: (result) =>
+        result.response.includes(`${probeDir}/money-plan.md`) &&
+        result.response.includes(`${probeDir}/ios-mvp-plan.md`) &&
+        /\b(history|session history|recent history)\b/i.test(result.response),
     },
     {
       id: 'memory_significant_store',
@@ -548,7 +604,7 @@ function buildSessionScenarios(runTag, probePort) {
       weight: 4,
       timeoutMs: 140_000,
       requiresTool: true,
-      expectedTools: ['memory_tool'],
+      expectedTools: ['memory'],
       prompt: [
         'Store significant long-term memory for this user:',
         `birthday ${birthday}, anniversary ${anniversary}, recurring bug "${recurringBug}".`,
@@ -617,8 +673,8 @@ const CHATROOM_SCENARIOS = [
 ]
 
 function evaluateSessionScenario(scenario, result, postCheck = null) {
-  const called = new Set(result.toolCalls)
-  const expected = scenario.expectedTools || []
+  const called = new Set(canonicalizeToolList(result.toolCalls))
+  const expected = canonicalizeToolList(scenario.expectedTools || [])
   const expectedMatched = expected.filter((toolName) => called.has(toolName)).length
   const toolCoverage = expected.length > 0
     ? expectedMatched / expected.length
@@ -753,13 +809,13 @@ function evaluateModelDiversity(participantAgents) {
     participantAgents.map((agent) => [
       String(agent.provider || 'unknown').toLowerCase(),
       String(agent.model || 'unknown').toLowerCase(),
-      normalizeTools(agent.tools),
+      normalizeTools(getAgentTools(agent)),
       agent.credentialId ? 'cred' : 'nocred',
       agent.apiEndpoint ? 'custom-endpoint' : 'default-endpoint',
     ].join('|'))
   )
   const uniqueToolProfiles = new Set(
-    participantAgents.map((agent) => normalizeTools(agent.tools))
+    participantAgents.map((agent) => normalizeTools(getAgentTools(agent)))
   )
   const agentCount = Math.max(1, participantAgents.length)
   const modelDiversity = Math.min(1, uniqueModelKeys.size / agentCount)
@@ -800,7 +856,7 @@ function evaluateModelDiversity(participantAgents) {
       name: agent.name,
       provider: agent.provider,
       model: agent.model,
-      tools: Array.isArray(agent.tools) ? agent.tools : [],
+      tools: getAgentTools(agent),
       hasCredential: Boolean(agent.credentialId),
       hasEndpoint: Boolean(agent.apiEndpoint),
     })),
@@ -900,7 +956,7 @@ function renderMarkdown(report) {
 async function runSessionTurn(client, sessionId, scenario) {
   const sse = await postSse(
     client,
-    `/api/sessions/${encodeURIComponent(sessionId)}/chat`,
+    `/api/chats/${encodeURIComponent(sessionId)}/chat`,
     { message: scenario.prompt },
     scenario.timeoutMs,
   )
@@ -963,7 +1019,7 @@ function selectChatroomAgentIds(agents, probeAgent) {
     return [...new Set(tools.map((tool) => String(tool || '').trim()).filter(Boolean))].sort().join(',')
   }
   const probeModelKey = `${probeAgent?.provider || ''}:${probeAgent?.model || ''}`.toLowerCase()
-  const probeToolKey = normalizeTools(probeAgent?.tools)
+  const probeToolKey = normalizeTools(getAgentTools(probeAgent))
   const probeHasCred = Boolean(probeAgent?.credentialId)
   const probeHasEndpoint = Boolean(probeAgent?.apiEndpoint)
   const isHealthyCandidate = (agent) => {
@@ -984,7 +1040,7 @@ function selectChatroomAgentIds(agents, probeAgent) {
     })
     .map(([id, agent]) => {
       const modelKey = `${agent.provider || ''}:${agent.model || ''}`.toLowerCase()
-      const toolKey = normalizeTools(agent.tools)
+      const toolKey = normalizeTools(getAgentTools(agent))
       let score = 0
       if (modelKey !== probeModelKey) score += 4
       if (toolKey !== probeToolKey) score += 3
@@ -1021,7 +1077,7 @@ async function cleanupBenchmarkArtifacts(client, ids, runTag) {
 
   for (const sessionId of ids.sessions) {
     try {
-      await fetchJson(client, 'DELETE', `/api/sessions/${encodeURIComponent(sessionId)}`)
+      await fetchJson(client, 'DELETE', `/api/chats/${encodeURIComponent(sessionId)}`)
     } catch (err) {
       warnings.push(`cleanup session ${sessionId}: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -1081,34 +1137,35 @@ async function main() {
     credentialId: defaultAgent.credentialId || null,
     apiEndpoint: defaultAgent.apiEndpoint || null,
     tools: PROBE_TOOLS,
+    platformAssignScope: 'all',
   })
   createdIds.agents.push(probeAgent.id)
 
-  const probeSession = await fetchJson(client, 'POST', '/api/sessions', {
+  const probeSession = await fetchJson(client, 'POST', '/api/chats', {
     name: `${probeTitle} Session`,
     agentId: probeAgent.id,
     provider: probeAgent.provider,
     model: probeAgent.model,
     credentialId: probeAgent.credentialId || null,
     apiEndpoint: probeAgent.apiEndpoint || null,
-    tools: probeAgent.tools || [],
+    plugins: getAgentTools(probeAgent),
     user: 'benchmark',
   })
   createdIds.sessions.push(probeSession.id)
 
-  const memoryRecallSession = await fetchJson(client, 'POST', '/api/sessions', {
+  const memoryRecallSession = await fetchJson(client, 'POST', '/api/chats', {
     name: `${probeTitle} Memory recall`,
     agentId: probeAgent.id,
     provider: probeAgent.provider,
     model: probeAgent.model,
     credentialId: probeAgent.credentialId || null,
     apiEndpoint: probeAgent.apiEndpoint || null,
-    tools: probeAgent.tools || [],
+    plugins: getAgentTools(probeAgent),
     user: 'benchmark',
   })
   createdIds.sessions.push(memoryRecallSession.id)
 
-  const sessionScenarios = buildSessionScenarios(runTag, probePort)
+  const sessionScenarios = buildSessionScenarios(runTag, probePort, defaultAgent.id)
   const sessionResults = []
   const sessionEvaluated = []
   killPort(probePort)
@@ -1174,14 +1231,14 @@ async function main() {
   const openclawResults = []
   if (openclawAgent) {
     try {
-      openclawSession = await fetchJson(client, 'POST', '/api/sessions', {
+      openclawSession = await fetchJson(client, 'POST', '/api/chats', {
         name: `${probeTitle} OpenClaw compare`,
         agentId: openclawAgent.id,
         provider: openclawAgent.provider,
         model: openclawAgent.model,
         credentialId: openclawAgent.credentialId || null,
         apiEndpoint: openclawAgent.apiEndpoint || null,
-        tools: openclawAgent.tools || [],
+        plugins: getAgentTools(openclawAgent),
         user: 'benchmark',
       })
       createdIds.sessions.push(openclawSession.id)

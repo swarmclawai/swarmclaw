@@ -4,6 +4,8 @@ import type { SettingsSectionProps } from './types'
 
 export function WebSearchSection({ appSettings, patchSettings, inputClass }: SettingsSectionProps) {
   const provider = appSettings.webSearchProvider || 'duckduckgo'
+  const hasTavilyKey = appSettings.tavilyApiKeyConfigured === true
+  const hasBraveKey = appSettings.braveApiKeyConfigured === true
 
   return (
     <div className="mb-10">
@@ -52,10 +54,13 @@ export function WebSearchSection({ appSettings, patchSettings, inputClass }: Set
               type="password"
               value={appSettings.tavilyApiKey || ''}
               onChange={(e) => patchSettings({ tavilyApiKey: e.target.value || null })}
-              placeholder="tvly-..."
+              placeholder={hasTavilyKey ? 'Stored securely. Enter a new key to replace it.' : 'tvly-...'}
               className={inputClass}
               style={{ fontFamily: 'inherit' }}
             />
+            {hasTavilyKey && (
+              <p className="text-[11px] text-emerald-400/90 mt-1.5">Stored securely. Clear the field and save to remove it.</p>
+            )}
             <p className="text-[11px] text-text-3/60 mt-2">Get your API key from <a href="https://tavily.com" target="_blank" rel="noopener noreferrer" className="text-accent-bright hover:underline">tavily.com</a></p>
           </div>
         )}
@@ -67,10 +72,13 @@ export function WebSearchSection({ appSettings, patchSettings, inputClass }: Set
               type="password"
               value={appSettings.braveApiKey || ''}
               onChange={(e) => patchSettings({ braveApiKey: e.target.value || null })}
-              placeholder="BSA..."
+              placeholder={hasBraveKey ? 'Stored securely. Enter a new key to replace it.' : 'BSA...'}
               className={inputClass}
               style={{ fontFamily: 'inherit' }}
             />
+            {hasBraveKey && (
+              <p className="text-[11px] text-emerald-400/90 mt-1.5">Stored securely. Clear the field and save to remove it.</p>
+            )}
             <p className="text-[11px] text-text-3/60 mt-2">Get your API key from <a href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer" className="text-accent-bright hover:underline">brave.com/search/api</a></p>
           </div>
         )}

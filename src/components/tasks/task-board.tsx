@@ -5,12 +5,42 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
 import { updateTask, bulkUpdateTasks } from '@/lib/tasks'
 import { TaskColumn } from './task-column'
+import { TaskCard } from './task-card'
 import { Skeleton } from '@/components/shared/skeleton'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
-import type { BoardTaskStatus } from '@/types'
+import type { BoardTask, BoardTaskStatus } from '@/types'
 import { toast } from 'sonner'
 
 const ACTIVE_COLUMNS: BoardTaskStatus[] = ['backlog', 'queued', 'running', 'completed', 'failed']
+type BoardViewMode = 'board' | 'list'
+type AttentionFilter = 'all' | 'needs-attention' | 'approval' | 'blocked' | 'overdue' | 'failed'
+
+function isTaskOverdue(task: BoardTask): boolean {
+  return !!task.dueAt && task.dueAt < Date.now() && task.status !== 'completed' && task.status !== 'archived'
+}
+
+function matchesAttentionFilter(task: BoardTask, filter: AttentionFilter): boolean {
+  const blocked = !!task.blockedBy?.length
+  const pendingApproval = !!task.pendingApproval
+  const overdue = isTaskOverdue(task)
+  const failed = task.status === 'failed'
+  if (filter === 'all') return true
+  if (filter === 'approval') return pendingApproval
+  if (filter === 'blocked') return blocked
+  if (filter === 'overdue') return overdue
+  if (filter === 'failed') return failed
+  return blocked || pendingApproval || overdue || failed
+}
+
+function attentionRank(task: BoardTask): number {
+  if (task.pendingApproval) return 0
+  if (task.status === 'failed') return 1
+  if (task.blockedBy?.length) return 2
+  if (isTaskOverdue(task)) return 3
+  if (task.status === 'running') return 4
+  if (task.status === 'queued') return 5
+  return 6
+}
 
 export function TaskBoard() {
   const tasks = useAppStore((s) => s.tasks)
@@ -40,17 +70,6 @@ export function TaskBoard() {
   }, [])
 
   const clearSelection = useCallback(() => setSelectedIds(new Set()), [])
-
-  const selectAllInColumn = useCallback((status: BoardTaskStatus) => {
-    const ids = Object.values(tasks)
-      .filter((t) => t.status === status)
-      .map((t) => t.id)
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      ids.forEach((id) => next.add(id))
-      return next
-    })
-  }, [tasks])
 
   // Bulk action handlers
   const [bulkActing, setBulkActing] = useState(false)
@@ -120,6 +139,8 @@ export function TaskBoard() {
     if (typeof window === 'undefined') return ''
     return new URLSearchParams(window.location.search).get('tag') || ''
   })
+  const [viewMode, setViewMode] = useState<BoardViewMode>('board')
+  const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all')
 
   // Seed activeProjectFilter from URL on mount
   useEffect(() => {
@@ -152,14 +173,43 @@ export function TaskBoard() {
 
   const columns: BoardTaskStatus[] = showArchived ? [...ACTIVE_COLUMNS, 'archived'] : ACTIVE_COLUMNS
 
-  const tasksByStatus = useCallback((status: BoardTaskStatus) =>
+  const matchesBaseFilters = useCallback((task: BoardTask) => {
+    if (!showArchived && task.status === 'archived') return false
+    if (filterAgentId && task.agentId !== filterAgentId) return false
+    if (filterTag && !(task.tags && task.tags.includes(filterTag))) return false
+    if (activeProjectFilter && task.projectId !== activeProjectFilter) return false
+    if (!matchesAttentionFilter(task, attentionFilter)) return false
+    return true
+  }, [activeProjectFilter, attentionFilter, filterAgentId, filterTag, showArchived])
+
+  const filteredTasks = useMemo(() => (
     Object.values(tasks)
-      .filter((t) => t.status === status
-        && (!filterAgentId || t.agentId === filterAgentId)
-        && (!filterTag || (t.tags && t.tags.includes(filterTag)))
-        && (!activeProjectFilter || t.projectId === activeProjectFilter))
+      .filter(matchesBaseFilters)
+      .sort((a, b) => {
+        const rankDiff = attentionRank(a) - attentionRank(b)
+        if (rankDiff !== 0) return rankDiff
+        const dueDiff = (a.dueAt || Number.MAX_SAFE_INTEGER) - (b.dueAt || Number.MAX_SAFE_INTEGER)
+        if (dueDiff !== 0) return dueDiff
+        return b.updatedAt - a.updatedAt
+      })
+  ), [tasks, matchesBaseFilters])
+
+  const tasksByStatus = useCallback((status: BoardTaskStatus) =>
+    filteredTasks
+      .filter((t) => t.status === status)
       .sort((a, b) => b.updatedAt - a.updatedAt),
-  [tasks, filterAgentId, filterTag, activeProjectFilter])
+  [filteredTasks])
+
+  const selectAllInColumn = useCallback((status: BoardTaskStatus) => {
+    const ids = filteredTasks
+      .filter((t) => t.status === status)
+      .map((t) => t.id)
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      ids.forEach((id) => next.add(id))
+      return next
+    })
+  }, [filteredTasks])
 
   const handleDrop = useCallback(async (taskId: string, newStatus: BoardTaskStatus) => {
     const task = tasks[taskId]
@@ -187,9 +237,21 @@ export function TaskBoard() {
       running: all.filter((t) => t.status === 'running').length,
       completed: all.filter((t) => t.status === 'completed').length,
       failed: all.filter((t) => t.status === 'failed').length,
-      overdue: all.filter((t) => t.dueAt && t.dueAt < Date.now() && t.status !== 'completed').length,
+      overdue: all.filter((t) => isTaskOverdue(t)).length,
+      blocked: all.filter((t) => (t.blockedBy?.length || 0) > 0).length,
+      approvals: all.filter((t) => !!t.pendingApproval).length,
+      attention: all.filter((t) => matchesAttentionFilter(t, 'needs-attention')).length,
     }
   }, [tasks])
+
+  const activeAttentionLabel = useMemo(() => {
+    if (attentionFilter === 'all') return null
+    if (attentionFilter === 'needs-attention') return 'Needs attention'
+    if (attentionFilter === 'approval') return 'Awaiting approval'
+    if (attentionFilter === 'blocked') return 'Blocked tasks'
+    if (attentionFilter === 'overdue') return 'Overdue tasks'
+    return 'Failed tasks'
+  }, [attentionFilter])
 
   // Custom dropdown state
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
@@ -253,6 +315,25 @@ export function TaskBoard() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 p-1 rounded-[11px] bg-surface-2 border border-white/[0.06]">
+            {([
+              ['board', 'Board'],
+              ['list', 'List'],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setViewMode(value)}
+                className={`px-3 py-1.5 rounded-[8px] text-[12px] font-700 transition-all cursor-pointer border-none ${
+                  viewMode === value
+                    ? 'bg-accent-soft text-accent-bright'
+                    : 'text-text-3 hover:text-text-2'
+                }`}
+                style={{ fontFamily: 'inherit' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="relative" ref={agentDropdownRef}>
             <button
               onClick={() => setAgentDropdownOpen(!agentDropdownOpen)}
@@ -384,8 +465,64 @@ export function TaskBoard() {
         </div>
       </div>
 
-      {activeProjectFilter && projects[activeProjectFilter] && (
-        <div className="flex items-center gap-2 px-8 pb-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 px-8 pb-4">
+        {[
+          { key: 'needs-attention', label: 'Needs Attention', value: stats.attention, tone: 'text-red-300', accent: 'bg-red-500/10' },
+          { key: 'approval', label: 'Approvals', value: stats.approvals, tone: 'text-amber-400', accent: 'bg-amber-500/10' },
+          { key: 'blocked', label: 'Blocked', value: stats.blocked, tone: 'text-rose-400', accent: 'bg-rose-500/10' },
+          { key: 'overdue', label: 'Overdue', value: stats.overdue, tone: 'text-red-400', accent: 'bg-red-500/10' },
+          { key: 'failed', label: 'Failed', value: stats.failed, tone: 'text-orange-400', accent: 'bg-orange-500/10' },
+        ].map((item) => (
+          <button
+            key={item.key}
+            onClick={() => setAttentionFilter((current) => (current === item.key ? 'all' : item.key as AttentionFilter))}
+            className={`rounded-[14px] border px-4 py-3 text-left transition-all cursor-pointer ${
+              attentionFilter === item.key
+                ? 'border-white/[0.12] bg-white/[0.05]'
+                : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04]'
+            }`}
+            style={{ fontFamily: 'inherit' }}
+          >
+            <div className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-700 uppercase tracking-[0.08em] ${item.accent} ${item.tone}`}>
+              {item.label}
+            </div>
+            <div className={`mt-3 text-[24px] font-display font-700 tracking-[-0.03em] ${item.tone}`}>
+              {item.value}
+            </div>
+            <p className="mt-1 text-[11px] text-text-3/60">
+              {item.value === 0 ? 'Nothing waiting here' : 'Click to focus this queue'}
+            </p>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 px-8 pb-3">
+        {([
+          ['all', 'All'],
+          ['needs-attention', 'Needs Attention'],
+          ['approval', 'Awaiting Approval'],
+          ['blocked', 'Blocked'],
+          ['overdue', 'Overdue'],
+          ['failed', 'Failed'],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => setAttentionFilter(value)}
+            className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 transition-all cursor-pointer border-none ${
+              attentionFilter === value
+                ? 'bg-accent-soft text-accent-bright'
+                : 'bg-white/[0.04] text-text-3 hover:bg-white/[0.08] hover:text-text-2'
+            }`}
+            style={{ fontFamily: 'inherit' }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {(activeProjectFilter && projects[activeProjectFilter]) || activeAttentionLabel ? (
+        <div className="flex flex-wrap items-center gap-2 px-8 pb-3">
+          {activeProjectFilter && projects[activeProjectFilter] && (
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-white/[0.04] border border-white/[0.06] text-[12px] font-600 text-text-2">
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: projects[activeProjectFilter].color || '#6366F1' }} />
             {projects[activeProjectFilter].name}
@@ -396,11 +533,24 @@ export function TaskBoard() {
               &times;
             </button>
           </span>
+          )}
+          {activeAttentionLabel && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-amber-500/10 border border-amber-500/20 text-[12px] font-600 text-amber-400">
+              {activeAttentionLabel}
+              <button
+                onClick={() => setAttentionFilter('all')}
+                className="ml-1 text-amber-300 hover:text-white cursor-pointer border-none bg-transparent p-0 text-[14px] leading-none"
+              >
+                &times;
+              </button>
+            </span>
+          )}
         </div>
-      )}
+      ) : null}
 
-      <div className="flex-1 min-h-0 flex gap-5 px-8 pb-6 overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x">
-        {!loaded ? (
+      {viewMode === 'board' ? (
+        <div className="flex-1 min-h-0 flex gap-5 px-8 pb-6 overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x">
+          {!loaded ? (
           ACTIVE_COLUMNS.map((status) => (
             <div key={status} className="flex flex-col gap-3 min-w-[260px] flex-1">
               <Skeleton className="rounded-[10px]" width="100%" height={32} />
@@ -409,29 +559,75 @@ export function TaskBoard() {
               ))}
             </div>
           ))
-        ) : (
-          columns.map((status, idx) => (
-            <div
-              key={status}
-              className="flex flex-col gap-3 min-w-[260px] flex-1"
-              style={{
-                animation: 'fade-up 0.6s var(--ease-spring) both',
-                animationDelay: `${idx * 0.1}s`
-              }}
-            >
-              <TaskColumn
-                status={status}
-                tasks={tasksByStatus(status)}
-                onDrop={handleDrop}
-                selectionMode={selectionMode}
-                selectedIds={selectedIds}
-                onToggleSelect={toggleSelect}
-                onSelectAll={() => selectAllInColumn(status)}
-              />
+          ) : (
+            columns.map((status, idx) => (
+              <div
+                key={status}
+                className="flex flex-col gap-3 min-w-[260px] flex-1"
+                style={{
+                  animation: 'fade-up 0.6s var(--ease-spring) both',
+                  animationDelay: `${idx * 0.1}s`
+                }}
+              >
+                <TaskColumn
+                  status={status}
+                  tasks={tasksByStatus(status)}
+                  onDrop={handleDrop}
+                  selectionMode={selectionMode}
+                  selectedIds={selectedIds}
+                  onToggleSelect={toggleSelect}
+                  onSelectAll={() => selectAllInColumn(status)}
+                />
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-8 pb-6">
+          {!loaded ? (
+            <div className="max-w-4xl mx-auto flex flex-col gap-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="rounded-[14px]" width="100%" height={112} />
+              ))}
             </div>
-          ))
-        )}
-      </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="max-w-3xl mx-auto rounded-[16px] border border-dashed border-white/[0.08] px-6 py-14 text-center">
+              <p className="text-[14px] font-600 text-text-2 mb-1">No tasks match this view</p>
+              <p className="text-[12px] text-text-3/60">Try clearing one of the active filters or switching back to the full board.</p>
+            </div>
+          ) : (
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-display text-[18px] font-700 tracking-[-0.02em] text-text">
+                    {attentionFilter === 'all' ? 'Task List' : activeAttentionLabel || 'Task List'}
+                  </h2>
+                  <p className="text-[12px] text-text-3/60">
+                    {attentionFilter === 'all'
+                      ? 'All visible tasks, sorted by urgency and freshness.'
+                      : 'Sorted by approval, failures, blockers, and due dates.'}
+                  </p>
+                </div>
+                <div className="text-[12px] text-text-3/60">
+                  {filteredTasks.length} visible task{filteredTasks.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+              <div className="flex flex-col gap-3">
+                {filteredTasks.map((task, idx) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    index={idx}
+                    selectionMode={selectionMode}
+                    selected={selectedIds.has(task.id)}
+                    onToggleSelect={toggleSelect}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Bulk action bar */}
       {selectionMode && (

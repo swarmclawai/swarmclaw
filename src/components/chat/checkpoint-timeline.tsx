@@ -68,7 +68,7 @@ export function CheckpointTimeline({ sessionId }: Props) {
     return (
       <div className="p-8 text-center">
         <p className="text-text-3 text-[13px]">No checkpoints found for this chat.</p>
-        <p className="text-[11px] text-text-3/50 mt-1">Only LangGraph-orchestrated chats support time travel.</p>
+        <p className="text-[11px] text-text-3/50 mt-1">Checkpoint restore is only available when a backend created checkpoints for this chat.</p>
       </div>
     )
   }

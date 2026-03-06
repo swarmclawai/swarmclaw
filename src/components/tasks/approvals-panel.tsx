@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useApprovalStore } from '@/stores/use-approval-store'
 import { api } from '@/lib/api-client'
@@ -24,6 +24,16 @@ const CATEGORY_ICONS: Record<string, string> = {
   plugin_scaffold: '🔌',
   plugin_install: '📦',
   task_tool: '🤖',
+}
+
+type ApprovalScope = 'all' | 'execution' | 'workflow' | 'task'
+
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return `${Math.floor(diff / 86_400_000)}d ago`
 }
 
 export function ApprovalsPanel() {
@@ -59,6 +69,10 @@ export function ApprovalsPanel() {
   useWs('approvals', refreshServerApprovals, 5000)
   useWs('openclaw:approvals', refreshExecApprovals, 5000)
 
+  const [search, setSearch] = useState('')
+  const [scope, setScope] = useState<ApprovalScope>('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+
   const taskApprovals = useMemo(() => {
     return Object.values(tasks)
       .filter((t) => t.pendingApproval)
@@ -92,6 +106,73 @@ export function ApprovalsPanel() {
   }, [execApprovals])
 
   const pendingCount = sortedExecApprovals.length + workflowApprovals.length
+  const searchTerm = search.trim().toLowerCase()
+
+  const workflowCategories = useMemo(() => (
+    Array.from(new Set(workflowApprovals.map((req) => req.category))).sort()
+  ), [workflowApprovals])
+
+  const filteredExecApprovals = useMemo(() => {
+    if (scope === 'workflow' || scope === 'task') return []
+    return sortedExecApprovals.filter((approval) => {
+      if (!searchTerm) return true
+      return [
+        approval.ask,
+        approval.command,
+        approval.cwd,
+        approval.host,
+        approval.security,
+      ].some((value) => value?.toLowerCase().includes(searchTerm))
+    })
+  }, [scope, sortedExecApprovals, searchTerm])
+
+  const filteredWorkflowApprovals = useMemo(() => {
+    return workflowApprovals.filter((req) => {
+      if (scope === 'execution') return false
+      if (scope === 'workflow' && req.category === 'task_tool') return false
+      if (scope === 'task' && req.category !== 'task_tool') return false
+      if (categoryFilter !== 'all' && req.category !== categoryFilter) return false
+      if (!searchTerm) return true
+      const agentName = req.agentId ? agents[req.agentId]?.name : 'system'
+      const payloadText = JSON.stringify(getApprovalPayload(req))
+      return [
+        getApprovalTitle(req),
+        req.description,
+        req.category,
+        agentName,
+        payloadText,
+      ].some((value) => value?.toLowerCase().includes(searchTerm))
+    })
+  }, [agents, categoryFilter, scope, searchTerm, workflowApprovals])
+
+  const visibleCount = filteredExecApprovals.length + filteredWorkflowApprovals.length
+
+  const summaryCards = [
+    {
+      label: 'Execution',
+      value: sortedExecApprovals.length,
+      tone: 'text-amber-400',
+      hint: 'Command approvals from OpenClaw',
+    },
+    {
+      label: 'Workflow',
+      value: sessionApprovals.length,
+      tone: 'text-sky-400',
+      hint: 'Agent and plugin governance requests',
+    },
+    {
+      label: 'Task Calls',
+      value: taskApprovals.length,
+      tone: 'text-violet-400',
+      hint: 'Tasks waiting on tool approval',
+    },
+    {
+      label: 'Recently Active',
+      value: workflowApprovals.filter((req) => Date.now() - req.updatedAt < 60 * 60 * 1000).length,
+      tone: 'text-emerald-400',
+      hint: 'Updated in the last hour',
+    },
+  ]
 
   const handleDecision = async (req: ApprovalRequest, approved: boolean) => {
     try {
@@ -131,29 +212,98 @@ export function ApprovalsPanel() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-1">Approvals</h1>
-            <p className="text-[13px] text-text-3">Execution and plugin governance requests pending review</p>
+            <p className="text-[13px] text-text-3">Execution, task, and governance requests queued for review</p>
           </div>
           <div className="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] font-600">
             {pendingCount} Pending
           </div>
         </div>
 
-        {sortedExecApprovals.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          {summaryCards.map((card) => (
+            <div key={card.label} className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] px-4 py-3.5">
+              <div className={`text-[22px] font-display font-700 tracking-[-0.03em] ${card.tone}`}>
+                {card.value}
+              </div>
+              <div className="text-[11px] font-600 text-text-2 mt-0.5">{card.label}</div>
+              <p className="text-[10px] text-text-3/50 mt-1 leading-relaxed">{card.hint}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-4 mb-6">
+          <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {([
+                ['all', `All (${pendingCount})`],
+                ['execution', `Execution (${sortedExecApprovals.length})`],
+                ['workflow', `Workflow (${sessionApprovals.length})`],
+                ['task', `Tasks (${taskApprovals.length})`],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => setScope(value)}
+                  className={`px-3 py-1.5 rounded-[9px] text-[11px] font-600 transition-all cursor-pointer border-none ${
+                    scope === value
+                      ? 'bg-accent-soft text-accent-bright'
+                      : 'bg-white/[0.04] text-text-3 hover:bg-white/[0.08] hover:text-text-2'
+                  }`}
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="text-[11px] text-text-3/60 font-600">
+                Showing {visibleCount} of {pendingCount}
+              </div>
+              {workflowCategories.length > 1 && scope !== 'execution' && (
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="px-3 py-2 rounded-[10px] bg-white/[0.04] border border-white/[0.06] text-[12px] text-text-2 outline-none"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <option value="all">All categories</option>
+                  {workflowCategories.map((category) => (
+                    <option key={category} value={category}>
+                      {CATEGORY_LABELS[category] || category}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search approvals by agent, tool, command, or payload"
+              className="w-full px-4 py-2.5 rounded-[12px] border border-white/[0.06] bg-surface text-[13px] text-text placeholder:text-text-3/50 outline-none focus:border-white/[0.12]"
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+        </div>
+
+        {filteredExecApprovals.length > 0 && (
           <div className="mb-6">
             <h2 className="text-[12px] font-700 uppercase tracking-[0.1em] text-amber-400/90 mb-2">Execution Approvals</h2>
             <div className="grid grid-cols-1 gap-3">
-              {sortedExecApprovals.map((approval) => (
+              {filteredExecApprovals.map((approval) => (
                 <ExecApprovalCard key={approval.id} approval={approval} />
               ))}
             </div>
           </div>
         )}
 
-        {workflowApprovals.length > 0 && (
+        {filteredWorkflowApprovals.length > 0 && (
           <div>
-            <h2 className="text-[12px] font-700 uppercase tracking-[0.1em] text-amber-400/90 mb-2">Plugin Workflow Approvals</h2>
+            <h2 className="text-[12px] font-700 uppercase tracking-[0.1em] text-amber-400/90 mb-2">Workflow Approvals</h2>
             <div className="grid grid-cols-1 gap-4">
-              {workflowApprovals.map((req) => {
+              {filteredWorkflowApprovals.map((req) => {
                 const agent = req.agentId ? agents[req.agentId] : null
                 const icon = CATEGORY_ICONS[req.category] || '⚠️'
                 const categoryLabel = CATEGORY_LABELS[req.category] || req.category
@@ -173,10 +323,23 @@ export function ApprovalsPanel() {
                             <span className="px-1.5 py-0.5 rounded-[4px] bg-white/[0.04] text-[9px] font-600 text-text-3/60 uppercase tracking-wider">
                               {categoryLabel}
                             </span>
+                            {req.taskId && (
+                              <span className="px-1.5 py-0.5 rounded-[4px] bg-violet-500/10 text-[9px] font-700 text-violet-300 uppercase tracking-wider">
+                                Task
+                              </span>
+                            )}
                           </div>
-                          <p className="text-[11px] text-text-3">
-                            {agent?.name || 'System'}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[11px] text-text-3">
+                            <span>{agent?.name || 'System'}</span>
+                            <span className="text-text-3/35">•</span>
+                            <span>{relativeTime(req.updatedAt)}</span>
+                            {req.description && (
+                              <>
+                                <span className="text-text-3/35">•</span>
+                                <span className="truncate max-w-[280px]">{req.description}</span>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <span className="text-[10px] text-text-3/50 font-mono">
@@ -185,15 +348,32 @@ export function ApprovalsPanel() {
                     </div>
 
                     <div className="p-5">
-                      {req.description && (
-                        <p className="text-[13px] text-text-2/90 mb-4">{req.description}</p>
-                      )}
-
-                      <div className="bg-black/30 rounded-[10px] border border-white/[0.04] p-4 mb-5 overflow-x-auto max-h-[250px] overflow-y-auto">
-                        <pre className="text-[12px] font-mono text-text-2/80 whitespace-pre-wrap break-all leading-relaxed">
-                          {payloadText === '{}' ? 'No structured payload provided.' : payloadText}
-                        </pre>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {req.sessionId && (
+                          <span className="px-2 py-1 rounded-[7px] bg-white/[0.04] text-[10px] font-600 text-text-3">
+                            Session {req.sessionId.slice(0, 8)}
+                          </span>
+                        )}
+                        {req.taskId && (
+                          <span className="px-2 py-1 rounded-[7px] bg-violet-500/10 text-[10px] font-600 text-violet-300">
+                            Task {req.taskId.slice(0, 8)}
+                          </span>
+                        )}
                       </div>
+
+                      <details className="mb-5 rounded-[10px] border border-white/[0.04] bg-black/20 overflow-hidden group">
+                        <summary className="list-none cursor-pointer px-4 py-3 flex items-center justify-between text-[12px] font-600 text-text-2">
+                          <span>Payload details</span>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-3 transition-transform group-open:rotate-180">
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </summary>
+                        <div className="px-4 pb-4 overflow-x-auto max-h-[260px] overflow-y-auto">
+                          <pre className="text-[12px] font-mono text-text-2/80 whitespace-pre-wrap break-all leading-relaxed">
+                            {payloadText === '{}' ? 'No structured payload provided.' : payloadText}
+                          </pre>
+                        </div>
+                      </details>
 
                       <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/[0.04]">
                         <button
@@ -216,6 +396,13 @@ export function ApprovalsPanel() {
                 )
               })}
             </div>
+          </div>
+        )}
+
+        {visibleCount === 0 && pendingCount > 0 && (
+          <div className="rounded-[16px] border border-dashed border-white/[0.08] px-6 py-10 text-center">
+            <p className="text-[13px] font-600 text-text-2 mb-1">No approvals match the current filters</p>
+            <p className="text-[12px] text-text-3/60">Try clearing the search or switching the queue scope.</p>
           </div>
         )}
       </div>

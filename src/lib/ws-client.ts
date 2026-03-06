@@ -1,15 +1,15 @@
 type WsCallback = () => void
 
 let ws: WebSocket | null = null
-let accessKey = ''
+let wsEnabled = false
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectDelay = 1000
 const MAX_RECONNECT_DELAY = 30_000
 const listeners = new Map<string, Set<WsCallback>>()
 let connected = false
 
-function getWsUrl(key: string): string {
-  if (typeof window === 'undefined') return `ws://localhost:3457/ws?key=${encodeURIComponent(key)}`
+function getWsUrl(): string {
+  if (typeof window === 'undefined') return 'ws://localhost:3457/ws'
 
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
   const pagePort = window.location.port
@@ -22,7 +22,7 @@ function getWsUrl(key: string): string {
   const behindProxy = !pagePort || pagePort === '80' || pagePort === '443' || pagePort !== appPort
   const wsHost = behindProxy ? window.location.host : `${window.location.hostname}:${buildPort}`
 
-  return `${protocol}://${wsHost}/ws?key=${encodeURIComponent(key)}`
+  return `${protocol}://${wsHost}/ws`
 }
 
 function handleMessage(event: MessageEvent) {
@@ -44,17 +44,18 @@ function scheduleReconnect() {
   const jitter = Math.random() * 2000
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
-    if (!accessKey) return
-    connect(accessKey)
+    if (!wsEnabled) return
+    connect()
   }, reconnectDelay + jitter)
   reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY)
 }
 
-function connect(key: string) {
+function connect() {
+  if (!wsEnabled) return
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
 
   try {
-    ws = new WebSocket(getWsUrl(key))
+    ws = new WebSocket(getWsUrl())
   } catch {
     scheduleReconnect()
     return
@@ -75,7 +76,7 @@ function connect(key: string) {
   ws.onclose = () => {
     connected = false
     ws = null
-    if (accessKey) scheduleReconnect()
+    if (wsEnabled) scheduleReconnect()
   }
 
   ws.onerror = () => {
@@ -84,13 +85,14 @@ function connect(key: string) {
 }
 
 export function connectWs(key: string) {
-  accessKey = key
+  void key
+  wsEnabled = true
   reconnectDelay = 1000
-  connect(key)
+  connect()
 }
 
 export function disconnectWs() {
-  accessKey = ''
+  wsEnabled = false
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null

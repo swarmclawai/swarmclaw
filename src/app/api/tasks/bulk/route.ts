@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadTasks, saveTasks, logActivity } from '@/lib/server/storage'
+import { loadTasks, logActivity, upsertStoredItems } from '@/lib/server/storage'
 import { enqueueTask, disableSessionHeartbeat } from '@/lib/server/queue'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
 import { notify } from '@/lib/server/ws-hub'
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     }
   }
 
-  saveTasks(tasks)
+  upsertStoredItems('tasks', results.map((id) => [id, tasks[id]] as [string, any]))
 
   if (updated > 0) {
     const action = body.status

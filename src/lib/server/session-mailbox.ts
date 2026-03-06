@@ -1,22 +1,6 @@
 import { genId } from '@/lib/id'
+import type { MailboxEnvelope } from '@/types'
 import { loadSessions, saveSessions } from './storage'
-
-export type MailboxStatus = 'new' | 'ack'
-
-export interface MailboxEnvelope {
-  id: string
-  type: string
-  payload: string
-  fromSessionId?: string | null
-  fromAgentId?: string | null
-  toSessionId: string
-  toAgentId?: string | null
-  correlationId?: string | null
-  status: MailboxStatus
-  createdAt: number
-  expiresAt?: number | null
-  ackAt?: number | null
-}
 
 interface MailboxOptions {
   limit?: number
@@ -78,6 +62,13 @@ export function sendMailboxEnvelope(input: {
   target.lastActiveAt = now
   sessions[input.toSessionId] = target
   saveSessions(sessions)
+  import('./watch-jobs')
+    .then(({ triggerMailboxWatchJobs }) => {
+      triggerMailboxWatchJobs({ sessionId: input.toSessionId, envelope })
+    })
+    .catch(() => {
+      // best-effort trigger only
+    })
   return envelope
 }
 
@@ -126,4 +117,3 @@ export function clearMailbox(sessionId: string, includeAcked = true): { before: 
   saveSessions(sessions)
   return { before, after: afterList.length }
 }
-

@@ -27,10 +27,10 @@ export function OrchestratorSection({ appSettings, patchSettings, inputClass }: 
   return (
     <div className="mb-10">
       <h3 className="font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-        Orchestrator Engine
+        Coordination Engine
       </h3>
       <p className="text-[12px] text-text-3 mb-5">
-        The LLM provider used by orchestrators for tool calling, agent generation, and task delegation.
+        The LLM provider used when agents coordinate delegation, tool calling, and automation-heavy runs.
       </p>
 
       <div className="p-6 rounded-[18px] bg-surface border border-white/[0.06]">
@@ -53,7 +53,7 @@ export function OrchestratorSection({ appSettings, patchSettings, inputClass }: 
         </div>
         {lgProviders.length === 0 && (
           <p className="text-[12px] text-text-3/60 mb-5">
-            No orchestration-compatible providers available. Add an API provider in Providers.
+            No coordination-compatible providers available. Add an API provider in Providers.
           </p>
         )}
 

@@ -129,8 +129,8 @@ export function PluginManager() {
 
   const { corePlugins, installedPlugins } = useMemo(() => {
     return {
-      corePlugins: plugins.filter(p => p.source === 'local'),
-      installedPlugins: plugins.filter(p => p.source !== 'local')
+      corePlugins: plugins.filter(p => p.isBuiltin),
+      installedPlugins: plugins.filter(p => !p.isBuiltin)
     }
   }, [plugins])
 
@@ -155,6 +155,22 @@ export function PluginManager() {
         </div>
         <div className="text-[11px] font-mono text-text-3/40 truncate">{p.filename}</div>
         {p.description && <div className="text-[12px] text-text-3/70 mt-1 line-clamp-1">{p.description}</div>}
+        {p.hasDependencyManifest && (
+          <div className="mt-1.5 flex items-center gap-2 text-[10px] font-700 uppercase tracking-[0.08em]">
+            <span className="px-1.5 py-0.5 rounded bg-white/[0.04] text-text-3/70">
+              {p.dependencyCount ?? 0} deps
+            </span>
+            <span className={`px-1.5 py-0.5 rounded ${
+              p.dependencyInstallStatus === 'installed'
+                ? 'bg-emerald-500/10 text-emerald-400'
+                : p.dependencyInstallStatus === 'error'
+                  ? 'bg-red-500/10 text-red-400'
+                  : 'bg-amber-500/10 text-amber-400'
+            }`}>
+              {p.dependencyInstallStatus || 'ready'}
+            </span>
+          </div>
+        )}
         {p.autoDisabled && (
           <div className="text-[11px] text-amber-400/90 mt-1.5 p-2 rounded-[8px] bg-amber-500/[0.03] border border-amber-500/10">
             {p.lastFailureStage ? `Error at ${p.lastFailureStage}:` : 'Last error:'} {p.lastFailureError}
@@ -163,7 +179,7 @@ export function PluginManager() {
       </div>
       
       <div className="flex items-center gap-2">
-        {p.source !== 'local' && (
+        {!p.isBuiltin && (
           <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={() => handleUpdateOne(p.filename)}
@@ -409,7 +425,7 @@ export function PluginManager() {
               </div>
             )}
             <p className="text-[11px] text-text-3/40 mt-6 leading-relaxed text-center italic">
-              SwarmClaw supports standalone CommonJS plugins and OpenClaw activate/deactivate formats.
+              SwarmClaw supports `.js` / `.mjs` plugins, native SwarmClaw hooks/tools, and OpenClaw activate/register formats.
             </p>
           </div>
         )}

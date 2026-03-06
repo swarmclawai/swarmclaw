@@ -1,6 +1,6 @@
 import { genId } from '@/lib/id'
 import { NextResponse } from 'next/server'
-import { loadTasks, saveTasks, logActivity, loadSettings } from '@/lib/server/storage'
+import { loadAgents, loadSettings, loadTasks, logActivity, upsertStoredItems, upsertTask } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { disableSessionHeartbeat, enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/queue'
 import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
@@ -13,6 +13,7 @@ import { requestHeartbeatNow } from '@/lib/server/heartbeat-wake'
 import { validateDag, cascadeUnblock } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
 import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
+import '@/lib/server/builtin-plugins'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Keep completed queue integrity even if daemon is not running.
@@ -90,7 +91,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  saveTasks(tasks)
+  upsertTask(id, tasks[id])
   logActivity({ entityType: 'task', entityId: id, action: 'updated', actor: 'user', summary: `Task updated: "${tasks[id].title}" (${prevStatus} → ${tasks[id].status})` })
   if (prevStatus !== tasks[id].status) {
     pushMainLoopEventToMainSessions({
@@ -111,7 +112,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     })
     
     if (tasks[id].status === 'completed') {
-      getPluginManager().runHook('onTaskComplete', { taskId: id, result: tasks[id].result })
+      const agentPlugins = tasks[id].agentId ? (loadAgents()[tasks[id].agentId]?.plugins || []) : []
+      getPluginManager().runHook(
+        'onTaskComplete',
+        { taskId: id, result: tasks[id].result },
+        { enabledIds: agentPlugins },
+      )
     }
 
     // Enqueue system event + heartbeat wake
@@ -131,7 +137,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // Revert status change and reject
       tasks[id].status = prevStatus
       tasks[id].updatedAt = Date.now()
-      saveTasks(tasks)
+      upsertTask(id, tasks[id])
       return NextResponse.json(
         { error: 'Cannot queue: blocked by incomplete tasks', blockedBy: incompleteBlocker },
         { status: 409 },
@@ -143,7 +149,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (tasks[id].status === 'completed') {
     const unblockedIds = cascadeUnblock(tasks, id)
     if (unblockedIds.length > 0) {
-      saveTasks(tasks)
+      upsertStoredItems('tasks', [
+        [id, tasks[id]],
+        ...unblockedIds.map((uid) => [uid, tasks[uid]] as [string, any]),
+      ])
       for (const uid of unblockedIds) {
         enqueueTask(uid)
       }
@@ -168,7 +177,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   tasks[id].status = 'archived'
   tasks[id].archivedAt = Date.now()
   tasks[id].updatedAt = Date.now()
-  saveTasks(tasks)
+  upsertTask(id, tasks[id])
   logActivity({ entityType: 'task', entityId: id, action: 'deleted', actor: 'user', summary: `Task archived: "${tasks[id].title}"` })
   pushMainLoopEventToMainSessions({
     type: 'task_archived',

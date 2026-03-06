@@ -24,6 +24,21 @@ describe('module exports', () => {
     const mem = await import('./memory')
     assert.equal(typeof mem.buildMemoryTools, 'function')
   })
+
+  it('primitive tool builders are exported', async () => {
+    const document = await import('./document')
+    const extract = await import('./extract')
+    const table = await import('./table')
+    const crawl = await import('./crawl')
+    const mailbox = await import('./mailbox')
+    const humanLoop = await import('./human-loop')
+    assert.equal(typeof document.buildDocumentTools, 'function')
+    assert.equal(typeof extract.buildExtractTools, 'function')
+    assert.equal(typeof table.buildTableTools, 'function')
+    assert.equal(typeof crawl.buildCrawlTools, 'function')
+    assert.equal(typeof mailbox.buildMailboxTools, 'function')
+    assert.equal(typeof humanLoop.buildHumanLoopTools, 'function')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -60,46 +75,45 @@ describe('buildSessionTools signature', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 4. Memory tool schema — knowledge actions
+// 4. Memory tool schema
 //    buildMemoryTools calls getMemoryDb() eagerly so we cannot invoke it
 //    without a real SQLite DB. Instead we read the source and verify the
-//    action enum includes the knowledge actions.
+//    declared action enum matches the current JSON schema definition.
 // ---------------------------------------------------------------------------
 describe('memory tool knowledge actions (source verification)', () => {
-  it('action enum in memory.ts includes knowledge_store and knowledge_search', async () => {
+  it('action enum in memory.ts includes the declared base actions', async () => {
     const fs = await import('fs')
     const src = fs.readFileSync(
       new URL('./memory.ts', import.meta.url).pathname,
       'utf-8',
     )
 
-    // Find the z.enum([...]) for the action field
-    const enumMatch = src.match(/z\.enum\(\[([^\]]+)\]\)\.describe\([^)]*action/s)
-    assert.ok(enumMatch, 'Should find a z.enum() for the action field')
+    const enumMatch = src.match(/action:\s*\{\s*type:\s*'string',\s*enum:\s*\[([^\]]+)\]/s)
+    assert.ok(enumMatch, 'Should find the action enum in the memory tool schema')
 
     const enumBody = enumMatch![1]
-    assert.ok(enumBody.includes("'knowledge_store'"), 'action enum should include knowledge_store')
-    assert.ok(enumBody.includes("'knowledge_search'"), 'action enum should include knowledge_search')
-  })
-
-  it('action enum includes all expected base actions', async () => {
-    const fs = await import('fs')
-    const src = fs.readFileSync(
-      new URL('./memory.ts', import.meta.url).pathname,
-      'utf-8',
-    )
-
-    const enumMatch = src.match(/z\.enum\(\[([^\]]+)\]\)/)
-    assert.ok(enumMatch)
-    const enumBody = enumMatch![1]
-
-    const expectedActions = ['store', 'get', 'search', 'list', 'delete', 'link', 'unlink', 'knowledge_store', 'knowledge_search']
+    const expectedActions = ['store', 'get', 'search', 'list', 'delete']
     for (const action of expectedActions) {
       assert.ok(
         enumBody.includes(`'${action}'`),
         `action enum should include '${action}'`,
       )
     }
+  })
+
+  it('action enum does not advertise removed knowledge actions', async () => {
+    const fs = await import('fs')
+    const src = fs.readFileSync(
+      new URL('./memory.ts', import.meta.url).pathname,
+      'utf-8',
+    )
+
+    const enumMatch = src.match(/action:\s*\{\s*type:\s*'string',\s*enum:\s*\[([^\]]+)\]/s)
+    assert.ok(enumMatch)
+    const enumBody = enumMatch![1]
+
+    assert.equal(enumBody.includes("'knowledge_store'"), false)
+    assert.equal(enumBody.includes("'knowledge_search'"), false)
   })
 })
 

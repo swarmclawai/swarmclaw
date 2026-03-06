@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { loadTasks, saveTasks, loadSettings, loadAgents, logActivity } from '@/lib/server/storage'
+import { deleteTask, loadAgents, loadSettings, loadTasks, logActivity, upsertTask } from '@/lib/server/storage'
 import { TaskCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
 import { enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/queue'
@@ -13,6 +13,7 @@ import { resolveTaskAgentFromDescription } from '@/lib/server/task-mention'
 import { validateDag } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
 import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
+import '@/lib/server/builtin-plugins'
 
 export async function GET(req: Request) {
   // Keep completed queue integrity even if daemon is not running.
@@ -49,7 +50,6 @@ export async function DELETE(req: Request) {
     (filter === 'done' && (task.status === 'completed' || task.status === 'failed')) ||
     (!filter && task.status === 'archived')
 
-  const { deleteTask } = await import('@/lib/server/storage')
   for (const [id, task] of Object.entries(tasks)) {
     if (shouldRemove(task as { status: string; sourceType?: string })) {
       deleteTask(id)
@@ -169,7 +169,12 @@ export async function POST(req: Request) {
     if (validation.ok) {
       tasks[id].completedAt = Date.now()
       tasks[id].error = null
-      getPluginManager().runHook('onTaskComplete', { taskId: id, result: tasks[id].result })
+      const agentPlugins = resolvedAgentId ? (loadAgents()[resolvedAgentId]?.plugins || []) : []
+      getPluginManager().runHook(
+        'onTaskComplete',
+        { taskId: id, result: tasks[id].result },
+        { enabledIds: agentPlugins },
+      )
     } else {
       tasks[id].status = 'failed'
       tasks[id].completedAt = null
@@ -177,7 +182,7 @@ export async function POST(req: Request) {
     }
   }
 
-  saveTasks(tasks)
+  upsertTask(id, tasks[id])
   logActivity({ entityType: 'task', entityId: id, action: 'created', actor: 'user', summary: `Task created: "${tasks[id].title}"` })
   pushMainLoopEventToMainSessions({
     type: 'task_created',

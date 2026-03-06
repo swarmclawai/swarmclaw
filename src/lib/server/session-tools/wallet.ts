@@ -63,21 +63,24 @@ async function executeWalletAction(args: any, context: { agentId?: string | null
       if (!amountSol || amountSol <= 0) return JSON.stringify({ error: 'amountSol must be positive' })
       
       if (normalized.approved !== true) {
-        const { requestApproval } = await import('../approvals')
-        requestApproval({
+        const { requestApprovalMaybeAutoApprove } = await import('../approvals')
+        const approval = await requestApprovalMaybeAutoApprove({
           category: 'wallet_transfer',
           title: `Send ${amountSol} SOL`,
           description: `Transfer to ${toAddress}. Memo: ${memo || 'none'}`,
           data: { toAddress, amountSol, memo },
           agentId: context.agentId,
         })
-        return JSON.stringify({
-          type: 'plugin_wallet_transfer_request',
-          amountSol,
-          toAddress,
-          memo,
-          message: `I'm requesting to send ${amountSol} SOL to ${toAddress}. Please approve this transaction.`
-        })
+        if (approval.status !== 'approved') {
+          return JSON.stringify({
+            type: 'plugin_wallet_transfer_request',
+            amountSol,
+            toAddress,
+            memo,
+            message: `I'm requesting to send ${amountSol} SOL to ${toAddress}. Please approve this transaction.`
+          })
+        }
+        normalized.approved = true
       }
 
       const { isValidSolanaAddress, solToLamports, lamportsToSol } = await import('../solana')
@@ -175,7 +178,7 @@ const WalletPlugin: Plugin = {
     headerWidgets: [
       {
         id: 'wallet-status',
-        label: '💎 Wallet Active'
+        label: 'Wallet'
       }
     ]
   },

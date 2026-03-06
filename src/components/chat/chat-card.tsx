@@ -66,6 +66,9 @@ export function ChatCard({ session, active, onClick }: Props) {
     : 'No messages'
   const providerLabel = PROVIDER_LABELS[session.provider] || session.provider
   const agent = session.agentId ? agents[session.agentId] : null
+  const displayName = session.shortcutForAgentId && agent?.id === session.shortcutForAgentId
+    ? agent.name
+    : session.name
   const connector = getSessionConnector(session, connectors)
   const loopIsOngoing = appSettings.loopMode === 'ongoing'
   const explicitOptIn = session.heartbeatEnabled === true || agent?.heartbeatEnabled === true
@@ -109,26 +112,7 @@ export function ChatCard({ session, active, onClick }: Props) {
             title={`${connector.name} (${connector.platform})`}
           />
         )}
-        <span className="font-display text-[14px] font-600 truncate flex-1 tracking-[-0.01em]">{session.name}</span>
-        {session.mainLoopState?.status && session.mainLoopState.status !== 'idle' && (
-          <span className={`shrink-0 flex items-center gap-1 text-[9px] font-600 uppercase tracking-wider px-1.5 py-0.5 rounded-[5px] ${
-            session.mainLoopState.status === 'progress' ? 'text-blue-400/90 bg-blue-400/[0.08]'
-            : session.mainLoopState.status === 'blocked' ? 'text-amber-400/90 bg-amber-400/[0.08]'
-            : 'text-emerald-400/90 bg-emerald-400/[0.08]'
-          }`}>
-            <span className={`w-[5px] h-[5px] rounded-full ${
-              session.mainLoopState.status === 'progress' ? 'bg-blue-400'
-              : session.mainLoopState.status === 'blocked' ? 'bg-amber-400'
-              : 'bg-emerald-400'
-            }`} />
-            {session.mainLoopState.status}
-          </span>
-        )}
-        {session.sessionType === 'orchestrated' && (
-          <span className="shrink-0 text-[10px] font-600 uppercase tracking-wider text-amber-400/80 bg-amber-400/[0.08] px-2 py-0.5 rounded-[6px]">
-            AI
-          </span>
-        )}
+        <span className="font-display text-[14px] font-600 truncate flex-1 tracking-[-0.01em]">{displayName}</span>
         {providerLabel && (
           <span className="shrink-0 text-[10px] font-600 uppercase tracking-wider text-text-3/70 bg-white/[0.03] px-2 py-0.5 rounded-[6px]">
             {providerLabel}

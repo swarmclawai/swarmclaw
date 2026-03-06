@@ -28,8 +28,10 @@ import {
 import { filterHealthyChatroomAgents } from '../chatroom-health'
 import { evaluateRoutingRules } from '../chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '../provider-health'
+import { syncSessionArchiveMemory } from '../session-archive-memory'
+import { buildIdentityContinuityContext } from '../identity-continuity'
 import { getProvider } from '@/lib/providers'
-import type { Connector, MessageSource, Chatroom, ChatroomMessage } from '@/types'
+import type { Connector, MessageSource, Chatroom, ChatroomMessage, Session } from '@/types'
 import type { ConnectorInstance, InboundMessage, InboundMedia } from './types'
 import {
   addAllowedSender,
@@ -43,6 +45,20 @@ import {
   type PairingPolicy,
 } from './pairing'
 import { enrichInboundMessageWithAudioTranscript } from './inbound-audio-transcription'
+import {
+  buildConnectorConversationKey,
+  buildConnectorDoctorWarnings,
+  buildInboundDebounceKey,
+  buildInboundDedupeKey,
+  getConnectorSessionStaleness,
+  isReplyToLastOutbound,
+  mergeInboundMessages,
+  resetConnectorSessionRuntime,
+  resolveConnectorSessionPolicy,
+  shouldReplyToInboundMessage,
+  textMentionsAlias,
+} from './policy'
+import { buildConnectorThreadContextBlock, resolveThreadPersonaLabel } from './thread-context'
 
 function resolveUploadPathFromUrl(rawUrl: string): string | null {
   if (!rawUrl) return null
@@ -80,7 +96,7 @@ function parseSseDataEvents(raw: string): Array<Record<string, unknown>> {
   return events
 }
 
-function parseConnectorToolResult(toolOutput: string): { status?: string; to?: string; followUpId?: string } | null {
+function parseConnectorToolResult(toolOutput: string): { status?: string; to?: string; followUpId?: string; messageId?: string } | null {
   const raw = toolOutput.trim()
   if (!raw) return null
   try {
@@ -90,7 +106,8 @@ function parseConnectorToolResult(toolOutput: string): { status?: string; to?: s
     const status = typeof record.status === 'string' ? String(record.status) : undefined
     const to = typeof record.to === 'string' ? String(record.to) : undefined
     const followUpId = typeof record.followUpId === 'string' ? String(record.followUpId) : undefined
-    return { status, to, followUpId }
+    const messageId = typeof record.messageId === 'string' ? String(record.messageId) : undefined
+    return { status, to, followUpId, messageId }
   } catch {
     return null
   }
@@ -279,6 +296,24 @@ const followupKey = '__swarmclaw_connector_followups__' as const
 const scheduledFollowups: Map<string, ScheduledConnectorFollowup> =
   g[followupKey] ?? (g[followupKey] = new Map<string, ScheduledConnectorFollowup>())
 
+const inboundDedupeKey = '__swarmclaw_connector_inbound_dedupe__' as const
+const recentInboundByKey: Map<string, number> =
+  g[inboundDedupeKey] ?? (g[inboundDedupeKey] = new Map<string, number>())
+
+type DebouncedInboundEntry = {
+  connector: Connector
+  messages: InboundMessage[]
+  timer: ReturnType<typeof setTimeout>
+}
+
+const inboundDebounceKey = '__swarmclaw_connector_inbound_debounce__' as const
+const pendingInboundDebounce: Map<string, DebouncedInboundEntry> =
+  g[inboundDebounceKey] ?? (g[inboundDebounceKey] = new Map<string, DebouncedInboundEntry>())
+
+const followupDedupeKey = '__swarmclaw_connector_followup_dedupe__' as const
+const scheduledFollowupByDedupe: Map<string, { id: string; sendAt: number }> =
+  g[followupDedupeKey] ?? (g[followupDedupeKey] = new Map<string, { id: string; sendAt: number }>())
+
 /** Reconnect state per connector — tracks backoff and retry attempts for crash recovery */
 export interface ConnectorReconnectState {
   attempts: number
@@ -308,10 +343,156 @@ function recordHealthEvent(connectorId: string, event: ConnectorHealthEventType,
   })
 }
 
+function statusReactionForPlatform(platform: string, state: 'processing' | 'sent' | 'silent'): string {
+  if (platform === 'slack') {
+    if (state === 'processing') return 'eyes'
+    if (state === 'sent') return 'white_check_mark'
+    return 'zipper_mouth_face'
+  }
+  if (state === 'processing') return '👀'
+  if (state === 'sent') return '✅'
+  return '🤐'
+}
+
+function pruneTransientConnectorState(now = Date.now()): void {
+  for (const [key, seenAt] of recentInboundByKey.entries()) {
+    if (now - seenAt > 120_000) recentInboundByKey.delete(key)
+  }
+  for (const [key, entry] of scheduledFollowupByDedupe.entries()) {
+    if (entry.sendAt <= now) scheduledFollowupByDedupe.delete(key)
+  }
+}
+
+function rememberRecentInbound(key: string, now = Date.now(), ttlMs = 120_000): boolean {
+  pruneTransientConnectorState(now)
+  const previous = recentInboundByKey.get(key) || 0
+  if (previous && now - previous < ttlMs) return false
+  recentInboundByKey.set(key, now)
+  return true
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function findDirectSessionForInbound(connector: Connector, msg: InboundMessage): Record<string, any> | null {
+  if (connector.chatroomId) return null
+  const effectiveAgentId = msg.agentIdOverride || connector.agentId
+  const sessions = Object.values(loadSessions()) as Array<Record<string, any>>
+  const candidates = sessions.filter((session) =>
+    session?.agentId === effectiveAgentId
+      && session?.connectorContext?.connectorId === connector.id
+      && session?.connectorContext?.channelId === msg.channelId,
+  )
+  if (msg.threadId) {
+    const threadExact = candidates.find((session) => session?.connectorContext?.threadId === msg.threadId)
+    if (threadExact) return threadExact
+  }
+  const senderExact = candidates.find((session) => session?.connectorContext?.senderId === msg.senderId)
+  if (senderExact) return senderExact
+  return candidates[0] || null
+}
+
+async function maybeSendStatusReaction(
+  connector: Connector,
+  msg: InboundMessage,
+  state: 'processing' | 'sent' | 'silent',
+): Promise<void> {
+  if (!msg.messageId) return
+  const session = findDirectSessionForInbound(connector, msg)
+  const policy = resolveConnectorSessionPolicy(connector, msg, session)
+  if (!policy.statusReactions) return
+  const instance = running.get(connector.id)
+  if (!instance?.sendReaction) return
+  try {
+    await instance.sendReaction(msg.channelId, msg.messageId, statusReactionForPlatform(connector.platform, state))
+  } catch {
+    // Ignore reaction failures — connectors vary widely here.
+  }
+}
+
+function startConnectorTypingLoop(connector: Connector, msg: InboundMessage): (() => void) | null {
+  const session = findDirectSessionForInbound(connector, msg)
+  const policy = resolveConnectorSessionPolicy(connector, msg, session)
+  if (!policy.typingIndicators) return null
+  const instance = running.get(connector.id)
+  if (!instance?.sendTyping) return null
+  const replyOptions = shouldReplyToInboundMessage({ msg, session, policy })
+
+  const sendTyping = () => {
+    void instance.sendTyping?.(msg.channelId, { threadId: replyOptions.threadId }).catch(() => {
+      // Best effort only.
+    })
+  }
+
+  sendTyping()
+  const timer = setInterval(sendTyping, 4_000)
+  timer.unref?.()
+  return () => clearInterval(timer)
+}
+
 type RouteMessageHandler = (connector: Connector, msg: InboundMessage) => Promise<string>
 const routeHandlerKey = '__swarmclaw_connector_route_handler__' as const
 const routeMessageHandlerRef: { current: RouteMessageHandler } =
   g[routeHandlerKey] ?? (g[routeHandlerKey] = { current: async () => '[Error] Connector router unavailable.' })
+
+async function flushDebouncedInbound(key: string): Promise<void> {
+  const entry = pendingInboundDebounce.get(key)
+  if (!entry) return
+  pendingInboundDebounce.delete(key)
+  clearTimeout(entry.timer)
+  const merged = mergeInboundMessages(entry.messages)
+  const response = await routeMessageHandlerRef.current(entry.connector, merged)
+  if (isNoMessage(response)) {
+    return
+  }
+  const replyOptions = getConnectorReplySendOptions({ connectorId: entry.connector.id, inbound: merged })
+  const session = findDirectSessionForInbound(entry.connector, merged)
+  await sendConnectorMessage({
+    connectorId: entry.connector.id,
+    channelId: merged.channelId,
+    text: response,
+    sessionId: session?.id,
+    replyToMessageId: replyOptions.replyToMessageId,
+    threadId: replyOptions.threadId,
+  })
+  await maybeSendStatusReaction(entry.connector, merged, 'sent')
+}
+
+async function routeOrDebounceInbound(connector: Connector, msg: InboundMessage): Promise<string> {
+  const dedupeKey = buildInboundDedupeKey(connector, msg)
+  const dedupeTtlMs = dedupeKey.startsWith('msg:') ? 120_000 : 15_000
+  if (!rememberRecentInbound(dedupeKey, Date.now(), dedupeTtlMs)) return NO_MESSAGE_SENTINEL
+
+  const session = findDirectSessionForInbound(connector, msg)
+  const policy = resolveConnectorSessionPolicy(connector, msg, session)
+  if (policy.inboundDebounceMs <= 0) {
+    return routeMessageHandlerRef.current(connector, msg)
+  }
+
+  const debounceKey = buildInboundDebounceKey(connector, msg)
+  const pending = pendingInboundDebounce.get(debounceKey)
+  if (pending) {
+    pending.messages.push(msg)
+    clearTimeout(pending.timer)
+    pending.timer = setTimeout(() => {
+      void flushDebouncedInbound(debounceKey).catch((err: unknown) => {
+        console.warn(`[connector] Debounced inbound flush failed: ${err instanceof Error ? err.message : String(err)}`)
+      })
+    }, policy.inboundDebounceMs)
+    pending.timer.unref?.()
+  } else {
+    const timer = setTimeout(() => {
+      void flushDebouncedInbound(debounceKey).catch((err: unknown) => {
+        console.warn(`[connector] Debounced inbound flush failed: ${err instanceof Error ? err.message : String(err)}`)
+      })
+    }, policy.inboundDebounceMs)
+    timer.unref?.()
+    pendingInboundDebounce.set(debounceKey, {
+      connector,
+      messages: [msg],
+      timer,
+    })
+  }
+  return NO_MESSAGE_SENTINEL
+}
 
 function dispatchInboundConnectorMessage(
   connectorId: string,
@@ -320,7 +501,7 @@ function dispatchInboundConnectorMessage(
 ): Promise<string> {
   const connectors = loadConnectors()
   const currentConnector = connectors[connectorId] as Connector | undefined
-  return routeMessageHandlerRef.current(currentConnector ?? fallbackConnector, msg)
+  return routeOrDebounceInbound(currentConnector ?? fallbackConnector, msg)
 }
 
 /** Get the current generation number for a connector (0 if never started) */
@@ -404,7 +585,17 @@ export function formatInboundUserText(msg: InboundMessage): string {
   return lines.join('\n').trim()
 }
 
-type ConnectorCommandName = 'help' | 'status' | 'new' | 'reset' | 'compact' | 'think' | 'pair'
+type ConnectorCommandName =
+  | 'help'
+  | 'status'
+  | 'new'
+  | 'reset'
+  | 'compact'
+  | 'think'
+  | 'pair'
+  | 'session'
+  | 'focus'
+  | 'doctor'
 
 interface ParsedConnectorCommand {
   name: ConnectorCommandName
@@ -425,9 +616,298 @@ function parseConnectorCommand(text: string): ParsedConnectorCommand | null {
     case 'compact':
     case 'think':
     case 'pair':
+    case 'session':
+    case 'focus':
+    case 'doctor':
       return { name, args } as ParsedConnectorCommand
     default:
       return null
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function persistSessionRecord(session: Record<string, any>): void {
+  const sessions = loadSessions()
+  sessions[session.id] = session
+  saveSessions(sessions)
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function updateSessionConnectorContext(session: Record<string, any>, connector: Connector, msg: InboundMessage, sessionKey: string): void {
+  const policy = resolveConnectorSessionPolicy(connector, msg, session)
+  session.connectorContext = {
+    ...(session.connectorContext || {}),
+    connectorId: connector.id,
+    platform: connector.platform,
+    channelId: msg.channelId,
+    senderId: msg.senderId,
+    senderName: msg.senderName,
+    sessionKey,
+    peerKey: msg.senderId,
+    scope: policy.scope,
+    replyMode: policy.replyMode,
+    threadBinding: policy.threadBinding,
+    groupPolicy: policy.groupPolicy,
+    threadId: msg.threadId || session.connectorContext?.threadId || null,
+    threadTitle: msg.threadTitle || session.connectorContext?.threadTitle || null,
+    threadPersonaLabel: resolveThreadPersonaLabel(msg) || session.connectorContext?.threadPersonaLabel || null,
+    threadParentChannelId: msg.threadParentChannelId || session.connectorContext?.threadParentChannelId || null,
+    threadParentChannelName: msg.threadParentChannelName || session.connectorContext?.threadParentChannelName || null,
+    isGroup: !!msg.isGroup,
+    lastInboundAt: Date.now(),
+    lastInboundMessageId: msg.messageId || null,
+    lastInboundReplyToMessageId: msg.replyToMessageId || null,
+    lastInboundThreadId: msg.threadId || null,
+    lastOutboundAt: session.connectorContext?.lastOutboundAt ?? null,
+    lastOutboundMessageId: session.connectorContext?.lastOutboundMessageId ?? null,
+    lastResetAt: session.connectorContext?.lastResetAt ?? null,
+    lastResetReason: session.connectorContext?.lastResetReason ?? null,
+  }
+}
+
+function describeSessionControls(session: Record<string, any>, connector: Connector, msg: InboundMessage): string {
+  const policy = resolveConnectorSessionPolicy(connector, msg, session)
+  const context = session.connectorContext || {}
+  const sessionAgeSec = Math.max(0, Math.round((Date.now() - (session.createdAt || Date.now())) / 1000))
+  const idleSec = Math.max(0, Math.round((Date.now() - (session.lastActiveAt || Date.now())) / 1000))
+  return [
+    `Session controls for ${connector.platform}/${connector.name}:`,
+    `- Session: ${session.id}`,
+    `- Scope: ${policy.scope}`,
+    `- Reply mode: ${policy.replyMode}`,
+    `- Thread binding: ${policy.threadBinding}`,
+    `- Group policy: ${policy.groupPolicy}`,
+    `- Reset mode: ${policy.resetMode}`,
+    `- Idle timeout: ${policy.idleTimeoutSec ?? 0}s`,
+    `- Max age: ${policy.maxAgeSec ?? 0}s`,
+    `- Daily reset: ${policy.dailyResetAt || 'off'}`,
+    `- Reset timezone: ${policy.resetTimezone || 'local'}`,
+    `- Debounce: ${policy.inboundDebounceMs}ms`,
+    `- Typing indicators: ${policy.typingIndicators ? 'on' : 'off'}`,
+    `- Thinking: ${policy.thinkingLevel || session.thinkingLevel || 'inherit'}`,
+    `- Model: ${session.provider}/${session.model}`,
+    `- Last outbound message: ${context.lastOutboundMessageId || 'none'}`,
+    `- Thread: ${context.threadId || 'none'}`,
+    `- Thread title: ${context.threadTitle || 'none'}`,
+    `- Thread persona: ${context.threadPersonaLabel || 'none'}`,
+    `- Session age: ${sessionAgeSec}s`,
+    `- Idle for: ${idleSec}s`,
+  ].join('\n')
+}
+
+function normalizeSessionSettingKey(raw: string): string {
+  return raw.trim().toLowerCase().replace(/[_-]+/g, '')
+}
+
+function applySessionSetting(session: Record<string, any>, keyRaw: string, valueRaw: string, msg: InboundMessage): string {
+  const key = normalizeSessionSettingKey(keyRaw)
+  const value = valueRaw.trim()
+  const asInt = () => {
+    const parsed = Number.parseInt(value, 10)
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new Error(`Invalid numeric value for ${keyRaw}: ${valueRaw}`)
+    }
+    return parsed
+  }
+
+  switch (key) {
+    case 'think':
+    case 'thinkinglevel':
+      session.connectorThinkLevel = value || null
+      return `Connector thinking level set to ${session.connectorThinkLevel || 'inherit'}.`
+    case 'reply':
+    case 'replymode':
+      session.connectorReplyMode = value || null
+      return `Reply mode set to ${session.connectorReplyMode || 'inherit'}.`
+    case 'scope':
+    case 'sessionscope':
+      session.connectorSessionScope = value || null
+      return `Session scope set to ${session.connectorSessionScope || 'inherit'}.`
+    case 'thread':
+    case 'threadbinding':
+      session.connectorThreadBinding = value || null
+      if (!value) {
+        session.connectorContext = { ...(session.connectorContext || {}), threadId: null }
+      } else if (value === 'strict' && msg.threadId) {
+        session.connectorContext = { ...(session.connectorContext || {}), threadId: msg.threadId }
+      }
+      return `Thread binding set to ${session.connectorThreadBinding || 'inherit'}.`
+    case 'group':
+    case 'grouppolicy':
+      session.connectorGroupPolicy = value || null
+      return `Group policy set to ${session.connectorGroupPolicy || 'inherit'}.`
+    case 'idle':
+    case 'idletimeout':
+      session.connectorIdleTimeoutSec = asInt()
+      return `Idle timeout set to ${session.connectorIdleTimeoutSec}s.`
+    case 'maxage':
+      session.connectorMaxAgeSec = asInt()
+      return `Max age set to ${session.connectorMaxAgeSec}s.`
+    case 'reset':
+    case 'resetmode': {
+      const normalized = value.toLowerCase()
+      if (!value) {
+        session.sessionResetMode = null
+        return 'Reset mode set to inherit.'
+      }
+      if (normalized !== 'idle' && normalized !== 'daily') {
+        throw new Error('Reset mode must be "idle" or "daily".')
+      }
+      session.sessionResetMode = normalized
+      return `Reset mode set to ${session.sessionResetMode}.`
+    }
+    case 'daily':
+    case 'dailyreset':
+    case 'dailyresetat':
+      if (!value) {
+        session.sessionDailyResetAt = null
+        return 'Daily reset time cleared.'
+      }
+      if (!/^\d{1,2}:\d{2}$/.test(value)) {
+        throw new Error('Daily reset time must be in HH:MM format.')
+      }
+      session.sessionDailyResetAt = value
+      return `Daily reset time set to ${session.sessionDailyResetAt}.`
+    case 'timezone':
+    case 'resettimezone':
+      session.sessionResetTimezone = value || null
+      return `Reset timezone set to ${session.sessionResetTimezone || 'inherit/local'}.`
+    case 'model':
+      session.model = value
+      return `Model set to ${session.model}.`
+    case 'provider':
+      session.provider = value
+      session.apiEndpoint = getProvider(value)?.defaultEndpoint || session.apiEndpoint || null
+      return `Provider set to ${session.provider}.`
+    default:
+      throw new Error(`Unknown session setting "${keyRaw}".`)
+  }
+}
+
+function evaluateGroupPolicy(params: {
+  connector: Connector
+  msg: InboundMessage
+  session?: Record<string, any> | null
+  aliases: string[]
+}): { allowed: boolean; reason: string } {
+  const { connector, msg, session, aliases } = params
+  if (!msg.isGroup) return { allowed: true, reason: 'dm' }
+  const policy = resolveConnectorSessionPolicy(connector, msg, session)
+  if (policy.groupPolicy === 'open') return { allowed: true, reason: 'open' }
+  if (policy.groupPolicy === 'disabled') return { allowed: false, reason: 'disabled' }
+  const mentioned = !!msg.mentionsBot || textMentionsAlias(msg.text || '', aliases)
+  const replied = isReplyToLastOutbound(msg, session)
+  if (policy.groupPolicy === 'mention') {
+    return { allowed: mentioned, reason: mentioned ? 'mentioned' : 'mention_required' }
+  }
+  const allowed = mentioned || replied
+  return { allowed, reason: allowed ? (mentioned ? 'mentioned' : 'reply') : 'reply_or_mention_required' }
+}
+
+function applyConnectorRuntimeDefaults(session: Record<string, any>, defaults: {
+  provider: string
+  model: string
+  apiEndpoint: string | null
+  thinkingLevel: string | null
+}): void {
+  session.provider = defaults.provider
+  session.model = defaults.model
+  session.apiEndpoint = defaults.apiEndpoint
+  session.connectorThinkLevel = defaults.thinkingLevel
+}
+
+function resolveDirectSession(params: {
+  connector: Connector
+  msg: InboundMessage
+  agent: Record<string, any>
+}): { session: Record<string, any>; sessionKey: string; wasCreated: boolean; staleReason?: string | null; clearedMessages?: number } {
+  const { connector, msg, agent } = params
+  const policySeed = resolveConnectorSessionPolicy(connector, msg)
+  const providerInfo = policySeed.providerOverride ? getProvider(policySeed.providerOverride) : null
+  const defaultProvider = policySeed.providerOverride || (agent.provider === 'claude-cli' ? 'anthropic' : agent.provider)
+  const defaultModel = policySeed.modelOverride || agent.model
+  const defaultApiEndpoint = agent.apiEndpoint || providerInfo?.defaultEndpoint || null
+  const runtimeDefaults = {
+    provider: defaultProvider,
+    model: defaultModel,
+    apiEndpoint: defaultApiEndpoint,
+    thinkingLevel: policySeed.thinkingLevel || null,
+  }
+  const sessionKey = buildConnectorConversationKey({
+    connector,
+    msg,
+    agentId: agent.id,
+    policy: policySeed,
+  })
+  const sessions = loadSessions()
+  let session = Object.values(sessions).find((item: any) => item?.name === sessionKey) as Record<string, any> | undefined
+  let wasCreated = false
+  if (!session) {
+    const id = genId()
+    session = {
+      id,
+      name: sessionKey,
+      cwd: WORKSPACE_DIR,
+      user: 'connector',
+      provider: defaultProvider,
+      model: defaultModel,
+      credentialId: agent.credentialId || null,
+      fallbackCredentialIds: Array.isArray(agent.fallbackCredentialIds) ? [...agent.fallbackCredentialIds] : [],
+      apiEndpoint: defaultApiEndpoint,
+      claudeSessionId: null,
+      codexThreadId: null,
+      opencodeSessionId: null,
+      delegateResumeIds: {
+        claudeCode: null,
+        codex: null,
+        opencode: null,
+        gemini: null,
+      },
+      messages: [],
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      sessionType: 'human' as const,
+      agentId: agent.id,
+      plugins: agent.plugins || agent.tools || [],
+      thinkingLevel: agent.thinkingLevel || null,
+      connectorThinkLevel: policySeed.thinkingLevel || null,
+    }
+    wasCreated = true
+  }
+  session.name = sessionKey
+  session.agentId = agent.id
+  session.plugins = Array.isArray(session.plugins) ? session.plugins : (agent.plugins || agent.tools || [])
+  if (!session.provider) session.provider = defaultProvider
+  if (!session.model) session.model = defaultModel
+  if (session.credentialId === undefined) session.credentialId = agent.credentialId || null
+  if (!Array.isArray(session.fallbackCredentialIds) && Array.isArray(agent.fallbackCredentialIds)) {
+    session.fallbackCredentialIds = [...agent.fallbackCredentialIds]
+  }
+  if (session.apiEndpoint === undefined || session.apiEndpoint === null) session.apiEndpoint = defaultApiEndpoint
+  if ((session.connectorThinkLevel === undefined || session.connectorThinkLevel === null) && policySeed.thinkingLevel) {
+    session.connectorThinkLevel = policySeed.thinkingLevel
+  }
+
+  const policy = resolveConnectorSessionPolicy(connector, msg, session)
+  const staleness = getConnectorSessionStaleness(session, policy)
+  let clearedMessages = 0
+  if (staleness.stale) {
+    try { syncSessionArchiveMemory(session as any, { agent }) } catch { /* archive sync is best-effort */ }
+    clearedMessages = resetConnectorSessionRuntime(session as any, staleness.reason || 'session_refresh')
+    applyConnectorRuntimeDefaults(session, {
+      ...runtimeDefaults,
+      thinkingLevel: policySeed.thinkingLevel || session.connectorThinkLevel || null,
+    })
+  }
+  updateSessionConnectorContext(session, connector, msg, sessionKey)
+  sessions[session.id] = session
+  saveSessions(sessions)
+  return {
+    session,
+    sessionKey,
+    wasCreated,
+    staleReason: staleness.reason || null,
+    clearedMessages,
   }
 }
 
@@ -609,6 +1089,10 @@ async function handleConnectorCommand(params: {
       '/new or /reset — Clear this connector conversation thread',
       '/compact [keepLastN] — Summarize older history and keep recent messages (default 10)',
       '/think <minimal|low|medium|high> — Set connector thread reasoning guidance',
+      '/session — Show session controls',
+      '/session set <scope|reply|thread|group|idle|maxAge|resetMode|dailyResetAt|timezone|think|model|provider> <value> — Patch this connector session',
+      '/focus here|clear — Bind or clear focus on the current thread/topic',
+      '/doctor — Show autonomy and safety warnings for this connector/session',
       '/pair — Pairing/access controls (status, request, list, approve, allow)',
       '/help — Show this list',
     ].join('\n')
@@ -619,6 +1103,7 @@ async function handleConnectorCommand(params: {
   }
 
   if (command.name === 'status') {
+    const policy = resolveConnectorSessionPolicy(connector, msg, session)
     const all = Array.isArray(session.messages) ? session.messages : []
     const userCount = all.filter((m: { role?: string }) => m?.role === 'user').length
     const assistantCount = all.filter((m: { role?: string }) => m?.role === 'assistant').length
@@ -632,6 +1117,9 @@ async function handleConnectorCommand(params: {
       `- Tools enabled: ${toolsCount}`,
       `- Channel: ${msg.channelName || msg.channelId}`,
       `- Last active: ${new Date(session.lastActiveAt || session.createdAt || Date.now()).toLocaleString()}`,
+      `- Reset mode: ${policy.resetMode}`,
+      `- Reply mode: ${policy.replyMode}`,
+      `- Scope: ${policy.scope}`,
     ].join('\n')
     pushSessionMessage(session, 'user', inboundText)
     pushSessionMessage(session, 'assistant', statusText)
@@ -640,13 +1128,17 @@ async function handleConnectorCommand(params: {
   }
 
   if (command.name === 'new' || command.name === 'reset') {
-    const cleared = Array.isArray(session.messages) ? session.messages.length : 0
-    session.messages = []
-    session.claudeSessionId = null
-    session.codexThreadId = null
-    session.opencodeSessionId = null
-    session.delegateResumeIds = { claudeCode: null, codex: null, opencode: null, gemini: null }
-    session.lastActiveAt = Date.now()
+    try { syncSessionArchiveMemory(session as any, { agent: loadAgents()[session.agentId] }) } catch { /* best effort */ }
+    const cleared = resetConnectorSessionRuntime(session as any, 'manual_reset')
+    const policy = resolveConnectorSessionPolicy(connector, msg, session)
+    const providerInfo = policy.providerOverride ? getProvider(policy.providerOverride) : null
+    applyConnectorRuntimeDefaults(session, {
+      provider: policy.providerOverride || session.provider,
+      model: policy.modelOverride || session.model,
+      apiEndpoint: providerInfo?.defaultEndpoint || session.apiEndpoint || null,
+      thinkingLevel: policy.thinkingLevel || session.connectorThinkLevel || null,
+    })
+    updateSessionConnectorContext(session, connector, msg, session.name || session.id)
     persistSession(session)
     return `Reset complete for ${connector.platform} channel thread. Cleared ${cleared} message(s).`
   }
@@ -683,8 +1175,9 @@ async function handleConnectorCommand(params: {
     const requested = command.args.trim().toLowerCase()
     const allowed = new Set(['minimal', 'low', 'medium', 'high'])
     if (!requested) {
-      const current = typeof session.connectorThinkLevel === 'string' && allowed.has(session.connectorThinkLevel)
-        ? session.connectorThinkLevel
+      const policy = resolveConnectorSessionPolicy(connector, msg, session)
+      const current = typeof policy.thinkingLevel === 'string' && allowed.has(policy.thinkingLevel)
+        ? policy.thinkingLevel
         : 'medium'
       const text = `Current /think level: ${current}. Usage: /think <minimal|low|medium|high>.`
       pushSessionMessage(session, 'user', inboundText)
@@ -708,6 +1201,77 @@ async function handleConnectorCommand(params: {
     return text
   }
 
+  if (command.name === 'doctor') {
+    const warnings = buildConnectorDoctorWarnings({ connector, msg, session })
+    const text = warnings.length
+      ? ['Connector doctor:', ...warnings.map((item) => `- ${item}`)].join('\n')
+      : 'Connector doctor: no obvious autonomy or safety issues detected.'
+    pushSessionMessage(session, 'user', inboundText)
+    pushSessionMessage(session, 'assistant', text)
+    persistSession(session)
+    return text
+  }
+
+  if (command.name === 'session') {
+    const parts = command.args.split(/\s+/).map((item) => item.trim()).filter(Boolean)
+    if (!parts.length || parts[0].toLowerCase() === 'show' || parts[0].toLowerCase() === 'status') {
+      const text = describeSessionControls(session, connector, msg)
+      pushSessionMessage(session, 'user', inboundText)
+      pushSessionMessage(session, 'assistant', text)
+      persistSession(session)
+      return text
+    }
+    if (parts[0].toLowerCase() === 'reset') {
+      try { syncSessionArchiveMemory(session as any, { agent: loadAgents()[session.agentId] }) } catch { /* best effort */ }
+      const cleared = resetConnectorSessionRuntime(session as any, 'manual_reset')
+      const policy = resolveConnectorSessionPolicy(connector, msg, session)
+      const providerInfo = policy.providerOverride ? getProvider(policy.providerOverride) : null
+      applyConnectorRuntimeDefaults(session, {
+        provider: policy.providerOverride || session.provider,
+        model: policy.modelOverride || session.model,
+        apiEndpoint: providerInfo?.defaultEndpoint || session.apiEndpoint || null,
+        thinkingLevel: policy.thinkingLevel || session.connectorThinkLevel || null,
+      })
+      updateSessionConnectorContext(session, connector, msg, session.name || session.id)
+      persistSession(session)
+      return `Connector session reset. Cleared ${cleared} message(s).`
+    }
+    if (parts[0].toLowerCase() === 'set') {
+      const key = parts[1] || ''
+      const value = parts.slice(2).join(' ').trim()
+      if (!key) return 'Usage: /session set <scope|reply|thread|group|idle|maxAge|resetMode|dailyResetAt|timezone|think|model|provider> <value>'
+      try {
+        const text = applySessionSetting(session, key, value, msg)
+        updateSessionConnectorContext(session, connector, msg, session.name || session.id)
+        persistSession(session)
+        return text
+      } catch (err: unknown) {
+        return err instanceof Error ? err.message : String(err)
+      }
+    }
+    return 'Usage: /session, /session show, /session set <key> <value>, /session reset'
+  }
+
+  if (command.name === 'focus') {
+    const subcommand = command.args.trim().toLowerCase()
+    if (subcommand === 'clear') {
+      session.connectorThreadBinding = null
+      session.connectorSessionScope = null
+      session.connectorContext = { ...(session.connectorContext || {}), threadId: null }
+      persistSession(session)
+      return 'Cleared connector thread focus.'
+    }
+    if (!msg.threadId) {
+      return 'Focus can only be set from a threaded or topic-bound message.'
+    }
+    session.connectorThreadBinding = 'strict'
+    session.connectorSessionScope = 'thread'
+    session.connectorReplyMode = session.connectorReplyMode || 'all'
+    session.connectorContext = { ...(session.connectorContext || {}), threadId: msg.threadId }
+    persistSession(session)
+    return `Focused this connector session on thread ${msg.threadId}.`
+  }
+
   return 'Unknown command.'
 }
 
@@ -721,6 +1285,9 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
   if (!chatroom) return '[Error] Chatroom not found.'
 
   const agents = loadAgents()
+  const chatroomAgentAliases = chatroom.agentIds
+    .map((agentId) => agents[agentId]?.name)
+    .filter((name): name is string => typeof name === 'string' && !!name.trim())
   const preferredCredentialId = (() => {
     if (connector.agentId && agents[connector.agentId]?.credentialId) {
       return agents[connector.agentId].credentialId as string
@@ -735,6 +1302,16 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
     msg,
     preferredCredentialId,
   })
+  const groupGate = evaluateGroupPolicy({
+    connector,
+    msg,
+    aliases: [connector.name, ...chatroomAgentAliases],
+  })
+  if (!groupGate.allowed) return NO_MESSAGE_SENTINEL
+
+  await maybeSendStatusReaction(connector, msg, 'processing')
+  const stopTyping = startConnectorTypingLoop(connector, msg)
+  try {
 
   const source: MessageSource = {
     platform: connector.platform,
@@ -743,10 +1320,14 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
     channelId: msg.channelId,
     senderId: msg.senderId,
     senderName: msg.senderName,
+    messageId: msg.messageId,
+    replyToMessageId: msg.replyToMessageId,
+    threadId: msg.threadId,
   }
   const inboundText = formatInboundUserText(msg)
   const inboundAttachmentPaths = buildInboundAttachmentPaths(msg)
   const firstImagePath = msg.media?.find((m) => m.type === 'image')?.localPath
+  const threadContextBlock = buildConnectorThreadContextBlock(msg)
 
   // Parse mentions from the message text
   let mentions = parseMentions(msg.text || '', agents, chatroom.agentIds)
@@ -824,7 +1405,7 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
     const syntheticSession = buildSyntheticSession(agent, chatroomId)
     const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent)
     const chatroomContext = buildChatroomSystemPrompt(freshChatroom, agents, agent.id)
-    const fullSystemPrompt = [agentSystemPrompt, chatroomContext].filter(Boolean).join('\n\n')
+    const fullSystemPrompt = [agentSystemPrompt, chatroomContext, threadContextBlock].filter(Boolean).join('\n\n')
     const history = buildHistoryForAgent(freshChatroom, agent.id)
 
     try {
@@ -882,7 +1463,10 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
     }
   }
 
-  if (responses.length === 0) return NO_MESSAGE_SENTINEL
+  if (responses.length === 0) {
+    await maybeSendStatusReaction(connector, msg, 'silent')
+    return NO_MESSAGE_SENTINEL
+  }
 
   const joined = responses.join('\n\n')
   // Extract embedded media from agent responses and send them via connector
@@ -891,9 +1475,18 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
   if (filesToSend.length > 0) {
     const inst = running.get(connector.id)
     if (inst?.sendMessage) {
+      const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound: msg })
       for (const file of filesToSend) {
         try {
-          await inst.sendMessage(msg.channelId, '', { mediaPath: file.path, caption: file.alt || undefined })
+          await sendConnectorMessage({
+            connectorId: connector.id,
+            channelId: msg.channelId,
+            text: '',
+            mediaPath: file.path,
+            caption: file.alt || undefined,
+            replyToMessageId: replyOptions.replyToMessageId,
+            threadId: replyOptions.threadId,
+          })
           console.log(`[connector] Sent chatroom media to ${msg.platform}: ${path.basename(file.path)}`)
         } catch (err: unknown) {
           console.error(`[connector] Failed to send chatroom media ${path.basename(file.path)}:`, err instanceof Error ? err.message : String(err))
@@ -903,6 +1496,9 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
     return extracted.cleanText || '(no response)'
   }
   return joined
+  } finally {
+    stopTyping?.()
+  }
 }
 
 /** Route an inbound message through the assigned agent and return the response */
@@ -927,84 +1523,11 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     preferredCredentialId: agent.credentialId || null,
   })
 
-  // Enqueue system event + heartbeat wake for the agent
-  const preview = (msg.text || '').slice(0, 80)
-  enqueueSystemEvent(
-    `connector:${connector.id}:${msg.channelId}`,
-    `Inbound message from ${msg.platform}: ${preview}`,
-    'connector-message',
-  )
-  requestHeartbeatNow({ agentId: effectiveAgentId, reason: 'connector-message' })
-
-  // Log connector trigger
-  const triggerSessionKey = `connector:${connector.id}:${msg.channelId}`
-  const allSessions = loadSessions()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const existingSession = Object.values(allSessions).find((s: any) => s.name === triggerSessionKey)
-  if (existingSession) {
-    logExecution(existingSession.id, 'trigger', `${msg.platform} message from ${msg.senderName}`, {
-      agentId: agent.id,
-      detail: {
-        source: 'connector',
-        platform: msg.platform,
-        connectorId: connector.id,
-        channelId: msg.channelId,
-        senderName: msg.senderName,
-        messagePreview: (msg.text || '').slice(0, 200),
-        hasMedia: !!(msg.media?.length || msg.imageUrl),
-      },
-    })
-  }
-
-  // Resolve API key for the agent's provider
-  let apiKey: string | null = null
-  if (agent.credentialId) {
-    const creds = loadCredentials()
-    const cred = creds[agent.credentialId]
-    if (cred?.encryptedKey) {
-      try { apiKey = decryptKey(cred.encryptedKey) } catch { /* ignore */ }
-    }
-  }
-
-  // Find a session for this connector message.
-  // Prefer the agent's thread session (visible in the agent chat UI) so connector
-  // messages appear inline alongside web UI messages.
-  // Fall back to a connector-keyed session if the agent has no thread session.
-  const sessionKey = `connector:${connector.id}:${msg.channelId}`
-  const sessions = loadSessions()
-  let session = (agent.threadSessionId && sessions[agent.threadSessionId])
-    ? sessions[agent.threadSessionId]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    : Object.values(sessions).find((s: any) => s.name === sessionKey)
-  if (!session) {
-    const id = genId()
-    session = {
-      id,
-      name: sessionKey,
-      cwd: WORKSPACE_DIR,
-      user: 'connector',
-      provider: agent.provider === 'claude-cli' ? 'anthropic' : agent.provider,
-      model: agent.model,
-      credentialId: agent.credentialId || null,
-      apiEndpoint: agent.apiEndpoint || null,
-      claudeSessionId: null,
-      codexThreadId: null,
-      opencodeSessionId: null,
-      delegateResumeIds: {
-        claudeCode: null,
-        codex: null,
-        opencode: null,
-      },
-      messages: [],
-      createdAt: Date.now(),
-      lastActiveAt: Date.now(),
-      sessionType: 'human' as const,
-      agentId: agent.id,
-      plugins: agent.plugins || agent.tools || [],
-    }
-    sessions[id] = session
-    saveSessions(sessions)
-  }
+  const { session, sessionKey, wasCreated, staleReason, clearedMessages } = resolveDirectSession({
+    connector,
+    msg,
+    agent,
+  })
 
   const parsedCommand = parseConnectorCommand(msg.text || '')
   if (parsedCommand?.name === 'pair') {
@@ -1039,6 +1562,26 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     return accessPolicyResult
   }
 
+  const groupGate = evaluateGroupPolicy({
+    connector,
+    msg,
+    session,
+    aliases: [agent.name, connector.name],
+  })
+  if (!groupGate.allowed) {
+    logExecution(session.id, 'decision', 'Connector inbound blocked by group policy', {
+      agentId: agent.id,
+      detail: {
+        platform: msg.platform,
+        channelId: msg.channelId,
+        senderId: msg.senderId,
+        groupPolicy: resolveConnectorSessionPolicy(connector, msg, session).groupPolicy,
+        reason: groupGate.reason,
+      },
+    })
+    return NO_MESSAGE_SENTINEL
+  }
+
   if (parsedCommand) {
     const commandResult = await handleConnectorCommand({
       command: parsedCommand,
@@ -1059,6 +1602,58 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     return commandResult
   }
 
+  await maybeSendStatusReaction(connector, msg, 'processing')
+  const stopTyping = startConnectorTypingLoop(connector, msg)
+  try {
+    // Enqueue system event + heartbeat wake for the agent only after access/gating checks pass.
+    const preview = (msg.text || '').slice(0, 80)
+    enqueueSystemEvent(
+      sessionKey,
+      `Inbound message from ${msg.platform}: ${preview}`,
+      'connector-message',
+    )
+    requestHeartbeatNow({ agentId: effectiveAgentId, reason: 'connector-message' })
+
+    logExecution(session.id, 'trigger', `${msg.platform} message from ${msg.senderName}`, {
+      agentId: agent.id,
+      detail: {
+        source: 'connector',
+        platform: msg.platform,
+        connectorId: connector.id,
+        channelId: msg.channelId,
+        senderName: msg.senderName,
+        sessionKey,
+        messagePreview: (msg.text || '').slice(0, 200),
+        hasMedia: !!(msg.media?.length || msg.imageUrl),
+        staleReason: staleReason || null,
+        clearedMessages: clearedMessages || 0,
+      },
+    })
+
+  // Resolve API key for the effective session provider, preferring matching fallback credentials.
+  let apiKey: string | null = null
+  const sessionCredentialIds = [
+    session.credentialId,
+    ...(Array.isArray(session.fallbackCredentialIds) ? session.fallbackCredentialIds : []),
+  ].filter(Boolean) as string[]
+  if (sessionCredentialIds.length > 0) {
+    const creds = loadCredentials()
+    const matching = sessionCredentialIds.find((credentialId) => creds[credentialId]?.provider === session.provider)
+    const ordered = matching
+      ? [matching, ...sessionCredentialIds.filter((credentialId) => credentialId !== matching)]
+      : sessionCredentialIds
+    for (const credentialId of ordered) {
+      const cred = creds[credentialId]
+      if (!cred?.encryptedKey) continue
+      try {
+        apiKey = decryptKey(cred.encryptedKey)
+        break
+      } catch {
+        // Try the next candidate.
+      }
+    }
+  }
+
   // Build system prompt: [identity] \n\n [userPrompt] \n\n [soul] \n\n [systemPrompt]
   const settings = loadSettings()
   const promptParts: string[] = []
@@ -1067,6 +1662,8 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   if (agent.description) identityLines.push(agent.description)
   identityLines.push('I should always refer to myself by this name. I am not "Assistant" — I have my own name and identity.')
   promptParts.push(identityLines.join(' '))
+  const continuityBlock = buildIdentityContinuityContext(session as Session, agent)
+  if (continuityBlock) promptParts.push(continuityBlock)
   if (settings.userPrompt) promptParts.push(settings.userPrompt)
   promptParts.push(buildCurrentDateTimePromptContext())
   if (agent.soul) promptParts.push(agent.soul)
@@ -1078,12 +1675,12 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
       if (skill?.content) promptParts.push(`## Skill: ${skill.name}\n${skill.content}`)
     }
   }
-  const thinkLevel = typeof session.connectorThinkLevel === 'string'
-    ? session.connectorThinkLevel.trim().toLowerCase()
-    : ''
+  const thinkLevel = resolveConnectorSessionPolicy(connector, msg, session).thinkingLevel || ''
   if (thinkLevel) {
     promptParts.push(`Connector thinking guidance: ${thinkLevel}. Keep responses concise and useful for chat.`)
   }
+  const threadContextBlock = buildConnectorThreadContextBlock(msg, { isFirstThreadTurn: wasCreated })
+  if (threadContextBlock) promptParts.push(threadContextBlock)
   // Add connector context
   promptParts.push(`\nYou are receiving messages via ${msg.platform}. The user "${msg.senderName}" is messaging from channel "${msg.channelName || msg.channelId}". Respond naturally and conversationally.
 
@@ -1128,6 +1725,9 @@ If media sending fails, report the exact error and retry with a corrected path/t
     channelId: msg.channelId,
     senderId: msg.senderId,
     senderName: msg.senderName,
+    messageId: msg.messageId,
+    replyToMessageId: msg.replyToMessageId,
+    threadId: msg.threadId,
   }
   session.messages.push({
     role: 'user',
@@ -1139,23 +1739,23 @@ If media sending fails, report the exact error and retry with a corrected path/t
     source: messageSource,
   })
   session.lastActiveAt = Date.now()
-  const s1 = loadSessions()
-  s1[session.id] = session
-  saveSessions(s1)
+  updateSessionConnectorContext(session, connector, msg, sessionKey)
+  persistSessionRecord(session)
   notify(`messages:${session.id}`)
 
   // Stream the response
   let fullText = ''
   let mediaExtractionText = ''
   let connectorToolDeliveredCurrentChannel = false
+  let connectorToolDeliveredMessageId: string | undefined
   const hasTools = session.plugins?.length && session.provider !== 'claude-cli'
-  console.log(`[connector] Routing message to agent "${agent.name}" (${agent.provider}/${agent.model}), hasTools=${!!hasTools}`)
+  console.log(`[connector] Routing message to agent "${agent.name}" (${session.provider}/${session.model}), hasTools=${!!hasTools}`)
 
   if (hasTools) {
     try {
       const toolMediaOutputs: string[] = []
       const result = await streamAgentChat({
-        session,
+        session: session as Session,
         message: modelInputText,
         imagePath: firstImagePath,
         attachedFiles: inboundAttachmentPaths.length ? inboundAttachmentPaths : undefined,
@@ -1180,6 +1780,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
                 : parsed.to
               if (inboundTarget && outboundTarget && inboundTarget === outboundTarget) {
                 connectorToolDeliveredCurrentChannel = true
+                if (parsed.messageId) connectorToolDeliveredMessageId = parsed.messageId
               }
             }
           }
@@ -1202,7 +1803,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
     if (!provider) return '[Error] Provider not found.'
 
     await provider.handler.streamChat({
-      session,
+      session: session as Session,
       message: modelInputText,
       imagePath: firstImagePath,
       apiKey,
@@ -1225,6 +1826,17 @@ If media sending fails, report the exact error and retry with a corrected path/t
   // If the agent chose NO_MESSAGE, skip saving it to history — the user's message
   // is already recorded, and saving the sentinel would pollute the LLM's context
   if (isNoMessage(fullText)) {
+    if (connectorToolDeliveredCurrentChannel) {
+      session.connectorContext = {
+        ...(session.connectorContext || {}),
+        lastOutboundAt: Date.now(),
+        lastOutboundMessageId: connectorToolDeliveredMessageId || session.connectorContext?.lastOutboundMessageId || null,
+      }
+      persistSessionRecord(session)
+      await maybeSendStatusReaction(connector, msg, 'sent')
+    } else {
+      await maybeSendStatusReaction(connector, msg, 'silent')
+    }
     console.log(`[connector] Agent returned NO_MESSAGE — suppressing outbound reply`)
     logExecution(session.id, 'decision', 'Agent suppressed outbound (NO_MESSAGE)', {
       agentId: agent.id,
@@ -1251,13 +1863,13 @@ If media sending fails, report the exact error and retry with a corrected path/t
     connectorId: connector.id,
     connectorName: connector.name,
     channelId: msg.channelId,
+    replyToMessageId: msg.messageId,
+    threadId: msg.threadId,
   }
   if (fullText.trim()) {
     session.messages.push({ role: 'assistant', text: fullText.trim(), time: Date.now(), source: assistantSource })
     session.lastActiveAt = Date.now()
-    const s2 = loadSessions()
-    s2[session.id] = session
-    saveSessions(s2)
+    persistSessionRecord(session)
     notify(`messages:${session.id}`)
   }
 
@@ -1275,9 +1887,19 @@ If media sending fails, report the exact error and retry with a corrected path/t
   if (filesToSend.length > 0) {
     const inst = running.get(connector.id)
     if (inst?.sendMessage) {
+      const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound: msg })
       for (const file of filesToSend) {
         try {
-          await inst.sendMessage(msg.channelId, '', { mediaPath: file.path, caption: file.alt || undefined })
+          await sendConnectorMessage({
+            connectorId: connector.id,
+            channelId: msg.channelId,
+            text: '',
+            sessionId: session.id,
+            mediaPath: file.path,
+            caption: file.alt || undefined,
+            replyToMessageId: replyOptions.replyToMessageId,
+            threadId: replyOptions.threadId,
+          })
           console.log(`[connector] Sent media to ${msg.platform}: ${path.basename(file.path)}`)
           logExecution(session.id, 'outbound', 'Connector media sent', {
             agentId: agent.id,
@@ -1317,8 +1939,11 @@ If media sending fails, report the exact error and retry with a corrected path/t
     return extractedFromReply.cleanText || '(no response)'
   }
 
-  if (connectorToolDeliveredCurrentChannel) return NO_MESSAGE_SENTINEL
-  return fullText || '(no response)'
+    if (connectorToolDeliveredCurrentChannel) return NO_MESSAGE_SENTINEL
+    return fullText || '(no response)'
+  } finally {
+    stopTyping?.()
+  }
 }
 
 routeMessageHandlerRef.current = routeMessage
@@ -1427,10 +2052,21 @@ export async function stopConnector(connectorId: string): Promise<void> {
     running.delete(connectorId)
   }
 
+  for (const [debounceKey, entry] of pendingInboundDebounce.entries()) {
+    if (entry.connector.id !== connectorId) continue
+    clearTimeout(entry.timer)
+    pendingInboundDebounce.delete(debounceKey)
+  }
+
   for (const [followupId, followup] of scheduledFollowups.entries()) {
     if (followup.connectorId !== connectorId) continue
     clearTimeout(followup.timer)
     scheduledFollowups.delete(followupId)
+  }
+  for (const [key, entry] of scheduledFollowupByDedupe.entries()) {
+    if (!scheduledFollowups.has(entry.id)) {
+      scheduledFollowupByDedupe.delete(key)
+    }
   }
 
   const connectors = loadConnectors()
@@ -1582,6 +2218,136 @@ export function getRunningInstance(connectorId: string): ConnectorInstance | und
   return running.get(connectorId)
 }
 
+export function getConnectorReplySendOptions(params: {
+  connectorId: string
+  inbound: InboundMessage
+}): { replyToMessageId?: string; threadId?: string } {
+  const connectors = loadConnectors()
+  const connector = connectors[params.connectorId] as Connector | undefined
+  if (!connector) return {}
+  const session = findDirectSessionForInbound(connector, params.inbound)
+  const policy = resolveConnectorSessionPolicy(connector, params.inbound, session)
+  return shouldReplyToInboundMessage({
+    msg: params.inbound,
+    session,
+    policy,
+  })
+}
+
+export async function recordConnectorOutboundDelivery(params: {
+  connectorId: string
+  inbound: InboundMessage
+  messageId?: string
+  state?: 'sent' | 'silent'
+}): Promise<void> {
+  const connectors = loadConnectors()
+  const connector = connectors[params.connectorId] as Connector | undefined
+  if (!connector) return
+  const session = findDirectSessionForInbound(connector, params.inbound)
+  if (session) {
+    session.connectorContext = {
+      ...(session.connectorContext || {}),
+      lastOutboundAt: Date.now(),
+      lastOutboundMessageId: params.messageId || session.connectorContext?.lastOutboundMessageId || null,
+      threadId: params.inbound.threadId || session.connectorContext?.threadId || null,
+    }
+    const history = Array.isArray(session.messages) ? session.messages : []
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const entry = history[i]
+      if (entry?.role !== 'assistant') continue
+      const source = entry?.source || {}
+      if (source.connectorId !== connector.id) continue
+      if (source.channelId !== params.inbound.channelId) continue
+      if (!source.messageId && params.messageId) {
+        entry.source = {
+          ...source,
+          messageId: params.messageId,
+          replyToMessageId: source.replyToMessageId || params.inbound.messageId,
+          threadId: source.threadId || params.inbound.threadId,
+        }
+      }
+      break
+    }
+    persistSessionRecord(session)
+    notify(`messages:${session.id}`)
+  }
+  if (params.state) {
+    await maybeSendStatusReaction(connector, params.inbound, params.state)
+  }
+}
+
+export async function performConnectorMessageAction(params: {
+  connectorId?: string
+  platform?: string
+  channelId: string
+  action: 'react' | 'edit' | 'delete' | 'pin'
+  messageId?: string
+  emoji?: string
+  text?: string
+  sessionId?: string | null
+  targetMessage?: 'last_inbound' | 'last_outbound'
+}): Promise<{ connectorId: string; platform: string; channelId: string; messageId?: string }> {
+  const connectors = loadConnectors()
+  const requestedId = params.connectorId?.trim()
+  let connector: Connector | undefined
+  let connectorId: string | undefined
+
+  if (requestedId) {
+    connector = connectors[requestedId] as Connector | undefined
+    connectorId = requestedId
+    if (!connector) throw new Error(`Connector not found: ${requestedId}`)
+  } else {
+    const candidates = Object.values(connectors) as Connector[]
+    const filtered = candidates.filter((item) => (!params.platform || item.platform === params.platform) && running.has(item.id))
+    if (!filtered.length) throw new Error(`No running connector found${params.platform ? ` for platform "${params.platform}"` : ''}.`)
+    connector = filtered[0]
+    connectorId = connector.id
+  }
+
+  if (!connector || !connectorId) throw new Error('Connector resolution failed.')
+  const instance = running.get(connectorId)
+  if (!instance) throw new Error(`Connector "${connectorId}" is not running.`)
+
+  const targetMessageId = (() => {
+    if (params.messageId?.trim()) return params.messageId.trim()
+    if (!params.sessionId) return ''
+    const session = loadSessions()[params.sessionId]
+    if (!session) return ''
+    if (params.targetMessage === 'last_inbound') return session.connectorContext?.lastInboundMessageId || ''
+    if (params.targetMessage === 'last_outbound' || !params.targetMessage) return session.connectorContext?.lastOutboundMessageId || ''
+    return ''
+  })()
+  if (!targetMessageId) throw new Error('messageId is required for connector message actions.')
+
+  switch (params.action) {
+    case 'react':
+      if (!instance.sendReaction) throw new Error(`Connector "${connector.name}" does not support reactions.`)
+      if (!params.emoji?.trim()) throw new Error('emoji is required for react action.')
+      await instance.sendReaction(params.channelId, targetMessageId, params.emoji.trim())
+      break
+    case 'edit':
+      if (!instance.editMessage) throw new Error(`Connector "${connector.name}" does not support edits.`)
+      if (!params.text?.trim()) throw new Error('text is required for edit action.')
+      await instance.editMessage(params.channelId, targetMessageId, params.text.trim())
+      break
+    case 'delete':
+      if (!instance.deleteMessage) throw new Error(`Connector "${connector.name}" does not support deletes.`)
+      await instance.deleteMessage(params.channelId, targetMessageId)
+      break
+    case 'pin':
+      if (!instance.pinMessage) throw new Error(`Connector "${connector.name}" does not support pinning.`)
+      await instance.pinMessage(params.channelId, targetMessageId)
+      break
+  }
+
+  return {
+    connectorId,
+    platform: connector.platform,
+    channelId: params.channelId,
+    messageId: targetMessageId,
+  }
+}
+
 /**
  * Send an outbound message through a running connector.
  * Intended for proactive agent notifications (e.g. WhatsApp updates).
@@ -1591,12 +2357,15 @@ export async function sendConnectorMessage(params: {
   platform?: string
   channelId: string
   text: string
+  sessionId?: string | null
   imageUrl?: string
   fileUrl?: string
   mediaPath?: string
   mimeType?: string
   fileName?: string
   caption?: string
+  replyToMessageId?: string
+  threadId?: string
   ptt?: boolean
 }): Promise<{ connectorId: string; platform: string; channelId: string; messageId?: string }> {
   const connectors = loadConnectors()
@@ -1650,6 +2419,8 @@ export async function sendConnectorMessage(params: {
     mimeType: params.mimeType,
     fileName: params.fileName,
     caption: params.caption,
+    replyToMessageId: params.replyToMessageId,
+    threadId: params.threadId,
     ptt: params.ptt,
   }
 
@@ -1668,6 +2439,41 @@ export async function sendConnectorMessage(params: {
   }
 
   const result = await instance.sendMessage(channelId, outboundText, outboundOptions)
+  if (params.sessionId) {
+    const sessions = loadSessions()
+    const session = sessions[params.sessionId]
+    if (session) {
+      session.connectorContext = {
+        ...(session.connectorContext || {}),
+        connectorId,
+        platform: connector.platform,
+        channelId,
+        threadId: params.threadId || session.connectorContext?.threadId || null,
+        lastOutboundAt: Date.now(),
+        lastOutboundMessageId: result?.messageId || session.connectorContext?.lastOutboundMessageId || null,
+      }
+      const history = Array.isArray(session.messages) ? session.messages : []
+      for (let i = history.length - 1; i >= 0; i -= 1) {
+        const entry = history[i]
+        if (entry?.role !== 'assistant') continue
+        const source = entry?.source || {}
+        if (source.connectorId !== connectorId) continue
+        if (source.channelId !== channelId) continue
+        if (!source.messageId && result?.messageId) {
+          entry.source = {
+            ...source,
+            messageId: result.messageId,
+            threadId: source.threadId || params.threadId,
+            replyToMessageId: source.replyToMessageId || params.replyToMessageId,
+          }
+        }
+        break
+      }
+      sessions[session.id] = session
+      saveSessions(sessions)
+      notify(`messages:${session.id}`)
+    }
+  }
   return {
     connectorId,
     platform: connector.platform,
@@ -1682,16 +2488,39 @@ export function scheduleConnectorFollowUp(params: {
   channelId: string
   text: string
   delaySec?: number
+  dedupeKey?: string
+  replaceExisting?: boolean
+  sessionId?: string | null
   imageUrl?: string
   fileUrl?: string
   mediaPath?: string
   mimeType?: string
   fileName?: string
   caption?: string
+  replyToMessageId?: string
+  threadId?: string
   ptt?: boolean
 }): { followUpId: string; sendAt: number } {
   const delaySecRaw = Number.isFinite(params.delaySec) ? Number(params.delaySec) : 300
   const delayMs = Math.max(1_000, Math.min(86_400_000, Math.round(delaySecRaw * 1000)))
+  const dedupeKey = params.dedupeKey || [
+    params.connectorId || params.platform || '',
+    params.channelId,
+    params.threadId || '',
+    (params.text || '').trim().slice(0, 160),
+  ].join('|')
+  const existing = scheduledFollowupByDedupe.get(dedupeKey)
+  if (existing && existing.sendAt > Date.now() && !params.replaceExisting) {
+    return { followUpId: existing.id, sendAt: existing.sendAt }
+  }
+  if (existing && params.replaceExisting) {
+    const scheduled = scheduledFollowups.get(existing.id)
+    if (scheduled) {
+      clearTimeout(scheduled.timer)
+      scheduledFollowups.delete(existing.id)
+    }
+    scheduledFollowupByDedupe.delete(dedupeKey)
+  }
   const followUpId = genId()
   const sendAt = Date.now() + delayMs
 
@@ -1701,18 +2530,24 @@ export function scheduleConnectorFollowUp(params: {
       platform: params.platform,
       channelId: params.channelId,
       text: params.text,
+      sessionId: params.sessionId,
       imageUrl: params.imageUrl,
       fileUrl: params.fileUrl,
       mediaPath: params.mediaPath,
       mimeType: params.mimeType,
       fileName: params.fileName,
       caption: params.caption,
+      replyToMessageId: params.replyToMessageId,
+      threadId: params.threadId,
       ptt: params.ptt,
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err)
       console.warn(`[connector] Scheduled follow-up ${followUpId} failed: ${msg}`)
     }).finally(() => {
       scheduledFollowups.delete(followUpId)
+      if (scheduledFollowupByDedupe.get(dedupeKey)?.id === followUpId) {
+        scheduledFollowupByDedupe.delete(dedupeKey)
+      }
     })
   }, delayMs)
 
@@ -1724,6 +2559,7 @@ export function scheduleConnectorFollowUp(params: {
     sendAt,
     timer,
   })
+  scheduledFollowupByDedupe.set(dedupeKey, { id: followUpId, sendAt })
 
   return { followUpId, sendAt }
 }

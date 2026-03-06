@@ -8,6 +8,7 @@ import { enqueueSystemEvent } from '@/lib/server/system-events'
 import { requestHeartbeatNow } from '@/lib/server/heartbeat-wake'
 import { mutateItem, deleteItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
 import type { WebhookRetryEntry } from '@/types'
+import { triggerWebhookWatchJobs } from '@/lib/server/watch-jobs'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ops: CollectionOps<any> = { load: loadWebhooks, save: saveWebhooks }
@@ -126,6 +127,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     })
   }
 
+  triggerWebhookWatchJobs({
+    webhookId: id,
+    event: incomingEvent,
+    payloadPreview: rawBody,
+  })
+
   const agents = loadAgents()
   const agent = webhook.agentId ? agents[webhook.agentId] : null
   if (!agent) {
@@ -165,7 +172,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       messages: [],
       createdAt: now,
       lastActiveAt: now,
-      sessionType: 'orchestrated',
+      sessionType: 'human',
       agentId: agent.id,
       parentSessionId: null,
       tools: agent.tools || [],

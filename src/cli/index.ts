@@ -17,7 +17,6 @@ interface CliContext {
 
 interface SetupAuthStatus {
   firstTime?: boolean
-  key?: string
 }
 
 interface SetupProviderCheckResponse {
@@ -208,19 +207,13 @@ async function resolveSetupAccessKey(ctx: CliContext): Promise<{
   }
 
   const status = await apiRequestWithAccessKey<SetupAuthStatus>(ctx, 'GET', '/auth', undefined)
-  const discoveredKey = typeof status?.key === 'string' ? status.key.trim() : ''
   const firstTime = status?.firstTime === true
 
-  if (!firstTime || !discoveredKey) {
-    throw new Error('No access key provided. Pass --key (or SWARMCLAW_ACCESS_KEY), or run setup on a fresh first-time instance.')
+  if (firstTime) {
+    throw new Error('No access key provided. Read the generated key from the launch terminal or .env.local, then pass --key (or SWARMCLAW_ACCESS_KEY).')
   }
 
-  await apiRequestWithAccessKey(ctx, 'POST', '/auth', discoveredKey, { key: discoveredKey })
-  return {
-    accessKey: discoveredKey,
-    firstTime: true,
-    autoDiscovered: true,
-  }
+  throw new Error('No access key provided. Pass --key (or SWARMCLAW_ACCESS_KEY).')
 }
 
 function printResult(value: unknown, rawOutput: boolean): void {

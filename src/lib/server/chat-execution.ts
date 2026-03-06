@@ -1,5 +1,6 @@
 import fs from 'fs'
 import os from 'os'
+import path from 'path'
 import {
   loadSessions,
   saveSessions,
@@ -38,7 +39,12 @@ import {
 } from './llm-response-cache'
 import type { Message, MessageToolEvent, SSEEvent, UsageRecord } from '@/types'
 import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from './provider-health'
+import { isHeartbeatSource, isInternalHeartbeatRun } from './heartbeat-source'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
+import { buildIdentityContinuityContext, refreshSessionIdentityState } from './identity-continuity'
+import { syncSessionArchiveMemory } from './session-archive-memory'
+import { evaluateSessionFreshness, resetSessionRuntime, resolveSessionResetPolicy } from './session-reset-policy'
+import { pruneStreamingAssistantArtifacts, upsertStreamingAssistantArtifact } from '@/lib/chat-streaming-state'
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
 /** Slice history from the most recent context-clear marker forward */
@@ -92,6 +98,10 @@ export interface ExecuteChatTurnResult {
   estimatedCost?: number
 }
 
+export function shouldApplySessionFreshnessReset(source: string): boolean {
+  return source !== 'eval'
+}
+
 function extractEventJson(line: string): SSEEvent | null {
   if (!line.startsWith('data: ')) return null
   try {
@@ -101,8 +111,17 @@ function extractEventJson(line: string): SSEEvent | null {
   }
 }
 
-function collectToolEvent(ev: SSEEvent, bag: MessageToolEvent[]) {
+export function collectToolEvent(ev: SSEEvent, bag: MessageToolEvent[]) {
   if (ev.t === 'tool_call') {
+    const previous = bag[bag.length - 1]
+    if (
+      previous
+      && previous.name === (ev.toolName || 'unknown')
+      && previous.input === (ev.toolInput || '')
+      && !previous.output
+    ) {
+      return
+    }
     bag.push({
       name: ev.toolName || 'unknown',
       input: ev.toolInput || '',
@@ -125,6 +144,96 @@ function collectToolEvent(ev: SSEEvent, bag: MessageToolEvent[]) {
   }
 }
 
+export function dedupeConsecutiveToolEvents(events: MessageToolEvent[]): MessageToolEvent[] {
+  const sameEvent = (left: MessageToolEvent, right: MessageToolEvent): boolean => (
+    left.name === right.name
+    && left.input === right.input
+    && (left.output || '') === (right.output || '')
+    && (left.error === true) === (right.error === true)
+  )
+  const sameBlock = (startA: number, startB: number, size: number): boolean => {
+    for (let offset = 0; offset < size; offset += 1) {
+      if (!sameEvent(events[startA + offset], events[startB + offset])) return false
+    }
+    return true
+  }
+
+  const deduped: MessageToolEvent[] = []
+  for (let index = 0; index < events.length;) {
+    const remaining = events.length - index
+    let collapsed = false
+    for (let blockSize = Math.floor(remaining / 2); blockSize >= 1; blockSize -= 1) {
+      if (!sameBlock(index, index + blockSize, blockSize)) continue
+      for (let offset = 0; offset < blockSize; offset += 1) deduped.push(events[index + offset])
+      const blockStart = index
+      index += blockSize
+      while (index + blockSize <= events.length && sameBlock(blockStart, index, blockSize)) {
+        index += blockSize
+      }
+      collapsed = true
+      break
+    }
+    if (collapsed) continue
+    deduped.push(events[index])
+    index += 1
+  }
+  return deduped
+}
+
+function extractDelegateResponse(outputText: string): string | null {
+  try {
+    const parsed = JSON.parse(outputText) as Record<string, unknown>
+    if (typeof parsed.response === 'string' && parsed.response.trim()) return parsed.response.trim()
+    if (typeof parsed.result === 'string' && parsed.result.trim()) return parsed.result.trim()
+    return null
+  } catch {
+    return null
+  }
+}
+
+function normalizeWorkspaceSandboxLinks(text: string, cwd: string): string {
+  return text.replace(/sandbox:\/workspace\/([^\s)"'\]`]+)/g, (raw, relativePath: string) => {
+    const normalized = String(relativePath || '').replace(/^\/+/, '')
+    if (!normalized) return raw
+    const resolvedCwd = path.resolve(cwd)
+    const resolved = path.resolve(resolvedCwd, normalized)
+    if (!resolved.startsWith(resolvedCwd)) return raw
+    if (!fs.existsSync(resolved)) return raw
+    return `/api/files/serve?path=${encodeURIComponent(resolved)}`
+  })
+}
+
+function normalizeAbsoluteFileMarkdownLinks(text: string): string {
+  return text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (raw, label: string, target: string) => {
+    if (!path.isAbsolute(target)) return raw
+    const resolved = path.resolve(target)
+    if (!fs.existsSync(resolved)) return raw
+    return `[${label}](/api/files/serve?path=${encodeURIComponent(resolved)})`
+  })
+}
+
+export function normalizeAssistantArtifactLinks(text: string, cwd: string): string {
+  const uploadsNormalized = text.replace(/sandbox:\/api\/uploads\//g, '/api/uploads/')
+  const workspaceNormalized = normalizeWorkspaceSandboxLinks(uploadsNormalized, cwd)
+  return normalizeAbsoluteFileMarkdownLinks(workspaceNormalized)
+}
+
+function extractHeartbeatStatus(text: string): { goal?: string; status?: string; summary?: string; nextAction?: string } | null {
+  const match = text.match(/\[AGENT_HEARTBEAT_META\]\s*(\{[^\n]*\})/i)
+  if (!match) return null
+  try {
+    const meta = JSON.parse(match[1]) as Record<string, unknown>
+    const payload: { goal?: string; status?: string; summary?: string; nextAction?: string } = {}
+    if (typeof meta.goal === 'string' && meta.goal.trim()) payload.goal = meta.goal.trim()
+    if (typeof meta.status === 'string' && meta.status.trim()) payload.status = meta.status.trim()
+    if (typeof meta.summary === 'string' && meta.summary.trim()) payload.summary = meta.summary.trim()
+    if (typeof meta.next_action === 'string' && meta.next_action.trim()) payload.nextAction = meta.next_action.trim()
+    return Object.keys(payload).length > 0 ? payload : null
+  } catch {
+    return null
+  }
+}
+
 function shouldReplaceRecentAssistantMessage(params: {
   previous: Message | null | undefined
   nextToolEvents: MessageToolEvent[]
@@ -140,7 +249,11 @@ function shouldReplaceRecentAssistantMessage(params: {
   return prevTools === 0
 }
 
-function requestedToolNamesFromMessage(message: string): string[] {
+export function pruneSuppressedHeartbeatStreamMessage(messages: Message[]): boolean {
+  return pruneStreamingAssistantArtifacts(messages)
+}
+
+export function requestedToolNamesFromMessage(message: string): string[] {
   const lower = message.toLowerCase()
   const candidates = [
     'delegate_to_claude_code',
@@ -179,15 +292,24 @@ function requestedToolNamesFromMessage(message: string): string[] {
     'sandbox_list_runtimes',
     'git',
     'canvas',
-    'delegate',
     'schedule_wake',
     'spawn_subagent',
+    'mailbox',
+    'ask_human',
+    'document',
+    'extract',
+    'table',
+    'crawl',
     'context_status',
     'context_summarize',
     'openclaw_nodes',
     'openclaw_workspace',
   ]
-  return candidates.filter((name) => lower.includes(name.toLowerCase()))
+  const requested = candidates.filter((name) => lower.includes(name.toLowerCase()))
+  if (/(^|[\s(])`delegate`([\s).,!?]|$)|\bdelegate tool\b|\buse delegate\b/.test(lower)) {
+    requested.push('delegate')
+  }
+  return Array.from(new Set(requested))
 }
 
 function parseKeyValueArgs(raw: string): Record<string, string> {
@@ -398,16 +520,27 @@ function syncSessionFromAgent(sessionId: string): void {
   if (!agent) return
 
   let changed = false
-  if (agent.provider && agent.provider !== session.provider) { session.provider = agent.provider; changed = true }
-  if (agent.model !== undefined && agent.model !== session.model) { session.model = agent.model; changed = true }
-  if (agent.credentialId !== undefined && agent.credentialId !== session.credentialId) { session.credentialId = agent.credentialId ?? null; changed = true }
-  if (agent.apiEndpoint !== undefined) {
+  if (!session.provider && agent.provider) { session.provider = agent.provider; changed = true }
+  if ((session.model === undefined || session.model === null || session.model === '') && agent.model !== undefined) {
+    session.model = agent.model
+    changed = true
+  }
+  if (session.credentialId === undefined && agent.credentialId !== undefined) {
+    session.credentialId = agent.credentialId ?? null
+    changed = true
+  }
+  if ((session.apiEndpoint === undefined || session.apiEndpoint === null) && agent.apiEndpoint !== undefined) {
     const normalized = normalizeProviderEndpoint(agent.provider, agent.apiEndpoint ?? null)
     if (normalized !== session.apiEndpoint) { session.apiEndpoint = normalized; changed = true }
   }
   if (!Array.isArray(session.plugins)) {
     session.plugins = Array.isArray(agent.plugins) ? [...agent.plugins] : []
     changed = true
+  }
+  const isShortcutChat = session.shortcutForAgentId === agent.id || agent.threadSessionId === sessionId
+  if (isShortcutChat) {
+    if (session.shortcutForAgentId !== agent.id) { session.shortcutForAgentId = agent.id; changed = true }
+    if (session.name !== agent.name) { session.name = agent.name; changed = true }
   }
 
   if (changed) {
@@ -435,6 +568,8 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
   if (agent.description) identityLines.push(`Description: ${agent.description}`)
   identityLines.push('I should always embody this identity. I am not just an "Assistant" — I am a persistent companion with my own soul and presence.')
   parts.push(identityLines.join('\n'))
+  const continuityBlock = buildIdentityContinuityContext(session, agent)
+  if (continuityBlock) parts.push(continuityBlock)
 
   // 2. Runtime & Capabilities (OpenClaw Style)
   const runtimeLines = [
@@ -553,20 +688,50 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const sessions = loadSessions()
   const session = sessions[sessionId]
   if (!session) throw new Error(`Session not found: ${sessionId}`)
+  session.messages = Array.isArray(session.messages) ? session.messages : []
+  const runStartedAt = Date.now()
+  const runMessageStartIndex = session.messages.length
 
   const appSettings = loadSettings()
+  const agentForSession = session.agentId ? loadAgents()[session.agentId] : null
   const toolPolicy = resolveSessionToolPolicy(session.plugins, appSettings)
-  const isHeartbeatRun = internal && source === 'heartbeat'
-  const isAutoRunNoHistory = isHeartbeatRun || (internal && source === 'main-loop-followup')
-  const heartbeatStatus = session.mainLoopState?.status || 'idle'
-  const mainLoopIdle = session.id.startsWith('agent-thread-')
-    && (heartbeatStatus === 'ok' || heartbeatStatus === 'idle')
-    && !(session.mainLoopState?.pendingEvents?.length > 0)
-  const heartbeatStatusOnly = isHeartbeatRun && mainLoopIdle
+  const isHeartbeatRun = isInternalHeartbeatRun(internal, source)
+  const isAutoRunNoHistory = isHeartbeatRun
+  const heartbeatStatusOnly = false
+  if (shouldApplySessionFreshnessReset(source)) {
+    const freshness = evaluateSessionFreshness({
+      session,
+      policy: resolveSessionResetPolicy({
+        session,
+        agent: agentForSession,
+        settings: appSettings,
+      }),
+    })
+    if (!freshness.fresh) {
+      try { syncSessionArchiveMemory(session, { agent: agentForSession }) } catch { /* archive sync is best-effort */ }
+      resetSessionRuntime(session, freshness.reason || 'session_reset')
+      onEvent?.({ t: 'status', text: JSON.stringify({ sessionReset: freshness.reason || 'session_reset' }) })
+      sessions[sessionId] = session
+      saveSessions(sessions)
+    }
+  }
   const pluginsForRun = heartbeatStatusOnly ? [] : toolPolicy.enabledPlugins
   let sessionForRun = pluginsForRun === session.plugins
     ? session
     : { ...session, plugins: pluginsForRun }
+  let effectiveMessage = message
+
+  if (pluginsForRun.length > 0) {
+    try {
+      effectiveMessage = await getPluginManager().transformText(
+        'transformInboundMessage',
+        { session: sessionForRun, text: message },
+        { enabledIds: pluginsForRun },
+      )
+    } catch {
+      effectiveMessage = message
+    }
+  }
 
   // Apply model override for heartbeat runs (cheaper model)
   if (isHeartbeatRun && input.modelOverride) {
@@ -662,7 +827,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       internal,
       provider: session.provider,
       model: session.model,
-      messagePreview: message.slice(0, 200),
+      messagePreview: effectiveMessage.slice(0, 200),
       hasImage: !!(imagePath || imageUrl),
     },
   })
@@ -679,7 +844,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   if (!internal) {
     const linkAnalysis = await runLinkUnderstanding(message)
-    session.messages.push({
+    const nextUserMessage: Message = {
       role: 'user',
       text: message,
       time: Date.now(),
@@ -687,7 +852,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       imageUrl: imageUrl || undefined,
       attachedFiles: attachedFiles?.length ? attachedFiles : undefined,
       replyToId: input.replyToId || undefined,
-    })
+    }
+    session.messages.push(nextUserMessage)
     if (linkAnalysis.length > 0) {
       session.messages.push({
         role: 'assistant',
@@ -698,6 +864,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
     session.lastActiveAt = Date.now()
     saveSessions(sessions)
+    try {
+      await getPluginManager().runHook('onMessage', { session, message: nextUserMessage }, { enabledIds: pluginsForRun })
+    } catch { /* onMessage hooks are non-critical */ }
   }
 
   const systemPrompt = buildAgentSystemPrompt(session)
@@ -746,19 +915,18 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         const fresh = loadSessions()
         const current = fresh[sessionId]
         if (!current) return
+        current.messages = Array.isArray(current.messages) ? current.messages : []
         const partialMsg: Message = {
           role: 'assistant',
           text: streamingPartialText,
           time: Date.now(),
           streaming: true,
-          toolEvents: toolEvents.length ? [...toolEvents] : undefined,
+          toolEvents: toolEvents.length ? dedupeConsecutiveToolEvents([...toolEvents]) : undefined,
         }
-        const lastMsg = current.messages.at(-1)
-        if (lastMsg?.streaming) {
-          current.messages[current.messages.length - 1] = partialMsg
-        } else {
-          current.messages.push(partialMsg)
-        }
+        upsertStreamingAssistantArtifact(current.messages, partialMsg, {
+          minIndex: runMessageStartIndex,
+          minTime: runStartedAt,
+        })
         fresh[sessionId] = current
         saveSessions(fresh)
         notify(`messages:${sessionId}`)
@@ -812,7 +980,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     if (hasPlugins) {
       fullResponse = (await streamAgentChat({
         session: sessionForRun,
-        message: message,
+        message: effectiveMessage,
         imagePath,
         attachedFiles,
         apiKey,
@@ -830,7 +998,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         model: sessionForRun.model,
         apiEndpoint: sessionForRun.apiEndpoint || '',
         systemPrompt,
-        message: message,
+        message: effectiveMessage,
         imagePath,
         imageUrl,
         attachedFiles,
@@ -858,7 +1026,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       } else {
         fullResponse = await provider.handler.streamChat({
           session: sessionForRun,
-          message: message,
+          message: effectiveMessage,
           imagePath,
           apiKey,
           systemPrompt,
@@ -1019,10 +1187,16 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       const toolOutput = await selectedTool.invoke(translated.args)
       const outputText = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
       emit({ t: 'tool_result', toolName, toolOutput: outputText })
-      // Don't overwrite fullResponse with raw tool output — it's already captured
-      // in toolEvents. Only set a brief notice when the LLM produced no text,
-      // so the message bubble isn't empty.
-      if (!fullResponse.trim() && outputText?.trim()) {
+      const delegateResponse = (
+        toolName === 'delegate'
+        || toolName.startsWith('delegate_to_')
+      ) ? extractDelegateResponse(outputText) : null
+      if (delegateResponse) {
+        fullResponse = delegateResponse
+      } else if (!fullResponse.trim() && outputText?.trim()) {
+        // Don't overwrite fullResponse with raw tool output — it's already captured
+        // in toolEvents. Only set a brief notice when the LLM produced no text,
+        // so the message bubble isn't empty.
         const label = toolName.replace(/_/g, ' ')
         fullResponse = `Used **${label}** — see tool output above for details.`
       }
@@ -1075,7 +1249,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     const delegationOrder = rankDelegatesByHealth(baseDelegationOrder as DelegateTool[])
       .filter((tool) => enabledDelegateTools.includes(tool))
     for (const delegateTool of delegationOrder) {
-      const invoked = await invokeSessionTool(delegateTool, { task: message.trim() }, 'Auto-delegation failed')
+      const invoked = await invokeSessionTool(delegateTool, { task: effectiveMessage.trim() }, 'Auto-delegation failed')
       if (invoked) break
     }
   }
@@ -1095,7 +1269,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     for (const delegateTool of fallbackOrder) {
       const invoked = await invokeSessionTool(
         delegateTool,
-        { task: message.trim() },
+        { task: effectiveMessage.trim() },
         `Provider failover via ${delegateTool} failed`,
       )
       if (invoked) {
@@ -1113,7 +1287,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   if (canAutoRouteWithTools && routingDecision?.intent === 'browsing' && routingDecision.primaryUrl && hasToolEnabled(sessionForRun, 'browser')) {
     await invokeSessionTool(
       'browser',
-      { action: 'navigate', url: routingDecision.primaryUrl },
+      { action: 'read_page', url: routingDecision.primaryUrl },
       'Auto browser routing failed',
     )
   }
@@ -1123,7 +1297,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     if (routeUrl && hasToolEnabled(sessionForRun, 'web_fetch')) {
       await invokeSessionTool('web_fetch', { url: routeUrl }, 'Auto web_fetch routing failed')
     } else if (hasToolEnabled(sessionForRun, 'web_search')) {
-      await invokeSessionTool('web_search', { query: message.trim(), maxResults: 5 }, 'Auto web_search routing failed')
+      await invokeSessionTool('web_search', { query: effectiveMessage.trim(), maxResults: 5 }, 'Auto web_search routing failed')
     }
   }
 
@@ -1158,27 +1332,23 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     errorMessage = streamErrors[streamErrors.length - 1]
   }
 
-  const finalText = (fullResponse || '').trim() || (!internal && errorMessage ? `Error: ${errorMessage}` : '')
+  let finalText = (fullResponse || '').trim() || (!internal && errorMessage ? `Error: ${errorMessage}` : '')
+  if (pluginsForRun.length > 0 && finalText && !isHeartbeatRun) {
+    try {
+      finalText = await getPluginManager().transformText(
+        'transformOutboundMessage',
+        { session: sessionForRun, text: finalText },
+        { enabledIds: pluginsForRun },
+      )
+    } catch { /* outbound transforms are non-critical */ }
+  }
+  finalText = normalizeAssistantArtifactLinks(finalText, session.cwd)
   const textForPersistence = stripMainLoopMetaForPersistence(finalText)
+  const persistedToolEvents = dedupeConsecutiveToolEvents(toolEvents)
 
-  // Emit status SSE event from [MAIN_LOOP_META] if present
-  if (internal && finalText) {
-    const metaMatch = finalText.match(/\[MAIN_LOOP_META\]\s*(\{[^\n]*\})/i)
-    if (metaMatch) {
-      try {
-        const meta = JSON.parse(metaMatch[1])
-        const statusPayload: Record<string, string | undefined> = {}
-        if (meta.goal) statusPayload.goal = String(meta.goal)
-        if (meta.status) statusPayload.status = String(meta.status)
-        if (meta.summary) statusPayload.summary = String(meta.summary)
-        if (meta.next_action) statusPayload.nextAction = String(meta.next_action)
-        if (Object.keys(statusPayload).length > 0) {
-          emit({ t: 'status', text: JSON.stringify(statusPayload) })
-        }
-      } catch {
-        // ignore malformed meta JSON
-      }
-    }
+  if (isHeartbeatRun && finalText) {
+    const heartbeatStatus = extractHeartbeatStatus(finalText)
+    if (heartbeatStatus) emit({ t: 'status', text: JSON.stringify(heartbeatStatus) })
   }
 
   // HEARTBEAT_OK suppression
@@ -1214,7 +1384,13 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const fresh = loadSessions()
   const current = fresh[sessionId]
   if (current) {
+    current.messages = Array.isArray(current.messages) ? current.messages : []
+    const currentAgent = current.agentId ? loadAgents()[current.agentId] : null
     let changed = false
+    changed = pruneStreamingAssistantArtifacts(current.messages, {
+      minIndex: runMessageStartIndex,
+      minTime: runStartedAt,
+    }) || changed
     const persistField = (key: string, value: unknown) => {
       const normalized = normalizeResumeId(value)
       if ((current as Record<string, unknown>)[key] !== normalized) {
@@ -1246,7 +1422,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
 
     if (shouldPersistAssistant) {
-      const persistedKind = internal && source === 'heartbeat' ? 'heartbeat' : 'chat'
+      const persistedKind = isHeartbeatRun ? 'heartbeat' : 'chat'
       const persistedText = heartbeatClassification === 'strip'
         ? textForPersistence.replace(/HEARTBEAT_OK/gi, '').trim()
         : textForPersistence
@@ -1256,13 +1432,13 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         text: persistedText,
         time: nowTs,
         thinking: thinkingText || undefined,
-        toolEvents: toolEvents.length ? toolEvents : undefined,
+        toolEvents: persistedToolEvents.length ? persistedToolEvents : undefined,
         kind: persistedKind,
       }
       const previous = current.messages.at(-1)
       if (previous?.streaming || shouldReplaceRecentAssistantMessage({
         previous,
-        nextToolEvents: toolEvents,
+        nextToolEvents: persistedToolEvents,
         nextKind: persistedKind,
         now: nowTs,
       })) {
@@ -1275,6 +1451,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         current.lastHeartbeatSentAt = nowTs
       }
       changed = true
+      try {
+        await getPluginManager().runHook('onMessage', { session: current, message: nextAssistantMessage }, { enabledIds: pluginsForRun })
+      } catch { /* onMessage hooks are non-critical */ }
 
       // Conversation tone detection
       if (!internal) {
@@ -1329,6 +1508,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         }
       }
     }
+    if (isHeartbeatRun && heartbeatClassification === 'suppress') {
+      changed = pruneSuppressedHeartbeatStreamMessage(current.messages) || changed
+    }
 
     // Fire afterChatTurn hook for all enabled plugins (memory auto-save, logging, etc.)
     try {
@@ -1338,13 +1520,20 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         response: textForPersistence,
         source,
         internal,
-      })
+      }, { enabledIds: pluginsForRun })
     } catch { /* afterChatTurn hooks are non-critical */ }
 
     // Don't extend idle timeout for heartbeat runs — only user-initiated activity counts
-    if (source !== 'heartbeat' && source !== 'heartbeat-wake' && source !== 'main-loop-followup') {
+    if (!isHeartbeatSource(source)) {
       current.lastActiveAt = Date.now()
     }
+
+    refreshSessionIdentityState(current, currentAgent)
+    changed = true
+    try {
+      const archiveSync = syncSessionArchiveMemory(current, { agent: currentAgent })
+      if (archiveSync.stored) changed = true
+    } catch { /* archive sync is best-effort */ }
     fresh[sessionId] = current
     saveSessions(fresh)
     notify(`messages:${sessionId}`)
@@ -1355,7 +1544,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     sessionId,
     text: finalText,
     persisted: shouldPersistAssistant,
-    toolEvents,
+    toolEvents: persistedToolEvents,
     error: errorMessage,
     inputTokens: accumulatedUsage.inputTokens || undefined,
     outputTokens: accumulatedUsage.outputTokens || undefined,

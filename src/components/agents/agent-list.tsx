@@ -25,7 +25,7 @@ export function AgentList({ inSidebar }: Props) {
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const approvals = useApprovalStore((s) => s.approvals)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'all' | 'orchestrator' | 'agent'>('all')
+  const [filter, setFilter] = useState<'all' | 'delegating' | 'solo'>('all')
 
   // FLIP animation refs
   const flipPositions = useRef<Map<string, number>>(new Map())
@@ -88,12 +88,22 @@ export function AgentList({ inSidebar }: Props) {
     return counts
   }, [approvals])
 
+  const delegatingCount = useMemo(
+    () => Object.values(agents).filter((agent) => agent.platformAssignScope === 'all' && !agent.trashedAt).length,
+    [agents],
+  )
+  const soloCount = useMemo(
+    () => Object.values(agents).filter((agent) => agent.platformAssignScope !== 'all' && !agent.trashedAt).length,
+    [agents],
+  )
+
   const filtered = useMemo(() => {
     return Object.values(agents)
       .filter((p) => {
         if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false
-        if (filter === 'orchestrator' && !p.isOrchestrator) return false
-        if (filter === 'agent' && p.isOrchestrator) return false
+        const canDelegateToAgents = p.platformAssignScope === 'all'
+        if (filter === 'delegating' && !canDelegateToAgents) return false
+        if (filter === 'solo' && canDelegateToAgents) return false
         if (activeProjectFilter && p.projectId !== activeProjectFilter) return false
         // Fleet filter
         if (fleetFilter === 'running' && !runningAgentIds.has(p.id)) return false
@@ -171,7 +181,7 @@ export function AgentList({ inSidebar }: Props) {
           </svg>
         }
         title="No agents yet"
-        subtitle="Create AI agents and orchestrators"
+        subtitle="Create AI agents and enable delegation where needed"
         action={!inSidebar ? { label: '+ New Agent', onClick: () => setAgentSheetOpen(true) } : undefined}
       />
     )
@@ -212,15 +222,19 @@ export function AgentList({ inSidebar }: Props) {
         })}
       </div>
       <div className="flex gap-1 px-4 pb-2 items-center">
-        {(['all', 'orchestrator', 'agent'] as const).map((f) => (
+        {([
+          ['all', `all (${delegatingCount + soloCount})`],
+          ['delegating', `delegating (${delegatingCount})`],
+          ['solo', `solo (${soloCount})`],
+        ] as const).map(([value, label]) => (
           <button
-            key={f}
-            onClick={() => setFilter(f)}
+            key={value}
+            onClick={() => setFilter(value)}
             className={`px-3 py-1.5 rounded-[8px] text-[11px] font-600 capitalize cursor-pointer transition-all
-              ${filter === f ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
+              ${filter === value ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
             style={{ fontFamily: 'inherit' }}
           >
-            {f}
+            {label}
           </button>
         ))}
         <div className="flex-1" />
@@ -235,6 +249,29 @@ export function AgentList({ inSidebar }: Props) {
           </svg>
         </button>
       </div>
+      {!inSidebar && (
+        <div className="mx-4 mb-3 rounded-[14px] border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Fleet Roles</h3>
+              <p className="text-[12px] text-text-3/65 mt-1">
+                Delegating agents can hand work to other agents. Solo agents stay on their own thread and tools.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="px-2.5 py-1 rounded-[8px] bg-white/[0.04] text-[11px] font-600 text-text-2">
+                Default: {agents[defaultAgentId]?.name || 'Unset'}
+              </span>
+              <span className="px-2.5 py-1 rounded-[8px] bg-sky-500/10 text-[11px] font-600 text-sky-400">
+                {delegatingCount} delegating
+              </span>
+              <span className="px-2.5 py-1 rounded-[8px] bg-white/[0.04] text-[11px] font-600 text-text-2">
+                {soloCount} solo
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col gap-1 px-2 pb-4">
         {filtered.map((p) => (
           <div key={p.id} ref={(el) => { if (el) cardRefs.current.set(p.id, el); else cardRefs.current.delete(p.id) }}>

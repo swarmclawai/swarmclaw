@@ -54,6 +54,24 @@ function parseDurationToSec(interval: string | number | null | undefined, interv
   return '' // default
 }
 
+function formatIdentityList(value: string[] | null | undefined): string {
+  return Array.isArray(value) ? value.join('\n') : ''
+}
+
+function parseIdentityList(value: string): string[] {
+  const seen = new Set<string>()
+  return value
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => {
+      if (!line) return false
+      const key = line.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
 export function AgentSheet() {
   const open = useAppStore((s) => s.agentSheetOpen)
   const setOpen = useAppStore((s) => s.setAgentSheetOpen)
@@ -92,7 +110,7 @@ export function AgentSheet() {
   const [model, setModel] = useState('')
   const [credentialId, setCredentialId] = useState<string | null>(null)
   const [apiEndpoint, setApiEndpoint] = useState<string | null>(null)
-  const [isOrchestrator, setIsOrchestrator] = useState(false)
+  const [platformAssignScope, setPlatformAssignScope] = useState<'self' | 'all'>('self')
   const [subAgentIds, setAgentAgentIds] = useState<string[]>([])
   const [tools, setTools] = useState<string[]>([])
   const [skills, setSkills] = useState<string[]>([])
@@ -117,6 +135,17 @@ export function AgentSheet() {
   const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
   const [heartbeatModel, setHeartbeatModel] = useState('')
   const [heartbeatPrompt, setHeartbeatPrompt] = useState('')
+  const [sessionResetMode, setSessionResetMode] = useState<'' | 'idle' | 'daily'>('')
+  const [sessionIdleTimeoutSec, setSessionIdleTimeoutSec] = useState('')
+  const [sessionMaxAgeSec, setSessionMaxAgeSec] = useState('')
+  const [sessionDailyResetAt, setSessionDailyResetAt] = useState('')
+  const [sessionResetTimezone, setSessionResetTimezone] = useState('')
+  const [identityPersonaLabel, setIdentityPersonaLabel] = useState('')
+  const [identitySelfSummary, setIdentitySelfSummary] = useState('')
+  const [identityRelationshipSummary, setIdentityRelationshipSummary] = useState('')
+  const [identityToneStyle, setIdentityToneStyle] = useState('')
+  const [identityBoundariesText, setIdentityBoundariesText] = useState('')
+  const [identityContinuityNotesText, setIdentityContinuityNotesText] = useState('')
   const [budgetEnabled, setBudgetEnabled] = useState(false)
   const [hourlyBudget, setHourlyBudget] = useState('')
   const [dailyBudget, setDailyBudget] = useState('')
@@ -181,7 +210,7 @@ export function AgentSheet() {
         setModel(editing.model)
         setCredentialId(editing.credentialId || null)
         setApiEndpoint(editing.apiEndpoint || null)
-        setIsOrchestrator(editing.isOrchestrator || false)
+        setPlatformAssignScope(editing.platformAssignScope || 'self')
         setAgentAgentIds(editing.subAgentIds || [])
         setTools(editing.plugins || [])
         setSkills(editing.skills || [])
@@ -189,7 +218,6 @@ export function AgentSheet() {
         setMcpServerIds(editing.mcpServerIds || [])
         setMcpDisabledTools(editing.mcpDisabledTools || [])
         setFallbackCredentialIds(editing.fallbackCredentialIds || [])
-        // platformAssignScope derived from isOrchestrator — no separate state
         setCapabilities(Array.isArray(editing.capabilities) ? editing.capabilities : [])
         setCapInput('')
         setOllamaMode(editing.credentialId && editing.provider === 'ollama' ? 'cloud' : 'local')
@@ -204,6 +232,17 @@ export function AgentSheet() {
         setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
         setHeartbeatModel(editing.heartbeatModel || '')
         setHeartbeatPrompt(editing.heartbeatPrompt || '')
+        setSessionResetMode(editing.sessionResetMode || '')
+        setSessionIdleTimeoutSec(editing.sessionIdleTimeoutSec != null ? String(editing.sessionIdleTimeoutSec) : '')
+        setSessionMaxAgeSec(editing.sessionMaxAgeSec != null ? String(editing.sessionMaxAgeSec) : '')
+        setSessionDailyResetAt(editing.sessionDailyResetAt || '')
+        setSessionResetTimezone(editing.sessionResetTimezone || '')
+        setIdentityPersonaLabel(editing.identityState?.personaLabel || '')
+        setIdentitySelfSummary(editing.identityState?.selfSummary || '')
+        setIdentityRelationshipSummary(editing.identityState?.relationshipSummary || '')
+        setIdentityToneStyle(editing.identityState?.toneStyle || '')
+        setIdentityBoundariesText(formatIdentityList(editing.identityState?.boundaries))
+        setIdentityContinuityNotesText(formatIdentityList(editing.identityState?.continuityNotes))
         setBudgetEnabled(
           (typeof editing.hourlyBudget === 'number' && editing.hourlyBudget > 0)
           || (typeof editing.dailyBudget === 'number' && editing.dailyBudget > 0)
@@ -233,7 +272,7 @@ export function AgentSheet() {
         setModel('')
         setCredentialId(null)
         setApiEndpoint(null)
-        setIsOrchestrator(false)
+        setPlatformAssignScope('self')
         setAgentAgentIds([])
         setTools([])
         setSkills([])
@@ -253,6 +292,17 @@ export function AgentSheet() {
         setHeartbeatIntervalSec('')
         setHeartbeatModel('')
         setHeartbeatPrompt('')
+        setSessionResetMode('')
+        setSessionIdleTimeoutSec('')
+        setSessionMaxAgeSec('')
+        setSessionDailyResetAt('')
+        setSessionResetTimezone('')
+        setIdentityPersonaLabel('')
+        setIdentitySelfSummary('')
+        setIdentityRelationshipSummary('')
+        setIdentityToneStyle('')
+        setIdentityBoundariesText('')
+        setIdentityContinuityNotesText('')
         setBudgetEnabled(false)
         setHourlyBudget('')
         setDailyBudget('')
@@ -329,6 +379,22 @@ export function AgentSheet() {
     const parsedHourlyBudget = budgetEnabled && hourlyBudget ? Number(hourlyBudget) : null
     const parsedDailyBudget = budgetEnabled && dailyBudget ? Number(dailyBudget) : null
     const parsedMonthlyBudget = budgetEnabled && monthlyBudget ? Number(monthlyBudget) : null
+    const parsedSessionIdleTimeoutSec = sessionIdleTimeoutSec ? Number(sessionIdleTimeoutSec) : null
+    const parsedSessionMaxAgeSec = sessionMaxAgeSec ? Number(sessionMaxAgeSec) : null
+    const identityBoundaries = parseIdentityList(identityBoundariesText)
+    const identityContinuityNotes = parseIdentityList(identityContinuityNotesText)
+    const identityState = (() => {
+      const value = {
+        personaLabel: identityPersonaLabel.trim() || undefined,
+        selfSummary: identitySelfSummary.trim() || undefined,
+        relationshipSummary: identityRelationshipSummary.trim() || undefined,
+        toneStyle: identityToneStyle.trim() || undefined,
+        boundaries: identityBoundaries.length ? identityBoundaries : undefined,
+        continuityNotes: identityContinuityNotes.length ? identityContinuityNotes : undefined,
+      }
+      return Object.values(value).some((entry) => Array.isArray(entry) ? entry.length > 0 : Boolean(entry)) ? value : null
+    })()
+    const canDelegateToAgents = platformAssignScope === 'all'
     const data = {
       name: name.trim() || 'Unnamed Agent',
       description,
@@ -338,15 +404,14 @@ export function AgentSheet() {
       model,
       credentialId,
       apiEndpoint: normalizedEndpoint,
-      isOrchestrator,
-      subAgentIds: isOrchestrator ? subAgentIds : [],
+      subAgentIds: canDelegateToAgents ? subAgentIds : [],
       tools,
       skills,
       skillIds,
       mcpServerIds,
       mcpDisabledTools: mcpDisabledTools.length ? mcpDisabledTools : undefined,
       fallbackCredentialIds,
-      platformAssignScope: (isOrchestrator ? 'all' : 'self') as 'all' | 'self',
+      platformAssignScope,
       capabilities,
       projectId: projectId || undefined,
       avatarSeed: avatarSeed.trim() || undefined,
@@ -359,6 +424,12 @@ export function AgentSheet() {
       heartbeatIntervalSec: heartbeatIntervalSec ? Number(heartbeatIntervalSec) : null,
       heartbeatModel: heartbeatModel.trim() || null,
       heartbeatPrompt: heartbeatPrompt.trim() || null,
+      identityState,
+      sessionResetMode: sessionResetMode || null,
+      sessionIdleTimeoutSec: Number.isFinite(parsedSessionIdleTimeoutSec) && parsedSessionIdleTimeoutSec! >= 0 ? parsedSessionIdleTimeoutSec : null,
+      sessionMaxAgeSec: Number.isFinite(parsedSessionMaxAgeSec) && parsedSessionMaxAgeSec! >= 0 ? parsedSessionMaxAgeSec : null,
+      sessionDailyResetAt: sessionDailyResetAt.trim() || null,
+      sessionResetTimezone: sessionResetTimezone.trim() || null,
       hourlyBudget: parsedHourlyBudget && parsedHourlyBudget > 0 ? parsedHourlyBudget : null,
       dailyBudget: parsedDailyBudget && parsedDailyBudget > 0 ? parsedDailyBudget : null,
       monthlyBudget: parsedMonthlyBudget && parsedMonthlyBudget > 0 ? parsedMonthlyBudget : null,
@@ -473,7 +544,8 @@ export function AgentSheet() {
     setSaving(false)
   }
 
-  const agentOptions = Object.values(agents).filter((p) => !p.isOrchestrator && p.id !== editingId)
+  const canDelegateToAgents = platformAssignScope === 'all'
+  const agentOptions = Object.values(agents).filter((p) => p.id !== editingId)
 
   const toggleAgent = (id: string) => {
     setAgentAgentIds((prev) =>
@@ -491,7 +563,7 @@ export function AgentSheet() {
           <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
             {editing ? 'Edit Agent' : 'New Agent'}
           </h2>
-          <p className="text-[14px] text-text-3">Define an AI agent or orchestrator</p>
+          <p className="text-[14px] text-text-3">Define an AI agent and optional multi-agent delegation behavior</p>
         </div>
         <div className="flex items-center gap-3 mt-1.5">
           <label className="text-[11px] font-600 text-text-3 uppercase tracking-[0.08em]">OpenClaw</label>
@@ -981,6 +1053,127 @@ export function AgentSheet() {
         </div>
       )}
 
+      <div className="mb-8">
+        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Identity Continuity <HintTip text="Seeds the agent's continuity state so session memory can preserve a stable persona and relationship context." />
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <input
+            type="text"
+            value={identityPersonaLabel}
+            onChange={(e) => setIdentityPersonaLabel(e.target.value)}
+            placeholder="Persona label"
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          />
+          <input
+            type="text"
+            value={identityToneStyle}
+            onChange={(e) => setIdentityToneStyle(e.target.value)}
+            placeholder="Tone style"
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-3">
+          <textarea
+            value={identitySelfSummary}
+            onChange={(e) => setIdentitySelfSummary(e.target.value)}
+            placeholder="How this agent should summarize itself across sessions."
+            rows={3}
+            className={`${inputClass} resize-y min-h-[84px]`}
+            style={{ fontFamily: 'inherit' }}
+          />
+          <textarea
+            value={identityRelationshipSummary}
+            onChange={(e) => setIdentityRelationshipSummary(e.target.value)}
+            placeholder="Relationship framing or standing context the agent should keep in mind."
+            rows={3}
+            className={`${inputClass} resize-y min-h-[84px]`}
+            style={{ fontFamily: 'inherit' }}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <textarea
+              value={identityBoundariesText}
+              onChange={(e) => setIdentityBoundariesText(e.target.value)}
+              placeholder="Boundaries, one per line."
+              rows={4}
+              className={`${inputClass} resize-y min-h-[108px]`}
+              style={{ fontFamily: 'inherit' }}
+            />
+            <textarea
+              value={identityContinuityNotesText}
+              onChange={(e) => setIdentityContinuityNotesText(e.target.value)}
+              placeholder="Continuity notes, one per line."
+              rows={4}
+              className={`${inputClass} resize-y min-h-[108px]`}
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+        </div>
+        <p className="text-[12px] text-text-3/60 mt-2 leading-[1.5]">
+          Use one line per item. Boundaries are stable guardrails; continuity notes are recurring relationship or project context worth carrying across sessions.
+        </p>
+      </div>
+
+      <div className="mb-8">
+        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Session Reset Policy <HintTip text="Controls when this agent's sessions are considered stale and should be refreshed." />
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <div>
+            <select
+              value={sessionResetMode}
+              onChange={(e) => setSessionResetMode(e.target.value as typeof sessionResetMode)}
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            >
+              <option value="">Inherit global default</option>
+              <option value="idle">Idle</option>
+              <option value="daily">Daily</option>
+            </select>
+          </div>
+          <div>
+            <input
+              type="number"
+              min={0}
+              value={sessionIdleTimeoutSec}
+              onChange={(e) => setSessionIdleTimeoutSec(e.target.value)}
+              placeholder="Idle timeout in seconds"
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <input
+            type="number"
+            min={0}
+            value={sessionMaxAgeSec}
+            onChange={(e) => setSessionMaxAgeSec(e.target.value)}
+            placeholder="Max age in seconds"
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          />
+          <input
+            type="text"
+            value={sessionDailyResetAt}
+            onChange={(e) => setSessionDailyResetAt(e.target.value)}
+            placeholder="Daily reset time (HH:MM)"
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          />
+          <input
+            type="text"
+            value={sessionResetTimezone}
+            onChange={(e) => setSessionResetTimezone(e.target.value)}
+            placeholder="Timezone (optional)"
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          />
+        </div>
+      </div>
+
       {/* OpenClaw Gateway Fields */}
       {openclawEnabled && (
         <div className="mb-8 space-y-5">
@@ -1178,7 +1371,7 @@ export function AgentSheet() {
       {!openclawEnabled && <div className="mb-8">
         <SectionLabel>Provider</SectionLabel>
         <div className="grid grid-cols-3 gap-3">
-          {providers.filter((p) => !isOrchestrator || p.id !== 'claude-cli').map((p) => {
+          {providers.map((p) => {
             const isConnected = !p.requiresApiKey || Object.values(credentials).some((c) => c.provider === p.id)
             return (
               <button
@@ -1584,15 +1777,13 @@ export function AgentSheet() {
           <label className="flex items-center gap-3 cursor-pointer">
             <div
               onClick={() => {
-                const next = !isOrchestrator
-                setIsOrchestrator(next)
-                if (next && provider === 'claude-cli') setProvider('anthropic')
+                setPlatformAssignScope((current) => current === 'all' ? 'self' : 'all')
               }}
               className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer
-                ${isOrchestrator ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
+                ${canDelegateToAgents ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
             >
               <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200
-                ${isOrchestrator ? 'left-[22px]' : 'left-0.5'}`} />
+                ${canDelegateToAgents ? 'left-[22px]' : 'left-0.5'}`} />
             </div>
             <span className="font-display text-[14px] font-600 text-text-2">Can Delegate to Other Agents</span>
             <span className="text-[12px] text-text-3">Route work to specialized agents and coordinate multi-agent tasks</span>
@@ -1600,7 +1791,7 @@ export function AgentSheet() {
         </div>
       )}
 
-      {provider !== 'openclaw' && isOrchestrator && agentOptions.length > 0 && (
+      {provider !== 'openclaw' && canDelegateToAgents && agentOptions.length > 0 && (
         <div className="mb-8">
           <SectionLabel>Available Agents</SectionLabel>
           <AgentPickerList

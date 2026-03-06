@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
+import { resolveOpenClawGatewayAgentId } from '@/lib/server/openclaw-agent-resolver'
+import { normalizeOpenClawSkillsPayload } from '@/lib/server/openclaw-skills-normalize'
 import { loadAgents, saveAgents } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import type { OpenClawSkillEntry, SkillAllowlistMode } from '@/types'
@@ -18,11 +20,17 @@ export async function GET(req: Request) {
   }
 
   try {
-    const result = await gw.rpc('skills.status', { agentId }) as OpenClawSkillEntry[] | undefined
-    return NextResponse.json(result ?? [])
+    const gatewayAgentId = await resolveOpenClawGatewayAgentId(agentId, gw)
+    const result = await gw.rpc('skills.status', { agentId: gatewayAgentId }) as unknown
+    return NextResponse.json(normalizeOpenClawSkillsPayload(result))
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: message }, { status: 502 })
+    const status = message.includes('not an OpenClaw agent')
+      ? 400
+      : message.includes('not found')
+        ? 404
+        : 502
+    return NextResponse.json({ error: message }, { status })
   }
 }
 

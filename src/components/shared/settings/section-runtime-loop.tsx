@@ -24,7 +24,7 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
         Runtime &amp; Loop Controls
       </h3>
       <p className="text-[12px] text-text-3 mb-5">
-        Choose bounded or ongoing agent loops and set safety guards for task execution.
+        Control how far agents can run on their own and set safety guards for delegation and tool execution.
       </p>
       <div className="p-6 rounded-[18px] bg-surface border border-white/[0.06]">
         <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Loop Mode <HintTip text="Bounded = fixed max steps. Ongoing = runs until the task completes (with a safety cap)" /></label>
@@ -64,8 +64,8 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
                 style={{ fontFamily: 'inherit' }}
               />
             </div>
-            <div>
-              <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Orchestrator Steps <HintTip text="Maximum tool calls the orchestrator can make when coordinating multiple agents" /></label>
+          <div>
+            <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Coordination Steps <HintTip text="Maximum tool calls an agent can make while coordinating multiple delegated agents" /></label>
               <input
                 type="number"
                 min={1}
@@ -79,8 +79,8 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
                 style={{ fontFamily: 'inherit' }}
               />
             </div>
-            <div>
-              <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Legacy Turns <HintTip text="Max conversation turns for older orchestration mode — increase if agents get cut off mid-task" /></label>
+          <div>
+            <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Legacy Turns <HintTip text="Compatibility limit for older coordination flows that still rely on turn-based execution" /></label>
               <input
                 type="number"
                 min={1}

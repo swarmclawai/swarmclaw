@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getPluginManager } from '@/lib/server/plugins'
+import '@/lib/server/builtin-plugins'
 
 export const dynamic = 'force-dynamic'
 

@@ -70,11 +70,7 @@ export function WalletPanel() {
       const data = await api<Record<string, SafeWallet>>('GET', '/wallets')
       setWallets(data)
 
-      // Auto-select wallet for target agent
-      if (walletPanelAgentId) {
-        const match = Object.values(data).find((w) => w.agentId === walletPanelAgentId)
-        if (match) setSelectedWalletId(match.id)
-      } else if (!selectedWalletId && Object.keys(data).length > 0) {
+      if (!walletPanelAgentId && !selectedWalletId && Object.keys(data).length > 0) {
         setSelectedWalletId(Object.keys(data)[0])
       }
     } catch { /* ignore */ }
@@ -84,6 +80,22 @@ export function WalletPanel() {
 
   useEffect(() => { loadWallets() }, [loadWallets])
   useWs('wallets', loadWallets, 15000)
+
+  useEffect(() => {
+    if (!walletPanelAgentId) return
+    const match = Object.values(wallets).find((wallet) => wallet.agentId === walletPanelAgentId)
+    if (match) {
+      setSelectedWalletId(match.id)
+      setShowCreateForm(false)
+      setCreateError('')
+      return
+    }
+    if (!agents[walletPanelAgentId]) return
+    setSelectedWalletId(null)
+    setShowCreateForm(true)
+    setCreateAgentId(walletPanelAgentId)
+    setCreateError('')
+  }, [agents, walletPanelAgentId, wallets])
 
   // Load detail when wallet selected
   const selectedWallet = selectedWalletId ? wallets[selectedWalletId] : null

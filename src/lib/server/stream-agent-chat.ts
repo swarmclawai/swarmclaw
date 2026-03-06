@@ -13,6 +13,7 @@ import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import { expandPluginIds } from './tool-aliases'
 import type { Session, Message, UsageRecord, PluginInvocationRecord } from '@/types'
 import { extractSuggestions } from './suggestions'
+import { buildIdentityContinuityContext } from './identity-continuity'
 
 /** Extract a breadcrumb title from notable tool completions (task/schedule/agent creation). */
 interface StreamAgentChatOpts {
@@ -59,7 +60,7 @@ const GOAL_DECOMPOSITION_BLOCK = [
   'When you receive a broad, open-ended goal:',
   '1. Break it into 3-7 concrete, sequentially-executable subtasks before taking action.',
   '2. If manage_tasks is available, create a task for each subtask to track progress.',
-  '3. Output your plan in a [MAIN_LOOP_PLAN] JSON line: {"steps":["step1","step2",...],"current_step":"step1"}',
+  '3. Present the plan as a short checklist or numbered list in plain language.',
   '4. Execute the first subtask immediately — do not stop after planning.',
   '5. After each subtask, update progress and move to the next.',
 ].join('\n')
@@ -71,7 +72,6 @@ function buildAgenticExecutionPolicy(opts: {
   heartbeatIntervalSec: number
   platformAssignScope?: 'self' | 'all'
   userMessage?: string
-  hasExistingPlan?: boolean
 }) {
   const hasTooling = opts.enabledPlugins.length > 0
   const pluginLines = buildPluginCapabilityLines(opts.enabledPlugins, { platformAssignScope: opts.platformAssignScope })
@@ -102,13 +102,15 @@ function buildAgenticExecutionPolicy(opts: {
     'Always reply to: questions, tasks, emotional sharing, or when you have something useful to add.',
     'Execute by default — only ask for confirmation on high-risk/irreversible actions. Do not end every response with a question.',
     'Never repeat completed side effects. Verify state first.',
+    'If a tool returns an error or validation failure, do not claim the task succeeded. Retry with corrected arguments or explain the blocker plainly.',
+    'Delegation is optional, not a stopping condition. If one delegate backend is unavailable or unauthenticated, try another delegate backend or continue with your other tools.',
+    'Only mention files, screenshots, URLs, or download links that were actually returned by tools. Copy returned links exactly; do not rewrite them or prepend extra prefixes like "sandbox:".',
     `Heartbeat: if message is "${opts.heartbeatPrompt}", reply "HEARTBEAT_OK" unless you have a progress update.`,
     opts.heartbeatIntervalSec > 0 ? `Heartbeat cadence: ~${opts.heartbeatIntervalSec}s.` : '',
-    'For SWARM_MAIN_MISSION_TICK / SWARM_MAIN_AUTO_FOLLOWUP messages, follow the response contract and include [MAIN_LOOP_META] JSON.',
   )
 
   if (pluginLines.length) parts.push('What I can do:\n' + pluginLines.join('\n'))
-  if (opts.userMessage && !opts.hasExistingPlan && isBroadGoal(opts.userMessage)) parts.push(GOAL_DECOMPOSITION_BLOCK)
+  if (opts.userMessage && isBroadGoal(opts.userMessage)) parts.push(GOAL_DECOMPOSITION_BLOCK)
 
   return parts.filter(Boolean).join('\n')
 }
@@ -136,7 +138,9 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   // Resolve agent's thinking level for provider-native params
   let agentThinkingLevel: 'minimal' | 'low' | 'medium' | 'high' | undefined
-  if (session.agentId) {
+  if (session.thinkingLevel) {
+    agentThinkingLevel = session.thinkingLevel
+  } else if (session.agentId) {
     const agentsForThinking = loadAgents()
     agentThinkingLevel = agentsForThinking[session.agentId]?.thinkingLevel
   }
@@ -192,6 +196,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       if (agent?.description) identityLines.push(agent.description)
       identityLines.push('I should always refer to myself by this name. I am not "Assistant" — I have my own name and identity.')
       stateModifierParts.push(identityLines.join(' '))
+      const continuityBlock = buildIdentityContinuityContext(session, agent)
+      if (continuityBlock) stateModifierParts.push(continuityBlock)
       if (agent?.soul) stateModifierParts.push(agent.soul)
       if (agent?.systemPrompt) stateModifierParts.push(agent.systemPrompt)
       if (agent?.skillIds?.length) {
@@ -290,9 +296,6 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     )
   }
 
-  // Check for existing plan in mainLoopState to skip decomposition injection
-  const hasExistingPlan = Array.isArray(session.mainLoopState?.planSteps) && session.mainLoopState.planSteps.length > 0
-
   stateModifierParts.push(
     buildAgenticExecutionPolicy({
       enabledPlugins: sessionPlugins,
@@ -301,7 +304,6 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       heartbeatIntervalSec,
       platformAssignScope: agentPlatformAssignScope,
       userMessage: message,
-      hasExistingPlan,
     }),
   )
 
@@ -480,14 +482,13 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   let needsTextSeparator = false
   let totalInputTokens = 0
   let totalOutputTokens = 0
-  let lastToolInput: unknown = null
   let accumulatedThinking = ''
   const pluginInvocations: PluginInvocationRecord[] = []
   let currentToolInputTokens = 0
 
   // Plugin hooks: beforeAgentStart
   const pluginMgr = getPluginManager()
-  await pluginMgr.runHook('beforeAgentStart', { session, message })
+  await pluginMgr.runHook('beforeAgentStart', { session, message }, { enabledIds: sessionPlugins })
 
   const abortController = new AbortController()
   const abortFromSignal = () => abortController.abort()
@@ -512,6 +513,9 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     const maxIterations = MAX_AUTO_CONTINUES + MAX_TRANSIENT_RETRIES
     for (let iteration = 0; iteration <= maxIterations; iteration++) {
       let shouldContinue: 'recursion' | 'transient' | false = false
+      let waitingForToolResult = false
+      let idleTimedOut = false
+      let idleTimer: ReturnType<typeof setTimeout> | null = null
 
       // Fresh per-iteration controller so an internal LangGraph abort doesn't poison subsequent iterations.
       // Linked to the parent so client disconnect / timeout still propagates.
@@ -520,7 +524,24 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       if (abortController.signal.aborted) iterationController.abort()
       else abortController.signal.addEventListener('abort', onParentAbort)
 
+      const clearIdleWatchdog = () => {
+        if (idleTimer) {
+          clearTimeout(idleTimer)
+          idleTimer = null
+        }
+      }
+
+      const armIdleWatchdog = () => {
+        clearIdleWatchdog()
+        if (waitingForToolResult || iterationController.signal.aborted) return
+        idleTimer = setTimeout(() => {
+          idleTimedOut = true
+          iterationController.abort()
+        }, 90_000)
+      }
+
       try {
+        armIdleWatchdog()
         const eventStream = agent.streamEvents(
           { messages: langchainMessages },
           { version: 'v2', recursionLimit, signal: iterationController.signal },
@@ -530,6 +551,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
           const kind = event.event
 
           if (kind === 'on_chat_model_stream') {
+            armIdleWatchdog()
             const chunk = event.data?.chunk
             if (chunk?.content) {
               // content can be string or array of content blocks
@@ -569,6 +591,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
               }
             }
           } else if (kind === 'on_llm_end') {
+            armIdleWatchdog()
             // Track token usage from LLM responses — check all known LangChain event shapes
             const output = event.data?.output
             const usage = output?.llmOutput?.tokenUsage
@@ -581,17 +604,16 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
               totalOutputTokens += usage.completionTokens || usage.output_tokens || usage.completion_tokens || 0
             }
           } else if (kind === 'on_tool_start') {
+            clearIdleWatchdog()
+            waitingForToolResult = true
             hasToolCalls = true
             needsTextSeparator = true
             lastSegment = ''
             const toolName = event.name || 'unknown'
             const input = event.data?.input
-            lastToolInput = input
             // Estimate input tokens for plugin invocation tracking
             const inputStr = typeof input === 'string' ? input : JSON.stringify(input)
             currentToolInputTokens = Math.ceil((inputStr?.length || 0) / 4)
-            // Plugin hooks: beforeToolExec
-            await pluginMgr.runHook('beforeToolExec', { toolName, input })
             logExecution(session.id, 'tool_call', `${toolName} invoked`, {
               agentId: session.agentId,
               detail: { toolName, input: inputStr?.slice(0, 4000) },
@@ -602,6 +624,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
               toolInput: inputStr,
             })}\n\n`)
           } else if (kind === 'on_tool_end') {
+            waitingForToolResult = false
+            armIdleWatchdog()
             const toolName = event.name || 'unknown'
             const output = event.data?.output
             const outputStr = typeof output === 'string'
@@ -609,9 +633,6 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
               : output?.content
                 ? String(output.content)
                 : JSON.stringify(output)
-            // Plugin hooks: afterToolExec
-            await pluginMgr.runHook('afterToolExec', { session, toolName, input: lastToolInput as Record<string, unknown> | null, output: outputStr })
-            lastToolInput = null
             logExecution(session.id, 'tool_result', `${toolName} returned`, {
               agentId: session.agentId,
               detail: { toolName, output: outputStr?.slice(0, 4000), error: /^(Error:|error:)/i.test((outputStr || '').trim()) || undefined },
@@ -654,7 +675,9 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         }
       } catch (innerErr: unknown) {
         const errName = innerErr instanceof Error ? innerErr.constructor.name : ''
-        const errMsg = innerErr instanceof Error ? innerErr.message : String(innerErr)
+        const errMsg = idleTimedOut
+          ? 'Model stream stalled without emitting text or tool results for 90 seconds.'
+          : innerErr instanceof Error ? innerErr.message : String(innerErr)
         const errStack = innerErr instanceof Error ? innerErr.stack?.slice(0, 500) : undefined
 
         // Classify the error:
@@ -662,9 +685,10 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         // 2. Transient abort/timeout — LLM API failure, not from client disconnect
         const isRecursionError = errName === 'GraphRecursionError'
           || /recursion limit|maximum recursion/i.test(errMsg)
-        const isTransientAbort = !isRecursionError
+        const isTransientAbort = (!isRecursionError && idleTimedOut)
+          || (!isRecursionError
           && /abort|timed?\s*out|ECONNRESET|ECONNREFUSED|socket hang up|network/i.test(errMsg)
-          && !abortController.signal.aborted
+          && !abortController.signal.aborted)
 
         // Log diagnostic details for every error so we can trace root causes
         console.error(`[stream-agent-chat] Error in streamEvents iteration=${iteration}`, {
@@ -695,6 +719,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
           throw innerErr
         }
       } finally {
+        clearIdleWatchdog()
         abortController.signal.removeEventListener('abort', onParentAbort)
       }
 
@@ -775,7 +800,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   }
 
   // Plugin hooks: afterAgentComplete
-  await pluginMgr.runHook('afterAgentComplete', { session, response: fullText })
+  await pluginMgr.runHook('afterAgentComplete', { session, response: fullText }, { enabledIds: sessionPlugins })
 
   // OpenClaw auto-sync: push memory if enabled
   try {

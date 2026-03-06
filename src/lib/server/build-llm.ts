@@ -7,6 +7,8 @@ import { NON_LANGGRAPH_PROVIDER_IDS } from '../provider-sets'
 
 const OLLAMA_CLOUD_URL = 'https://ollama.com/v1'
 const OLLAMA_LOCAL_URL = 'http://localhost:11434/v1'
+export const OPENAI_COMPAT_MODEL_TIMEOUT_MS = 180_000
+export const OPENAI_COMPAT_MODEL_MAX_RETRIES = 0
 
 /**
  * Build a LangChain chat model from provider config.
@@ -50,12 +52,19 @@ export function buildChatModel(opts: {
     return new ChatOpenAI({
       model: model || 'qwen3.5',
       apiKey: apiKey || 'ollama',
+      timeout: OPENAI_COMPAT_MODEL_TIMEOUT_MS,
+      maxRetries: OPENAI_COMPAT_MODEL_MAX_RETRIES,
       configuration: { baseURL },
     })
   }
 
   // All other providers — OpenAI-compatible with their registered endpoint
-  const config: any = { model: model || 'gpt-4o', apiKey: apiKey || undefined }
+  const config: any = {
+    model: model || 'gpt-4o',
+    apiKey: apiKey || undefined,
+    timeout: OPENAI_COMPAT_MODEL_TIMEOUT_MS,
+    maxRetries: OPENAI_COMPAT_MODEL_MAX_RETRIES,
+  }
   // Map thinking level to reasoning_effort for OpenAI o-series models
   if (thinkingLevel && provider === 'openai' && /^o\d/.test(model || '')) {
     const effortMap = { minimal: 'low', low: 'low', medium: 'medium', high: 'high' }
@@ -70,9 +79,7 @@ export function buildChatModel(opts: {
       config.configuration.defaultHeaders = { 'Content-Type': 'text/plain' }
     }
   }
-  return config.configuration
-    ? new ChatOpenAI(config)
-    : new ChatOpenAI({ model: config.model, apiKey: config.apiKey })
+  return new ChatOpenAI(config)
 }
 
 function resolveApiKeyFromCredential(credentialId: string | null | undefined): string | null {

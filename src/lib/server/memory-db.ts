@@ -14,6 +14,7 @@ import {
   traverseLinkedMemoryGraph,
   type MemoryLookupLimits,
 } from './memory-graph'
+import { isWorkingMemoryCategory } from './memory-tiers'
 
 import { DATA_DIR } from './data-dir'
 
@@ -1203,8 +1204,7 @@ function initDb() {
         if (seenCanonical.has(keyCanonical)) canonicalDuplicateCandidates++
         else seenCanonical.add(keyCanonical)
 
-        const category = String(row.category || '').toLowerCase()
-        const isWorkingLike = category === 'execution' || category === 'working' || category === 'scratch'
+        const isWorkingLike = isWorkingMemoryCategory(row.category)
         if (isWorkingLike && (row.updatedAt || row.createdAt || 0) < cutoff) staleWorkingCandidates++
       }
 
@@ -1303,8 +1303,7 @@ function initDb() {
       if (pruneWorking && toDelete.size < deleteBudget) {
         for (const row of rows) {
           if (toDelete.has(row.id)) continue
-          const category = String(row.category || '').toLowerCase()
-          const isWorkingLike = category === 'execution' || category === 'working' || category === 'scratch'
+          const isWorkingLike = isWorkingMemoryCategory(row.category)
           const updatedAt = row.updatedAt || row.createdAt || 0
           if (isWorkingLike && updatedAt < cutoff) toDelete.add(row.id)
           if (toDelete.size >= deleteBudget) break
@@ -1323,8 +1322,7 @@ function initDb() {
         const deletedSet = new Set(deleteIds)
         for (const row of rows) {
           if (!deletedSet.has(row.id)) continue
-          const category = String(row.category || '').toLowerCase()
-          const isWorkingLike = category === 'execution' || category === 'working' || category === 'scratch'
+          const isWorkingLike = isWorkingMemoryCategory(row.category)
           if (isWorkingLike) pruned++
           else deduped++
         }

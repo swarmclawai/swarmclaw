@@ -3,12 +3,17 @@
 import { useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
+import type { SessionResetMode } from '@/types'
 import type { SettingsSectionProps } from './types'
 
 export function HeartbeatSection({ appSettings, patchSettings, inputClass }: SettingsSectionProps) {
   const loadSessions = useAppStore((s) => s.loadSessions)
   const [disablingHeartbeats, setDisablingHeartbeats] = useState(false)
   const [heartbeatBulkNotice, setHeartbeatBulkNotice] = useState('')
+  const parseResetMode = (value: string): SessionResetMode | null => {
+    if (value === 'idle' || value === 'daily') return value
+    return null
+  }
 
   const handleDisableAllHeartbeats = async () => {
     if (disablingHeartbeats) return
@@ -109,6 +114,78 @@ export function HeartbeatSection({ appSettings, patchSettings, inputClass }: Set
               className={inputClass}
               style={{ fontFamily: 'inherit' }}
             />
+          </div>
+        </div>
+
+        <div className="border-t border-white/[0.06] pt-5 mt-5">
+          <h4 className="font-display text-[11px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            Session Reset Defaults
+          </h4>
+          <p className="text-[11px] text-text-3/60 mb-4">
+            Freshness policy inherited by new sessions unless overridden on the agent or session itself.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Reset Mode</label>
+              <select
+                value={appSettings.sessionResetMode || ''}
+                onChange={(e) => patchSettings({ sessionResetMode: parseResetMode(e.target.value) })}
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              >
+                <option value="">Use built-in defaults</option>
+                <option value="idle">Idle</option>
+                <option value="daily">Daily</option>
+              </select>
+            </div>
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Idle Timeout (sec)</label>
+              <input
+                type="number"
+                min={0}
+                value={appSettings.sessionIdleTimeoutSec ?? ''}
+                onChange={(e) => patchSettings({ sessionIdleTimeoutSec: e.target.value ? Number.parseInt(e.target.value, 10) : null })}
+                placeholder="43200"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Max Age (sec)</label>
+              <input
+                type="number"
+                min={0}
+                value={appSettings.sessionMaxAgeSec ?? ''}
+                onChange={(e) => patchSettings({ sessionMaxAgeSec: e.target.value ? Number.parseInt(e.target.value, 10) : null })}
+                placeholder="604800"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Daily Reset Time</label>
+              <input
+                type="text"
+                value={appSettings.sessionDailyResetAt || ''}
+                onChange={(e) => patchSettings({ sessionDailyResetAt: e.target.value || null })}
+                placeholder="04:00"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Reset Timezone</label>
+              <input
+                type="text"
+                value={appSettings.sessionResetTimezone || ''}
+                onChange={(e) => patchSettings({ sessionResetTimezone: e.target.value || null })}
+                placeholder="UTC"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
           </div>
         </div>
 

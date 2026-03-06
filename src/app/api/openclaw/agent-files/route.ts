@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
+import { resolveOpenClawGatewayAgentId } from '@/lib/server/openclaw-agent-resolver'
 
 const AGENT_FILES = ['SOUL.md', 'IDENTITY.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'MEMORY.md', 'AGENTS.md'] as const
 
@@ -16,12 +17,24 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'OpenClaw gateway not connected' }, { status: 503 })
   }
 
+  let gatewayAgentId: string
+  try {
+    gatewayAgentId = await resolveOpenClawGatewayAgentId(agentId, gw)
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    const status = message.includes('not an OpenClaw agent') ? 400 : 404
+    return NextResponse.json({ error: message }, { status })
+  }
+
   const files: Record<string, { content: string; error?: string }> = {}
   await Promise.all(
     AGENT_FILES.map(async (filename) => {
       try {
-        const result = await gw.rpc('agents.files.get', { agentId, filename }) as { content?: string } | undefined
-        files[filename] = { content: result?.content ?? '' }
+        const result = await gw.rpc('agents.files.get', {
+          agentId: gatewayAgentId,
+          name: filename,
+        }) as { file?: { content?: string } } | undefined
+        files[filename] = { content: result?.file?.content ?? '' }
       } catch (err: unknown) {
         files[filename] = { content: '', error: err instanceof Error ? err.message : String(err) }
       }
@@ -48,10 +61,20 @@ export async function PUT(req: Request) {
   }
 
   try {
-    await gw.rpc('agents.files.set', { agentId, filename, content: content ?? '' })
+    const gatewayAgentId = await resolveOpenClawGatewayAgentId(agentId, gw)
+    await gw.rpc('agents.files.set', {
+      agentId: gatewayAgentId,
+      name: filename,
+      content: content ?? '',
+    })
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: message }, { status: 502 })
+    const status = message.includes('not an OpenClaw agent')
+      ? 400
+      : message.includes('not found')
+        ? 404
+        : 502
+    return NextResponse.json({ error: message }, { status })
   }
 }

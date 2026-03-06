@@ -4,7 +4,9 @@ import { active, loadSessions } from './storage'
 import { executeSessionChatTurn, type ExecuteChatTurnResult } from './chat-execution'
 import { loadRuntimeSettings } from './runtime-settings'
 import { log } from './logger'
-import { handleMainLoopRunResult, type MainLoopFollowupRequest } from './main-agent-loop'
+import { isInternalHeartbeatRun } from './heartbeat-source'
+import { cleanupSessionBrowser } from './session-tools/web'
+import { cancelDelegationJobsForParentSession } from './delegation-jobs'
 
 export type SessionRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type SessionQueueMode = 'followup' | 'steer' | 'collect'
@@ -122,6 +124,23 @@ function emitRunMeta(entry: QueueEntry, status: SessionRunStatus, extra?: Record
   })
 }
 
+function markRunningEntryCancelled(entry: QueueEntry, reason: string) {
+  if (entry.run.status === 'cancelled') return
+  entry.run.status = 'cancelled'
+  entry.run.endedAt = now()
+  entry.run.error = reason
+  emitRunMeta(entry, 'cancelled', { reason })
+}
+
+function abortSessionRuntime(entry: QueueEntry, reason: string) {
+  markRunningEntryCancelled(entry, reason)
+  entry.signalController.abort()
+  try { active.get(entry.run.sessionId)?.kill?.() } catch { /* noop */ }
+  active.delete(entry.run.sessionId)
+  try { cleanupSessionBrowser(entry.run.sessionId) } catch { /* noop */ }
+  try { cancelDelegationJobsForParentSession(entry.run.sessionId, reason) } catch { /* noop */ }
+}
+
 function executionKeyForSession(sessionId: string): string {
   return `session:${sessionId}`
 }
@@ -170,7 +189,7 @@ export function cancelAllHeartbeatRuns(reason = 'Heartbeat disabled globally'): 
     if (!queue.length) continue
     const keep: QueueEntry[] = []
     for (const entry of queue) {
-      const isHeartbeat = entry.run.internal === true && entry.run.source === 'heartbeat'
+      const isHeartbeat = isInternalHeartbeatRun(entry.run.internal, entry.run.source)
       if (!isHeartbeat) {
         keep.push(entry)
         continue
@@ -187,43 +206,13 @@ export function cancelAllHeartbeatRuns(reason = 'Heartbeat disabled globally'): 
   }
 
   for (const entry of state.runningByExecution.values()) {
-    const isHeartbeat = entry.run.internal === true && entry.run.source === 'heartbeat'
+    const isHeartbeat = isInternalHeartbeatRun(entry.run.internal, entry.run.source)
     if (!isHeartbeat) continue
     abortedRunning += 1
-    entry.signalController.abort()
-    try { active.get(entry.run.sessionId)?.kill?.() } catch { /* noop */ }
+    abortSessionRuntime(entry, reason)
   }
 
   return { cancelledQueued, abortedRunning }
-}
-
-function scheduleMainLoopFollowup(sessionId: string, followup: MainLoopFollowupRequest) {
-  const delayMs = Math.max(0, Math.trunc(followup.delayMs || 0))
-  setTimeout(() => {
-    try {
-      const sessions = loadSessions()
-      const session = sessions[sessionId]
-      if (!session || !isMainMissionSession(session)) return
-      enqueueSessionRun({
-        sessionId,
-        message: followup.message,
-        internal: true,
-        source: 'main-loop-followup',
-        mode: 'collect',
-        dedupeKey: followup.dedupeKey,
-      })
-    } catch (err: any) {
-      log.warn('session-run', `Failed to enqueue main-loop followup for ${sessionId}`, err?.message || String(err))
-    }
-  }, delayMs)
-}
-
-export function isMainMissionSession(session: Record<string, unknown>): boolean {
-  const id = typeof session.id === 'string' ? session.id.trim() : ''
-  const sessionType = typeof session.sessionType === 'string' ? session.sessionType : ''
-  if (id.startsWith('agent-thread-')) return true
-  if (sessionType === 'orchestrated') return true
-  return false
 }
 
 async function drainExecution(executionKey: string): Promise<void> {
@@ -269,49 +258,25 @@ async function drainExecution(executionKey: string): Promise<void> {
     })
 
     const failed = !!result.error
-    let followup: MainLoopFollowupRequest | null = null
-    try {
-      followup = handleMainLoopRunResult({
-        sessionId: next.run.sessionId,
-        message: next.message,
-        internal: next.run.internal,
-        source: next.run.source,
-        resultText: result.text,
-        error: result.error,
-        toolEvents: result.toolEvents,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        estimatedCost: result.estimatedCost,
-      })
-    } catch (mainLoopErr: any) {
-      log.warn('session-run', `Main-loop update failed for ${next.run.id}`, mainLoopErr?.message || String(mainLoopErr))
-    }
-
-    next.run.status = failed ? 'failed' : 'completed'
-    next.run.endedAt = now()
-    next.run.error = result.error
+    const aborted = next.signalController.signal.aborted
+    next.run.status = aborted ? 'cancelled' : (failed ? 'failed' : 'completed')
+    next.run.endedAt = next.run.endedAt || now()
+    next.run.error = aborted ? (next.run.error || 'Cancelled') : result.error
     next.run.resultPreview = result.text?.slice(0, 280)
     emitRunMeta(next, next.run.status, {
       persisted: result.persisted,
       hasText: !!result.text,
-      error: result.error || null,
+      error: next.run.error || null,
     })
     log.info('session-run', `Run finished ${next.run.id}`, {
       sessionId: next.run.sessionId,
       status: next.run.status,
       persisted: result.persisted,
       hasText: !!result.text,
-      error: result.error || null,
+      error: next.run.error || null,
       durationMs: (next.run.endedAt || now()) - (next.run.startedAt || now()),
     })
     next.resolve(result)
-    if (!failed && followup) {
-      scheduleMainLoopFollowup(next.run.sessionId, followup)
-      log.info('session-run', `Queued main-loop followup after ${next.run.id}`, {
-        sessionId: next.run.sessionId,
-        delayMs: followup.delayMs,
-      })
-    }
   } catch (err: any) {
     const aborted = next.signalController.signal.aborted
     next.run.status = aborted ? 'cancelled' : 'failed'
@@ -324,19 +289,6 @@ async function drainExecution(executionKey: string): Promise<void> {
       error: next.run.error,
       durationMs: (next.run.endedAt || now()) - (next.run.startedAt || now()),
     })
-    try {
-      handleMainLoopRunResult({
-        sessionId: next.run.sessionId,
-        message: next.message,
-        internal: next.run.internal,
-        source: next.run.source,
-        resultText: '',
-        error: next.run.error,
-        toolEvents: [],
-      })
-    } catch {
-      // Main-loop bookkeeping failures should not affect queue execution.
-    }
     next.reject(err instanceof Error ? err : new Error(next.run.error))
   } finally {
     if (runtimeTimer) clearTimeout(runtimeTimer)
@@ -528,7 +480,9 @@ export function getSessionRunState(sessionId: string): {
   const running = state.runningByExecution.get(executionKey)
   const queued = queueForExecution(executionKey).filter((entry) => entry.run.sessionId === sessionId).length
   return {
-    runningRunId: running?.run.sessionId === sessionId ? running.run.id : undefined,
+    runningRunId: (running?.run.sessionId === sessionId && running.run.status === 'running')
+      ? running.run.id
+      : undefined,
     queueLength: queued,
   }
 }
@@ -562,8 +516,7 @@ export function cancelSessionRuns(sessionId: string, reason = 'Cancelled'): { ca
   let cancelledRunning = false
   if (running && running.run.sessionId === sessionId) {
     cancelledRunning = true
-    running.signalController.abort()
-    try { active.get(sessionId)?.kill?.() } catch { /* noop */ }
+    abortSessionRuntime(running, reason)
   }
   const cancelledQueued = cancelPendingForSession(sessionId, reason)
   return { cancelledQueued, cancelledRunning }

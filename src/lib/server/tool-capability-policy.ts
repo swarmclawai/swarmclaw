@@ -82,6 +82,12 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   context_mgmt: { categories: ['memory'], concreteTools: ['context_mgmt', 'context_status', 'context_summarize'] },
   plugin_creator: { categories: ['filesystem', 'execution'], concreteTools: ['plugin_creator', 'plugin_creator_tool'] },
   sample_ui: { categories: ['platform'], concreteTools: ['sample_ui', 'show_plugin_card'] },
+  mailbox: { categories: ['network', 'platform', 'outbound'], concreteTools: ['mailbox', 'inbox'] },
+  ask_human: { categories: ['platform'], concreteTools: ['ask_human', 'human_loop'] },
+  document: { categories: ['filesystem', 'platform'], concreteTools: ['document', 'ocr_document', 'parse_document'] },
+  extract: { categories: ['filesystem', 'network'], concreteTools: ['extract', 'extract_structured'] },
+  table: { categories: ['filesystem'], concreteTools: ['table', 'dataframe'] },
+  crawl: { categories: ['network'], concreteTools: ['crawl', 'site_crawler'] },
 }
 
 const CONCRETE_TOOL_TO_SESSION_TOOL = new Map<string, string>()

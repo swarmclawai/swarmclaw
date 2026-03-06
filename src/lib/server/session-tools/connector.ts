@@ -60,8 +60,6 @@ function isAutonomousSystemTurn(userText: string): boolean {
   if (!userText) return false
   const text = userText.toUpperCase()
   return text.includes('AGENT_HEARTBEAT_WAKE')
-    || text.includes('SWARM_MAIN_MISSION_TICK')
-    || text.includes('SWARM_MAIN_AUTO_FOLLOWUP')
     || text.includes('SWARM_HEARTBEAT_CHECK')
 }
 
@@ -247,6 +245,9 @@ interface ConnectorActionInput {
   platform?: string
   to?: string
   message?: string
+  messageId?: string
+  targetMessage?: 'last_inbound' | 'last_outbound'
+  emoji?: string
   voiceText?: string
   voiceId?: string
   imageUrl?: string
@@ -255,9 +256,12 @@ interface ConnectorActionInput {
   mimeType?: string
   fileName?: string
   caption?: string
+  replyToMessageId?: string
+  threadId?: string
   delaySec?: number
   followUpMessage?: string
   followUpDelaySec?: number
+  dedupeKey?: string
   approved?: boolean
   ptt?: boolean
 }
@@ -284,13 +288,25 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
     mimeType,
     fileName,
     caption,
+    messageId,
+    targetMessage,
+    emoji,
+    replyToMessageId,
+    threadId,
+    dedupeKey,
     approved,
     ptt,
   } = normalized as ConnectorActionInput
 
   try {
     const actionName = String(action)
-    const { listRunningConnectors, sendConnectorMessage, getConnectorRecentChannelId } = await import('../connectors/manager')
+    const {
+      listRunningConnectors,
+      sendConnectorMessage,
+      getConnectorRecentChannelId,
+      scheduleConnectorFollowUp,
+      performConnectorMessageAction,
+    } = await import('../connectors/manager')
     const running = listRunningConnectors(platform || undefined)
 
     if (actionName === 'list_running' || actionName === 'list_targets') {
@@ -342,6 +358,9 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
       return { selected, connector }
     }
 
+    const currentSession = bctx.resolveCurrentSession?.()
+    const sessionId = bctx.ctx?.sessionId || currentSession?.id || undefined
+
     if (actionName === 'send' || actionName === 'send_voice_note' || actionName === 'schedule_followup') {
       const settings = loadSettings()
       if (settings.safetyRequireApprovalForOutbound === true && approved !== true) {
@@ -363,9 +382,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
       let channelId = target.channelId
       if (connector.platform === 'whatsapp') channelId = normalizeWhatsAppTarget(channelId)
 
-      const currentSession = bctx.resolveCurrentSession?.()
       const latestUserTurn = parseLatestUserTurn(currentSession)
-      const sessionId = bctx.ctx?.sessionId || currentSession?.id || 'unknown-session'
       const turnKey = buildConnectorActionKey([sessionId, latestUserTurn.time || 'no-user-turn'])
       const multiOutboundAllowed = userExplicitlyWantsMultipleOutbound(latestUserTurn.text)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -392,6 +409,9 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
         const sent = await sendConnectorMessage({
           connectorId: selected.id, channelId, text: '', mediaPath: voicePath, mimeType: 'audio/mpeg',
           fileName: fileName?.trim() || 'voicenote.mp3', caption: caption?.trim() || undefined, ptt: ptt ?? true,
+          sessionId,
+          replyToMessageId: replyToMessageId?.trim() || undefined,
+          threadId: threadId?.trim() || undefined,
         })
         const result = JSON.stringify({ status: 'voice_sent', connectorId: sent.connectorId, platform: sent.platform, to: sent.channelId, voiceFile: voicePath })
         connectorTurnSendBudget.set(turnKey, { count: (existingBudget?.count || 0) + 1, at: now, lastResult: result })
@@ -405,16 +425,88 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
         return 'Error: message or media required.'
       }
 
+      if (actionName === 'schedule_followup') {
+        const followupText = (normalized.followUpMessage as string | undefined)?.trim() || message?.trim() || ''
+        if (!followupText && !media.mediaPath && !media.imageUrl && !media.fileUrl) {
+          return 'Error: follow-up message or media required.'
+        }
+        const followupDelay = (() => {
+          const direct = Number(normalized.followUpDelaySec)
+          if (Number.isFinite(direct) && direct >= 0) return direct
+          const fallback = Number(normalized.delaySec)
+          if (Number.isFinite(fallback) && fallback >= 0) return fallback
+          return 300
+        })()
+        const scheduled = scheduleConnectorFollowUp({
+          connectorId: selected.id,
+          channelId,
+          text: followupText,
+          sessionId,
+          delaySec: followupDelay,
+          dedupeKey: dedupeKey?.trim() || undefined,
+          imageUrl: media.imageUrl,
+          fileUrl: media.fileUrl,
+          mediaPath: media.mediaPath,
+          mimeType: mimeType?.trim() || undefined,
+          fileName: fileName?.trim() || undefined,
+          caption: caption?.trim() || undefined,
+          replyToMessageId: replyToMessageId?.trim() || undefined,
+          threadId: threadId?.trim() || undefined,
+          ptt: ptt ?? undefined,
+        })
+        return JSON.stringify({
+          status: 'scheduled',
+          connectorId: selected.id,
+          platform: selected.platform,
+          to: channelId,
+          followUpId: scheduled.followUpId,
+          sendAt: scheduled.sendAt,
+        })
+      }
+
       const sent = await sendConnectorMessage({
         connectorId: selected.id, channelId, text: message?.trim() || '',
+        sessionId,
         imageUrl: media.imageUrl, fileUrl: media.fileUrl, mediaPath: media.mediaPath,
         mimeType: mimeType?.trim() || undefined, fileName: fileName?.trim() || undefined,
-        caption: caption?.trim() || undefined, ptt: ptt ?? undefined,
+        caption: caption?.trim() || undefined,
+        replyToMessageId: replyToMessageId?.trim() || undefined,
+        threadId: threadId?.trim() || undefined,
+        ptt: ptt ?? undefined,
       })
 
       const result = JSON.stringify({ status: 'sent', connectorId: sent.connectorId, platform: sent.platform, to: sent.channelId, messageId: sent.messageId || null })
       connectorTurnSendBudget.set(turnKey, { count: (existingBudget?.count || 0) + 1, at: now, lastResult: result })
       return result
+    }
+
+    if (actionName === 'react' || actionName === 'edit' || actionName === 'delete' || actionName === 'pin') {
+      const resolved = resolveSelectedConnector()
+      if ('error' in resolved) return resolved.error
+      const { selected } = resolved
+      const target = pickChannelTarget({
+        connector: resolved.connector,
+        to,
+        recentChannelId: getConnectorRecentChannelId(selected.id),
+      })
+      if (target.error) return target.error
+      const result = await performConnectorMessageAction({
+        connectorId: selected.id,
+        channelId: selected.platform === 'whatsapp' ? normalizeWhatsAppTarget(target.channelId) : target.channelId,
+        action: actionName,
+        messageId: messageId?.trim() || undefined,
+        emoji: emoji?.trim() || undefined,
+        text: message?.trim() || undefined,
+        sessionId,
+        targetMessage,
+      })
+      return JSON.stringify({
+        status: actionName,
+        connectorId: result.connectorId,
+        platform: result.platform,
+        to: result.channelId,
+        messageId: result.messageId || null,
+      })
     }
 
     return 'Unknown action.'
@@ -440,11 +532,20 @@ const ConnectorPlugin: Plugin = {
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['list_running', 'start', 'stop', 'send', 'send_voice_note'] },
+          action: { type: 'string', enum: ['list_running', 'start', 'stop', 'send', 'send_voice_note', 'schedule_followup', 'react', 'edit', 'delete', 'pin'] },
           connectorId: { type: 'string' },
           platform: { type: 'string' },
           to: { type: 'string' },
-          message: { type: 'string' }
+          message: { type: 'string' },
+          messageId: { type: 'string' },
+          targetMessage: { type: 'string', enum: ['last_inbound', 'last_outbound'] },
+          emoji: { type: 'string' },
+          replyToMessageId: { type: 'string' },
+          threadId: { type: 'string' },
+          delaySec: { type: 'number' },
+          followUpMessage: { type: 'string' },
+          followUpDelaySec: { type: 'number' },
+          dedupeKey: { type: 'string' },
         },
         required: ['action']
       },

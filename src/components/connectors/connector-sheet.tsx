@@ -30,6 +30,29 @@ function linkify(text: string) {
   })
 }
 
+interface ConnectorDoctorPolicyPreview {
+  scope?: string
+  replyMode?: string
+  threadBinding?: string
+  groupPolicy?: string
+  resetMode?: string
+  idleTimeoutSec?: number | null
+  maxAgeSec?: number | null
+  dailyResetAt?: string | null
+  resetTimezone?: string | null
+  thinkingLevel?: string | null
+  providerOverride?: string | null
+  modelOverride?: string | null
+  inboundDebounceMs?: number
+  statusReactions?: boolean
+  typingIndicators?: boolean
+}
+
+interface ConnectorDoctorResponse {
+  warnings?: string[]
+  policy?: ConnectorDoctorPolicyPreview | null
+}
+
 const PLATFORMS: {
   id: ConnectorPlatform
   label: string
@@ -226,6 +249,96 @@ const PLATFORMS: {
 
 const COMMON_CONFIG_FIELDS: { key: string; label: string; placeholder: string; help?: string }[] = [
   {
+    key: 'thinkingLevel',
+    label: 'Thinking Level',
+    placeholder: 'minimal | low | medium | high',
+    help: 'Default reasoning depth for new/reset direct connector sessions.',
+  },
+  {
+    key: 'providerOverride',
+    label: 'Provider Override',
+    placeholder: 'openai | anthropic | openclaw | ...',
+    help: 'Optional direct-session provider override. Useful for connector-specific routing or cheaper autonomy lanes.',
+  },
+  {
+    key: 'modelOverride',
+    label: 'Model Override',
+    placeholder: 'gpt-4.1-mini',
+    help: 'Optional direct-session model override. Defaults to the assigned agent model when empty.',
+  },
+  {
+    key: 'sessionScope',
+    label: 'Session Scope',
+    placeholder: 'main | channel | peer | channel-peer | thread',
+    help: 'Conversation identity policy. Defaults to channel-peer for DMs and channel for groups.',
+  },
+  {
+    key: 'replyMode',
+    label: 'Reply Mode',
+    placeholder: 'off | first | all',
+    help: 'Whether outbound replies should attach to the triggering inbound message.',
+  },
+  {
+    key: 'threadBinding',
+    label: 'Thread Binding',
+    placeholder: 'off | prefer | strict',
+    help: 'Prefer or require thread/topic-specific sessions when the platform exposes thread IDs.',
+  },
+  {
+    key: 'groupPolicy',
+    label: 'Group Policy',
+    placeholder: 'open | mention | reply-or-mention | disabled',
+    help: 'Controls whether the agent speaks in group chats without being mentioned or replied to.',
+  },
+  {
+    key: 'idleTimeoutSec',
+    label: 'Idle Timeout (sec)',
+    placeholder: '43200',
+    help: 'If exceeded, the connector session is reset before the next inbound turn.',
+  },
+  {
+    key: 'maxAgeSec',
+    label: 'Max Age (sec)',
+    placeholder: '604800',
+    help: 'Absolute maximum age of a connector session before it is reset.',
+  },
+  {
+    key: 'sessionResetMode',
+    label: 'Reset Mode',
+    placeholder: 'idle | daily',
+    help: 'Freshness policy for connector sessions. Daily resets use the fields below.',
+  },
+  {
+    key: 'sessionDailyResetAt',
+    label: 'Daily Reset Time',
+    placeholder: '04:00',
+    help: 'Used only when Reset Mode is daily. Format: HH:MM.',
+  },
+  {
+    key: 'sessionResetTimezone',
+    label: 'Reset Timezone',
+    placeholder: 'UTC or Europe/Isle_of_Man',
+    help: 'Optional timezone for daily reset boundaries. Defaults to the server timezone.',
+  },
+  {
+    key: 'inboundDebounceMs',
+    label: 'Inbound Debounce (ms)',
+    placeholder: '700',
+    help: 'Coalesces rapid inbound bursts from the same sender before starting a run.',
+  },
+  {
+    key: 'statusReactions',
+    label: 'Status Reactions',
+    placeholder: 'true | false',
+    help: 'When supported, add lightweight platform-native reactions for processing/sent/silent states.',
+  },
+  {
+    key: 'typingIndicators',
+    label: 'Typing Indicators',
+    placeholder: 'true | false',
+    help: 'When supported, keep a native typing/working indicator alive while the agent is running.',
+  },
+  {
     key: 'taskFollowups',
     label: 'Task Follow-ups',
     placeholder: 'true | false',
@@ -295,6 +408,9 @@ export function ConnectorSheet() {
   const [newCredName, setNewCredName] = useState('')
   const [newCredValue, setNewCredValue] = useState('')
   const [savingCred, setSavingCred] = useState(false)
+  const [doctorWarnings, setDoctorWarnings] = useState<string[]>([])
+  const [doctorPolicy, setDoctorPolicy] = useState<ConnectorDoctorPolicyPreview | null>(null)
+  const [doctorLoading, setDoctorLoading] = useState(false)
 
   const editing = editingId ? connectors[editingId] as Connector | undefined : null
 
@@ -359,6 +475,41 @@ export function ConnectorSheet() {
   }, [editing?.id, isWaRunning, pollWaStatus])
 
   useWs('connectors', pollWaStatus, isWaRunning ? 2000 : undefined)
+
+  const loadDoctorPreview = useCallback(async () => {
+    setDoctorLoading(true)
+    try {
+      const data = await api<ConnectorDoctorResponse>('POST', '/connectors/doctor', {
+        id: editing?.id || null,
+        name,
+        platform,
+        agentId: routeMode === 'agent' ? (agentId || null) : null,
+        chatroomId: routeMode === 'chatroom' ? (chatroomId || null) : null,
+        credentialId: credentialId || null,
+        config,
+      })
+      setDoctorWarnings(Array.isArray(data.warnings) ? data.warnings : [])
+      setDoctorPolicy(data.policy || null)
+    } catch {
+      setDoctorWarnings([])
+      setDoctorPolicy(null)
+    } finally {
+      setDoctorLoading(false)
+    }
+  }, [editing?.id, name, platform, routeMode, agentId, chatroomId, credentialId, config])
+
+  useEffect(() => {
+    if (!open) {
+      setDoctorWarnings([])
+      setDoctorPolicy(null)
+      setDoctorLoading(false)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      void loadDoctorPreview()
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [open, loadDoctorPreview])
 
   const handleSave = async () => {
     const hasTarget = routeMode === 'agent' ? !!agentId : !!chatroomId
@@ -795,6 +946,72 @@ export function ConnectorSheet() {
         </div>
         )
       })()}
+
+      <div className="mb-6 p-4 rounded-[14px] border border-white/[0.06] bg-white/[0.01]">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div>
+            <div className="text-[13px] font-600 text-text-2">Connector Doctor</div>
+            <div className="text-[12px] text-text-3/70">
+              Live autonomy and safety preview for the current connector settings.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadDoctorPreview()}
+            disabled={doctorLoading}
+            className="px-3 py-1.5 rounded-[9px] border border-white/[0.08] bg-transparent text-[12px] font-600 text-text-3 hover:text-text-2 hover:bg-white/[0.04] transition-all cursor-pointer disabled:opacity-50"
+            style={{ fontFamily: 'inherit' }}
+          >
+            {doctorLoading ? 'Checking...' : 'Refresh'}
+          </button>
+        </div>
+        {doctorPolicy && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
+              Scope: <span className="text-text-2">{doctorPolicy.scope || 'channel-peer'}</span>{' '}
+              · Reply: <span className="text-text-2">{doctorPolicy.replyMode || 'first'}</span>{' '}
+              · Thread: <span className="text-text-2">{doctorPolicy.threadBinding || 'prefer'}</span>
+            </div>
+            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
+              Group: <span className="text-text-2">{doctorPolicy.groupPolicy || 'reply-or-mention'}</span>{' '}
+              · Debounce: <span className="text-text-2">{doctorPolicy.inboundDebounceMs ?? 700}ms</span>
+            </div>
+            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
+              Reset: <span className="text-text-2">{doctorPolicy.resetMode || 'idle'}</span>{' '}
+              {doctorPolicy.resetMode === 'daily'
+                ? `at ${doctorPolicy.dailyResetAt || 'unset'} (${doctorPolicy.resetTimezone || 'server timezone'})`
+                : `idle ${doctorPolicy.idleTimeoutSec ?? 0}s / max ${doctorPolicy.maxAgeSec ?? 0}s`}
+            </div>
+            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
+              Runtime: <span className="text-text-2">{doctorPolicy.thinkingLevel || 'inherit'}</span>{' '}
+              · Provider: <span className="text-text-2">{doctorPolicy.providerOverride || 'agent default'}</span>{' '}
+              · Model: <span className="text-text-2">{doctorPolicy.modelOverride || 'agent default'}</span>
+            </div>
+          </div>
+        )}
+        {doctorWarnings.length > 0 ? (
+          <div className="space-y-2">
+            {doctorWarnings.map((warning, index) => (
+              <div key={`${index}:${warning}`} className="rounded-[10px] border border-amber-400/15 bg-amber-500/8 px-3 py-2 text-[12px] text-amber-200/85 leading-[1.5]">
+                {warning}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-[12px] text-emerald-300/85">
+            {doctorLoading ? 'Running checks…' : 'No autonomy or safety warnings detected for the current form values.'}
+          </div>
+        )}
+        <p className="text-[11px] text-text-3/55 mt-2">
+          This preview updates from the form directly, so you can catch risky connector policy changes before saving.
+        </p>
+      </div>
+
+      {editing && (
+        <div className="mb-6 p-4 rounded-[14px] border border-white/[0.06] bg-white/[0.01]">
+          <ConnectorHealth connectorId={editing.id} />
+        </div>
+      )}
 
       {/* WhatsApp QR code */}
       {editing && editing.platform === 'whatsapp' && (editing.status === 'running' || waConnecting) && qrDataUrl && (

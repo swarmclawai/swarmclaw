@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import type { Message, DevServerStatus, SSEEvent, ChatTraceBlock } from '../types'
 import { streamChat } from '../lib/chat'
+import { mergeCompletedAssistantMessage } from '../lib/chat-streaming-state'
 import { speak } from '../lib/tts'
 import { getStoredAccessKey } from '../lib/api-client'
 import { useAppStore } from './use-app-store'
@@ -306,6 +307,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else if (event.t === 'tool_call') {
         const id = `tc-${++toolCallCounter}`
         set((s) => ({
+          ...(s.toolEvents[s.toolEvents.length - 1]?.name === (event.toolName || 'unknown')
+            && s.toolEvents[s.toolEvents.length - 1]?.input === (event.toolInput || '')
+            && s.toolEvents[s.toolEvents.length - 1]?.status === 'running'
+              ? {}
+              : {
           streamPhase: 'tool' as const,
           streamToolName: event.toolName || 'unknown',
           toolEvents: [...s.toolEvents, {
@@ -314,6 +320,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             input: event.toolInput || '',
             status: 'running',
           }],
+              }),
         }))
       } else if (event.t === 'tool_result') {
         const soundOn = get().soundEnabled
@@ -322,6 +329,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const idx = events.findLastIndex(
             (e) => e.name === event.toolName && e.status === 'running',
           )
+          if (idx === -1) {
+            const last = events[events.length - 1]
+            const output = event.toolOutput || ''
+            const isError = /^(Error:|error:|ECONNREFUSED|ETIMEDOUT|timeout|failed)/i.test(output.trim())
+              || output.includes('ECONNREFUSED')
+              || output.includes('ETIMEDOUT')
+              || output.includes('Error:')
+            if (
+              last
+              && last.name === event.toolName
+              && last.output === output
+              && last.status === (isError ? 'error' : 'done')
+            ) {
+              return { toolEvents: events }
+            }
+          }
           if (idx !== -1) {
             const output = event.toolOutput || ''
             const isError = /^(Error:|error:|ECONNREFUSED|ETIMEDOUT|timeout|failed)/i.test(output.trim())
@@ -348,7 +371,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else if (event.t === 'status') {
         try {
           const parsed = JSON.parse(event.text || '{}')
-          set({ agentStatus: parsed })
+          if (
+            parsed
+            && typeof parsed === 'object'
+            && ['goal', 'status', 'summary', 'nextAction'].some((key) => key in parsed)
+          ) {
+            set({ agentStatus: parsed })
+          }
         } catch {
           // ignore malformed status
         }
@@ -377,7 +406,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         suggestions: suggestions || undefined,
       }
       set((s) => ({
-        messages: [...s.messages, assistantMsg],
+        messages: mergeCompletedAssistantMessage(s.messages, assistantMsg),
         streaming: false,
         streamingSessionId: null,
         streamText: '',

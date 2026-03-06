@@ -15,28 +15,57 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const user = body.user || 'default'
   const sessions = loadSessions()
 
-  // If agent already has a thread session that exists, return it
+  // If the agent already has a shortcut chat session, return it.
   if (agent.threadSessionId && sessions[agent.threadSessionId]) {
-    return NextResponse.json(sessions[agent.threadSessionId])
+    const existing = sessions[agent.threadSessionId] as Record<string, unknown>
+    let changed = false
+    if (existing.shortcutForAgentId !== agentId) {
+      existing.shortcutForAgentId = agentId
+      changed = true
+    }
+    if (existing.name !== agent.name) {
+      existing.name = agent.name
+      changed = true
+    }
+    if (changed) saveSessions(sessions)
+    return NextResponse.json(existing)
   }
 
-  // Check if an existing session is already linked to this agent as a thread
+  // Legacy fallback for older shortcut sessions that were named using the
+  // old agent-thread convention before the explicit link was persisted.
   const existing = Object.values(sessions).find(
-    (s: Record<string, unknown>) => s.name === `agent-thread:${agentId}` && s.user === user
+    (s: Record<string, unknown>) =>
+      (
+        s.shortcutForAgentId === agentId
+        || s.name === `agent-thread:${agentId}`
+      )
+      && s.user === user
   )
   if (existing) {
     agent.threadSessionId = (existing as Record<string, unknown>).id as string
     agent.updatedAt = Date.now()
     saveAgents(agents)
+    let changed = false
+    const existingRecord = existing as Record<string, unknown>
+    if (existingRecord.shortcutForAgentId !== agentId) {
+      existingRecord.shortcutForAgentId = agentId
+      changed = true
+    }
+    if (existingRecord.name !== agent.name) {
+      existingRecord.name = agent.name
+      changed = true
+    }
+    if (changed) saveSessions(sessions)
     return NextResponse.json(existing)
   }
 
-  // Create a new thread session
-  const sessionId = `agent-thread-${agentId}-${genId()}`
+  // Create a new shortcut chat session for this agent.
+  const sessionId = `agent-chat-${agentId}-${genId()}`
   const now = Date.now()
   const session = {
     id: sessionId,
-    name: `agent-thread:${agentId}`,
+    name: agent.name,
+    shortcutForAgentId: agentId,
     cwd: WORKSPACE_DIR,
     user: user,
     provider: agent.provider,

@@ -11,9 +11,33 @@ import path from 'path'
 const UPLOAD_DIR = process.env.SWARMCLAW_UPLOAD_DIR || path.join(process.env.DATA_DIR || path.join(process.cwd(), 'data'), 'uploads')
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 
-const child = spawn('npx', ['@playwright/mcp@latest'], {
-  stdio: ['pipe', 'pipe', 'pipe'],
-})
+function resolvePlaywrightCli() {
+  const candidates = [
+    path.join(process.cwd(), 'node_modules', '@playwright', 'mcp', 'cli.js'),
+    path.join(process.cwd(), '[project]', 'node_modules', '@playwright', 'mcp', 'cli.js'),
+  ]
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null
+}
+
+function sanitizePlaywrightEnv(baseEnv) {
+  const env = { ...baseEnv }
+  for (const key of Object.keys(env)) {
+    if (!key.toUpperCase().startsWith('PLAYWRIGHT_MCP_')) continue
+    delete env[key]
+  }
+  return env
+}
+
+const cliPath = resolvePlaywrightCli()
+const child = cliPath
+  ? spawn(process.execPath, [cliPath], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: sanitizePlaywrightEnv(process.env),
+    })
+  : spawn('npx', ['@playwright/mcp@latest'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: sanitizePlaywrightEnv(process.env),
+    })
 
 // Forward stdin → child
 process.stdin.on('data', (chunk) => child.stdin.write(chunk))

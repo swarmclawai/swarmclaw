@@ -19,3 +19,16 @@ function resolveWorkspaceDir(): string {
 }
 
 export const WORKSPACE_DIR = resolveWorkspaceDir()
+
+function resolveBrowserProfilesDir(): string {
+  if (process.env.BROWSER_PROFILES_DIR) return process.env.BROWSER_PROFILES_DIR
+  const external = path.join(os.homedir(), '.swarmclaw', 'browser-profiles')
+  try {
+    fs.mkdirSync(external, { recursive: true })
+    return external
+  } catch {
+    return path.join(DATA_DIR, 'browser-profiles')
+  }
+}
+
+export const BROWSER_PROFILES_DIR = resolveBrowserProfilesDir()

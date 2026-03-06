@@ -18,6 +18,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { toast } from 'sonner'
 import type { ProviderType } from '@/types'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { buildOpenClawMainSessionKey } from '@/lib/openclaw-agent-id'
 import { useWs } from '@/hooks/use-ws'
 
 function Tip({ label, children, side = 'bottom' }: { label: string; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
@@ -29,6 +30,40 @@ function Tip({ label, children, side = 'bottom' }: { label: string; children: Re
         {label}
       </TooltipContent>
     </Tooltip>
+  )
+}
+
+function HeaderChip({
+  children,
+  title,
+  onClick,
+  className = '',
+  active = false,
+}: {
+  children: ReactNode
+  title?: string
+  onClick?: () => void
+  className?: string
+  active?: boolean
+}) {
+  const baseClass = `inline-flex max-w-full items-center gap-1.5 rounded-[9px] border px-2.5 py-1 text-[10px] font-600 backdrop-blur-sm transition-colors ${
+    active
+      ? 'border-accent-bright/20 bg-accent-soft/50 text-accent-bright'
+      : 'border-white/[0.06] bg-white/[0.03] text-text-3/68'
+  } ${onClick ? 'cursor-pointer hover:border-white/[0.1] hover:bg-white/[0.06] hover:text-text-2' : ''} ${className}`
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} title={title} className={baseClass}>
+        {children}
+      </button>
+    )
+  }
+
+  return (
+    <span title={title} className={baseClass}>
+      {children}
+    </span>
   )
 }
 
@@ -100,6 +135,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const providers = useAppStore((s) => s.providers)
   const loadProviders = useAppStore((s) => s.loadProviders)
   const modelName = session.model || agent?.model || ''
+  const providerLabel = PROVIDER_LABELS[session.provider] || session.provider
   const [modelSwitcherOpen, setModelSwitcherOpen] = useState(false)
   const modelSwitcherRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
@@ -108,9 +144,6 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const hbDropdownRef = useRef<HTMLDivElement>(null)
   const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false)
   const sourceDropdownRef = useRef<HTMLDivElement>(null)
-  const [mainLoopSaving, setMainLoopSaving] = useState(false)
-  const [mainLoopError, setMainLoopError] = useState('')
-  const [mainLoopNotice, setMainLoopNotice] = useState('')
   const [syncingHistory, setSyncingHistory] = useState(false)
   const [syncResult, setSyncResult] = useState('')
   const [renaming, setRenaming] = useState(false)
@@ -122,9 +155,6 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const setWalletPanelAgentId = useAppStore((s) => s.setWalletPanelAgentId)
   const [walletBalance, setWalletBalance] = useState<number | null>(null)
   const [headerWidgets, setHeaderWidgets] = useState<Array<{ id: string; label: string; icon?: string }>>([])
-  const [goalModalOpen, setGoalModalOpen] = useState(false)
-  const [goalDraft, setGoalDraft] = useState('')
-  const goalInputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     api<Array<{ id: string; label: string; icon?: string }>>('GET', `/plugins/ui?type=header&sessionId=${session.id}`).then(widgets => {
@@ -150,6 +180,46 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   }, [fetchWalletBalance])
   useWs('wallets', fetchWalletBalance)
 
+  const workspaceLabel = useMemo(() => shortPath(session.cwd), [session.cwd])
+  const liveStatus = agentStatus || null
+  const threadContextLabel = useMemo(() => {
+    const title = session.connectorContext?.threadTitle?.trim()
+    if (title) return title
+    const persona = session.connectorContext?.threadPersonaLabel?.trim()
+    if (persona) return persona
+    return null
+  }, [session.connectorContext?.threadPersonaLabel, session.connectorContext?.threadTitle])
+  const connectorPresenceMeta = useMemo(() => {
+    if (!connector) return null
+    const lastAt = connectorPresence?.lastMessageAt
+    if (!lastAt) {
+      return {
+        label: 'Idle',
+        dotClass: 'bg-text-3/30',
+        textClass: 'text-text-3/45',
+      }
+    }
+    const ago = Date.now() - lastAt
+    if (ago < 5 * 60_000) {
+      return {
+        label: 'Active',
+        dotClass: 'bg-emerald-400',
+        textClass: 'text-emerald-400',
+      }
+    }
+    if (ago < 30 * 60_000) {
+      return {
+        label: `${Math.floor(ago / 60_000)}m ago`,
+        dotClass: 'bg-amber-400',
+        textClass: 'text-amber-300',
+      }
+    }
+    return {
+      label: 'Idle',
+      dotClass: 'bg-text-3/30',
+      textClass: 'text-text-3/45',
+    }
+  }, [connector, connectorPresence?.lastMessageAt])
 
   const visibleHeaderWidgets = useMemo(() => {
     const seen = new Set<string>()
@@ -160,6 +230,25 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       return true
     })
   }, [headerWidgets])
+
+  const walletHeaderMeta = useMemo(() => {
+    if (!agent?.id) {
+      return {
+        label: 'Wallets',
+        title: 'Open wallets',
+      }
+    }
+    if (!agent.walletId) {
+      return {
+        label: 'Create wallet',
+        title: 'Create wallet',
+      }
+    }
+    return {
+      label: walletBalance !== null ? `${walletBalance.toFixed(3)} SOL` : 'Wallet',
+      title: 'View wallet',
+    }
+  }, [agent?.id, agent?.walletId, walletBalance])
 
   const handleHeaderWidgetClick = (widgetId: string) => {
     if (widgetId === 'wallet-status') {
@@ -270,13 +359,6 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     }
   }, [appSettings, agent, session])
   const heartbeatWillRun = heartbeatEnabled && (loopIsOngoing || heartbeatExplicitOptIn)
-  const hasMainLoop = session.id.startsWith('agent-thread-') || session.sessionType === 'orchestrated'
-  const missionState = session.mainLoopState || {}
-  const missionPaused = missionState.paused === true
-  const missionMode = missionState.autonomyMode === 'assist' ? 'assist' : 'autonomous'
-  const missionStatus = missionState.status || 'idle'
-  const missionMomentum = typeof missionState.momentumScore === 'number' ? missionState.momentumScore : null
-  const missionEventsCount = missionState.pendingEvents?.length || 0
 
   const handleToggleHeartbeat = async () => {
     if (!heartbeatSupported || heartbeatSaving) return
@@ -322,68 +404,8 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     }
   }
 
-  const postMainLoopAction = async (action: string, extra?: Record<string, unknown>) => {
-    if (!hasMainLoop || mainLoopSaving) return
-    setMainLoopSaving(true)
-    try {
-      const result = await api<{ runId?: string; deduped?: boolean }>('POST', `/chats/${session.id}/main-loop`, {
-        action,
-        ...(extra || {}),
-      })
-      setMainLoopError('')
-      if (action === 'nudge') {
-        setMainLoopNotice(result?.deduped ? 'Nudge already queued.' : 'Nudge queued.')
-      } else if (action === 'set_mode') {
-        setMainLoopNotice(`Mode set to ${extra?.mode === 'assist' ? 'Assist' : 'Auto'}.`)
-      } else {
-        setMainLoopNotice('')
-      }
-      await loadSessions()
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to update mission controls.'
-      setMainLoopError(message)
-    } finally {
-      setMainLoopSaving(false)
-    }
-  }
-
-  const handleToggleMissionPause = () => {
-    void postMainLoopAction(missionPaused ? 'resume' : 'pause')
-  }
-
-  const handleToggleMissionMode = () => {
-    const nextMode = missionMode === 'autonomous' ? 'assist' : 'autonomous'
-    void postMainLoopAction('set_mode', { mode: nextMode })
-  }
-
-  const handleNudgeMission = () => {
-    void postMainLoopAction('nudge')
-  }
-
-  const handleOpenGoalModal = () => {
-    if (!hasMainLoop) return
-    setGoalDraft(typeof missionState.goal === 'string' ? missionState.goal : '')
-    setGoalModalOpen(true)
-    requestAnimationFrame(() => goalInputRef.current?.focus())
-  }
-
-  const handleSubmitGoal = () => {
-    const goal = goalDraft.trim()
-    setGoalModalOpen(false)
-    if (!goal) return
-    void postMainLoopAction('set_goal', { goal })
-  }
-
-  const handleClearMissionEvents = () => {
-    if (!hasMainLoop || missionEventsCount <= 0) return
-    void postMainLoopAction('clear_events')
-  }
-
   const isOpenClawAgent = agent?.provider === 'openclaw'
-  // Derive OpenClaw session key: agent sessions use "agent:<name>:main" convention
-  const openclawSessionKey = isOpenClawAgent && agent
-    ? `agent:${agent.name.toLowerCase().replace(/\s+/g, '-')}:main`
-    : null
+  const openclawSessionKey = isOpenClawAgent ? buildOpenClawMainSessionKey(agent?.name) : null
 
   const handleSyncHistory = async () => {
     if (!openclawSessionKey || syncingHistory) return
@@ -511,36 +533,28 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   }, [session.name, loadConnectors])
 
   useEffect(() => {
-    setMainLoopError('')
-    setMainLoopNotice('')
     setModelSwitcherOpen(false)
   }, [session.id])
 
-  useEffect(() => {
-    if (!mainLoopNotice) return
-    const timer = setTimeout(() => setMainLoopNotice(''), 2500)
-    return () => clearTimeout(timer)
-  }, [mainLoopNotice])
-
-  // Context bar shows for tools, mission controls, memories, source filter, task links, resume handles, browser
+  // Context bar shows for tools, memories, source filter, task links, resume handles, browser
   const hasToolToggles = ((agent?.plugins?.length ?? 0) > 0) || ((session.plugins?.length ?? 0) > 0)
   const hasMemoryLink = !!(agent && session.plugins?.includes('memory'))
   const hasSourceFilter = !!hasMultipleSources
-  const hasContextBar = !!(hasMainLoop || hasMemoryLink || hasSourceFilter || linkedTask || resumeHandle || (isOpenClawAgent && openclawSessionKey) || browserActive)
+  const hasContextBar = !!(hasMemoryLink || hasSourceFilter || linkedTask || resumeHandle || (isOpenClawAgent && openclawSessionKey) || browserActive)
 
   return (
     <>
     <header
       className="relative z-20 border-b border-white/[0.06] shrink-0"
       style={{
-        background: 'linear-gradient(180deg, rgba(var(--rgb-bg, 15,15,26), 0.95) 0%, rgba(var(--rgb-bg, 15,15,26), 0.88) 100%)',
+        background: 'radial-gradient(circle at top left, rgba(66, 211, 255, 0.08), transparent 32%), radial-gradient(circle at top right, rgba(255, 190, 92, 0.05), transparent 28%), linear-gradient(180deg, rgba(var(--rgb-bg, 15,15,26), 0.96) 0%, rgba(var(--rgb-bg, 15,15,26), 0.9) 100%)',
         backdropFilter: 'blur(20px) saturate(1.4)',
         WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
         ...(mobile ? { paddingTop: 'max(12px, env(safe-area-inset-top))' } : {}),
       }}
     >
       {/* Main row */}
-      <div className="flex items-center gap-2 px-3.5 py-1.5 min-h-[48px]">
+      <div className="flex flex-wrap items-start gap-3 px-4 py-2.5 min-h-[64px]">
         {/* Back button */}
         {onBack && (
           <IconButton onClick={onBack} aria-label="Go back" size="sm">
@@ -581,10 +595,8 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         )}
 
         {/* Identity + metadata — fills center */}
-        <div className="flex-1 min-w-0 flex items-center gap-3">
-          {/* Name (row 1) + tools (row 2) */}
-          <div className="flex flex-col gap-0.5 min-w-0 shrink">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {renaming && agent ? (
               <span ref={renameContainerRef} className="inline-flex items-center gap-2">
                 <input
@@ -602,99 +614,90 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 {renameSaving && <span className="w-3 h-3 rounded-full border-2 border-text-3/30 border-t-accent-bright animate-spin shrink-0" />}
                 {renameError && <span className="text-[10px] text-red-400 shrink-0">{renameError}</span>}
               </span>
+            ) : agent ? (
+              <button
+                type="button"
+                onClick={startRename}
+                title="Rename agent"
+                className="group/title inline-flex min-w-0 items-center gap-1.5 rounded-[9px] px-1 py-0.5 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-bright/40"
+              >
+                <span className="font-display text-[16px] font-700 truncate tracking-[-0.02em] text-text transition-colors group-hover/title:text-accent-bright">
+                  {(session.shortcutForAgentId && agent.id === session.shortcutForAgentId) || agent.threadSessionId === session.id
+                    ? agent.name
+                    : session.name}
+                </span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-text-3/40 opacity-0 transition-opacity group-hover/title:opacity-100 group-focus-visible/title:opacity-100">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+              </button>
             ) : (
-              <span
-                className={`font-display text-[15px] font-700 truncate tracking-[-0.02em] text-text${agent ? ' cursor-pointer hover:text-accent-bright transition-colors duration-200' : ''}`}
-                onClick={agent ? startRename : undefined}
-                title={agent ? 'Click to rename' : undefined}
-              >{
-                session.name.startsWith('agent-thread:') ? (agent?.name || session.name)
-                : session.name
-              }</span>
+              <span className="font-display text-[16px] font-700 truncate tracking-[-0.02em] text-text">{session.name}</span>
             )}
             {connector && connectorMeta && (
               <span
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[5px] border text-[9px] font-700 uppercase tracking-wider shrink-0"
+                className="inline-flex min-w-0 items-center gap-1 px-2 py-1 rounded-[8px] border text-[10px] font-700 uppercase tracking-wider shrink-0"
                 style={{
                   color: connectorMeta.color,
-                  backgroundColor: `${connectorMeta.color}10`,
-                  borderColor: `${connectorMeta.color}20`,
+                  backgroundColor: `${connectorMeta.color}12`,
+                  borderColor: `${connectorMeta.color}22`,
                 }}
                 title={`${connector.name} connector`}
               >
                 <ConnectorPlatformIcon platform={connector.platform} size={10} />
-                {connectorMeta.label}
+                <span className="truncate max-w-[140px]">{connectorMeta.label}</span>
               </span>
             )}
-            {connector && connectorPresence && (() => {
-              const lastAt = connectorPresence.lastMessageAt
-              if (!lastAt) return (
-                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] text-text-3/40">
-                  <span className="w-1.5 h-1.5 rounded-full bg-text-3/30" />
-                  Idle
-                </span>
-              )
-              const ago = Date.now() - lastAt
-              const isActive = ago < 5 * 60_000
-              const isRecent = ago < 30 * 60_000
-              const label = isActive ? 'Active' : isRecent ? `${Math.floor(ago / 60_000)}m ago` : 'Idle'
-              const dotColor = isActive ? 'bg-emerald-400' : isRecent ? 'bg-amber-400' : 'bg-text-3/30'
-              const textColor = isActive ? 'text-emerald-400' : isRecent ? 'text-amber-300' : 'text-text-3/40'
-              return (
-                <span className={`shrink-0 inline-flex items-center gap-1 text-[10px] ${textColor}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-                  {label}
-                </span>
-              )
-            })()}
-            {agent?.isOrchestrator && (
-              <span className="px-1.5 py-0.5 rounded-[5px] bg-amber-500/10 text-amber-500 text-[9px] font-700 uppercase tracking-wider shrink-0">Orch</span>
+            {connectorPresenceMeta && (
+              <HeaderChip className={`${connectorPresenceMeta.textClass} shrink-0`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${connectorPresenceMeta.dotClass}`} />
+                {connectorPresenceMeta.label}
+              </HeaderChip>
+            )}
+            {agent?.platformAssignScope === 'all' && (
+              <HeaderChip className="bg-amber-500/10 border-amber-500/15 text-amber-400 shrink-0">Delegates</HeaderChip>
             )}
             {streaming && (
-              <span className="shrink-0 w-2 h-2 rounded-full bg-accent-bright" style={{ animation: 'pulse 1.5s ease infinite' }} />
+              <HeaderChip className="bg-accent-soft/60 border-accent-bright/20 text-accent-bright shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent-bright" style={{ animation: 'pulse 1.5s ease infinite' }} />
+                Responding
+              </HeaderChip>
             )}
           </div>
-          {hasToolToggles && <ChatToolToggles session={session} />}
-          </div>
-
-          {/* Metadata tray: wallet · model · path · status */}
-          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
-            <span className="text-text-3/10 text-[10px] select-none shrink-0">/</span>
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+            {hasToolToggles && <ChatToolToggles session={session} />}
             {visibleHeaderWidgets.map((widget) => {
               const actionable = widget.id === 'wallet-status'
-              const walletLabel = walletBalance !== null
-                ? `${walletBalance.toFixed(3)} SOL`
+              const walletLabel = actionable
+                ? walletHeaderMeta.label
                 : (widget.label || 'Wallet')
+              const widgetTitle = actionable
+                ? walletHeaderMeta.title
+                : widget.label
               return (
-                <button
+                <HeaderChip
                   key={widget.id}
-                  type="button"
                   onClick={actionable ? () => handleHeaderWidgetClick(widget.id) : undefined}
-                  className={`inline-flex items-center gap-1 shrink-0 bg-transparent border-none p-0.5 rounded-[4px] text-[11px] font-mono transition-colors ${
-                    actionable ? 'cursor-pointer text-text-3/45 hover:text-text-3/70 hover:bg-white/[0.04]' : 'cursor-default text-text-3/55'
-                  }`}
-                  title={actionable ? 'View wallet' : widget.label}
+                  title={widgetTitle}
+                  className={actionable ? 'text-text-3/80' : ''}
                 >
                   {actionable ? (
                     <>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                         <rect x="2" y="6" width="20" height="14" rx="2" />
                         <path d="M22 10H18a2 2 0 0 0 0 4h4" />
                       </svg>
-                      {walletLabel}
+                      <span className="truncate max-w-[120px]">{walletLabel}</span>
                     </>
                   ) : (
-                    widget.label
+                    <span className="truncate max-w-[120px]">{widget.label}</span>
                   )}
-                </button>
+                </HeaderChip>
               )
             })}
-            {visibleHeaderWidgets.length > 0 && (
-              <span className="text-text-3/10 text-[10px] select-none shrink-0">·</span>
-            )}
             {modelName && (
               <div className="relative shrink-0" ref={modelSwitcherRef}>
-                <Tip label="Switch LLM model">
+                <Tip label={`Switch model (${providerLabel})`}>
                 <button
                   type="button"
                   onClick={() => {
@@ -702,16 +705,19 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                     setModelSwitcherOpen((o) => { if (!o) void loadProviders(); return !o })
                   }}
                   disabled={streaming}
-                  className="inline-flex items-center gap-1 text-[11px] text-text-3/45 font-mono shrink-0 cursor-pointer bg-transparent border-none px-1 py-0.5 rounded-[5px] hover:bg-white/[0.04] hover:text-text-3/70 transition-colors disabled:cursor-default disabled:hover:text-text-3/45"
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-[9px] border border-white/[0.06] bg-white/[0.03] px-2.5 py-1 text-[10px] font-600 text-text-3/70 backdrop-blur-sm transition-colors hover:border-white/[0.1] hover:bg-white/[0.06] hover:text-text-2 disabled:cursor-default disabled:opacity-60"
                 >
-                  {modelName}
-                  <svg width="7" height="7" viewBox="0 0 16 16" fill="none" className="shrink-0 opacity-30">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                    <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" />
+                  </svg>
+                  <span className="truncate max-w-[min(42vw,220px)]">{mobile ? modelName : `${providerLabel} · ${modelName}`}</span>
+                  <svg width="7" height="7" viewBox="0 0 16 16" fill="none" className="shrink-0 opacity-40">
                     <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 </button>
                 </Tip>
                 {modelSwitcherOpen && (
-                  <div className="absolute z-50 top-full left-0 mt-2 w-[280px] rounded-[12px] border border-white/[0.08] bg-surface backdrop-blur-md shadow-xl p-3">
+                  <div className="absolute z-50 top-full right-0 sm:left-0 sm:right-auto mt-2 w-[min(320px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-[12px] border border-white/[0.08] bg-surface backdrop-blur-md shadow-xl p-3">
                     <div className="text-[10px] font-600 text-text-3/50 uppercase tracking-wider mb-2">Provider</div>
                     <div className="flex flex-wrap gap-1.5 mb-3">
                       {providers.map((p) => (
@@ -739,113 +745,108 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 )}
               </div>
             )}
-            <Tip label={`Open working directory: ${shortPath(session.cwd)}`}>
-            <button
-              type="button"
+            {threadContextLabel && (
+              <HeaderChip title={threadContextLabel}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+                </svg>
+                <span className="truncate max-w-[min(42vw,220px)]">{threadContextLabel}</span>
+              </HeaderChip>
+            )}
+            <Tip label={`Open working directory: ${workspaceLabel}`}>
+            <HeaderChip
               onClick={() => { api('POST', '/files/open', { path: session.cwd }).catch(() => {}) }}
-              className="inline-flex items-center shrink-0 bg-transparent border-none p-0.5 rounded-[4px] cursor-pointer text-text-3/20 hover:text-text-3/50 hover:bg-white/[0.04] transition-colors"
+              title={workspaceLabel}
+              className="max-w-[min(44vw,220px)]"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
               </svg>
-            </button>
+              <span className="truncate">{mobile ? 'Workspace' : workspaceLabel}</span>
+            </HeaderChip>
             </Tip>
-            {/* Live agent status */}
-            {(() => {
-              const liveStatus = agentStatus || (missionState.status ? {
-                goal: missionState.goal ?? undefined,
-                status: missionState.status ?? undefined,
-                summary: missionState.summary ?? undefined,
-                nextAction: missionState.nextAction ?? undefined,
-              } : null)
-              if (!liveStatus) return null
-              const statusColors: Record<string, string> = {
-                idle: 'bg-text-3/40', progress: 'bg-blue-500', blocked: 'bg-amber-400', ok: 'bg-emerald-400',
-              }
-              const dotColor = statusColors[liveStatus.status || ''] || 'bg-text-3/40'
-              return (
-                <>
-                  <span className="text-text-3/10 text-[10px] select-none shrink-0">·</span>
-                  {liveStatus.status && (
-                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] text-[9px] font-700 uppercase tracking-wider ${
-                      liveStatus.status === 'blocked' ? 'bg-amber-400/12 text-amber-300'
-                      : liveStatus.status === 'ok' ? 'bg-emerald-400/12 text-emerald-400'
-                      : liveStatus.status === 'progress' ? 'bg-blue-500/12 text-blue-400'
-                      : 'bg-white/[0.03] text-text-3/50'
-                    }`}>
-                      <span className={`w-1 h-1 rounded-full ${dotColor}`} />
-                      {liveStatus.status}
-                    </span>
-                  )}
-                  {liveStatus.goal && (
-                    <span className="text-[10px] text-text-3/40 font-mono truncate max-w-[180px]" title={liveStatus.goal}>
-                      {liveStatus.goal}
-                    </span>
-                  )}
-                  {liveStatus.nextAction && (
-                    <>
-                      <span className="text-[9px] text-text-3/20 shrink-0">→</span>
-                      <span className="text-[10px] text-text-3/35 font-mono truncate max-w-[140px]" title={liveStatus.nextAction}>
-                        {liveStatus.nextAction}
-                      </span>
-                    </>
-                  )}
-                </>
-              )
-            })()}
+            {liveStatus?.status && (
+              <HeaderChip
+                className={`${
+                  liveStatus.status === 'blocked' ? 'bg-amber-400/12 border-amber-400/15 text-amber-300'
+                  : liveStatus.status === 'ok' ? 'bg-emerald-400/12 border-emerald-400/15 text-emerald-400'
+                  : liveStatus.status === 'progress' ? 'bg-blue-500/12 border-blue-500/15 text-blue-400'
+                  : 'text-text-3/60'
+                }`}
+                title={liveStatus.goal || liveStatus.summary || liveStatus.nextAction || liveStatus.status}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  liveStatus.status === 'blocked' ? 'bg-amber-300'
+                  : liveStatus.status === 'ok' ? 'bg-emerald-400'
+                  : liveStatus.status === 'progress' ? 'bg-blue-400'
+                  : 'bg-text-3/30'
+                }`} />
+                {liveStatus.status}
+              </HeaderChip>
+            )}
+            {!mobile && liveStatus?.nextAction && (
+              <span className="text-[10px] text-text-3/45 font-mono truncate max-w-[min(34vw,220px)]" title={liveStatus.nextAction}>
+                Next: {liveStatus.nextAction}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Heartbeat compound control */}
-        {heartbeatSupported && (
-          <div className="flex items-center rounded-[8px] shrink-0" style={{ background: 'rgba(255,255,255,0.025)' }}>
-            <Tip label={heartbeatWillRun ? 'Disable heartbeat — periodic check-ins' : 'Enable heartbeat — periodic check-ins'}>
-            <button
-              onClick={handleToggleHeartbeat}
-              disabled={heartbeatSaving}
-              className={`flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 transition-colors cursor-pointer border-none text-[11px] font-600
-                ${heartbeatWillRun ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-text-3/60 hover:bg-white/[0.04]'}`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full transition-colors ${heartbeatWillRun ? 'bg-emerald-400' : 'bg-text-3/30'}`} />
-              HB
-              {heartbeatEnabled && !loopIsOngoing && !heartbeatExplicitOptIn && (
-                <span className="text-[9px] text-text-3/40">(bounded)</span>
-              )}
-            </button>
-            </Tip>
-            <div className="relative" ref={hbDropdownRef}>
-              <Tip label="Set heartbeat interval">
+        <div className={`flex items-center gap-2 shrink-0 ${mobile ? 'w-full justify-between pt-1' : 'ml-auto'}`}>
+          {/* Heartbeat compound control */}
+          {heartbeatSupported && (
+            <div className="flex items-center rounded-[12px] border border-white/[0.06] bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] shrink-0">
+              <Tip label={heartbeatWillRun ? 'Disable heartbeat — periodic check-ins' : 'Enable heartbeat — periodic check-ins'}>
               <button
-                onClick={() => setHbDropdownOpen((o) => !o)}
+                onClick={handleToggleHeartbeat}
                 disabled={heartbeatSaving}
-                className="flex items-center gap-0.5 pl-1 pr-2 py-1 text-text-3/50 hover:text-text-3/70 hover:bg-white/[0.04] transition-colors cursor-pointer border-none"
+                aria-pressed={heartbeatWillRun}
+                className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1.5 rounded-l-[11px] transition-colors cursor-pointer border-none text-[11px] font-600
+                  ${heartbeatWillRun ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-text-3/70 hover:bg-white/[0.04]'}`}
               >
-                <span className="text-[11px] font-600">{formatDuration(heartbeatIntervalSec)}</span>
-                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="opacity-40">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
+                <span className={`w-1.5 h-1.5 rounded-full transition-colors ${heartbeatWillRun ? 'bg-emerald-400' : heartbeatEnabled ? 'bg-amber-300' : 'bg-text-3/30'}`} />
+                <span className="hidden sm:inline">Heartbeat</span>
+                <span className="sm:hidden">HB</span>
+                <span className={`hidden md:inline text-[9px] uppercase tracking-wider ${
+                  heartbeatWillRun ? 'text-emerald-300/80' : heartbeatEnabled ? 'text-amber-300/70' : 'text-text-3/40'
+                }`}>
+                  {heartbeatWillRun ? 'On' : heartbeatEnabled ? 'Bounded' : 'Off'}
+                </span>
               </button>
               </Tip>
-              {hbDropdownOpen && (
-                <div className="absolute top-full right-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[80px]">
-                  {[...(typeof window !== 'undefined' && window.location.hostname === 'localhost' ? [10, 15, 30, 60] : []), 1800, 3600, 7200, 21600, 43200].map((sec) => (
-                    <button
-                      key={sec}
-                      onClick={() => handleSelectHeartbeatInterval(sec)}
-                      className={`w-full text-left px-3 py-1.5 text-[11px] font-600 transition-colors cursor-pointer border-none
-                        ${sec === heartbeatIntervalSec ? 'bg-accent-soft text-accent-bright' : 'text-text-3 hover:bg-white/[0.06]'}`}
-                    >
-                      {formatDuration(sec)}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div className="relative" ref={hbDropdownRef}>
+                <Tip label="Set heartbeat interval">
+                <button
+                  onClick={() => setHbDropdownOpen((o) => !o)}
+                  disabled={heartbeatSaving}
+                  className="flex items-center gap-0.5 pl-1 pr-2.5 py-1.5 text-text-3/60 hover:text-text-2 hover:bg-white/[0.04] transition-colors cursor-pointer border-none rounded-r-[11px]"
+                >
+                  <span className="text-[11px] font-600">{formatDuration(heartbeatIntervalSec)}</span>
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="opacity-40">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+                </Tip>
+                {hbDropdownOpen && (
+                  <div className="absolute top-full right-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[88px]">
+                    {[...(typeof window !== 'undefined' && window.location.hostname === 'localhost' ? [10, 15, 30, 60] : []), 1800, 3600, 7200, 21600, 43200].map((sec) => (
+                      <button
+                        key={sec}
+                        onClick={() => handleSelectHeartbeatInterval(sec)}
+                        className={`w-full text-left px-3 py-1.5 text-[11px] font-600 transition-colors cursor-pointer border-none
+                          ${sec === heartbeatIntervalSec ? 'bg-accent-soft text-accent-bright' : 'text-text-3 hover:bg-white/[0.06]'}`}
+                      >
+                        {formatDuration(sec)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Action buttons */}
-        <div className="flex items-center shrink-0">
+          {/* Action buttons */}
+          <div className="flex items-center shrink-0 rounded-[12px] border border-white/[0.06] bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] p-1">
           {streaming && (
             <>
               <IconButton onClick={onStop} variant="danger" tooltip="Stop" aria-label="Stop generation" size="sm">
@@ -906,76 +907,18 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
             </IconButton>
           )}
         </div>
+        </div>
       </div>
 
-      {/* Context bar: tools, mission controls, links */}
+      {/* Context bar: tools and links */}
       {hasContextBar && (
-        <div className="flex items-center gap-1.5 px-3.5 pb-1.5 flex-wrap">
-          {hasMainLoop && (
-            <>
-              <Tip label={missionPaused ? 'Resume mission loop' : 'Pause mission loop'}>
-                <button
-                  onClick={handleToggleMissionPause}
-                  disabled={mainLoopSaving}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded-[7px] transition-colors cursor-pointer border-none text-[10px] font-600
-                    ${missionPaused ? 'bg-amber-500/10 hover:bg-amber-500/18 text-amber-300' : 'bg-emerald-500/8 hover:bg-emerald-500/12 text-emerald-400'}`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${missionPaused ? 'bg-amber-300' : 'bg-emerald-400'}`} />
-                  {missionPaused ? 'Paused' : 'Live'}
-                </button>
-              </Tip>
-
-              <Tip label={missionMode === 'autonomous' ? 'Switch to assisted mode' : 'Switch to autonomous mode'}>
-                <button
-                  onClick={handleToggleMissionMode}
-                  disabled={mainLoopSaving}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-[7px] transition-colors cursor-pointer border-none text-[10px] font-600
-                    ${missionMode === 'autonomous' ? 'bg-indigo-500/12 hover:bg-indigo-500/20 text-indigo-300' : 'bg-white/[0.03] hover:bg-white/[0.06] text-text-3/60'}`}
-                >
-                  {missionMode === 'autonomous' ? 'Auto' : 'Assist'}
-                </button>
-              </Tip>
-              <Tip label="Run one iteration of the mission loop">
-                <button
-                  onClick={handleNudgeMission}
-                  disabled={mainLoopSaving || missionPaused}
-                  className="px-2 py-1 rounded-[7px] bg-blue-500/8 hover:bg-blue-500/15 text-blue-400 transition-colors cursor-pointer border-none disabled:opacity-50 text-[10px] font-600"
-                >
-                  Nudge
-                </button>
-              </Tip>
-              <Tip label="Set or edit the mission goal">
-                <button
-                  onClick={handleOpenGoalModal}
-                  disabled={mainLoopSaving}
-                  className="px-2 py-1 rounded-[7px] bg-fuchsia-500/8 hover:bg-fuchsia-500/15 text-fuchsia-300 transition-colors cursor-pointer border-none text-[10px] font-600"
-                >
-                  Goal
-                </button>
-              </Tip>
-              {missionEventsCount > 0 && (
-                <Tip label="Clear queued mission events">
-                  <button
-                    onClick={handleClearMissionEvents}
-                    disabled={mainLoopSaving}
-                    className="px-2 py-1 rounded-[7px] bg-white/[0.03] hover:bg-white/[0.06] text-text-3/60 transition-colors cursor-pointer border-none text-[10px] font-600"
-                  >
-                    Events {missionEventsCount}
-                  </button>
-                </Tip>
-              )}
-              <span className="text-[9px] text-text-3/40 uppercase tracking-wider shrink-0">
-                {missionStatus}{missionMomentum !== null ? ` · ${missionMomentum}` : ''}
-              </span>
-              {mainLoopError && <span className="text-[9px] text-red-300/80 truncate max-w-[240px]" title={mainLoopError}>{mainLoopError}</span>}
-              {mainLoopNotice && <span className="text-[9px] text-emerald-300/80 truncate max-w-[200px]" title={mainLoopNotice}>{mainLoopNotice}</span>}
-            </>
-          )}
+        <div className="border-t border-white/[0.05] bg-black/[0.08] px-4 py-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {hasMemoryLink && (
             <Tip label="View agent memories">
             <button
               onClick={() => { setMemoryAgentFilter(session.agentId!); setActiveView('memory'); setSidebarOpen(true) }}
-              className="flex items-center gap-1 px-2 py-1 rounded-[7px] bg-accent-soft/40 hover:bg-accent-soft/70 transition-colors cursor-pointer text-[10px] font-600 text-accent-bright/55 hover:text-accent-bright/80 shrink-0"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-[8px] bg-accent-soft/40 hover:bg-accent-soft/70 transition-colors cursor-pointer text-[10px] font-600 text-accent-bright/55 hover:text-accent-bright/80 shrink-0"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
@@ -1007,7 +950,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               </button>
               </Tip>
               {sourceDropdownOpen && (
-                <div className="absolute top-full left-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[140px]">
+                <div className="absolute top-full right-0 sm:left-0 sm:right-auto mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[160px] max-w-[calc(100vw-2rem)]">
                   <button
                     onClick={() => { onConnectorFilterChange(null); setSourceDropdownOpen(false) }}
                     className={`w-full text-left px-3 py-1.5 text-[11px] font-600 transition-colors cursor-pointer border-none flex items-center gap-2 ${
@@ -1072,12 +1015,12 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <Tip label="Copy CLI resume command">
               <button
                 onClick={handleCopySessionId}
-                className="flex items-center gap-1 px-2 py-1 rounded-l-[7px] hover:bg-white/[0.06] transition-colors cursor-pointer"
+                className="flex min-w-0 items-center gap-1 px-2 py-1 rounded-l-[7px] hover:bg-white/[0.06] transition-colors cursor-pointer"
               >
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/40 shrink-0">
                   <path d="M4 17l6 0l0 -6" /><path d="M20 7l-6 0l0 6" /><path d="M4 17l10 -10" />
                 </svg>
-                <span className="text-[10px] font-mono text-text-3/40 group-hover/resume:text-text-3/60 truncate max-w-[180px]">
+                <span className="text-[10px] font-mono text-text-3/40 group-hover/resume:text-text-3/60 truncate max-w-[min(46vw,220px)]">
                   {copied ? 'Copied!' : `${resumeHandle.label}: ${resumeHandle.id}`}
                 </span>
               </button>
@@ -1085,7 +1028,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
               <Tip label="Dismiss resume handle">
               <button
                 onClick={handleDismissResumeHandle}
-                className="px-1 py-1 rounded-r-[7px] hover:bg-white/[0.06] transition-colors cursor-pointer opacity-0 group-hover/resume:opacity-100"
+                className="px-1 py-1 rounded-r-[7px] hover:bg-white/[0.06] transition-colors cursor-pointer opacity-60 md:opacity-0 md:group-hover/resume:opacity-100 group-focus-within/resume:opacity-100"
               >
                 <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3/40 hover:text-text-3">
                   <path d="M4 4l8 8M12 4l-8 8" />
@@ -1111,51 +1054,10 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
             </Tip>
           )}
         </div>
+        </div>
       )}
 
     </header>
-
-    {/* Goal modal — fixed to viewport, not constrained by header */}
-    {goalModalOpen && (
-      <div className="fixed inset-0 z-[200] flex items-center justify-center" onClick={() => setGoalModalOpen(false)}>
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-        <div
-          className="relative w-[420px] max-w-[90vw] rounded-[16px] border border-white/[0.08] bg-surface shadow-2xl p-6"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h4 className="font-display text-[15px] font-700 text-text mb-1">Set Mission Goal</h4>
-          <p className="text-[11px] text-text-3/60 mb-4">Define what this agent should work towards.</p>
-          <textarea
-            ref={goalInputRef}
-            value={goalDraft}
-            onChange={(e) => setGoalDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmitGoal(); if (e.key === 'Escape') setGoalModalOpen(false) }}
-            placeholder="Describe the agent's mission..."
-            rows={4}
-            className="w-full py-2.5 px-3 rounded-[10px] text-[13px] bg-bg border border-white/[0.06] text-text placeholder:text-text-3/50 outline-none focus:border-accent-bright/30 mb-1 resize-y min-h-[80px]"
-            style={{ fontFamily: 'inherit' }}
-          />
-          <p className="text-[10px] text-text-3/40 mb-3">Cmd+Enter to submit</p>
-          <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => setGoalModalOpen(false)}
-              className="px-4 py-2 rounded-[8px] text-[12px] font-600 text-text-3 bg-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer border-none"
-              style={{ fontFamily: 'inherit' }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmitGoal}
-              disabled={!goalDraft.trim()}
-              className="px-4 py-2 rounded-[8px] text-[12px] font-600 text-accent-bright bg-accent-soft hover:bg-accent-soft/80 transition-colors cursor-pointer border border-accent-bright/20 disabled:opacity-40 disabled:cursor-default"
-              style={{ fontFamily: 'inherit' }}
-            >
-              Set Goal
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
     </>
   )
 }

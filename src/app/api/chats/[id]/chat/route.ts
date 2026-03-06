@@ -49,7 +49,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         mode: queueMode,
         onEvent: (ev) => writeEvent(ev as unknown as Record<string, unknown>),
         replyToId,
-        callerSignal: req.signal,
+        // Keep user-initiated runs alive even if the SSE transport drops so
+        // long-lived tasks can finish and be observed later via polling/history.
+        callerSignal: internal ? req.signal : undefined,
       })
       abortRun = run.abort
 
@@ -89,8 +91,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         })
     },
     cancel() {
-      // Client disconnected — abort the run so the LLM stream is cancelled.
-      abortRun?.()
+      // Client disconnected. User-facing runs continue in the background so
+      // they can persist results even when the transport drops. Explicit stop
+      // controls still cancel the run through the session run manager.
+      if (internal) abortRun?.()
     },
   })
 

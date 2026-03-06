@@ -2,6 +2,13 @@ import type { Connector } from '@/types'
 
 export type InboundMediaType = 'image' | 'video' | 'audio' | 'document' | 'file'
 
+export interface InboundThreadHistoryEntry {
+  role: 'user' | 'assistant'
+  senderName: string
+  text: string
+  messageId?: string
+}
+
 export interface InboundMedia {
   type: InboundMediaType
   fileName?: string
@@ -22,10 +29,41 @@ export interface InboundMessage {
   senderName: string       // display name
   text: string
   isGroup?: boolean
+  messageId?: string
   imageUrl?: string
   media?: InboundMedia[]
   replyToMessageId?: string
+  threadId?: string
+  threadTitle?: string
+  threadStarterText?: string
+  threadStarterSenderName?: string
+  threadPersonaLabel?: string
+  threadParentChannelId?: string
+  threadParentChannelName?: string
+  threadHistory?: InboundThreadHistoryEntry[]
+  mentionsBot?: boolean
   agentIdOverride?: string
+}
+
+export interface OutboundSendOptions {
+  imageUrl?: string
+  fileUrl?: string
+  /** Absolute local file path (e.g. screenshot saved to disk) */
+  mediaPath?: string
+  mimeType?: string
+  fileName?: string
+  caption?: string
+  /** Send audio as a WhatsApp voice note (push-to-talk) */
+  ptt?: boolean
+  /** Platform-native reply target when supported */
+  replyToMessageId?: string
+  /** Platform-native thread or topic identifier when supported */
+  threadId?: string
+}
+
+export interface OutboundTypingOptions {
+  /** Platform-native thread or topic identifier when supported */
+  threadId?: string
 }
 
 /** A running connector instance */
@@ -36,17 +74,7 @@ export interface ConnectorInstance {
   sendMessage?: (
     channelId: string,
     text: string,
-    options?: {
-      imageUrl?: string
-      fileUrl?: string
-      /** Absolute local file path (e.g. screenshot saved to disk) */
-      mediaPath?: string
-      mimeType?: string
-      fileName?: string
-      caption?: string
-      /** Send audio as a WhatsApp voice note (push-to-talk) */
-      ptt?: boolean
-    },
+    options?: OutboundSendOptions,
   ) => Promise<{ messageId?: string } | void>
   /** Current QR code data URL (WhatsApp only, null when paired) */
   qrDataUrl?: string | null
@@ -62,6 +90,8 @@ export interface ConnectorInstance {
   deleteMessage?: (channelId: string, messageId: string) => Promise<void>
   /** Rich messaging: pin a message */
   pinMessage?: (channelId: string, messageId: string) => Promise<void>
+  /** Best-effort typing or "working" indicator for the target conversation */
+  sendTyping?: (channelId: string, options?: OutboundTypingOptions) => Promise<void>
   /** Health check: returns true if the underlying connection is alive */
   isAlive?: () => boolean
 }

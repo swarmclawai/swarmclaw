@@ -4,6 +4,7 @@ import type { SettingsSectionProps } from './types'
 
 export function VoiceSection({ appSettings, patchSettings, inputClass }: SettingsSectionProps) {
   const enabled = appSettings.elevenLabsEnabled ?? false
+  const hasApiKey = appSettings.elevenLabsApiKeyConfigured === true
 
   return (
     <div className="mb-10">
@@ -37,10 +38,13 @@ export function VoiceSection({ appSettings, patchSettings, inputClass }: Setting
                 type="password"
                 value={appSettings.elevenLabsApiKey || ''}
                 onChange={(e) => patchSettings({ elevenLabsApiKey: e.target.value || null })}
-                placeholder="sk_..."
+                placeholder={hasApiKey ? 'Stored securely. Enter a new key to replace it.' : 'sk_...'}
                 className={inputClass}
                 style={{ fontFamily: 'inherit' }}
               />
+              {hasApiKey && (
+                <p className="text-[11px] text-emerald-400/90 mt-1.5">Stored securely. Clear the field and save to remove it.</p>
+              )}
             </div>
             <div>
               <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Default Voice ID</label>

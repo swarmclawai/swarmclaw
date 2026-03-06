@@ -1,13 +1,126 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { UPLOAD_DIR } from '../storage'
+import { WORKSPACE_DIR } from '../data-dir'
 import type { ToolBuildContext } from './context'
 import { safePath, truncate, listDirRecursive, MAX_FILE } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+
+function pickNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (trimmed) return trimmed
+  }
+  return undefined
+}
+
+function pickStringValue(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string') return value
+  }
+  return undefined
+}
+
+function getFileEntryPath(entry: Record<string, unknown> | undefined): string | undefined {
+  if (!entry) return undefined
+  return pickNonEmptyString(
+    entry.path,
+    entry.filePath,
+    entry.filename,
+    entry.fileName,
+    entry.name,
+    entry.targetPath,
+    entry.target,
+  )
+}
+
+function getFileEntryContent(entry: Record<string, unknown> | undefined): string | undefined {
+  if (!entry) return undefined
+  const raw = entry.content ?? entry.text ?? entry.contents ?? entry.value ?? entry.body
+  if (raw === undefined || raw === null) return undefined
+  return typeof raw === 'string' ? raw : JSON.stringify(raw)
+}
+
+function inferFileAction(
+  normalized: Record<string, unknown>,
+  files: Array<Record<string, unknown>> | undefined,
+  filePath: string | undefined,
+  dirPath: string | undefined,
+): string | undefined {
+  const fileHasContent = Array.isArray(files) && files.some((entry) => getFileEntryContent(entry) !== undefined)
+  if (fileHasContent) return 'write'
+  if (getFileEntryContent(normalized) !== undefined) return 'write'
+  if (dirPath) return 'list'
+  if (filePath) return 'read'
+  return undefined
+}
+
+export function normalizeFileArgs(rawArgs: Record<string, unknown>): Record<string, unknown> {
+  const normalized = normalizeToolInputArgs(rawArgs)
+  const actionPayload = ['read', 'write', 'list', 'copy', 'move', 'delete']
+    .map((candidate) => {
+      const value = normalized[candidate]
+      return value && typeof value === 'object' && !Array.isArray(value)
+        ? { action: candidate, value: value as Record<string, unknown> }
+        : null
+    })
+    .find(Boolean)
+  const merged = {
+    ...normalized,
+    ...(actionPayload?.value || {}),
+  }
+  const files = Array.isArray(merged.files)
+    ? merged.files.filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object' && !Array.isArray(entry))
+    : undefined
+
+  let action = pickNonEmptyString(normalized.action, actionPayload?.action)
+  if (!action && Array.isArray(files) && files.length > 0) {
+    action = pickNonEmptyString(files[0].action)
+  }
+
+  const filePath = pickNonEmptyString(
+    merged.filePath,
+    merged.filepath,
+    merged.path,
+    merged.name,
+    merged.filename,
+    merged.fileName,
+    merged.file,
+    merged.targetPath,
+    merged.target,
+  )
+  const dirPath = pickNonEmptyString(
+    merged.dirPath,
+    merged.directory,
+    merged.directoryPath,
+    merged.dir,
+    merged.folder,
+  )
+
+  if (!action) {
+    action = inferFileAction(merged, files, filePath, dirPath)
+  }
+
+  return {
+    action,
+    files,
+    encoding: pickNonEmptyString(merged.encoding),
+    filePath,
+    content: pickStringValue(merged.content, merged.text, merged.contents, merged.value, merged.body),
+    dirPath,
+    sourcePath: pickNonEmptyString(merged.sourcePath, merged.source, merged.from, merged.src),
+    destinationPath: pickNonEmptyString(merged.destinationPath, merged.destination, merged.to, merged.dest),
+    overwrite: !!merged.overwrite,
+    recursive: !!merged.recursive,
+    force: !!merged.force,
+  }
+}
 
 function resolveFileToolPath(cwd: string, target: string): string {
   try {
@@ -21,23 +134,16 @@ function resolveFileToolPath(cwd: string, target: string): string {
 /**
  * Unified File Execution Logic
  */
-async function executeFileAction(args: Record<string, unknown>, bctx: { cwd: string }) {
-  const normalized = normalizeToolInputArgs(args)
-  // Normalize filePath/content for single-file mode
+export async function executeFileAction(args: Record<string, unknown>, bctx: { cwd: string }) {
+  const normalized = normalizeFileArgs(args)
   const files = normalized.files as Array<Record<string, unknown>> | undefined
-  let action = normalized.action as string | undefined
+  const action = normalized.action as string | undefined
   const encoding = normalized.encoding as string | undefined
-
-  // Resiliency: check if action is buried in the files array
-  if (!action && Array.isArray(files) && files.length > 0) {
-    action = files[0].action as string
-  }
-
-  const filePath = (normalized.filePath || normalized.path) as string | undefined
+  const filePath = normalized.filePath as string | undefined
   const content = normalized.content as string | undefined
-  const dirPath = (normalized.dirPath || normalized.directory || normalized.path) as string | undefined
-  const sourcePath = (normalized.sourcePath || normalized.source || normalized.from) as string | undefined
-  const destinationPath = (normalized.destinationPath || normalized.destination || normalized.to) as string | undefined
+  const dirPath = normalized.dirPath as string | undefined
+  const sourcePath = normalized.sourcePath as string | undefined
+  const destinationPath = normalized.destinationPath as string | undefined
   const overwrite = !!normalized.overwrite
   const recursive = !!normalized.recursive
   const force = !!normalized.force
@@ -45,7 +151,7 @@ async function executeFileAction(args: Record<string, unknown>, bctx: { cwd: str
   try {
     switch (action) {
       case 'read': {
-        const target = filePath || (files?.[0]?.path as string | undefined)
+        const target = filePath || getFileEntryPath(files?.[0])
         if (!target) return 'Error: no filePath or path provided.'
         const resolved = resolveFileToolPath(bctx.cwd, target)
         return truncate(fs.readFileSync(resolved, 'utf-8'), MAX_FILE)
@@ -57,9 +163,15 @@ async function executeFileAction(args: Record<string, unknown>, bctx: { cwd: str
         const results: string[] = []
 
         for (const file of filesToWrite) {
-          const targetPath = (file.path || file.filePath) as string | undefined
+          const targetPath = getFileEntryPath(file)
           if (!targetPath) continue
-          const fileContent = (file.content ?? '') as string
+          const fileContent = getFileEntryContent(file) ?? ''
+          if (/[\\/]$/.test(targetPath)) {
+            const resolvedDir = resolveFileToolPath(bctx.cwd, targetPath)
+            fs.mkdirSync(resolvedDir, { recursive: true })
+            results.push(`Created directory ${targetPath}`)
+            continue
+          }
 
           const resolved = resolveFileToolPath(bctx.cwd, targetPath)
           fs.mkdirSync(path.dirname(resolved), { recursive: true })
@@ -106,7 +218,7 @@ async function executeFileAction(args: Record<string, unknown>, bctx: { cwd: str
       }
 
       case 'delete': {
-        const target = filePath || (files?.[0]?.path as string | undefined)
+        const target = filePath || getFileEntryPath(files?.[0])
         if (!target) return 'Error: no filePath or path provided.'
         const resolved = resolveFileToolPath(bctx.cwd, target)
         if (resolved === path.resolve(bctx.cwd) || resolved === path.resolve(process.cwd())) return 'Error: cannot delete root'
@@ -126,7 +238,17 @@ function collectSendFilePaths(payload: unknown, into: string[]): void {
   if (!payload) return
   if (typeof payload === 'string') {
     const trimmed = payload.trim()
-    if (trimmed) into.push(trimmed)
+    if (trimmed) {
+      const extracted = new Set<string>()
+      const uploadMatches = trimmed.match(/(?:sandbox:)?\/api\/uploads\/[^\s)\]]+/g) || []
+      for (const match of uploadMatches) extracted.add(match)
+      const markdownMatches = [...trimmed.matchAll(/\]\(((?:sandbox:)?\/api\/uploads\/[^\s)]+|(?:\.{1,2}\/|\/)?[^\s)]+\.(?:png|jpg|jpeg|gif|webp|pdf|md|txt|html|json|csv|yml|yaml))\)/gi)]
+      for (const match of markdownMatches) {
+        if (typeof match[1] === 'string' && match[1].trim()) extracted.add(match[1].trim())
+      }
+      if (extracted.size === 0) extracted.add(trimmed)
+      for (const candidate of extracted) into.push(candidate)
+    }
     return
   }
   if (Array.isArray(payload)) {
@@ -135,15 +257,29 @@ function collectSendFilePaths(payload: unknown, into: string[]): void {
   }
   if (typeof payload !== 'object') return
   const record = payload as Record<string, unknown>
+  if (record.filePaths !== undefined) collectSendFilePaths(record.filePaths, into)
   if (typeof record.filePath === 'string') into.push(record.filePath)
+  if (typeof record.filepath === 'string') into.push(record.filepath)
+  if (typeof record.fileId === 'string') into.push(record.fileId)
+  if (typeof record.id === 'string') into.push(record.id)
   if (typeof record.path === 'string') into.push(record.path)
+  if (typeof record.filename === 'string') into.push(record.filename)
+  if (typeof record.fileName === 'string') into.push(record.fileName)
+  if (typeof record.name === 'string') into.push(record.name)
+  if (typeof record.targetPath === 'string') into.push(record.targetPath)
+  if (typeof record.target === 'string') into.push(record.target)
   if (record.files !== undefined) collectSendFilePaths(record.files, into)
 }
 
 export function normalizeSendFilePaths(args: Record<string, unknown>): string[] {
   const candidates: string[] = []
+  collectSendFilePaths(args.filePaths, candidates)
   collectSendFilePaths(args.filePath, candidates)
+  collectSendFilePaths(args.filepath, candidates)
   collectSendFilePaths(args.path, candidates)
+  collectSendFilePaths(args.filename, candidates)
+  collectSendFilePaths(args.fileName, candidates)
+  collectSendFilePaths(args.name, candidates)
   collectSendFilePaths(args.file, candidates)
   collectSendFilePaths(args.files, candidates)
 
@@ -167,17 +303,94 @@ export function normalizeSendFilePaths(args: Record<string, unknown>): string[] 
   return [...deduped]
 }
 
+function collectRecentFiles(
+  root: string,
+  currentDir: string,
+  maxAgeMs: number,
+  into: string[],
+  depth: number,
+): void {
+  if (depth > 3) return
+  let entries: fs.Dirent[] = []
+  try {
+    entries = fs.readdirSync(currentDir, { withFileTypes: true })
+  } catch {
+    return
+  }
+
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue
+    if (entry.isDirectory()) {
+      if (entry.name === 'node_modules' || entry.name === '.next') continue
+      collectRecentFiles(root, path.join(currentDir, entry.name), maxAgeMs, into, depth + 1)
+      continue
+    }
+    if (!entry.isFile()) continue
+    const absolute = path.join(currentDir, entry.name)
+    let stat: fs.Stats | null = null
+    try {
+      stat = fs.statSync(absolute)
+    } catch {
+      stat = null
+    }
+    if (!stat) continue
+    if (Date.now() - stat.mtimeMs > maxAgeMs) continue
+    into.push(path.relative(root, absolute))
+  }
+}
+
+export function findRecentSendFileFallbackPaths(cwd: string, maxAgeMs = 10 * 60 * 1000): string[] {
+  const resolvedRoot = path.resolve(cwd)
+  const candidates: string[] = []
+  collectRecentFiles(resolvedRoot, resolvedRoot, maxAgeMs, candidates, 0)
+  return [...new Set(candidates)]
+}
+
+export function resolveSendFileSourcePath(cwd: string, rawPath: string): string {
+  const trimmed = rawPath.trim()
+  const uploadMatch = trimmed.match(/^(?:sandbox:)?\/api\/uploads\/(.+)$/)
+  if (uploadMatch) {
+    return path.join(UPLOAD_DIR, path.basename(uploadMatch[1]))
+  }
+  const browserProfileIdx = trimmed.lastIndexOf('.swarmclaw/browser-profiles/')
+  if (browserProfileIdx !== -1) {
+    const relative = trimmed.slice(browserProfileIdx)
+    return path.join(os.homedir(), relative)
+  }
+  if (trimmed.startsWith('browser-profiles/')) {
+    const candidate = path.join(os.homedir(), '.swarmclaw', trimmed)
+    if (fs.existsSync(candidate)) return candidate
+  }
+  if (trimmed === '/workspace' || trimmed === 'workspace') return cwd
+  if (trimmed.startsWith('/workspace/') || trimmed.startsWith('workspace/')) {
+    const relative = trimmed.replace(/^\/?workspace\/?/, '')
+    const sessionScoped = path.resolve(cwd, relative)
+    if (fs.existsSync(sessionScoped)) return sessionScoped
+    return path.resolve(WORKSPACE_DIR, relative)
+  }
+  try {
+    return safePath(cwd, trimmed)
+  } catch (err: unknown) {
+    if (path.isAbsolute(trimmed)) return trimmed
+    throw err
+  }
+}
+
 async function executeSendFile(args: Record<string, unknown>, bctx: { cwd: string }) {
   try {
-    const paths = normalizeSendFilePaths(args)
+    const explicitPaths = normalizeSendFilePaths(args)
+    const paths = explicitPaths.length > 0 ? explicitPaths : findRecentSendFileFallbackPaths(bctx.cwd)
     if (paths.length === 0) {
+      return 'Error: filePath/path is required (or provide files[] / input.files[]).'
+    }
+    if (explicitPaths.length === 0 && paths.length !== 1) {
       return 'Error: filePath/path is required (or provide files[] / input.files[]).'
     }
 
     const links: string[] = []
     const errors: string[] = []
     for (const rawPath of paths) {
-      const resolved = path.isAbsolute(rawPath) ? rawPath : path.resolve(bctx.cwd, rawPath)
+      const resolved = resolveSendFileSourcePath(bctx.cwd, rawPath)
       if (!fs.existsSync(resolved)) {
         errors.push(`file not found: ${rawPath}`)
         continue
@@ -204,12 +417,12 @@ const FilePlugin: Plugin = {
   name: 'Core Files',
   description: 'Complete file management: read, write, list, move, copy, delete, and send.',
   hooks: {
-    getCapabilityDescription: () => 'I can read, write, copy, move, and send files (`read_file`, `write_file`, `list_files`, `copy_file`, `move_file`, `send_file`). Deleting files is destructive, so that may need explicit permission.',
+    getCapabilityDescription: () => 'I can read, write, copy, move, and send files (`read_file`, `write_file`, `list_files`, `copy_file`, `move_file`, `send_file`). When writing, I should always provide a target path (`filePath`, `path`, `filename`, or `name`) and the content (`content`, `text`, or `body`). When `send_file` returns a download link, I should copy that link exactly instead of rewriting it. Deleting files is destructive, so that may need explicit permission.',
   } as PluginHooks,
   tools: [
     {
       name: 'files',
-      description: 'Unified file management tool. Actions: read, write, list, copy, move, delete. Supports bulk writes via "files" array.',
+      description: 'Unified file management tool. Actions: read, write, list, copy, move, delete. For writes, include a target path (`filePath`, `path`, `filename`, or `name`) plus content (`content`, `text`, or `body`). Supports bulk writes via "files" array.',
       parameters: {
         type: 'object',
         properties: {
@@ -238,7 +451,7 @@ const FilePlugin: Plugin = {
     },
     {
       name: 'send_file',
-      description: 'Send a file to the user in chat.',
+      description: 'Send a file to the user in chat. Use the returned /api/uploads/... links exactly as provided.',
       parameters: {
         type: 'object',
         properties: {

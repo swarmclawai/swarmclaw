@@ -156,7 +156,12 @@ const COLLECTIONS = [
   'souls',
   'benchmarks',
   'approvals',
+  'browser_sessions',
+  'watch_jobs',
+  'delegation_jobs',
 ] as const
+
+export type StorageCollection = (typeof COLLECTIONS)[number]
 
 for (const table of COLLECTIONS) {
   db.exec(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, data TEXT NOT NULL)`)
@@ -185,12 +190,34 @@ function getCollectionRawCache(table: string): LRUMap<string, string> {
   return loaded
 }
 
+function normalizeStoredRecord(table: string, value: any): any {
+  if (table !== 'sessions') return value
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+
+  const session = value as Record<string, any>
+  if (session.sessionType !== 'human') session.sessionType = 'human'
+  const isLegacyShortcut = (
+    (typeof session.id === 'string' && session.id.startsWith('agent-thread-'))
+    || (typeof session.name === 'string' && session.name.startsWith('agent-thread:'))
+  )
+  if (
+    isLegacyShortcut
+    && typeof session.agentId === 'string'
+    && session.agentId.trim()
+    && (!session.shortcutForAgentId || session.shortcutForAgentId !== session.agentId)
+  ) {
+    session.shortcutForAgentId = session.agentId
+  }
+  if ('mainLoopState' in session) delete session.mainLoopState
+  return session
+}
+
 function loadCollection(table: string): Record<string, any> {
   const raw = getCollectionRawCache(table)
   const result: Record<string, any> = {}
   for (const [id, data] of raw.entries()) {
     try {
-      result[id] = JSON.parse(data)
+      result[id] = normalizeStoredRecord(table, JSON.parse(data))
     } catch {
       // Ignore malformed records instead of crashing list endpoints.
     }
@@ -205,7 +232,8 @@ function saveCollection(table: string, data: Record<string, any>) {
   const toDelete: string[] = []
 
   for (const [id, val] of Object.entries(data)) {
-    const serialized = JSON.stringify(val)
+    const normalized = normalizeStoredRecord(table, val)
+    const serialized = JSON.stringify(normalized)
     if (typeof serialized !== 'string') continue
     next.set(id, serialized)
     if (current.get(id) !== serialized) {
@@ -251,13 +279,58 @@ function deleteCollectionItem(table: string, id: string) {
  * concurrent processes are modifying different items.
  */
 function upsertCollectionItem(table: string, id: string, value: any) {
-  const serialized = JSON.stringify(value)
+  const serialized = JSON.stringify(normalizeStoredRecord(table, value))
   db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`).run(id, serialized)
   // Update the in-memory cache
   const cached = collectionCache.get(table)
   if (cached) {
     cached.set(id, serialized)
   }
+}
+
+function loadCollectionItem(table: string, id: string): any | null {
+  const row = db.prepare(`SELECT data FROM ${table} WHERE id = ?`).get(id) as { data: string } | undefined
+  if (!row) return null
+  try {
+    return normalizeStoredRecord(table, JSON.parse(row.data))
+  } catch {
+    return null
+  }
+}
+
+function upsertCollectionItems(table: string, entries: Array<[string, any]>): void {
+  if (!entries.length) return
+  const prepared = entries
+    .map(([id, value]) => [id, JSON.stringify(normalizeStoredRecord(table, value))] as const)
+    .filter(([, serialized]) => typeof serialized === 'string')
+  if (!prepared.length) return
+
+  const transaction = db.transaction(() => {
+    const upsert = db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`)
+    for (const [id, serialized] of prepared) {
+      upsert.run(id, serialized)
+    }
+  })
+  transaction()
+
+  const cached = collectionCache.get(table)
+  if (cached) {
+    for (const [id, serialized] of prepared) {
+      cached.set(id, serialized)
+    }
+  }
+}
+
+export function loadStoredItem(table: StorageCollection, id: string): any | null {
+  return loadCollectionItem(table, id)
+}
+
+export function upsertStoredItem(table: StorageCollection, id: string, value: any): void {
+  upsertCollectionItem(table, id, value)
+}
+
+export function upsertStoredItems(table: StorageCollection, entries: Array<[string, any]>): void {
+  upsertCollectionItems(table, entries)
 }
 
 function loadSingleton(table: string, fallback: any): any {
@@ -392,7 +465,7 @@ if (!IS_BUILD_BOOTSTRAP) {
 
 ## Platform
 
-- **Agents** — Create specialized AI agents (Agents tab → "+") with a provider, model, system prompt, and tools. "Generate with AI" scaffolds agents from a description. Toggle "Orchestrator" to let an agent delegate work to others.
+- **Agents** — Create specialized AI agents (Agents tab → "+") with a provider, model, system prompt, and tools. "Generate with AI" scaffolds agents from a description. Enable cross-agent delegation when an agent should assign work to others.
 - **Providers** — Configure LLM backends in Settings → Providers: Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, OpenClaw, or custom OpenAI-compatible endpoints.
 - **Tasks** — The Task Board tracks work items. Assign agents and they'll execute autonomously.
 - **Schedules** — Cron-based recurring jobs that run agents or tasks automatically.
@@ -419,7 +492,7 @@ Use your platform management tools proactively:
 You have opinions about good agent design. You suggest creative approaches, warn about common pitfalls, and get excited when someone gets something cool working. You're not a manual — you're a collaborator.
 
 Be concise but not curt. Warmth doesn't require verbosity. When someone asks "how do I...?", give them the direct steps. Offer to do things rather than just explaining — if someone wants an agent created, create it. Use your tools when actions speak louder than words. If you don't know something, say so honestly.`,
-      isOrchestrator: false,
+      isOrchestrator: true,
       plugins: defaultStarterTools,
       heartbeatEnabled: true,
       platformAssignScope: 'all',
@@ -440,6 +513,15 @@ Be concise but not curt. Warmth doesn't require verbosity. When someone asks "ho
           existing.plugins = mergedPlugins
           delete existing.tools
           existing.updatedAt = Date.now()
+        }
+        if (existing.platformAssignScope === 'all' || existing.platformAssignScope === 'self') {
+          const derivedIsOrchestrator = existing.platformAssignScope === 'all'
+          if (existing.isOrchestrator !== derivedIsOrchestrator) {
+            existing.isOrchestrator = derivedIsOrchestrator
+            existing.updatedAt = Date.now()
+          }
+        }
+        if (JSON.stringify(JSON.parse(row.data)) !== JSON.stringify(existing)) {
           db.prepare('UPDATE agents SET data = ? WHERE id = ?').run(JSON.stringify(existing), 'default')
         }
       } catch {
@@ -685,12 +767,106 @@ export function saveQueue(q: string[]) {
 }
 
 // --- Settings ---
+const APP_SETTINGS_SECRET_FIELDS = [
+  'elevenLabsApiKey',
+  'tavilyApiKey',
+  'braveApiKey',
+] as const
+
+const ENCRYPTED_APP_SETTINGS_KEY = '__encryptedAppSettings'
+
+type PersistedSettingsRecord = Record<string, any> & {
+  [ENCRYPTED_APP_SETTINGS_KEY]?: Record<string, string>
+}
+
+function cloneRecord<T extends Record<string, any>>(value: T): T {
+  return JSON.parse(JSON.stringify(value || {})) as T
+}
+
+function isPlainRecord(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function getEncryptedAppSettings(settings: PersistedSettingsRecord): Record<string, string> {
+  return isPlainRecord(settings[ENCRYPTED_APP_SETTINGS_KEY])
+    ? { ...(settings[ENCRYPTED_APP_SETTINGS_KEY] as Record<string, string>) }
+    : {}
+}
+
+function isClearedSecretValue(value: unknown): boolean {
+  return value === null || (typeof value === 'string' && value.trim() === '')
+}
+
+function isProvidedSecretValue(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function buildPersistedSettings(input: Record<string, any>, existing?: PersistedSettingsRecord): PersistedSettingsRecord {
+  const next = cloneRecord(input) as PersistedSettingsRecord
+  const encrypted = {
+    ...(existing ? getEncryptedAppSettings(existing) : {}),
+    ...getEncryptedAppSettings(next),
+  }
+
+  delete next[ENCRYPTED_APP_SETTINGS_KEY]
+
+  for (const field of APP_SETTINGS_SECRET_FIELDS) {
+    const raw = next[field]
+    if (isClearedSecretValue(raw)) {
+      delete encrypted[field]
+      delete next[field]
+      continue
+    }
+    if (isProvidedSecretValue(raw)) {
+      encrypted[field] = encryptKey(raw)
+      delete next[field]
+    }
+  }
+
+  if (Object.keys(encrypted).length > 0) next[ENCRYPTED_APP_SETTINGS_KEY] = encrypted
+  return next
+}
+
+function resolveSettingsSecrets(settings: PersistedSettingsRecord): Record<string, any> {
+  const resolved = cloneRecord(settings)
+  delete resolved[ENCRYPTED_APP_SETTINGS_KEY]
+
+  const encrypted = getEncryptedAppSettings(settings)
+  for (const field of APP_SETTINGS_SECRET_FIELDS) {
+    if (isProvidedSecretValue(resolved[field])) continue
+    const value = encrypted[field]
+    if (typeof value !== 'string' || !value) continue
+    try {
+      resolved[field] = decryptKey(value)
+    } catch {
+      // Ignore malformed encrypted settings instead of breaking all settings reads.
+    }
+  }
+
+  return resolved
+}
+
 export function loadSettings(): Record<string, any> {
-  return loadSingleton('settings', {})
+  const persisted = loadSingleton('settings', {}) as PersistedSettingsRecord
+  const normalized = buildPersistedSettings(persisted, persisted)
+  if (JSON.stringify(persisted) !== JSON.stringify(normalized)) {
+    saveSingleton('settings', normalized)
+  }
+  return resolveSettingsSecrets(normalized)
 }
 
 export function saveSettings(s: Record<string, any>) {
-  saveSingleton('settings', s)
+  const existing = loadSingleton('settings', {}) as PersistedSettingsRecord
+  saveSingleton('settings', buildPersistedSettings(s, existing))
+}
+
+export function loadPublicSettings(): Record<string, any> {
+  const settings = cloneRecord(loadSettings())
+  for (const field of APP_SETTINGS_SECRET_FIELDS) {
+    settings[`${field}Configured`] = isProvidedSecretValue(settings[field])
+    settings[field] = null
+  }
+  return settings
 }
 
 // --- Secrets (service keys for orchestrators) ---
@@ -1024,6 +1200,49 @@ export function upsertConnectorHealthEvent(id: string, event: unknown) {
 // --- Approvals ---
 export function loadApprovals(): Record<string, unknown> {
   return loadCollection('approvals')
+}
+
+// --- Browser Sessions ---
+export function loadBrowserSessions(): Record<string, unknown> {
+  return loadCollection('browser_sessions')
+}
+
+export function upsertBrowserSession(id: string, data: unknown) {
+  upsertCollectionItem('browser_sessions', id, data)
+}
+
+export function deleteBrowserSession(id: string) {
+  deleteCollectionItem('browser_sessions', id)
+}
+
+// --- Watch Jobs ---
+export function loadWatchJobs(): Record<string, unknown> {
+  return loadCollection('watch_jobs')
+}
+
+export function upsertWatchJob(id: string, data: unknown) {
+  upsertCollectionItem('watch_jobs', id, data)
+}
+
+export function upsertWatchJobs(entries: Array<[string, unknown]>) {
+  upsertCollectionItems('watch_jobs', entries)
+}
+
+export function deleteWatchJob(id: string) {
+  deleteCollectionItem('watch_jobs', id)
+}
+
+// --- Delegation Jobs ---
+export function loadDelegationJobs(): Record<string, unknown> {
+  return loadCollection('delegation_jobs')
+}
+
+export function upsertDelegationJob(id: string, data: unknown) {
+  upsertCollectionItem('delegation_jobs', id, data)
+}
+
+export function deleteDelegationJob(id: string) {
+  deleteCollectionItem('delegation_jobs', id)
 }
 
 export function upsertApproval(id: string, approval: unknown) {

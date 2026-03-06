@@ -3,7 +3,6 @@ import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { loadSettings } from '../storage'
 import type { ToolBuildContext } from './context'
 
 interface ReplicateConfig {
@@ -14,8 +13,7 @@ interface ReplicateConfig {
 }
 
 function getConfig(): ReplicateConfig {
-  const settings = loadSettings()
-  const ps = (settings.pluginSettings as Record<string, Record<string, unknown>> | undefined)?.replicate ?? {}
+  const ps = getPluginManager().getPluginSettings('replicate')
   return {
     apiToken: (ps.apiToken as string) || '',
     defaultModel: (ps.defaultModel as string) || '',

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import {
   LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -158,6 +158,14 @@ export function MetricsDashboard() {
   useWs('tasks', loadTaskMetrics, 15_000)
 
   const completionRate = computeCompletionRate(tasks)
+  const pendingApprovals = useMemo(
+    () => Object.values(tasks).filter((task) => !!task.pendingApproval).length,
+    [tasks],
+  )
+  const failedTasks = useMemo(
+    () => Object.values(tasks).filter((task) => task.status === 'failed').length,
+    [tasks],
+  )
 
   const timeSeriesFormatted = (data?.timeSeries ?? []).map((pt) => ({
     ...pt,
@@ -202,6 +210,57 @@ export function MetricsDashboard() {
     labelStyle: { color: 'var(--color-text-2)' },
   }
 
+  const insightCards = useMemo(() => {
+    const series = data?.timeSeries ?? []
+    const latest = series[series.length - 1]
+    const previous = series.slice(0, -1)
+    const baselineCost = previous.length > 0
+      ? previous.reduce((sum, point) => sum + point.cost, 0) / previous.length
+      : 0
+    const costDeltaPct = latest && baselineCost > 0
+      ? Math.round(((latest.cost - baselineCost) / baselineCost) * 100)
+      : null
+
+    const providerHealthEntries = Object.entries(data?.providerHealth ?? {})
+      .filter(([, health]) => health.totalRequests > 0)
+      .sort(([, a], [, b]) => b.errorRate - a.errorRate)
+    const riskiestProvider = providerHealthEntries[0]
+
+    const topCostAgent = Object.values(data?.byAgent ?? {})
+      .sort((a, b) => b.cost - a.cost)[0]
+
+    return [
+      {
+        label: 'Cost Pulse',
+        value: latest
+          ? `${formatCost(latest.cost)}${costDeltaPct !== null ? ` · ${costDeltaPct >= 0 ? '+' : ''}${costDeltaPct}%` : ''}`
+          : 'No recent spend',
+        hint: latest ? `Latest bucket vs ${previous.length > 0 ? 'range average' : 'current range'}` : 'Waiting for usage data',
+        tone: costDeltaPct !== null && costDeltaPct > 40 ? 'text-red-400' : 'text-text',
+      },
+      {
+        label: 'Provider Risk',
+        value: riskiestProvider
+          ? `${riskiestProvider[0]} · ${(riskiestProvider[1].errorRate * 100).toFixed(1)}%`
+          : 'No provider issues',
+        hint: riskiestProvider ? `${riskiestProvider[1].totalRequests} requests in range` : 'No provider health records yet',
+        tone: riskiestProvider && riskiestProvider[1].errorRate > 0.1 ? 'text-red-400' : 'text-emerald-400',
+      },
+      {
+        label: 'Top Spend Agent',
+        value: topCostAgent ? `${topCostAgent.name} · ${formatCost(topCostAgent.cost)}` : 'No agent activity',
+        hint: topCostAgent ? `${formatTokens(topCostAgent.tokens)} tokens` : 'No per-agent usage in range',
+        tone: 'text-sky-400',
+      },
+      {
+        label: 'Workflow Friction',
+        value: `${pendingApprovals} approvals · ${failedTasks} failed`,
+        hint: pendingApprovals + failedTasks > 0 ? 'Operational overhead from live work' : 'No obvious workflow friction',
+        tone: pendingApprovals + failedTasks > 0 ? 'text-amber-400' : 'text-emerald-400',
+      },
+    ]
+  }, [data, failedTasks, pendingApprovals])
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-y-auto">
       <div className="px-8 pt-6 pb-4 shrink-0" style={{ animation: 'fade-up 0.5s var(--ease-spring)' }}>
@@ -244,6 +303,20 @@ export function MetricsDashboard() {
             <StatCard label="Total Cost" value={formatCost(data?.totalCost ?? 0)} index={1} />
             <StatCard label="Requests" value={String(data?.records.length ?? 0)} index={2} />
             <StatCard label="Completion Rate" value={`${completionRate}%`} index={3} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+            {insightCards.map((card, index) => (
+              <div
+                key={card.label}
+                className="bg-surface-2 rounded-[12px] p-4 border border-white/[0.04] hover:bg-surface transition-all"
+                style={{ animation: 'spring-in 0.6s var(--ease-spring) both', animationDelay: `${0.12 + index * 0.04}s` }}
+              >
+                <p className="text-[11px] font-700 uppercase tracking-[0.08em] text-text-3/60 mb-2">{card.label}</p>
+                <p className={`text-[15px] font-700 leading-tight ${card.tone}`}>{card.value}</p>
+                <p className="text-[11px] text-text-3/55 mt-2 leading-relaxed">{card.hint}</p>
+              </div>
+            ))}
           </div>
 
           {/* Token usage over time */}

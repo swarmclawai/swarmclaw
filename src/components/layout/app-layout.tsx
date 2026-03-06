@@ -9,6 +9,7 @@ import { Avatar } from '@/components/shared/avatar'
 import { SettingsPage } from '@/components/shared/settings/settings-page'
 import { AgentList } from '@/components/agents/agent-list'
 import { AgentChatList } from '@/components/agents/agent-chat-list'
+import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { AgentSheet } from '@/components/agents/agent-sheet'
 import { ScheduleList } from '@/components/schedules/schedule-list'
 import { ScheduleSheet } from '@/components/schedules/schedule-sheet'
@@ -70,6 +71,46 @@ import type { AppView } from '@/types'
 const RAIL_EXPANDED_KEY = 'sc_rail_expanded'
 const STAR_NOTIFICATION_KEY = 'sc_star_notification_v1'
 const GITHUB_REPO_URL = 'https://github.com/swarmclawai/swarmclaw'
+
+const VIEW_LABELS: Record<AppView, string> = {
+  home: 'Home',
+  agents: 'Agents',
+  chatrooms: 'Chatrooms',
+  schedules: 'Schedules',
+  memory: 'Memory',
+  tasks: 'Tasks',
+  approvals: 'Approvals',
+  secrets: 'Secrets',
+  providers: 'Providers',
+  skills: 'Skills',
+  connectors: 'Connectors',
+  webhooks: 'Webhooks',
+  mcp_servers: 'MCP Servers',
+  knowledge: 'Knowledge',
+  logs: 'Logs',
+  plugins: 'Plugins',
+  usage: 'Usage',
+  wallets: 'Wallets',
+  runs: 'Runs',
+  settings: 'Settings',
+  projects: 'Projects',
+  activity: 'Activity',
+}
+
+const CREATE_LABELS: Partial<Record<AppView, string>> = {
+  agents: 'Agent',
+  schedules: 'Schedule',
+  tasks: 'Task',
+  secrets: 'Secret',
+  providers: 'Provider',
+  skills: 'Skill',
+  connectors: 'Connector',
+  webhooks: 'Webhook',
+  mcp_servers: 'MCP Server',
+  knowledge: 'Knowledge Entry',
+  plugins: 'Plugin',
+  projects: 'Project',
+}
 
 export function AppLayout() {
   const currentUser = useAppStore((s) => s.currentUser)
@@ -133,13 +174,15 @@ export function AppLayout() {
 
   const handleShortcutKey = useCallback((e: KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey
-    // Cmd+N / Ctrl+N — new chat
+    // Cmd+N / Ctrl+N — jump to the default agent shortcut
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'n') {
       e.preventDefault()
       const state = useAppStore.getState()
-      const allAgents = Object.values(state.agents).filter((a) => !a.trashedAt)
-      const target = allAgents.find((a) => a.id === 'default') || allAgents[0]
-      if (target) void state.setCurrentAgent(target.id)
+      const defaultAgentId = state.appSettings.defaultAgentId && state.agents[state.appSettings.defaultAgentId]
+        ? state.appSettings.defaultAgentId
+        : Object.values(state.agents)[0]?.id || null
+      if (defaultAgentId) void state.setCurrentAgent(defaultAgentId)
+      else state.setActiveView('agents')
       return
     }
     // Cmd+Shift+T / Ctrl+Shift+T — jump to tasks
@@ -191,6 +234,17 @@ export function AppLayout() {
 
   useWs('plugins', refreshPluginState)
 
+  const isViewEnabled = useCallback((view: AppView) => {
+    if (view === 'chatrooms') return plugins['chatroom']?.enabled !== false
+    if (view === 'schedules') return plugins['schedule']?.enabled !== false
+    if (view === 'memory') return plugins['memory']?.enabled !== false
+    if (view === 'connectors') return plugins['connectors']?.enabled !== false
+    if (view === 'webhooks') return plugins['http']?.enabled !== false
+    if (view === 'wallets') return plugins['wallet']?.enabled !== false
+    if (view === 'logs') return plugins['monitor']?.enabled !== false
+    return true
+  }, [plugins])
+
   const [railExpanded, setRailExpanded] = useState(() => {
     const stored = safeStorageGet(RAIL_EXPANDED_KEY)
     return stored === null ? true : stored === 'true'
@@ -237,10 +291,11 @@ export function AppLayout() {
   const agents = useAppStore((s) => s.agents)
   const currentAgentId = useAppStore((s) => s.currentAgentId)
   const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
-  const defaultAgentId = appSettings.defaultAgentId && agents[appSettings.defaultAgentId]
-    ? appSettings.defaultAgentId
-    : Object.values(agents)[0]?.id || null
-  const isMainChat = activeView === 'agents' && currentAgentId === defaultAgentId
+  const defaultAgent = appSettings.defaultAgentId && agents[appSettings.defaultAgentId]
+    ? agents[appSettings.defaultAgentId]
+    : Object.values(agents)[0] || null
+  const defaultAgentId = defaultAgent?.id || null
+  const isDefaultChat = activeView === 'agents' && currentAgentId === defaultAgentId
 
   const swipeHandlers = useSwipe({
     onSwipe: (dir) => {
@@ -255,9 +310,11 @@ export function AppLayout() {
   const hasCanvas = !!(currentSession?.canvasContent && canvasDismissedFor !== currentSessionId)
   const canvasAgentName = currentSession?.agentId && agents[currentSession.agentId] ? agents[currentSession.agentId].name : undefined
 
-  const goToMainChat = async () => {
+  const goToDefaultChat = async () => {
     if (defaultAgentId) {
       await setCurrentAgent(defaultAgentId)
+    } else {
+      setActiveView('agents')
     }
     setActiveView('agents')
     setSidebarOpen(false)
@@ -317,32 +374,60 @@ export function AppLayout() {
             </div>
           )}
 
-          {/* Main Chat shortcut */}
+          {/* Default agent shortcut */}
           {railExpanded ? (
-            <div className="px-3 mb-2">
+            <div className="px-3 mb-2.5">
               <button
-                onClick={goToMainChat}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all
-                  ${isMainChat
+                onClick={goToDefaultChat}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[12px] text-[13px] font-600 cursor-pointer transition-all text-left
+                  ${isDefaultChat
                     ? 'bg-accent-bright/15 border border-[#6366F1]/25 text-accent-bright'
                     : 'bg-accent-bright/10 border border-[#6366F1]/20 text-accent-bright hover:bg-accent-bright/15'}`}
                 style={{ fontFamily: 'inherit' }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-                Main Chat
+                {defaultAgent ? (
+                  <AgentAvatar
+                    seed={defaultAgent.avatarSeed || null}
+                    avatarUrl={defaultAgent.avatarUrl}
+                    name={defaultAgent.name}
+                    size={28}
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-accent-bright/15 flex items-center justify-center shrink-0">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="truncate">{defaultAgent?.name || 'Choose Agent'}</div>
+                  <div className="text-[10px] font-500 text-accent-bright/75 mt-0.5">
+                    {defaultAgent ? 'Default shortcut' : 'Pick an agent to open its thread'}
+                  </div>
+                </div>
               </button>
             </div>
           ) : (
-            <RailTooltip label="Main Chat" description="Your persistent assistant chat">
+            <RailTooltip
+              label={defaultAgent?.name || 'Choose Agent'}
+              description={defaultAgent ? 'Open your default agent shortcut chat' : 'Choose an agent thread'}
+            >
               <button
-                onClick={goToMainChat}
-                className={`rail-btn self-center mb-2 ${isMainChat ? 'active' : ''}`}
+                onClick={goToDefaultChat}
+                className={`rail-btn self-center mb-2 ${isDefaultChat ? 'active' : ''}`}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
+                {defaultAgent ? (
+                  <AgentAvatar
+                    seed={defaultAgent.avatarSeed || null}
+                    avatarUrl={defaultAgent.avatarUrl}
+                    name={defaultAgent.name}
+                    size={20}
+                  />
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                )}
               </button>
             </RailTooltip>
           )}
@@ -380,128 +465,159 @@ export function AppLayout() {
 
           <div className="flex-1 min-h-0 flex flex-col overflow-y-auto overscroll-contain touch-pan-y">
             {/* Nav items */}
-            <div className={`flex flex-col gap-0.5 ${railExpanded ? 'px-3' : 'items-center'}`}>
-            <NavItem view="home" label="Home" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('home')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
-              </svg>
-            </NavItem>
-            <NavItem view="agents" label="Agents" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('agents')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-              </svg>
-            </NavItem>
-            {plugins['chatroom']?.enabled !== false && (
-            <NavItem view="chatrooms" label="Chatrooms" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('chatrooms')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                <path d="M8 10h8" /><path d="M8 14h4" />
-              </svg>
-            </NavItem>
-            )}
-            <NavItem view="projects" label="Projects" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('projects')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7-7H4a2 2 0 0 0-2 2v17Z" /><path d="M14 2v7h7" />
-              </svg>
-            </NavItem>
-            {plugins['schedule']?.enabled !== false && (
-            <NavItem view="schedules" label="Schedules" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('schedules')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-              </svg>
-            </NavItem>
-            )}
-            {plugins['memory']?.enabled !== false && (
-            <NavItem view="memory" label="Memory" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('memory')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-              </svg>
-            </NavItem>
-            )}
-            <NavItem view="tasks" label="Tasks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('tasks')} badge={pendingApprovalCount}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 14l2 2 4-4" />
-              </svg>
-            </NavItem>
-            <NavItem view="approvals" label="Approvals" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('approvals')} badge={pendingApprovalCount}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-                <path d="m9 12 2 2 4-4"/>
-              </svg>
-            </NavItem>
-            <NavItem view="secrets" label="Secrets" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('secrets')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-            </NavItem>
-            <NavItem view="providers" label="Providers" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('providers')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
-              </svg>
-            </NavItem>
-            <NavItem view="skills" label="Skills" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('skills')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-              </svg>
-            </NavItem>
-            {plugins['connectors']?.enabled !== false && (
-            <NavItem view="connectors" label="Connectors" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('connectors')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" />
-              </svg>
-            </NavItem>
-            )}
-            {plugins['http']?.enabled !== false && (
-            <NavItem view="webhooks" label="Webhooks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('webhooks')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M22 12h-4l-3 7L9 5l-3 7H2" />
-              </svg>
-            </NavItem>
-            )}
-            <NavItem view="mcp_servers" label="MCP" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('mcp_servers')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><line x1="6" y1="6" x2="6.01" y2="6" /><line x1="6" y1="18" x2="6.01" y2="18" />
-              </svg>
-            </NavItem>
-            <NavItem view="knowledge" label="Knowledge" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('knowledge')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-              </svg>
-            </NavItem>
-            <NavItem view="plugins" label="Plugins" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('plugins')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2v4m0 12v4M2 12h4m12 0h4" /><circle cx="12" cy="12" r="4" /><path d="M8 8L5.5 5.5M16 8l2.5-2.5M8 16l-2.5 2.5M16 16l2.5 2.5" />
-              </svg>
-            </NavItem>
-            <NavItem view="usage" label="Usage" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('usage')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
-              </svg>
-            </NavItem>
-            {plugins['wallet']?.enabled !== false && (
-            <NavItem view="wallets" label="Wallets" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('wallets')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="6" width="20" height="14" rx="2" /><path d="M22 10H18a2 2 0 0 0 0 4h4" /><path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
-              </svg>
-            </NavItem>
-            )}
-            <NavItem view="runs" label="Runs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('runs')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-              </svg>
-            </NavItem>
-            <NavItem view="activity" label="Activity" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('activity')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="10" />
-              </svg>
-            </NavItem>
-            {plugins['monitor']?.enabled !== false && (
-            <NavItem view="logs" label="Logs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('logs')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
-              </svg>
-            </NavItem>
-            )}
+            <div className={`flex flex-col gap-3 ${railExpanded ? 'px-3' : 'items-center'}`}>
+              <div className={`flex flex-col gap-0.5 ${railExpanded ? '' : 'items-center'}`}>
+                {railExpanded ? (
+                  <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">Workspace</div>
+                ) : (
+                  <div className="my-1 h-px w-6 bg-white/[0.06]" />
+                )}
+                <NavItem view="home" label="Home" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('home')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
+                  </svg>
+                </NavItem>
+                <NavItem view="agents" label="Agents" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('agents')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+                  </svg>
+                </NavItem>
+                {isViewEnabled('chatrooms') && (
+                  <NavItem view="chatrooms" label="Chatrooms" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('chatrooms')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                      <path d="M8 10h8" /><path d="M8 14h4" />
+                    </svg>
+                  </NavItem>
+                )}
+                <NavItem view="projects" label="Projects" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('projects')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7-7H4a2 2 0 0 0-2 2v17Z" /><path d="M14 2v7h7" />
+                  </svg>
+                </NavItem>
+              </div>
+
+              <div className={`flex flex-col gap-0.5 ${railExpanded ? '' : 'items-center'}`}>
+                {railExpanded ? (
+                  <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">Execution</div>
+                ) : (
+                  <div className="my-1 h-px w-6 bg-white/[0.06]" />
+                )}
+                <NavItem view="tasks" label="Tasks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('tasks')} badge={pendingApprovalCount}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 14l2 2 4-4" />
+                  </svg>
+                </NavItem>
+                <NavItem view="approvals" label="Approvals" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('approvals')} badge={pendingApprovalCount}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                    <path d="m9 12 2 2 4-4"/>
+                  </svg>
+                </NavItem>
+                {isViewEnabled('schedules') && (
+                  <NavItem view="schedules" label="Schedules" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('schedules')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                    </svg>
+                  </NavItem>
+                )}
+                {isViewEnabled('memory') && (
+                  <NavItem view="memory" label="Memory" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('memory')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                    </svg>
+                  </NavItem>
+                )}
+                <NavItem view="runs" label="Runs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('runs')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                  </svg>
+                </NavItem>
+              </div>
+
+              <div className={`flex flex-col gap-0.5 ${railExpanded ? '' : 'items-center'}`}>
+                {railExpanded ? (
+                  <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">Knowledge</div>
+                ) : (
+                  <div className="my-1 h-px w-6 bg-white/[0.06]" />
+                )}
+                <NavItem view="knowledge" label="Knowledge" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('knowledge')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                  </svg>
+                </NavItem>
+                <NavItem view="skills" label="Skills" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('skills')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                  </svg>
+                </NavItem>
+                {isViewEnabled('connectors') && (
+                  <NavItem view="connectors" label="Connectors" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('connectors')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" /><line x1="8" y1="12" x2="16" y2="12" />
+                    </svg>
+                  </NavItem>
+                )}
+                {isViewEnabled('webhooks') && (
+                  <NavItem view="webhooks" label="Webhooks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('webhooks')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M22 12h-4l-3 7L9 5l-3 7H2" />
+                    </svg>
+                  </NavItem>
+                )}
+                <NavItem view="mcp_servers" label="MCP Servers" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('mcp_servers')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><line x1="6" y1="6" x2="6.01" y2="6" /><line x1="6" y1="18" x2="6.01" y2="18" />
+                  </svg>
+                </NavItem>
+                <NavItem view="plugins" label="Plugins" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('plugins')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2v4m0 12v4M2 12h4m12 0h4" /><circle cx="12" cy="12" r="4" /><path d="M8 8L5.5 5.5M16 8l2.5-2.5M8 16l-2.5 2.5M16 16l2.5 2.5" />
+                  </svg>
+                </NavItem>
+              </div>
+
+              <div className={`flex flex-col gap-0.5 ${railExpanded ? '' : 'items-center'}`}>
+                {railExpanded ? (
+                  <div className="px-3 pb-1 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">System</div>
+                ) : (
+                  <div className="my-1 h-px w-6 bg-white/[0.06]" />
+                )}
+                <NavItem view="secrets" label="Secrets" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('secrets')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                </NavItem>
+                <NavItem view="providers" label="Providers" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('providers')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
+                  </svg>
+                </NavItem>
+                <NavItem view="usage" label="Usage" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('usage')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+                  </svg>
+                </NavItem>
+                <NavItem view="activity" label="Activity" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('activity')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="10" />
+                  </svg>
+                </NavItem>
+                {isViewEnabled('wallets') && (
+                  <NavItem view="wallets" label="Wallets" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('wallets')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="6" width="20" height="14" rx="2" /><path d="M22 10H18a2 2 0 0 0 0 4h4" /><path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </NavItem>
+                )}
+                {isViewEnabled('logs') && (
+                  <NavItem view="logs" label="Logs" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('logs')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
+                    </svg>
+                  </NavItem>
+                )}
+              </div>
             </div>
 
             <div className="flex-1" />
@@ -616,7 +732,7 @@ export function AppLayout() {
           style={{ animation: 'panel-in 0.3s var(--ease-spring)' }}
         >
           <div className="flex items-center px-5 pt-5 pb-3 shrink-0">
-            <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">{activeView}</h2>
+            <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] flex-1">{VIEW_LABELS[activeView]}</h2>
             {activeView === 'logs' || activeView === 'usage' || activeView === 'runs' ? null : activeView === 'memory' ? (
               <button
                 onClick={() => useAppStore.getState().setMemorySheetOpen(true)}
@@ -638,7 +754,7 @@ export function AppLayout() {
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                {activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : 'New'}
+                {CREATE_LABELS[activeView] || 'New'}
               </button>
             )}
           </div>
@@ -706,32 +822,89 @@ export function AppLayout() {
                 <Avatar user={currentUser!} size="sm" avatarSeed={appSettings.userAvatarSeed} />
               </button>
             </div>
-            {/* View selector tabs */}
-            <div className="flex px-4 py-2 gap-1 shrink-0 flex-wrap">
-              {(['agents', 'chatrooms', 'schedules', 'memory', 'tasks', 'secrets', 'providers', 'skills', 'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'plugins', 'usage', 'runs', 'logs'] as AppView[]).map((v) => (
+            {defaultAgent && (
+              <div className="px-4 pt-1 pb-3 shrink-0">
                 <button
-                  key={v}
-                  onClick={() => setActiveView(v)}
-                  className={`py-2 px-2.5 rounded-[10px] text-[11px] font-600 capitalize cursor-pointer transition-all
-                    ${activeView === v
-                      ? 'bg-accent-soft text-accent-bright'
-                      : 'bg-transparent text-text-3 hover:text-text-2'}`}
+                  onClick={goToDefaultChat}
+                  className={`w-full flex items-center gap-3 rounded-[14px] border px-4 py-3 text-left transition-all cursor-pointer ${
+                    isDefaultChat
+                      ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                      : 'bg-accent-soft/50 border-accent-bright/15 text-accent-bright hover:bg-accent-soft/65'
+                  }`}
                   style={{ fontFamily: 'inherit' }}
                 >
-                  {v}
+                  <AgentAvatar
+                    seed={defaultAgent.avatarSeed || null}
+                    avatarUrl={defaultAgent.avatarUrl}
+                    name={defaultAgent.name}
+                    size={32}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-700 truncate">{defaultAgent.name}</div>
+                    <div className="text-[11px] text-accent-bright/70">Default shortcut</div>
+                  </div>
                 </button>
-              ))}
-              {/* Dynamic Plugin Items */}
-              {pluginSidebarItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => window.open(item.href, '_blank')}
-                  className="py-2 px-2.5 rounded-[10px] text-[11px] font-600 capitalize cursor-pointer transition-all bg-emerald-500/[0.05] text-emerald-400/80 hover:text-emerald-400 border border-emerald-400/10"
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  {item.label}
-                </button>
-              ))}
+              </div>
+            )}
+            <div className="px-4 pb-3 shrink-0 max-h-[260px] overflow-y-auto">
+              <div className="space-y-4">
+                {([
+                  { label: 'Workspace', views: ['agents', 'chatrooms', 'projects'] as AppView[] },
+                  { label: 'Execution', views: ['tasks', 'approvals', 'schedules', 'memory', 'runs'] as AppView[] },
+                  { label: 'Knowledge', views: ['knowledge', 'skills', 'connectors', 'webhooks', 'mcp_servers', 'plugins'] as AppView[] },
+                  { label: 'System', views: ['secrets', 'providers', 'usage', 'logs'] as AppView[] },
+                ]).map((section) => {
+                  const visibleViews = section.views.filter((view) => isViewEnabled(view))
+                  if (!visibleViews.length) return null
+                  return (
+                    <div key={section.label}>
+                      <div className="px-1 pb-2 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">
+                        {section.label}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {visibleViews.map((view) => (
+                          <button
+                            key={view}
+                            onClick={() => {
+                              setActiveView(view)
+                              if (FULL_WIDTH_VIEWS.has(view)) setSidebarOpen(false)
+                            }}
+                            className={`rounded-[12px] border px-3 py-2.5 text-left transition-all cursor-pointer ${
+                              activeView === view
+                                ? 'bg-accent-soft border-accent-bright/20 text-accent-bright'
+                                : 'bg-transparent border-white/[0.06] text-text-3 hover:text-text hover:bg-white/[0.04]'
+                            }`}
+                            style={{ fontFamily: 'inherit' }}
+                          >
+                            <div className="text-[12px] font-600">{VIEW_LABELS[view]}</div>
+                            <div className="text-[10px] text-current/60 mt-1">{VIEW_DESCRIPTIONS[view]}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+                {pluginSidebarItems.length > 0 && (
+                  <div>
+                    <div className="px-1 pb-2 text-[10px] font-700 uppercase tracking-[0.12em] text-text-3/45">
+                      Extensions
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {pluginSidebarItems.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => window.open(item.href, '_blank')}
+                          className="rounded-[12px] border border-emerald-400/10 bg-emerald-500/[0.05] px-3 py-2.5 text-left text-emerald-400/85 hover:text-emerald-300 transition-colors cursor-pointer"
+                          style={{ fontFamily: 'inherit' }}
+                        >
+                          <div className="text-[12px] font-600">{item.label}</div>
+                          <div className="text-[10px] text-emerald-300/60 mt-1">Open plugin view</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             {activeView !== 'logs' && activeView !== 'usage' && activeView !== 'runs' && activeView !== 'settings' && (
             <div className="px-4 py-2.5 shrink-0">
@@ -745,7 +918,7 @@ export function AppLayout() {
                   shadow-[0_2px_12px_rgba(99,102,241,0.15)]"
                 style={{ fontFamily: 'inherit' }}
               >
-                + New {activeView === 'agents' ? 'Agent' : activeView === 'schedules' ? 'Schedule' : activeView === 'tasks' ? 'Task' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : activeView === 'plugins' ? 'Plugin' : activeView === 'projects' ? 'Project' : 'Entry'}
+                + New {CREATE_LABELS[activeView] || 'Entry'}
               </button>
             </div>
             )}
@@ -811,11 +984,27 @@ export function AppLayout() {
                 <div className="flex-1 flex items-center justify-center px-8">
                   <div className="text-center max-w-[420px]">
                     <h2 className="font-display text-[24px] font-700 text-text mb-2 tracking-[-0.02em]">
-                      Select an Agent
+                      Open a Chat
                     </h2>
                     <p className="text-[14px] text-text-3">
-                      Choose an agent from the sidebar to start chatting.
+                      Choose a chat from the sidebar, or jump straight into your default agent shortcut.
                     </p>
+                    <div className="mt-5 flex items-center justify-center gap-3">
+                      <button
+                        onClick={defaultAgent ? goToDefaultChat : () => setAgentSheetOpen(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[12px] border-none bg-accent-bright text-white text-[13px] font-600 cursor-pointer hover:brightness-110 transition-all"
+                        style={{ fontFamily: 'inherit' }}
+                      >
+                        {defaultAgent ? `Open ${defaultAgent.name}` : 'Create Agent'}
+                      </button>
+                      <button
+                        onClick={() => setAgentSheetOpen(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[12px] border border-white/[0.08] bg-transparent text-[13px] font-600 text-text-2 cursor-pointer hover:bg-white/[0.04] transition-all"
+                        style={{ fontFamily: 'inherit' }}
+                      >
+                        Create Agent
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -865,7 +1054,7 @@ export function AppLayout() {
             <div className="flex-1 flex flex-col h-full">
               <div className="flex items-center px-6 pt-5 pb-3 shrink-0">
                 <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">
-                  {activeView === 'mcp_servers' ? 'MCP Servers' : activeView.replace('_', ' ')}
+                  {VIEW_LABELS[activeView]}
                 </h2>
                 {activeView !== 'runs' && activeView !== 'logs' && (
                   <button
@@ -876,7 +1065,7 @@ export function AppLayout() {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                       <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
-                    {activeView === 'schedules' ? 'Schedule' : activeView === 'secrets' ? 'Secret' : activeView === 'providers' ? 'Provider' : activeView === 'skills' ? 'Skill' : activeView === 'connectors' ? 'Connector' : activeView === 'webhooks' ? 'Webhook' : activeView === 'mcp_servers' ? 'MCP Server' : activeView === 'knowledge' ? 'Knowledge' : activeView === 'plugins' ? 'Plugin' : 'New'}
+                    {CREATE_LABELS[activeView] || 'New'}
                   </button>
                 )}
               </div>
@@ -981,9 +1170,9 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   chatrooms: 'Multi-agent collaborative chatrooms',
   schedules: 'Automated task schedules',
   memory: 'Long-term agent memory store',
-  tasks: 'Task board for orchestrator jobs',
+  tasks: 'Task board for agent work and queued runs',
   approvals: 'Pending tool execution approvals',
-  secrets: 'API keys & credentials for orchestrators',
+  secrets: 'API keys, tokens, and encrypted credentials',
   providers: 'LLM providers & custom endpoints',
   skills: 'Reusable instruction sets for agents',
   connectors: 'Chat platform bridges (Discord, Slack, etc.)',
@@ -995,7 +1184,7 @@ const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   usage: 'Usage metrics, cost tracking & agent performance',
   wallets: 'Agent crypto wallets — hold funds, send SOL, manage spending',
   runs: 'Live run monitoring & history',
-  settings: 'Manage providers, API keys & orchestrator engine',
+  settings: 'Manage defaults, providers, secrets, and automation settings',
   projects: 'Group agents, tasks & schedules into projects',
   activity: 'Audit trail of all entity mutations',
 }
@@ -1016,26 +1205,26 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { icon: str
   schedules: {
     icon: 'clock',
     title: 'Schedules',
-    description: 'Automate recurring tasks by scheduling orchestrators to run on a cron, interval, or one-time basis.',
-    features: ['Set up cron expressions for precise timing', 'Run orchestrators automatically on intervals', 'Schedule one-time future tasks', 'View execution history and results'],
+    description: 'Automate recurring work with cron, interval, or one-time schedules that launch agent tasks.',
+    features: ['Set up cron expressions for precise timing', 'Run agents automatically on intervals', 'Schedule one-time future tasks', 'View execution history and results'],
   },
   memory: {
     icon: 'database',
     title: 'Memory',
-    description: 'Long-term memory store for AI agents. Orchestrators can store and retrieve knowledge across conversations.',
+    description: 'Long-term memory store for AI agents so they can retain useful context across conversations.',
     features: ['Agents store findings and learnings automatically', 'Full-text search across all stored memories', 'Organized by categories and agents', 'Persists across conversations for continuity'],
   },
   tasks: {
     icon: 'clipboard',
     title: 'Task Board',
-    description: 'A Trello-style board for managing orchestrator jobs. Create tasks, assign them to orchestrators, and track progress.',
-    features: ['Kanban columns: Backlog, Queued, Running, Completed, Failed', 'Assign tasks to specific orchestrator agents', 'Sequential queue ensures orchestrators don\'t conflict', 'View results and logs for completed tasks'],
+    description: 'A kanban board for managing agent work. Create tasks, assign them to agents, and track progress.',
+    features: ['Kanban columns: Backlog, Queued, Running, Completed, Failed', 'Assign tasks to specific agents', 'Track retries, results, and logs', 'Review status without leaving the board'],
   },
   secrets: {
     icon: 'lock',
     title: 'Secrets',
-    description: 'Manage API keys and credentials that orchestrators can access during task execution.',
-    features: ['Store keys for external services (Gmail, APIs, etc.)', 'Scope secrets globally or to specific orchestrators', 'Encrypted at rest with AES-256-GCM', 'Orchestrators retrieve secrets via the get_secret tool'],
+    description: 'Manage API keys and credentials that agents and integrations can access securely.',
+    features: ['Store keys for external services (Gmail, APIs, etc.)', 'Scope secrets globally or to specific agents', 'Encrypted at rest with AES-256-GCM', 'Agents retrieve secrets through approved tools'],
   },
   providers: {
     icon: 'zap',
@@ -1058,8 +1247,8 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { icon: str
   webhooks: {
     icon: 'webhook',
     title: 'Webhooks',
-    description: 'Receive external events over HTTP and trigger orchestrator runs automatically.',
-    features: ['Create secure inbound webhook endpoints', 'Filter events by type or source', 'Route each webhook to a specific orchestrator', 'Use x-webhook-secret for request authentication'],
+    description: 'Receive external events over HTTP and route them into agent-driven workflows automatically.',
+    features: ['Create secure inbound webhook endpoints', 'Filter events by type or source', 'Route each webhook to a specific agent', 'Use x-webhook-secret for request authentication'],
   },
   mcp_servers: {
     icon: 'server',
@@ -1070,7 +1259,7 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { icon: str
   knowledge: {
     icon: 'globe',
     title: 'Knowledge Base',
-    description: 'A shared knowledge graph accessible by all agents, enabling cross-agent information sharing and orchestration.',
+    description: 'A shared knowledge graph accessible by all agents for cross-workspace information sharing.',
     features: ['Create tagged knowledge entries', 'Agents can store and search knowledge via tools', 'Full-text and vector search', 'Provenance tracking per entry'],
   },
   logs: {
@@ -1100,8 +1289,8 @@ const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { icon: str
   settings: {
     icon: 'settings',
     title: 'Settings',
-    description: 'Manage providers, API keys & orchestrator engine.',
-    features: ['Configure LLM providers', 'Manage API credentials', 'Tune orchestrator settings', 'Set up voice & embedding'],
+    description: 'Manage app defaults, providers, encrypted secrets, and automation settings.',
+    features: ['Choose your default agent shortcut', 'Configure LLM providers and credentials', 'Tune heartbeat and autonomy settings', 'Set up voice, embeddings, and search'],
   },
   projects: {
     icon: 'folder',
@@ -1283,7 +1472,7 @@ function RailTooltip({ label, description, children }: { label: string; descript
 }
 
 function DesktopEmptyState({ userName }: { userName: string | null }) {
-  const setNewSessionOpen = useAppStore((s) => s.setNewSessionOpen)
+  const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8 pb-20 relative overflow-hidden">
@@ -1314,10 +1503,10 @@ function DesktopEmptyState({ userName }: { userName: string | null }) {
           <span className="text-text-2">What would you like to do?</span>
         </h1>
         <p className="text-[15px] text-text-3 mb-12">
-          Create a new chat to start chatting
+          Create an agent, then keep working in its persistent thread
         </p>
         <button
-          onClick={() => setNewSessionOpen(true)}
+          onClick={() => setAgentSheetOpen(true)}
           className="inline-flex items-center gap-2.5 px-12 py-4 rounded-[16px] border-none bg-accent-bright text-white text-[16px] font-display font-600
             cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-200
             shadow-[0_6px_28px_rgba(99,102,241,0.3)]"
@@ -1327,7 +1516,7 @@ function DesktopEmptyState({ userName }: { userName: string | null }) {
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          New Chat
+          New Agent
         </button>
       </div>
     </div>

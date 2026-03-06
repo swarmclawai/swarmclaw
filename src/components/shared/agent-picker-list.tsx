@@ -12,7 +12,7 @@ interface Props {
   onSelect: (agentId: string) => void
   /** Show a "None" option at the top for optional single-select */
   noneOption?: { label: string; onSelect: () => void }
-  /** Show orchestrator badge */
+  /** Show delegation-capable badge */
   showOrchBadge?: boolean
   /** Max height of the scrollable list */
   maxHeight?: number
@@ -76,7 +76,7 @@ export function AgentPickerList({
             <span className={`text-[13px] font-600 flex-1 truncate ${active ? 'text-accent-bright' : 'text-text-2'}`}>
               {a.name}
             </span>
-            {showOrchBadge && a.isOrchestrator && (
+            {showOrchBadge && a.platformAssignScope === 'all' && (
               <span className="text-[10px] text-text-3/60 flex items-center gap-0.5">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg>
               </span>
