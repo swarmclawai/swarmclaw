@@ -3,6 +3,7 @@
  * Requests are debounced with a 250ms coalesce window to batch rapid-fire events.
  */
 
+import { ensureAgentThreadSession } from './agent-thread-session'
 import { loadSessions, loadAgents, loadSettings } from './storage'
 import { enqueueSessionRun } from './session-run-manager'
 import { log } from './logger'
@@ -29,7 +30,6 @@ function flushWakes(): void {
   const wakes = new Map(state.pending)
   state.pending.clear()
 
-  const sessions = loadSessions()
   const agents = loadAgents()
   const settings = loadSettings()
 
@@ -39,6 +39,7 @@ function flushWakes(): void {
 
       // If only agentId provided, find the agent's most recently active session
       if (!sessionId && wake.agentId) {
+        const sessions = loadSessions()
         let bestSession: { id: string; lastActiveAt: number } | null = null
         for (const s of Object.values(sessions) as Array<Record<string, unknown>>) {
           if (s.agentId !== wake.agentId) continue
@@ -48,11 +49,14 @@ function flushWakes(): void {
           }
         }
         sessionId = bestSession?.id
+        if (!sessionId) {
+          sessionId = ensureAgentThreadSession(wake.agentId)?.id
+        }
       }
 
       if (!sessionId) continue
 
-      const session = sessions[sessionId] as Record<string, unknown> | undefined
+      const session = loadSessions()[sessionId] as Record<string, unknown> | undefined
       if (!session) continue
 
       const agentId = (session.agentId || wake.agentId) as string | undefined

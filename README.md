@@ -117,7 +117,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.7.4 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.7.5 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -670,7 +670,7 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example patch release (v0.7.4 style)
+# example patch release (v0.7.5 style)
 npm version patch
 git push origin main --follow-tags
 ```
@@ -680,13 +680,13 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.7.4 Release Readiness Notes
+#### v0.7.5 Release Readiness Notes
 
-Before shipping `v0.7.4`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.7.5`, confirm the following user-facing changes are reflected in docs:
 
 1. Sandbox docs are updated everywhere to reflect the current Deno-only `sandbox_exec` behavior and the guidance to prefer `http_request` for simple API calls.
 2. OpenClaw docs cover the current gateway/runtime behavior, including per-agent gateway routing, control-plane actions, and inspector-side advanced controls.
-3. Site and README install/version strings are updated to `v0.7.4`, including install snippets, release notes index text, and sidebar/footer labels.
+3. Site and README install/version strings are updated to `v0.7.5`, including install snippets, release notes index text, and sidebar/footer labels.
 4. Release notes summarize the user-visible setup/auth/runtime changes from the current worktree, especially gateway/external-agent/setup flow improvements.
 5. CLI and tool docs do not reference removed or non-functional surfaces such as the old `openclaw_sandbox` bridge.
 

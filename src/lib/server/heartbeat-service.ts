@@ -12,6 +12,7 @@ import { log } from './logger'
 import { WORKSPACE_DIR } from './data-dir'
 import { drainSystemEvents } from './system-events'
 import { buildIdentityContinuityContext } from './identity-continuity'
+import { ensureAgentThreadSession } from './agent-thread-session'
 
 const HEARTBEAT_TICK_MS = 5_000
 
@@ -358,8 +359,12 @@ async function tickHeartbeats() {
     return
   }
 
-  const sessions = loadSessions()
   const agents = loadAgents()
+  for (const agent of Object.values(agents) as any[]) {
+    if (!agent?.id || agent.heartbeatEnabled !== true) continue
+    ensureAgentThreadSession(String(agent.id))
+  }
+  const sessions = loadSessions()
   const hasScopedAgents = Object.values(agents).some((a: any) => a?.heartbeatEnabled === true)
 
   // Prune tracked sessions that no longer exist or have heartbeat disabled
@@ -377,7 +382,6 @@ async function tickHeartbeats() {
 
   for (const session of Object.values(sessions) as any[]) {
     if (!session?.id) continue
-    if (!Array.isArray(session.plugins) || session.plugins.length === 0) continue
     if (session.sessionType && session.sessionType !== 'human') continue
 
     // Check if this session or its agent has explicit heartbeat opt-in
@@ -402,8 +406,13 @@ async function tickHeartbeats() {
       : Math.max(cfg.intervalSec * 2, 180)
     const userIdleThresholdSec = resolveHeartbeatUserIdleSec(settings, defaultIdleSec)
     const lastUserAt = lastUserMessageAt(session)
-    if (lastUserAt <= 0) continue
-    const idleMs = now - lastUserAt
+    const baselineAt = lastUserAt > 0
+      ? lastUserAt
+      : explicitOptIn
+        ? (typeof session.lastActiveAt === 'number' ? session.lastActiveAt : (typeof session.createdAt === 'number' ? session.createdAt : 0))
+        : 0
+    if (baselineAt <= 0) continue
+    const idleMs = now - baselineAt
     if (idleMs < userIdleThresholdSec * 1000) continue
 
     const last = state.lastBySession.get(session.id) || 0
