@@ -8,7 +8,19 @@ WORKDIR /app
 # Install dependencies
 COPY package.json package-lock.json ./
 COPY scripts/postinstall.mjs ./scripts/postinstall.mjs
-RUN npm ci
+RUN npm config set fetch-retries 5 \
+    && npm config set fetch-retry-factor 2 \
+    && npm config set fetch-retry-mintimeout 10000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && attempt=1 \
+    && until npm ci; do \
+      if [ "$attempt" -ge 3 ]; then \
+        exit 1; \
+      fi; \
+      echo "npm ci failed on attempt ${attempt}; retrying..." >&2; \
+      sleep $((attempt * 5)); \
+      attempt=$((attempt + 1)); \
+    done
 
 # Copy source
 COPY . .
