@@ -90,12 +90,14 @@ export async function GET(req: Request) {
   const checkedAt = Date.now()
 
   const nodeVersion = process.versions.node
-  const nodeMajor = Number.parseInt(String(nodeVersion).split('.')[0] || '0', 10)
-  if (nodeMajor >= 20) {
+  const [nodeMajorRaw, nodeMinorRaw] = String(nodeVersion).split('.')
+  const nodeMajor = Number.parseInt(nodeMajorRaw || '0', 10)
+  const nodeMinor = Number.parseInt(nodeMinorRaw || '0', 10)
+  if (nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 6)) {
     pushCheck(checks, 'node-version', 'Node.js version', 'pass', `Detected Node ${nodeVersion}.`, true)
   } else {
-    pushCheck(checks, 'node-version', 'Node.js version', 'fail', `Detected Node ${nodeVersion}. Node 20+ is required.`, true)
-    actions.push('Install Node.js 20 or newer from https://nodejs.org and rerun setup.')
+    pushCheck(checks, 'node-version', 'Node.js version', 'fail', `Detected Node ${nodeVersion}. Node 22.6+ is required.`, true)
+    actions.push('Install Node.js 22.6 or newer from https://nodejs.org and rerun setup.')
   }
 
   const npmCheck = run('npm', ['--version'], 5_000)

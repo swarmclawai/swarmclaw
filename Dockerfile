@@ -1,4 +1,4 @@
-FROM node:20-slim AS base
+FROM node:22-slim AS base
 
 # Install git (needed for update checker) and build essentials (needed for better-sqlite3)
 RUN apt-get update && apt-get install -y git python3 make g++ && rm -rf /var/lib/apt/lists/*
@@ -17,7 +17,7 @@ COPY . .
 RUN SWARMCLAW_BUILD_MODE=1 npm run build:ci
 
 # Production
-FROM node:20-slim AS runner
+FROM node:22-slim AS runner
 
 RUN apt-get update && apt-get install -y git curl unzip && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL https://deno.land/install.sh | sh

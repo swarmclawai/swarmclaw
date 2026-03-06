@@ -35,9 +35,11 @@ function run(command, commandArgs, options = {}) {
 
 function ensureNodeVersion() {
   const version = process.versions.node
-  const major = Number.parseInt(version.split('.')[0] || '0', 10)
-  if (major < 20) {
-    fail(`Detected Node ${version}. SwarmClaw requires Node 20 or newer.`)
+  const [majorRaw, minorRaw] = version.split('.')
+  const major = Number.parseInt(majorRaw || '0', 10)
+  const minor = Number.parseInt(minorRaw || '0', 10)
+  if (major < 22 || (major === 22 && minor < 6)) {
+    fail(`Detected Node ${version}. SwarmClaw requires Node 22.6 or newer.`)
   }
   log(`Node ${version} detected.`)
 }
