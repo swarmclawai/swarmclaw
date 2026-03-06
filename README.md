@@ -524,8 +524,9 @@ The shortest reliable workflow for a new plugin:
 2. Export `name`, `description`, any `hooks`, and optional `tools` / `ui.settingsFields`.
 3. Keep tool outputs structured when the agent needs to chain them into later steps.
 4. Use `settingsFields` for secrets or environment-specific values instead of hardcoding them.
-5. Enable the plugin in **Settings → Plugins** and test both the tool path and any hook behavior.
-6. If you host it remotely, install from a stable HTTPS URL so SwarmClaw can record source metadata and update it later.
+5. If the plugin needs third-party npm packages, attach a `package.json` manifest so SwarmClaw can manage it in a per-plugin workspace.
+6. Enable the plugin in **Settings → Plugins** and test both the tool path and any hook behavior.
+7. If you host it remotely, install from a stable HTTPS URL so SwarmClaw can record source metadata and update it later.
 
 A fuller step-by-step walkthrough lives at https://swarmclaw.ai/docs/plugin-tutorial.
 
@@ -534,6 +535,7 @@ A fuller step-by-step walkthrough lives at https://swarmclaw.ai/docs/plugin-tuto
 - **Versioning**: All plugins support semantic versioning (e.g., `v1.2.3`).
 - **Updates**: External plugins installed from a recorded source URL can be updated individually or in bulk via the Plugins manager. Built-ins update with the app release.
 - **Hot Reload**: Changes inside `data/plugins/` invalidate the plugin registry automatically, and installs/updates trigger an immediate reload.
+- **Plugin Workspaces**: Plugins with a manifest are managed under `data/plugins/.workspaces/<plugin>/`, and dependency installs can be triggered from the plugin detail sheet or `POST /api/plugins/dependencies`.
 - **Stability Guardrails**: Consecutive plugin failures are tracked in `data/plugin-failures.json`; failing external plugins are auto-disabled, a warning notification is emitted in-app, and users can re-enable manually from the Plugins manager.
 - **Source Metadata**: Marketplace/URL installs record the normalized source URL and source hash in `data/plugins.json`.
 - **Settings Safety**: Plugin settings are validated against declared `settingsFields`; unknown keys are ignored and `secret` values are stored encrypted.
@@ -672,9 +674,11 @@ Before shipping `v0.7.3`, confirm the following user-facing changes are reflecte
 1. New primitive plugins are documented in README and site docs: `mailbox`, `ask_human`, `document`, `extract`, `table`, and `crawl`.
 2. Browser persistence, higher-level browser actions, durable watch jobs, and delegation handles are covered in docs.
 3. Plugin docs mention canonical built-in IDs, source-backed installs/updates, hot reload, and encrypted `secret` settings.
-4. The plugin tutorial reflects the current hook behavior, including `beforeToolExec` input rewriting and `settingsFields`.
-5. Site install/version strings are updated to `v0.7.3`, including the release notes index, install snippets, and sidebar footer.
-6. Provider docs mention that configured OpenAI models can populate the model dropdown while still allowing custom/manual entries.
+4. Plugin docs cover per-plugin workspaces and dependency installs for plugins that ship with a `package.json` manifest.
+5. Connector docs and CLI docs cover the connector doctor diagnostics endpoints/commands.
+6. The plugin tutorial reflects the current hook behavior, including `beforeToolExec` input rewriting and `settingsFields`.
+7. Site install/version strings are updated to `v0.7.3`, including the release notes index, install snippets, and sidebar footer.
+8. Provider docs mention that configured OpenAI models can populate the model dropdown while still allowing custom/manual entries.
 
 ## CLI
 
