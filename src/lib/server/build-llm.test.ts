@@ -7,6 +7,12 @@ import {
   OPENAI_COMPAT_MODEL_TIMEOUT_MS,
 } from './build-llm'
 
+type ChatOpenAiInternals = ChatOpenAI & {
+  timeout?: number
+  caller?: { maxRetries?: number }
+  clientConfig?: { defaultHeaders?: Record<string, string> }
+}
+
 describe('buildChatModel', () => {
   it('applies bounded timeout and disables internal retries for openai-compatible models', () => {
     const llm = buildChatModel({
@@ -14,10 +20,11 @@ describe('buildChatModel', () => {
       model: 'gpt-4o',
       apiKey: 'test-key',
     })
+    const model = llm as ChatOpenAiInternals
 
     assert.equal(llm instanceof ChatOpenAI, true)
-    assert.equal((llm as any).timeout, OPENAI_COMPAT_MODEL_TIMEOUT_MS)
-    assert.equal((llm as any).caller?.maxRetries, OPENAI_COMPAT_MODEL_MAX_RETRIES)
+    assert.equal(model.timeout, OPENAI_COMPAT_MODEL_TIMEOUT_MS)
+    assert.equal(model.caller?.maxRetries, OPENAI_COMPAT_MODEL_MAX_RETRIES)
   })
 
   it('preserves openclaw headers while applying the same timeout policy', () => {
@@ -27,10 +34,11 @@ describe('buildChatModel', () => {
       apiKey: 'test-key',
       apiEndpoint: 'https://example.com/v1',
     })
+    const model = llm as ChatOpenAiInternals
 
     assert.equal(llm instanceof ChatOpenAI, true)
-    assert.equal((llm as any).timeout, OPENAI_COMPAT_MODEL_TIMEOUT_MS)
-    assert.equal((llm as any).caller?.maxRetries, OPENAI_COMPAT_MODEL_MAX_RETRIES)
-    assert.deepEqual((llm as any).clientConfig?.defaultHeaders, { 'Content-Type': 'text/plain' })
+    assert.equal(model.timeout, OPENAI_COMPAT_MODEL_TIMEOUT_MS)
+    assert.equal(model.caller?.maxRetries, OPENAI_COMPAT_MODEL_MAX_RETRIES)
+    assert.deepEqual(model.clientConfig?.defaultHeaders, { 'Content-Type': 'text/plain' })
   })
 })

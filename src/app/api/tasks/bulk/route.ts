@@ -4,7 +4,7 @@ import { enqueueTask, disableSessionHeartbeat } from '@/lib/server/queue'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
 import { notify } from '@/lib/server/ws-hub'
 import { createNotification } from '@/lib/server/create-notification'
-import type { BoardTaskStatus } from '@/types'
+import type { BoardTask, BoardTaskStatus } from '@/types'
 
 const VALID_STATUSES: BoardTaskStatus[] = ['backlog', 'queued', 'running', 'completed', 'failed', 'archived']
 
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     }
   }
 
-  upsertStoredItems('tasks', results.map((id) => [id, tasks[id]] as [string, any]))
+  upsertStoredItems('tasks', results.map((id) => [id, tasks[id]] as [string, BoardTask]))
 
   if (updated > 0) {
     const action = body.status

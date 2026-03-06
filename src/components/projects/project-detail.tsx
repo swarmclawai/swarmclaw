@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { updateAgent } from '@/lib/agents'
@@ -102,7 +102,12 @@ export function ProjectDetail() {
   const setScheduleSheetOpen = useAppStore((s) => s.setScheduleSheetOpen)
 
   const [assignPickerOpen, setAssignPickerOpen] = useState(false)
-  const now = Date.now()
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(intervalId)
+  }, [])
 
   const project = activeProjectFilter ? projects[activeProjectFilter] : null
 

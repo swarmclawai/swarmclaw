@@ -284,7 +284,7 @@ const slack: PlatformConnector = {
     })
 
     // Handle @mentions
-    app.event('app_mention', async ({ event, say, client }) => {
+    app.event('app_mention', async ({ event, client }) => {
       if (allowedChannels && !allowedChannels.includes(event.channel)) return
 
       let senderName = event.user || 'unknown'

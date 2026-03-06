@@ -4,7 +4,7 @@ import { resolveOpenClawGatewayAgentId } from '@/lib/server/openclaw-agent-resol
 import { normalizeOpenClawSkillsPayload } from '@/lib/server/openclaw-skills-normalize'
 import { loadAgents, saveAgents } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
-import type { OpenClawSkillEntry, SkillAllowlistMode } from '@/types'
+import type { SkillAllowlistMode } from '@/types'
 
 /** GET ?agentId=X — fetch skills from gateway with eligibility */
 export async function GET(req: Request) {

@@ -8,7 +8,8 @@ const DEFAULT_CONFIG: ExecApprovalConfig = {
 }
 
 /** Fetch the gateway's global exec approval config. */
-export async function getExecConfig(_agentId?: string): Promise<ExecApprovalSnapshot> {
+export async function getExecConfig(agentId?: string): Promise<ExecApprovalSnapshot> {
+  void agentId
   const gw = await ensureGatewayConnected()
   if (!gw) throw new Error('Gateway not connected')
 
@@ -21,10 +22,11 @@ export async function getExecConfig(_agentId?: string): Promise<ExecApprovalSnap
 
 /** Save exec approval config with hash-based conflict retry (up to 3 attempts) */
 export async function setExecConfig(
-  _agentId: string,
+  agentId: string,
   config: ExecApprovalConfig,
   baseHash: string,
 ): Promise<{ ok: boolean; hash: string }> {
+  void agentId
   const gw = await ensureGatewayConnected()
   if (!gw) throw new Error('Gateway not connected')
 

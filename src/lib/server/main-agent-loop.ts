@@ -66,11 +66,13 @@ export interface HandleMainLoopRunResultInput {
   estimatedCost?: number
 }
 
-export function isMainSession(_session: unknown): boolean {
+export function isMainSession(session: unknown): boolean {
+  void session
   return false
 }
 
-export function buildMainLoopHeartbeatPrompt(_session: unknown, fallbackPrompt: string): string {
+export function buildMainLoopHeartbeatPrompt(session: unknown, fallbackPrompt: string): string {
+  void session
   return fallbackPrompt
 }
 
@@ -82,18 +84,23 @@ export function stripMainLoopMetaForPersistence(text: string): string {
     .trim()
 }
 
-export function getMainLoopStateForSession(_sessionId: string): MainLoopState | null {
+export function getMainLoopStateForSession(sessionId: string): MainLoopState | null {
+  void sessionId
   return null
 }
 
-export function setMainLoopStateForSession(_sessionId: string, _patch: Partial<MainLoopState>): MainLoopState | null {
+export function setMainLoopStateForSession(sessionId: string, patch: Partial<MainLoopState>): MainLoopState | null {
+  void sessionId
+  void patch
   return null
 }
 
-export function pushMainLoopEventToMainSessions(_input: PushMainLoopEventInput): number {
+export function pushMainLoopEventToMainSessions(input: PushMainLoopEventInput): number {
+  void input
   return 0
 }
 
-export function handleMainLoopRunResult(_input: HandleMainLoopRunResultInput): MainLoopFollowupRequest | null {
+export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): MainLoopFollowupRequest | null {
+  void input
   return null
 }

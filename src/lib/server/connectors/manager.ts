@@ -31,7 +31,7 @@ import { markProviderFailure, markProviderSuccess } from '../provider-health'
 import { syncSessionArchiveMemory } from '../session-archive-memory'
 import { buildIdentityContinuityContext } from '../identity-continuity'
 import { getProvider } from '@/lib/providers'
-import type { Connector, MessageSource, Chatroom, ChatroomMessage, Session } from '@/types'
+import type { Agent, Connector, MessageSource, Chatroom, ChatroomMessage, Session } from '@/types'
 import type { ConnectorInstance, InboundMessage, InboundMedia } from './types'
 import {
   addAllowedSender,
@@ -258,30 +258,41 @@ export function isNoMessage(text: string): boolean {
  *  Stored on globalThis to survive HMR reloads in dev mode —
  *  prevents duplicate sockets fighting for the same WhatsApp session. */
 const globalKey = '__swarmclaw_running_connectors__' as const
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const g = globalThis as any
+const g = globalThis as typeof globalThis & Record<string, unknown>
+
+function getOrInitGlobalValue<T>(key: string, factory: () => T): T {
+  const existing = g[key]
+  if (existing !== undefined) return existing as T
+  const created = factory()
+  g[key] = created
+  return created
+}
+
+type ConnectorSession = Session
+type ConnectorAgent = Agent
+
 const running: Map<string, ConnectorInstance> =
-  g[globalKey] ?? (g[globalKey] = new Map<string, ConnectorInstance>())
+  getOrInitGlobalValue(globalKey, () => new Map<string, ConnectorInstance>())
 
 /** Most recent inbound channel per connector (used for proactive replies/default outbound target) */
 const lastInboundKey = '__swarmclaw_connector_last_inbound__' as const
 const lastInboundChannelByConnector: Map<string, string> =
-  g[lastInboundKey] ?? (g[lastInboundKey] = new Map<string, string>())
+  getOrInitGlobalValue(lastInboundKey, () => new Map<string, string>())
 
 /** Last inbound message timestamp per connector (for presence indicators) */
 const lastInboundTimeKey = '__swarmclaw_connector_last_inbound_time__' as const
 const lastInboundTimeByConnector: Map<string, number> =
-  g[lastInboundTimeKey] ?? (g[lastInboundTimeKey] = new Map<string, number>())
+  getOrInitGlobalValue(lastInboundTimeKey, () => new Map<string, number>())
 
 /** Per-connector lock to prevent concurrent start/stop operations */
 const lockKey = '__swarmclaw_connector_locks__' as const
 const locks: Map<string, Promise<void>> =
-  g[lockKey] ?? (g[lockKey] = new Map<string, Promise<void>>())
+  getOrInitGlobalValue(lockKey, () => new Map<string, Promise<void>>())
 
 /** Generation counter per connector — used to detect stale lifecycle events after restart */
 const genCounterKey = '__swarmclaw_connector_gen__' as const
 const generationCounter: Map<string, number> =
-  g[genCounterKey] ?? (g[genCounterKey] = new Map<string, number>())
+  getOrInitGlobalValue(genCounterKey, () => new Map<string, number>())
 
 type ScheduledConnectorFollowup = {
   id: string
@@ -294,11 +305,11 @@ type ScheduledConnectorFollowup = {
 
 const followupKey = '__swarmclaw_connector_followups__' as const
 const scheduledFollowups: Map<string, ScheduledConnectorFollowup> =
-  g[followupKey] ?? (g[followupKey] = new Map<string, ScheduledConnectorFollowup>())
+  getOrInitGlobalValue(followupKey, () => new Map<string, ScheduledConnectorFollowup>())
 
 const inboundDedupeKey = '__swarmclaw_connector_inbound_dedupe__' as const
 const recentInboundByKey: Map<string, number> =
-  g[inboundDedupeKey] ?? (g[inboundDedupeKey] = new Map<string, number>())
+  getOrInitGlobalValue(inboundDedupeKey, () => new Map<string, number>())
 
 type DebouncedInboundEntry = {
   connector: Connector
@@ -308,11 +319,11 @@ type DebouncedInboundEntry = {
 
 const inboundDebounceKey = '__swarmclaw_connector_inbound_debounce__' as const
 const pendingInboundDebounce: Map<string, DebouncedInboundEntry> =
-  g[inboundDebounceKey] ?? (g[inboundDebounceKey] = new Map<string, DebouncedInboundEntry>())
+  getOrInitGlobalValue(inboundDebounceKey, () => new Map<string, DebouncedInboundEntry>())
 
 const followupDedupeKey = '__swarmclaw_connector_followup_dedupe__' as const
 const scheduledFollowupByDedupe: Map<string, { id: string; sendAt: number }> =
-  g[followupDedupeKey] ?? (g[followupDedupeKey] = new Map<string, { id: string; sendAt: number }>())
+  getOrInitGlobalValue(followupDedupeKey, () => new Map<string, { id: string; sendAt: number }>())
 
 /** Reconnect state per connector — tracks backoff and retry attempts for crash recovery */
 export interface ConnectorReconnectState {
@@ -325,7 +336,7 @@ export interface ConnectorReconnectState {
 
 const reconnectStateKey = '__swarmclaw_connector_reconnect_state__' as const
 const reconnectState: Map<string, ConnectorReconnectState> =
-  g[reconnectStateKey] ?? (g[reconnectStateKey] = new Map<string, ConnectorReconnectState>())
+  getOrInitGlobalValue(reconnectStateKey, () => new Map<string, ConnectorReconnectState>())
 
 const RECONNECT_INITIAL_BACKOFF_MS = 1_000
 const RECONNECT_MAX_BACKOFF_MS = 5 * 60 * 1_000
@@ -371,11 +382,10 @@ function rememberRecentInbound(key: string, now = Date.now(), ttlMs = 120_000): 
   return true
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function findDirectSessionForInbound(connector: Connector, msg: InboundMessage): Record<string, any> | null {
+function findDirectSessionForInbound(connector: Connector, msg: InboundMessage): ConnectorSession | null {
   if (connector.chatroomId) return null
   const effectiveAgentId = msg.agentIdOverride || connector.agentId
-  const sessions = Object.values(loadSessions()) as Array<Record<string, any>>
+  const sessions = Object.values(loadSessions() as Record<string, ConnectorSession>)
   const candidates = sessions.filter((session) =>
     session?.agentId === effectiveAgentId
       && session?.connectorContext?.connectorId === connector.id
@@ -431,7 +441,7 @@ function startConnectorTypingLoop(connector: Connector, msg: InboundMessage): ((
 type RouteMessageHandler = (connector: Connector, msg: InboundMessage) => Promise<string>
 const routeHandlerKey = '__swarmclaw_connector_route_handler__' as const
 const routeMessageHandlerRef: { current: RouteMessageHandler } =
-  g[routeHandlerKey] ?? (g[routeHandlerKey] = { current: async () => '[Error] Connector router unavailable.' })
+  getOrInitGlobalValue(routeHandlerKey, () => ({ current: async () => '[Error] Connector router unavailable.' }))
 
 async function flushDebouncedInbound(key: string): Promise<void> {
   const entry = pendingInboundDebounce.get(key)
@@ -625,15 +635,13 @@ function parseConnectorCommand(text: string): ParsedConnectorCommand | null {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function persistSessionRecord(session: Record<string, any>): void {
+function persistSessionRecord(session: ConnectorSession): void {
   const sessions = loadSessions()
   sessions[session.id] = session
   saveSessions(sessions)
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function updateSessionConnectorContext(session: Record<string, any>, connector: Connector, msg: InboundMessage, sessionKey: string): void {
+function updateSessionConnectorContext(session: ConnectorSession, connector: Connector, msg: InboundMessage, sessionKey: string): void {
   const policy = resolveConnectorSessionPolicy(connector, msg, session)
   session.connectorContext = {
     ...(session.connectorContext || {}),
@@ -665,7 +673,7 @@ function updateSessionConnectorContext(session: Record<string, any>, connector: 
   }
 }
 
-function describeSessionControls(session: Record<string, any>, connector: Connector, msg: InboundMessage): string {
+function describeSessionControls(session: ConnectorSession, connector: Connector, msg: InboundMessage): string {
   const policy = resolveConnectorSessionPolicy(connector, msg, session)
   const context = session.connectorContext || {}
   const sessionAgeSec = Math.max(0, Math.round((Date.now() - (session.createdAt || Date.now())) / 1000))
@@ -699,7 +707,7 @@ function normalizeSessionSettingKey(raw: string): string {
   return raw.trim().toLowerCase().replace(/[_-]+/g, '')
 }
 
-function applySessionSetting(session: Record<string, any>, keyRaw: string, valueRaw: string, msg: InboundMessage): string {
+function applySessionSetting(session: ConnectorSession, keyRaw: string, valueRaw: string, msg: InboundMessage): string {
   const key = normalizeSessionSettingKey(keyRaw)
   const value = valueRaw.trim()
   const asInt = () => {
@@ -787,7 +795,7 @@ function applySessionSetting(session: Record<string, any>, keyRaw: string, value
 function evaluateGroupPolicy(params: {
   connector: Connector
   msg: InboundMessage
-  session?: Record<string, any> | null
+  session?: ConnectorSession | null
   aliases: string[]
 }): { allowed: boolean; reason: string } {
   const { connector, msg, session, aliases } = params
@@ -804,7 +812,7 @@ function evaluateGroupPolicy(params: {
   return { allowed, reason: allowed ? (mentioned ? 'mentioned' : 'reply') : 'reply_or_mention_required' }
 }
 
-function applyConnectorRuntimeDefaults(session: Record<string, any>, defaults: {
+function applyConnectorRuntimeDefaults(session: ConnectorSession, defaults: {
   provider: string
   model: string
   apiEndpoint: string | null
@@ -819,8 +827,8 @@ function applyConnectorRuntimeDefaults(session: Record<string, any>, defaults: {
 function resolveDirectSession(params: {
   connector: Connector
   msg: InboundMessage
-  agent: Record<string, any>
-}): { session: Record<string, any>; sessionKey: string; wasCreated: boolean; staleReason?: string | null; clearedMessages?: number } {
+  agent: ConnectorAgent
+}): { session: ConnectorSession; sessionKey: string; wasCreated: boolean; staleReason?: string | null; clearedMessages?: number } {
   const { connector, msg, agent } = params
   const policySeed = resolveConnectorSessionPolicy(connector, msg)
   const providerInfo = policySeed.providerOverride ? getProvider(policySeed.providerOverride) : null
@@ -840,7 +848,7 @@ function resolveDirectSession(params: {
     policy: policySeed,
   })
   const sessions = loadSessions()
-  let session = Object.values(sessions).find((item: any) => item?.name === sessionKey) as Record<string, any> | undefined
+  let session = Object.values(sessions as Record<string, ConnectorSession>).find((item) => item?.name === sessionKey)
   let wasCreated = false
   if (!session) {
     const id = genId()
@@ -892,8 +900,8 @@ function resolveDirectSession(params: {
   const staleness = getConnectorSessionStaleness(session, policy)
   let clearedMessages = 0
   if (staleness.stale) {
-    try { syncSessionArchiveMemory(session as any, { agent }) } catch { /* archive sync is best-effort */ }
-    clearedMessages = resetConnectorSessionRuntime(session as any, staleness.reason || 'session_refresh')
+    try { syncSessionArchiveMemory(session, { agent }) } catch { /* archive sync is best-effort */ }
+    clearedMessages = resetConnectorSessionRuntime(session, staleness.reason || 'session_refresh')
     applyConnectorRuntimeDefaults(session, {
       ...runtimeDefaults,
       thinkingLevel: policySeed.thinkingLevel || session.connectorThinkLevel || null,
@@ -911,16 +919,14 @@ function resolveDirectSession(params: {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function pushSessionMessage(session: Record<string, any>, role: 'user' | 'assistant', text: string): void {
+function pushSessionMessage(session: ConnectorSession, role: 'user' | 'assistant', text: string): void {
   if (!text.trim()) return
   if (!Array.isArray(session.messages)) session.messages = []
   session.messages.push({ role, text: text.trim(), time: Date.now() })
   session.lastActiveAt = Date.now()
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function persistSession(session: Record<string, any>): void {
+function persistSession(session: ConnectorSession): void {
   const sessions = loadSessions()
   sessions[session.id] = session
   saveSessions(sessions)
@@ -1074,8 +1080,7 @@ function enforceInboundAccessPolicy(connector: Connector, msg: InboundMessage): 
 async function handleConnectorCommand(params: {
   command: ParsedConnectorCommand
   connector: Connector
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  session: Record<string, any>
+  session: ConnectorSession
   msg: InboundMessage
   agentName: string
 }): Promise<string> {
@@ -1128,8 +1133,9 @@ async function handleConnectorCommand(params: {
   }
 
   if (command.name === 'new' || command.name === 'reset') {
-    try { syncSessionArchiveMemory(session as any, { agent: loadAgents()[session.agentId] }) } catch { /* best effort */ }
-    const cleared = resetConnectorSessionRuntime(session as any, 'manual_reset')
+    const agent = session.agentId ? (loadAgents() as Record<string, ConnectorAgent>)[session.agentId] : undefined
+    try { syncSessionArchiveMemory(session, { agent }) } catch { /* best effort */ }
+    const cleared = resetConnectorSessionRuntime(session, 'manual_reset')
     const policy = resolveConnectorSessionPolicy(connector, msg, session)
     const providerInfo = policy.providerOverride ? getProvider(policy.providerOverride) : null
     applyConnectorRuntimeDefaults(session, {
@@ -1222,8 +1228,9 @@ async function handleConnectorCommand(params: {
       return text
     }
     if (parts[0].toLowerCase() === 'reset') {
-      try { syncSessionArchiveMemory(session as any, { agent: loadAgents()[session.agentId] }) } catch { /* best effort */ }
-      const cleared = resetConnectorSessionRuntime(session as any, 'manual_reset')
+      const agent = session.agentId ? (loadAgents() as Record<string, ConnectorAgent>)[session.agentId] : undefined
+      try { syncSessionArchiveMemory(session, { agent }) } catch { /* best effort */ }
+      const cleared = resetConnectorSessionRuntime(session, 'manual_reset')
       const policy = resolveConnectorSessionPolicy(connector, msg, session)
       const providerInfo = policy.providerOverride ? getProvider(policy.providerOverride) : null
       applyConnectorRuntimeDefaults(session, {

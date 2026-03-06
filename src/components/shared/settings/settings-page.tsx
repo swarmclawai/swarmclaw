@@ -117,8 +117,9 @@ export function SettingsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const credList = Object.values(credentials)
   const patchSettings = updateSettings
-  const sectionProps = { appSettings, patchSettings, inputClass }
-  const sections = useMemo<SettingsSectionDef[]>(() => [
+  const sections = useMemo<SettingsSectionDef[]>(() => {
+    const sectionProps = { appSettings, patchSettings, inputClass }
+    return [
     {
       id: 'user-preferences',
       tabId: 'general',
@@ -223,7 +224,8 @@ export function SettingsPage() {
       keywords: ['secrets', 'credentials', 'api keys', 'tokens'],
       render: () => <SecretsSection {...sectionProps} />,
     },
-  ], [credList, sectionProps])
+    ]
+  }, [appSettings, credList, patchSettings])
   const sectionsByTab = useMemo(() => {
     const map = new Map<string, SettingsSectionDef[]>()
     for (const section of sections) {

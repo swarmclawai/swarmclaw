@@ -150,7 +150,8 @@ export function ChatroomView() {
   ), [agents, chatroom])
 
   const streamingAgentIds = useMemo(() => new Set(streamingAgents.keys()), [streamingAgents])
-  const pinnedIds = chatroom?.pinnedMessageIds || []
+  const chatroomId = chatroom?.id || null
+  const pinnedIds = useMemo(() => chatroom?.pinnedMessageIds ?? [], [chatroom?.pinnedMessageIds])
   const pinnedMessages = useMemo(() => (
     chatroom
       ? (pinnedIds.map((pid) => chatroom.messages.find((m) => m.id === pid)).filter(Boolean) as ChatroomMessage[])
@@ -183,22 +184,22 @@ export function ChatroomView() {
   }, [chatroom, markChatRead])
 
   useEffect(() => {
-    if (!chatroom) return
-    markChatRead(chatroom.id)
-  }, [chatroom?.id, markChatRead])
+    if (!chatroomId) return
+    markChatRead(chatroomId)
+  }, [chatroomId, markChatRead])
 
   useEffect(() => {
     const node = scrollRef.current
-    if (!node || !chatroom) return
+    if (!node || !chatroomId) return
     const handleScroll = () => {
       const nearBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 120
       setIsNearBottom(nearBottom)
-      if (nearBottom) markChatRead(chatroom.id)
+      if (nearBottom) markChatRead(chatroomId)
     }
     handleScroll()
     node.addEventListener('scroll', handleScroll)
     return () => node.removeEventListener('scroll', handleScroll)
-  }, [chatroom?.id, markChatRead])
+  }, [chatroomId, markChatRead])
 
   useEffect(() => {
     if (chatroom && isNearBottom) {

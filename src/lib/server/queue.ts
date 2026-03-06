@@ -550,7 +550,7 @@ function notifyMainChatScheduleResult(task: BoardTask): void {
   if (task.status !== 'completed' && task.status !== 'failed') return
 
   const sessions = loadSessions()
-  const ownerUser = resolveTaskOwnerUser(scheduleTask, sessions as Record<string, SessionLike>)
+  void resolveTaskOwnerUser(scheduleTask, sessions as Record<string, SessionLike>)
   const scheduleNameRaw = typeof scheduleTask.sourceScheduleName === 'string'
     ? scheduleTask.sourceScheduleName.trim()
     : ''

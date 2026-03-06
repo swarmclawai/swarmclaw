@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { validateAccessKey, getAccessKey, isFirstTimeSetup, markSetupComplete } from '@/lib/server/storage'
+import { validateAccessKey, isFirstTimeSetup, markSetupComplete } from '@/lib/server/storage'
 import { ensureDaemonStarted } from '@/lib/server/daemon-state'
 import { AUTH_COOKIE_NAME, getCookieValue } from '@/lib/auth'
 export const dynamic = 'force-dynamic'

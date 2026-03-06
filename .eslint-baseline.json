@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-05T14:30:30.311Z",
-  "totalIssues": 514,
-  "uniqueIssues": 190,
+  "generatedAt": "2026-03-06T03:21:15.385Z",
+  "totalIssues": 543,
+  "uniqueIssues": 180,
   "issues": [
     {
       "filePath": "bin/server-cmd.js",
@@ -24,13 +24,6 @@
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
       "count": 2
-    },
-    {
-      "filePath": "src/app/api/auth/route.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_req' is defined but never used.",
-      "count": 1
     },
     {
       "filePath": "src/app/api/chats/[id]/deploy/route.ts",
@@ -821,7 +814,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 5
+      "count": 15
     },
     {
       "filePath": "src/lib/server/connectors/matrix.ts",
@@ -870,7 +863,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 8
+      "count": 20
     },
     {
       "filePath": "src/lib/server/connectors/teams.ts",
@@ -891,7 +884,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 2
+      "count": 15
     },
     {
       "filePath": "src/lib/server/connectors/whatsapp.ts",
@@ -948,20 +941,6 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 4
-    },
-    {
-      "filePath": "src/lib/server/main-agent-loop.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 8
-    },
-    {
-      "filePath": "src/lib/server/main-session.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
     },
     {
       "filePath": "src/lib/server/mcp-client.test.ts",
@@ -1073,7 +1052,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 5
+      "count": 3
     },
     {
       "filePath": "src/lib/server/session-tools/context.ts",
@@ -1087,7 +1066,7 @@
       "ruleId": "@typescript-eslint/no-require-imports",
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
-      "count": 5
+      "count": 4
     },
     {
       "filePath": "src/lib/server/session-tools/crud.ts",
@@ -1160,34 +1139,6 @@
       "count": 6
     },
     {
-      "filePath": "src/lib/server/session-tools/monitor.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'limit' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/monitor.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'path' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/monitor.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'threshold' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/monitor.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 3
-    },
-    {
       "filePath": "src/lib/server/session-tools/openclaw-nodes.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1252,13 +1203,6 @@
     },
     {
       "filePath": "src/lib/server/session-tools/subagent.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'log' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/subagent.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
@@ -1273,24 +1217,10 @@
     },
     {
       "filePath": "src/lib/server/session-tools/web.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'withRetry' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/web.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 7
-    },
-    {
-      "filePath": "src/lib/server/session-tools/web.ts",
-      "ruleId": "prefer-const",
-      "severity": 2,
-      "message": "'text' is never reassigned. Use 'const' instead.",
-      "count": 1
+      "count": 9
     },
     {
       "filePath": "src/lib/server/storage-mcp.test.ts",
@@ -1304,7 +1234,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 52
+      "count": 66
     },
     {
       "filePath": "src/lib/server/stream-agent-chat.ts",

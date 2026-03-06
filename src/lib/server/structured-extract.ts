@@ -348,7 +348,7 @@ export async function runStructuredExtraction(params: {
   let parsed: unknown
   try {
     parsed = parseModelJson(raw)
-  } catch (error) {
+  } catch {
     raw = await callExtractionModel({
       session: params.session,
       prompt: [

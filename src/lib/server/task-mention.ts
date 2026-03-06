@@ -43,7 +43,6 @@ export function parseMentionedAgentId(
   agents: Record<string, Agent>,
 ): string | null {
   const mentionRegex = /(?:^|[\s(])@([a-zA-Z0-9._-]+)/g
-  const agentList = Object.values(agents)
   let match: RegExpExecArray | null
 
   while ((match = mentionRegex.exec(description)) !== null) {

@@ -72,6 +72,12 @@ export function ApprovalsPanel() {
   const [search, setSearch] = useState('')
   const [scope, setScope] = useState<ApprovalScope>('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(intervalId)
+  }, [])
 
   const taskApprovals = useMemo(() => {
     return Object.values(tasks)
@@ -168,7 +174,7 @@ export function ApprovalsPanel() {
     },
     {
       label: 'Recently Active',
-      value: workflowApprovals.filter((req) => Date.now() - req.updatedAt < 60 * 60 * 1000).length,
+      value: workflowApprovals.filter((req) => now - req.updatedAt < 60 * 60 * 1000).length,
       tone: 'text-emerald-400',
       hint: 'Updated in the last hour',
     },

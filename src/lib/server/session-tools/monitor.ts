@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
-import path from 'path'
 import * as os from 'os'
 import type { ToolBuildContext } from './context'
 import { getPluginManager } from '../plugins'
@@ -89,17 +88,25 @@ async function createDurableWatch(
   return JSON.stringify(job, null, 2)
 }
 
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 /**
  * Unified Monitoring Logic
  */
-async function executeMonitorAction(args: any, bctx: { cwd: string; sessionId?: string; agentId?: string | null }) {
+async function executeMonitorAction(
+  args: Record<string, unknown> | undefined,
+  bctx: { cwd: string; sessionId?: string; agentId?: string | null },
+) {
   const normalized = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
   const action = normalized.action as string | undefined
   const target = (normalized.target ?? normalized.url ?? normalized.path) as string | undefined
   const limit = normalized.limit as number | undefined
   const threshold = normalized.threshold as number | undefined
   const sessionId = typeof normalized.sessionId === 'string' ? normalized.sessionId : bctx.sessionId
-  const agentId = typeof normalized.agentId === 'string' ? normalized.agentId : (bctx.agentId || undefined)
+  void limit
+  void sessionId
 
   try {
     switch (action) {
@@ -150,10 +157,10 @@ async function executeMonitorAction(args: any, bctx: { cwd: string; sessionId?: 
             thresholdExceeded: typeof threshold === 'number' ? latency >= threshold : undefined,
             url
           }, null, 2)
-        } catch (err: any) {
+        } catch (err: unknown) {
           return JSON.stringify({
             status: 'error',
-            error: err.message,
+            error: getErrorMessage(err),
             url
           }, null, 2)
         }
@@ -211,8 +218,8 @@ async function executeMonitorAction(args: any, bctx: { cwd: string; sessionId?: 
       default:
         return `Error: Unknown action "${action}"`
     }
-  } catch (err: any) {
-    return `Error: ${err.message}`
+  } catch (err: unknown) {
+    return `Error: ${getErrorMessage(err)}`
   }
 }
 

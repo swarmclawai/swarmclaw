@@ -13,6 +13,7 @@ import { requestHeartbeatNow } from '@/lib/server/heartbeat-wake'
 import { validateDag, cascadeUnblock } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
 import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
+import type { BoardTask } from '@/types'
 import '@/lib/server/builtin-plugins'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -151,7 +152,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (unblockedIds.length > 0) {
       upsertStoredItems('tasks', [
         [id, tasks[id]],
-        ...unblockedIds.map((uid) => [uid, tasks[uid]] as [string, any]),
+        ...unblockedIds.map((uid) => [uid, tasks[uid]] as [string, BoardTask]),
       ])
       for (const uid of unblockedIds) {
         enqueueTask(uid)
