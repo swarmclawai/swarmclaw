@@ -120,6 +120,9 @@ const COMMAND_GROUPS = [
         defaultBody: { action: 'repair' },
       }),
       cmd('health', 'GET', '/connectors/:id/health', 'Get connector health status'),
+      cmd('doctor', 'GET', '/connectors/:id/doctor', 'Get connector doctor diagnostics'),
+      cmd('doctor-preview', 'POST', '/connectors/:id/doctor', 'Preview connector doctor diagnostics with temporary overrides', { expectsJsonBody: true }),
+      cmd('doctor-draft', 'POST', '/connectors/doctor', 'Preview connector doctor diagnostics before saving a connector', { expectsJsonBody: true }),
     ],
   },
   {
@@ -344,6 +347,7 @@ const COMMAND_GROUPS = [
       cmd('delete', 'DELETE', '/plugins', 'Delete an external plugin (use --query filename=plugin.js)'),
       cmd('update', 'PATCH', '/plugins', 'Update a plugin (use --query id=plugin.js or --query all=true)'),
       cmd('install', 'POST', '/plugins/install', 'Install plugin from URL', { expectsJsonBody: true }),
+      cmd('install-deps', 'POST', '/plugins/dependencies', 'Install or refresh plugin workspace dependencies', { expectsJsonBody: true }),
       cmd('marketplace', 'GET', '/plugins/marketplace', 'Get marketplace catalog'),
       cmd('settings-get', 'GET', '/plugins/settings', 'Get plugin settings (use --query pluginId=plugin_name)'),
       cmd('settings-set', 'PUT', '/plugins/settings', 'Set plugin settings (use --query pluginId=plugin_name and --data JSON)', { expectsJsonBody: true }),
