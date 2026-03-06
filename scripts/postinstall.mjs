@@ -2,9 +2,16 @@
 
 import { writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import packageManager from '../bin/package-manager.js'
+const INSTALL_METADATA_FILE = '.swarmclaw-install.json'
 
-const { detectPackageManagerFromUserAgent, INSTALL_METADATA_FILE } = packageManager
+function detectPackageManagerFromUserAgent(userAgent) {
+  const normalized = String(userAgent || '').toLowerCase()
+  if (normalized.startsWith('pnpm/')) return 'pnpm'
+  if (normalized.startsWith('yarn/')) return 'yarn'
+  if (normalized.startsWith('bun/')) return 'bun'
+  if (normalized.startsWith('npm/')) return 'npm'
+  return null
+}
 
 const installedWith = detectPackageManagerFromUserAgent(process.env.npm_config_user_agent) || 'npm'
 
