@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict'
+/* eslint-disable @typescript-eslint/no-require-imports */
 
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
@@ -34,12 +35,44 @@ function shouldUseLegacyTsCli(argv) {
   return actions.has(action)
 }
 
+function supportsStripTypes() {
+  return process.allowedNodeEnvironmentFlags.has('--experimental-strip-types')
+}
+
+function hasTsxRuntime() {
+  try {
+    require.resolve('tsx/package.json')
+    return true
+  } catch {
+    return false
+  }
+}
+
+function buildLegacyTsCliArgs(cliPath, argv, options = {}) {
+  const stripTypesSupported = options.supportsStripTypes ?? supportsStripTypes()
+  if (stripTypesSupported) {
+    return ['--no-warnings', '--experimental-strip-types', cliPath, ...argv]
+  }
+
+  const tsxAvailable = options.hasTsxRuntime ?? hasTsxRuntime()
+  if (tsxAvailable) {
+    return ['--no-warnings', '--import', 'tsx', cliPath, ...argv]
+  }
+
+  return null
+}
+
 function runLegacyTsCli(argv) {
   const cliPath = path.join(__dirname, '..', 'src', 'cli', 'index.ts')
+  const args = buildLegacyTsCliArgs(cliPath, argv)
   const env = normalizeLegacyCliEnv(process.env)
+  if (!args) {
+    process.stderr.write('Legacy CLI commands require Node 22.6+ or an available local tsx runtime.\n')
+    return 1
+  }
   const child = spawnSync(
     process.execPath,
-    ['--no-warnings', '--experimental-strip-types', cliPath, ...argv],
+    args,
     { stdio: 'inherit', env },
   )
 
@@ -83,7 +116,7 @@ async function main() {
     return
   }
   if (top === 'update') {
-    require('./update-cmd.js')
+    require('./update-cmd.js').main()
     return
   }
 
@@ -99,7 +132,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildLegacyTsCliArgs,
+  hasTsxRuntime,
   TS_CLI_ACTIONS,
   normalizeLegacyCliEnv,
+  supportsStripTypes,
   shouldUseLegacyTsCli,
 }

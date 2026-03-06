@@ -8,12 +8,22 @@ const os = require('node:os')
 const path = require('node:path')
 
 const {
+  INSTALL_METADATA_FILE,
   LOCKFILE_NAMES,
   dependenciesChanged,
   detectPackageManager,
+  detectPackageManagerFromUserAgent,
+  getGlobalUpdateSpec,
   getInstallCommand,
   getRunScriptCommand,
 } = require('./package-manager.js')
+
+test('detectPackageManagerFromUserAgent parses supported package managers', () => {
+  assert.equal(detectPackageManagerFromUserAgent('pnpm/10.6.1 npm/? node/v22.6.0 darwin arm64'), 'pnpm')
+  assert.equal(detectPackageManagerFromUserAgent('yarn/4.7.0 npm/? node/v22.6.0 darwin arm64'), 'yarn')
+  assert.equal(detectPackageManagerFromUserAgent('bun/1.2.10 npm/? node/v22.6.0 darwin arm64'), 'bun')
+  assert.equal(detectPackageManagerFromUserAgent('npm/10.9.2 node/v22.6.0 darwin arm64'), 'npm')
+})
 
 test('detectPackageManager prefers the lockfile present in the workspace', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-pm-'))
@@ -30,6 +40,17 @@ test('detectPackageManager prefers the lockfile present in the workspace', () =>
 test('detectPackageManager falls back to npm when no lockfile exists', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-pm-empty-'))
   assert.equal(detectPackageManager(tmpDir), 'npm')
+  fs.rmSync(tmpDir, { recursive: true, force: true })
+})
+
+test('detectPackageManager uses install metadata when present', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-pm-meta-'))
+  fs.writeFileSync(
+    path.join(tmpDir, INSTALL_METADATA_FILE),
+    JSON.stringify({ packageManager: 'yarn' }),
+    'utf8',
+  )
+  assert.equal(detectPackageManager(tmpDir), 'yarn')
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
@@ -53,4 +74,17 @@ test('getRunScriptCommand returns manager-specific script launchers', () => {
   assert.deepEqual(getRunScriptCommand('pnpm', 'start'), { command: 'pnpm', args: ['start'] })
   assert.deepEqual(getRunScriptCommand('yarn', 'dev'), { command: 'yarn', args: ['dev'] })
   assert.deepEqual(getRunScriptCommand('bun', 'start'), { command: 'bun', args: ['run', 'start'] })
+})
+
+test('getGlobalUpdateSpec returns manager-specific update commands', () => {
+  assert.deepEqual(getGlobalUpdateSpec('npm', '@swarmclawai/swarmclaw'), {
+    command: 'npm',
+    args: ['update', '-g', '@swarmclawai/swarmclaw'],
+    display: 'npm update -g @swarmclawai/swarmclaw',
+  })
+  assert.deepEqual(getGlobalUpdateSpec('pnpm', '@swarmclawai/swarmclaw'), {
+    command: 'pnpm',
+    args: ['add', '-g', '@swarmclawai/swarmclaw@latest'],
+    display: 'pnpm add -g @swarmclawai/swarmclaw@latest',
+  })
 })

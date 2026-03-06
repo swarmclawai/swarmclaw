@@ -16,6 +16,7 @@ import { startHeartbeatService, stopHeartbeatService, getHeartbeatServiceStatus 
 import { hasOpenClawAgents, ensureGatewayConnected, disconnectGateway, getGateway } from './openclaw-gateway'
 import { enqueueSessionRun } from './session-run-manager'
 import { WORKSPACE_DIR } from './data-dir'
+import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { genId } from '@/lib/id'
 import path from 'node:path'
 import type { WebhookRetryEntry } from '@/types'
@@ -57,7 +58,7 @@ function daemonAutostartEnvEnabled(): boolean {
   return parseBoolish(process.env.SWARMCLAW_DAEMON_AUTOSTART, true)
 }
 
-function parseHeartbeatIntervalSec(value: unknown, fallback = 120): number {
+function parseHeartbeatIntervalSec(value: unknown, fallback = DEFAULT_HEARTBEAT_INTERVAL_SEC): number {
   const parsed = typeof value === 'number'
     ? value
     : typeof value === 'string'
@@ -735,7 +736,7 @@ async function runHealthChecks() {
 
     const sessionId = session.id
     const sessionLabel = String(session.name || sessionId)
-    const intervalSec = parseHeartbeatIntervalSec(session.heartbeatIntervalSec, 120)
+    const intervalSec = parseHeartbeatIntervalSec(session.heartbeatIntervalSec, DEFAULT_HEARTBEAT_INTERVAL_SEC)
     if (intervalSec <= 0) continue
     const staleAfter = Math.max(intervalSec * STALE_MULTIPLIER * 1000, STALE_MIN_MS)
     const lastActive = typeof session.lastActiveAt === 'number' ? session.lastActiveAt : 0

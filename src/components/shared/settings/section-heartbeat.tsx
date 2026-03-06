@@ -1,5 +1,10 @@
 'use client'
 
+import {
+  DEFAULT_HEARTBEAT_ACK_MAX_CHARS,
+  DEFAULT_HEARTBEAT_SHOW_ALERTS,
+  DEFAULT_HEARTBEAT_SHOW_OK,
+} from '@/lib/heartbeat-defaults'
 import { useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
@@ -63,10 +68,10 @@ export function HeartbeatSection({ appSettings, patchSettings, inputClass }: Set
             <input
               type="number"
               min={0}
-              value={appSettings.heartbeatAckMaxChars ?? 300}
+              value={appSettings.heartbeatAckMaxChars ?? DEFAULT_HEARTBEAT_ACK_MAX_CHARS}
               onChange={(e) => {
                 const n = Number.parseInt(e.target.value, 10)
-                patchSettings({ heartbeatAckMaxChars: Number.isFinite(n) ? Math.max(0, n) : 300 })
+                patchSettings({ heartbeatAckMaxChars: Number.isFinite(n) ? Math.max(0, n) : DEFAULT_HEARTBEAT_ACK_MAX_CHARS })
               }}
               className={inputClass}
               style={{ fontFamily: 'inherit' }}
@@ -79,7 +84,7 @@ export function HeartbeatSection({ appSettings, patchSettings, inputClass }: Set
           <div>
             <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Show OK Messages</label>
             <button
-              onClick={() => patchSettings({ heartbeatShowOk: !(appSettings.heartbeatShowOk ?? false) })}
+              onClick={() => patchSettings({ heartbeatShowOk: !(appSettings.heartbeatShowOk ?? DEFAULT_HEARTBEAT_SHOW_OK) })}
               className={`px-3 py-2 rounded-[10px] border text-[12px] font-600 transition-colors cursor-pointer ${
                 appSettings.heartbeatShowOk
                   ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-300'
@@ -93,15 +98,15 @@ export function HeartbeatSection({ appSettings, patchSettings, inputClass }: Set
           <div>
             <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Show Alert Messages</label>
             <button
-              onClick={() => patchSettings({ heartbeatShowAlerts: !(appSettings.heartbeatShowAlerts ?? true) })}
+              onClick={() => patchSettings({ heartbeatShowAlerts: !(appSettings.heartbeatShowAlerts ?? DEFAULT_HEARTBEAT_SHOW_ALERTS) })}
               className={`px-3 py-2 rounded-[10px] border text-[12px] font-600 transition-colors cursor-pointer ${
-                (appSettings.heartbeatShowAlerts ?? true)
+                (appSettings.heartbeatShowAlerts ?? DEFAULT_HEARTBEAT_SHOW_ALERTS)
                   ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-300'
                   : 'border-white/[0.08] bg-white/[0.03] text-text-3'
               }`}
               style={{ fontFamily: 'inherit' }}
             >
-              {(appSettings.heartbeatShowAlerts ?? true) ? 'On' : 'Off'}
+              {(appSettings.heartbeatShowAlerts ?? DEFAULT_HEARTBEAT_SHOW_ALERTS) ? 'On' : 'Off'}
             </button>
           </div>
           <div>

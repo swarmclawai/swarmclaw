@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { disableAllSessionHeartbeats, loadSettings, saveSettings } from '@/lib/server/storage'
 import { cancelAllHeartbeatRuns } from '@/lib/server/session-run-manager'
 
@@ -11,7 +12,7 @@ export async function POST(req: Request) {
 
   const updatedSessions = disableAllSessionHeartbeats()
   const settings = loadSettings()
-  if ((settings.heartbeatIntervalSec ?? 120) !== 0) {
+  if ((settings.heartbeatIntervalSec ?? DEFAULT_HEARTBEAT_INTERVAL_SEC) !== 0) {
     settings.heartbeatIntervalSec = 0
     saveSettings(settings)
   }

@@ -1,5 +1,6 @@
 'use client'
 
+import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import type { Session } from '@/types'
 import { api } from '@/lib/api-client'
 import { useAppStore } from '@/stores/use-app-store'
@@ -72,7 +73,7 @@ export function ChatCard({ session, active, onClick }: Props) {
   const connector = getSessionConnector(session, connectors)
   const loopIsOngoing = appSettings.loopMode === 'ongoing'
   const explicitOptIn = session.heartbeatEnabled === true || agent?.heartbeatEnabled === true
-  const intervalRaw = session.heartbeatIntervalSec ?? agent?.heartbeatIntervalSec ?? appSettings.heartbeatIntervalSec ?? 120
+  const intervalRaw = session.heartbeatIntervalSec ?? agent?.heartbeatIntervalSec ?? appSettings.heartbeatIntervalSec ?? DEFAULT_HEARTBEAT_INTERVAL_SEC
   const intervalNum = typeof intervalRaw === 'number' ? intervalRaw : Number.parseInt(String(intervalRaw), 10)
   const intervalEnabled = Number.isFinite(intervalNum) ? intervalNum > 0 : true
   const heartbeatEnabled =

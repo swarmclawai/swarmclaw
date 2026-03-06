@@ -1,6 +1,25 @@
 #!/usr/bin/env node
 
+import { writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import packageManager from '../bin/package-manager.js'
+
+const { detectPackageManagerFromUserAgent, INSTALL_METADATA_FILE } = packageManager
+
+const installedWith = detectPackageManagerFromUserAgent(process.env.npm_config_user_agent) || 'npm'
+
+try {
+  writeFileSync(
+    new URL(`../${INSTALL_METADATA_FILE}`, import.meta.url),
+    JSON.stringify({
+      packageManager: installedWith,
+      installedAt: new Date().toISOString(),
+    }, null, 2),
+    'utf8',
+  )
+} catch {
+  // Ignore metadata write failures for install resilience.
+}
 
 const result = spawnSync('npm', ['rebuild', 'better-sqlite3', '--silent'], {
   stdio: 'ignore',

@@ -5,6 +5,7 @@ import os from 'os'
 import Database from 'better-sqlite3'
 
 import { DATA_DIR, WORKSPACE_DIR } from './data-dir'
+import { normalizeHeartbeatSettingFields } from '@/lib/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
 import type { ExternalAgentRuntime, GatewayProfile, Message } from '@/types'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
@@ -809,6 +810,7 @@ function isProvidedSecretValue(value: unknown): value is string {
 function buildPersistedSettings(input: Record<string, any>, existing?: PersistedSettingsRecord): PersistedSettingsRecord {
   const next = cloneRecord(input) as PersistedSettingsRecord
   Object.assign(next, normalizeRuntimeSettingFields(next))
+  Object.assign(next, normalizeHeartbeatSettingFields(next))
   const encrypted = {
     ...(existing ? getEncryptedAppSettings(existing) : {}),
     ...getEncryptedAppSettings(next),

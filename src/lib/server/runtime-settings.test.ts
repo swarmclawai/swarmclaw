@@ -55,6 +55,12 @@ describe('runtime settings defaults', () => {
     assert.equal(output.settings.shellCommandTimeoutSec, 30)
     assert.equal(output.settings.claudeCodeTimeoutSec, 1800)
     assert.equal(output.settings.cliProcessTimeoutSec, 1800)
+    assert.equal(output.settings.heartbeatIntervalSec, 1800)
+    assert.equal(output.settings.heartbeatAckMaxChars, 300)
+    assert.equal(output.settings.heartbeatShowOk, false)
+    assert.equal(output.settings.heartbeatShowAlerts, true)
+    assert.equal(output.settings.heartbeatTarget, null)
+    assert.equal(output.settings.heartbeatPrompt, null)
     assert.equal(output.runtime.agentLoopRecursionLimit, 60)
     assert.equal(output.runtime.orchestratorLoopRecursionLimit, 80)
     assert.equal(output.runtime.legacyOrchestratorMaxTurns, 16)
@@ -78,6 +84,12 @@ describe('runtime settings defaults', () => {
         shellCommandTimeoutSec: 0,
         claudeCodeTimeoutSec: 999999,
         cliProcessTimeoutSec: 'abc',
+        heartbeatIntervalSec: 999999,
+        heartbeatAckMaxChars: -50,
+        heartbeatShowOk: 'yes',
+        heartbeatShowAlerts: 'off',
+        heartbeatTarget: '   ',
+        heartbeatPrompt: '   ',
       })
 
       console.log(JSON.stringify({
@@ -96,6 +108,12 @@ describe('runtime settings defaults', () => {
     assert.equal(output.settings.shellCommandTimeoutSec, 1)
     assert.equal(output.settings.claudeCodeTimeoutSec, 7200)
     assert.equal(output.settings.cliProcessTimeoutSec, 1800)
+    assert.equal(output.settings.heartbeatIntervalSec, 86400)
+    assert.equal(output.settings.heartbeatAckMaxChars, 0)
+    assert.equal(output.settings.heartbeatShowOk, true)
+    assert.equal(output.settings.heartbeatShowAlerts, false)
+    assert.equal(output.settings.heartbeatTarget, null)
+    assert.equal(output.settings.heartbeatPrompt, null)
     assert.equal(output.runtime.ongoingLoopMaxRuntimeMs, null)
   })
 })

@@ -56,7 +56,7 @@
     "lint:baseline": "node ./scripts/lint-baseline.mjs check",
     "lint:baseline:update": "node ./scripts/lint-baseline.mjs update",
     "cli": "node ./bin/swarmclaw.js",
-    "test:cli": "node --test src/cli/*.test.js bin/package-manager.test.js",
+    "test:cli": "node --test src/cli/*.test.js bin/*.test.js",
     "test:openclaw": "tsx --test src/lib/openclaw-agent-id.test.ts src/lib/openclaw-endpoint.test.ts src/lib/server/agent-runtime-config.test.ts src/lib/server/build-llm.test.ts src/lib/server/connectors/connector-routing.test.ts src/lib/server/connectors/openclaw.test.ts src/lib/server/gateway/protocol.test.ts src/lib/server/llm-response-cache.test.ts src/lib/server/mcp-conformance.test.ts src/lib/server/openclaw-agent-resolver.test.ts src/lib/server/openclaw-skills-normalize.test.ts src/lib/server/session-tools/openclaw-nodes.test.ts src/lib/server/task-quality-gate.test.ts src/lib/server/task-validation.test.ts src/lib/server/tool-capability-policy.test.ts",
     "test:mcp:conformance": "node --import tsx ./scripts/mcp-conformance-check.ts",
     "postinstall": "node ./scripts/postinstall.mjs"

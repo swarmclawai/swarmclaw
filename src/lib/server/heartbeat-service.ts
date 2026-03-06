@@ -1,5 +1,11 @@
 import fs from 'fs'
 import path from 'path'
+import {
+  DEFAULT_HEARTBEAT_ACK_MAX_CHARS,
+  DEFAULT_HEARTBEAT_INTERVAL_SEC,
+  DEFAULT_HEARTBEAT_SHOW_ALERTS,
+  DEFAULT_HEARTBEAT_SHOW_OK,
+} from '@/lib/heartbeat-defaults'
 import { loadAgents, loadSessions, loadSettings } from './storage'
 import { enqueueSessionRun, getSessionRunState } from './session-run-manager'
 import { log } from './logger'
@@ -275,7 +281,7 @@ function resolveNum(obj: Record<string, any>, key: string, current: number): num
 
 function heartbeatConfigForSession(session: any, settings: Record<string, any>, agents: Record<string, any>): HeartbeatConfig {
   // Global defaults — 30 min interval (was 120s)
-  let intervalSec = resolveInterval(settings, 1800)
+  let intervalSec = resolveInterval(settings, DEFAULT_HEARTBEAT_INTERVAL_SEC)
   const globalPrompt = (typeof settings.heartbeatPrompt === 'string' && settings.heartbeatPrompt.trim())
     ? settings.heartbeatPrompt.trim()
     : DEFAULT_HEARTBEAT_PROMPT
@@ -283,9 +289,9 @@ function heartbeatConfigForSession(session: any, settings: Record<string, any>, 
   let enabled = intervalSec > 0
   let prompt = globalPrompt
   let model: string | null = resolveStr(settings, 'heartbeatModel', null)
-  let ackMaxChars = resolveNum(settings, 'heartbeatAckMaxChars', 300)
-  let showOk = resolveBool(settings, 'heartbeatShowOk', false)
-  let showAlerts = resolveBool(settings, 'heartbeatShowAlerts', true)
+  let ackMaxChars = resolveNum(settings, 'heartbeatAckMaxChars', DEFAULT_HEARTBEAT_ACK_MAX_CHARS)
+  let showOk = resolveBool(settings, 'heartbeatShowOk', DEFAULT_HEARTBEAT_SHOW_OK)
+  let showAlerts = resolveBool(settings, 'heartbeatShowAlerts', DEFAULT_HEARTBEAT_SHOW_ALERTS)
   let target: string | null = resolveStr(settings, 'heartbeatTarget', null)
 
   // Agent layer overrides

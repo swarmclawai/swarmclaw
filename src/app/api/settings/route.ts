@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { normalizeHeartbeatSettingFields } from '@/lib/heartbeat-defaults'
 import { loadPublicSettings, loadSettings, saveSettings } from '@/lib/server/storage'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
 export const dynamic = 'force-dynamic'
@@ -82,6 +83,7 @@ export async function PUT(req: Request) {
     MEMORY_LINKED_MAX,
   )
   const normalizedRuntime = normalizeRuntimeSettingFields(settings)
+  const normalizedHeartbeat = normalizeHeartbeatSettingFields(settings)
   const nextResponseCacheTtlSec = parseIntSetting(
     settings.responseCacheTtlSec,
     15 * 60,
@@ -114,6 +116,7 @@ export async function PUT(req: Request) {
   settings.memoryMaxPerLookup = nextPerLookup
   settings.maxLinkedMemoriesExpanded = nextLinked
   Object.assign(settings, normalizedRuntime)
+  Object.assign(settings, normalizedHeartbeat)
   settings.responseCacheTtlSec = nextResponseCacheTtlSec
   settings.responseCacheMaxEntries = nextResponseCacheMaxEntries
   settings.responseCacheEnabled = parseBoolSetting(settings.responseCacheEnabled, true)

@@ -1,6 +1,7 @@
 import fs from 'fs'
 import { createReactAgent } from '@langchain/langgraph/prebuilt'
 import { HumanMessage, AIMessage } from '@langchain/core/messages'
+import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { buildSessionTools } from './session-tools'
 import { buildChatModel } from './build-llm'
 import { loadSettings, loadAgents, loadSkills, appendUsage } from './storage'
@@ -14,6 +15,7 @@ import { expandPluginIds } from './tool-aliases'
 import type { Session, Message, UsageRecord, PluginInvocationRecord } from '@/types'
 import { extractSuggestions } from './suggestions'
 import { buildIdentityContinuityContext } from './identity-continuity'
+import { enqueueSystemEvent } from './system-events'
 
 /** Extract a breadcrumb title from notable tool completions (task/schedule/agent creation). */
 interface StreamAgentChatOpts {
@@ -254,7 +256,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       : typeof raw === 'string'
         ? Number.parseInt(raw, 10)
         : Number.NaN
-    if (!Number.isFinite(parsed)) return 120
+    if (!Number.isFinite(parsed)) return DEFAULT_HEARTBEAT_INTERVAL_SEC
     return Math.max(0, Math.min(3600, Math.trunc(parsed)))
   })()
 
@@ -272,12 +274,14 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   let agentPlatformAssignScope: 'self' | 'all' = 'self'
   let agentMcpServerIds: string[] | undefined
   let agentMcpDisabledTools: string[] | undefined
+  let agentHeartbeatEnabled = false
   if (session.agentId) {
     const agents = loadAgents()
     const agent = agents[session.agentId]
     agentPlatformAssignScope = agent?.platformAssignScope || 'self'
     agentMcpServerIds = agent?.mcpServerIds
     agentMcpDisabledTools = agent?.mcpDisabledTools
+    agentHeartbeatEnabled = agent?.heartbeatEnabled === true
     if (!hasProvidedSystemPrompt) {
       // Identity block — make sure the agent knows who it is
       const identityLines = [`## My Identity`, `My name is ${agent?.name || 'Agent'}.`]
@@ -859,6 +863,19 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     const errMsg = timedOut
       ? 'Ongoing loop stopped after reaching the configured runtime limit.'
       : err instanceof Error ? err.message : String(err)
+    const heartbeatEligible = runtime.loopMode === 'ongoing' || session.heartbeatEnabled === true || agentHeartbeatEnabled
+    const budgetLimited = timedOut || /recursion limit|maximum recursion/i.test(errMsg)
+    if (heartbeatEligible && budgetLimited) {
+      enqueueSystemEvent(
+        session.id,
+        '[Loop Budget Reached] The previous autonomous run stopped after hitting its loop budget. On the next heartbeat, resume carefully from the current state, verify completed work before repeating it, and focus only on the remaining objective.',
+        'loop_budget_reached',
+      )
+      logExecution(session.id, 'decision', 'Queued a deferred resume cue for the next heartbeat after loop budget exhaustion.', {
+        agentId: session.agentId,
+        detail: { timedOut, heartbeatEligible },
+      })
+    }
     logExecution(session.id, 'error', errMsg, { agentId: session.agentId, detail: { timedOut } })
     write(`data: ${JSON.stringify({ t: 'err', text: errMsg })}\n\n`)
   } finally {

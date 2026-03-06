@@ -1,5 +1,6 @@
 'use client'
 
+import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { Agent } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
@@ -192,7 +193,7 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
     { label: 'Provider', value: PROVIDER_LABELS[agent.provider] || agent.provider.replace(/-/g, ' ') },
     { label: 'Model', value: agent.model || 'Default' },
     { label: 'Plugins', value: String(agent.plugins?.length ?? 0) },
-    { label: 'Heartbeat', value: agent.heartbeatEnabled ? `Every ${agent.heartbeatIntervalSec ?? 120}s` : 'Off' },
+    { label: 'Heartbeat', value: agent.heartbeatEnabled ? `Every ${agent.heartbeatIntervalSec ?? DEFAULT_HEARTBEAT_INTERVAL_SEC}s` : 'Off' },
   ]
 
   return (
@@ -417,7 +418,7 @@ function AdvancedTab({ agent }: { agent: Agent }) {
         <div className={panelCardClass('p-4')}>
           <SectionLabel>Heartbeat</SectionLabel>
           <p className="text-[13px] text-text-2">
-            Every {agent.heartbeatIntervalSec ?? 120}s
+            Every {agent.heartbeatIntervalSec ?? DEFAULT_HEARTBEAT_INTERVAL_SEC}s
             {agent.heartbeatModel && ` (${agent.heartbeatModel})`}
           </p>
         </div>

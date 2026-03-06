@@ -7,7 +7,7 @@ const path = require('node:path')
 const {
   dependenciesChanged,
   detectPackageManager,
-  getGlobalUpdateCommand,
+  getGlobalUpdateSpec,
   getInstallCommand,
 } = require('./package-manager.js')
 
@@ -36,15 +36,37 @@ function getLatestStableTag() {
   return tags.find((t) => RELEASE_TAG_RE.test(t)) || null
 }
 
+function runRegistrySelfUpdate(
+  packageManager = PACKAGE_MANAGER,
+  execImpl = execFileSync,
+  logger = { log, logError },
+) {
+  const update = getGlobalUpdateSpec(packageManager, PACKAGE_NAME)
+  logger.log(`No git checkout detected. Updating the global ${PACKAGE_NAME} install via ${packageManager}...`)
+  try {
+    execImpl(update.command, update.args, {
+      cwd: PKG_ROOT,
+      stdio: 'inherit',
+      timeout: 120_000,
+    })
+    logger.log(`Global update complete via ${packageManager}.`)
+    logger.log('Restart the server to apply changes: swarmclaw server stop && swarmclaw server start')
+    return 0
+  } catch (err) {
+    logger.logError(`Registry update failed: ${err.message}`)
+    logger.logError(`Retry manually with: ${update.display}`)
+    return 1
+  }
+}
+
 function main() {
   const args = process.argv.slice(3)
   if (args.includes('-h') || args.includes('--help')) {
     console.log(`
 Usage: swarmclaw update
 
-Pull the latest SwarmClaw release via git.
-Prefers stable release tags (v*); falls back to origin/main.
-Runs ${PACKAGE_MANAGER} install if package files changed.
+If running from a git checkout, pull the latest SwarmClaw release tag.
+If running from a registry install, update the global package with ${PACKAGE_MANAGER}.
 `.trim())
     process.exit(0)
   }
@@ -53,9 +75,7 @@ Runs ${PACKAGE_MANAGER} install if package files changed.
   try {
     run('git rev-parse --git-dir')
   } catch {
-    logError('This install is not a git checkout, so swarmclaw update cannot pull a release tag directly.')
-    logError(`Reinstall the latest version with: ${getGlobalUpdateCommand(PACKAGE_MANAGER, PACKAGE_NAME)}`)
-    process.exit(1)
+    process.exit(runRegistrySelfUpdate(PACKAGE_MANAGER))
   }
 
   const beforeRef = run('git rev-parse HEAD')
@@ -128,4 +148,11 @@ Runs ${PACKAGE_MANAGER} install if package files changed.
   log('Restart the server to apply changes: swarmclaw server stop && swarmclaw server start')
 }
 
-main()
+if (require.main === module) {
+  main()
+}
+
+module.exports = {
+  main,
+  runRegistrySelfUpdate,
+}

@@ -1,5 +1,6 @@
 'use client'
 
+import { DEFAULT_HEARTBEAT_SHOW_ALERTS, DEFAULT_HEARTBEAT_SHOW_OK } from '@/lib/heartbeat-defaults'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { useChatStore } from '@/stores/use-chat-store'
@@ -80,8 +81,8 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
     || (session?.provider === 'claude-cli' ? undefined : session?.model || session?.provider)
     || undefined
 
-  const showOk = appSettings.heartbeatShowOk ?? false
-  const showAlerts = appSettings.heartbeatShowAlerts ?? true
+  const showOk = appSettings.heartbeatShowOk ?? DEFAULT_HEARTBEAT_SHOW_OK
+  const showAlerts = appSettings.heartbeatShowAlerts ?? DEFAULT_HEARTBEAT_SHOW_ALERTS
 
   // Gateway disconnect overlay for openclaw agents
   const isOpenClaw = agent?.provider === 'openclaw'

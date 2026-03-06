@@ -1,5 +1,6 @@
 'use client'
 
+import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { useEffect, useState, useMemo, useRef, useCallback, type ReactNode } from 'react'
 import type { Session } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
@@ -335,7 +336,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       return null
     }
     // Global defaults
-    let sec = resolveFrom(appSettings) ?? 1800
+    let sec = resolveFrom(appSettings) ?? DEFAULT_HEARTBEAT_INTERVAL_SEC
     let enabled = sec > 0
     let explicitOptIn = false
     // Agent layer

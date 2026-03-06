@@ -40,6 +40,7 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(streamAgentChatSource.includes('If a task explicitly names an enabled tool, use that tool before declaring success.'))
     assert.ok(streamAgentChatSource.includes('collect required human input through the tool'))
     assert.ok(streamAgentChatSource.includes('You have not yet completed the required explicit tool step(s):'))
+    assert.ok(streamAgentChatSource.includes('[Loop Budget Reached]'))
   })
 })
 
