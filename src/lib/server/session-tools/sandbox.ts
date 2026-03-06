@@ -14,22 +14,20 @@ function getDenoPath(): string | null {
   return findBinaryOnPath('deno')
 }
 
-function getNodePath(): string | null {
-  return findBinaryOnPath('node')
-}
-
-function getTsxPath(): string | null {
-  return findBinaryOnPath('tsx')
-}
-
-function getPythonPath(): string | null {
-  return findBinaryOnPath('python3') ?? findBinaryOnPath('python')
-}
-
 const EXT_MAP: Record<string, string> = {
   javascript: 'js',
   typescript: 'ts',
-  python: 'py',
+}
+
+function sandboxUnavailableError(reason: string): string {
+  return JSON.stringify({
+    error: reason,
+    guidance: [
+      'Install Deno or run `npm run setup:easy` to enable sandbox_exec.',
+      'Use http_request for straightforward API calls.',
+      'Use plugin_creator plus manage_schedules for recurring automations.',
+    ],
+  })
 }
 
 /**
@@ -45,18 +43,13 @@ async function executeSandboxExec(args: any, context: { sessionId?: string; cwd?
   const sessionId = context.sessionId ?? 'unknown'
   const sandboxDir = path.join('/tmp', `swarmclaw-sandbox-${sessionId}-${Date.now()}`)
   const denoPath = getDenoPath()
-  const nodePath = getNodePath()
-  const tsxPath = getTsxPath()
-  const pythonPath = getPythonPath()
 
-  if (language === 'javascript' && !denoPath && !nodePath) {
-    return JSON.stringify({ error: 'No JavaScript runtime available. Install Deno or Node.js.' })
+  if (language !== 'javascript' && language !== 'typescript') {
+    return sandboxUnavailableError('sandbox_exec currently supports only JavaScript and TypeScript via Deno.')
   }
-  if (language === 'typescript' && !denoPath && !tsxPath) {
-    return JSON.stringify({ error: 'No TypeScript runtime available. Install Deno or tsx.' })
-  }
-  if (language === 'python' && !pythonPath) {
-    return JSON.stringify({ error: 'Python is not installed.' })
+
+  if (!denoPath) {
+    return sandboxUnavailableError('Deno is required for sandbox_exec. Unsafe Node/Python fallbacks are disabled.')
   }
 
   try {
@@ -65,36 +58,15 @@ async function executeSandboxExec(args: any, context: { sessionId?: string; cwd?
     const scriptPath = path.join(sandboxDir, scriptFile)
     fs.writeFileSync(scriptPath, code, 'utf-8')
 
-    let result: ReturnType<typeof spawnSync>
-
-    if (language === 'javascript') {
-      if (denoPath) {
-        result = spawnSync(denoPath, [
-          'run', '--allow-read=.', '--allow-write=.', '--allow-net', '--deny-env', '--no-prompt', scriptFile,
-        ], { cwd: sandboxDir, encoding: 'utf-8', timeout, maxBuffer: MAX_OUTPUT })
-      } else {
-        result = spawnSync(nodePath!, [scriptPath], {
-          cwd: sandboxDir, encoding: 'utf-8', timeout, maxBuffer: MAX_OUTPUT,
-          env: { PATH: process.env.PATH || '/usr/bin:/bin' } as any,
-        })
-      }
-    } else if (language === 'typescript') {
-      if (denoPath) {
-        result = spawnSync(denoPath, [
-          'run', '--allow-read=.', '--allow-write=.', '--allow-net', '--deny-env', '--no-prompt', scriptFile,
-        ], { cwd: sandboxDir, encoding: 'utf-8', timeout, maxBuffer: MAX_OUTPUT })
-      } else {
-        result = spawnSync(tsxPath!, [scriptPath], {
-          cwd: sandboxDir, encoding: 'utf-8', timeout, maxBuffer: MAX_OUTPUT,
-          env: { PATH: process.env.PATH || '/usr/bin:/bin' } as any,
-        })
-      }
-    } else {
-      result = spawnSync(pythonPath!, [scriptPath], {
-        cwd: sandboxDir, encoding: 'utf-8', timeout, maxBuffer: MAX_OUTPUT,
-        env: { PATH: process.env.PATH || '/usr/bin:/bin' } as any,
-      })
-    }
+    const result = spawnSync(denoPath, [
+      'run',
+      '--allow-read=.',
+      '--allow-write=.',
+      '--allow-net',
+      '--deny-env',
+      '--no-prompt',
+      scriptFile,
+    ], { cwd: sandboxDir, encoding: 'utf-8', timeout, maxBuffer: MAX_OUTPUT })
 
     const stdout = truncate((result.stdout || '').toString(), MAX_OUTPUT)
     const stderr = truncate((result.stderr || '').toString(), MAX_OUTPUT)
@@ -125,16 +97,18 @@ async function executeSandboxExec(args: any, context: { sessionId?: string; cwd?
 }
 
 async function executeListRuntimes() {
-  const runtimes: Record<string, any> = {}
-  for (const [name, bin] of [['deno', getDenoPath()], ['node', getNodePath()], ['tsx', getTsxPath()], ['python', getPythonPath()]] as const) {
-    if (bin) {
-      const ver = spawnSync(bin, ['--version'], { encoding: 'utf-8', timeout: 3000 })
-      runtimes[name] = { available: true, version: (ver.stdout || '').split('\n')[0]?.trim() || null }
-    } else {
-      runtimes[name] = { available: false }
-    }
+  const denoPath = getDenoPath()
+  if (!denoPath) {
+    return sandboxUnavailableError('Deno is not available for sandbox_exec.')
   }
-  return JSON.stringify(runtimes)
+  const ver = spawnSync(denoPath, ['--version'], { encoding: 'utf-8', timeout: 3000 })
+  return JSON.stringify({
+    deno: {
+      available: true,
+      version: (ver.stdout || '').split('\n')[0]?.trim() || null,
+    },
+    sandboxReady: true,
+  })
 }
 
 /**
@@ -142,18 +116,23 @@ async function executeListRuntimes() {
  */
 const SandboxPlugin: Plugin = {
   name: 'Core Sandbox',
-  description: 'Secure isolated code execution for JS, TS, and Python.',
+  description: 'Deno-based isolated code execution for JavaScript and TypeScript when custom code is necessary.',
   hooks: {
-    getCapabilityDescription: () => 'I can run code in a sandbox (`sandbox_exec`) — JS/TS via Deno or Python, in an isolated environment. I get stdout, stderr, and any files created.',
+    getCapabilityDescription: () => 'I can run JavaScript or TypeScript in a Deno sandbox (`sandbox_exec`) when custom code is necessary. For straightforward API calls, use `http_request` instead.',
+    getOperatingGuidance: () => [
+      'Use `http_request` for straightforward REST/JSON API calls instead of writing code in `sandbox_exec`.',
+      'Use `sandbox_exec` only when custom parsing or transformation code is actually needed.',
+      'For recurring automations, prefer `plugin_creator` plus `manage_schedules` over repeated sandbox runs.',
+    ],
   } as PluginHooks,
   tools: [
     {
       name: 'sandbox_exec',
-      description: 'Execute code in an isolated sandbox.',
+      description: 'Execute JavaScript or TypeScript in a Deno sandbox when custom code is necessary.',
       parameters: {
         type: 'object',
         properties: {
-          language: { type: 'string', enum: ['javascript', 'typescript', 'python'] },
+          language: { type: 'string', enum: ['javascript', 'typescript'] },
           code: { type: 'string' },
           timeoutSec: { type: 'number' }
         },
@@ -163,7 +142,7 @@ const SandboxPlugin: Plugin = {
     },
     {
       name: 'sandbox_list_runtimes',
-      description: 'List available sandbox runtimes.',
+      description: 'Report whether the Deno sandbox runtime is available.',
       parameters: { type: 'object', properties: {} },
       execute: async () => executeListRuntimes()
     }
@@ -185,7 +164,11 @@ export function buildSandboxTools(bctx: ToolBuildContext): StructuredToolInterfa
       {
         name: 'sandbox_exec',
         description: SandboxPlugin.tools![0].description,
-        schema: z.object({}).passthrough()
+        schema: z.object({
+          language: z.enum(['javascript', 'typescript']),
+          code: z.string(),
+          timeoutSec: z.number().optional(),
+        })
       }
     ),
     tool(
@@ -197,30 +180,6 @@ export function buildSandboxTools(bctx: ToolBuildContext): StructuredToolInterfa
       }
     )
   )
-
-  const openclawPath = findBinaryOnPath('openclaw') || findBinaryOnPath('clawdbot')
-  if (openclawPath) {
-    tools.push(
-      tool(
-        async (rawArgs) => {
-          const normalized = normalizeToolInputArgs((rawArgs ?? {}) as Record<string, unknown>)
-          const code = normalized.code as string | undefined
-          const explain = normalized.explain as boolean | undefined
-          try {
-            if (!code) return JSON.stringify({ error: 'code is required' })
-            const args = explain ? ['sandbox', 'explain', code] : ['sandbox', 'run', code]
-            const result = spawnSync(openclawPath, args, { encoding: 'utf-8', timeout: 60_000, maxBuffer: MAX_OUTPUT })
-            return JSON.stringify({ exitCode: result.status ?? 0, stdout: truncate(result.stdout || '', MAX_OUTPUT), stderr: truncate(result.stderr || '', MAX_OUTPUT) })
-          } catch (err: any) { return JSON.stringify({ error: err.message }) }
-        },
-        {
-          name: 'openclaw_sandbox',
-          description: 'Execute or explain code through OpenClaw CLI.',
-          schema: z.object({ code: z.string(), explain: z.boolean().optional() }),
-        }
-      )
-    )
-  }
 
   return tools
 }

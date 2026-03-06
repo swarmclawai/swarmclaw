@@ -612,8 +612,7 @@ export async function executeLangGraphOrchestrator(
   const completeMatch = finalResult.match(/ORCHESTRATION_COMPLETE:\s*([\s\S]+)/)
   const summary = completeMatch ? completeMatch[1].trim() : finalResult
   
-  // Append meta so the main-loop knows we are done
-  return `${summary}\n\n[MAIN_LOOP_META] {"status":"ok", "follow_up":false, "summary":${JSON.stringify(summary.slice(0, 300))}, "mission_task_id":${JSON.stringify(taskId || null)}}`
+  return summary
 }
 
 /**

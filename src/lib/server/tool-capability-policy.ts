@@ -56,7 +56,7 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   opencode_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_opencode_cli'] },
   gemini_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_gemini_cli'] },
   memory: { categories: ['memory'], concreteTools: ['memory', 'memory_tool', 'context_status', 'context_summarize'] },
-  sandbox: { categories: ['execution', 'filesystem'], concreteTools: ['sandbox', 'sandbox_exec', 'sandbox_list_runtimes', 'openclaw_sandbox'] },
+  sandbox: { categories: ['execution', 'filesystem'], concreteTools: ['sandbox', 'sandbox_exec', 'sandbox_list_runtimes'] },
   git: { categories: ['execution', 'filesystem'], concreteTools: ['git'] },
   http_request: { categories: ['network'], concreteTools: ['http_request'] },
   canvas: { categories: ['filesystem'], concreteTools: ['canvas'] },

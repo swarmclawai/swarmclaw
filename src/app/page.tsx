@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { initAudioContext } from '@/lib/tts'
 import { getStoredAccessKey, clearStoredAccessKey, api } from '@/lib/api-client'
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 import { connectWs, disconnectWs } from '@/lib/ws-client'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { useWs } from '@/hooks/use-ws'
@@ -12,10 +13,17 @@ import { UserPicker } from '@/components/auth/user-picker'
 import { SetupWizard } from '@/components/auth/setup-wizard'
 import { AppLayout } from '@/components/layout/app-layout'
 import { useViewRouter } from '@/hooks/use-view-router'
+import type { Agent } from '@/types'
 
 const AUTH_CHECK_TIMEOUT_MS = 8_000
+const POST_AUTH_BOOTSTRAP_TIMEOUT_MS = 8_000
 
-function FullScreenLoader() {
+function FullScreenLoader(props: {
+  stage?: string | null
+  stalled?: boolean
+  onReload?: () => void
+  onReset?: () => void
+}) {
   return (
     <div className="h-full flex flex-col items-center justify-center bg-bg overflow-hidden select-none">
       {/* Animated orbital ring */}
@@ -106,6 +114,42 @@ function FullScreenLoader() {
         />
       </div>
 
+      {props.stage ? (
+        <p
+          className="mt-4 text-[12px] text-text-3"
+          style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.4s both' }}
+        >
+          {props.stage}
+        </p>
+      ) : null}
+
+      {props.stalled ? (
+        <div
+          className="mt-6 max-w-[360px] px-4 text-center"
+          style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.5s both' }}
+        >
+          <p className="text-[12px] text-text-2">
+            Startup is taking longer than expected. This usually means the browser kept stale local state while the dev server restarted.
+          </p>
+          <div className="mt-4 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={props.onReload}
+              className="px-4 py-2 rounded-[12px] border border-white/[0.08] bg-surface text-[12px] text-text-2 transition-colors hover:bg-surface-2"
+            >
+              Reload
+            </button>
+            <button
+              type="button"
+              onClick={props.onReset}
+              className="px-4 py-2 rounded-[12px] border border-white/[0.08] bg-transparent text-[12px] text-text-3 transition-colors hover:bg-white/[0.04]"
+            >
+              Reset Local Session
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Loading animation keyframes */}
       <style>{`
         @keyframes sc-orbit {
@@ -150,8 +194,9 @@ export default function Home() {
 
   const [authChecked, setAuthChecked] = useState(false)
   const [authenticated, setAuthenticated] = useState(false)
+  const [bootTimedOut, setBootTimedOut] = useState(false)
   const [setupDone, setSetupDone] = useState<boolean | null>(() => {
-    if (typeof window !== 'undefined' && localStorage.getItem('sc_setup_done') === '1') return true
+    if (safeStorageGet('sc_setup_done') === '1') return true
     return null
   })
 
@@ -183,7 +228,8 @@ export default function Home() {
         setAuthenticated(false)
       }
     } catch {
-      setAuthenticated(true)
+      clearStoredAccessKey()
+      setAuthenticated(false)
     } finally {
       setAuthChecked(true)
     }
@@ -193,7 +239,10 @@ export default function Home() {
   const syncUserFromServer = useCallback(async () => {
     if (currentUser) return // already have a name locally
     try {
-      const settings = await api<{ userName?: string }>('GET', '/settings')
+      const settings = await api<{ userName?: string }>('GET', '/settings', undefined, {
+        timeoutMs: POST_AUTH_BOOTSTRAP_TIMEOUT_MS,
+        retries: 0,
+      })
       if (settings.userName) {
         setUser(settings.userName)
       }
@@ -229,11 +278,14 @@ export default function Home() {
     let cancelled = false
     ;(async () => {
       try {
-        const state = useAppStore.getState()
-        await state.loadAgents()
+        const agents = await api<Record<string, Agent>>('GET', '/agents', undefined, {
+          timeoutMs: POST_AUTH_BOOTSTRAP_TIMEOUT_MS,
+          retries: 0,
+        })
         if (cancelled) return
+        useAppStore.setState({ agents })
 
-        const { agents, currentAgentId, appSettings } = useAppStore.getState()
+        const { currentAgentId, appSettings } = useAppStore.getState()
         // Priority: persisted agent > settings default > first agent
         const targetId = (currentAgentId && agents[currentAgentId])
           ? currentAgentId
@@ -256,14 +308,23 @@ export default function Home() {
     let cancelled = false
     ;(async () => {
       try {
-        const [settings, creds] = await Promise.all([
-          api<{ setupCompleted?: boolean }>('GET', '/settings'),
-          api<Record<string, unknown>>('GET', '/credentials'),
+        const [settingsResult, credsResult] = await Promise.allSettled([
+          api<{ setupCompleted?: boolean }>('GET', '/settings', undefined, {
+            timeoutMs: POST_AUTH_BOOTSTRAP_TIMEOUT_MS,
+            retries: 0,
+          }),
+          api<Record<string, unknown>>('GET', '/credentials', undefined, {
+            timeoutMs: POST_AUTH_BOOTSTRAP_TIMEOUT_MS,
+            retries: 0,
+          }),
         ])
         if (cancelled) return
+        const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : {}
+        const creds = credsResult.status === 'fulfilled' ? credsResult.value : {}
+        const bothFailed = settingsResult.status === 'rejected' && credsResult.status === 'rejected'
         const hasCreds = Object.keys(creds).length > 0
-        const done = settings.setupCompleted === true || hasCreds
-        if (done) localStorage.setItem('sc_setup_done', '1')
+        const done = bothFailed ? true : settings.setupCompleted === true || hasCreds
+        if (done) safeStorageSet('sc_setup_done', '1')
         setSetupDone(done)
       } catch {
         if (!cancelled) setSetupDone(true) // on error, skip wizard
@@ -293,10 +354,60 @@ export default function Home() {
 
   useViewRouter()
 
-  if (!hydrated || !authChecked) return <FullScreenLoader />
+  const bootStage = !hydrated
+    ? 'Restoring local session'
+    : !authChecked
+      ? 'Checking access'
+      : authenticated && currentUser && setupDone === null
+        ? 'Loading setup state'
+        : authenticated && currentUser && !agentReady
+          ? 'Restoring agent workspace'
+          : null
+
+  useEffect(() => {
+    if (!bootStage) {
+      setBootTimedOut(false)
+      return
+    }
+    const timer = window.setTimeout(() => setBootTimedOut(true), 15_000)
+    return () => window.clearTimeout(timer)
+  }, [bootStage])
+
+  const reloadApp = useCallback(() => {
+    window.location.reload()
+  }, [])
+
+  const resetLocalSession = useCallback(() => {
+    clearStoredAccessKey()
+    disconnectWs()
+    safeStorageRemove('sc_user')
+    safeStorageRemove('sc_agent')
+    safeStorageRemove('sc_setup_done')
+    window.location.assign('/')
+  }, [])
+
+  if (!hydrated || !authChecked) {
+    return (
+      <FullScreenLoader
+        stage={bootStage}
+        stalled={bootTimedOut}
+        onReload={reloadApp}
+        onReset={resetLocalSession}
+      />
+    )
+  }
   if (!authenticated) return <AccessKeyGate onAuthenticated={() => setAuthenticated(true)} />
   if (!currentUser) return <UserPicker />
-  if (setupDone === null || !agentReady) return <FullScreenLoader />
-  if (!setupDone) return <SetupWizard onComplete={() => { localStorage.setItem('sc_setup_done', '1'); setSetupDone(true) }} />
+  if (setupDone === null || !agentReady) {
+    return (
+      <FullScreenLoader
+        stage={bootStage}
+        stalled={bootTimedOut}
+        onReload={reloadApp}
+        onReset={resetLocalSession}
+      />
+    )
+  }
+  if (!setupDone) return <SetupWizard onComplete={() => { safeStorageSet('sc_setup_done', '1'); setSetupDone(true) }} />
   return <AppLayout />
 }

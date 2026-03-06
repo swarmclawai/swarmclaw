@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { genId } from '@/lib/id'
 import type { EvalScenario, EvalRun, EvalSuiteResult } from './types'
 import { getScenario, EVAL_SCENARIOS } from './scenarios'
@@ -5,7 +7,14 @@ import { scoreCriteria } from './scorer'
 import { saveEvalRun } from './store'
 import { loadSessions, saveSessions, loadAgents, loadCredentials, decryptKey } from '../storage'
 import { executeSessionChatTurn } from '../chat-execution'
+import { WORKSPACE_DIR } from '../data-dir'
 import type { Session } from '@/types'
+
+export function resolveEvalSessionCwd(runId: string): string {
+  const dir = path.join(WORKSPACE_DIR, 'evals', runId)
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
 
 export async function runEvalScenario(scenarioId: string, agentId: string): Promise<EvalRun> {
   const scenario = getScenario(scenarioId)
@@ -18,6 +27,7 @@ export async function runEvalScenario(scenarioId: string, agentId: string): Prom
   const runId = genId()
   const sessionId = `eval-${runId}`
   const now = Date.now()
+  const sessionCwd = resolveEvalSessionCwd(runId)
 
   const run: EvalRun = {
     id: runId,
@@ -36,7 +46,7 @@ export async function runEvalScenario(scenarioId: string, agentId: string): Prom
   const evalSession: Session = {
     id: sessionId,
     name: `Eval: ${scenario.name}`,
-    cwd: process.cwd(),
+    cwd: sessionCwd,
     user: 'eval-runner',
     provider: (agent.provider as Session['provider']) ?? 'anthropic',
     model: (agent.model as string) ?? '',

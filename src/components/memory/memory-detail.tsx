@@ -3,7 +3,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { getMemory, updateMemory, deleteMemory } from '@/lib/memory'
+import { deriveMemoryScope, getMemoryScopeLabel, getMemoryTier } from '@/lib/memory-presentation'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import type { MemoryEntry } from '@/types'
 
 const CATEGORIES = ['note', 'fact', 'preference', 'finding', 'learning', 'general']
@@ -22,6 +24,7 @@ export function MemoryDetail() {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [category, setCategory] = useState('note')
+  const [editTier, setEditTier] = useState<'working' | 'durable' | 'archive'>('durable')
   const [editAgentId, setEditAgentId] = useState<string | null>(null)
   const [editSharedWith, setEditSharedWith] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
@@ -53,6 +56,7 @@ export function MemoryDetail() {
         setTitle(resolved.title)
         setContent(resolved.content)
         setCategory(resolved.category || 'note')
+        setEditTier(getMemoryTier(resolved))
         setEditAgentId(resolved.agentId || null)
         setEditSharedWith(resolved.sharedWith || [])
         setEditing(false)
@@ -97,6 +101,12 @@ export function MemoryDetail() {
         category,
         agentId: editAgentId,
         sharedWith: editSharedWith.length ? editSharedWith : undefined,
+        metadata: {
+          ...(entry.metadata || {}),
+          tier: editTier,
+          scope: editAgentId ? 'agent' : 'global',
+          visibility: editAgentId ? (editSharedWith.length ? 'shared' : 'private') : 'global',
+        },
       })
       setEntry(updated)
       setEditing(false)
@@ -151,6 +161,8 @@ export function MemoryDetail() {
 
   const agentName = entry.agentId ? (agents[entry.agentId]?.name || entry.agentId) : null
   const sessionName = entry.sessionId ? (sessions[entry.sessionId]?.name || entry.sessionId) : null
+  const scope = deriveMemoryScope(entry)
+  const tier = getMemoryTier(entry)
   const imagePath = entry.image?.path || entry.imagePath || null
   const imageUrl = imagePath
     ? imagePath.startsWith('data/memory-images/')
@@ -170,6 +182,18 @@ export function MemoryDetail() {
           <div className="flex items-center gap-2.5">
             <span className="shrink-0 text-[10px] font-700 uppercase tracking-wider text-accent-bright/70 bg-accent-soft px-2 py-0.5 rounded-[6px]">
               {entry.category || 'note'}
+            </span>
+            <span className="shrink-0 text-[10px] font-700 uppercase tracking-wider text-text-3/70 bg-white/[0.04] px-2 py-0.5 rounded-[6px]">
+              {getMemoryScopeLabel(scope)}
+            </span>
+            <span className={`shrink-0 text-[10px] font-700 uppercase tracking-wider px-2 py-0.5 rounded-[6px] ${
+              tier === 'working'
+                ? 'bg-amber-400/10 text-amber-300'
+                : tier === 'archive'
+                  ? 'bg-sky-400/10 text-sky-300'
+                  : 'bg-emerald-400/10 text-emerald-300'
+            }`}>
+              {tier}
             </span>
             {!editing && (
               <h2 className="font-display text-[16px] font-700 truncate tracking-[-0.02em]">{entry.title || 'Untitled'}</h2>
@@ -216,6 +240,7 @@ export function MemoryDetail() {
                   setTitle(entry.title)
                   setContent(entry.content)
                   setCategory(entry.category || 'note')
+                  setEditTier(getMemoryTier(entry))
                   setEditAgentId(entry.agentId || null)
                   setEditSharedWith(entry.sharedWith || [])
                   setEditing(false)
@@ -301,9 +326,23 @@ export function MemoryDetail() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-[11px] font-600 text-text-3/60 uppercase tracking-[0.06em] mb-2">Tier</label>
+                <select
+                  value={editTier}
+                  onChange={(e) => setEditTier(e.target.value as typeof editTier)}
+                  className={inputClass}
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <option value="working">Working</option>
+                  <option value="durable">Durable</option>
+                  <option value="archive">Archive</option>
+                </select>
+              </div>
+
               {/* Agent assignment */}
               <div>
-                <label className="block text-[11px] font-600 text-text-3/60 uppercase tracking-[0.06em] mb-2">Assigned to</label>
+                <label className="block text-[11px] font-600 text-text-3/60 uppercase tracking-[0.06em] mb-2">Visibility</label>
                 <div className="flex gap-1.5 flex-wrap">
                   <button
                     onClick={() => setEditAgentId(null)}
@@ -522,10 +561,18 @@ export function MemoryDetail() {
                   </div>
                   {entry.agentId && (
                     <div>
-                      <span className="text-text-3/70 block mb-1">Agent</span>
+                      <span className="text-text-3/70 block mb-1">Owner</span>
                       <span className="text-text-3/60 font-mono">{agentName}</span>
                     </div>
                   )}
+                  <div>
+                    <span className="text-text-3/70 block mb-1">Scope</span>
+                    <span className="text-text-3/60 font-mono">{getMemoryScopeLabel(scope)}</span>
+                  </div>
+                  <div>
+                    <span className="text-text-3/70 block mb-1">Tier</span>
+                    <span className="text-text-3/60 font-mono">{tier}</span>
+                  </div>
                   {entry.sessionId && (
                     <div>
                       <span className="text-text-3/70 block mb-1">Chat</span>
@@ -544,35 +591,15 @@ export function MemoryDetail() {
         </div>
       </div>
 
-      {/* Delete confirmation */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setConfirmDelete(false)} />
-          <div className="relative bg-raised rounded-[16px] p-6 max-w-[360px] w-full shadow-xl border border-white/[0.06]"
-            style={{ animation: 'fade-in 0.15s cubic-bezier(0.16, 1, 0.3, 1)' }}>
-            <h3 className="font-display text-[16px] font-700 mb-2">Delete Memory</h3>
-            <p className="text-[13px] text-text-3 mb-5">
-              Delete &ldquo;{entry.title}&rdquo;? This cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmDelete(false)}
-                className="flex-1 py-2.5 rounded-[10px] border border-white/[0.08] bg-transparent text-text-2 text-[13px] font-600 cursor-pointer hover:bg-surface-2 transition-all"
-                style={{ fontFamily: 'inherit' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                className="flex-1 py-2.5 rounded-[10px] border-none bg-red-500/90 text-white text-[13px] font-600 cursor-pointer active:scale-[0.97] transition-all hover:bg-red-500"
-                style={{ fontFamily: 'inherit' }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete Memory"
+        message={`Delete "${entry.title}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => { void handleDelete() }}
+      />
     </div>
   )
 }

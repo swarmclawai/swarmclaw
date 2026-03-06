@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { createProviderConfig, updateProviderConfig, deleteProviderConfig } from '@/lib/provider-config'
 import { api } from '@/lib/api-client'
+import { fetchProviderModelDiscovery } from '@/lib/provider-model-discovery-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { toast } from 'sonner'
 
@@ -35,10 +36,10 @@ export function ProviderSheet() {
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'pass' | 'fail'>('idle')
   const [testMessage, setTestMessage] = useState('')
 
-  // Ollama local models
-  const [localModels, setLocalModels] = useState<string[]>([])
-  const [localLoading, setLocalLoading] = useState(false)
-  const [localError, setLocalError] = useState('')
+  const [liveModels, setLiveModels] = useState<string[]>([])
+  const [liveLoading, setLiveLoading] = useState(false)
+  const [liveMessage, setLiveMessage] = useState('')
+  const [liveCached, setLiveCached] = useState(false)
 
   // Find editing provider in custom configs OR built-in list
   const editingCustom = editingId ? providerConfigs.find((c) => c.id === editingId) : null
@@ -50,8 +51,9 @@ export function ProviderSheet() {
     if (open) {
       loadCredentials()
       setNewModel('')
-      setLocalModels([])
-      setLocalError('')
+      setLiveModels([])
+      setLiveMessage('')
+      setLiveCached(false)
       setTestStatus('idle')
       setTestMessage('')
       if (editingCustom) {
@@ -79,34 +81,19 @@ export function ProviderSheet() {
         setIsEnabled(true)
       }
     }
-  }, [open, editingId])
-
-  // Fetch local Ollama models when editing Ollama provider
-  useEffect(() => {
-    if (!open || editingId !== 'ollama') return
-    setLocalLoading(true)
-    const endpoint = baseUrl || 'http://localhost:11434'
-    api<{ models: { name: string }[]; error?: string }>('GET', `/providers/ollama?endpoint=${encodeURIComponent(endpoint)}`)
-      .then((res) => {
-        if (res.error) {
-          setLocalError(res.error)
-          setLocalModels([])
-        } else {
-          setLocalModels(res.models.map((m) => m.name))
-        }
-      })
-      .catch(() => {
-        setLocalError('Failed to connect')
-        setLocalModels([])
-      })
-      .finally(() => setLocalLoading(false))
-  }, [open, editingId, baseUrl])
+  }, [open, editingId, credentials, editingBuiltin, editingCustom, loadCredentials])
 
   // Reset test status when connection params change
   useEffect(() => {
     setTestStatus('idle')
     setTestMessage('')
   }, [credentialId, baseUrl])
+
+  useEffect(() => {
+    setLiveModels([])
+    setLiveMessage('')
+    setLiveCached(false)
+  }, [editingId, credentialId, baseUrl, requiresApiKey])
 
   const handleTestConnection = async () => {
     setTestStatus('testing')
@@ -210,10 +197,43 @@ export function ProviderSheet() {
     setModels(list.join(', '))
   }
 
+  const handleLoadLiveModels = async (force = false) => {
+    if (!open) return
+    const providerId = editingId || 'custom'
+    setLiveLoading(true)
+    setLiveMessage('')
+    try {
+      const result = await fetchProviderModelDiscovery({
+        providerId,
+        credentialId,
+        endpoint: baseUrl,
+        force,
+        requiresApiKey: isBuiltin ? undefined : requiresApiKey,
+      })
+      setLiveModels(result.models)
+      setLiveCached(result.cached)
+      setLiveMessage(result.message || '')
+      if (!result.ok) {
+        toast.message(result.message || 'Live model discovery is unavailable.')
+        return
+      }
+      setModels(result.models.join(', '))
+      toast.success(`Loaded ${result.models.length} live model${result.models.length === 1 ? '' : 's'}`)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load live models'
+      setLiveMessage(message)
+      toast.error(message)
+    } finally {
+      setLiveLoading(false)
+    }
+  }
+
   const credList = Object.values(credentials)
   const modelList = models.split(',').map((m) => m.trim()).filter(Boolean)
-  const isNew = !editing
   const showApiKey = isBuiltin ? editingBuiltin?.requiresApiKey || editingBuiltin?.optionalApiKey : requiresApiKey
+  const canDiscoverModels = isBuiltin
+    ? Boolean(editingBuiltin?.supportsModelDiscovery)
+    : !!baseUrl.trim()
 
   const inputClass = "w-full px-4 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[15px] outline-none transition-all duration-200 placeholder:text-text-3/50 focus-glow"
 
@@ -254,26 +274,45 @@ export function ProviderSheet() {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Models</label>
-          {isBuiltin && (
-            <button onClick={handleResetModels}
-              className="text-[11px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none"
-              style={{ fontFamily: 'inherit' }}>
-              Reset to defaults
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {canDiscoverModels && (
+              <button
+                onClick={() => { void handleLoadLiveModels(Boolean(liveModels.length)) }}
+                disabled={liveLoading}
+                className="text-[11px] text-accent-bright hover:brightness-110 transition-colors cursor-pointer bg-transparent border-none disabled:opacity-50 disabled:cursor-default"
+                style={{ fontFamily: 'inherit' }}
+              >
+                {liveLoading ? 'Loading live models...' : liveModels.length > 0 ? 'Refresh live list' : 'Load live models'}
+              </button>
+            )}
+            {isBuiltin && (
+              <button onClick={handleResetModels}
+                className="text-[11px] text-text-3 hover:text-text-2 transition-colors cursor-pointer bg-transparent border-none"
+                style={{ fontFamily: 'inherit' }}>
+                Reset to defaults
+              </button>
+            )}
+          </div>
         </div>
+
+        {(liveMessage || liveCached) && (
+          <p className="text-[11px] text-text-3/70 mb-3">
+            {liveMessage}
+            {liveCached ? ' Cached.' : ''}
+          </p>
+        )}
 
         {isBuiltin ? (
           <>
             <div className="flex flex-wrap gap-1.5 mb-3">
               {modelList.map((model, i) => {
-                const isLocal = editingId === 'ollama' && localModels.includes(model)
+                const isLive = liveModels.includes(model)
                 return (
                   <div key={`${model}-${i}`} className={`group/model flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border
-                    ${isLocal ? 'bg-emerald-500/[0.08] border-emerald-500/20' : 'bg-white/[0.04] border-white/[0.06]'}`}>
+                    ${isLive ? 'bg-emerald-500/[0.08] border-emerald-500/20' : 'bg-white/[0.04] border-white/[0.06]'}`}>
                     <span className="text-[12px] text-text-2 font-mono">{model}</span>
-                    {isLocal && (
-                      <span className="text-[9px] font-600 px-1.5 py-0.5 rounded-[4px] bg-emerald-500/15 text-emerald-400 uppercase tracking-wider">local</span>
+                    {isLive && (
+                      <span className="text-[9px] font-600 px-1.5 py-0.5 rounded-[4px] bg-emerald-500/15 text-emerald-400 uppercase tracking-wider">live</span>
                     )}
                     <button
                       onClick={() => handleRemoveModel(i)}
@@ -287,34 +326,6 @@ export function ProviderSheet() {
                 )
               })}
             </div>
-
-            {/* Ollama: show available local models not yet in the list */}
-            {editingId === 'ollama' && !localLoading && localModels.length > 0 && (() => {
-              const missing = localModels.filter((m) => !modelList.includes(m))
-              if (missing.length === 0) return null
-              return (
-                <div className="mb-3">
-                  <p className="text-[11px] text-text-3/60 mb-2">Available locally — click to add:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {missing.map((m) => (
-                      <button key={m} onClick={() => { setModels(models ? models + ', ' + m : m) }}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] bg-emerald-500/[0.05] border border-emerald-500/15
-                          hover:bg-emerald-500/10 transition-all cursor-pointer text-[12px] text-emerald-300/80 font-mono"
-                        style={{ fontFamily: 'inherit' }}>
-                        <span>+</span> {m}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )
-            })()}
-
-            {editingId === 'ollama' && localLoading && (
-              <p className="text-[11px] text-text-3/70 mb-3">Checking local Ollama instance...</p>
-            )}
-            {editingId === 'ollama' && localError && (
-              <p className="text-[11px] text-amber-400/60 mb-3">{localError}</p>
-            )}
 
             <div className="flex gap-2">
               <input
@@ -431,13 +442,13 @@ export function ProviderSheet() {
                   onClick={async () => {
                     setSavingKey(true)
                     try {
-                      const cred = await api<any>('POST', '/credentials', { provider: editingId || name || 'custom', name: newKeyName.trim() || `${name || editingId || 'Custom'} key`, apiKey: newKeyValue.trim() })
+                      const cred = await api<{ id: string }>('POST', '/credentials', { provider: editingId || name || 'custom', name: newKeyName.trim() || `${name || editingId || 'Custom'} key`, apiKey: newKeyValue.trim() })
                       await loadCredentials()
                       setCredentialId(cred.id)
                       setAddingKey(false)
                       setNewKeyName('')
                       setNewKeyValue('')
-                    } catch (err: any) { toast.error(`Failed to save: ${err.message}`) }
+                    } catch (err: unknown) { toast.error(`Failed to save: ${err instanceof Error ? err.message : String(err)}`) }
                     finally { setSavingKey(false) }
                   }}
                   className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40"

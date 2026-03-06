@@ -52,10 +52,24 @@ export interface ProviderInfo {
   name: string
   models: string[]
   defaultModels?: string[]
+  supportsModelDiscovery?: boolean
   requiresApiKey: boolean
   optionalApiKey?: boolean
   requiresEndpoint: boolean
   defaultEndpoint?: string
+}
+
+export interface ProviderModelDiscoveryResult {
+  ok: boolean
+  providerId: string
+  providerName?: string
+  models: string[]
+  cached: boolean
+  fetchedAt: number
+  cacheTtlMs: number
+  supportsDiscovery: boolean
+  missingCredential?: boolean
+  message?: string
 }
 
 export interface Credential {
@@ -78,6 +92,7 @@ export interface Session {
   credentialId?: string | null
   fallbackCredentialIds?: string[]
   apiEndpoint?: string | null
+  gatewayProfileId?: string | null
   claudeSessionId: string | null
   codexThreadId?: string | null
   opencodeSessionId?: string | null
@@ -105,13 +120,13 @@ export interface Session {
   sessionMaxAgeSec?: number | null
   sessionDailyResetAt?: string | null
   sessionResetTimezone?: string | null
-  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high' | null
   browserProfileId?: string | null
-  connectorThinkLevel?: 'minimal' | 'low' | 'medium' | 'high'
-  connectorSessionScope?: 'main' | 'channel' | 'peer' | 'channel-peer' | 'thread'
-  connectorReplyMode?: 'off' | 'first' | 'all'
-  connectorThreadBinding?: 'off' | 'prefer' | 'strict'
-  connectorGroupPolicy?: 'open' | 'mention' | 'reply-or-mention' | 'disabled'
+  connectorThinkLevel?: 'minimal' | 'low' | 'medium' | 'high' | null
+  connectorSessionScope?: 'main' | 'channel' | 'peer' | 'channel-peer' | 'thread' | null
+  connectorReplyMode?: 'off' | 'first' | 'all' | null
+  connectorThreadBinding?: 'off' | 'prefer' | 'strict' | null
+  connectorGroupPolicy?: 'open' | 'mention' | 'reply-or-mention' | 'disabled' | null
   connectorIdleTimeoutSec?: number | null
   connectorMaxAgeSec?: number | null
   mailbox?: MailboxEnvelope[] | null
@@ -482,6 +497,9 @@ export interface Agent {
   credentialId?: string | null
   fallbackCredentialIds?: string[]
   apiEndpoint?: string | null
+  gatewayProfileId?: string | null
+  routingStrategy?: AgentRoutingStrategy | null
+  routingTargets?: AgentRoutingTarget[]
   isOrchestrator?: boolean
   subAgentIds?: string[]
   plugins?: string[]             // e.g. ['browser', 'memory'] — enabled plugin IDs
@@ -511,6 +529,8 @@ export interface Agent {
   sessionDailyResetAt?: string | null
   sessionResetTimezone?: string | null
   thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
+  memoryScopeMode?: 'auto' | 'all' | 'global' | 'agent' | 'session' | 'project' | null
+  memoryTierPreference?: 'working' | 'durable' | 'archive' | 'blended' | null
   elevenLabsVoiceId?: string | null
   projectId?: string
   avatarSeed?: string
@@ -603,6 +623,11 @@ export interface Schedule {
   projectId?: string
   taskPrompt: string
   scheduleType: ScheduleType
+  action?: string
+  path?: string
+  command?: string
+  description?: string
+  frequency?: string
   cron?: string
   intervalMs?: number
   runAt?: number
@@ -611,7 +636,10 @@ export interface Schedule {
   status: ScheduleStatus
   linkedTaskId?: string | null
   runNumber?: number
+  createdByAgentId?: string | null
+  createdInSessionId?: string | null
   createdAt: number
+  updatedAt?: number
 }
 
 export type BrowserSessionStatus = 'active' | 'idle' | 'closed' | 'error'
@@ -1132,6 +1160,161 @@ export interface ProviderConfig {
   requiresApiKey: boolean
   credentialId?: string | null
   isEnabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+// --- Gateways ---
+
+export type GatewayProvider = 'openclaw'
+export type GatewayHealthState = 'unknown' | 'healthy' | 'degraded' | 'offline' | 'pending'
+
+export interface GatewayProfile {
+  id: string
+  name: string
+  provider: GatewayProvider
+  endpoint: string
+  wsUrl?: string | null
+  credentialId?: string | null
+  status: GatewayHealthState
+  notes?: string | null
+  tags?: string[]
+  lastError?: string | null
+  lastCheckedAt?: number | null
+  lastModelCount?: number | null
+  discoveredHost?: string | null
+  discoveredPort?: number | null
+  isDefault?: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface OpenClawNode {
+  nodeId: string
+  displayName?: string
+  platform?: string
+  version?: string
+  coreVersion?: string
+  uiVersion?: string
+  deviceFamily?: string
+  modelIdentifier?: string
+  remoteIp?: string
+  caps?: string[]
+  commands?: string[]
+  pathEnv?: string[]
+  permissions?: string[]
+  connectedAtMs?: number
+  paired?: boolean
+  connected?: boolean
+}
+
+export interface OpenClawNodePairRequest {
+  requestId: string
+  nodeId?: string
+  displayName?: string
+  platform?: string
+  remoteIp?: string
+  createdAtMs?: number
+}
+
+export interface OpenClawPairedDevice {
+  deviceId: string
+  displayName?: string
+  role?: string
+  remoteIp?: string
+  platform?: string
+  tokens?: Array<{ role?: string; scopes?: string[]; createdAtMs?: number; rotatedAtMs?: number; revokedAtMs?: number }>
+}
+
+export interface OpenClawDevicePairRequest {
+  requestId: string
+  deviceId?: string
+  displayName?: string
+  role?: string
+  platform?: string
+  remoteIp?: string
+  createdAtMs?: number
+}
+
+export interface OpenClawPairingSnapshot {
+  pending?: OpenClawDevicePairRequest[]
+  paired?: OpenClawPairedDevice[]
+}
+
+// --- Agent Routing / Packs ---
+
+export type AgentRoutingStrategy = 'single' | 'balanced' | 'economy' | 'premium' | 'reasoning'
+export type AgentRoutingTargetRole = 'primary' | 'economy' | 'premium' | 'reasoning' | 'backup'
+
+export interface AgentRoutingTarget {
+  id: string
+  label?: string
+  role?: AgentRoutingTargetRole
+  provider: ProviderType
+  model: string
+  credentialId?: string | null
+  fallbackCredentialIds?: string[]
+  apiEndpoint?: string | null
+  gatewayProfileId?: string | null
+  priority?: number
+}
+
+export interface AgentPackEntry {
+  id: string
+  name: string
+  description?: string
+  provider: ProviderType
+  model: string
+  credentialId?: string | null
+  fallbackCredentialIds?: string[]
+  apiEndpoint?: string | null
+  gatewayProfileId?: string | null
+  routingStrategy?: AgentRoutingStrategy | null
+  routingTargets?: AgentRoutingTarget[]
+  tools?: string[]
+  plugins?: string[]
+  capabilities?: string[]
+  soul?: string
+  systemPrompt?: string
+}
+
+export interface AgentPackManifest {
+  schemaVersion: 1
+  kind: 'swarmclaw-agent-pack'
+  name: string
+  description?: string
+  exportedAt: number
+  recommendedProviders?: ProviderType[]
+  agents: AgentPackEntry[]
+}
+
+// --- External Agents ---
+
+export type ExternalAgentSourceType = 'codex' | 'claude' | 'opencode' | 'openclaw' | 'custom'
+export type ExternalAgentStatus = 'online' | 'idle' | 'offline' | 'stale'
+
+export interface ExternalAgentRuntime {
+  id: string
+  name: string
+  sourceType: ExternalAgentSourceType
+  status: ExternalAgentStatus
+  provider?: ProviderType | null
+  model?: string | null
+  workspace?: string | null
+  transport?: 'http' | 'ws' | 'cli' | 'gateway' | 'custom' | null
+  endpoint?: string | null
+  agentId?: string | null
+  gatewayProfileId?: string | null
+  capabilities?: string[]
+  labels?: string[]
+  metadata?: Record<string, unknown> | null
+  tokenStats?: {
+    inputTokens?: number
+    outputTokens?: number
+    totalTokens?: number
+  } | null
+  lastHeartbeatAt?: number | null
+  lastSeenAt?: number | null
   createdAt: number
   updatedAt: number
 }

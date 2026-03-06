@@ -1,10 +1,14 @@
+import fs from 'fs'
 import os from 'os'
-import { loadSettings, loadSkills, loadCredentials, decryptKey } from './storage'
+import path from 'path'
+import { loadSettings, loadSkills, loadCredentials, decryptKey, loadSessions, saveSessions } from './storage'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import { buildIdentityContinuityContext } from './identity-continuity'
 import { genId } from '@/lib/id'
 import { getProvider } from '@/lib/providers'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import { WORKSPACE_DIR } from './data-dir'
+import { applyResolvedRoute, resolvePrimaryAgentRoute } from './agent-runtime-config'
 import type { Chatroom, ChatroomMember, Agent, Session, Message, ChatroomMessage } from '@/types'
 
 /** Resolve API key from an agent's credentialId */
@@ -210,11 +214,31 @@ export function buildChatroomSystemPrompt(chatroom: Chatroom, agents: Record<str
 }
 
 /** Build a synthetic session object for an agent in a chatroom */
-export function buildSyntheticSession(agent: Agent, chatroomId: string): Session {
+export function resolveChatroomWorkspaceDir(chatroomId: string): string {
+  return path.join(WORKSPACE_DIR, 'chatrooms', chatroomId)
+}
+
+export function resolveSyntheticSessionId(chatroomId: string, agentId: string): string {
+  return `chatroom-${chatroomId}-${agentId}`
+}
+
+function buildEmptyDelegateResumeIds(): NonNullable<Session['delegateResumeIds']> {
   return {
-    id: `chatroom-${chatroomId}-${agent.id}`,
+    claudeCode: null,
+    codex: null,
+    opencode: null,
+    gemini: null,
+  }
+}
+
+export function buildSyntheticSession(agent: Agent, chatroomId: string): Session {
+  const roomWorkspace = resolveChatroomWorkspaceDir(chatroomId)
+  fs.mkdirSync(roomWorkspace, { recursive: true })
+  const now = Date.now()
+  return applyResolvedRoute({
+    id: resolveSyntheticSessionId(chatroomId, agent.id),
     name: `Chatroom session for ${agent.name}`,
-    cwd: process.cwd(),
+    cwd: roomWorkspace,
     user: 'chatroom',
     provider: agent.provider,
     model: agent.model,
@@ -222,12 +246,81 @@ export function buildSyntheticSession(agent: Agent, chatroomId: string): Session
     fallbackCredentialIds: agent.fallbackCredentialIds,
     apiEndpoint: resolveAgentApiEndpoint(agent),
     claudeSessionId: null,
+    codexThreadId: null,
+    opencodeSessionId: null,
+    delegateResumeIds: buildEmptyDelegateResumeIds(),
     messages: [],
-    createdAt: Date.now(),
-    lastActiveAt: Date.now(),
+    createdAt: now,
+    lastActiveAt: now,
+    sessionType: 'human',
     plugins: agent.plugins || agent.tools || [],
     agentId: agent.id,
+  }, resolvePrimaryAgentRoute(agent))
+}
+
+export function ensureSyntheticSession(agent: Agent, chatroomId: string): Session {
+  const roomWorkspace = resolveChatroomWorkspaceDir(chatroomId)
+  fs.mkdirSync(roomWorkspace, { recursive: true })
+  const sessionId = resolveSyntheticSessionId(chatroomId, agent.id)
+  const sessions = loadSessions()
+  const now = Date.now()
+  const existing = sessions[sessionId]
+  const session: Session = existing
+    ? applyResolvedRoute({
+        ...existing,
+        id: sessionId,
+        name: `Chatroom session for ${agent.name}`,
+        cwd: roomWorkspace,
+        user: 'chatroom',
+        provider: agent.provider,
+        model: agent.model,
+        credentialId: agent.credentialId ?? null,
+        fallbackCredentialIds: Array.isArray(agent.fallbackCredentialIds) ? [...agent.fallbackCredentialIds] : [],
+        apiEndpoint: resolveAgentApiEndpoint(agent),
+        sessionType: existing.sessionType || 'human',
+        agentId: agent.id,
+        plugins: agent.plugins || agent.tools || [],
+        tools: agent.plugins || agent.tools || [],
+        createdAt: existing.createdAt || now,
+        lastActiveAt: now,
+      }, resolvePrimaryAgentRoute(agent))
+    : applyResolvedRoute({
+        ...buildSyntheticSession(agent, chatroomId),
+        fallbackCredentialIds: Array.isArray(agent.fallbackCredentialIds) ? [...agent.fallbackCredentialIds] : [],
+        lastActiveAt: now,
+        tools: agent.plugins || agent.tools || [],
+      }, resolvePrimaryAgentRoute(agent))
+
+  if (!Array.isArray(session.messages)) session.messages = []
+  if (!session.delegateResumeIds || typeof session.delegateResumeIds !== 'object') {
+    session.delegateResumeIds = buildEmptyDelegateResumeIds()
   }
+  if (session.codexThreadId === undefined) session.codexThreadId = null
+  if (session.opencodeSessionId === undefined) session.opencodeSessionId = null
+  sessions[sessionId] = session
+  saveSessions(sessions)
+  return session
+}
+
+export function appendSyntheticSessionMessage(
+  sessionId: string,
+  role: 'user' | 'assistant',
+  text: string,
+): void {
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return
+  const sessions = loadSessions()
+  const session = sessions[sessionId]
+  if (!session) return
+  if (!Array.isArray(session.messages)) session.messages = []
+  session.messages.push({
+    role,
+    text: trimmed,
+    time: Date.now(),
+  })
+  session.lastActiveAt = Date.now()
+  sessions[sessionId] = session
+  saveSessions(sessions)
 }
 
 /** Build agent's system prompt including skills and identity context */

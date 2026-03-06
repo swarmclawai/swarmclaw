@@ -37,6 +37,8 @@ SwarmClaw was built for OpenClaw users who outgrew a single agent. Connect each 
 
 SwarmClaw includes the `openclaw` CLI as a bundled dependency, so there is no separate OpenClaw CLI install step.
 
+The Providers screen now supports named OpenClaw gateway profiles with discovery, health checks, default-gateway selection, and an External Agent Runtimes view for remote workers that register/heartbeat into SwarmClaw.
+
 The OpenClaw Control Plane in SwarmClaw adds:
 - Reload mode switching (`hot`, `hybrid`, `full`)
 - Config issue detection and guided repair
@@ -47,13 +49,13 @@ The Agent Inspector Panel lets you edit OpenClaw files (`SOUL.md`, `IDENTITY.md`
 
 To connect an agent to an OpenClaw gateway:
 
-1. Create or edit an agent
-2. Toggle **OpenClaw Gateway** ON
-3. Enter the gateway URL (e.g. `http://192.168.1.50:18789` or `https://my-vps:18789`)
-4. Add a gateway token if authentication is enabled on the remote gateway
+1. Optional: create a named gateway profile in **Providers** and mark a default
+2. Create or edit an agent
+3. Toggle **OpenClaw Gateway** ON
+4. Select a saved gateway profile or enter a direct gateway URL/token override
 5. Click **Connect** — approve the device in your gateway's dashboard if prompted, then **Retry Connection**
 
-Each agent can point to a **different** OpenClaw gateway — one local, several remote. This is how you manage a **swarm of OpenClaws** from a single dashboard.
+Each agent can point to a **different** OpenClaw gateway profile or direct endpoint — one local, several remote. This is how you manage a **swarm of OpenClaws** from a single dashboard.
 
 URLs without a protocol are auto-prefixed with `http://`. For remote gateways with TLS, use `https://` explicitly.
 
@@ -77,19 +79,35 @@ Skill source and runbook: [`swarmclaw/SKILL.md`](swarmclaw/SKILL.md).
 ## Requirements
 
 - **Node.js** 22.6+
-- **npm** 10+
+- **Node.js** 22.6+
+- One of: **npm** 10+, **pnpm**, **Yarn**, or **Bun**
 - **Claude Code CLI** (optional, for `claude-cli` provider) — [Install](https://docs.anthropic.com/en/docs/claude-code/overview)
 - **OpenAI Codex CLI** (optional, for `codex-cli` provider) — [Install](https://github.com/openai/codex)
 - **OpenCode CLI** (optional, for `opencode-cli` provider) — [Install](https://github.com/opencode-ai/opencode)
 - **Gemini CLI** (optional, for `delegate` backend `gemini`) — install and authenticate `gemini` on your host
+- **Deno** (required for `sandbox_exec`) — auto-installed by `npm run quickstart` / `npm run setup:easy` when missing
 
 ## Quick Start
 
-### npm (recommended)
+SwarmClaw is published to the npm registry once and can be installed with `npm`, `pnpm`, `yarn`, or `bun`. There is no separate package-manager signup for end users.
+
+### Global install
 
 ```bash
 npm i -g @swarmclawai/swarmclaw
+pnpm add -g @swarmclawai/swarmclaw
+yarn global add @swarmclawai/swarmclaw
+bun add -g @swarmclawai/swarmclaw
 swarmclaw
+```
+
+### One-off run
+
+```bash
+npx @swarmclawai/swarmclaw
+pnpm dlx @swarmclawai/swarmclaw
+yarn dlx @swarmclawai/swarmclaw
+bunx @swarmclawai/swarmclaw
 ```
 
 ### Install script
@@ -99,7 +117,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.7.3 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.7.4 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -111,9 +129,18 @@ npm run quickstart
 
 `npm run quickstart` will:
 - Check Node/npm versions
+- Install Deno if the sandbox runtime is missing
 - Install dependencies
 - Prepare `.env.local` and `data/`
 - Start the app at `http://localhost:3456`
+
+If you prefer another package manager for local development:
+
+```bash
+pnpm install && pnpm dev
+yarn install && yarn dev
+bun install && bun run dev
+```
 
 `postinstall` rebuilds `better-sqlite3` natively. If you install with `--ignore-scripts`, run `npm rebuild better-sqlite3` manually.
 
@@ -143,7 +170,7 @@ Notes:
 - When run with no flags in a TTY, `setup init` enters interactive mode — pick providers, enter keys, name agents, and add multiple providers in one session.
 - Use `--no-interactive` to force flag-only mode.
 - On a fresh instance, `setup init` can auto-discover and claim the first-run access key from `/api/auth`.
-- For existing installs, pass `--key <ACCESS_KEY>` (or set `SWARMCLAW_ACCESS_KEY`).
+- For existing installs, pass `--key <ACCESS_KEY>` or set `SWARMCLAW_ACCESS_KEY` / `SWARMCLAW_API_KEY`.
 - `setup init` performs provider validation, stores credentials, creates a starter agent, and marks setup complete.
 - Use `--skip-check` to bypass connection validation.
 
@@ -164,7 +191,7 @@ Notes:
 ## Features
 
 - **15 providers out of the box** - CLI providers + major hosted APIs + OpenAI-compatible custom endpoints
-- **OpenClaw-native control plane** - per-agent gateway mapping, reload modes, sync, and approval flows
+- **OpenClaw-native control plane** - named gateway profiles, external runtimes, reload modes, sync, and approval flows
 - **Agent builder + inspector** - personality/system tuning, skill management, and OpenClaw file editing
 - **Rich toolset** - shell, files, browser, git, sandbox execution, memory, MCP, and delegation
 - **Platform automation** - agents can manage tasks, schedules, chats, connectors, secrets, and more
@@ -289,6 +316,7 @@ Connector ingress now also supports optional pairing/allowlist policy:
 - `dmPolicy: allowlist` blocks unknown senders until approved
 - `/pair` flow lets approved admins generate and approve pairing codes
 - `/think` command can set connector thread thinking level (`low`, `medium`, `high`)
+- Session overrides also support per-thread `/reply`, `/scope`, `/thread`, `/provider`, `/model`, `/idle`, `/maxage`, and `/reset` controls
 
 ## Agent Tools
 
@@ -315,7 +343,7 @@ Agents can use the following tools when enabled:
 | Image Generation | Generate images from prompts (`generate_image`) via OpenAI, Stability, Replicate, fal.ai, Together, Fireworks, BFL, or custom endpoints; saved to uploads |
 | Email | Send outbound email via SMTP (`email`) with `send`/`status` actions |
 | Calendar | Manage Google/Outlook events (`calendar`) with list/create/update/delete/status actions |
-| Sandbox | Run JS/TS (Deno) or Python code in an isolated sandbox. Created files are returned as downloadable artifacts |
+| Sandbox | Run JS/TS in a Deno sandbox when custom code is necessary. If Deno is unavailable it fails closed with guidance; for simple API calls, prefer HTTP Request. |
 | MCP Servers | Connect to external Model Context Protocol servers. Tools from MCP servers are injected as first-class agent tools |
 
 ### Platform Tools
@@ -369,21 +397,6 @@ Daemon runtime also triggers memory consolidation (daily summary generation plus
 
 - **API:** `GET /api/daemon` (status), `POST /api/daemon` with `{"action": "start"}` or `{"action": "stop"}`
 - Auto-starts on first authenticated runtime traffic (`/api/auth` or `/api/daemon`) unless `SWARMCLAW_DAEMON_AUTOSTART=0`
-
-## Main Agent Loop
-
-For autonomous long-running missions, enable the **Main Loop** on an agent-thread or orchestrated chat. This lets an agent pursue a goal continuously with heartbeat-driven progress checks and automatic followups.
-
-- **Heartbeat prompts:** `SWARM_MAIN_MISSION_TICK` triggers on each heartbeat, giving the agent its goal, status, and pending events
-- **Auto-followup:** When an agent returns `[MAIN_LOOP_META] {"follow_up":true}`, the loop schedules another tick after `delay_sec`
-- **Mission state:** Tracks `goal`, `status` (idle/progress/blocked/ok), `summary`, `nextAction`, `autonomyMode` (assist/autonomous), and pending events
-- **Autonomy modes:**
-  - `autonomous`: Agent executes safe actions without confirmation, only asks when blocked by permissions/credentials
-  - `assist`: Agent asks before irreversible external actions (sending messages, purchases, account mutations)
-- **API:** `POST /api/chats/[id]/main-loop` with `{"tick":true}` to trigger a mission tick
-- **CLI:** `swarmclaw chats main-loop <id>` to inspect loop state, or `swarmclaw chats main-loop-action <id> --data '{"action":"nudge"}'` to control it
-
-Use this for background agents that should "keep working" on a goal until blocked or complete.
 
 ## Loop Modes
 
@@ -657,7 +670,7 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example patch release (v0.7.3 style)
+# example patch release (v0.7.4 style)
 npm version patch
 git push origin main --follow-tags
 ```
@@ -667,18 +680,15 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.7.3 Release Readiness Notes
+#### v0.7.4 Release Readiness Notes
 
-Before shipping `v0.7.3`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.7.4`, confirm the following user-facing changes are reflected in docs:
 
-1. New primitive plugins are documented in README and site docs: `mailbox`, `ask_human`, `document`, `extract`, `table`, and `crawl`.
-2. Browser persistence, higher-level browser actions, durable watch jobs, and delegation handles are covered in docs.
-3. Plugin docs mention canonical built-in IDs, source-backed installs/updates, hot reload, and encrypted `secret` settings.
-4. Plugin docs cover per-plugin workspaces and dependency installs for plugins that ship with a `package.json` manifest.
-5. Connector docs and CLI docs cover the connector doctor diagnostics endpoints/commands.
-6. The plugin tutorial reflects the current hook behavior, including `beforeToolExec` input rewriting and `settingsFields`.
-7. Site install/version strings are updated to `v0.7.3`, including the release notes index, install snippets, and sidebar footer.
-8. Provider docs mention that configured OpenAI models can populate the model dropdown while still allowing custom/manual entries.
+1. Sandbox docs are updated everywhere to reflect the current Deno-only `sandbox_exec` behavior and the guidance to prefer `http_request` for simple API calls.
+2. OpenClaw docs cover the current gateway/runtime behavior, including per-agent gateway routing, control-plane actions, and inspector-side advanced controls.
+3. Site and README install/version strings are updated to `v0.7.4`, including install snippets, release notes index text, and sidebar/footer labels.
+4. Release notes summarize the user-visible setup/auth/runtime changes from the current worktree, especially gateway/external-agent/setup flow improvements.
+5. CLI and tool docs do not reference removed or non-functional surfaces such as the old `openclaw_sandbox` bridge.
 
 ## CLI
 
@@ -712,9 +722,6 @@ swarmclaw agents list
 # create and inspect a chat
 swarmclaw chats create --name "Main Ops" --agent-id <agentId>
 swarmclaw chats list
-
-# run a main loop action
-swarmclaw chats main-loop-action <chatId> --data '{"action":"nudge"}'
 
 # run setup diagnostics
 swarmclaw setup doctor

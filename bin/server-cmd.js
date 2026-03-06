@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 'use strict'
+/* eslint-disable @typescript-eslint/no-require-imports */
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawn, execSync } = require('node:child_process')
+const { spawn, execFileSync } = require('node:child_process')
 const os = require('node:os')
+const {
+  LOCKFILE_NAMES,
+  detectPackageManager,
+  getInstallCommand,
+} = require('./package-manager.js')
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -26,7 +32,7 @@ const BUILD_COPY_ENTRIES = [
   'tsconfig.json',
   'postcss.config.mjs',
   'package.json',
-  'package-lock.json',
+  ...LOCKFILE_NAMES,
 ]
 
 // ---------------------------------------------------------------------------
@@ -73,13 +79,26 @@ function symlinkPath(src, dest) {
   fs.symlinkSync(src, dest)
 }
 
+function readBuiltInfo() {
+  if (!fs.existsSync(BUILT_MARKER)) return null
+  try {
+    const raw = JSON.parse(fs.readFileSync(BUILT_MARKER, 'utf8'))
+    return raw && typeof raw === 'object' ? raw : null
+  } catch {
+    return null
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Build
 // ---------------------------------------------------------------------------
 
 function needsBuild(forceBuild) {
   if (forceBuild) return true
-  if (!fs.existsSync(BUILT_MARKER)) return true
+  const info = readBuiltInfo()
+  if (!info) return true
+  if (info.version !== getVersion()) return true
+  if (!findStandaloneServer()) return true
   return false
 }
 
@@ -110,15 +129,18 @@ function runBuild() {
     symlinkPath(nmSrc, nmDest)
   } else {
     // If node_modules doesn't exist at PKG_ROOT, install
-    log('Installing dependencies...')
-    execSync('npm install', { cwd: SWARMCLAW_HOME, stdio: 'inherit' })
+    const packageManager = detectPackageManager(SWARMCLAW_HOME, process.env)
+    const install = getInstallCommand(packageManager)
+    log(`Installing dependencies with ${packageManager}...`)
+    execFileSync(install.command, install.args, { cwd: SWARMCLAW_HOME, stdio: 'inherit' })
   }
 
   // Run Next.js build
   log('Building Next.js application (this may take a minute)...')
   // Use webpack for production build reliability in packaged/fresh-install
   // environments (Turbopack has intermittently failed during prerender).
-  execSync('npx next build --webpack', {
+  const nextCli = path.join(SWARMCLAW_HOME, 'node_modules', 'next', 'dist', 'bin', 'next')
+  execFileSync(process.execPath, [nextCli, 'build', '--webpack'], {
     cwd: SWARMCLAW_HOME,
     stdio: 'inherit',
     env: {
@@ -373,4 +395,13 @@ function main() {
   startServer({ port, wsPort, host, detach })
 }
 
-main()
+if (require.main === module) {
+  main()
+}
+
+module.exports = {
+  getVersion,
+  main,
+  needsBuild,
+  readBuiltInfo,
+}

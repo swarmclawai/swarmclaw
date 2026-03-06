@@ -15,15 +15,24 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
   const normalized = normalizeToolInputArgs(args)
   const action = normalized.action
   const approved = normalized.approved
-  const pluginId = typeof normalized.pluginId === 'string'
+  const explicitPluginId = typeof normalized.pluginId === 'string'
     ? normalized.pluginId.trim()
     : typeof normalized.plugin_id === 'string'
       ? normalized.plugin_id.trim()
-      : undefined
+      : typeof normalized.toolId === 'string'
+        ? normalized.toolId.trim()
+        : typeof normalized.tool_id === 'string'
+          ? normalized.tool_id.trim()
+          : typeof normalized.tool === 'string'
+            ? normalized.tool.trim()
+            : typeof normalized.name === 'string'
+              ? normalized.name.trim()
+              : undefined
   const url = typeof normalized.url === 'string' ? normalized.url.trim() : undefined
   const reason = normalized.reason as string | undefined
   const manager = getPluginManager()
   const q = typeof normalized.query === 'string' ? normalized.query : ''
+  const pluginId = explicitPluginId || (action === 'request_access' ? q.trim() : '')
 
   console.log('[discovery] Executing action:', action, { query: q, pluginId })
 
@@ -88,7 +97,8 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
         if (bctx?.ctx?.sessionId) {
           const allSessions = loadSessions()
           const currentSession = allSessions[bctx.ctx.sessionId]
-          if (currentSession && pluginIdMatches(currentSession.tools, pluginId)) {
+          const grantedTools = currentSession?.plugins || currentSession?.tools || []
+          if (currentSession && pluginIdMatches(grantedTools, pluginId)) {
             return JSON.stringify({
               alreadyGranted: true,
               pluginId,
@@ -176,13 +186,13 @@ const DiscoveryPlugin: Plugin = {
   tools: [
     {
       name: 'manage_capabilities',
-      description: 'Search for available plugins locally or in external marketplaces.',
+      description: 'Discover currently available tools, search marketplaces, or request access to a direct tool/plugin name with action="request_access" (for example "shell", "manage_schedules", or "delegate").',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['discover', 'search_marketplace', 'request_access', 'install_request'] },
-          query: { type: 'string', description: 'Search term for marketplace' },
-          pluginId: { type: 'string', description: 'The ID or filename of the plugin' },
+          query: { type: 'string', description: 'Search term for marketplace, or the direct tool/plugin name for request_access' },
+          pluginId: { type: 'string', description: 'The exact tool/plugin name to request, such as "shell" or "manage_schedules"' },
           url: { type: 'string', description: 'URL for new plugin install request' },
           reason: { type: 'string', description: 'Why you need this capability' }
         },
@@ -205,8 +215,8 @@ export function buildDiscoveryTools(bctx: ToolBuildContext): StructuredToolInter
         description: DiscoveryPlugin.tools![0].description,
         schema: z.object({
           action: z.enum(['discover', 'search_marketplace', 'request_access', 'install_request']).describe('The discovery action to perform'),
-          query: z.string().optional().describe('The search query for marketplace actions'),
-          pluginId: z.string().optional(),
+          query: z.string().optional().describe('The marketplace query, or the direct tool/plugin name to request access to'),
+          pluginId: z.string().optional().describe('The exact tool/plugin name to request, such as "shell" or "manage_schedules"'),
           url: z.string().optional(),
           reason: z.string().describe('Why you need to perform this discovery action')
         })

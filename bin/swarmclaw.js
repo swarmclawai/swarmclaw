@@ -36,10 +36,11 @@ function shouldUseLegacyTsCli(argv) {
 
 function runLegacyTsCli(argv) {
   const cliPath = path.join(__dirname, '..', 'src', 'cli', 'index.ts')
+  const env = normalizeLegacyCliEnv(process.env)
   const child = spawnSync(
     process.execPath,
     ['--no-warnings', '--experimental-strip-types', cliPath, ...argv],
-    { stdio: 'inherit' },
+    { stdio: 'inherit', env },
   )
 
   if (child.error) {
@@ -48,6 +49,18 @@ function runLegacyTsCli(argv) {
   }
   if (typeof child.status === 'number') return child.status
   return 1
+}
+
+function normalizeLegacyCliEnv(env) {
+  const nextEnv = { ...env }
+  if (!nextEnv.SWARMCLAW_URL && nextEnv.SWARMCLAW_BASE_URL) {
+    nextEnv.SWARMCLAW_URL = nextEnv.SWARMCLAW_BASE_URL
+  }
+  if (!nextEnv.SWARMCLAW_ACCESS_KEY) {
+    const key = nextEnv.SWARMCLAW_API_KEY || nextEnv.SC_ACCESS_KEY || ''
+    if (key) nextEnv.SWARMCLAW_ACCESS_KEY = key
+  }
+  return nextEnv
 }
 
 async function runMappedCli(argv) {
@@ -66,7 +79,7 @@ async function main() {
 
   // Route 'server' and 'update' subcommands to CJS scripts (no TS dependency).
   if (top === 'server') {
-    require('./server-cmd.js')
+    require('./server-cmd.js').main()
     return
   }
   if (top === 'update') {
@@ -87,5 +100,6 @@ if (require.main === module) {
 
 module.exports = {
   TS_CLI_ACTIONS,
+  normalizeLegacyCliEnv,
   shouldUseLegacyTsCli,
 }

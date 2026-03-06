@@ -28,6 +28,7 @@ import { getPluginManager } from './plugins'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { routeTaskIntent } from './capability-router'
 import { notify } from './ws-hub'
+import { applyResolvedRoute, resolvePrimaryAgentRoute } from './agent-runtime-config'
 import { resolveConcreteToolPolicyBlock, resolveSessionToolPolicy } from './tool-capability-policy'
 import { pluginIdMatches } from './tool-aliases'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
@@ -132,14 +133,10 @@ export function collectToolEvent(ev: SSEEvent, bag: MessageToolEvent[]) {
     const idx = bag.findLastIndex((e) => e.name === (ev.toolName || 'unknown') && !e.output)
     if (idx === -1) return
     const output = ev.toolOutput || ''
-    const isError = /^(Error:|error:)/i.test(output.trim())
-      || output.includes('ECONNREFUSED')
-      || output.includes('ETIMEDOUT')
-      || output.includes('Error:')
     bag[idx] = {
       ...bag[idx],
       output,
-      error: isError || undefined,
+      error: isLikelyToolErrorOutput(output) || undefined,
     }
   }
 }
@@ -191,15 +188,124 @@ function extractDelegateResponse(outputText: string): string | null {
   }
 }
 
+const MANAGE_PLATFORM_RESOURCE_TO_TOOL: Record<string, string> = {
+  agent: 'manage_agents',
+  agents: 'manage_agents',
+  task: 'manage_tasks',
+  tasks: 'manage_tasks',
+  schedule: 'manage_schedules',
+  schedules: 'manage_schedules',
+  skill: 'manage_skills',
+  skills: 'manage_skills',
+  document: 'manage_documents',
+  documents: 'manage_documents',
+  secret: 'manage_secrets',
+  secrets: 'manage_secrets',
+  connector: 'manage_connectors',
+  connectors: 'manage_connectors',
+  session: 'manage_sessions',
+  sessions: 'manage_sessions',
+}
+
+export function translateRequestedToolInvocation(
+  requestedName: string,
+  rawArgs: Record<string, unknown>,
+  messageFallback: string,
+  availableToolNames?: Iterable<string>,
+): { toolName: string; args: Record<string, unknown> } {
+  const available = new Set(availableToolNames || [])
+
+  if (requestedName === 'web_search') {
+    return {
+      toolName: 'web',
+      args: {
+        action: 'search',
+        query: typeof rawArgs.query === 'string' ? rawArgs.query : messageFallback.trim(),
+        maxResults: typeof rawArgs.maxResults === 'number' ? rawArgs.maxResults : 5,
+      },
+    }
+  }
+  if (requestedName === 'web_fetch') {
+    return {
+      toolName: 'web',
+      args: {
+        action: 'fetch',
+        url: rawArgs.url,
+      },
+    }
+  }
+  if (requestedName === 'delegate_to_claude_code') {
+    return { toolName: 'delegate', args: { ...rawArgs, backend: 'claude' } }
+  }
+  if (requestedName === 'delegate_to_codex_cli') {
+    return { toolName: 'delegate', args: { ...rawArgs, backend: 'codex' } }
+  }
+  if (requestedName === 'delegate_to_opencode_cli') {
+    return { toolName: 'delegate', args: { ...rawArgs, backend: 'opencode' } }
+  }
+  if (requestedName === 'delegate_to_gemini_cli') {
+    return { toolName: 'delegate', args: { ...rawArgs, backend: 'gemini' } }
+  }
+
+  const managePrefix = 'manage_'
+  if (requestedName === 'manage_platform') {
+    const resource = typeof rawArgs.resource === 'string'
+      ? rawArgs.resource.trim().toLowerCase()
+      : ''
+    const specificTool = MANAGE_PLATFORM_RESOURCE_TO_TOOL[resource]
+    if (specificTool && available.has(specificTool) && !available.has('manage_platform')) {
+      return { toolName: specificTool, args: rawArgs }
+    }
+    return { toolName: requestedName, args: rawArgs }
+  }
+
+  if (requestedName.startsWith(managePrefix) && requestedName !== 'manage_platform') {
+    if (!available.has(requestedName) && available.has('manage_platform')) {
+      const resource = requestedName.slice(managePrefix.length)
+      if (resource) {
+        const { action, id, data, ...rest } = rawArgs
+        const nextArgs: Record<string, unknown> = { resource, ...rest }
+        if (action !== undefined) nextArgs.action = action
+        if (id !== undefined) nextArgs.id = id
+        if (data !== undefined) nextArgs.data = data
+        return {
+          toolName: 'manage_platform',
+          args: nextArgs,
+        }
+      }
+    }
+    return { toolName: requestedName, args: rawArgs }
+  }
+
+  return { toolName: requestedName, args: rawArgs }
+}
+
+export function isLikelyToolErrorOutput(output: string): boolean {
+  const trimmed = String(output || '').trim()
+  if (!trimmed) return false
+  if (/^(Error(?::|\s*\(exit\b[^)]*\):?)|error:)/i.test(trimmed)) return true
+  if (/\b(MCP error|ECONNREFUSED|ETIMEDOUT|ERR_CONNECTION_REFUSED|ENOENT|EACCES)\b/i.test(trimmed)) return true
+  if (/\binvalid_type\b/i.test(trimmed) && /\b(issue|issues|expected|required|received|zod)\b/i.test(trimmed)) return true
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>
+    const status = typeof parsed.status === 'string' ? parsed.status.trim().toLowerCase() : ''
+    if (status === 'error' || status === 'failed') return true
+    if (typeof parsed.error === 'string' && parsed.error.trim()) return true
+  } catch {
+    // Ignore non-JSON tool output.
+  }
+  return false
+}
+
 function normalizeWorkspaceSandboxLinks(text: string, cwd: string): string {
-  return text.replace(/sandbox:\/workspace\/([^\s)"'\]`]+)/g, (raw, relativePath: string) => {
+  return text.replace(/\[([^\]]+)\]\(sandbox:\/workspace\/([^)]+)\)/g, (raw, label: string, relativePath: string) => {
     const normalized = String(relativePath || '').replace(/^\/+/, '')
     if (!normalized) return raw
     const resolvedCwd = path.resolve(cwd)
     const resolved = path.resolve(resolvedCwd, normalized)
     if (!resolved.startsWith(resolvedCwd)) return raw
     if (!fs.existsSync(resolved)) return raw
-    return `/api/files/serve?path=${encodeURIComponent(resolved)}`
+    return `[${label}](/api/files/serve?path=${encodeURIComponent(resolved)})`
   })
 }
 
@@ -520,18 +626,41 @@ function syncSessionFromAgent(sessionId: string): void {
   if (!agent) return
 
   let changed = false
+  const route = resolvePrimaryAgentRoute(agent)
   if (!session.provider && agent.provider) { session.provider = agent.provider; changed = true }
   if ((session.model === undefined || session.model === null || session.model === '') && agent.model !== undefined) {
     session.model = agent.model
     changed = true
   }
-  if (session.credentialId === undefined && agent.credentialId !== undefined) {
-    session.credentialId = agent.credentialId ?? null
-    changed = true
-  }
-  if ((session.apiEndpoint === undefined || session.apiEndpoint === null) && agent.apiEndpoint !== undefined) {
-    const normalized = normalizeProviderEndpoint(agent.provider, agent.apiEndpoint ?? null)
-    if (normalized !== session.apiEndpoint) { session.apiEndpoint = normalized; changed = true }
+  if (route) {
+    const resolved = applyResolvedRoute({ ...session }, route)
+    if (session.provider !== resolved.provider) { session.provider = resolved.provider; changed = true }
+    if (session.model !== resolved.model) { session.model = resolved.model; changed = true }
+    if ((session.credentialId || null) !== (resolved.credentialId || null)) {
+      session.credentialId = resolved.credentialId ?? null
+      changed = true
+    }
+    if (JSON.stringify(session.fallbackCredentialIds || []) !== JSON.stringify(resolved.fallbackCredentialIds || [])) {
+      session.fallbackCredentialIds = [...resolved.fallbackCredentialIds]
+      changed = true
+    }
+    if ((session.apiEndpoint || null) !== (resolved.apiEndpoint || null)) {
+      session.apiEndpoint = resolved.apiEndpoint ?? null
+      changed = true
+    }
+    if ((session.gatewayProfileId || null) !== (resolved.gatewayProfileId || null)) {
+      session.gatewayProfileId = resolved.gatewayProfileId ?? null
+      changed = true
+    }
+  } else {
+    if (session.credentialId === undefined && agent.credentialId !== undefined) {
+      session.credentialId = agent.credentialId ?? null
+      changed = true
+    }
+    if ((session.apiEndpoint === undefined || session.apiEndpoint === null) && agent.apiEndpoint !== undefined) {
+      const normalized = normalizeProviderEndpoint(agent.provider, agent.apiEndpoint ?? null)
+      if (normalized !== session.apiEndpoint) { session.apiEndpoint = normalized; changed = true }
+    }
   }
   if (!Array.isArray(session.plugins)) {
     session.plugins = Array.isArray(agent.plugins) ? [...agent.plugins] : []
@@ -719,6 +848,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   let sessionForRun = pluginsForRun === session.plugins
     ? session
     : { ...session, plugins: pluginsForRun }
+  if (agentForSession) {
+    const preferredRoute = resolvePrimaryAgentRoute(agentForSession)
+    if (preferredRoute) {
+      sessionForRun = applyResolvedRoute({ ...sessionForRun }, preferredRoute)
+    }
+  }
   let effectiveMessage = message
 
   if (pluginsForRun.length > 0) {
@@ -825,14 +960,14 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     detail: {
       source,
       internal,
-      provider: session.provider,
-      model: session.model,
+      provider: sessionForRun.provider,
+      model: sessionForRun.model,
       messagePreview: effectiveMessage.slice(0, 200),
       hasImage: !!(imagePath || imageUrl),
     },
   })
 
-  const providerType = session.provider || 'claude-cli'
+  const providerType = sessionForRun.provider || 'claude-cli'
   const provider = getProvider(providerType)
   if (!provider) throw new Error(`Unknown provider: ${providerType}`)
 
@@ -840,7 +975,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     throw new Error(`Directory not found: ${session.cwd}`)
   }
 
-  const apiKey = resolveApiKeyForSession(session, provider)
+  const apiKey = resolveApiKeyForSession(sessionForRun, provider)
 
   if (!internal) {
     const linkAnalysis = await runLinkUnderstanding(message)
@@ -1105,57 +1240,6 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     : null
   const calledNames = new Set((toolEvents || []).map((t) => t.name))
 
-  const translateToolInvocation = (
-    requestedName: string,
-    rawArgs: Record<string, unknown>,
-  ): { toolName: string; args: Record<string, unknown> } => {
-    if (requestedName === 'web_search') {
-      return {
-        toolName: 'web',
-        args: {
-          action: 'search',
-          query: typeof rawArgs.query === 'string' ? rawArgs.query : message.trim(),
-          maxResults: typeof rawArgs.maxResults === 'number' ? rawArgs.maxResults : 5,
-        },
-      }
-    }
-    if (requestedName === 'web_fetch') {
-      return {
-        toolName: 'web',
-        args: {
-          action: 'fetch',
-          url: rawArgs.url,
-        },
-      }
-    }
-    if (requestedName === 'delegate_to_claude_code') {
-      return { toolName: 'delegate', args: { ...rawArgs, backend: 'claude' } }
-    }
-    if (requestedName === 'delegate_to_codex_cli') {
-      return { toolName: 'delegate', args: { ...rawArgs, backend: 'codex' } }
-    }
-    if (requestedName === 'delegate_to_opencode_cli') {
-      return { toolName: 'delegate', args: { ...rawArgs, backend: 'opencode' } }
-    }
-    if (requestedName === 'delegate_to_gemini_cli') {
-      return { toolName: 'delegate', args: { ...rawArgs, backend: 'gemini' } }
-    }
-
-    const managePrefix = 'manage_'
-    if (requestedName.startsWith(managePrefix) && requestedName !== 'manage_platform') {
-      const resource = requestedName.slice(managePrefix.length)
-      if (resource) {
-        const { action, id, data, ...rest } = rawArgs
-        return {
-          toolName: 'manage_platform',
-          args: { resource, action, id, data, ...rest },
-        }
-      }
-    }
-
-    return { toolName: requestedName, args: rawArgs }
-  }
-
   const invokeSessionTool = async (toolName: string, args: Record<string, unknown>, failurePrefix: string): Promise<boolean> => {
     const blockedReason = resolveConcreteToolPolicyBlock(toolName, toolPolicy, appSettings)
     if (blockedReason) {
@@ -1179,8 +1263,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       mcpDisabledTools: agent?.mcpDisabledTools,
     })
     try {
-      const translated = translateToolInvocation(toolName, args)
-      const selectedTool = tools.find((t) => t?.name === translated.toolName) as StructuredToolInterface | undefined
+      const directTool = tools.find((t) => t?.name === toolName) as StructuredToolInterface | undefined
+      const availableToolNames = tools.map((candidate) => candidate?.name).filter(Boolean)
+      const translated = directTool
+        ? { toolName, args }
+        : translateRequestedToolInvocation(toolName, args, message, availableToolNames)
+      const selectedTool = directTool || tools.find((t) => t?.name === translated.toolName) as StructuredToolInterface | undefined
       if (!selectedTool?.invoke) return false
       const toolInput = JSON.stringify(translated.args)
       emit({ t: 'tool_call', toolName, toolInput })

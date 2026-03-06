@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { createMemory } from '@/lib/memory'
+import { getMemoryTierForCategory } from '@/lib/memory-presentation'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { SheetFooter } from '@/components/shared/sheet-footer'
@@ -24,6 +25,7 @@ export function MemorySheet() {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [category, setCategory] = useState('note')
+  const [tier, setTier] = useState<'working' | 'durable' | 'archive'>(getMemoryTierForCategory('note'))
   const [agentId, setAgentId] = useState<string | null>(defaultAgentId)
   const [sharedWith, setSharedWith] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
@@ -36,6 +38,7 @@ export function MemorySheet() {
     setTitle('')
     setContent('')
     setCategory('note')
+    setTier(getMemoryTierForCategory('note'))
     setSaving(false)
   } else if (!open && prevOpen) {
     setPrevOpen(false)
@@ -56,6 +59,11 @@ export function MemorySheet() {
         agentId,
         sessionId: null,
         sharedWith: sharedWith.length ? sharedWith : undefined,
+        metadata: {
+          tier,
+          scope: agentId ? 'agent' : 'global',
+          visibility: agentId ? (sharedWith.length ? 'shared' : 'private') : 'global',
+        },
       })
       triggerRefresh()
       onClose()
@@ -77,7 +85,7 @@ export function MemorySheet() {
 
       {/* Agent selector */}
       <div className="mb-6">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Assign to</label>
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Visibility</label>
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setAgentId(null)}
@@ -111,12 +119,12 @@ export function MemorySheet() {
         </div>
         {selectedAgent && (
           <p className="text-[11px] text-text-3/50 mt-2">
-            This memory will be available to <span className="text-text-2">{selectedAgent.name}</span> during conversations
+            Owned by <span className="text-text-2">{selectedAgent.name}</span>. Add collaborators below if other agents should be able to recall it too.
           </p>
         )}
         {!agentId && (
           <p className="text-[11px] text-text-3/50 mt-2">
-            Global memories are accessible to all agents
+            Global memories are accessible to every agent in the workspace.
           </p>
         )}
       </div>
@@ -167,7 +175,10 @@ export function MemorySheet() {
           {CATEGORIES.map((c) => (
             <button
               key={c}
-              onClick={() => setCategory(c)}
+              onClick={() => {
+                setCategory(c)
+                setTier(getMemoryTierForCategory(c))
+              }}
               className={`px-3 py-1.5 rounded-[8px] text-[12px] font-600 capitalize cursor-pointer transition-all border-none
                 ${category === c
                   ? 'bg-accent-soft text-accent-bright'
@@ -178,6 +189,23 @@ export function MemorySheet() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="mb-6">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-3">Tier</label>
+        <select
+          value={tier}
+          onChange={(e) => setTier(e.target.value as typeof tier)}
+          className={inputClass}
+          style={{ fontFamily: 'inherit' }}
+        >
+          <option value="working">Working: short-horizon, active context</option>
+          <option value="durable">Durable: keep this around as reusable knowledge</option>
+          <option value="archive">Archive: preserve, but keep less salient</option>
+        </select>
+        <p className="text-[11px] text-text-3/50 mt-2">
+          Tier controls how aggressively this memory should stay in active recall.
+        </p>
       </div>
 
       {/* Content */}

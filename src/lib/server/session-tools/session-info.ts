@@ -25,9 +25,30 @@ async function executeWhoAmI(context: { sessionId?: string; agentId?: string }) 
   } catch (err: any) { return `Error: ${err.message}` }
 }
 
+function inferSessionsAction(
+  normalized: Record<string, unknown>,
+  context: { sessionId?: string; agentId?: string },
+): string | undefined {
+  const explicit = typeof normalized.action === 'string' ? normalized.action.trim() : ''
+  if (explicit) return explicit
+
+  const hasUpdates = !!normalized.updates && typeof normalized.updates === 'object'
+  const hasSpawnTarget = typeof normalized.agentId === 'string' || typeof normalized.agent_id === 'string'
+  const hasHistoryTarget =
+    typeof normalized.sessionId === 'string'
+    || typeof normalized.session_id === 'string'
+    || typeof normalized.limit === 'number'
+    || !!context.sessionId
+
+  if (hasUpdates) return 'update'
+  if (hasSpawnTarget) return 'spawn'
+  if (hasHistoryTarget) return 'history'
+  return 'list'
+}
+
 async function executeSessionsAction(args: any, context: { sessionId?: string; agentId?: string; cwd: string }) {
   const normalized = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
-  const action = normalized.action as string | undefined
+  const action = inferSessionsAction(normalized, context)
   const sessionId = (normalized.sessionId ?? normalized.session_id) as string | undefined
   const message = normalized.message as string | undefined
   const limit = normalized.limit as number | undefined

@@ -22,6 +22,18 @@ describe('browser workflow surface', () => {
       assert.equal(src.includes(`'${action}'`), true, `web.ts should expose ${action}`)
     }
   })
+
+  it('supports the shorthand form-map path for fill_form', () => {
+    const src = readToolSource('web.ts')
+    assert.equal(src.includes('params.form'), true)
+    assert.equal(src.includes('fields is required for fill_form.'), true)
+  })
+
+  it('flags pages that require human-provided input', () => {
+    const src = readToolSource('web.ts')
+    assert.equal(src.includes("type: 'human_input_required'"), true)
+    assert.equal(src.includes('Ask the human instead of guessing'), true)
+  })
 })
 
 describe('durable wait surface', () => {
@@ -37,6 +49,17 @@ describe('durable wait surface', () => {
     const src = readToolSource('schedule.ts')
     assert.equal(src.includes('createWatchJob'), true)
     assert.equal(src.includes("type: 'time'"), true)
+  })
+})
+
+describe('sandbox surface', () => {
+  it('advertises a Deno-only sandbox and steers simple APIs to http_request', () => {
+    const src = readToolSource('sandbox.ts')
+    assert.equal(src.includes("enum: ['javascript', 'typescript']"), true)
+    assert.equal(src.includes('http_request'), true)
+    assert.equal(src.includes('plugin_creator'), true)
+    assert.equal(src.includes('manage_schedules'), true)
+    assert.equal(src.includes('openclaw_sandbox'), false)
   })
 })
 

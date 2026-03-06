@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { describe, it } from 'node:test'
+import { buildToolDisciplineLines, looksLikeOpenEndedDeliverableTask } from './stream-agent-chat'
+
+const streamAgentChatSource = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'stream-agent-chat.ts'), 'utf-8')
+
+describe('buildToolDisciplineLines', () => {
+  it('tells the agent to use direct platform tools when manage_platform is absent', () => {
+    const lines = buildToolDisciplineLines(['files', 'manage_schedules'])
+
+    assert.equal(lines[0], 'Enabled tools in this session: `files`, `manage_schedules`.')
+    assert.ok(lines.some((line) => line.includes('Do not substitute `manage_platform`')))
+  })
+
+  it('omits the manage_platform warning when the umbrella tool is enabled', () => {
+    const lines = buildToolDisciplineLines(['manage_platform', 'manage_schedules'])
+
+    assert.ok(lines.every((line) => !line.includes('Do not substitute `manage_platform`')))
+  })
+
+  it('includes concrete files-tool examples for revision work', () => {
+    const lines = buildToolDisciplineLines(['files'])
+
+    assert.ok(lines.some((line) => line.includes('{"action":"read","filePath":"path/to/file.md"}')))
+  })
+
+  it('warns browser tasks to use literal urls and the supported form schema', () => {
+    const lines = buildToolDisciplineLines(['browser', 'http_request', 'email', 'ask_human'])
+
+    assert.ok(lines.some((line) => line.includes('Do not invent placeholder URLs')))
+    assert.ok(lines.some((line) => line.includes('A shorthand `form` object keyed by input id/name also works')))
+    assert.ok(lines.some((line) => line.includes('Keep JSON request bodies as raw JSON strings')))
+    assert.ok(lines.some((line) => line.includes('{"action":"send","to":"user@example.com","subject":"...","body":"..."}')))
+    assert.ok(lines.some((line) => line.includes('do not guess or keep re-submitting blank forms')))
+  })
+
+  it('tells the agent that named enabled tools are completion requirements', () => {
+    assert.ok(streamAgentChatSource.includes('If a task explicitly names an enabled tool, use that tool before declaring success.'))
+    assert.ok(streamAgentChatSource.includes('collect required human input through the tool'))
+    assert.ok(streamAgentChatSource.includes('You have not yet completed the required explicit tool step(s):'))
+  })
+})
+
+describe('looksLikeOpenEndedDeliverableTask', () => {
+  it('detects open-ended deliverable prompts', () => {
+    assert.equal(
+      looksLikeOpenEndedDeliverableTask('Revise the landing copy and update the proposal draft with a stronger second pass.'),
+      true,
+    )
+  })
+
+  it('does not misclassify explicit coding tasks', () => {
+    assert.equal(
+      looksLikeOpenEndedDeliverableTask('Fix the React bug in src/components/chat/chat-area.tsx and run npm run build.'),
+      false,
+    )
+  })
+})

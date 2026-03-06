@@ -24,7 +24,7 @@ const TOOL_ALIAS_GROUPS = [
   ['schedule', 'schedule_wake'],
   ['http', 'http_request'],
   ['memory', 'memory_tool'],
-  ['sandbox', 'sandbox_exec', 'sandbox_list_runtimes', 'openclaw_sandbox'],
+  ['sandbox', 'sandbox_exec', 'sandbox_list_runtimes'],
   ['wallet', 'wallet_tool'],
   ['monitor', 'monitor_tool'],
   ['sample_ui', 'show_plugin_card'],

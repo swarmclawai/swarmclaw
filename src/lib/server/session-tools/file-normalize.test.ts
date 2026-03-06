@@ -38,6 +38,11 @@ describe('normalizeFileArgs', () => {
     assert.equal(out.dirPath, 'docs')
   })
 
+  it('defaults empty file payloads to a workspace listing instead of an unknown action', () => {
+    const out = normalizeFileArgs({})
+    assert.equal(out.action, 'list')
+  })
+
   it('infers write from bulk file entries with text content', () => {
     const out = normalizeFileArgs({
       files: [

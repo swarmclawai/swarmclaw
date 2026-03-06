@@ -32,12 +32,14 @@ describe('module exports', () => {
     const crawl = await import('./crawl')
     const mailbox = await import('./mailbox')
     const humanLoop = await import('./human-loop')
+    const sandbox = await import('./sandbox')
     assert.equal(typeof document.buildDocumentTools, 'function')
     assert.equal(typeof extract.buildExtractTools, 'function')
     assert.equal(typeof table.buildTableTools, 'function')
     assert.equal(typeof crawl.buildCrawlTools, 'function')
     assert.equal(typeof mailbox.buildMailboxTools, 'function')
     assert.equal(typeof humanLoop.buildHumanLoopTools, 'function')
+    assert.equal(typeof sandbox.buildSandboxTools, 'function')
   })
 })
 
@@ -71,6 +73,27 @@ describe('buildSessionTools signature', () => {
     const { buildSessionTools } = await import('./index')
     // Verify the function has arity of at least 2
     assert.ok(buildSessionTools.length >= 2, 'buildSessionTools should accept at least 2 params')
+  })
+
+  it('sandbox builder exposes only the local Deno sandbox tools', async () => {
+    const { buildSandboxTools } = await import('./sandbox')
+    const bctx: import('./context').ToolBuildContext = {
+      cwd: process.cwd(),
+      ctx: { sessionId: 'sandbox-test' },
+      hasPlugin: (name) => name === 'sandbox',
+      hasTool: (name) => name === 'sandbox',
+      cleanupFns: [],
+      commandTimeoutMs: 1_000,
+      claudeTimeoutMs: 1_000,
+      cliProcessTimeoutMs: 1_000,
+      persistDelegateResumeId: () => {},
+      readStoredDelegateResumeId: () => null,
+      resolveCurrentSession: () => null,
+      activePlugins: ['sandbox'],
+    }
+
+    const tools = buildSandboxTools(bctx).map((tool) => tool.name).sort()
+    assert.deepEqual(tools, ['sandbox_exec', 'sandbox_list_runtimes'])
   })
 })
 

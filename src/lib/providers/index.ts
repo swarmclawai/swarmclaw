@@ -256,11 +256,16 @@ export function getProviderList(): ProviderInfo[] {
   const overrides = getModelOverrides()
   const builtins = Object.values(PROVIDERS)
     .filter(({ id }) => id !== 'openclaw')
-    .map(({ handler, ...info }) => ({
-      ...info,
-      models: overrides[info.id] || info.models,
-      defaultModels: info.models,
-    }))
+    .map((provider) => {
+      const { handler, ...info } = provider
+      void handler
+      return {
+        ...info,
+        models: overrides[info.id] || info.models,
+        defaultModels: info.models,
+        supportsModelDiscovery: !['claude-cli', 'codex-cli', 'opencode-cli', 'fireworks'].includes(info.id),
+      }
+    })
   
   const customs: ProviderInfo[] = Object.values(getCustomProviders())
     .filter((c) => c.isEnabled)
@@ -269,6 +274,7 @@ export function getProviderList(): ProviderInfo[] {
       name: c.name,
       models: c.models,
       defaultModels: c.models,
+      supportsModelDiscovery: !!(c.baseUrl && c.baseUrl.trim()),
       requiresApiKey: c.requiresApiKey,
       requiresEndpoint: false as boolean,
       defaultEndpoint: c.baseUrl,
@@ -283,6 +289,7 @@ export function getProviderList(): ProviderInfo[] {
       name: String(p.name),
       models: p.models as string[],
       defaultModels: p.models as string[],
+      supportsModelDiscovery: Boolean(p.supportsModelDiscovery),
       requiresApiKey: Boolean(p.requiresApiKey),
       requiresEndpoint: Boolean(p.requiresEndpoint),
       defaultEndpoint: p.defaultEndpoint as string | undefined,

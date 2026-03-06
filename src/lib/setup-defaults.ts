@@ -22,6 +22,7 @@ export interface SetupProviderOption {
   description: string
   requiresKey: boolean
   supportsEndpoint: boolean
+  allowMultiple?: boolean
   defaultEndpoint?: string
   keyUrl?: string
   keyLabel?: string
@@ -43,6 +44,18 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     keyLabel: 'platform.openai.com',
     badge: 'Recommended',
     icon: 'O',
+  },
+  {
+    id: 'openclaw',
+    name: 'OpenClaw',
+    description: 'Connect one or more local or remote OpenClaw gateways and map different starter agents to each one.',
+    requiresKey: false,
+    supportsEndpoint: true,
+    allowMultiple: true,
+    defaultEndpoint: 'http://localhost:18789/v1',
+    optionalKey: true,
+    badge: 'First-Tier',
+    icon: 'C',
   },
   {
     id: 'anthropic',
@@ -126,17 +139,6 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     icon: 'F',
   },
   {
-    id: 'openclaw',
-    name: 'OpenClaw',
-    description: 'Connect to your local or remote OpenClaw gateway (multi-OpenClaw ready).',
-    requiresKey: false,
-    supportsEndpoint: true,
-    defaultEndpoint: 'http://localhost:18789/v1',
-    optionalKey: true,
-    badge: 'OpenClaw',
-    icon: 'C',
-  },
-  {
     id: 'ollama',
     name: 'Ollama',
     description: 'Run local open-source models. No API key required.',
@@ -188,6 +190,341 @@ Behavior:
 - Prefer step-by-step instructions that can be executed immediately.
 - When the user asks for direct execution (for example browsing, screenshots, research, or file edits), use available tools and return real results instead of only describing what to do.
 - If a capability depends on provider/tool configuration, call that out explicitly.`
+
+const PERSONAL_ASSISTANT_PROMPT = `You are a personal AI copilot inside SwarmClaw.
+
+Primary objective:
+- Help the user make progress on whatever matters to them, whether that is research, planning, writing, building, organizing life admin, or running a business.
+
+Behavior:
+- Start from the user's intent, not from the tooling.
+- Turn vague goals into concrete next steps.
+- When useful, suggest tasks, schedules, or specialist agents, but do not force control-plane workflow on the user.
+- Stay concise, practical, and execution-oriented.`
+
+const RESEARCH_PROMPT = `You are a research copilot inside SwarmClaw.
+
+Primary objective:
+- Gather facts, compare options, summarize findings, and keep the user's work organized.
+
+Behavior:
+- Clarify the research question when needed.
+- Prefer structured findings, tradeoffs, and source-backed summaries.
+- Capture useful outputs in files or tasks when that helps the user continue.`
+
+const BUILDER_PROMPT = `You are a builder agent inside SwarmClaw.
+
+Primary objective:
+- Help the user design, implement, debug, and ship software or technical projects.
+
+Behavior:
+- Move from goal to concrete implementation steps quickly.
+- Use code, files, browser, and task tooling when helpful.
+- Surface blockers, assumptions, and verification clearly.`
+
+const REVIEWER_PROMPT = `You are a reviewer agent inside SwarmClaw.
+
+Primary objective:
+- Review plans, code, documents, and outputs for quality, correctness, and risk.
+
+Behavior:
+- Focus first on bugs, regressions, gaps, and unclear assumptions.
+- Be direct and specific.
+- Offer concrete follow-up actions when you find issues.`
+
+const WRITER_PROMPT = `You are a writing copilot inside SwarmClaw.
+
+Primary objective:
+- Help the user draft, refine, and structure written work for clarity and impact.
+
+Behavior:
+- Adapt tone, format, and level of detail to the user's context.
+- Suggest outlines, drafts, revisions, and packaging for different channels.
+- Keep momentum high and avoid generic filler.`
+
+const EDITOR_PROMPT = `You are an editor inside SwarmClaw.
+
+Primary objective:
+- Improve drafts for clarity, structure, tone, and quality.
+
+Behavior:
+- Tighten weak writing, call out inconsistencies, and preserve the intended voice.
+- Give concise, high-signal edits and rationale.
+- Flag missing evidence or unclear claims when relevant.`
+
+const OPERATOR_PROMPT = `You are an operations-focused SwarmClaw operator.
+
+Primary objective:
+- Keep work moving across agents, tasks, schedules, and approvals without losing sight of the user's real goals.
+
+Behavior:
+- Monitor progress, surface bottlenecks, and delegate when appropriate.
+- Be explicit about what is blocked, what is running, and what should happen next.
+- Treat the control plane as a means to an end, not the end itself.`
+
+export type OnboardingPath = 'quick' | 'intent' | 'manual'
+
+export interface OnboardingPathOption {
+  id: OnboardingPath
+  title: string
+  description: string
+  detail: string
+  badge?: string
+}
+
+export const ONBOARDING_PATHS: OnboardingPathOption[] = [
+  {
+    id: 'quick',
+    title: 'Quick Start',
+    description: 'Provider first, one starter kit, fastest path into chat.',
+    detail: 'Best when you already know which provider you want and want to get moving quickly.',
+    badge: 'Fastest',
+  },
+  {
+    id: 'intent',
+    title: 'Intent Guided',
+    description: 'Start from what you want to do, then shape a starter workspace around it.',
+    detail: 'Best for open-ended use cases like research, building, writing, planning, or mixed personal work.',
+    badge: 'Recommended',
+  },
+  {
+    id: 'manual',
+    title: 'Custom Setup',
+    description: 'Configure providers first and choose whether to start blank or from a template.',
+    detail: 'Best for advanced users who want control over the initial setup and agent mix.',
+  },
+]
+
+export interface StarterKitAgentTemplate {
+  id: string
+  name: string
+  description: string
+  systemPrompt: string
+  tools: string[]
+  capabilities?: string[]
+  recommendedProviders?: SetupProvider[]
+  platformAssignScope?: 'self' | 'all'
+}
+
+export interface StarterKit {
+  id: string
+  name: string
+  description: string
+  detail: string
+  badge?: string
+  recommendedFor?: OnboardingPath[]
+  agents: StarterKitAgentTemplate[]
+}
+
+const PERSONAL_AGENT_TOOLS = [
+  'memory',
+  'files',
+  'web_search',
+  'web_fetch',
+  'browser',
+  'manage_tasks',
+  'manage_schedules',
+  'manage_documents',
+]
+
+const RESEARCH_AGENT_TOOLS = [
+  'memory',
+  'files',
+  'web_search',
+  'web_fetch',
+  'browser',
+  'manage_tasks',
+  'manage_documents',
+]
+
+const BUILDER_AGENT_TOOLS = [
+  'memory',
+  'files',
+  'web_search',
+  'web_fetch',
+  'browser',
+  'manage_tasks',
+  'claude_code',
+  'codex_cli',
+  'opencode_cli',
+]
+
+const OPERATOR_AGENT_TOOLS = STARTER_AGENT_TOOLS
+const OPENCLAW_AGENT_TOOLS = [
+  'memory',
+  'files',
+  'web_search',
+  'web_fetch',
+  'browser',
+  'manage_tasks',
+  'manage_schedules',
+  'manage_sessions',
+  'openclaw_workspace',
+]
+
+export const STARTER_KITS: StarterKit[] = [
+  {
+    id: 'personal_assistant',
+    name: 'Personal Assistant',
+    description: 'One flexible agent for open-ended work.',
+    detail: 'A strong default for general planning, research, writing, and day-to-day execution.',
+    badge: 'Recommended',
+    recommendedFor: ['quick', 'intent'],
+    agents: [
+      {
+        id: 'sidekick',
+        name: 'Sidekick',
+        description: 'A versatile assistant for everyday work, planning, and follow-through.',
+        systemPrompt: PERSONAL_ASSISTANT_PROMPT,
+        tools: PERSONAL_AGENT_TOOLS,
+        capabilities: ['planning', 'research', 'writing', 'coordination'],
+      },
+    ],
+  },
+  {
+    id: 'research_copilot',
+    name: 'Research Copilot',
+    description: 'A focused setup for investigation and synthesis.',
+    detail: 'Useful for market scans, comparisons, technical investigation, and source-backed summaries.',
+    recommendedFor: ['intent', 'manual'],
+    agents: [
+      {
+        id: 'researcher',
+        name: 'Researcher',
+        description: 'Collects facts, compares options, and produces structured findings.',
+        systemPrompt: RESEARCH_PROMPT,
+        tools: RESEARCH_AGENT_TOOLS,
+        capabilities: ['research', 'analysis', 'summarization'],
+      },
+    ],
+  },
+  {
+    id: 'builder_studio',
+    name: 'Builder Studio',
+    description: 'Start with a builder and a reviewer.',
+    detail: 'Good for coding, prototyping, product work, and technical iteration.',
+    recommendedFor: ['intent', 'manual'],
+    agents: [
+      {
+        id: 'builder',
+        name: 'Builder',
+        description: 'Implements ideas, ships changes, and drives technical execution.',
+        systemPrompt: BUILDER_PROMPT,
+        tools: BUILDER_AGENT_TOOLS,
+        capabilities: ['coding', 'debugging', 'implementation'],
+        recommendedProviders: ['anthropic', 'openai', 'google', 'openclaw', 'ollama'],
+      },
+      {
+        id: 'reviewer',
+        name: 'Reviewer',
+        description: 'Reviews plans and outputs for bugs, regressions, and quality gaps.',
+        systemPrompt: REVIEWER_PROMPT,
+        tools: RESEARCH_AGENT_TOOLS,
+        capabilities: ['review', 'testing', 'risk assessment'],
+        recommendedProviders: ['anthropic', 'openai', 'google', 'openclaw'],
+      },
+    ],
+  },
+  {
+    id: 'content_studio',
+    name: 'Content Studio',
+    description: 'A writer and editor working together.',
+    detail: 'Useful for blogs, marketing copy, docs, newsletters, and publishing workflows.',
+    recommendedFor: ['intent', 'manual'],
+    agents: [
+      {
+        id: 'writer',
+        name: 'Writer',
+        description: 'Drafts content, outlines, and messaging in the user’s preferred style.',
+        systemPrompt: WRITER_PROMPT,
+        tools: PERSONAL_AGENT_TOOLS,
+        capabilities: ['writing', 'messaging', 'structuring'],
+      },
+      {
+        id: 'editor',
+        name: 'Editor',
+        description: 'Improves structure, tone, and quality before publishing.',
+        systemPrompt: EDITOR_PROMPT,
+        tools: RESEARCH_AGENT_TOOLS,
+        capabilities: ['editing', 'quality control', 'review'],
+      },
+    ],
+  },
+  {
+    id: 'operator_swarm',
+    name: 'Operator Swarm',
+    description: 'A coordination-heavy setup for multi-agent work.',
+    detail: 'Closest to the current SwarmClaw operator workflow, with an orchestrator plus an execution agent.',
+    recommendedFor: ['manual'],
+    agents: [
+      {
+        id: 'operator',
+        name: 'Operator',
+        description: 'Coordinates tasks, delegates work, and keeps the workspace moving.',
+        systemPrompt: OPERATOR_PROMPT,
+        tools: OPERATOR_AGENT_TOOLS,
+        capabilities: ['coordination', 'delegation', 'operations'],
+        platformAssignScope: 'all',
+        recommendedProviders: ['openclaw', 'anthropic', 'openai'],
+      },
+      {
+        id: 'maker',
+        name: 'Maker',
+        description: 'Executes focused work items assigned by the user or other agents.',
+        systemPrompt: BUILDER_PROMPT,
+        tools: BUILDER_AGENT_TOOLS,
+        capabilities: ['execution', 'implementation', 'research'],
+      },
+    ],
+  },
+  {
+    id: 'openclaw_fleet',
+    name: 'OpenClaw Fleet',
+    description: 'An OpenClaw-first starter setup for local or remote gateways.',
+    detail: 'Designed for users who want multiple OpenClaw-backed agents right away, including remote endpoint assignments.',
+    recommendedFor: ['manual'],
+    badge: 'OpenClaw',
+    agents: [
+      {
+        id: 'openclaw_operator',
+        name: 'OpenClaw Operator',
+        description: 'Coordinates OpenClaw-backed execution and keeps distributed agents aligned.',
+        systemPrompt: OPERATOR_PROMPT,
+        tools: OPERATOR_AGENT_TOOLS,
+        capabilities: ['coordination', 'delegation', 'openclaw'],
+        platformAssignScope: 'all',
+        recommendedProviders: ['openclaw'],
+      },
+      {
+        id: 'openclaw_builder',
+        name: 'Remote Builder',
+        description: 'A build-focused OpenClaw agent for implementation work on a chosen gateway.',
+        systemPrompt: BUILDER_PROMPT,
+        tools: OPENCLAW_AGENT_TOOLS,
+        capabilities: ['coding', 'implementation', 'openclaw'],
+        recommendedProviders: ['openclaw'],
+      },
+      {
+        id: 'openclaw_researcher',
+        name: 'Remote Researcher',
+        description: 'A research-focused OpenClaw agent for browser and knowledge work on a chosen gateway.',
+        systemPrompt: RESEARCH_PROMPT,
+        tools: OPENCLAW_AGENT_TOOLS,
+        capabilities: ['research', 'analysis', 'openclaw'],
+        recommendedProviders: ['openclaw'],
+      },
+    ],
+  },
+  {
+    id: 'blank_workspace',
+    name: 'Blank Workspace',
+    description: 'Finish setup without starter agents.',
+    detail: 'Use this if you want to land in the app first and create providers, agents, and workflows yourself.',
+    recommendedFor: ['manual'],
+    badge: 'Blank',
+    agents: [],
+  },
+]
 
 export interface DefaultAgentConfig {
   name: string
@@ -275,4 +612,8 @@ export const DEFAULT_AGENTS: Record<SetupProvider, DefaultAgentConfig> = {
     model: 'default',
     tools: STARTER_AGENT_TOOLS,
   },
+}
+
+export function getDefaultModelForProvider(provider: SetupProvider): string {
+  return DEFAULT_AGENTS[provider].model
 }

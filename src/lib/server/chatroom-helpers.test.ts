@@ -6,6 +6,7 @@ import {
   compactChatroomMessages,
   buildHistoryForAgent,
   buildSyntheticSession,
+  resolveChatroomWorkspaceDir,
   resolveAgentApiEndpoint,
   resolveReplyTargetAgentId,
 } from './chatroom-helpers'
@@ -155,5 +156,11 @@ describe('chatroom-helpers', () => {
 
     assert.equal(resolveAgentApiEndpoint(agent), 'http://localhost:11434')
     assert.equal(buildSyntheticSession(agent, 'room-1').apiEndpoint, 'http://localhost:11434')
+  })
+
+  it('keeps chatroom execution inside the workspace instead of the repo root', () => {
+    const cwd = buildSyntheticSession(makeAgents().default, 'room-safe').cwd
+    assert.equal(cwd, resolveChatroomWorkspaceDir('room-safe'))
+    assert.match(cwd, /chatrooms[\/\\]room-safe$/)
   })
 })

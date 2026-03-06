@@ -51,7 +51,10 @@ export function SandboxEnvPanel() {
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50">Sandbox Env Allowlist</label>
+      <label className="block text-[11px] font-600 uppercase tracking-wider text-text-3/50">OpenClaw Sandbox Env Allowlist</label>
+      <p className="text-[12px] text-text-3/50">
+        Applies to OpenClaw gateway Docker sandboxes only. It does not affect SwarmClaw&apos;s local <code className="font-mono">sandbox_exec</code> tool.
+      </p>
       <div className="flex flex-col gap-1">
         {available.map((key) => (
           <label key={key} className="flex items-center gap-2 py-1 px-2 rounded-[8px] hover:bg-white/[0.02] cursor-pointer transition-colors">

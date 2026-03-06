@@ -36,7 +36,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   chatroom.updatedAt = Date.now()
   chatrooms[id] = chatroom
   saveChatrooms(chatrooms)
+  notify('chatrooms')
   notify(`chatroom:${id}`)
 
-  return NextResponse.json({ ok: true, reactions: message.reactions })
+  return NextResponse.json(chatroom)
 }

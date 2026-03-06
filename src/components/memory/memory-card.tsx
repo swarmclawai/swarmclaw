@@ -2,6 +2,7 @@
 
 import type { MemoryEntry } from '@/types'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { deriveMemoryScope, getMemoryScopeLabel, getMemoryTier } from '@/lib/memory-presentation'
 
 function timeAgo(ts: number): string {
   if (!ts) return ''
@@ -22,6 +23,9 @@ interface Props {
 }
 
 export function MemoryCard({ entry, active, agentName, agentAvatarSeed, agentAvatarUrl, onClick }: Props) {
+  const scope = deriveMemoryScope(entry)
+  const tier = getMemoryTier(entry)
+
   return (
     <div
       onClick={onClick}
@@ -50,6 +54,20 @@ export function MemoryCard({ entry, active, agentName, agentAvatarSeed, agentAva
       </div>
       <div className="text-[12px] text-text-2/40 mt-1 line-clamp-3 leading-relaxed">
         {entry.content || '(empty)'}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <span className="px-1.5 py-0.5 rounded-[5px] text-[9px] font-700 uppercase tracking-[0.08em] bg-white/[0.04] text-text-3/75">
+          {getMemoryScopeLabel(scope)}
+        </span>
+        <span className={`px-1.5 py-0.5 rounded-[5px] text-[9px] font-700 uppercase tracking-[0.08em] ${
+          tier === 'working'
+            ? 'bg-amber-400/10 text-amber-300'
+            : tier === 'archive'
+              ? 'bg-sky-400/10 text-sky-300'
+              : 'bg-emerald-400/10 text-emerald-300'
+        }`}>
+          {tier}
+        </span>
       </div>
       {(entry.image?.path || entry.imagePath) && (
         <div className="mt-2 w-10 h-10 rounded-[6px] overflow-hidden bg-white/[0.04] shrink-0">

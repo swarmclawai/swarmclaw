@@ -127,6 +127,16 @@ const COMMAND_GROUPS = {
       },
     },
   },
+  'external-agents': {
+    description: 'Manage external agent runtimes',
+    commands: {
+      list: { description: 'List external agent runtimes', method: 'GET', path: '/external-agents' },
+      create: { description: 'Register an external agent runtime', method: 'POST', path: '/external-agents' },
+      update: { description: 'Update an external agent runtime', method: 'PUT', path: '/external-agents/:id', params: ['id'] },
+      delete: { description: 'Delete an external agent runtime', method: 'DELETE', path: '/external-agents/:id', params: ['id'] },
+      heartbeat: { description: 'Record an external agent heartbeat', method: 'POST', path: '/external-agents/:id/heartbeat', params: ['id'] },
+    },
+  },
   uploads: {
     description: 'Manage uploaded artifacts',
     commands: {
@@ -141,6 +151,16 @@ const COMMAND_GROUPS = {
     commands: {
       serve: { description: 'Serve a local file (supports --query path=/some/file)', method: 'GET', path: '/files/serve' },
       open: { description: 'Open a local file path via host default app/browser', method: 'POST', path: '/files/open' },
+    },
+  },
+  gateways: {
+    description: 'Manage named OpenClaw gateway profiles',
+    commands: {
+      list: { description: 'List configured gateway profiles', method: 'GET', path: '/gateways' },
+      create: { description: 'Create a gateway profile', method: 'POST', path: '/gateways' },
+      update: { description: 'Update a gateway profile', method: 'PUT', path: '/gateways/:id', params: ['id'] },
+      delete: { description: 'Delete a gateway profile', method: 'DELETE', path: '/gateways/:id', params: ['id'] },
+      health: { description: 'Run a gateway health check', method: 'GET', path: '/gateways/:id/health', params: ['id'] },
     },
   },
   logs: {
@@ -291,8 +311,6 @@ const COMMAND_GROUPS = {
       'messages-delete': { description: 'Delete a message from a chat', method: 'DELETE', path: '/chats/:id/messages', params: ['id'] },
       fork: { description: 'Fork chat from a specific message index', method: 'POST', path: '/chats/:id/fork', params: ['id'] },
       'edit-resend': { description: 'Edit and resend from a specific message index', method: 'POST', path: '/chats/:id/edit-resend', params: ['id'] },
-      'main-loop': { description: 'Get main mission loop state for a chat', method: 'GET', path: '/chats/:id/main-loop', params: ['id'] },
-      'main-loop-action': { description: 'Control main mission loop (pause/resume/set_goal/set_mode/clear_events/nudge)', method: 'POST', path: '/chats/:id/main-loop', params: ['id'] },
       chat: { description: 'Send chat message (SSE stream)', method: 'POST', path: '/chats/:id/chat', params: ['id'], stream: true, waitable: true },
       stop: { description: 'Cancel active/running chat work', method: 'POST', path: '/chats/:id/stop', params: ['id'] },
       clear: { description: 'Clear chat history', method: 'POST', path: '/chats/:id/clear', params: ['id'] },

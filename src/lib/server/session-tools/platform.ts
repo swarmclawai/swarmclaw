@@ -190,7 +190,7 @@ const PlatformPlugin: Plugin = {
   tools: [
     {
       name: 'manage_platform',
-      description: 'Unified tool for managing all SwarmClaw resources. For create/update, pass resource + action, then either put fields inside data, pass them as top-level fields, or use a single resources[0].parameters envelope.',
+      description: 'Unified fallback tool for managing SwarmClaw resources when a more specific `manage_*` tool is not available. For create/update, pass resource + action, then either put fields inside data, pass them as top-level fields, or use a single resources[0].parameters envelope.',
       parameters: {
         type: 'object',
         properties: {

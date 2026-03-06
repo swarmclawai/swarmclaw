@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { searchMemory } from '@/lib/memory'
+import { deriveMemoryScope, getMemoryTier } from '@/lib/memory-presentation'
 import { useAppStore } from '@/stores/use-app-store'
 import { MemoryCard } from './memory-card'
 import { MemoryDetail } from './memory-detail'
@@ -14,6 +15,10 @@ export function MemoryBrowser() {
   const refreshKey = useAppStore((s) => s.memoryRefreshKey)
   const agents = useAppStore((s) => s.agents)
   const memoryAgentFilter = useAppStore((s) => s.memoryAgentFilter)
+  const memoryTierFilter = useAppStore((s) => s.memoryTierFilter)
+  const setMemoryTierFilter = useAppStore((s) => s.setMemoryTierFilter)
+  const memoryScopeFilter = useAppStore((s) => s.memoryScopeFilter)
+  const setMemoryScopeFilter = useAppStore((s) => s.setMemoryScopeFilter)
 
   const [search, setSearch] = useState('')
   const [entries, setEntries] = useState<MemoryEntry[]>([])
@@ -32,14 +37,24 @@ export function MemoryBrowser() {
 
   const load = useCallback(async (query: string) => {
     try {
-      const results = await searchMemory({ q: query || undefined, agentId: apiAgentId })
+      const scope = memoryAgentFilter === '_global'
+        ? 'global'
+        : memoryAgentFilter
+          ? 'auto'
+          : 'all'
+      const results = await searchMemory({
+        q: query || undefined,
+        agentId: apiAgentId,
+        scope,
+        limit: 120,
+      })
       setEntries(Array.isArray(results) ? results : [])
       setError(null)
     } catch {
       setError('Unable to load memories right now.')
     }
     setLoaded(true)
-  }, [apiAgentId])
+  }, [apiAgentId, memoryAgentFilter])
 
   useEffect(() => {
     searchRef.current = search
@@ -70,12 +85,23 @@ export function MemoryBrowser() {
 
   const filtered = useMemo(() => {
     return entries.filter((e) => {
-      // Client-side global filter
       if (memoryAgentFilter === '_global' && e.agentId) return false
+      if (memoryAgentFilter && memoryAgentFilter !== '_global') {
+        const visibleToAgent = e.agentId === memoryAgentFilter || (Array.isArray(e.sharedWith) && e.sharedWith.includes(memoryAgentFilter)) || !e.agentId
+        if (!visibleToAgent) return false
+      }
+      const scope = deriveMemoryScope(e)
+      if (memoryScopeFilter !== 'all') {
+        if (memoryScopeFilter === 'global' && scope !== 'global') return false
+        if (memoryScopeFilter === 'agent' && scope !== 'agent' && scope !== 'shared') return false
+        if (memoryScopeFilter === 'session' && scope !== 'session') return false
+        if (memoryScopeFilter === 'project' && scope !== 'project') return false
+      }
+      if (memoryTierFilter !== 'all' && getMemoryTier(e) !== memoryTierFilter) return false
       if (categoryFilter && (e.category || 'note') !== categoryFilter) return false
       return true
     })
-  }, [entries, memoryAgentFilter, categoryFilter])
+  }, [entries, memoryAgentFilter, memoryScopeFilter, memoryTierFilter, categoryFilter])
 
   const filterLabel = useMemo(() => {
     if (!memoryAgentFilter) return 'All Memories'
@@ -135,6 +161,41 @@ export function MemoryBrowser() {
               text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
             style={{ fontFamily: 'inherit' }}
           />
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            {(['all', 'global', 'agent', 'session', 'project'] as const).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => setMemoryScopeFilter(scope)}
+                className={`px-2.5 py-1 rounded-[8px] text-[10px] font-700 uppercase tracking-[0.08em] border transition-all ${
+                  memoryScopeFilter === scope
+                    ? 'bg-accent-soft text-accent-bright border-accent-bright/15'
+                    : 'bg-transparent text-text-3/70 border-white/[0.05] hover:text-text-2 hover:bg-white/[0.03]'
+                }`}
+              >
+                {scope === 'agent' ? 'private/shared' : scope}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {(['all', 'working', 'durable', 'archive'] as const).map((tier) => (
+              <button
+                key={tier}
+                type="button"
+                onClick={() => setMemoryTierFilter(tier)}
+                className={`px-2.5 py-1 rounded-[8px] text-[10px] font-700 uppercase tracking-[0.08em] border transition-all ${
+                  memoryTierFilter === tier
+                    ? 'bg-white/[0.08] text-text-2 border-white/[0.10]'
+                    : 'bg-transparent text-text-3/70 border-white/[0.05] hover:text-text-2 hover:bg-white/[0.03]'
+                }`}
+              >
+                {tier}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-text-3/55">
+            Scope shows what kind of memory it is. Tier shows how long it should stay salient.
+          </p>
         </div>
 
         {/* Category chips */}
@@ -207,8 +268,12 @@ export function MemoryBrowser() {
                     <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
                   </svg>
                 </div>
-                <p className="font-display text-[14px] font-600 text-text-2">No memories yet</p>
-                <p className="text-[12px] text-text-3/50">Agents store knowledge here as they learn</p>
+                <p className="font-display text-[14px] font-600 text-text-2">No memories match these filters</p>
+                <p className="text-[12px] text-text-3/50">
+                  {memoryScopeFilter === 'all' && memoryTierFilter === 'all'
+                    ? 'Agents store knowledge here as they learn'
+                    : `Try a different ${memoryScopeFilter !== 'all' ? 'scope' : 'tier'} filter`}
+                </p>
               </div>
             ) : null
           ) : (

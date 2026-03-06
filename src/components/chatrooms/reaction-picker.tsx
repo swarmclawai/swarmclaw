@@ -164,39 +164,33 @@ export function ReactionPicker({ onSelect, onClose }: Props) {
   const filteredEmojis = useMemo(() => {
     if (!search.trim()) return null
     const q = search.toLowerCase()
-    // Simple search: match against category names or just return all emojis that are visible
-    const results: string[] = []
+    const directEmojiMatches: string[] = []
     const seen = new Set<string>()
     for (const cat of CATEGORIES) {
       if (cat.id === 'frequent') continue
       for (const emoji of cat.emojis) {
-        if (!seen.has(emoji)) {
-          seen.add(emoji)
-          results.push(emoji)
-        }
+        if (seen.has(emoji)) continue
+        seen.add(emoji)
+        if (emoji.includes(search.trim())) directEmojiMatches.push(emoji)
       }
     }
-    // For basic emoji search, filter by category label matching
-    // Since emoji don't have text names in this simple implementation,
-    // we filter categories that match and show all their emojis
+    if (directEmojiMatches.length > 0) return directEmojiMatches
+
+    // This lightweight picker only understands category labels, not emoji names.
     const matchingCats = CATEGORIES.filter(
       (c) => c.id !== 'frequent' && c.label.toLowerCase().includes(q)
     )
-    if (matchingCats.length > 0) {
-      const catResults: string[] = []
-      const catSeen = new Set<string>()
-      for (const cat of matchingCats) {
-        for (const emoji of cat.emojis) {
-          if (!catSeen.has(emoji)) {
-            catSeen.add(emoji)
-            catResults.push(emoji)
-          }
+    const catResults: string[] = []
+    const catSeen = new Set<string>()
+    for (const cat of matchingCats) {
+      for (const emoji of cat.emojis) {
+        if (!catSeen.has(emoji)) {
+          catSeen.add(emoji)
+          catResults.push(emoji)
         }
       }
-      return catResults
     }
-    // If no category match, just return all emojis (user can visually scan)
-    return results
+    return catResults
   }, [search])
 
   return (
@@ -212,9 +206,14 @@ export function ReactionPicker({ onSelect, onClose }: Props) {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search emoji..."
+          placeholder="Filter by category or paste emoji..."
           className="w-full px-2.5 py-1.5 rounded-[8px] bg-white/[0.06] border border-white/[0.08] text-[12px] text-text placeholder:text-text-3 focus:outline-none focus:border-accent-bright/40"
         />
+        {search.trim() && (
+          <p className="mt-1 px-0.5 text-[10px] text-text-3/55">
+            This picker filters category labels rather than emoji names.
+          </p>
+        )}
       </div>
 
       {/* Category tabs */}
@@ -238,17 +237,23 @@ export function ReactionPicker({ onSelect, onClose }: Props) {
       {/* Emoji grid */}
       <div className="px-2 pb-2 max-h-[220px] overflow-y-auto">
         {search.trim() ? (
-          <div className="grid grid-cols-8 gap-0.5">
-            {filteredEmojis?.map((emoji, i) => (
-              <button
-                key={`${emoji}-${i}`}
-                onClick={() => onSelect(emoji)}
-                className="w-[34px] h-[34px] flex items-center justify-center rounded-[6px] hover:bg-white/[0.08] transition-all cursor-pointer text-[18px]"
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
+          filteredEmojis && filteredEmojis.length > 0 ? (
+            <div className="grid grid-cols-8 gap-0.5">
+              {filteredEmojis.map((emoji, i) => (
+                <button
+                  key={`${emoji}-${i}`}
+                  onClick={() => onSelect(emoji)}
+                  className="w-[34px] h-[34px] flex items-center justify-center rounded-[6px] hover:bg-white/[0.08] transition-all cursor-pointer text-[18px]"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="px-2 py-6 text-center text-[11px] text-text-3/60">
+              No category matches. Try terms like <span className="text-text-3">food</span>, <span className="text-text-3">travel</span>, or paste an emoji.
+            </div>
+          )
         ) : (
           CATEGORIES.filter((c) => c.id === activeCategory).map((cat) => (
             <div key={cat.id}>

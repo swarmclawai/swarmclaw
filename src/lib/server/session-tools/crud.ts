@@ -30,6 +30,7 @@ import {
   validateManagedAgentAssignment,
 } from '@/lib/server/agent-assignment'
 import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
+import { normalizeSchedulePayload } from '@/lib/server/schedule-normalization'
 import type { ToolBuildContext } from './context'
 import { safePath, findBinaryOnPath } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
@@ -261,6 +262,9 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
     if (!hasPlugin(toolKey)) continue
 
     let description = `Manage SwarmClaw ${res.label}. ${res.readOnly ? 'List and get only.' : 'List, get, create, update, or delete.'} Returns JSON.`
+    if (toolKey.startsWith('manage_') && toolKey !== 'manage_platform') {
+      description += `\n\nUse this direct tool name exactly as shown (\`${toolKey}\`). Do not swap it for \`manage_platform\` unless that umbrella tool is separately enabled in the current session.`
+    }
     if (toolKey === 'manage_tasks') {
       if (assignScope === 'self') {
         description += `\n\nYou may create tasks for yourself ("${ctx?.agentId || 'unknown'}") or leave them unassigned to track multi-step work. You cannot assign tasks to other agents unless a user enables "Assign to Other Agents" in your agent settings. Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.`
@@ -271,9 +275,9 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
       description += `\n\nAgents may self-edit their own soul. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field. Set "platformAssignScope":"all" to let an agent delegate work across the fleet; use "self" for solo execution.`
     } else if (toolKey === 'manage_schedules') {
       if (assignScope === 'self') {
-        description += `\n\nSet "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}") or leave it null. You can only assign schedules to yourself. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Set taskPrompt for what the agent should do. Before create, call list/get to avoid duplicate schedules. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true).`
+        description += `\n\nOmit "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}"), or set it explicitly to yourself. You can only assign schedules to yourself. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Provide either taskPrompt, command, or action+path. Before create, call list/get to avoid duplicate schedules. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true).`
       } else {
-        description += `\n\nSet "agentId" to assign a schedule to an agent (including yourself: "${ctx?.agentId || 'unknown'}"). Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Set taskPrompt for what the agent should do. Before create, call list/get to avoid duplicate schedules. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true).` + agentSummary
+        description += `\n\nOmit "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}"), or set "agentId" to another agent when needed. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Provide either taskPrompt, command, or action+path. Before create, call list/get to avoid duplicate schedules. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true).` + agentSummary
       }
     } else if (toolKey === 'manage_webhooks') {
       description += '\n\nUse `source`, `events`, `agentId`, and `secret` when creating webhooks. Inbound calls should POST to `/api/webhooks/{id}` with header `x-webhook-secret` when a secret is configured.'
@@ -350,7 +354,9 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 const resolution = resolveManagedAgentAssignment(
                   parsed as Record<string, unknown>,
                   agents,
-                  toolKey === 'manage_tasks' ? (parsed.agentId || ctx?.agentId || null) : null,
+                  toolKey === 'manage_tasks' || toolKey === 'manage_schedules'
+                    ? (parsed.agentId || ctx?.agentId || null)
+                    : null,
                   { allowDescription: toolKey === 'manage_tasks' },
                 )
                 const assignmentError = validateManagedAgentAssignment({
@@ -369,6 +375,12 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 parsed.agentId = resolution.agentId
               }
               if (toolKey === 'manage_schedules') {
+                const normalizedSchedule = normalizeSchedulePayload(parsed as Record<string, unknown>, {
+                  cwd,
+                  now,
+                })
+                if (!normalizedSchedule.ok) return normalizedSchedule.error
+                Object.assign(parsed, normalizedSchedule.value)
                 const duplicate = findDuplicateSchedule(all as Record<string, ScheduleLike>, {
                   agentId: parsed.agentId || null,
                   taskPrompt: parsed.taskPrompt || '',
@@ -552,6 +564,18 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 }
               }
               all[id] = { ...all[id], ...parsed, updatedAt: Date.now() }
+              if (toolKey === 'manage_schedules') {
+                const normalizedSchedule = normalizeSchedulePayload(all[id] as Record<string, unknown>, {
+                  cwd,
+                  now: Date.now(),
+                })
+                if (!normalizedSchedule.ok) return normalizedSchedule.error
+                all[id] = {
+                  ...all[id],
+                  ...normalizedSchedule.value,
+                  updatedAt: Date.now(),
+                }
+              }
               if (toolKey === 'manage_secrets') {
                 if (!canAccessSecret(all[id])) return 'Error: you do not have access to this secret.'
                 const nextScope = parsed.scope === 'agent'

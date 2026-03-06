@@ -190,6 +190,10 @@ export function ChatroomSheet() {
 
   const handleSave = async () => {
     if (!name.trim() || saving) return
+    if (selectedAgentIds.length === 0) {
+      toast.error('Select at least one chatroom member.')
+      return
+    }
     setSaving(true)
     try {
       const payload = {
@@ -363,6 +367,9 @@ export function ChatroomSheet() {
             <label className="block text-[12px] font-600 text-text-2 mb-1.5">
               Members ({selectedAgentIds.length} selected)
             </label>
+            <p className="mb-2 text-[11px] text-text-3">
+              Choose the agents who should be available in this room. Every chatroom needs at least one member.
+            </p>
             <div className="max-h-[240px] overflow-y-auto rounded-[8px] border border-white/[0.08] bg-white/[0.03]">
               {agentList.length === 0 ? (
                 <p className="p-3 text-[12px] text-text-3">No agents available</p>
@@ -387,6 +394,11 @@ export function ChatroomSheet() {
                 })
               )}
             </div>
+            {selectedAgentIds.length === 0 && (
+              <p className="mt-2 text-[11px] text-amber-300">
+                Select at least one member before creating the room.
+              </p>
+            )}
           </div>
 
           {/* Routing Rules */}
@@ -484,7 +496,7 @@ export function ChatroomSheet() {
         <div className="flex items-center gap-3 mt-6">
           <button
             onClick={handleSave}
-            disabled={!name.trim() || saving}
+            disabled={!name.trim() || saving || selectedAgentIds.length === 0}
             className="flex-1 py-2.5 rounded-[8px] text-[13px] font-600 bg-accent-bright text-white hover:bg-accent-bright/90 transition-all disabled:opacity-50 cursor-pointer"
           >
             {saving ? 'Saving...' : editing ? 'Save Changes' : 'Create Chatroom'}

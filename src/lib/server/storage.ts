@@ -5,7 +5,8 @@ import os from 'os'
 import Database from 'better-sqlite3'
 
 import { DATA_DIR, WORKSPACE_DIR } from './data-dir'
-import type { Message } from '@/types'
+import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
+import type { ExternalAgentRuntime, GatewayProfile, Message } from '@/types'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
 // --- LRU Cache ---
@@ -135,6 +136,7 @@ const COLLECTIONS = [
   'tasks',
   'secrets',
   'provider_configs',
+  'gateway_profiles',
   'skills',
   'connectors',
   'documents',
@@ -159,6 +161,7 @@ const COLLECTIONS = [
   'browser_sessions',
   'watch_jobs',
   'delegation_jobs',
+  'external_agents',
 ] as const
 
 export type StorageCollection = (typeof COLLECTIONS)[number]
@@ -352,10 +355,12 @@ const JSON_FILES: Record<string, string> = {
   tasks: path.join(DATA_DIR, 'tasks.json'),
   secrets: path.join(DATA_DIR, 'secrets.json'),
   provider_configs: path.join(DATA_DIR, 'providers.json'),
+  gateway_profiles: path.join(DATA_DIR, 'gateways.json'),
   skills: path.join(DATA_DIR, 'skills.json'),
   connectors: path.join(DATA_DIR, 'connectors.json'),
   documents: path.join(DATA_DIR, 'documents.json'),
   webhooks: path.join(DATA_DIR, 'webhooks.json'),
+  external_agents: path.join(DATA_DIR, 'external-agents.json'),
 }
 
 const MIGRATION_FLAG = path.join(DATA_DIR, '.sqlite_migrated')
@@ -803,6 +808,7 @@ function isProvidedSecretValue(value: unknown): value is string {
 
 function buildPersistedSettings(input: Record<string, any>, existing?: PersistedSettingsRecord): PersistedSettingsRecord {
   const next = cloneRecord(input) as PersistedSettingsRecord
+  Object.assign(next, normalizeRuntimeSettingFields(next))
   const encrypted = {
     ...(existing ? getEncryptedAppSettings(existing) : {}),
     ...getEncryptedAppSettings(next),
@@ -935,6 +941,15 @@ export function saveProviderConfigs(p: Record<string, any>) {
   saveCollection('provider_configs', p)
 }
 
+// --- Gateway Profiles ---
+export function loadGatewayProfiles(): Record<string, any> {
+  return loadCollection('gateway_profiles') as Record<string, GatewayProfile>
+}
+
+export function saveGatewayProfiles(g: Record<string, GatewayProfile>) {
+  saveCollection('gateway_profiles', g)
+}
+
 // --- Model Overrides (user-added models for built-in providers) ---
 export function loadModelOverrides(): Record<string, string[]> {
   return loadCollection('model_overrides') as Record<string, string[]>
@@ -962,6 +977,15 @@ export function loadSkills(): Record<string, any> {
 
 export function saveSkills(s: Record<string, any>) {
   saveCollection('skills', s)
+}
+
+// --- External Agent Runtimes ---
+export function loadExternalAgents(): Record<string, ExternalAgentRuntime> {
+  return loadCollection('external_agents') as Record<string, ExternalAgentRuntime>
+}
+
+export function saveExternalAgents(items: Record<string, ExternalAgentRuntime>) {
+  saveCollection('external_agents', items)
 }
 
 // --- Usage ---
@@ -1067,11 +1091,11 @@ export function saveIntegrityBaselines(entries: Record<string, any>) {
 }
 
 // --- Webhook Logs ---
-export function loadWebhookLogs(): Record<string, any> {
+export function loadWebhookLogs(): Record<string, unknown> {
   return loadCollection('webhook_logs')
 }
 
-export function appendWebhookLog(id: string, entry: any) {
+export function appendWebhookLog(id: string, entry: unknown) {
   upsertCollectionItem('webhook_logs', id, entry)
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
@@ -50,9 +50,10 @@ interface Props {
   messages: Message[]
   streaming: boolean
   connectorFilter?: string | null
+  loading?: boolean
 }
 
-export function MessageList({ messages, streaming, connectorFilter = null }: Props) {
+export function MessageList({ messages, streaming, connectorFilter = null, loading = false }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const snapUntilRef = useRef(0)
@@ -157,6 +158,10 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
   const [searchQuery, setSearchQuery] = useState('')
   const [searchIdx, setSearchIdx] = useState(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const openSearch = useCallback(() => {
+    setSearchOpen(true)
+    setTimeout(() => searchInputRef.current?.focus(), 50)
+  }, [])
 
   const isHeartbeatMessage = (msg: Message) =>
     msg.role === 'assistant' && (msg.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(msg.text || '') || /^\s*NO_MESSAGE\b/i.test(msg.text || ''))
@@ -192,11 +197,13 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
   }
 
   // Search matches
-  const searchMatches = searchQuery.trim()
-    ? filteredMessages
-        .map((msg, i) => ({ msg, i }))
-        .filter(({ msg }) => msg.text.toLowerCase().includes(searchQuery.toLowerCase()))
-    : []
+  const searchMatches = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase()
+    if (!normalizedQuery) return []
+    return filteredMessages
+      .map((msg, i) => ({ msg, i }))
+      .filter(({ msg }) => msg.text.toLowerCase().includes(normalizedQuery))
+  }, [filteredMessages, searchQuery])
 
   // Track whether user is at/near bottom so we know whether to auto-scroll on new content
   const wasAtBottomRef = useRef(true)
@@ -311,6 +318,15 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
     return () => window.removeEventListener('swarmclaw:scroll-to-message', handler)
   }, [])
 
+  useEffect(() => {
+    if (!searchQuery || !searchMatches.length) return
+    const currentMatch = searchMatches[searchIdx]
+    if (!currentMatch) return
+    const el = scrollRef.current?.querySelector(`[data-message-index="${currentMatch.i}"]`) as HTMLElement | null
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [searchIdx, searchMatches, searchQuery])
+
   // Ctrl+F search toggle
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -334,9 +350,81 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
 
   return (
     <div className="relative flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+      <div className="shrink-0 px-4 md:px-12 lg:px-16 pt-3">
+        <div className="flex flex-wrap items-center gap-2 rounded-[14px] border border-white/[0.06] bg-surface/55 px-3 py-2 backdrop-blur-sm">
+          <button
+            type="button"
+            onClick={() => {
+              if (searchOpen) {
+                setSearchOpen(false)
+                setSearchQuery('')
+                setSearchIdx(0)
+              } else {
+                openSearch()
+              }
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[11px] font-600 transition-colors cursor-pointer ${
+              searchOpen
+                ? 'border-accent-bright/25 bg-accent-soft/60 text-accent-bright'
+                : 'border-white/[0.06] bg-white/[0.03] text-text-3 hover:text-text-2 hover:bg-white/[0.06]'
+            }`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            Find
+            <span className="hidden sm:inline text-text-3/50">Cmd/Ctrl+F</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setBookmarkFilter((v) => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[11px] font-600 transition-colors cursor-pointer ${
+              bookmarkFilter
+                ? 'border-amber-400/25 bg-amber-500/10 text-amber-300'
+                : 'border-white/[0.06] bg-white/[0.03] text-text-3 hover:text-text-2 hover:bg-white/[0.06]'
+            }`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill={bookmarkFilter ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            {bookmarkFilter ? 'Bookmarked' : 'Bookmarks'}
+          </button>
+          {(searchQuery || bookmarkFilter) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchOpen(false)
+                setSearchQuery('')
+                setSearchIdx(0)
+                setBookmarkFilter(false)
+              }}
+              className="inline-flex items-center gap-1.5 rounded-[9px] border border-white/[0.06] bg-transparent px-2.5 py-1.5 text-[11px] font-600 text-text-3 hover:text-text-2 hover:bg-white/[0.04] cursor-pointer transition-colors"
+            >
+              Reset filters
+            </button>
+          )}
+          <div className="ml-auto flex items-center gap-2 text-[11px] text-text-3/60">
+            {searchQuery ? (
+              <span className="tabular-nums">
+                {searchMatches.length > 0 ? `${searchIdx + 1}/${searchMatches.length}` : '0 results'}
+              </span>
+            ) : (
+              <span>{filteredMessages.length} message{filteredMessages.length === 1 ? '' : 's'}</span>
+            )}
+            {loading && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.04] px-2 py-1 text-text-3/70">
+                <span className="w-2 h-2 rounded-full bg-accent-bright animate-pulse" />
+                Loading thread
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* In-thread search bar */}
       {searchOpen && (
-        <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-2 px-6 md:px-12 lg:px-16 py-2 bg-surface/95 backdrop-blur-sm border-b border-white/[0.06]">
+        <div className="shrink-0 z-20 flex items-center gap-2 px-4 md:px-12 lg:px-16 py-2 bg-surface/95 backdrop-blur-sm border-b border-white/[0.06]">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3 shrink-0">
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -401,7 +489,7 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
       <div
         ref={scrollRef}
         onScroll={updateScrollState}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 md:px-12 lg:px-16 pt-6 pb-[120px] md:pb-10 fade-up"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 md:px-12 lg:px-16 pt-4 pb-[120px] md:pb-10 fade-up"
       >
         <div className="flex flex-col gap-6 relative">
           {/* Chat spine — vertical line for assistant messages */}
@@ -442,13 +530,48 @@ export function MessageList({ messages, streaming, connectorFilter = null }: Pro
             </div>
           )}
           {filteredMessages.length === 0 && !streaming && (
-            <div className="flex flex-col items-center justify-center gap-3 py-20 text-center" style={{ animation: 'fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
-              <AgentAvatar seed={agent?.avatarSeed || null} avatarUrl={agent?.avatarUrl} name={agent?.name || 'Agent'} size={48} />
-              <span className="font-display text-[16px] font-600 text-text-2">{agent?.name || 'Assistant'}</span>
-              <span className="text-[14px] text-text-3/60">
-                {INTRO_GREETINGS[stableHash(agent?.id || session?.id || '') % INTRO_GREETINGS.length]}
-              </span>
-            </div>
+            searchQuery.trim() || bookmarkFilter || connectorFilter ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+                <div className="w-12 h-12 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="text-text-3/70">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                </div>
+                <span className="font-display text-[16px] font-600 text-text-2">
+                  {bookmarkFilter ? 'No bookmarked messages here' : 'No messages match these filters'}
+                </span>
+                <span className="text-[13px] text-text-3/60 max-w-[360px]">
+                  {searchQuery.trim()
+                    ? `Nothing in this thread matches "${searchQuery.trim()}".`
+                    : connectorFilter
+                      ? 'Try another source filter or reset the thread filters.'
+                      : 'Try another keyword or turn off bookmarks-only mode.'}
+                </span>
+                {(searchQuery.trim() || bookmarkFilter) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchOpen(false)
+                      setSearchQuery('')
+                      setSearchIdx(0)
+                      setBookmarkFilter(false)
+                    }}
+                    className="rounded-[10px] border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-[12px] font-600 text-text-2 hover:bg-white/[0.06] cursor-pointer transition-colors"
+                  >
+                    Clear thread filters
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-3 py-20 text-center" style={{ animation: 'fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
+                <AgentAvatar seed={agent?.avatarSeed || null} avatarUrl={agent?.avatarUrl} name={agent?.name || 'Agent'} size={48} />
+                <span className="font-display text-[16px] font-600 text-text-2">{agent?.name || 'Assistant'}</span>
+                <span className="text-[14px] text-text-3/60">
+                  {INTRO_GREETINGS[stableHash(agent?.id || session?.id || '') % INTRO_GREETINGS.length]}
+                </span>
+              </div>
+            )
           )}
           {filteredMessages.map((msg, i) => {
             // Context-clear divider — render a visual separator instead of a bubble

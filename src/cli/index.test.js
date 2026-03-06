@@ -163,6 +163,37 @@ test('runCli sends authenticated request and emits compact JSON when --json is s
   assert.equal(stderr.toString(), '')
 })
 
+test('runCli falls back to platform-api-key.txt when env key is missing', async () => {
+  const stdout = makeWritable()
+  const stderr = makeWritable()
+  const calls = []
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-cli-keyfile-'))
+  fs.writeFileSync(path.join(tmpDir, 'platform-api-key.txt'), 'file-key\n', 'utf8')
+
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return jsonResponse({ ok: true })
+  }
+
+  const exitCode = await runCli(
+    ['runs', 'list', '--json'],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: tmpDir,
+    }
+  )
+
+  assert.equal(exitCode, 0)
+  assert.equal(calls[0].init.headers['X-Access-Key'], 'file-key')
+  assert.equal(stderr.toString(), '')
+
+  fs.rmSync(tmpDir, { recursive: true, force: true })
+})
+
 test('upload command sends binary body and x-filename header', async () => {
   const stdout = makeWritable()
   const stderr = makeWritable()
@@ -195,6 +226,32 @@ test('upload command sends binary body and x-filename header', async () => {
   assert.equal(calls[0].init.headers['x-filename'], 'sample.txt')
 
   fs.rmSync(tmpDir, { recursive: true, force: true })
+})
+
+test('binary responses require --out when stdout is a TTY', async () => {
+  const stdout = makeWritable()
+  stdout.isTTY = true
+  const stderr = makeWritable()
+
+  const fetchImpl = async () =>
+    new Response(Buffer.from('hello'), {
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+    })
+
+  const exitCode = await runCli(
+    ['uploads', 'get', 'artifact.bin'],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: process.cwd(),
+    }
+  )
+
+  assert.equal(exitCode, 1)
+  assert.match(stderr.toString(), /binary response requires --out <file>/i)
 })
 
 test('wait polls run endpoint until terminal state', async () => {
@@ -234,6 +291,144 @@ test('wait polls run endpoint until terminal state', async () => {
   assert.match(stdout.toString(), /"runId": "run_1"/)
   assert.match(stdout.toString(), /\[wait\] run run_1: queued/)
   assert.match(stdout.toString(), /"status": "completed"/)
+})
+
+test('runCli parses CRLF-delimited SSE events correctly', async () => {
+  const stdout = makeWritable()
+  const stderr = makeWritable()
+
+  const fetchImpl = async () => new Response(
+    'data: {"t":"md","text":"first"}\r\n\r\ndata: {"t":"md","text":"second"}\r\n\r\n',
+    {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    }
+  )
+
+  const exitCode = await runCli(
+    ['chatrooms', 'chat', 'room-1', '--data', '{}'],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: process.cwd(),
+    }
+  )
+
+  assert.equal(exitCode, 0)
+  assert.equal(stdout.toString(), 'first\nsecond\n')
+  assert.equal(stderr.toString(), '')
+})
+
+test('binary responses require --out when stdout is a TTY', async () => {
+  const stdout = makeWritable()
+  stdout.isTTY = true
+  const stderr = makeWritable()
+
+  const fetchImpl = async () => new Response(Buffer.from('ok'), {
+    status: 200,
+    headers: { 'content-type': 'application/octet-stream' },
+  })
+
+  const exitCode = await runCli(
+    ['memory-images', 'get', 'image-1.png'],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: process.cwd(),
+    }
+  )
+
+  assert.equal(exitCode, 1)
+  assert.equal(stdout.toString(), '')
+  assert.match(stderr.toString(), /binary response requires --out <file>/i)
+})
+
+test('client-side collection lookups fail cleanly when the entity is missing', async () => {
+  const stdout = makeWritable()
+  const stderr = makeWritable()
+
+  const fetchImpl = async () => jsonResponse([{ id: 'agent-2', name: 'Other Agent' }])
+
+  const exitCode = await runCli(
+    ['agents', 'get', 'agent-1'],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: process.cwd(),
+    }
+  )
+
+  assert.equal(exitCode, 1)
+  assert.equal(stdout.toString(), '')
+  assert.match(stderr.toString(), /entity not found for id: agent-1/i)
+})
+
+test('runCli loads request JSON from @file inputs', async () => {
+  const stdout = makeWritable()
+  const stderr = makeWritable()
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-cli-data-'))
+  const dataPath = path.join(tmpDir, 'payload.json')
+  fs.writeFileSync(dataPath, JSON.stringify({ title: 'From file', status: 'backlog' }), 'utf8')
+
+  const calls = []
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return jsonResponse({ ok: true })
+  }
+
+  const exitCode = await runCli(
+    ['tasks', 'create', '--data', `@${dataPath}`],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: process.cwd(),
+    }
+  )
+
+  assert.equal(exitCode, 0)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].init.headers['Content-Type'], 'application/json')
+  assert.deepEqual(JSON.parse(calls[0].init.body), { title: 'From file', status: 'backlog' })
+
+  fs.rmSync(tmpDir, { recursive: true, force: true })
+})
+
+test('runCli falls back to platform-api-key.txt when no env key is provided', async () => {
+  const stdout = makeWritable()
+  const stderr = makeWritable()
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-cli-key-'))
+  fs.writeFileSync(path.join(tmpDir, 'platform-api-key.txt'), 'file-key\n', 'utf8')
+
+  const calls = []
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return jsonResponse({ ok: true })
+  }
+
+  const exitCode = await runCli(
+    ['runs', 'list'],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: tmpDir,
+    }
+  )
+
+  assert.equal(exitCode, 0)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].init.headers['X-Access-Key'], 'file-key')
+
+  fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
 test('all command definitions execute with a mocked API transport', async () => {

@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter, ActivityEntry, AppNotification, ApprovalRequest } from '../types'
+import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter, ActivityEntry, AppNotification, ApprovalRequest, GatewayProfile, ExternalAgentRuntime } from '../types'
 import { fetchChats, fetchDirs, fetchProviders, fetchCredentials } from '../lib/chats'
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
@@ -76,6 +76,10 @@ interface AppState {
   triggerMemoryRefresh: () => void
   memoryAgentFilter: string | null
   setMemoryAgentFilter: (agentId: string | null) => void
+  memoryTierFilter: 'all' | 'working' | 'durable' | 'archive'
+  setMemoryTierFilter: (tier: 'all' | 'working' | 'durable' | 'archive') => void
+  memoryScopeFilter: 'all' | 'global' | 'agent' | 'session' | 'project'
+  setMemoryScopeFilter: (scope: 'all' | 'global' | 'agent' | 'session' | 'project') => void
 
   appSettings: AppSettings
   loadSettings: () => Promise<void>
@@ -108,6 +112,13 @@ interface AppState {
   setProviderSheetOpen: (open: boolean) => void
   editingProviderId: string | null
   setEditingProviderId: (id: string | null) => void
+
+  gatewayProfiles: GatewayProfile[]
+  loadGatewayProfiles: () => Promise<void>
+  gatewaySheetOpen: boolean
+  setGatewaySheetOpen: (open: boolean) => void
+  editingGatewayId: string | null
+  setEditingGatewayId: (id: string | null) => void
 
   // Skills
   skills: Record<string, Skill>
@@ -211,6 +222,9 @@ interface AppState {
   // Wallets
   walletPanelAgentId: string | null
   setWalletPanelAgentId: (id: string | null) => void
+
+  externalAgents: ExternalAgentRuntime[]
+  loadExternalAgents: () => Promise<void>
 
 }
 
@@ -394,6 +408,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   triggerMemoryRefresh: () => set((s) => ({ memoryRefreshKey: s.memoryRefreshKey + 1 })),
   memoryAgentFilter: null,
   setMemoryAgentFilter: (agentId) => set({ memoryAgentFilter: agentId }),
+  memoryTierFilter: 'all',
+  setMemoryTierFilter: (tier) => set({ memoryTierFilter: tier }),
+  memoryScopeFilter: 'all',
+  setMemoryScopeFilter: (scope) => set({ memoryScopeFilter: scope }),
 
   appSettings: {},
   loadSettings: async () => {
@@ -489,6 +507,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   setProviderSheetOpen: (open) => set({ providerSheetOpen: open }),
   editingProviderId: null,
   setEditingProviderId: (id) => set({ editingProviderId: id }),
+
+  gatewayProfiles: [],
+  loadGatewayProfiles: async () => {
+    try {
+      const gatewayProfiles = await api<GatewayProfile[]>('GET', '/gateways')
+      set({ gatewayProfiles })
+    } catch {
+      // ignore
+    }
+  },
+  gatewaySheetOpen: false,
+  setGatewaySheetOpen: (open) => set({ gatewaySheetOpen: open }),
+  editingGatewayId: null,
+  setEditingGatewayId: (id) => set({ editingGatewayId: id }),
 
   // Skills
   skills: {},
@@ -711,5 +743,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Wallets
   walletPanelAgentId: null,
   setWalletPanelAgentId: (id) => set({ walletPanelAgentId: id }),
+
+  externalAgents: [],
+  loadExternalAgents: async () => {
+    try {
+      const externalAgents = await api<ExternalAgentRuntime[]>('GET', '/external-agents')
+      set({ externalAgents })
+    } catch {
+      // ignore
+    }
+  },
 
 }))

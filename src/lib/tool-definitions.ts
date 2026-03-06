@@ -16,14 +16,14 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
   { id: 'delegate', label: 'Delegate', description: 'Delegate complex tasks to specialized backends (Claude Code, Codex, OpenCode)' },
   { id: 'browser', label: 'Browser', description: 'Playwright — browse, scrape, interact with web pages' },
   { id: 'memory', label: 'Memory', description: 'Store and retrieve long-term memories across conversations' },
-  { id: 'sandbox', label: 'Sandbox', description: 'Secure isolated code execution for JS, TS, and Python' },
+  { id: 'sandbox', label: 'Sandbox', description: 'Deno-based isolated JS/TS execution for cases where custom code is necessary' },
   { id: 'create_document', label: 'Create Document', description: 'Render markdown to PDF, HTML, or image' },
   { id: 'create_spreadsheet', label: 'Create Spreadsheet', description: 'Create Excel or CSV files from structured data' },
-  { id: 'http_request', label: 'HTTP Request', description: 'Make direct HTTP API calls with custom methods, headers, and bodies' },
+  { id: 'http_request', label: 'HTTP Request', description: 'Make direct HTTP API calls without generating throwaway code' },
   { id: 'git', label: 'Git', description: 'Run structured git operations (status, commit, push, diff, etc.)' },
   { id: 'wallet', label: 'Wallet', description: 'Manage agent crypto wallet — check balance, send SOL, view transactions' },
   { id: 'monitor', label: 'Monitor', description: 'System observability: check resource usage, watch logs, and ping endpoints' },
-  { id: 'plugin_creator', label: 'Plugin Creator', description: 'Design, write, and test custom SwarmClaw plugins dynamically' },
+  { id: 'plugin_creator', label: 'Plugin Creator', description: 'Design focused plugins for durable capabilities and recurring automations' },
   { id: 'sample_ui', label: 'Sample UI', description: 'Demonstration of dynamic UI injection into Sidebar and Chat Header' },
   { id: 'image_gen', label: 'Image Generation', description: 'Generate images from text prompts using OpenAI, Stability AI, Replicate, fal.ai, and more' },
   { id: 'email', label: 'Email', description: 'Send emails via SMTP with plain text and HTML support' },
@@ -49,4 +49,3 @@ export const ALL_TOOLS: ToolDefinition[] = [...AVAILABLE_TOOLS, ...PLATFORM_TOOL
 export const TOOL_LABELS: Record<string, string> = Object.fromEntries(
   ALL_TOOLS.map((t) => [t.id, t.label]),
 )
-

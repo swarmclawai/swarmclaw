@@ -68,12 +68,18 @@ async function executeHttpAction(args: HttpRequestArgs) {
  */
 const HttpPlugin: Plugin = {
   name: 'Core HTTP',
-  description: 'Make direct HTTP API calls with custom methods, headers, and bodies.',
-  hooks: {} as PluginHooks,
+  description: 'Make direct HTTP API calls without generating throwaway code.',
+  hooks: {
+    getCapabilityDescription: () => 'I can make direct HTTP requests (`http_request`) without writing code. Use this for straightforward API calls or fetching JSON.',
+    getOperatingGuidance: () => [
+      'Prefer `http_request` over `sandbox_exec` for straightforward REST or JSON API calls.',
+      'Keep API keys in plugin settings or SwarmClaw secrets instead of hardcoding them in generated code.',
+    ],
+  } as PluginHooks,
   tools: [
     {
       name: 'http_request',
-      description: 'Make an HTTP API request.',
+      description: 'Make an HTTP API request without generating code.',
       parameters: {
         type: 'object',
         properties: {

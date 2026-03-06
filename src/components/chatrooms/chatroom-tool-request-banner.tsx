@@ -103,6 +103,9 @@ export function ChatroomToolRequestBanner({ agentId, agentName, text, toolOutput
                 <span className="text-accent-bright">{agentName}</span> requesting <span className="text-amber-400">{label}</span>
               </p>
               {reason && <p className="text-[11px] text-text-3/60 mt-0.5 truncate">{reason}</p>}
+              <p className="text-[10px] text-text-3/45 mt-1">
+                Approving updates this agent&apos;s tool access and posts a follow-up continue message in the room.
+              </p>
             </div>
             {isGranted ? (
               <span className="text-[11px] text-emerald-400 font-600 shrink-0">Granted</span>
@@ -115,14 +118,14 @@ export function ChatroomToolRequestBanner({ agentId, agentName, text, toolOutput
                   className="px-3 py-1.5 rounded-[8px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-600 border-none cursor-pointer transition-colors"
                   style={{ fontFamily: 'inherit' }}
                 >
-                  Grant
+                  Grant & Continue
                 </button>
                 <button
                   onClick={() => handleDeny(toolId)}
                   className="px-3 py-1.5 rounded-[8px] bg-red-500/15 hover:bg-red-500/25 text-red-400 text-[11px] font-600 border-none cursor-pointer transition-colors"
                   style={{ fontFamily: 'inherit' }}
                 >
-                  Deny
+                  Deny & Reply
                 </button>
               </div>
             )}

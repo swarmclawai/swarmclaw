@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { loadPublicSettings, loadSettings, saveSettings } from '@/lib/server/storage'
-import { DEFAULT_DELEGATION_MAX_DEPTH } from '@/lib/runtime-loop'
+import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
 export const dynamic = 'force-dynamic'
 
 
@@ -10,8 +10,6 @@ const MEMORY_PER_LOOKUP_MIN = 1
 const MEMORY_PER_LOOKUP_MAX = 200
 const MEMORY_LINKED_MIN = 0
 const MEMORY_LINKED_MAX = 1000
-const DELEGATION_DEPTH_MIN = 1
-const DELEGATION_DEPTH_MAX = 12
 const RESPONSE_CACHE_TTL_MIN_SEC = 5
 const RESPONSE_CACHE_TTL_MAX_SEC = 7 * 24 * 3600
 const RESPONSE_CACHE_MAX_ENTRIES_MIN = 1
@@ -83,12 +81,7 @@ export async function PUT(req: Request) {
     MEMORY_LINKED_MIN,
     MEMORY_LINKED_MAX,
   )
-  const nextDelegationDepth = parseIntSetting(
-    settings.delegationMaxDepth,
-    DEFAULT_DELEGATION_MAX_DEPTH,
-    DELEGATION_DEPTH_MIN,
-    DELEGATION_DEPTH_MAX,
-  )
+  const normalizedRuntime = normalizeRuntimeSettingFields(settings)
   const nextResponseCacheTtlSec = parseIntSetting(
     settings.responseCacheTtlSec,
     15 * 60,
@@ -120,7 +113,7 @@ export async function PUT(req: Request) {
   settings.maxMemoriesPerLookup = nextPerLookup
   settings.memoryMaxPerLookup = nextPerLookup
   settings.maxLinkedMemoriesExpanded = nextLinked
-  settings.delegationMaxDepth = nextDelegationDepth
+  Object.assign(settings, normalizedRuntime)
   settings.responseCacheTtlSec = nextResponseCacheTtlSec
   settings.responseCacheMaxEntries = nextResponseCacheMaxEntries
   settings.responseCacheEnabled = parseBoolSetting(settings.responseCacheEnabled, true)

@@ -86,6 +86,7 @@ async function executeOrchestratorLegacy(
   sessionId: string,
   taskId?: string,
 ): Promise<string> {
+  void taskId
   const allAgents = loadAgents()
   const sessions = loadSessions()
   const session = sessions[sessionId]
@@ -241,7 +242,7 @@ async function executeOrchestratorLegacy(
 
       if (cmd.done) {
         result = cmd.summary || fullText
-        return `${result}\n\n[MAIN_LOOP_META] {"status":"ok", "follow_up":false, "summary":${JSON.stringify(result.slice(0, 300))}, "mission_task_id":${JSON.stringify(taskId || null)}}`
+        return result
       }
     }
 
@@ -256,7 +257,7 @@ async function executeOrchestratorLegacy(
     result = `Loop stopped after reaching max turns (${maxTurns}).`
   }
 
-  return `${result}\n\n[MAIN_LOOP_META] {"status":"ok", "follow_up":false, "summary":${JSON.stringify(result.slice(0, 300))}, "mission_task_id":${JSON.stringify(taskId || null)}}`
+  return result
 }
 
 async function executeSubTask(

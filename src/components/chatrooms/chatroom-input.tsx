@@ -29,6 +29,16 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
   const removePendingFile = useChatroomStore((s) => s.removePendingFile)
   const replyingTo = useChatroomStore((s) => s.replyingTo)
   const setReplyingTo = useChatroomStore((s) => s.setReplyingTo)
+  const streaming = useChatroomStore((s) => s.streaming)
+  const queuedMessages = useChatroomStore((s) => s.queuedMessages)
+  const removeQueuedMessage = useChatroomStore((s) => s.removeQueuedMessage)
+
+  const resizeTextarea = useCallback(() => {
+    const node = inputRef.current
+    if (!node) return
+    node.style.height = 'auto'
+    node.style.height = `${Math.min(node.scrollHeight, 160)}px`
+  }, [])
 
   // Draft persistence: restore on chatroom change
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -37,6 +47,10 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
     const draft = safeStorageGet(`sc_draft_cr_${chatroomId}`)
     setText(draft || '')
   }, [chatroomId])
+
+  useEffect(() => {
+    resizeTextarea()
+  }, [resizeTextarea, text, chatroomId])
 
   // Debounced save to localStorage
   useEffect(() => {
@@ -83,6 +97,7 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
 
   const handleChange = useCallback((value: string) => {
     setText(value)
+    resizeTextarea()
     const cursorPos = inputRef.current?.selectionStart || value.length
     const beforeCursor = value.slice(0, cursorPos)
     const mentionMatch = beforeCursor.match(/@(\S*)$/)
@@ -95,7 +110,7 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
       setMentionFilter('')
       setSelectedIndex(0)
     }
-  }, [])
+  }, [resizeTextarea])
 
   const insertMention = useCallback((name: string) => {
     const cursorPos = inputRef.current?.selectionStart || text.length
@@ -138,13 +153,23 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
     return parts.length > 0 ? parts : null
   }, [text])
 
-  const mentionDropdownVisible = showMentions && (filteredAgents.length > 0 || mentionFilter === '')
+  const mentionDropdownVisible = showMentions
   const mentionItems = mentionDropdownVisible
     ? ['all', ...filteredAgents.map((a) => a.name)]
     : []
+  const visibleQueuedMessages = queuedMessages.filter((item) => item.chatroomId === chatroomId)
+
+  const handleSendCurrent = useCallback(() => {
+    if ((!text.trim() && !pendingFiles.length) || disabled) return
+    onSend(text)
+    setText('')
+    resizeTextarea()
+    if (chatroomId) safeStorageRemove(`sc_draft_cr_${chatroomId}`)
+    setShowMentions(false)
+  }, [chatroomId, disabled, onSend, pendingFiles.length, resizeTextarea, text])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (mentionDropdownVisible) {
+    if (mentionDropdownVisible && mentionItems.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setSelectedIndex((i) => (i + 1) % mentionItems.length)
@@ -165,12 +190,7 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if ((text.trim() || pendingFiles.length) && !disabled) {
-        onSend(text)
-        setText('')
-        if (chatroomId) safeStorageRemove(`sc_draft_cr_${chatroomId}`)
-        setShowMentions(false)
-      }
+      handleSendCurrent()
     }
     if (e.key === 'Escape') {
       if (replyingTo) {
@@ -195,18 +215,65 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
             <span className="text-[13px] text-text">all</span>
             <span className="text-[11px] text-text-3 ml-auto">Mention all agents</span>
           </button>
-          {filteredAgents.map((agent, i) => (
-            <button
-              key={agent.id}
-              onClick={() => insertMention(agent.name)}
-              className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-all cursor-pointer ${
-                selectedIndex === i + 1 ? 'bg-white/[0.08]' : 'hover:bg-white/[0.06]'
-              }`}
-            >
-              <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={20} />
-              <span className="text-[13px] text-text">{agent.name}</span>
-            </button>
+          {filteredAgents.length > 0 ? (
+            filteredAgents.map((agent, i) => (
+              <button
+                key={agent.id}
+                onClick={() => insertMention(agent.name)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-all cursor-pointer ${
+                  selectedIndex === i + 1 ? 'bg-white/[0.08]' : 'hover:bg-white/[0.06]'
+                }`}
+              >
+                <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={20} />
+                <span className="text-[13px] text-text">{agent.name}</span>
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-3 text-[12px] text-text-3">
+              No agents match <span className="text-text">@{mentionFilter}</span>.
+            </div>
+          )}
+        </div>
+      )}
+
+      {visibleQueuedMessages.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="label-mono text-amber-400/70">Queued</span>
+          {visibleQueuedMessages.map((item) => (
+            <span key={item.id} className="inline-flex items-center gap-1.5 rounded-[8px] border border-amber-500/15 bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-300">
+              <span className="truncate max-w-[180px]">
+                {item.text.trim() || `Attachment${item.pendingFiles.length > 1 ? 's' : ''}`}
+              </span>
+              {item.pendingFiles.length > 0 && (
+                <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px]">
+                  +{item.pendingFiles.length} file{item.pendingFiles.length === 1 ? '' : 's'}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => removeQueuedMessage(item.id)}
+                className="border-none bg-transparent p-0 text-amber-300/70 hover:text-amber-200 cursor-pointer"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </span>
           ))}
+        </div>
+      )}
+
+      {visibleQueuedMessages.length === 0 && !disabled && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-[10px] border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+          <span className="text-[11px] text-text-3">
+            {streaming
+              ? 'Current round is still running. Press send to queue the next message.'
+              : agents.length > 0
+                ? 'Use @AgentName or @all to direct the next reply.'
+                : 'Start the next round here.'}
+          </span>
+          <span className="text-[10px] text-text-3/50">Enter sends · Shift+Enter newline</span>
         </div>
       )}
 
@@ -268,12 +335,12 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
           </svg>
         </button>
 
-        <div className="flex-1 relative rounded-[8px] bg-white/[0.06] border border-white/[0.08] focus-within:border-accent-bright/40">
+        <div className="flex-1 relative rounded-[10px] bg-white/[0.06] border border-white/[0.08] focus-within:border-accent-bright/40">
           {/* Highlight mirror — renders @mentions with accent background behind the transparent textarea */}
           <div
             aria-hidden
             className="absolute inset-0 px-3 py-2 text-[13px] leading-[1.5] break-words whitespace-pre-wrap pointer-events-none overflow-hidden"
-            style={{ minHeight: '38px', color: 'transparent' }}
+            style={{ minHeight: '44px', color: 'transparent' }}
           >
             {highlightedSegments}
           </div>
@@ -286,21 +353,17 @@ export function ChatroomInput({ agents, onSend, disabled }: Props) {
             placeholder="Type a message... Use @ to mention agents"
             disabled={disabled}
             rows={1}
-            className="w-full resize-none px-3 py-2 rounded-[8px] bg-transparent text-[13px] text-text placeholder:text-text-3 focus:outline-none max-h-[120px] disabled:opacity-50 relative border-none"
-            style={{ minHeight: '38px' }}
+            className="relative w-full resize-none rounded-[10px] border-none bg-transparent px-3 py-2.5 text-[13px] text-text placeholder:text-text-3 focus:outline-none max-h-[160px] disabled:opacity-50"
+            style={{ minHeight: '44px' }}
           />
         </div>
         <button
-          onClick={() => {
-            if ((text.trim() || pendingFiles.length) && !disabled) {
-              onSend(text)
-              setText('')
-              if (chatroomId) safeStorageRemove(`sc_draft_cr_${chatroomId}`)
-              setShowMentions(false)
-            }
-          }}
+          onClick={handleSendCurrent}
           disabled={(!text.trim() && !pendingFiles.length) || disabled}
-          className="shrink-0 w-9 h-9 rounded-[8px] bg-accent-bright flex items-center justify-center hover:bg-accent-bright/90 transition-all disabled:opacity-30 cursor-pointer"
+          className={`shrink-0 w-10 h-10 rounded-[10px] flex items-center justify-center transition-all disabled:opacity-30 cursor-pointer ${
+            streaming ? 'bg-amber-500/20 hover:bg-amber-500/30' : 'bg-accent-bright hover:bg-accent-bright/90'
+          }`}
+          title="Send or queue message"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="22" y1="2" x2="11" y2="13" />

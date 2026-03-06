@@ -182,11 +182,33 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'external-agents',
+    description: 'Manage external agent runtimes',
+    commands: [
+      cmd('list', 'GET', '/external-agents', 'List external agent runtimes'),
+      cmd('create', 'POST', '/external-agents', 'Register an external agent runtime', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/external-agents/:id', 'Update an external agent runtime', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/external-agents/:id', 'Delete an external agent runtime'),
+      cmd('heartbeat', 'POST', '/external-agents/:id/heartbeat', 'Record an external agent heartbeat', { expectsJsonBody: true }),
+    ],
+  },
+  {
     name: 'files',
     description: 'Serve and manage local files',
     commands: [
       cmd('serve', 'GET', '/files/serve', 'Serve a local file (use --query path=/abs/path)'),
       cmd('open', 'POST', '/files/open', 'Open a local file path via the host default app/browser', { expectsJsonBody: true }),
+    ],
+  },
+  {
+    name: 'gateways',
+    description: 'Manage named OpenClaw gateway profiles',
+    commands: [
+      cmd('list', 'GET', '/gateways', 'List configured gateway profiles'),
+      cmd('create', 'POST', '/gateways', 'Create a gateway profile', { expectsJsonBody: true }),
+      cmd('update', 'PUT', '/gateways/:id', 'Update a gateway profile', { expectsJsonBody: true }),
+      cmd('delete', 'DELETE', '/gateways/:id', 'Delete a gateway profile'),
+      cmd('health', 'GET', '/gateways/:id/health', 'Run a gateway health check'),
     ],
   },
   {
@@ -364,6 +386,7 @@ const COMMAND_GROUPS = [
       cmd('update', 'PUT', '/providers/:id', 'Update provider', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/providers/:id', 'Delete provider'),
       cmd('configs', 'GET', '/providers/configs', 'List saved provider configs'),
+      cmd('discover-models', 'GET', '/providers/:id/discover-models', 'Discover provider models via endpoint or credential checks'),
       cmd('ollama', 'GET', '/providers/ollama', 'List local Ollama models (use --query endpoint=http://localhost:11434)'),
       cmd('openclaw-health', 'GET', '/providers/openclaw/health', 'Probe OpenClaw endpoint/auth (use --query endpoint= --query credentialId= --query model=)'),
       cmd('models', 'GET', '/providers/:id/models', 'Get provider model overrides'),
@@ -429,10 +452,6 @@ const COMMAND_GROUPS = [
       cmd('messages-delete', 'DELETE', '/chats/:id/messages', 'Delete a message from a chat', { expectsJsonBody: true }),
       cmd('fork', 'POST', '/chats/:id/fork', 'Fork chat from a specific message index', { expectsJsonBody: true }),
       cmd('edit-resend', 'POST', '/chats/:id/edit-resend', 'Edit and resend from a specific message index', { expectsJsonBody: true }),
-      cmd('main-loop', 'GET', '/chats/:id/main-loop', 'Get main mission loop state'),
-      cmd('main-loop-action', 'POST', '/chats/:id/main-loop', 'Control main mission loop (pause/resume/set_goal/set_mode/clear_events/nudge)', {
-        expectsJsonBody: true,
-      }),
       cmd('chat', 'POST', '/chats/:id/chat', 'Send chat message (streaming)', {
         expectsJsonBody: true,
         responseType: 'sse',
@@ -677,7 +696,7 @@ function normalizeBaseUrl(raw) {
 
 function resolveAccessKey(opts, env, cwd) {
   if (opts.accessKey) return String(opts.accessKey).trim()
-  const envKey = env.SWARMCLAW_API_KEY || env.SC_ACCESS_KEY || ''
+  const envKey = env.SWARMCLAW_API_KEY || env.SC_ACCESS_KEY || env.SWARMCLAW_ACCESS_KEY || ''
   if (envKey) return String(envKey).trim()
 
   const keyFile = path.join(cwd, 'platform-api-key.txt')
@@ -927,9 +946,11 @@ async function consumeSse(body, stdout, stderr, jsonOutput) {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  const eventBoundary = /\r?\n\r?\n/
 
   function flushChunk(rawChunk) {
     const lines = rawChunk
+      .replace(/\r\n/g, '\n')
       .split('\n')
       .map((line) => line.trimEnd())
       .filter(Boolean)
@@ -972,12 +993,14 @@ async function consumeSse(body, stdout, stderr, jsonOutput) {
     if (done) break
     buffer += decoder.decode(value, { stream: true })
 
-    let splitIndex = buffer.indexOf('\n\n')
-    while (splitIndex >= 0) {
+    let match = eventBoundary.exec(buffer)
+    while (match) {
+      const splitIndex = match.index
+      const delimiterLength = match[0].length
       const chunk = buffer.slice(0, splitIndex)
-      buffer = buffer.slice(splitIndex + 2)
+      buffer = buffer.slice(splitIndex + delimiterLength)
       flushChunk(chunk)
-      splitIndex = buffer.indexOf('\n\n')
+      match = eventBoundary.exec(buffer)
     }
   }
 
@@ -1090,7 +1113,7 @@ function renderGeneralHelp() {
     '',
     'Global options:',
     '  --base-url <url>       API base URL (default: http://localhost:3456)',
-    '  --access-key <key>     Access key override (else SWARMCLAW_API_KEY or platform-api-key.txt)',
+    '  --access-key <key>     Access key override (else SWARMCLAW_API_KEY/SWARMCLAW_ACCESS_KEY or platform-api-key.txt)',
     '  --data <json|@file|->  Request JSON body',
     '  --query key=value      Query parameter (repeatable)',
     '  --header key=value     Extra HTTP header (repeatable)',
@@ -1215,7 +1238,7 @@ async function runCli(argv, deps = {}) {
   }
 
   const accessKey = resolveAccessKey(parsed.opts, env, cwd)
-  const baseUrl = parsed.opts.baseUrl || env.SWARMCLAW_BASE_URL || 'http://localhost:3456'
+  const baseUrl = parsed.opts.baseUrl || env.SWARMCLAW_BASE_URL || env.SWARMCLAW_URL || 'http://localhost:3456'
 
   const headerEntries = []
   for (const raw of parsed.opts.headers) {

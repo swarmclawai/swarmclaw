@@ -58,7 +58,7 @@ function inferFileAction(
   if (getFileEntryContent(normalized) !== undefined) return 'write'
   if (dirPath) return 'list'
   if (filePath) return 'read'
-  return undefined
+  return 'list'
 }
 
 export function normalizeFileArgs(rawArgs: Record<string, unknown>): Record<string, unknown> {
@@ -417,7 +417,13 @@ const FilePlugin: Plugin = {
   name: 'Core Files',
   description: 'Complete file management: read, write, list, move, copy, delete, and send.',
   hooks: {
-    getCapabilityDescription: () => 'I can read, write, copy, move, and send files (`read_file`, `write_file`, `list_files`, `copy_file`, `move_file`, `send_file`). When writing, I should always provide a target path (`filePath`, `path`, `filename`, or `name`) and the content (`content`, `text`, or `body`). When `send_file` returns a download link, I should copy that link exactly instead of rewriting it. Deleting files is destructive, so that may need explicit permission.',
+    getCapabilityDescription: () => 'I can manage files with the unified `files` tool (actions: `read`, `write`, `list`, `copy`, `move`, `delete`) and deliver finished artifacts with `send_file`.',
+    getOperatingGuidance: () => [
+      'The `files` tool always works best with an explicit action. Use `{"action":"list","dirPath":"."}` to inspect the workspace, `{"action":"read","filePath":"path/to/file.md"}` to inspect a file, and `{"action":"write","files":[{"path":"path/to/file.md","content":"..."}]}` to create or overwrite content.',
+      'For follow-up revision requests, read the current file first, then overwrite it with the improved version or use `edit_file` for a surgical change.',
+      'If a `files` call fails, correct the arguments and retry. Do not conclude that the workspace is inaccessible until an explicit read/list/write attempt with a path fails.',
+      'When `send_file` returns a download link, copy that link exactly instead of rewriting it.',
+    ],
   } as PluginHooks,
   tools: [
     {

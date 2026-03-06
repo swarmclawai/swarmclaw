@@ -1,5 +1,14 @@
 'use client'
 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+
 interface Props {
   open: boolean
   title: string
@@ -11,37 +20,43 @@ interface Props {
 }
 
 export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', danger, onConfirm, onCancel }: Props) {
-  if (!open) return null
-
   return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative glass rounded-[20px] p-6 w-full max-w-[380px]
-        shadow-[0_24px_80px_rgba(0,0,0,0.5)]"
-        style={{ animation: 'fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)' }}>
-        <h3 className="font-display text-[18px] font-700 tracking-[-0.02em] mb-2">{title}</h3>
-        <p className="text-[13px] text-text-2 mb-6 leading-relaxed">{message}</p>
-        <div className="flex gap-2.5">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2.5 rounded-[12px] border border-white/[0.06] bg-transparent text-text-2 text-[13px] font-600 cursor-pointer
-              hover:bg-surface transition-all duration-200"
-            style={{ fontFamily: 'inherit' }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className={`flex-1 py-2.5 rounded-[12px] border-none text-[13px] font-600 cursor-pointer active:scale-[0.97] transition-all duration-200
-              ${danger
-                ? 'bg-danger text-white shadow-[0_4px_20px_rgba(244,63,94,0.2)]'
-                : 'bg-accent-bright text-white shadow-[0_4px_20px_rgba(99,102,241,0.2)]'}`}
-            style={{ fontFamily: 'inherit' }}
-          >
-            {confirmLabel}
-          </button>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onCancel() }}>
+      <DialogContent
+        className="sm:max-w-[400px] rounded-[20px] border-white/[0.06] bg-raised p-0 shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
+      >
+        <div className="p-6">
+          <DialogHeader className="text-left">
+            <DialogTitle className="font-display text-[18px] font-700 tracking-[-0.02em] text-text">
+              {title}
+            </DialogTitle>
+            <DialogDescription className="mt-2 text-[13px] leading-relaxed text-text-2">
+              {message}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-6">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 rounded-[12px] border border-white/[0.06] bg-transparent px-4 py-2.5 text-[13px] font-600 text-text-2 transition-all duration-200 hover:bg-surface"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              className={`flex-1 rounded-[12px] border-none px-4 py-2.5 text-[13px] font-600 text-white transition-all duration-200 active:scale-[0.98]
+                ${danger
+                  ? 'bg-danger shadow-[0_4px_20px_rgba(244,63,94,0.2)]'
+                  : 'bg-accent-bright shadow-[0_4px_20px_rgba(99,102,241,0.2)]'}`}
+              style={{ fontFamily: 'inherit' }}
+            >
+              {confirmLabel}
+            </button>
+          </DialogFooter>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -80,6 +80,7 @@ export function ChatArea() {
   const [messagesLoading, setMessagesLoading] = useState(true)
   const [connectorFilter, setConnectorFilter] = useState<string | null>(null)
   const [pluginChatActions, setPluginChatActions] = useState<Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>>([])
+  const sessionHasBrowserPlugin = session?.plugins?.includes('browser') === true
 
   useEffect(() => {
     if (sessionId) {
@@ -113,44 +114,64 @@ export function ChatArea() {
 
   useEffect(() => {
     if (!sessionId) return
+    let cancelled = false
+    const requestedSessionId = sessionId
     const chatState = useChatStore.getState()
-    const preserveLocalStream = chatState.streaming && chatState.streamingSessionId === sessionId
-    // Clear stale state from the previous session, but keep active local stream state for this session.
+    const preserveLocalStream = chatState.streaming && chatState.streamingSessionId === requestedSessionId
+    // Keep the previous thread visible while the next one loads to avoid blank flashes.
     setMessagesLoading(true)
-    setMessages([])
     if (!preserveLocalStream) {
       useChatStore.setState({ streaming: false, streamingSessionId: null, streamText: '', toolEvents: [] })
     }
-    fetchMessagesPaginated(sessionId, 100).then((data) => {
+    fetchMessagesPaginated(requestedSessionId, 100).then((data) => {
+      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
       setMessages(data.messages)
       useChatStore.setState({ hasMoreMessages: data.hasMore, totalMessages: data.total })
     }).catch((err) => {
+      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
       console.error('Failed to load messages:', err)
-      setMessages(session?.messages || [])
+      const fallbackSession = useAppStore.getState().sessions[requestedSessionId]
+      setMessages(fallbackSession?.messages || [])
     }).finally(() => {
+      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
       setMessagesLoading(false)
     })
     // If server reports session is still active, show streaming state
     if (session?.active) {
-      useChatStore.setState({ streaming: true, streamingSessionId: sessionId, streamText: '' })
+      useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamText: '' })
     }
     // Refresh active state from server so returning to a session restores typing indicator.
     loadSessions().then(() => {
-      const refreshed = useAppStore.getState().sessions[sessionId]
+      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+      const refreshed = useAppStore.getState().sessions[requestedSessionId]
       if (refreshed?.active) {
-        useChatStore.setState({ streaming: true, streamingSessionId: sessionId, streamText: '' })
+        useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamText: '' })
       }
     }).catch((err) => console.error('Failed to refresh messages:', err))
-    devServer(sessionId, 'status').then((r) => {
+    devServer(requestedSessionId, 'status').then((r) => {
+      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
       setDevServer(r.running ? r : null)
-    }).catch(() => setDevServer(null))
+    }).catch(() => {
+      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+      setDevServer(null)
+    })
     // Check browser status
-    if (session?.plugins?.includes('browser')) {
-      checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch((err) => { console.error('Browser check failed:', err); setBrowserActive(false) })
+    if (sessionHasBrowserPlugin) {
+      checkBrowser(requestedSessionId).then((r) => {
+        if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+        setBrowserActive(r.active)
+      }).catch((err) => {
+        if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+        console.error('Browser check failed:', err)
+        setBrowserActive(false)
+      })
     } else {
       setBrowserActive(false)
     }
-  }, [sessionId])
+    return () => {
+      cancelled = true
+    }
+  }, [loadSessions, session?.active, sessionHasBrowserPlugin, sessionId, setDevServer, setMessages])
 
   // Auto-poll messages for sessions that are actively running on the server
   const isServerActive = session?.active === true
@@ -424,7 +445,7 @@ export function ChatArea() {
           </div>
         </div>
       ) : (
-        <MessageList messages={messages} streaming={streamingForThisSession} connectorFilter={connectorFilter} />
+        <MessageList messages={messages} streaming={streamingForThisSession} connectorFilter={connectorFilter} loading={messagesLoading} />
       )}
 
       {voice.active && (
@@ -450,6 +471,12 @@ export function ChatArea() {
       />
 
       <Dropdown open={menuOpen} onClose={() => setMenuOpen(false)}>
+        <DropdownItem onClick={() => {
+          setMenuOpen(false)
+          setDebugOpen(!debugOpen)
+        }}>
+          {debugOpen ? 'Hide Debug Panel' : 'Show Debug Panel'}
+        </DropdownItem>
         <DropdownItem onClick={() => { setMenuOpen(false); setConfirmClear(true) }}>
           Clear History
         </DropdownItem>

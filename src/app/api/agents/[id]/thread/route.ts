@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { loadAgents, saveAgents, loadSessions, saveSessions } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
+import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: agentId } = await params
@@ -62,7 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Create a new shortcut chat session for this agent.
   const sessionId = `agent-chat-${agentId}-${genId()}`
   const now = Date.now()
-  const session = {
+  const baseSession = {
     id: sessionId,
     name: agent.name,
     shortcutForAgentId: agentId,
@@ -84,6 +85,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     heartbeatEnabled: agent.heartbeatEnabled || false,
     heartbeatIntervalSec: agent.heartbeatIntervalSec || null,
   }
+  const session = applyResolvedRoute(baseSession, resolvePrimaryAgentRoute(agent))
 
   sessions[sessionId] = session as Record<string, unknown>
   saveSessions(sessions)

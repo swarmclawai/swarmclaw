@@ -113,8 +113,6 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const toggleTts = useChatStore((s) => s.toggleTts)
   const soundEnabled = useChatStore((s) => s.soundEnabled)
   const toggleSound = useChatStore((s) => s.toggleSound)
-  const debugOpen = useChatStore((s) => s.debugOpen)
-  const setDebugOpen = useChatStore((s) => s.setDebugOpen)
   const agentStatus = useChatStore((s) => s.agentStatus)
   const agents = useAppStore((s) => s.agents)
   const tasks = useAppStore((s) => s.tasks)
@@ -739,6 +737,9 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                       onChange={(m) => void handleModelSwitch(session.provider, m)}
                       models={currentModels}
                       defaultModels={currentProviderInfo?.defaultModels}
+                      credentialId={session.credentialId}
+                      apiEndpoint={session.apiEndpoint}
+                      supportsDiscovery={currentProviderInfo?.supportsModelDiscovery}
                       className="px-2.5 py-1.5 rounded-[7px] text-[12px] font-mono bg-white/[0.04] hover:bg-white/[0.06] transition-colors"
                     />
                   </div>
@@ -886,18 +887,11 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
             </IconButton>
           )}
           <div className="w-px h-3.5 bg-white/[0.06] mx-0.5" />
-          <IconButton onClick={() => setDebugOpen(!debugOpen)} active={debugOpen} tooltip="Debug" aria-label="Toggle debug panel" size="sm">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M12 20V10" /><path d="M18 20V4" /><path d="M6 20v-4" />
+          <IconButton onClick={(e) => { e.stopPropagation(); onMenuToggle() }} tooltip="More" aria-label="Chat menu" size="sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <circle cx="12" cy="6" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="18" r="1" />
             </svg>
           </IconButton>
-          {(!agent || mobile) && (
-            <IconButton onClick={(e) => { e.stopPropagation(); onMenuToggle() }} tooltip="Menu" aria-label="Chat menu" size="sm">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <circle cx="12" cy="6" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="18" r="1" />
-              </svg>
-            </IconButton>
-          )}
           {agent && (
             <IconButton onClick={() => setInspectorOpen(!inspectorOpen)} active={inspectorOpen} tooltip="Settings" aria-label="Toggle inspector" size="sm">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

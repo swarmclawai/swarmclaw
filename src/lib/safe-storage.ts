@@ -1,5 +1,10 @@
 function canUseLocalStorage(): boolean {
-  return typeof window !== 'undefined' && !!window.localStorage
+  if (typeof window === 'undefined') return false
+  try {
+    return !!window.localStorage
+  } catch {
+    return false
+  }
 }
 
 export function safeStorageGet(key: string): string | null {

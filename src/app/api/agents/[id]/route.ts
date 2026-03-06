@@ -23,6 +23,23 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         body.apiEndpoint,
       )
     }
+    if (body.routingTargets !== undefined && Array.isArray(body.routingTargets)) {
+      agent.routingTargets = body.routingTargets.map((target: Record<string, unknown>, index: number) => ({
+        id: typeof target.id === 'string' && target.id.trim() ? target.id.trim() : `route-${index + 1}`,
+        label: typeof target.label === 'string' ? target.label : undefined,
+        role: target.role,
+        provider: (typeof target.provider === 'string' && target.provider.trim() ? target.provider : agent.provider),
+        model: typeof target.model === 'string' ? target.model : '',
+        credentialId: target.credentialId ?? null,
+        fallbackCredentialIds: Array.isArray(target.fallbackCredentialIds) ? target.fallbackCredentialIds : [],
+        apiEndpoint: normalizeProviderEndpoint(
+          typeof target.provider === 'string' ? target.provider : agent.provider,
+          typeof target.apiEndpoint === 'string' ? target.apiEndpoint : null,
+        ),
+        gatewayProfileId: target.gatewayProfileId ?? null,
+        priority: typeof target.priority === 'number' ? target.priority : index + 1,
+      }))
+    }
     delete (agent as Record<string, unknown>).isOrchestrator
     agent.isOrchestrator = agent.platformAssignScope === 'all'
     delete (agent as Record<string, unknown>).id

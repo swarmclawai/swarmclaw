@@ -163,8 +163,8 @@ const ShellPlugin: Plugin = {
   name: 'Core Shell',
   description: 'Execute shell commands and manage background processes.',
   hooks: {
-    getCapabilityDescription: () => 'I can run shell commands (`execute_command`) — servers, installs, scripts, git, builds, anything. I can run things in the background for long-lived processes like dev servers.',
-    getOperatingGuidance: () => ['Shell: use `execute_command` for servers, installs, scripts, git. Use `background=true` for long-lived processes.', 'Verify servers with `process_tool` status/log and liveness probes before claiming success.', 'Resolve IPs/URLs via shell — never use placeholders. Retry path errors without workdir override.'],
+    getCapabilityDescription: () => 'I can run shell commands with the unified `shell` tool. Use action `execute` for commands, and `list` / `status` / `poll` / `log` for long-lived processes.',
+    getOperatingGuidance: () => ['Shell: use `shell` with `{"action":"execute","command":"..."}` for servers, installs, scripts, and git. Use `background=true` for long-lived processes.', 'Verify servers with `shell` status/log actions and liveness probes before claiming success.', 'Resolve IPs/URLs via shell — never use placeholders. Retry path errors without workdir override.'],
   } as PluginHooks,
   tools: [
     {

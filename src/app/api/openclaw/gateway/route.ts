@@ -5,6 +5,7 @@ import { ensureGatewayConnected, getGateway, disconnectGateway, manualConnect } 
 export async function POST(req: Request) {
   const body = await req.json()
   const { method, params } = body as { method?: string; params?: Record<string, unknown> }
+  const profileId = typeof params?.profileId === 'string' ? params.profileId : undefined
   if (!method || typeof method !== 'string') {
     return NextResponse.json({ error: 'Missing RPC method' }, { status: 400 })
   }
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
     try {
       const url = (params?.url as string) || undefined
       const token = (params?.token as string) || undefined
-      const ok = await manualConnect(url, token)
+      const ok = await manualConnect(url, token, profileId)
       return NextResponse.json({ ok })
     } catch (err: unknown) {
       return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, { status: 502 })
@@ -22,13 +23,13 @@ export async function POST(req: Request) {
   }
 
   if (method === 'gateway.disconnect') {
-    disconnectGateway()
+    disconnectGateway(profileId)
     return NextResponse.json({ ok: true })
   }
 
   // Reload mode get/set
   if (method === 'gateway.reload-mode.get') {
-    const gw = await ensureGatewayConnected()
+    const gw = await ensureGatewayConnected({ profileId })
     if (!gw) return NextResponse.json({ error: 'Not connected' }, { status: 503 })
     try {
       const config = await gw.rpc('config.get') as Record<string, unknown> | undefined
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
   }
 
   if (method === 'gateway.reload-mode.set') {
-    const gw = await ensureGatewayConnected()
+    const gw = await ensureGatewayConnected({ profileId })
     if (!gw) return NextResponse.json({ error: 'Not connected' }, { status: 503 })
     try {
       await gw.rpc('config.set', { reloadMode: params?.mode })
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
   }
 
   // General RPC proxy
-  const gw = await ensureGatewayConnected()
+  const gw = await ensureGatewayConnected({ profileId })
   if (!gw) {
     return NextResponse.json({ error: 'OpenClaw gateway not connected' }, { status: 503 })
   }
@@ -66,7 +67,9 @@ export async function POST(req: Request) {
 }
 
 /** GET — check gateway connection status */
-export async function GET() {
-  const gw = getGateway()
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const profileId = searchParams.get('profileId') || undefined
+  const gw = getGateway(profileId || undefined)
   return NextResponse.json({ connected: !!gw?.connected })
 }

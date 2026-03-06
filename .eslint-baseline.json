@@ -1,29 +1,15 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-06T03:21:15.385Z",
-  "totalIssues": 543,
-  "uniqueIssues": 180,
+  "generatedAt": "2026-03-06T12:59:03.570Z",
+  "totalIssues": 521,
+  "uniqueIssues": 173,
   "issues": [
-    {
-      "filePath": "bin/server-cmd.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 4
-    },
     {
       "filePath": "bin/swarmclaw.js",
       "ruleId": "@typescript-eslint/no-require-imports",
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
       "count": 4
-    },
-    {
-      "filePath": "bin/update-cmd.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 2
     },
     {
       "filePath": "src/app/api/chats/[id]/deploy/route.ts",
@@ -303,28 +289,28 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_ca' is assigned a value but never used.",
-      "count": 2
+      "count": 1
     },
     {
       "filePath": "src/components/agents/agent-sheet.tsx",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_id' is assigned a value but never used.",
-      "count": 2
+      "count": 1
     },
     {
       "filePath": "src/components/agents/agent-sheet.tsx",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_ts' is assigned a value but never used.",
-      "count": 2
+      "count": 1
     },
     {
       "filePath": "src/components/agents/agent-sheet.tsx",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_ua' is assigned a value but never used.",
-      "count": 2
+      "count": 1
     },
     {
       "filePath": "src/components/agents/agent-sheet.tsx",
@@ -415,13 +401,6 @@
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
       "message": "React Hook useEffect has a missing dependency: 'setMessages'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/chat/chat-area.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has missing dependencies: 'loadSessions', 'session?.active', 'session?.messages', 'session?.plugins', 'setDevServer', and 'setMessages'. Either include them or remove the dependency array.",
       "count": 1
     },
     {
@@ -556,27 +535,6 @@
       "severity": 2,
       "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
-    },
-    {
-      "filePath": "src/components/providers/provider-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'isNew' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/providers/provider-sheet.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has missing dependencies: 'credentials', 'editingBuiltin', 'editingCustom', and 'loadCredentials'. Either include them or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/providers/provider-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
     },
     {
       "filePath": "src/components/schedules/schedule-list.tsx",
@@ -738,13 +696,6 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 2
-    },
-    {
-      "filePath": "src/lib/providers/index.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'handler' is defined but never used.",
-      "count": 1
     },
     {
       "filePath": "src/lib/providers/ollama.ts",
@@ -1178,7 +1129,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 7
+      "count": 2
     },
     {
       "filePath": "src/lib/server/session-tools/schedule.ts",
@@ -1234,7 +1185,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 66
+      "count": 65
     },
     {
       "filePath": "src/lib/server/stream-agent-chat.ts",

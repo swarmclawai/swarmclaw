@@ -7,7 +7,7 @@ import { api } from '@/lib/api-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { toast } from 'sonner'
 import { ModelCombobox } from '@/components/shared/model-combobox'
-import type { ProviderType, ClaudeSkill, AgentWallet } from '@/types'
+import type { ProviderType, ClaudeSkill, AgentWallet, AgentPackManifest, AgentRoutingStrategy, AgentRoutingTarget } from '@/types'
 import { WalletSection } from '@/components/wallets/wallet-section'
 import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
 import { NATIVE_CAPABILITY_PROVIDER_IDS, NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
@@ -83,6 +83,8 @@ export function AgentSheet() {
   const loadProjects = useAppStore((s) => s.loadProjects)
   const providers = useAppStore((s) => s.providers)
   const loadProviders = useAppStore((s) => s.loadProviders)
+  const gatewayProfiles = useAppStore((s) => s.gatewayProfiles)
+  const loadGatewayProfiles = useAppStore((s) => s.loadGatewayProfiles)
   const credentials = useAppStore((s) => s.credentials)
   const loadCredentials = useAppStore((s) => s.loadCredentials)
   const appSettings = useAppStore((s) => s.appSettings)
@@ -110,6 +112,9 @@ export function AgentSheet() {
   const [model, setModel] = useState('')
   const [credentialId, setCredentialId] = useState<string | null>(null)
   const [apiEndpoint, setApiEndpoint] = useState<string | null>(null)
+  const [gatewayProfileId, setGatewayProfileId] = useState<string | null>(null)
+  const [routingStrategy, setRoutingStrategy] = useState<AgentRoutingStrategy>('single')
+  const [routingTargets, setRoutingTargets] = useState<AgentRoutingTarget[]>([])
   const [platformAssignScope, setPlatformAssignScope] = useState<'self' | 'all'>('self')
   const [subAgentIds, setAgentAgentIds] = useState<string[]>([])
   const [tools, setTools] = useState<string[]>([])
@@ -129,6 +134,8 @@ export function AgentSheet() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [thinkingLevel, setThinkingLevel] = useState<'' | 'minimal' | 'low' | 'medium' | 'high'>('')
+  const [memoryScopeMode, setMemoryScopeMode] = useState<'auto' | 'all' | 'global' | 'agent' | 'session' | 'project'>('auto')
+  const [memoryTierPreference, setMemoryTierPreference] = useState<'working' | 'durable' | 'archive' | 'blended'>('blended')
   const [autoRecovery, setAutoRecovery] = useState(false)
   const [voiceId, setVoiceId] = useState('')
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(false)
@@ -182,6 +189,7 @@ export function AgentSheet() {
   const currentProvider = providers.find((p) => p.id === provider)
   const providerCredentials = Object.values(credentials).filter((c) => c.provider === provider)
   const openclawCredentials = Object.values(credentials).filter((c) => c.provider === 'openclaw')
+  const openclawGatewayProfiles = gatewayProfiles.filter((item) => item.provider === 'openclaw')
   const editing = editingId ? agents[editingId] : null
   const hasNativeCapabilities = NATIVE_CAPABILITY_PROVIDER_IDS.has(provider)
 
@@ -193,6 +201,7 @@ export function AgentSheet() {
   useEffect(() => {
     if (open) {
       loadProviders()
+      loadGatewayProfiles()
       loadCredentials()
       loadSkills()
       loadProjects()
@@ -210,6 +219,9 @@ export function AgentSheet() {
         setModel(editing.model)
         setCredentialId(editing.credentialId || null)
         setApiEndpoint(editing.apiEndpoint || null)
+        setGatewayProfileId(editing.gatewayProfileId || null)
+        setRoutingStrategy(editing.routingStrategy || 'single')
+        setRoutingTargets(editing.routingTargets || [])
         setPlatformAssignScope(editing.platformAssignScope || 'self')
         setAgentAgentIds(editing.subAgentIds || [])
         setTools(editing.plugins || [])
@@ -226,6 +238,8 @@ export function AgentSheet() {
         setAvatarSeed(editing.avatarSeed || crypto.randomUUID().slice(0, 8))
         setAvatarUrl(editing.avatarUrl || null)
         setThinkingLevel(editing.thinkingLevel || '')
+        setMemoryScopeMode(editing.memoryScopeMode || 'auto')
+        setMemoryTierPreference(editing.memoryTierPreference || 'blended')
         setAutoRecovery(editing.autoRecovery || false)
         setVoiceId(editing.elevenLabsVoiceId || '')
         setHeartbeatEnabled(editing.heartbeatEnabled || false)
@@ -272,6 +286,9 @@ export function AgentSheet() {
         setModel('')
         setCredentialId(null)
         setApiEndpoint(null)
+        setGatewayProfileId(null)
+        setRoutingStrategy('single')
+        setRoutingTargets([])
         setPlatformAssignScope('self')
         setAgentAgentIds([])
         setTools([])
@@ -286,6 +303,8 @@ export function AgentSheet() {
         setProjectId(undefined)
         setAvatarSeed('')
         setThinkingLevel('')
+        setMemoryScopeMode('auto')
+        setMemoryTierPreference('blended')
         setAutoRecovery(false)
         setVoiceId('')
         setHeartbeatEnabled(false)
@@ -369,6 +388,45 @@ export function AgentSheet() {
     setEditingId(null)
   }
 
+  const applyGatewayProfileSelection = (nextGatewayProfileId: string | null) => {
+    setGatewayProfileId(nextGatewayProfileId)
+    const gateway = openclawGatewayProfiles.find((item) => item.id === nextGatewayProfileId)
+    if (!gateway) return
+    setProvider('openclaw')
+    setOpenclawEnabled(true)
+    setApiEndpoint(gateway.endpoint)
+    if (gateway.credentialId) setCredentialId(gateway.credentialId)
+    if (!model) setModel('default')
+  }
+
+  const updateRoutingTarget = (targetId: string, patch: Partial<AgentRoutingTarget>) => {
+    setRoutingTargets((current) => current.map((target) => (
+      target.id === targetId
+        ? { ...target, ...patch }
+        : target
+    )))
+  }
+
+  const removeRoutingTarget = (targetId: string) => {
+    setRoutingTargets((current) => current.filter((target) => target.id !== targetId))
+  }
+
+  const addRoutingTargetFromCurrent = () => {
+    const nextTarget: AgentRoutingTarget = {
+      id: crypto.randomUUID(),
+      label: routingTargets.length === 0 ? 'Primary route' : `Route ${routingTargets.length + 1}`,
+      role: routingTargets.length === 0 ? 'primary' : 'backup',
+      provider,
+      model,
+      credentialId,
+      fallbackCredentialIds,
+      apiEndpoint,
+      gatewayProfileId,
+      priority: routingTargets.length + 1,
+    }
+    setRoutingTargets((current) => [...current, nextTarget])
+  }
+
   const handleSave = async () => {
     // For any endpoint, just ensure bare host:port gets a protocol prepended
     let normalizedEndpoint = apiEndpoint
@@ -404,6 +462,12 @@ export function AgentSheet() {
       model,
       credentialId,
       apiEndpoint: normalizedEndpoint,
+      gatewayProfileId,
+      routingStrategy,
+      routingTargets: routingTargets.map((target, index) => ({
+        ...target,
+        priority: typeof target.priority === 'number' ? target.priority : index + 1,
+      })),
       subAgentIds: canDelegateToAgents ? subAgentIds : [],
       tools,
       skills,
@@ -417,6 +481,8 @@ export function AgentSheet() {
       avatarSeed: avatarSeed.trim() || undefined,
       avatarUrl: avatarUrl || null,
       thinkingLevel: thinkingLevel || undefined,
+      memoryScopeMode,
+      memoryTierPreference,
       autoRecovery,
       elevenLabsVoiceId: voiceId.trim() || null,
       heartbeatEnabled,
@@ -460,15 +526,40 @@ export function AgentSheet() {
 
   const handleExport = () => {
     if (!editing) return
-    const { id: _id, createdAt: _ca, updatedAt: _ua, threadSessionId: _ts, ...exportData } = editing
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const pack: AgentPackManifest = {
+      schemaVersion: 1,
+      kind: 'swarmclaw-agent-pack',
+      name: `${editing.name} Pack`,
+      description: editing.description || undefined,
+      exportedAt: Date.now(),
+      recommendedProviders: [editing.provider],
+      agents: [{
+        id: editing.name.replace(/\s+/g, '-').toLowerCase(),
+        name: editing.name,
+        description: editing.description || undefined,
+        provider: editing.provider,
+        model: editing.model,
+        credentialId: editing.credentialId || null,
+        fallbackCredentialIds: editing.fallbackCredentialIds || [],
+        apiEndpoint: editing.apiEndpoint || null,
+        gatewayProfileId: editing.gatewayProfileId || null,
+        routingStrategy: editing.routingStrategy || null,
+        routingTargets: editing.routingTargets || [],
+        tools: editing.tools,
+        plugins: editing.plugins,
+        capabilities: editing.capabilities,
+        soul: editing.soul,
+        systemPrompt: editing.systemPrompt,
+      }],
+    }
+    const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${editing.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.agent.json`
+    a.download = `${editing.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.agent-pack.json`
     a.click()
     URL.revokeObjectURL(url)
-    toast.success('Agent exported')
+    toast.success('Agent pack exported')
   }
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -478,11 +569,15 @@ export function AgentSheet() {
     reader.onload = async (ev) => {
       try {
         const data = JSON.parse(ev.target?.result as string)
+        const importedAgent = data?.kind === 'swarmclaw-agent-pack'
+          ? data?.agents?.[0]
+          : data
+        if (!importedAgent || typeof importedAgent !== 'object') throw new Error('Invalid agent pack')
         // Strip IDs and timestamps
-        const { id: _id, createdAt: _ca, updatedAt: _ua, threadSessionId: _ts, ...agentData } = data
+        const { id: _id, createdAt: _ca, updatedAt: _ua, threadSessionId: _ts, ...agentData } = importedAgent
         await createAgent({ ...agentData, name: agentData.name || 'Imported Agent' })
         await loadAgents()
-        toast.success('Agent imported')
+        toast.success(data?.kind === 'swarmclaw-agent-pack' ? 'Agent pack imported' : 'Agent imported')
         onClose()
       } catch (err) {
         toast.error('Invalid agent JSON file')
@@ -582,6 +677,7 @@ export function AgentSheet() {
                 setModel('')
                 setApiEndpoint(null)
                 setCredentialId(null)
+                setGatewayProfileId(null)
                 setTestStatus('idle')
                 setTestMessage('')
                 setTestErrorCode(null)
@@ -769,6 +865,29 @@ export function AgentSheet() {
           <option value="high">High — Deep, thorough reasoning</option>
         </select>
         <p className="text-[11px] text-text-3/70 mt-1.5">Controls reasoning depth. Anthropic models use extended thinking; OpenAI o-series uses reasoning_effort. Others get system prompt guidance.</p>
+      </div>
+
+      <div className="mb-8">
+        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Memory Defaults <HintTip text="Controls where this agent should look first and which memory tier it should favor when writing or recalling context." />
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <select value={memoryScopeMode} onChange={(e) => setMemoryScopeMode(e.target.value as typeof memoryScopeMode)} className={inputClass}>
+            <option value="auto">Scope: Auto</option>
+            <option value="all">Scope: All memories</option>
+            <option value="global">Scope: Global only</option>
+            <option value="agent">Scope: Agent memories</option>
+            <option value="session">Scope: Session memories</option>
+            <option value="project">Scope: Project memories</option>
+          </select>
+          <select value={memoryTierPreference} onChange={(e) => setMemoryTierPreference(e.target.value as typeof memoryTierPreference)} className={inputClass}>
+            <option value="blended">Tier: Blended</option>
+            <option value="working">Tier: Working</option>
+            <option value="durable">Tier: Durable</option>
+            <option value="archive">Tier: Archive</option>
+          </select>
+        </div>
+        <p className="text-[11px] text-text-3/70 mt-1.5">Use working for fast recent context, durable for facts/preferences, and archive for long-lived history.</p>
       </div>
 
       {/* Auto-Recovery */}
@@ -1177,6 +1296,23 @@ export function AgentSheet() {
       {/* OpenClaw Gateway Fields */}
       {openclawEnabled && (
         <div className="mb-8 space-y-5">
+          {openclawGatewayProfiles.length > 0 && (
+            <div>
+              <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Gateway Profile</label>
+              <select
+                value={gatewayProfileId || ''}
+                onChange={(e) => applyGatewayProfileSelection(e.target.value || null)}
+                className={inputClass}
+              >
+                <option value="">Custom endpoint</option>
+                {openclawGatewayProfiles.map((gateway) => (
+                  <option key={gateway.id} value={gateway.id}>
+                    {gateway.name}{gateway.isDefault ? ' (default)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {/* Connection fields */}
           <div className="space-y-4">
             <div>
@@ -1378,6 +1514,7 @@ export function AgentSheet() {
                 key={p.id}
                 onClick={() => {
                   setProvider(p.id)
+                  setGatewayProfileId(null)
                 }}
                 className={`relative py-3.5 px-4 rounded-[14px] text-center cursor-pointer transition-all duration-200
                   active:scale-[0.97] text-[14px] font-600 border
@@ -1405,6 +1542,9 @@ export function AgentSheet() {
             onChange={setModel}
             models={currentProvider.models}
             defaultModels={currentProvider.defaultModels}
+            credentialId={credentialId}
+            apiEndpoint={apiEndpoint}
+            supportsDiscovery={currentProvider.supportsModelDiscovery}
             className={`${inputClass} cursor-pointer`}
           />
         </div>
@@ -1557,6 +1697,108 @@ export function AgentSheet() {
           )}
         </div>
       )}
+
+      <div className="mb-8">
+        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Model Routing <HintTip text="Route this agent through a provider/model pool instead of a single fixed model. The base provider remains the default when no route matches." />
+        </label>
+        <div className="flex items-center gap-3 mb-3">
+          <select value={routingStrategy} onChange={(e) => setRoutingStrategy(e.target.value as AgentRoutingStrategy)} className={inputClass}>
+            <option value="single">Single route</option>
+            <option value="balanced">Balanced</option>
+            <option value="economy">Economy</option>
+            <option value="premium">Premium</option>
+            <option value="reasoning">Reasoning</option>
+          </select>
+          <button
+            type="button"
+            onClick={addRoutingTargetFromCurrent}
+            className="shrink-0 px-3 py-2.5 rounded-[10px] bg-accent-soft/50 text-accent-bright text-[12px] font-700 hover:bg-accent-soft transition-colors cursor-pointer border border-accent-bright/20"
+          >
+            + Add Current Route
+          </button>
+        </div>
+        <div className="space-y-3">
+          {routingTargets.map((target, index) => {
+            const targetCredentials = Object.values(credentials).filter((item) => item.provider === target.provider)
+            return (
+              <div key={target.id} className="p-4 rounded-[12px] border border-white/[0.08] bg-white/[0.02] space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input
+                    value={target.label || ''}
+                    onChange={(e) => updateRoutingTarget(target.id, { label: e.target.value })}
+                    placeholder={`Route ${index + 1} label`}
+                    className={inputClass}
+                  />
+                  <select value={target.role || 'backup'} onChange={(e) => updateRoutingTarget(target.id, { role: e.target.value as AgentRoutingTarget['role'] })} className={inputClass}>
+                    <option value="primary">Primary</option>
+                    <option value="economy">Economy</option>
+                    <option value="premium">Premium</option>
+                    <option value="reasoning">Reasoning</option>
+                    <option value="backup">Backup</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <select value={target.provider} onChange={(e) => updateRoutingTarget(target.id, { provider: e.target.value as ProviderType, gatewayProfileId: e.target.value === 'openclaw' ? target.gatewayProfileId : null })} className={inputClass}>
+                    {providers.map((item) => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    value={target.model}
+                    onChange={(e) => updateRoutingTarget(target.id, { model: e.target.value })}
+                    placeholder="Model"
+                    className={inputClass}
+                  />
+                </div>
+                {target.provider === 'openclaw' && openclawGatewayProfiles.length > 0 && (
+                  <select
+                    value={target.gatewayProfileId || ''}
+                    onChange={(e) => {
+                      const nextId = e.target.value || null
+                      const gateway = openclawGatewayProfiles.find((item) => item.id === nextId)
+                      updateRoutingTarget(target.id, {
+                        gatewayProfileId: nextId,
+                        apiEndpoint: gateway?.endpoint || target.apiEndpoint || null,
+                        credentialId: gateway?.credentialId || target.credentialId || null,
+                        model: target.model || 'default',
+                      })
+                    }}
+                    className={inputClass}
+                  >
+                    <option value="">Custom OpenClaw endpoint</option>
+                    {openclawGatewayProfiles.map((gateway) => (
+                      <option key={gateway.id} value={gateway.id}>{gateway.name}</option>
+                    ))}
+                  </select>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
+                  <input
+                    value={target.apiEndpoint || ''}
+                    onChange={(e) => updateRoutingTarget(target.id, { apiEndpoint: e.target.value || null })}
+                    placeholder="Endpoint (optional)"
+                    className={`${inputClass} font-mono text-[14px]`}
+                  />
+                  <select value={target.credentialId || ''} onChange={(e) => updateRoutingTarget(target.id, { credentialId: e.target.value || null })} className={inputClass}>
+                    <option value="">No key</option>
+                    {targetCredentials.map((item) => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex justify-end">
+                  <button type="button" onClick={() => removeRoutingTarget(target.id)} className="px-3 py-1.5 rounded-[8px] border border-red-400/20 bg-red-400/[0.06] text-[12px] font-700 text-red-300 hover:bg-red-400/[0.1] transition-all cursor-pointer">
+                    Remove Route
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {routingTargets.length === 0 && (
+          <p className="text-[11px] text-text-3/70 mt-2">No route pool yet. Add one if this agent should switch between cheaper, stronger, or gateway-specific models.</p>
+        )}
+      </div>
 
       {/* Plugins — hidden for providers that manage capabilities outside LangGraph */}
       {!hasNativeCapabilities && (

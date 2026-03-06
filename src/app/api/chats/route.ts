@@ -7,6 +7,7 @@ import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { notify } from '@/lib/server/ws-hub'
 import { getSessionRunState } from '@/lib/server/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
 export const dynamic = 'force-dynamic'
 
 
@@ -60,6 +61,7 @@ export async function POST(req: Request) {
   const id = body.id || genId()
   const sessions = loadSessions()
   const agent = body.agentId ? loadAgents()[body.agentId] : null
+  const resolvedRoute = agent ? resolvePrimaryAgentRoute(agent) : null
   const requestedPlugins = Array.isArray(body.plugins) ? body.plugins : (Array.isArray(body.tools) ? body.tools : null)
   const resolvedPlugins = requestedPlugins ?? (Array.isArray(agent?.plugins) ? agent.plugins : (Array.isArray(agent?.tools) ? agent.tools : []))
 
@@ -70,12 +72,13 @@ export async function POST(req: Request) {
 
   const sessionName = body.name || 'New Chat'
 
-  sessions[id] = {
+  const nextSession = {
     id, name: sessionName, cwd,
     user: body.user || 'user',
     provider: body.provider || agent?.provider || 'claude-cli',
     model: body.model || agent?.model || '',
     credentialId: body.credentialId || agent?.credentialId || null,
+    fallbackCredentialIds: body.fallbackCredentialIds || agent?.fallbackCredentialIds || [],
     apiEndpoint: normalizeProviderEndpoint(
       body.provider || agent?.provider || 'claude-cli',
       body.apiEndpoint || agent?.apiEndpoint || null,
@@ -113,6 +116,9 @@ export async function POST(req: Request) {
     identityState: body.identityState ?? agent?.identityState ?? null,
     sessionArchiveState: body.sessionArchiveState ?? null,
   }
+  sessions[id] = (body.provider || body.model || body.credentialId || body.apiEndpoint)
+    ? nextSession
+    : applyResolvedRoute(nextSession, resolvedRoute)
   saveSessions(sessions)
   notify('sessions')
   return NextResponse.json(sessions[id])

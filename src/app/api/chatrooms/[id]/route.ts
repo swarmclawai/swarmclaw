@@ -33,6 +33,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   // Diff agentIds and inject join/leave system messages
   if (Array.isArray(body.agentIds)) {
+    if (body.agentIds.length === 0) {
+      return NextResponse.json(
+        { error: 'Select at least one chatroom member.' },
+        { status: 400 },
+      )
+    }
     const agents = loadAgents()
     const invalidAgentIds = (body.agentIds as string[]).filter((agentId) => !agents[agentId])
     if (invalidAgentIds.length > 0) {

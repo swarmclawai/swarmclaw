@@ -393,12 +393,12 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
       </div>
 
       {/* Action buttons (reply + pin + transfer + moderate + reaction) */}
-      <div className="relative shrink-0 mt-0.5 flex items-start gap-0.5" style={{ zIndex: showPicker || showTransferPicker || showModMenu ? 50 : undefined }}>
+      <div className="relative shrink-0 mt-0.5 flex items-start gap-1" style={{ zIndex: showPicker || showTransferPicker || showModMenu ? 50 : undefined }}>
         {/* Reply button */}
         {onReply && (
           <button
             onClick={() => onReply(message)}
-            className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
+            className="w-7 h-7 rounded-[8px] border border-white/[0.06] bg-white/[0.02] flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
             title="Reply"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-3">
@@ -411,7 +411,7 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
         {onTogglePin && (
           <button
             onClick={() => onTogglePin(message.id)}
-            className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
+            className="w-7 h-7 rounded-[8px] border border-white/[0.06] bg-white/[0.02] flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
             title={pinnedMessageIds?.includes(message.id) ? 'Unpin message' : 'Pin message'}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill={pinnedMessageIds?.includes(message.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={pinnedMessageIds?.includes(message.id) ? 'text-amber-400' : 'text-text-3'}>
@@ -424,7 +424,7 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
         {onTransfer && !isUser && (
           <button
             onClick={() => setShowTransferPicker(!showTransferPicker)}
-            className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
+            className="w-7 h-7 rounded-[8px] border border-white/[0.06] bg-white/[0.02] flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
             title="Transfer to agent"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-3">
@@ -449,7 +449,7 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
         {!isUser && (onDeleteMessage || onMuteAgent || onSetRole) && (
           <button
             onClick={() => setShowModMenu(!showModMenu)}
-            className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
+            className="w-7 h-7 rounded-[8px] border border-white/[0.06] bg-white/[0.02] flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
             title="Moderate"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3">
@@ -550,7 +550,8 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
         {/* Reaction button */}
         <button
           onClick={() => setShowPicker(!showPicker)}
-          className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
+          className="w-7 h-7 rounded-[8px] border border-white/[0.06] bg-white/[0.02] flex items-center justify-center hover:bg-white/[0.08] transition-all cursor-pointer"
+          title="Add reaction"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-3">
             <circle cx="12" cy="12" r="10" />

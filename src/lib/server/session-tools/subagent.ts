@@ -9,6 +9,7 @@ import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { applyResolvedRoute, resolvePrimaryAgentRoute } from '../agent-runtime-config'
 import {
   appendDelegationCheckpoint,
   cancelDelegationJob,
@@ -74,7 +75,7 @@ async function startSubagentJob(jobId: string, args: {
   const sessions = loadSessions()
   const parent = context.sessionId ? sessions[context.sessionId] : null
   const browserProfileId = resolveSubagentBrowserProfileId(parent, sid, args.shareBrowserProfile === true)
-  sessions[sid] = {
+  const nextSession = {
     id: sid,
     name: `subagent-${agent.name}`,
     cwd: args.cwd || context.cwd,
@@ -91,6 +92,7 @@ async function startSubagentJob(jobId: string, args: {
     plugins: agent.plugins || agent.tools || [],
     browserProfileId,
   }
+  sessions[sid] = applyResolvedRoute(nextSession, resolvePrimaryAgentRoute(agent))
   saveSessions(sessions)
 
   startDelegationJob(jobId, {

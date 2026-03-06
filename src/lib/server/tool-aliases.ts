@@ -1,11 +1,18 @@
 const PLUGIN_ALIAS_GROUPS: string[][] = [
-  ['shell', 'execute_command', 'process_tool', 'process'],
+  ['shell', 'execute_command', 'process_tool'],
   ['files', 'read_file', 'write_file', 'list_files', 'copy_file', 'move_file', 'delete_file', 'send_file'],
   ['edit_file'],
   ['web', 'web_search', 'web_fetch'],
   ['browser', 'openclaw_browser'],
   ['delegate', 'claude_code', 'codex_cli', 'opencode_cli', 'gemini_cli', 'delegate_to_claude_code', 'delegate_to_codex_cli', 'delegate_to_opencode_cli', 'delegate_to_gemini_cli'],
-  ['manage_platform', 'manage_agents', 'manage_tasks', 'manage_schedules', 'manage_skills', 'manage_documents', 'manage_webhooks', 'manage_secrets', 'manage_sessions'],
+  ['manage_platform'],
+  ['manage_agents'],
+  ['manage_tasks'],
+  ['manage_schedules'],
+  ['manage_skills'],
+  ['manage_documents'],
+  ['manage_webhooks'],
+  ['manage_secrets'],
   ['manage_connectors', 'connectors', 'connector_message_tool'],
   ['manage_chatrooms', 'chatroom'],
   ['spawn_subagent', 'subagent', 'delegate_to_agent'],
@@ -31,6 +38,21 @@ const PLUGIN_ALIAS_GROUPS: string[][] = [
   ['table', 'dataframe'],
   ['crawl', 'site_crawler'],
 ]
+
+const PLUGIN_IMPLICATIONS: Record<string, string[]> = {
+  shell: ['process'],
+  manage_platform: [
+    'manage_agents',
+    'manage_tasks',
+    'manage_schedules',
+    'manage_skills',
+    'manage_documents',
+    'manage_webhooks',
+    'manage_connectors',
+    'manage_sessions',
+    'manage_secrets',
+  ],
+}
 
 const PLUGIN_CANONICAL_MAP = (() => {
   const map = new Map<string, string>()
@@ -85,13 +107,22 @@ export function expandPluginIds(values: string[] | null | undefined): string[] {
   while (queue.length > 0) {
     const next = queue.shift()!
     const normalized = normalizePluginId(next)
+    const canonical = canonicalizePluginId(next)
     const aliases = PLUGIN_ALIAS_MAP.get(normalized)
-    const key = aliases ? normalized : next
+    const key = aliases ? normalized : (canonical || next)
     if (expanded.has(key)) continue
     expanded.add(key)
-    if (!aliases) continue
-    for (const alias of aliases) {
-      if (!expanded.has(alias)) queue.push(alias)
+    if (aliases) {
+      for (const alias of aliases) {
+        if (!expanded.has(alias)) queue.push(alias)
+      }
+    }
+    const implicationSources = [key, normalized, normalizePluginId(canonical)]
+    for (const source of implicationSources) {
+      if (!source) continue
+      for (const implied of PLUGIN_IMPLICATIONS[source] || []) {
+        if (!expanded.has(implied)) queue.push(implied)
+      }
     }
   }
 

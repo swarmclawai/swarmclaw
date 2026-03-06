@@ -245,8 +245,15 @@ Key rules:
  */
 const PluginCreatorPlugin: Plugin = {
   name: 'Plugin Creator',
-  description: 'Design, write, and test custom SwarmClaw plugins dynamically.',
-  hooks: {} as PluginHooks,
+  description: 'Design focused SwarmClaw plugins for durable capabilities and recurring automations.',
+  hooks: {
+    getCapabilityDescription: () => 'I can scaffold focused plugins (`plugin_creator_tool`) when a capability should become durable instead of living in a one-off sandbox script.',
+    getOperatingGuidance: () => [
+      'For recurring or scheduled automations, prefer a focused plugin plus `manage_schedules` over repeated sandbox runs.',
+      'Put API keys in plugin settings or SwarmClaw secrets instead of hardcoding them in plugin source.',
+      'Call `get_spec` before scaffolding so the plugin follows the current contract.',
+    ],
+  } as PluginHooks,
   tools: [
     {
       name: 'plugin_creator_tool',

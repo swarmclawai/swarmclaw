@@ -1,8 +1,9 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 import type { EvalRun } from './types'
+import { DATA_DIR } from '../data-dir'
 
-const DB_PATH = path.join(process.cwd(), 'data', 'eval-runs.db')
+const DB_PATH = path.join(DATA_DIR, 'eval-runs.db')
 
 let db: Database.Database | null = null
 

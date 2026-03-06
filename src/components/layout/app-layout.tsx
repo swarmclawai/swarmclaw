@@ -24,6 +24,7 @@ import { SecretsList } from '@/components/secrets/secrets-list'
 import { SecretSheet } from '@/components/secrets/secret-sheet'
 import { ProviderList } from '@/components/providers/provider-list'
 import { ProviderSheet } from '@/components/providers/provider-sheet'
+import { GatewaySheet } from '@/components/gateways/gateway-sheet'
 import { SkillList } from '@/components/skills/skill-list'
 import { SkillSheet } from '@/components/skills/skill-sheet'
 import { ConnectorList } from '@/components/connectors/connector-list'
@@ -1097,6 +1098,7 @@ export function AppLayout() {
       <TaskSheet />
       <SecretSheet />
       <ProviderSheet />
+      <GatewaySheet />
       <SkillSheet />
       <ConnectorSheet />
       <ChatroomSheet />

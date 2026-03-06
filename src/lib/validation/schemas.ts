@@ -1,5 +1,18 @@
 import { z } from 'zod'
 
+const AgentRoutingTargetSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().optional(),
+  role: z.enum(['primary', 'economy', 'premium', 'reasoning', 'backup']).optional(),
+  provider: z.string().min(1),
+  model: z.string().optional().default(''),
+  credentialId: z.string().nullable().optional().default(null),
+  fallbackCredentialIds: z.array(z.string()).optional().default([]),
+  apiEndpoint: z.string().nullable().optional().default(null),
+  gatewayProfileId: z.string().nullable().optional().default(null),
+  priority: z.number().int().optional(),
+})
+
 export const AgentCreateSchema = z.object({
   name: z.string().min(1, 'Agent name is required'),
   provider: z.string().min(1, 'Provider is required'),
@@ -7,22 +20,41 @@ export const AgentCreateSchema = z.object({
   systemPrompt: z.string().optional().default(''),
   model: z.string().optional().default(''),
   credentialId: z.string().nullable().optional().default(null),
+  fallbackCredentialIds: z.array(z.string()).optional().default([]),
   apiEndpoint: z.string().nullable().optional().default(null),
+  gatewayProfileId: z.string().nullable().optional().default(null),
+  routingStrategy: z.enum(['single', 'balanced', 'economy', 'premium', 'reasoning']).nullable().optional().default(null),
+  routingTargets: z.array(AgentRoutingTargetSchema).optional().default([]),
   isOrchestrator: z.boolean().optional().default(false),
   platformAssignScope: z.enum(['self', 'all']).optional().default('self'),
   subAgentIds: z.array(z.string()).optional().default([]),
   plugins: z.array(z.string()).optional().default([]),
   /** @deprecated Use plugins */
   tools: z.array(z.string()).optional(),
+  skills: z.array(z.string()).optional().default([]),
+  skillIds: z.array(z.string()).optional().default([]),
+  mcpServerIds: z.array(z.string()).optional().default([]),
+  mcpDisabledTools: z.array(z.string()).optional().default([]),
   capabilities: z.array(z.string()).optional().default([]),
   thinkingLevel: z.string().optional(),
   soul: z.string().optional(),
   identityState: z.record(z.string(), z.unknown()).nullable().optional().default(null),
+  heartbeatEnabled: z.boolean().optional().default(false),
+  heartbeatInterval: z.union([z.string(), z.number()]).nullable().optional().default(null),
+  heartbeatIntervalSec: z.number().int().nonnegative().nullable().optional().default(null),
+  heartbeatModel: z.string().nullable().optional().default(null),
+  heartbeatPrompt: z.string().nullable().optional().default(null),
+  elevenLabsVoiceId: z.string().nullable().optional().default(null),
   sessionResetMode: z.enum(['idle', 'daily']).nullable().optional().default(null),
   sessionIdleTimeoutSec: z.number().int().nonnegative().nullable().optional().default(null),
   sessionMaxAgeSec: z.number().int().nonnegative().nullable().optional().default(null),
   sessionDailyResetAt: z.string().nullable().optional().default(null),
   sessionResetTimezone: z.string().nullable().optional().default(null),
+  memoryScopeMode: z.enum(['auto', 'all', 'global', 'agent', 'session', 'project']).nullable().optional().default(null),
+  memoryTierPreference: z.enum(['working', 'durable', 'archive', 'blended']).nullable().optional().default(null),
+  projectId: z.string().optional(),
+  avatarSeed: z.string().optional(),
+  avatarUrl: z.string().nullable().optional().default(null),
   autoRecovery: z.boolean().optional().default(false),
   monthlyBudget: z.number().positive().nullable().optional().default(null),
   dailyBudget: z.number().positive().nullable().optional().default(null),
@@ -41,6 +73,28 @@ export const ConnectorCreateSchema = z.object({
   credentialId: z.string().nullable().optional().default(null),
   config: z.record(z.string(), z.string()).optional().default({}),
   autoStart: z.boolean().optional(),
+})
+
+export const ExternalAgentRegisterSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1, 'External agent name is required'),
+  sourceType: z.enum(['codex', 'claude', 'opencode', 'openclaw', 'custom']).default('custom'),
+  status: z.enum(['online', 'idle', 'offline', 'stale']).optional().default('online'),
+  provider: z.string().nullable().optional().default(null),
+  model: z.string().nullable().optional().default(null),
+  workspace: z.string().nullable().optional().default(null),
+  transport: z.enum(['http', 'ws', 'cli', 'gateway', 'custom']).nullable().optional().default(null),
+  endpoint: z.string().nullable().optional().default(null),
+  agentId: z.string().nullable().optional().default(null),
+  gatewayProfileId: z.string().nullable().optional().default(null),
+  capabilities: z.array(z.string()).optional().default([]),
+  labels: z.array(z.string()).optional().default([]),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional().default(null),
+  tokenStats: z.object({
+    inputTokens: z.number().nonnegative().optional(),
+    outputTokens: z.number().nonnegative().optional(),
+    totalTokens: z.number().nonnegative().optional(),
+  }).nullable().optional().default(null),
 })
 
 export const TaskCreateSchema = z.object({
@@ -71,7 +125,7 @@ export const TaskCreateSchema = z.object({
 
 export const ChatroomCreateSchema = z.object({
   name: z.string().min(1, 'Chatroom name is required'),
-  agentIds: z.array(z.string()).default([]),
+  agentIds: z.array(z.string()).min(1, 'Select at least one agent').default([]),
   description: z.string().optional().default(''),
   chatMode: z.enum(['sequential', 'parallel']).optional(),
   autoAddress: z.boolean().optional(),

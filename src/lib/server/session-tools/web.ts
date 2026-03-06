@@ -222,7 +222,7 @@ const WebPlugin: Plugin = {
   name: 'Core Web',
   description: 'Search the web and fetch content from URLs.',
   hooks: {
-    getCapabilityDescription: () => 'I can search the web (`web_search`) for research, fact-checking, and discovery.',
+    getCapabilityDescription: () => 'I can use the unified `web` tool with action `search` for research and action `fetch` for reading a URL.',
   } as PluginHooks,
   tools: [
     {
@@ -400,9 +400,12 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
     }
 
     const stringifyStructured = (value: unknown): string => truncate(JSON.stringify(value, null, 2), MAX_OUTPUT)
+    const callBrowserEvaluate = (fn: string) => callMcpTool('browser_evaluate', {
+      function: fn,
+    })
 
     const captureStructuredObservation = async () => {
-      const expression = `(() => {
+      const expression = `() => {
         const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
         const visible = (el) => {
           if (!el) return false;
@@ -445,17 +448,27 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
           .slice(0, 10)
           .map((el) => normalize(el.innerText || el.textContent))
           .filter(Boolean);
-        return JSON.stringify({
+        const textPreview = normalize(document.body?.innerText || document.body?.textContent || '').slice(0, 1200);
+        const lowerPreview = textPreview.toLowerCase();
+        const notices = [];
+        if (/ask the human|out-of-band|do not guess|verification code required/.test(lowerPreview)) {
+          notices.push({
+            type: 'human_input_required',
+            message: 'This page requires human-provided input. Ask the human instead of guessing or repeatedly submitting blank values.',
+          });
+        }
+        return {
           url: window.location.href,
           title: document.title || null,
-          textPreview: normalize(document.body?.innerText || document.body?.textContent || '').slice(0, 1200),
+          textPreview,
           links,
           forms,
           tables,
           errors,
-        });
-      })()`
-      const raw = await callMcpTool('browser_evaluate', { expression })
+          notices,
+        };
+      }`
+      const raw = await callBrowserEvaluate(expression)
       const parsed = extractJsonPayload(raw)
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         const observation = {
@@ -638,18 +651,39 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
 
     const dismissCookieBanners = async (mcpCall: (toolName: string, args: Record<string, unknown>) => Promise<string>) => {
       await new Promise((r) => setTimeout(r, 1500))
-      const js = `(() => {
+      const js = `() => {
         const sel = ['button[id*="reject" i]', 'button[class*="reject" i]', 'a[id*="reject" i]', 'a[class*="reject" i]', '#onetrust-reject-all-handler', '#CybotCookiebotDialogBodyButtonDecline', '#didomi-notice-disagree-button', '.qc-cmp2-summary-buttons button:first-child', 'button.sp_choice_type_12'];
         for (const s of sel) { const el = document.querySelector(s); if (el && el.offsetParent !== null) { el.click(); return 'dismissed:' + s; } }
         const btns = [...document.querySelectorAll('button, a[role="button"]')]; const rejectRe = /^(reject|reject all|decline|deny|refuse|no,? thanks|only necessary|necessary only)$/i;
         for (const b of btns) { const txt = (b.textContent || '').trim(); if (rejectRe.test(txt) && b.offsetParent !== null) { b.click(); return 'dismissed:text=' + txt; } }
         return 'none';
-      })()`
-      await mcpCall('browser_evaluate', { expression: js })
+      }`
+      await mcpCall('browser_evaluate', { function: js })
     }
 
     const performFillForm = async (params: Record<string, unknown>) => {
-      const fields = Array.isArray(params.fields) ? params.fields : []
+      const fields = Array.isArray(params.fields)
+        ? params.fields
+        : (() => {
+            const form = params.form
+            if (!form || typeof form !== 'object' || Array.isArray(form)) return []
+            return Object.entries(form as Record<string, unknown>).map(([key, value]) => {
+              const escapedId = String(key).replace(/[^a-zA-Z0-9_-]/g, '')
+              const escapedAttr = String(key).replace(/["\\]/g, '\\$&')
+              const inferredType = typeof value === 'boolean'
+                ? 'checkbox'
+                : /password/i.test(key)
+                  ? 'password'
+                  : 'text'
+              return {
+                element: escapedId
+                  ? `#${escapedId}, [name="${escapedAttr}"]`
+                  : `[name="${escapedAttr}"]`,
+                type: inferredType,
+                value,
+              }
+            })
+          })()
       if (fields.length === 0) return { ok: false, error: 'fields is required for fill_form.' }
       const filled: Array<Record<string, unknown>> = []
       for (const field of fields) {
@@ -692,14 +726,29 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
           element: typeof params.submitElement === 'string' ? params.submitElement : undefined,
         })
       } else {
-        await callMcpTool('browser_press_key', { key: typeof params.key === 'string' ? params.key : 'Enter' })
+        await callBrowserEvaluate(`() => {
+          const form = document.forms[0];
+          if (!form) return { submitted: false, reason: 'no-form' };
+          const submitButton = form.querySelector('button[type="submit"], input[type="submit"], button');
+          if (submitButton && typeof submitButton.click === 'function') {
+            submitButton.click();
+            return { submitted: true, method: 'click' };
+          }
+          if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+            return { submitted: true, method: 'requestSubmit' };
+          }
+          if (typeof form.submit === 'function') {
+            form.submit();
+            return { submitted: true, method: 'submit' };
+          }
+          return { submitted: false, reason: 'no-submit-method' };
+        }`)
       }
 
       const waitMs = typeof params.waitMs === 'number' ? Math.max(250, params.waitMs) : 1000
       try {
-        await callMcpTool('browser_evaluate', {
-          expression: `await new Promise(resolve => setTimeout(resolve, ${Math.min(waitMs, 5000)}))`,
-        })
+        await callBrowserEvaluate(`async () => { await new Promise(resolve => setTimeout(resolve, ${Math.min(waitMs, 5000)})); }`)
       } catch {
         await new Promise((resolve) => setTimeout(resolve, waitMs))
       }
@@ -723,18 +772,16 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       const maxScrolls = typeof params.maxScrolls === 'number' ? Math.max(1, Math.min(20, params.maxScrolls)) : 8
       let matchedAtStep = -1
       for (let index = 0; index < maxScrolls; index += 1) {
-        const result = await callMcpTool('browser_evaluate', {
-          expression: `(() => {
+        const result = await callBrowserEvaluate(`() => {
             const bodyText = String(document.body?.innerText || document.body?.textContent || '');
             const selector = ${JSON.stringify(selector)};
             const containsText = ${JSON.stringify(containsText)};
             const match = (selector && !!document.querySelector(selector))
               || (containsText && bodyText.includes(containsText));
-            if (match) return JSON.stringify({ found: true, scrollY: window.scrollY, step: ${index} });
+            if (match) return { found: true, scrollY: window.scrollY, step: ${index} };
             window.scrollBy({ top: Math.max(window.innerHeight * 0.85, 600), behavior: 'instant' });
-            return JSON.stringify({ found: false, scrollY: window.scrollY, step: ${index} });
-          })()`,
-        })
+            return { found: false, scrollY: window.scrollY, step: ${index} };
+          }`)
         const payload = extractJsonPayload(result)
         if (payload && typeof payload === 'object' && !Array.isArray(payload) && (payload as Record<string, unknown>).found === true) {
           matchedAtStep = index
@@ -756,8 +803,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       const linkText = typeof params.linkText === 'string' ? params.linkText.trim() : ''
       const hrefContains = typeof params.hrefContains === 'string' ? params.hrefContains.trim() : ''
       if (!linkText && !hrefContains) return null
-      const result = await callMcpTool('browser_evaluate', {
-        expression: `(() => {
+      const result = await callBrowserEvaluate(`() => {
           const linkText = ${JSON.stringify(linkText)};
           const hrefContains = ${JSON.stringify(hrefContains)};
           const links = Array.from(document.querySelectorAll('a[href]'));
@@ -769,9 +815,8 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             if (hrefContains && href.toLowerCase().includes(hrefContains.toLowerCase())) return true;
             return false;
           });
-          return JSON.stringify({ href: match ? (match.href || match.getAttribute('href') || '') : null });
-        })()`,
-      })
+          return { href: match ? (match.href || match.getAttribute('href') || '') : null };
+        }`)
       const payload = extractJsonPayload(result)
       if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
         const href = (payload as Record<string, unknown>).href
@@ -1083,16 +1128,14 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
 
             if (action === 'screenshot' || action === 'snapshot') {
               try {
-                await callMcpTool('browser_evaluate', {
-                  expression: `await new Promise(resolve => {
+                await callBrowserEvaluate(`async () => { await new Promise(resolve => {
                     if (document.readyState === 'complete') {
                       setTimeout(resolve, 1200);
                     } else {
                       window.addEventListener('load', () => setTimeout(resolve, 1200), { once: true });
                       setTimeout(resolve, 5000);
                     }
-                  })`,
-                })
+                  }); }`)
               } catch {
                 await new Promise((r) => setTimeout(r, 1200))
               }

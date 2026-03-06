@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { getPluginManager, normalizeMarketplacePluginUrl, sanitizePluginFilename } from './plugins'
-import { canonicalizePluginId, expandPluginIds } from './tool-aliases'
+import { canonicalizePluginId, expandPluginIds, pluginIdMatches } from './tool-aliases'
 import { DATA_DIR } from './data-dir'
 
 let testPluginSeq = 0
@@ -32,6 +32,14 @@ describe('plugin id canonicalization', () => {
     assert.equal(expanded.includes('http'), true)
     assert.equal(expanded.includes('ask_human'), true)
     assert.equal(expanded.includes('human_loop'), true)
+  })
+
+  it('does not expand a specific platform tool back into manage_platform', () => {
+    const expanded = expandPluginIds(['manage_schedules'])
+    assert.equal(expanded.includes('manage_schedules'), true)
+    assert.equal(expanded.includes('manage_platform'), false)
+    assert.equal(pluginIdMatches(['manage_platform'], 'manage_schedules'), true)
+    assert.equal(pluginIdMatches(['manage_schedules'], 'manage_platform'), false)
   })
 })
 

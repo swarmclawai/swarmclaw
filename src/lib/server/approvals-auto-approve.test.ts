@@ -202,4 +202,63 @@ describe('approval auto-approve', () => {
     assert.match(output.lastMessage.text, /\"type\":\"plugin_request\"/)
     assert.match(output.lastMessage.text, /\"pluginId\":\"shell\"/)
   })
+
+  it('applies tool access after a manual approval decision', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage.ts')
+      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storage = storageMod.default || storageMod
+      const approvals = approvalsMod.default || approvalsMod
+
+      const now = Date.now()
+      storage.saveSettings({
+        approvalsEnabled: true,
+        approvalAutoApproveCategories: [],
+      })
+      storage.saveSessions({
+        session_manual: {
+          id: 'session_manual',
+          name: 'Manual Approval Test',
+          cwd: process.cwd(),
+          user: 'tester',
+          provider: 'openai',
+          model: 'gpt-test',
+          credentialId: null,
+          apiEndpoint: null,
+          claudeSessionId: null,
+          codexThreadId: null,
+          opencodeSessionId: null,
+          delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null },
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'default',
+          plugins: [],
+        },
+      })
+
+      const approval = await approvals.requestApprovalMaybeAutoApprove({
+        category: 'tool_access',
+        title: 'Enable Plugin: shell',
+        description: 'Need shell access for a task.',
+        data: { toolId: 'shell', pluginId: 'shell' },
+        sessionId: 'session_manual',
+        agentId: 'default',
+      })
+      await approvals.submitDecision(approval.id, true)
+
+      const storedApproval = storage.loadApprovals()[approval.id]
+      const session = storage.loadSessions().session_manual
+      console.log(JSON.stringify({
+        initialStatus: approval.status,
+        finalStatus: storedApproval?.status || null,
+        plugins: session.plugins || [],
+      }))
+    `)
+
+    assert.equal(output.initialStatus, 'pending')
+    assert.equal(output.finalStatus, 'approved')
+    assert.equal(output.plugins.includes('shell'), true)
+  })
 })

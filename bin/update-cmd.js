@@ -1,11 +1,20 @@
 #!/usr/bin/env node
 'use strict'
+/* eslint-disable @typescript-eslint/no-require-imports */
 
-const { execSync } = require('node:child_process')
+const { execSync, execFileSync } = require('node:child_process')
 const path = require('node:path')
+const {
+  dependenciesChanged,
+  detectPackageManager,
+  getGlobalUpdateCommand,
+  getInstallCommand,
+} = require('./package-manager.js')
 
 const PKG_ROOT = path.resolve(__dirname, '..')
+const PACKAGE_NAME = '@swarmclawai/swarmclaw'
 const RELEASE_TAG_RE = /^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/
+const PACKAGE_MANAGER = detectPackageManager(PKG_ROOT)
 
 function run(cmd) {
   return execSync(cmd, { encoding: 'utf-8', cwd: PKG_ROOT, timeout: 60_000 }).trim()
@@ -35,7 +44,7 @@ Usage: swarmclaw update
 
 Pull the latest SwarmClaw release via git.
 Prefers stable release tags (v*); falls back to origin/main.
-Runs npm install if package files changed.
+Runs ${PACKAGE_MANAGER} install if package files changed.
 `.trim())
     process.exit(0)
   }
@@ -44,7 +53,8 @@ Runs npm install if package files changed.
   try {
     run('git rev-parse --git-dir')
   } catch {
-    logError('Not a git repository. Cannot update.')
+    logError('This install is not a git checkout, so swarmclaw update cannot pull a release tag directly.')
+    logError(`Reinstall the latest version with: ${getGlobalUpdateCommand(PACKAGE_MANAGER, PACKAGE_NAME)}`)
     process.exit(1)
   }
 
@@ -105,9 +115,10 @@ Runs npm install if package files changed.
   // Install deps if package files changed
   try {
     const diff = run(`git diff --name-only ${beforeSha}..HEAD`)
-    if (diff.includes('package-lock.json') || diff.includes('package.json')) {
-      log('Package files changed — running npm install...')
-      execSync('npm install --omit=dev', { cwd: PKG_ROOT, stdio: 'inherit', timeout: 120_000 })
+    if (dependenciesChanged(diff)) {
+      const install = getInstallCommand(PACKAGE_MANAGER, true)
+      log(`Package files changed — running ${PACKAGE_MANAGER} install...`)
+      execFileSync(install.command, install.args, { cwd: PKG_ROOT, stdio: 'inherit', timeout: 120_000 })
     }
   } catch {
     // If diff fails, skip install check

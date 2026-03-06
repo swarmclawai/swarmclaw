@@ -11,11 +11,23 @@ interface ToolEvent {
   output?: string
 }
 
-interface StreamingAgent {
+export interface StreamingAgent {
   text: string
   name: string
   error?: string
   toolEvents: ToolEvent[]
+}
+
+interface QueuedChatroomMessage {
+  id: string
+  chatroomId: string
+  text: string
+  pendingFiles: PendingFile[]
+  replyingTo: ChatroomMessage | null
+}
+
+function nextQueuedId() {
+  return `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 interface ChatroomState {
@@ -35,6 +47,10 @@ interface ChatroomState {
   // Reply-to
   replyingTo: ChatroomMessage | null
   setReplyingTo: (msg: ChatroomMessage | null) => void
+
+  queuedMessages: QueuedChatroomMessage[]
+  removeQueuedMessage: (id: string) => void
+  shiftQueuedMessage: () => QueuedChatroomMessage | undefined
 
   loadChatrooms: () => Promise<void>
   createChatroom: (data: { name: string; description?: string; agentIds?: string[]; chatMode?: 'sequential' | 'parallel'; autoAddress?: boolean; routingRules?: ChatroomRoutingRule[] }) => Promise<Chatroom>
@@ -73,6 +89,15 @@ export const useChatroomStore = create<ChatroomState>((set, get) => ({
   // Reply-to
   replyingTo: null,
   setReplyingTo: (msg) => set({ replyingTo: msg }),
+  queuedMessages: [],
+  removeQueuedMessage: (id) => set((s) => ({ queuedMessages: s.queuedMessages.filter((item) => item.id !== id) })),
+  shiftQueuedMessage: () => {
+    const queue = get().queuedMessages
+    if (!queue.length) return undefined
+    const next = queue[0]
+    set({ queuedMessages: queue.slice(1) })
+    return next
+  },
 
   loadChatrooms: async () => {
     const chatrooms = await api<Record<string, Chatroom>>('GET', '/chatrooms')
@@ -106,9 +131,26 @@ export const useChatroomStore = create<ChatroomState>((set, get) => ({
 
   sendMessage: async (text) => {
     const { currentChatroomId, streaming, pendingFiles, replyingTo } = get()
-    if (!currentChatroomId || streaming || (!text.trim() && !pendingFiles.length)) return
+    if (!currentChatroomId || (!text.trim() && !pendingFiles.length)) return
+    const targetChatroomId = currentChatroomId
 
-    set({ streaming: true, streamingAgents: new Map(), pendingFiles: [], replyingTo: null })
+    if (streaming) {
+      set((s) => ({
+        queuedMessages: [
+          ...s.queuedMessages,
+          {
+            id: nextQueuedId(),
+            chatroomId: targetChatroomId,
+            text,
+            pendingFiles: [...pendingFiles],
+            replyingTo,
+          },
+        ],
+        pendingFiles: [],
+        replyingTo: null,
+      }))
+      return
+    }
 
     const imagePath = pendingFiles.length > 0 && pendingFiles[0].file.type.startsWith('image/')
       ? pendingFiles[0].path
@@ -116,10 +158,12 @@ export const useChatroomStore = create<ChatroomState>((set, get) => ({
     const attachedFiles = pendingFiles.length > 0
       ? pendingFiles.map((f) => f.path)
       : undefined
+    const optimisticText = text.trim() || 'See attached file(s).'
+    let started = false
 
     const key = getStoredAccessKey()
     try {
-      const res = await fetch(`/api/chatrooms/${currentChatroomId}/chat`, {
+      const res = await fetch(`/api/chatrooms/${targetChatroomId}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -134,9 +178,42 @@ export const useChatroomStore = create<ChatroomState>((set, get) => ({
       })
 
       if (!res.ok || !res.body) {
-        set({ streaming: false })
         return
       }
+
+      started = true
+      set((s) => {
+        const existingChatroom = s.chatrooms[targetChatroomId]
+        const optimisticMessage: ChatroomMessage = {
+          id: `local-${Date.now()}`,
+          senderId: 'user',
+          senderName: 'You',
+          role: 'user',
+          text: optimisticText,
+          mentions: [],
+          reactions: [],
+          time: Date.now(),
+          ...(imagePath ? { imagePath } : {}),
+          ...(attachedFiles ? { attachedFiles } : {}),
+          ...(replyingTo ? { replyToId: replyingTo.id } : {}),
+        }
+        return {
+          streaming: true,
+          streamingAgents: new Map(),
+          pendingFiles: [],
+          replyingTo: null,
+          chatrooms: existingChatroom
+            ? {
+                ...s.chatrooms,
+                [targetChatroomId]: {
+                  ...existingChatroom,
+                  messages: [...existingChatroom.messages, optimisticMessage],
+                  updatedAt: optimisticMessage.time,
+                },
+              }
+            : s.chatrooms,
+        }
+      })
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -220,13 +297,6 @@ export const useChatroomStore = create<ChatroomState>((set, get) => ({
                   return { streamingAgents: agents }
                 })
               }
-              try {
-                const { currentChatroomId: cid } = get()
-                if (cid) {
-                  const chatroom = await api<Chatroom>('GET', `/chatrooms/${cid}`)
-                  set((s) => ({ chatrooms: { ...s.chatrooms, [cid]: chatroom } }))
-                }
-              } catch { /* will catch on next WS push */ }
             } else if (event.t === 'done') {
               break
             }
@@ -236,31 +306,88 @@ export const useChatroomStore = create<ChatroomState>((set, get) => ({
         }
       }
     } finally {
-      set({ streaming: false, streamingAgents: new Map() })
-      try {
-        const { currentChatroomId: cid } = get()
-        if (cid) {
-          const chatroom = await api<Chatroom>('GET', `/chatrooms/${cid}`)
-          set((s) => ({ chatrooms: { ...s.chatrooms, [cid]: chatroom } }))
+      if (started) {
+        set({ streaming: false, streamingAgents: new Map() })
+        try {
+          const chatroom = await api<Chatroom>('GET', `/chatrooms/${targetChatroomId}`)
+          set((s) => ({ chatrooms: { ...s.chatrooms, [targetChatroomId]: chatroom } }))
+        } catch { /* ignore */ }
+
+        const nextQueued = get().shiftQueuedMessage()
+        if (nextQueued) {
+          if (get().currentChatroomId !== nextQueued.chatroomId) {
+            set((s) => ({ queuedMessages: [nextQueued, ...s.queuedMessages] }))
+            return
+          }
+          set({ pendingFiles: nextQueued.pendingFiles, replyingTo: nextQueued.replyingTo })
+          setTimeout(() => {
+            void get().sendMessage(nextQueued.text)
+          }, 100)
         }
-      } catch { /* ignore */ }
+      }
     }
   },
 
   toggleReaction: async (messageId, emoji) => {
     const { currentChatroomId } = get()
     if (!currentChatroomId) return
-    await api('POST', `/chatrooms/${currentChatroomId}/reactions`, { messageId, emoji })
-    const chatroom = await api<Chatroom>('GET', `/chatrooms/${currentChatroomId}`)
-    set((s) => ({ chatrooms: { ...s.chatrooms, [currentChatroomId]: chatroom } }))
+    const previous = get().chatrooms[currentChatroomId]
+    if (previous) {
+      set((s) => ({
+        chatrooms: {
+          ...s.chatrooms,
+          [currentChatroomId]: {
+            ...previous,
+            messages: previous.messages.map((message) => {
+              if (message.id !== messageId) return message
+              const existing = message.reactions.find((reaction) => reaction.emoji === emoji && reaction.reactorId === 'user')
+              return {
+                ...message,
+                reactions: existing
+                  ? message.reactions.filter((reaction) => !(reaction.emoji === emoji && reaction.reactorId === 'user'))
+                  : [...message.reactions, { emoji, reactorId: 'user', time: Date.now() }],
+              }
+            }),
+          },
+        },
+      }))
+    }
+    try {
+      const chatroom = await api<Chatroom>('POST', `/chatrooms/${currentChatroomId}/reactions`, { messageId, emoji })
+      set((s) => ({ chatrooms: { ...s.chatrooms, [currentChatroomId]: chatroom } }))
+    } catch {
+      if (previous) {
+        set((s) => ({ chatrooms: { ...s.chatrooms, [currentChatroomId]: previous } }))
+      }
+    }
   },
 
   togglePin: async (messageId) => {
     const { currentChatroomId } = get()
     if (!currentChatroomId) return
-    await api('POST', `/chatrooms/${currentChatroomId}/pins`, { messageId })
-    const chatroom = await api<Chatroom>('GET', `/chatrooms/${currentChatroomId}`)
-    set((s) => ({ chatrooms: { ...s.chatrooms, [currentChatroomId]: chatroom } }))
+    const previous = get().chatrooms[currentChatroomId]
+    if (previous) {
+      const pinnedMessageIds = previous.pinnedMessageIds || []
+      set((s) => ({
+        chatrooms: {
+          ...s.chatrooms,
+          [currentChatroomId]: {
+            ...previous,
+            pinnedMessageIds: pinnedMessageIds.includes(messageId)
+              ? pinnedMessageIds.filter((id) => id !== messageId)
+              : [...pinnedMessageIds, messageId],
+          },
+        },
+      }))
+    }
+    try {
+      const chatroom = await api<Chatroom>('POST', `/chatrooms/${currentChatroomId}/pins`, { messageId })
+      set((s) => ({ chatrooms: { ...s.chatrooms, [currentChatroomId]: chatroom } }))
+    } catch {
+      if (previous) {
+        set((s) => ({ chatrooms: { ...s.chatrooms, [currentChatroomId]: previous } }))
+      }
+    }
   },
 
   addMember: async (agentId) => {

@@ -8,13 +8,14 @@ import { fetchMessages } from '@/lib/chats'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/shared/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
+import { Dropdown, DropdownItem } from '@/components/shared/dropdown'
 
 interface Props {
   inSidebar?: boolean
   onSelect?: () => void
 }
 
-type SessionFilter = 'all' | 'active'
+type SessionFilter = 'all' | 'active' | 'unread'
 type SortMode = 'lastActive' | 'name' | 'messages'
 
 export function ChatList({ inSidebar, onSelect }: Props) {
@@ -28,11 +29,15 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   const clearSessions = useAppStore((s) => s.clearSessions)
   const togglePinSession = useAppStore((s) => s.togglePinSession)
   const markChatRead = useAppStore((s) => s.markChatRead)
+  const lastReadTimestamps = useAppStore((s) => s.lastReadTimestamps)
+  const agents = useAppStore((s) => s.agents)
+  const connectors = useAppStore((s) => s.connectors)
   const setMessages = useChatStore((s) => s.setMessages)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<SessionFilter>('all')
   const [sortMode, setSortMode] = useState<SortMode>('lastActive')
   const [loaded, setLoaded] = useState(Object.keys(sessions).length > 0)
+  const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
 
   useEffect(() => {
     if (Object.keys(sessions).length > 0 && !loaded) setLoaded(true)
@@ -56,8 +61,32 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   const filtered = useMemo(() => {
     return allUserSessions
       .filter((s) => {
-        if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false
+        const unreadCount = (s.messages || []).filter(
+          (m) => m.role === 'assistant' && (m.time || 0) > (lastReadTimestamps[s.id] || 0),
+        ).length
+        if (search) {
+          const agent = s.agentId ? agents[s.agentId] : null
+          const connector = Object.values(connectors).find((item) => item.chatroomId == null && item.agentId === s.agentId && item.isEnabled !== false)
+          const lastMessage = s.messages?.[s.messages.length - 1]
+          const haystack = [
+            s.name,
+            agent?.name,
+            s.provider,
+            s.model,
+            s.cwd,
+            connector?.name,
+            connector?.platform,
+            lastMessage?.text,
+            lastMessage?.source?.senderName,
+            lastMessage?.source?.platform,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+          if (!haystack.includes(search.toLowerCase())) return false
+        }
         if (typeFilter === 'active' && !s.active) return false
+        if (typeFilter === 'unread' && unreadCount === 0) return false
         return true
       })
       .sort((a, b) => {
@@ -69,7 +98,7 @@ export function ChatList({ inSidebar, onSelect }: Props) {
         if (sortMode === 'messages') return (b.messages?.length || 0) - (a.messages?.length || 0)
         return (b.lastActiveAt || 0) - (a.lastActiveAt || 0)
       })
-  }, [allUserSessions, search, typeFilter, sortMode])
+  }, [agents, allUserSessions, connectors, lastReadTimestamps, search, sortMode, typeFilter])
 
   const handleSelect = async (id: string) => {
     setCurrentSession(id)
@@ -123,7 +152,7 @@ export function ChatList({ inSidebar, onSelect }: Props) {
     <div className="flex-1 flex flex-col overflow-y-auto">
       {/* Filter tabs — always visible when sessions exist */}
       <div className="flex items-center gap-1 px-4 pt-2 pb-1 shrink-0">
-        {(['all', 'active'] as SessionFilter[]).map((f) => (
+        {(['all', 'active', 'unread'] as SessionFilter[]).map((f) => (
           <button
             key={f}
             onClick={() => setTypeFilter(f)}
@@ -131,25 +160,34 @@ export function ChatList({ inSidebar, onSelect }: Props) {
               ${typeFilter === f ? 'bg-accent-soft text-accent-bright' : 'bg-transparent text-text-3 hover:text-text-2'}`}
             style={{ fontFamily: 'inherit' }}
           >
-            {f === 'all' ? 'All' : 'Active'}
+            {f === 'all' ? 'All' : f === 'active' ? 'Active' : 'Unread'}
           </button>
         ))}
         {filtered.length > 0 && (
-          <button
-            onClick={async () => {
-              if (!window.confirm(`Delete ${filtered.length} chat${filtered.length === 1 ? '' : 's'}?`)) return
-              await clearSessions(filtered.map((s) => s.id))
-              toast.success(`${filtered.length} chat${filtered.length === 1 ? '' : 's'} deleted`)
-            }}
-            className="ml-auto p-1.5 rounded-[8px] text-text-3/70 hover:text-red-400 hover:bg-red-400/[0.06]
-              cursor-pointer transition-all bg-transparent border-none"
-            title="Clear all chats"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-              <path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-            </svg>
-          </button>
+          <div className="ml-auto relative">
+            <button
+              onClick={() => setBulkMenuOpen((open) => !open)}
+              className="p-1.5 rounded-[8px] text-text-3/70 hover:text-text-2 hover:bg-white/[0.04]
+                cursor-pointer transition-all bg-transparent border-none"
+              title="More actions"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="1.75" />
+                <circle cx="12" cy="12" r="1.75" />
+                <circle cx="19" cy="12" r="1.75" />
+              </svg>
+            </button>
+            <Dropdown open={bulkMenuOpen} onClose={() => setBulkMenuOpen(false)}>
+              <DropdownItem onClick={async () => {
+                setBulkMenuOpen(false)
+                if (!window.confirm(`Delete ${filtered.length} chat${filtered.length === 1 ? '' : 's'}?`)) return
+                await clearSessions(filtered.map((s) => s.id))
+                toast.success(`${filtered.length} chat${filtered.length === 1 ? '' : 's'} deleted`)
+              }}>
+                Clear filtered chats
+              </DropdownItem>
+            </Dropdown>
+          </div>
         )}
       </div>
 

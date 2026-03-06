@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { loadSessions, saveSessions, deleteSession, active, loadAgents } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import { resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -17,6 +18,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const linkedAgent = nextAgentId ? loadAgents()[nextAgentId] : null
+  const linkedRoute = linkedAgent ? resolvePrimaryAgentRoute(linkedAgent) : null
 
   if (updates.name !== undefined) sessions[id].name = updates.name
   if (updates.cwd !== undefined) sessions[id].cwd = updates.cwd
@@ -24,10 +26,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   else if (agentIdUpdateProvided && linkedAgent?.provider) sessions[id].provider = linkedAgent.provider
 
   if (updates.model !== undefined) sessions[id].model = updates.model
+  else if (agentIdUpdateProvided && linkedRoute?.model) sessions[id].model = linkedRoute.model
   else if (agentIdUpdateProvided && linkedAgent?.model !== undefined) sessions[id].model = linkedAgent.model
 
   if (updates.credentialId !== undefined) sessions[id].credentialId = updates.credentialId
+  else if (agentIdUpdateProvided && linkedRoute) sessions[id].credentialId = linkedRoute.credentialId ?? null
   else if (agentIdUpdateProvided && linkedAgent) sessions[id].credentialId = linkedAgent.credentialId ?? null
+
+  if (updates.fallbackCredentialIds !== undefined) sessions[id].fallbackCredentialIds = updates.fallbackCredentialIds
+  else if (agentIdUpdateProvided && linkedRoute) sessions[id].fallbackCredentialIds = [...linkedRoute.fallbackCredentialIds]
+
+  if (updates.gatewayProfileId !== undefined) sessions[id].gatewayProfileId = updates.gatewayProfileId
+  else if (agentIdUpdateProvided && linkedRoute) sessions[id].gatewayProfileId = linkedRoute.gatewayProfileId ?? null
 
   if (updates.plugins !== undefined) sessions[id].plugins = updates.plugins
   else if (agentIdUpdateProvided && linkedAgent) sessions[id].plugins = Array.isArray(linkedAgent.plugins) ? linkedAgent.plugins : []
@@ -37,6 +47,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       updates.provider || sessions[id].provider,
       updates.apiEndpoint,
     )
+  } else if (agentIdUpdateProvided && linkedRoute) {
+    sessions[id].apiEndpoint = linkedRoute.apiEndpoint ?? null
   } else if (agentIdUpdateProvided && linkedAgent) {
     sessions[id].apiEndpoint = normalizeProviderEndpoint(
       linkedAgent.provider,

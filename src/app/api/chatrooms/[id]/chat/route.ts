@@ -12,7 +12,8 @@ import {
   resolveAgentApiEndpoint,
   compactChatroomMessages,
   buildChatroomSystemPrompt,
-  buildSyntheticSession,
+  ensureSyntheticSession,
+  appendSyntheticSessionMessage,
   buildAgentSystemPromptForChatroom,
   buildHistoryForAgent,
   isMuted,
@@ -21,6 +22,7 @@ import { filterHealthyChatroomAgents } from '@/lib/server/chatroom-health'
 import { evaluateRoutingRules } from '@/lib/server/chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '@/lib/server/provider-health'
 import { applyAgentReactionsFromText } from '@/lib/server/chatroom-orchestration'
+import { resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
 import type { Chatroom, ChatroomMessage, Agent } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -150,9 +152,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           }
 
           // Pre-flight: check if the agent's provider is usable before attempting to stream
-          const providerInfo = getProvider(agent.provider)
-          const apiKey = resolveApiKey(agent.credentialId)
-          const resolvedEndpoint = resolveAgentApiEndpoint(agent)
+          const route = resolvePrimaryAgentRoute(agent)
+          const providerInfo = getProvider(route?.provider || agent.provider)
+          const apiKey = resolveApiKey(route?.credentialId || agent.credentialId)
+          const resolvedEndpoint = route?.apiEndpoint || resolveAgentApiEndpoint(agent)
           if (providerInfo?.requiresApiKey && !apiKey) {
             writeEvent({ t: 'cr_agent_start', agentId: agent.id, agentName: agent.name })
             writeEvent({ t: 'err', text: `${agent.name} has no API credentials configured`, agentId: agent.id, agentName: agent.name })
@@ -177,7 +180,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
               notify(`chatroom:${id}`)
             }
 
-            const syntheticSession = buildSyntheticSession(agent, id)
+            const syntheticSession = ensureSyntheticSession(agent, id)
+            syntheticSession.provider = route?.provider || syntheticSession.provider
+            syntheticSession.model = route?.model || syntheticSession.model
+            syntheticSession.credentialId = route?.credentialId ?? syntheticSession.credentialId ?? null
+            syntheticSession.fallbackCredentialIds = route?.fallbackCredentialIds || syntheticSession.fallbackCredentialIds || []
+            syntheticSession.gatewayProfileId = route?.gatewayProfileId ?? syntheticSession.gatewayProfileId ?? null
             syntheticSession.apiEndpoint = resolvedEndpoint
             const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent)
             const chatroomContext = buildChatroomSystemPrompt(freshChatroom, agents, agent.id)
@@ -186,6 +194,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
             // Use enriched context message for chained agents, or reply context + original text
             const messageForAgent = item.contextMessage || (replyContext + text)
+            appendSyntheticSessionMessage(syntheticSession.id, 'user', messageForAgent)
 
             let fullText = ''
             let agentError = ''
@@ -223,12 +232,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
             // Don't persist empty or error-only messages — they pollute chat history
             if (!responseText.trim() && agentError) {
+              appendSyntheticSessionMessage(syntheticSession.id, 'assistant', agentError)
               markProviderFailure(agent.provider, agentError)
               writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })
               return []
             }
 
             if (responseText.trim()) {
+              appendSyntheticSessionMessage(syntheticSession.id, 'assistant', responseText)
               const parsedMentions = parseMentions(responseText, agents, freshChatroom.agentIds)
               const chainedHealth = filterHealthyChatroomAgents(parsedMentions, agents)
               const newMentions = chainedHealth.healthyAgentIds

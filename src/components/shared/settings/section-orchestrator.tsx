@@ -67,6 +67,9 @@ export function OrchestratorSection({ appSettings, patchSettings, inputClass }: 
               onChange={(m) => patchSettings({ langGraphModel: m })}
               models={lgProviderInfo.models}
               defaultModels={lgProviderInfo.defaultModels}
+              credentialId={appSettings.langGraphCredentialId}
+              apiEndpoint={appSettings.langGraphEndpoint}
+              supportsDiscovery={lgProviderInfo.supportsModelDiscovery}
               className={`${inputClass} cursor-pointer`}
             />
           </div>

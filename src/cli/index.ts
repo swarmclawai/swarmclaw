@@ -2,6 +2,8 @@
 
 import { Command } from 'commander'
 import { pathToFileURL } from 'node:url'
+import fs from 'node:fs'
+import path from 'node:path'
 import {
   SETUP_PROVIDERS,
   DEFAULT_AGENTS,
@@ -33,7 +35,21 @@ const DEFAULT_BASE_URL =
   || process.env.SWARMCLAW_BASE_URL
   || 'http://localhost:3456'
 
-const DEFAULT_ACCESS_KEY = process.env.SWARMCLAW_ACCESS_KEY || ''
+function resolveDefaultAccessKey(cwd: string = process.cwd()): string {
+  const envKey = (
+    process.env.SWARMCLAW_ACCESS_KEY
+    || process.env.SWARMCLAW_API_KEY
+    || process.env.SC_ACCESS_KEY
+    || ''
+  ).trim()
+  if (envKey) return envKey
+
+  const keyFile = path.join(cwd, 'platform-api-key.txt')
+  if (!fs.existsSync(keyFile)) return ''
+  return fs.readFileSync(keyFile, 'utf8').trim()
+}
+
+const DEFAULT_ACCESS_KEY = resolveDefaultAccessKey()
 
 function normalizeBaseUrl(value: string): string {
   const trimmed = value.trim()
@@ -210,10 +226,10 @@ async function resolveSetupAccessKey(ctx: CliContext): Promise<{
   const firstTime = status?.firstTime === true
 
   if (firstTime) {
-    throw new Error('No access key provided. Read the generated key from the launch terminal or .env.local, then pass --key (or SWARMCLAW_ACCESS_KEY).')
+    throw new Error('No access key provided. Read the generated key from the launch terminal or .env.local, then pass --key, set SWARMCLAW_ACCESS_KEY / SWARMCLAW_API_KEY, or use platform-api-key.txt.')
   }
 
-  throw new Error('No access key provided. Pass --key (or SWARMCLAW_ACCESS_KEY).')
+  throw new Error('No access key provided. Pass --key, set SWARMCLAW_ACCESS_KEY / SWARMCLAW_API_KEY, or use platform-api-key.txt.')
 }
 
 function printResult(value: unknown, rawOutput: boolean): void {
@@ -1357,7 +1373,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       ? null
       : checkForUpdate(
           normalizeBaseUrl(process.env.SWARMCLAW_URL || process.env.SWARMCLAW_BASE_URL || 'http://localhost:3456'),
-          (process.env.SWARMCLAW_ACCESS_KEY || '').trim(),
+          resolveDefaultAccessKey(),
         )
 
     await program.parseAsync(['node', 'swarmclaw', ...argv])

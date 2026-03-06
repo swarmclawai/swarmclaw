@@ -510,12 +510,22 @@ class PluginManager {
     if (this.watcher) return
     try {
       this.ensurePluginDirs()
-      this.watcher = fs.watch(PLUGINS_DIR, (_eventType, filename) => {
+      const watcher = fs.watch(PLUGINS_DIR, (_eventType, filename) => {
         if (!filename || (!filename.endsWith('.js') && !filename.endsWith('.mjs'))) return
         this.loaded = false
         notify('plugins')
       })
-      this.watcher.unref?.()
+      watcher.on('error', (err: unknown) => {
+        log.warn('plugins', 'Plugin watcher disabled after runtime watch failure', {
+          error: err instanceof Error ? err.message : String(err),
+        })
+        if (this.watcher === watcher) {
+          try { watcher.close() } catch { /* ignore */ }
+          this.watcher = null
+        }
+      })
+      watcher.unref?.()
+      this.watcher = watcher
     } catch (err: unknown) {
       log.warn('plugins', 'Failed to watch plugins directory', {
         error: err instanceof Error ? err.message : String(err),

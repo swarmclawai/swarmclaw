@@ -24,9 +24,11 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 
 export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }: Props) {
   const [value, setValue] = useState('')
+  const [extrasOpen, setExtrasOpen] = useState(false)
   const { ref: textareaRef, resize } = useAutoResize()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const extrasRef = useRef<HTMLDivElement>(null)
   const pendingFiles = useChatStore((s) => s.pendingFiles)
   const addPendingFile = useChatStore((s) => s.addPendingFile)
   const removePendingFile = useChatStore((s) => s.removePendingFile)
@@ -36,6 +38,17 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
   const queuedMessages = useChatStore((s) => s.queuedMessages)
   const addQueuedMessage = useChatStore((s) => s.addQueuedMessage)
   const removeQueuedMessage = useChatStore((s) => s.removeQueuedMessage)
+
+  useEffect(() => {
+    if (!extrasOpen) return
+    const handler = (e: MouseEvent) => {
+      if (extrasRef.current && !extrasRef.current.contains(e.target as Node)) {
+        setExtrasOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [extrasOpen])
 
   // Draft persistence: restore on session change
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -61,6 +74,10 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
     if (!text && !pendingFiles.length) return
     // If streaming, queue the message instead of blocking
     if (streaming) {
+      if (pendingFiles.length > 0) {
+        toast.error('Wait for the current reply to finish before sending files.')
+        return
+      }
       if (text) {
         addQueuedMessage(text)
         setValue('')
@@ -133,24 +150,30 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
   return (
     <div className="shrink-0 px-4 md:px-12 lg:px-16 pb-4 pt-2 fixed bottom-0 left-0 right-0 z-20 bg-bg/95 backdrop-blur-md md:relative md:z-auto md:bg-transparent md:backdrop-blur-none"
       style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
-      <div>
+      <div className="relative" ref={extrasRef}>
         {streaming && (
-          <div className="flex justify-center py-2 mb-2">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-amber-500/15 bg-amber-500/[0.06] px-3.5 py-2">
+            <div className="min-w-0">
+              <div className="text-[12px] font-600 text-amber-300">Reply in progress</div>
+              <div className="text-[11px] text-amber-200/70">
+                New text sends queue automatically. File uploads wait for the current reply to finish.
+              </div>
+            </div>
             <button
               onClick={onStop}
-              className="px-6 py-2.5 rounded-pill border border-danger/20 bg-danger/[0.06]
-                text-danger text-[13px] font-600 cursor-pointer transition-all duration-200
-                active:scale-95 hover:bg-danger/[0.1] hover:border-danger/30"
+              className="px-4 py-2 rounded-pill border border-danger/20 bg-danger/[0.06]
+                text-danger text-[12px] font-600 cursor-pointer transition-all duration-200
+                active:scale-95 hover:bg-danger/[0.1] hover:border-danger/30 shrink-0"
               style={{ fontFamily: 'inherit' }}
             >
-              Stop generating
+              Stop
             </button>
           </div>
         )}
 
         {queuedMessages.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
-            <span className="label-mono text-amber-400/70">Queued</span>
+            <span className="label-mono text-amber-400/70">Sending next</span>
             {queuedMessages.map((msg, i) => (
               <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-amber-500/10 border border-amber-500/15 text-[12px] text-amber-300 font-mono max-w-[200px]">
                 <span className="truncate">{msg}</span>
@@ -195,91 +218,18 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
 
           <div className="flex items-center gap-1 px-4 pb-3.5">
             <button
-              onClick={() => fileInputRef.current?.click()}
+              type="button"
+              onClick={() => setExtrasOpen((open) => !open)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-[10px] border-none bg-transparent
                 text-text-3 text-[13px] cursor-pointer hover:text-text-2 hover:bg-white/[0.05] transition-all duration-200"
               style={{ fontFamily: 'inherit' }}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
               </svg>
-              <span className="hidden sm:inline">Attach</span>
+              <span className="hidden sm:inline">Add</span>
             </button>
-
-            <button
-              onClick={() => imageInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-[10px] border-none bg-transparent
-                text-text-3 text-[13px] cursor-pointer hover:text-text-2 hover:bg-white/[0.05] transition-all duration-200"
-              style={{ fontFamily: 'inherit' }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <polyline points="21 15 16 10 5 21" />
-              </svg>
-              <span className="hidden sm:inline">Image</span>
-            </button>
-
-            {/* Plugin Chat Actions */}
-            {pluginChatActions.map((action) => (
-              <Tooltip key={action.id}>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => {
-                      if (action.action === 'message') onSend(action.value)
-                      else if (action.action === 'link') window.open(action.value, '_blank')
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-[10px] border-none bg-emerald-500/[0.05]
-                      text-emerald-400 text-[13px] cursor-pointer hover:text-emerald-300 hover:bg-emerald-500/[0.1] transition-all duration-200"
-                    style={{ fontFamily: 'inherit' }}
-                  >
-                    {action.label}
-                  </button>
-                </TooltipTrigger>
-                {action.tooltip && <TooltipContent>{action.tooltip}</TooltipContent>}
-              </Tooltip>
-            ))}
-
-            {micSupported && (
-              <button
-                onClick={toggleRecording}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] border-none bg-transparent
-                  text-[13px] cursor-pointer transition-all duration-200
-                  ${recording ? 'text-danger' : 'text-text-3 hover:text-text-2 hover:bg-white/[0.05]'}`}
-                style={recording ? { animation: 'mic-pulse 1.5s ease-out infinite', fontFamily: 'inherit' } : { fontFamily: 'inherit' }}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <rect x="9" y="2" width="6" height="11" rx="3" />
-                  <path d="M5 10a7 7 0 0 0 14 0" />
-                  <line x1="12" y1="19" x2="12" y2="22" />
-                </svg>
-              </button>
-            )}
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => { useChatStore.getState().clearContext() }}
-                  disabled={streaming}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-[10px] border-none bg-transparent
-                    text-text-3 text-[13px] cursor-pointer hover:text-amber-400 hover:bg-amber-400/10 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none"
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <line x1="2" y1="12" x2="22" y2="12" />
-                    <polyline points="8 8 4 12 8 16" />
-                    <polyline points="16 8 20 12 16 16" />
-                  </svg>
-                  <span className="hidden sm:inline">New context</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={8}
-                className="bg-raised border border-white/[0.08] text-text shadow-[0_8px_32px_rgba(0,0,0,0.5)] rounded-[10px] px-3.5 py-2.5 max-w-[220px]">
-                <div className="font-display text-[12px] font-600 mb-0.5">New context window</div>
-                <div className="text-[11px] text-text-3 leading-[1.4]">Adds a marker — messages above it won&apos;t be sent to the AI. Nothing is deleted.</div>
-              </TooltipContent>
-            </Tooltip>
 
             <div className="flex-1" />
 
@@ -313,6 +263,105 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
             </button>
           </div>
         </div>
+
+        {extrasOpen && (
+          <div className="absolute left-0 bottom-[72px] w-[280px] max-w-[calc(100vw-2rem)] rounded-[16px] border border-white/[0.08] bg-raised/95 p-2 shadow-[0_18px_64px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+            <button
+              type="button"
+              onClick={() => {
+                setExtrasOpen(false)
+                fileInputRef.current?.click()
+              }}
+              className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] text-text-2 hover:bg-white/[0.05] cursor-pointer transition-colors"
+              style={{ fontFamily: 'inherit' }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+              Attach files
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setExtrasOpen(false)
+                imageInputRef.current?.click()
+              }}
+              className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] text-text-2 hover:bg-white/[0.05] cursor-pointer transition-colors"
+              style={{ fontFamily: 'inherit' }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+              Add image
+            </button>
+            {micSupported && (
+              <button
+                type="button"
+                onClick={() => {
+                  setExtrasOpen(false)
+                  toggleRecording()
+                }}
+                className={`flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] cursor-pointer transition-colors ${
+                  recording ? 'text-danger bg-danger/[0.06]' : 'text-text-2 hover:bg-white/[0.05]'
+                }`}
+                style={recording ? { animation: 'mic-pulse 1.5s ease-out infinite', fontFamily: 'inherit' } : { fontFamily: 'inherit' }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <rect x="9" y="2" width="6" height="11" rx="3" />
+                  <path d="M5 10a7 7 0 0 0 14 0" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+                {recording ? 'Stop microphone' : 'Use microphone'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setExtrasOpen(false)
+                void useChatStore.getState().clearContext()
+              }}
+              disabled={streaming}
+              className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] text-text-2 hover:bg-white/[0.05] cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ fontFamily: 'inherit' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <polyline points="8 8 4 12 8 16" />
+                <polyline points="16 8 20 12 16 16" />
+              </svg>
+              New context window
+            </button>
+            {pluginChatActions.length > 0 && (
+              <>
+                <div className="mx-2 my-1 h-px bg-white/[0.06]" />
+                <div className="px-3 pb-1 pt-1 text-[10px] font-700 uppercase tracking-[0.08em] text-text-3/50">
+                  Quick actions
+                </div>
+                {pluginChatActions.map((action) => (
+                  <Tooltip key={action.id}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExtrasOpen(false)
+                          if (action.action === 'message') onSend(action.value)
+                          else if (action.action === 'link') window.open(action.value, '_blank')
+                        }}
+                        className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] text-emerald-300 hover:bg-emerald-500/[0.08] cursor-pointer transition-colors"
+                        style={{ fontFamily: 'inherit' }}
+                      >
+                        {action.label}
+                      </button>
+                    </TooltipTrigger>
+                    {action.tooltip && <TooltipContent>{action.tooltip}</TooltipContent>}
+                  </Tooltip>
+                ))}
+              </>
+            )}
+          </div>
+        )}
 
         <input
           ref={fileInputRef}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
+import type { StreamingAgent } from '@/stores/use-chatroom-store'
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
 import { ChatroomMessageBubble } from './chatroom-message'
@@ -10,6 +11,7 @@ import { ChatroomTypingBar } from './chatroom-typing-bar'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { HeartbeatMoment, ActivityMoment, isNotableTool } from '@/components/chat/activity-moment'
+import { BottomSheet } from '@/components/shared/bottom-sheet'
 import type { Chatroom, ChatroomMessage, ChatroomMember, Agent } from '@/types'
 
 function navigateToAgent(agentId: string) {
@@ -50,14 +52,19 @@ function useAgentHeartbeat(agentId: string, onPulse: (id: string) => void) {
   useWs(topic, () => onPulseRef.current(agentId))
 }
 
-function AgentHeartbeatListeners({ agentIds, onPulse }: { agentIds: string[]; onPulse: (id: string) => void }) {
-  useAgentHeartbeat(agentIds[0] || '', onPulse)
-  useAgentHeartbeat(agentIds[1] || '', onPulse)
-  useAgentHeartbeat(agentIds[2] || '', onPulse)
-  useAgentHeartbeat(agentIds[3] || '', onPulse)
-  useAgentHeartbeat(agentIds[4] || '', onPulse)
-  useAgentHeartbeat(agentIds[5] || '', onPulse)
+function AgentHeartbeatListener({ agentId, onPulse }: { agentId: string; onPulse: (id: string) => void }) {
+  useAgentHeartbeat(agentId, onPulse)
   return null
+}
+
+function AgentHeartbeatListeners({ agentIds, onPulse }: { agentIds: string[]; onPulse: (id: string) => void }) {
+  return (
+    <>
+      {agentIds.map((agentId) => (
+        <AgentHeartbeatListener key={agentId} agentId={agentId} onPulse={onPulse} />
+      ))}
+    </>
+  )
 }
 
 const GROUP_THRESHOLD_MS = 2 * 60 * 1000
@@ -76,7 +83,6 @@ function dayLabel(ts: number): string {
 export function ChatroomView() {
   const currentChatroomId = useChatroomStore((s) => s.currentChatroomId)
   const chatrooms = useChatroomStore((s) => s.chatrooms)
-  const streaming = useChatroomStore((s) => s.streaming)
   const streamingAgents = useChatroomStore((s) => s.streamingAgents)
   const sendMessage = useChatroomStore((s) => s.sendMessage)
   const toggleReaction = useChatroomStore((s) => s.toggleReaction)
@@ -96,6 +102,7 @@ export function ChatroomView() {
   const [pinsExpanded, setPinsExpanded] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
   const [agentMoments, setAgentMoments] = useState<Record<string, MomentType>>({})
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
   const handleHeartbeatPulse = useCallback((agentId: string) => {
     setAgentMoments((prev) => ({ ...prev, [agentId]: { kind: 'heartbeat' } }))
@@ -157,7 +164,7 @@ export function ChatroomView() {
       ? (pinnedIds.map((pid) => chatroom.messages.find((m) => m.id === pid)).filter(Boolean) as ChatroomMessage[])
       : []
   ), [chatroom, pinnedIds])
-  const memberAgentIds = chatroom?.agentIds.slice(0, 6) || []
+  const memberAgentIds = chatroom?.agentIds || []
   const mutedCount = chatroom ? chatroom.agentIds.filter((agentId) => isAgentMuted(chatroom, agentId)).length : 0
   const adminCount = chatroom ? chatroom.agentIds.filter((agentId) => getMemberRole(chatroom, agentId) === 'admin').length : 0
   const lastReadAt = chatroom ? (lastReadTimestamps[chatroom.id] || 0) : 0
@@ -187,6 +194,10 @@ export function ChatroomView() {
     if (!chatroomId) return
     markChatRead(chatroomId)
   }, [chatroomId, markChatRead])
+
+  useEffect(() => {
+    setDetailsOpen(false)
+  }, [chatroomId])
 
   useEffect(() => {
     const node = scrollRef.current
@@ -298,6 +309,14 @@ export function ChatroomView() {
               </div>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+            className="xl:hidden shrink-0 rounded-[9px] border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-[11px] font-600 text-text-2 hover:bg-white/[0.06] cursor-pointer transition-colors"
+          >
+            Details
+          </button>
 
           <button
             onClick={() => {
@@ -435,98 +454,149 @@ export function ChatroomView() {
         <ChatroomInput
           agents={memberAgents}
           onSend={sendMessage}
-          disabled={streaming}
         />
       </div>
 
       <aside className="hidden xl:flex xl:w-[300px] xl:flex-col xl:border-l xl:border-white/[0.06] bg-surface/30">
-        <div className="px-4 py-4 border-b border-white/[0.06]">
-          <h3 className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Room Status</h3>
-          <div className="grid grid-cols-2 gap-2 mt-3">
-            {[
-              { label: 'Members', value: String(memberAgents.length), tone: 'text-text' },
-              { label: 'Active', value: String(streamingAgents.size), tone: 'text-sky-400' },
-              { label: 'Pinned', value: String(pinnedMessages.length), tone: 'text-amber-400' },
-              { label: 'Muted', value: String(mutedCount), tone: 'text-rose-400' },
-            ].map((item) => (
-              <div key={item.label} className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
-                <div className={`text-[18px] font-display font-700 tracking-[-0.02em] ${item.tone}`}>{item.value}</div>
-                <div className="text-[10px] text-text-3/50 uppercase tracking-[0.08em] mt-0.5">{item.label}</div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 space-y-1 text-[11px] text-text-3/65">
-            <div>Mode: {chatroom.chatMode === 'parallel' ? 'Parallel replies' : 'Sequential replies'}</div>
-            <div>Auto-address: {chatroom.autoAddress ? 'Enabled' : 'Off'}</div>
-            <div>Admins: {adminCount}</div>
-          </div>
-        </div>
+        <RoomDetailsPanel
+          chatroom={chatroom}
+          memberAgents={memberAgents}
+          streamingAgents={streamingAgents}
+          pinnedMessages={pinnedMessages}
+          mutedCount={mutedCount}
+          adminCount={adminCount}
+          onFocusMessage={focusMessage}
+        />
+      </aside>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          <section>
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Members</h4>
-              <span className="text-[11px] text-text-3/40">{memberAgents.length}</span>
+      <BottomSheet open={detailsOpen} onClose={() => setDetailsOpen(false)}>
+        <RoomDetailsPanel
+          chatroom={chatroom}
+          memberAgents={memberAgents}
+          streamingAgents={streamingAgents}
+          pinnedMessages={pinnedMessages}
+          mutedCount={mutedCount}
+          adminCount={adminCount}
+          onFocusMessage={(messageId) => {
+            setDetailsOpen(false)
+            setTimeout(() => focusMessage(messageId), 50)
+          }}
+          compact
+        />
+      </BottomSheet>
+    </div>
+  )
+}
+
+function RoomDetailsPanel({
+  chatroom,
+  memberAgents,
+  streamingAgents,
+  pinnedMessages,
+  mutedCount,
+  adminCount,
+  onFocusMessage,
+  compact = false,
+}: {
+  chatroom: Chatroom
+  memberAgents: Agent[]
+  streamingAgents: Map<string, StreamingAgent>
+  pinnedMessages: ChatroomMessage[]
+  mutedCount: number
+  adminCount: number
+  onFocusMessage: (messageId: string) => void
+  compact?: boolean
+}) {
+  return (
+    <div className={`flex flex-col ${compact ? 'gap-5' : 'h-full'}`}>
+      <div className={compact ? '' : 'border-b border-white/[0.06] px-4 py-4'}>
+        <h3 className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Room Status</h3>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {[
+            { label: 'Members', value: String(memberAgents.length), tone: 'text-text' },
+            { label: 'Active', value: String(streamingAgents.size), tone: 'text-sky-400' },
+            { label: 'Pinned', value: String(pinnedMessages.length), tone: 'text-amber-400' },
+            { label: 'Muted', value: String(mutedCount), tone: 'text-rose-400' },
+          ].map((item) => (
+            <div key={item.label} className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+              <div className={`text-[18px] font-display font-700 tracking-[-0.02em] ${item.tone}`}>{item.value}</div>
+              <div className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-text-3/50">{item.label}</div>
             </div>
-            <div className="space-y-2">
-              {memberAgents.map((agent) => {
-                const role = getMemberRole(chatroom, agent.id)
-                const muted = isAgentMuted(chatroom, agent.id)
-                return (
-                  <button
-                    key={agent.id}
-                    onClick={() => navigateToAgent(agent.id)}
-                    className="w-full flex items-center gap-3 rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left hover:bg-white/[0.05] transition-all cursor-pointer"
-                    style={{ fontFamily: 'inherit' }}
-                  >
+          ))}
+        </div>
+        <div className="mt-3 space-y-1 text-[11px] text-text-3/65">
+          <div>Mode: {chatroom.chatMode === 'parallel' ? 'Parallel replies' : 'Sequential replies'}</div>
+          <div>Auto-address: {chatroom.autoAddress ? 'Enabled' : 'Off'}</div>
+          <div>Admins: {adminCount}</div>
+        </div>
+      </div>
+
+      <div className={compact ? 'space-y-4' : 'flex-1 overflow-y-auto px-4 py-4 space-y-4'}>
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Members</h4>
+            <span className="text-[11px] text-text-3/40">{memberAgents.length}</span>
+          </div>
+          <div className="space-y-2">
+            {memberAgents.map((agent) => {
+              const role = getMemberRole(chatroom, agent.id)
+              const muted = isAgentMuted(chatroom, agent.id)
+              return (
+                <button
+                  key={agent.id}
+                  onClick={() => navigateToAgent(agent.id)}
+                  className="w-full rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left hover:bg-white/[0.05] transition-all cursor-pointer"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <div className="flex items-center gap-3">
                     <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={26} status={streamingAgents.has(agent.id) ? 'busy' : 'online'} />
                     <div className="min-w-0 flex-1">
-                      <div className="text-[12px] font-600 text-text truncate">{agent.name}</div>
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        <span className="px-1.5 py-0.5 rounded-[5px] bg-white/[0.04] text-[10px] font-700 uppercase tracking-[0.08em] text-text-3/70">
+                      <div className="truncate text-[12px] font-600 text-text">{agent.name}</div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        <span className="rounded-[5px] bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-700 uppercase tracking-[0.08em] text-text-3/70">
                           {role}
                         </span>
                         {muted && (
-                          <span className="px-1.5 py-0.5 rounded-[5px] bg-rose-500/10 text-[10px] font-700 uppercase tracking-[0.08em] text-rose-400">
+                          <span className="rounded-[5px] bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-700 uppercase tracking-[0.08em] text-rose-400">
                             Muted
                           </span>
                         )}
                         {streamingAgents.has(agent.id) && (
-                          <span className="px-1.5 py-0.5 rounded-[5px] bg-sky-500/10 text-[10px] font-700 uppercase tracking-[0.08em] text-sky-400">
+                          <span className="rounded-[5px] bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-700 uppercase tracking-[0.08em] text-sky-400">
                             Active
                           </span>
                         )}
                       </div>
                     </div>
-                  </button>
-                )
-              })}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+
+        {pinnedMessages.length > 0 && (
+          <section>
+            <div className="mb-2 flex items-center justify-between">
+              <h4 className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Pinned</h4>
+              <span className="text-[11px] text-text-3/40">{pinnedMessages.length}</span>
+            </div>
+            <div className="space-y-2">
+              {pinnedMessages.slice(0, compact ? pinnedMessages.length : 4).map((message) => (
+                <button
+                  key={message.id}
+                  onClick={() => onFocusMessage(message.id)}
+                  className="w-full rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left hover:bg-white/[0.05] transition-all cursor-pointer"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <div className="text-[11px] font-700 text-accent-bright">{message.senderName}</div>
+                  <div className="mt-1 line-clamp-2 text-[12px] text-text-3">{message.text}</div>
+                </button>
+              ))}
             </div>
           </section>
-
-          {pinnedMessages.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Pinned</h4>
-                <span className="text-[11px] text-text-3/40">{pinnedMessages.length}</span>
-              </div>
-              <div className="space-y-2">
-                {pinnedMessages.slice(0, 4).map((message) => (
-                  <button
-                    key={message.id}
-                    onClick={() => focusMessage(message.id)}
-                    className="w-full rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left hover:bg-white/[0.05] transition-all cursor-pointer"
-                    style={{ fontFamily: 'inherit' }}
-                  >
-                    <div className="text-[11px] font-700 text-accent-bright">{message.senderName}</div>
-                    <div className="text-[12px] text-text-3 mt-1 line-clamp-2">{message.text}</div>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-      </aside>
+        )}
+      </div>
     </div>
   )
 }

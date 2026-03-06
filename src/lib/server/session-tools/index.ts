@@ -25,6 +25,7 @@ import { buildWalletTools } from './wallet'
 import { buildOpenClawWorkspaceTools } from './openclaw-workspace'
 import { buildScheduleTools } from './schedule'
 import { buildPlatformTools } from './platform'
+import { buildCrudTools } from './crud'
 import { buildSessionInfoTools } from './session-info'
 import { buildOpenClawNodeTools } from './openclaw-nodes'
 import { buildContextTools } from './context-mgmt'
@@ -179,6 +180,12 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       tools.push(...builtTools)
     }
 
+    const crudTools = buildCrudTools(bctx)
+    for (const toolEntry of crudTools) {
+      toolToPluginMap[toolEntry.name] = toolEntry.name
+    }
+    tools.push(...crudTools)
+
     // 2. Build Plugin Tools (Built-in + External)
     try {
       const pluginTools = pluginManager.getTools(activePlugins)
@@ -266,11 +273,34 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
           const normalized = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
           const toolId = normalized.toolId as string | undefined
           const reason = normalized.reason as string | undefined
+          if (!toolId?.trim()) {
+            return JSON.stringify({
+              error: 'toolId is required',
+              message: 'Specify the exact plugin ID to request access for.',
+            })
+          }
+          const { requestApprovalMaybeAutoApprove } = await import('../approvals')
+          const approval = await requestApprovalMaybeAutoApprove({
+            category: 'tool_access',
+            title: `Enable Plugin: ${toolId}`,
+            description: reason || `Agent is requesting access to "${toolId}".`,
+            data: { toolId, pluginId: toolId, reason: reason || '' },
+            agentId: ctx?.agentId,
+            sessionId: ctx?.sessionId,
+          })
+          if (approval.status === 'approved') {
+            return JSON.stringify({
+              type: 'tool_request',
+              toolId,
+              autoApproved: true,
+              message: `Tool access for "${toolId}" was granted. Proceed to use it directly.`,
+            })
+          }
           return JSON.stringify({
             type: 'tool_request',
             toolId,
             reason,
-            message: `Tool access request sent to user for "${toolId}". The user will be prompted to grant access — once granted, a follow-up message will arrive and you should immediately proceed with the original task using the newly available tool.`,
+            message: `Tool access request sent to user for "${toolId}". Once granted, continue immediately with the original task using the newly available tool.`,
           })
         },
         {

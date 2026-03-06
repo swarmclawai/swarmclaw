@@ -43,6 +43,85 @@ function buildPluginCapabilityLines(enabledPlugins: string[], opts?: { platformA
   return lines
 }
 
+export function buildToolDisciplineLines(enabledPlugins: string[]): string[] {
+  const uniqueTools = Array.from(new Set(enabledPlugins.filter(Boolean))).sort()
+  if (uniqueTools.length === 0) return []
+
+  const lines = [
+    `Enabled tools in this session: ${uniqueTools.map((toolId) => `\`${toolId}\``).join(', ')}.`,
+    'Only call tools from this enabled list or tools explicitly returned by the runtime.',
+  ]
+
+  const directPlatformTools = uniqueTools.filter((toolId) => toolId.startsWith('manage_') && toolId !== 'manage_platform')
+  if (directPlatformTools.length > 0 && !uniqueTools.includes('manage_platform')) {
+    lines.push(`Use direct platform tools exactly as named (${directPlatformTools.map((toolId) => `\`${toolId}\``).join(', ')}). Do not substitute \`manage_platform\` unless it is explicitly enabled.`)
+  }
+
+  if (uniqueTools.includes('files')) {
+    lines.push('For `files`, include an explicit action whenever possible. Common patterns: `{"action":"list","dirPath":"."}`, `{"action":"read","filePath":"path/to/file.md"}`, and `{"action":"write","files":[{"path":"path/to/file.md","content":"..."}]}`.')
+  }
+
+  if (uniqueTools.includes('shell')) {
+    lines.push('For `shell`, use `{"action":"execute","command":"..."}` for commands and `{"action":"status","processId":"..."}` or `{"action":"log","processId":"..."}` for long-lived processes.')
+  }
+
+  if (uniqueTools.includes('web')) {
+    lines.push('For `web`, use `{"action":"search","query":"..."}` to research and `{"action":"fetch","url":"https://..."}` to read a specific page.')
+  }
+
+  if (uniqueTools.includes('browser')) {
+    lines.push('For `browser`, when the task includes a literal URL, pass that exact URL string to `{"action":"navigate","url":"..."}`. Do not invent placeholder URLs like `[Your URL]`, `Example_URL`, or `MockMailPage_URL`.')
+    lines.push('For `browser` form work, prefer `{"action":"fill_form","fields":[{"element":"#email","value":"user@example.com"},{"element":"#password","value":"..."}]}`. A shorthand `form` object keyed by input id/name also works for simple forms.')
+  }
+
+  if (uniqueTools.includes('http_request')) {
+    lines.push('For `http_request`, send exact literal URLs from the task or from prior tool results. Keep JSON request bodies as raw JSON strings.')
+  }
+
+  if (uniqueTools.includes('email')) {
+    lines.push('For `email`, send mail with `{"action":"send","to":"user@example.com","subject":"...","body":"..."}`. If delivery depends on SMTP setup, check `{"action":"status"}` before claiming success.')
+  }
+
+  if (uniqueTools.includes('ask_human')) {
+    lines.push('For `ask_human`, when a workflow needs a code, approval, or out-of-band value from a person, do not guess or keep re-submitting blank forms. Use `{"action":"request_input","question":"..."}` and, for durable pauses, `{"action":"wait_for_reply","correlationId":"..."}`.')
+  }
+
+  return lines
+}
+
+export function looksLikeOpenEndedDeliverableTask(text: string): boolean {
+  const normalized = text.toLowerCase()
+  if (!normalized.trim()) return false
+  if (/```|package\.json|tsconfig|tsx?\b|jsx?\b|pytest|vitest|npm run|src\/|components\/|api\//.test(normalized)) return false
+  if (/\b(revise|revision|iterate|iteration|draft|deliverable|deliverables|offer|brief|copy|proposal|landing|outreach|plan|strategy|report|memo|document|docs?)\b/.test(normalized)) return true
+  return isBroadGoal(text) && /(\.md\b|\.txt\b|copy|brief|proposal|plan|report|draft|document)/.test(normalized)
+}
+
+function getExplicitRequiredToolNames(userMessage: string, enabledPlugins: string[]): string[] {
+  const normalized = userMessage.toLowerCase()
+  const required: string[] = []
+
+  if (enabledPlugins.includes('ask_human')
+    && (/\bask_human\b/.test(normalized) || /ask the human/.test(normalized) || /request_input/.test(normalized))) {
+    required.push('ask_human')
+  }
+
+  if (enabledPlugins.includes('email')
+    && (/\bemail\b/.test(normalized) || /send a welcome email/.test(normalized) || /send an email/.test(normalized))) {
+    required.push('email')
+  }
+
+  return required
+}
+
+const OPEN_ENDED_REVISION_BLOCK = [
+  '## Revision Loop',
+  'For open-ended deliverable work, do a real two-pass loop before declaring success: create the draft artifacts, critique them against the objective, then modify at least one artifact based on that critique.',
+  'A critique by itself does not count as iteration. Iteration requires an actual changed artifact.',
+  'When resuming in an existing workspace, inspect the current files first, then update them. Do not assume you lost access to the workspace without an explicit tool attempt.',
+  'If `files` is available, use it with explicit actions and paths to inspect and revise the artifacts.',
+].join('\n')
+
 /** Detect whether a user message is a broad, high-level goal that benefits from decomposition. */
 function isBroadGoal(text: string): boolean {
   if (text.length < 50) return false
@@ -75,6 +154,7 @@ function buildAgenticExecutionPolicy(opts: {
 }) {
   const hasTooling = opts.enabledPlugins.length > 0
   const pluginLines = buildPluginCapabilityLines(opts.enabledPlugins, { platformAssignScope: opts.platformAssignScope })
+  const toolDisciplineLines = buildToolDisciplineLines(opts.enabledPlugins)
 
   const parts: string[] = []
 
@@ -85,7 +165,8 @@ function buildAgenticExecutionPolicy(opts: {
       ? 'I take initiative — plan briefly, execute tools, evaluate, iterate until done. Never stop at advice when action is implied.'
       : 'No tools enabled. Be explicit about what tool access is needed.',
     'Follow through on stated intentions with tool calls. Never claim results without tool evidence.',
-    'If a tool is named explicitly, invoke it. Short progress updates between steps.',
+    'If a task explicitly names an enabled tool, use that tool before declaring success. A prose request is not a substitute for `ask_human`, and browser work is not a substitute for `email` delivery.',
+    'When `ask_human` is enabled, collect required human input through the tool instead of asking for it only in plain assistant text.',
     opts.loopMode === 'ongoing'
       ? 'Loop: ONGOING — keep iterating until done, blocked, or limits reached.'
       : 'Loop: BOUNDED — execute multiple steps but finish within recursion budget.',
@@ -103,14 +184,21 @@ function buildAgenticExecutionPolicy(opts: {
     'Execute by default — only ask for confirmation on high-risk/irreversible actions. Do not end every response with a question.',
     'Never repeat completed side effects. Verify state first.',
     'If a tool returns an error or validation failure, do not claim the task succeeded. Retry with corrected arguments or explain the blocker plainly.',
+    'Prefer the most specific tool you already have. Example: use `manage_schedules` for schedules and `manage_tasks` for tasks; treat `manage_platform` as a fallback umbrella only when a specific `manage_*` tool is unavailable.',
+    'For recurring, cron, interval, or follow-up automation requests, use `manage_schedules` directly when it is available.',
     'Delegation is optional, not a stopping condition. If one delegate backend is unavailable or unauthenticated, try another delegate backend or continue with your other tools.',
+    'If a required tool is missing, request access by name with `manage_capabilities` action `request_access` (for example `shell` or `manage_schedules`).',
     'Only mention files, screenshots, URLs, or download links that were actually returned by tools. Copy returned links exactly; do not rewrite them or prepend extra prefixes like "sandbox:".',
     `Heartbeat: if message is "${opts.heartbeatPrompt}", reply "HEARTBEAT_OK" unless you have a progress update.`,
     opts.heartbeatIntervalSec > 0 ? `Heartbeat cadence: ~${opts.heartbeatIntervalSec}s.` : '',
   )
 
+  if (toolDisciplineLines.length) parts.push('## Tool Discipline', ...toolDisciplineLines)
   if (pluginLines.length) parts.push('What I can do:\n' + pluginLines.join('\n'))
   if (opts.userMessage && isBroadGoal(opts.userMessage)) parts.push(GOAL_DECOMPOSITION_BLOCK)
+  if (opts.userMessage && looksLikeOpenEndedDeliverableTask(opts.userMessage) && opts.enabledPlugins.some((toolId) => toolId === 'files' || toolId === 'edit_file')) {
+    parts.push(OPEN_ENDED_REVISION_BLOCK)
+  }
 
   return parts.filter(Boolean).join('\n')
 }
@@ -506,13 +594,18 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   const MAX_AUTO_CONTINUES = 3
   const MAX_TRANSIENT_RETRIES = 2
+  const MAX_REQUIRED_TOOL_CONTINUES = 2
   let autoContinueCount = 0
   let transientRetryCount = 0
+  let requiredToolContinueCount = 0
+  const explicitRequiredToolNames = getExplicitRequiredToolNames(message, sessionPlugins)
+  const usedToolNames = new Set<string>()
 
   try {
-    const maxIterations = MAX_AUTO_CONTINUES + MAX_TRANSIENT_RETRIES
+    const maxIterations = MAX_AUTO_CONTINUES + MAX_TRANSIENT_RETRIES + MAX_REQUIRED_TOOL_CONTINUES
     for (let iteration = 0; iteration <= maxIterations; iteration++) {
-      let shouldContinue: 'recursion' | 'transient' | false = false
+      let shouldContinue: 'recursion' | 'transient' | 'required_tool' | false = false
+      let requiredToolReminderNames: string[] = []
       let waitingForToolResult = false
       let idleTimedOut = false
       let idleTimer: ReturnType<typeof setTimeout> | null = null
@@ -610,6 +703,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
             needsTextSeparator = true
             lastSegment = ''
             const toolName = event.name || 'unknown'
+            usedToolNames.add(toolName)
             const input = event.data?.input
             // Estimate input tokens for plugin invocation tracking
             const inputStr = typeof input === 'string' ? input : JSON.stringify(input)
@@ -723,6 +817,22 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         abortController.signal.removeEventListener('abort', onParentAbort)
       }
 
+      if (!shouldContinue && explicitRequiredToolNames.length > 0 && requiredToolContinueCount < MAX_REQUIRED_TOOL_CONTINUES) {
+        requiredToolReminderNames = explicitRequiredToolNames.filter((toolName) => !usedToolNames.has(toolName))
+        if (requiredToolReminderNames.length > 0) {
+          shouldContinue = 'required_tool'
+          requiredToolContinueCount++
+          write(`data: ${JSON.stringify({
+            t: 'status',
+            text: JSON.stringify({
+              requiredToolsPending: requiredToolReminderNames,
+              reminderCount: requiredToolContinueCount,
+              maxReminders: MAX_REQUIRED_TOOL_CONTINUES,
+            }),
+          })}\n\n`)
+        }
+      }
+
       if (!shouldContinue) break
 
       if (shouldContinue === 'recursion') {
@@ -731,6 +841,14 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
           langchainMessages.push(new AIMessage({ content: fullText }))
         }
         langchainMessages.push(new HumanMessage({ content: 'Continue where you left off. Complete the remaining steps of the objective.' }))
+        lastSegment = ''
+      } else if (shouldContinue === 'required_tool') {
+        if (fullText.trim()) {
+          langchainMessages.push(new AIMessage({ content: fullText }))
+        }
+        langchainMessages.push(new HumanMessage({
+          content: `You have not yet completed the required explicit tool step(s): ${requiredToolReminderNames.join(', ')}. Use those enabled tools now before declaring success. Do not replace ask_human with a plain-text request, and do not replace email delivery with browser work or prose.`,
+        }))
         lastSegment = ''
       } else if (shouldContinue === 'transient') {
         // Short delay before retrying transient errors (API timeout, rate limit, etc.)

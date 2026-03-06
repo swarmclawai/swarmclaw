@@ -70,13 +70,9 @@ Sessions:
 ```bash
 swarmclaw sessions list --raw
 ```
-- `swarmclaw sessions main-loop <id>` — inspect/trigger mission loop state for a background session
+- `swarmclaw sessions chat <id> --message "..."` — send a message to an existing session
 ```bash
-swarmclaw sessions main-loop <id> --json
-```
-- `swarmclaw sessions chat <id> --data '{"message":"..."}'` — send a message to an existing session
-```bash
-swarmclaw sessions chat <id> --data '{"message":"Give me a status update"}' --json
+swarmclaw sessions chat <id> --message "Give me a status update" --raw
 ```
 
 Memory:
@@ -95,9 +91,9 @@ swarmclaw setup doctor --raw
 
 Version:
 
-- `swarmclaw version get` — check current version and update status
+- `swarmclaw version check` — check current version and update status
 ```bash
-swarmclaw version get --json
+swarmclaw version check --raw
 ```
 
 ## Rules

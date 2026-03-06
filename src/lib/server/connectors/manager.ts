@@ -20,7 +20,7 @@ import {
   parseMentions,
   compactChatroomMessages,
   buildChatroomSystemPrompt,
-  buildSyntheticSession,
+  ensureSyntheticSession,
   buildAgentSystemPromptForChatroom,
   buildHistoryForAgent,
   resolveApiKey as resolveApiKeyHelper,
@@ -717,32 +717,38 @@ function applySessionSetting(session: ConnectorSession, keyRaw: string, valueRaw
     }
     return parsed
   }
+  const asEnum = <T extends string>(allowed: readonly T[], label: string): T | null => {
+    if (!value) return null
+    const normalized = value.toLowerCase()
+    if ((allowed as readonly string[]).includes(normalized)) return normalized as T
+    throw new Error(`Invalid ${label}. Use one of: ${allowed.join(', ')}.`)
+  }
 
   switch (key) {
     case 'think':
     case 'thinkinglevel':
-      session.connectorThinkLevel = value || null
+      session.connectorThinkLevel = asEnum(['minimal', 'low', 'medium', 'high'] as const, '/think level')
       return `Connector thinking level set to ${session.connectorThinkLevel || 'inherit'}.`
     case 'reply':
     case 'replymode':
-      session.connectorReplyMode = value || null
+      session.connectorReplyMode = asEnum(['off', 'first', 'all'] as const, 'reply mode')
       return `Reply mode set to ${session.connectorReplyMode || 'inherit'}.`
     case 'scope':
     case 'sessionscope':
-      session.connectorSessionScope = value || null
+      session.connectorSessionScope = asEnum(['main', 'channel', 'peer', 'channel-peer', 'thread'] as const, 'session scope')
       return `Session scope set to ${session.connectorSessionScope || 'inherit'}.`
     case 'thread':
     case 'threadbinding':
-      session.connectorThreadBinding = value || null
+      session.connectorThreadBinding = asEnum(['off', 'prefer', 'strict'] as const, 'thread binding')
       if (!value) {
         session.connectorContext = { ...(session.connectorContext || {}), threadId: null }
-      } else if (value === 'strict' && msg.threadId) {
+      } else if (session.connectorThreadBinding === 'strict' && msg.threadId) {
         session.connectorContext = { ...(session.connectorContext || {}), threadId: msg.threadId }
       }
       return `Thread binding set to ${session.connectorThreadBinding || 'inherit'}.`
     case 'group':
     case 'grouppolicy':
-      session.connectorGroupPolicy = value || null
+      session.connectorGroupPolicy = asEnum(['open', 'mention', 'reply-or-mention', 'disabled'] as const, 'group policy')
       return `Group policy set to ${session.connectorGroupPolicy || 'inherit'}.`
     case 'idle':
     case 'idletimeout':
@@ -783,10 +789,15 @@ function applySessionSetting(session: ConnectorSession, keyRaw: string, valueRaw
     case 'model':
       session.model = value
       return `Model set to ${session.model}.`
-    case 'provider':
-      session.provider = value
-      session.apiEndpoint = getProvider(value)?.defaultEndpoint || session.apiEndpoint || null
+    case 'provider': {
+      const provider = getProvider(value)
+      if (!provider) {
+        throw new Error(`Unknown provider "${value}".`)
+      }
+      session.provider = provider.id as Session['provider']
+      session.apiEndpoint = provider.defaultEndpoint || session.apiEndpoint || null
       return `Provider set to ${session.provider}.`
+    }
     default:
       throw new Error(`Unknown session setting "${keyRaw}".`)
   }
@@ -813,10 +824,10 @@ function evaluateGroupPolicy(params: {
 }
 
 function applyConnectorRuntimeDefaults(session: ConnectorSession, defaults: {
-  provider: string
+  provider: Session['provider']
   model: string
   apiEndpoint: string | null
-  thinkingLevel: string | null
+  thinkingLevel: Session['connectorThinkLevel']
 }): void {
   session.provider = defaults.provider
   session.model = defaults.model
@@ -832,7 +843,7 @@ function resolveDirectSession(params: {
   const { connector, msg, agent } = params
   const policySeed = resolveConnectorSessionPolicy(connector, msg)
   const providerInfo = policySeed.providerOverride ? getProvider(policySeed.providerOverride) : null
-  const defaultProvider = policySeed.providerOverride || (agent.provider === 'claude-cli' ? 'anthropic' : agent.provider)
+  const defaultProvider: Session['provider'] = providerInfo?.id || (agent.provider === 'claude-cli' ? 'anthropic' : agent.provider)
   const defaultModel = policySeed.modelOverride || agent.model
   const defaultApiEndpoint = agent.apiEndpoint || providerInfo?.defaultEndpoint || null
   const runtimeDefaults = {
@@ -1139,7 +1150,7 @@ async function handleConnectorCommand(params: {
     const policy = resolveConnectorSessionPolicy(connector, msg, session)
     const providerInfo = policy.providerOverride ? getProvider(policy.providerOverride) : null
     applyConnectorRuntimeDefaults(session, {
-      provider: policy.providerOverride || session.provider,
+      provider: providerInfo?.id || session.provider,
       model: policy.modelOverride || session.model,
       apiEndpoint: providerInfo?.defaultEndpoint || session.apiEndpoint || null,
       thinkingLevel: policy.thinkingLevel || session.connectorThinkLevel || null,
@@ -1179,7 +1190,7 @@ async function handleConnectorCommand(params: {
 
   if (command.name === 'think') {
     const requested = command.args.trim().toLowerCase()
-    const allowed = new Set(['minimal', 'low', 'medium', 'high'])
+    const allowed = new Set(['minimal', 'low', 'medium', 'high'] as const)
     if (!requested) {
       const policy = resolveConnectorSessionPolicy(connector, msg, session)
       const current = typeof policy.thinkingLevel === 'string' && allowed.has(policy.thinkingLevel)
@@ -1191,7 +1202,12 @@ async function handleConnectorCommand(params: {
       persistSession(session)
       return text
     }
-    if (!allowed.has(requested)) {
+    if (
+      requested !== 'minimal'
+      && requested !== 'low'
+      && requested !== 'medium'
+      && requested !== 'high'
+    ) {
       const text = 'Invalid /think level. Use one of: minimal, low, medium, high.'
       pushSessionMessage(session, 'user', inboundText)
       pushSessionMessage(session, 'assistant', text)
@@ -1234,7 +1250,7 @@ async function handleConnectorCommand(params: {
       const policy = resolveConnectorSessionPolicy(connector, msg, session)
       const providerInfo = policy.providerOverride ? getProvider(policy.providerOverride) : null
       applyConnectorRuntimeDefaults(session, {
-        provider: policy.providerOverride || session.provider,
+        provider: providerInfo?.id || session.provider,
         model: policy.modelOverride || session.model,
         apiEndpoint: providerInfo?.defaultEndpoint || session.apiEndpoint || null,
         thinkingLevel: policy.thinkingLevel || session.connectorThinkLevel || null,
@@ -1409,7 +1425,7 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
       continue
     }
 
-    const syntheticSession = buildSyntheticSession(agent, chatroomId)
+    const syntheticSession = ensureSyntheticSession(agent, chatroomId)
     const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent)
     const chatroomContext = buildChatroomSystemPrompt(freshChatroom, agents, agent.id)
     const fullSystemPrompt = [agentSystemPrompt, chatroomContext, threadContextBlock].filter(Boolean).join('\n\n')
@@ -2262,12 +2278,17 @@ export async function recordConnectorOutboundDelivery(params: {
     for (let i = history.length - 1; i >= 0; i -= 1) {
       const entry = history[i]
       if (entry?.role !== 'assistant') continue
-      const source = entry?.source || {}
+      const source: Partial<MessageSource> = entry?.source || {}
       if (source.connectorId !== connector.id) continue
       if (source.channelId !== params.inbound.channelId) continue
       if (!source.messageId && params.messageId) {
         entry.source = {
-          ...source,
+          platform: source.platform || connector.platform,
+          connectorId: source.connectorId || connector.id,
+          connectorName: source.connectorName || connector.name,
+          channelId: source.channelId || params.inbound.channelId,
+          senderId: source.senderId,
+          senderName: source.senderName,
           messageId: params.messageId,
           replyToMessageId: source.replyToMessageId || params.inbound.messageId,
           threadId: source.threadId || params.inbound.threadId,
@@ -2463,7 +2484,7 @@ export async function sendConnectorMessage(params: {
       for (let i = history.length - 1; i >= 0; i -= 1) {
         const entry = history[i]
         if (entry?.role !== 'assistant') continue
-        const source = entry?.source || {}
+        const source: Partial<MessageSource> = entry?.source || {}
         if (source.connectorId !== connectorId) continue
         if (source.channelId !== channelId) continue
         if (!source.messageId && result?.messageId) {
