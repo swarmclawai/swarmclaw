@@ -99,7 +99,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.7.2 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.7.3 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -249,6 +249,8 @@ src/
 | xAI (Grok) | api.x.ai | Grok 3, Grok 3 Fast, Grok 3 Mini |
 | Fireworks AI | api.fireworks.ai | DeepSeek R1, Llama 3.3 70B, Qwen 3 |
 
+If a provider is configured, SwarmClaw can populate the model dropdown from that provider’s advertised model list. For OpenAI this means the selector can auto-fill current OpenAI models, while still allowing users to type a newer or custom model manually if it is not in the fetched list yet.
+
 ### Local & Remote
 
 | Provider | Type | Notes |
@@ -301,13 +303,14 @@ Agents can use the following tools when enabled:
 | Edit File | Search-and-replace editing (exact match required) |
 | Web Search | Search the web via DuckDuckGo HTML scraping |
 | Web Fetch | Fetch and extract text content from URLs (uses cheerio) |
-| CLI Delegation | Delegate complex tasks to Claude Code, Codex CLI, OpenCode CLI, or Gemini CLI |
-| Spawn Subagent | Delegate a sub-task to another agent and capture its response in the current run |
-| Browser | Playwright-powered web browsing via MCP (navigate, click, type, screenshot, PDF) |
+| CLI Delegation | Delegate complex tasks to Claude Code, Codex CLI, OpenCode CLI, or Gemini CLI, either inline or as a background job handle |
+| Spawn Subagent | Delegate a sub-task to another agent with `status` / `list` / `wait` / `cancel` handles and inherited browser state when needed |
+| Browser | Playwright-powered web browsing via MCP with persistent profiles, structured page reads, form helpers, verification actions, and resumable state |
 | Canvas | Present/hide/snapshot live HTML content in a chat canvas panel |
 | HTTP Request | Make direct API calls with method, headers, body, redirect control, and timeout |
 | Git | Run structured git subcommands (`status`, `diff`, `log`, `add`, `commit`, `push`, etc.) with repo safety checks |
 | Memory | Store and retrieve long-term memories with FTS5 + vector search, file references, image attachments, and linked memory graph traversal |
+| Monitor | Inspect system state and create durable watches over files, endpoints, tasks, webhooks, and page/content changes (`monitor_tool`) |
 | Wallet | Manage an agent-linked Solana wallet (`wallet_tool`) to check balance/address, send SOL (limits + approval), and review transaction history |
 | Image Generation | Generate images from prompts (`generate_image`) via OpenAI, Stability, Replicate, fal.ai, Together, Fireworks, BFL, or custom endpoints; saved to uploads |
 | Email | Send outbound email via SMTP (`email`) with `send`/`status` actions |
@@ -324,7 +327,7 @@ Agents with platform tools enabled can manage the SwarmClaw instance:
 | Manage Agents | List, create, update, delete agents |
 | Manage Tasks | Create and manage task board items with agent assignment |
 | Manage Schedules | Create cron, interval, or one-time scheduled jobs |
-| Reminders | Schedule a conversational wake event in the current chat (`schedule_wake`) |
+| Reminders | Schedule a durable conversational wake event in the current chat (`schedule_wake`) |
 | Manage Skills | List, create, update reusable skill definitions |
 | Manage Documents | Upload/search/get/delete indexed docs for lightweight RAG workflows |
 | Manage Webhooks | Register external webhook endpoints that trigger agent chats |
@@ -440,9 +443,9 @@ Agents and chats can have **fallback credentials**. If the primary API key gets 
 
 ## Plugin System
 
-SwarmClaw features a powerful, modular plugin system designed for both agent enhancement and application extensibility. It is fully compatible with the **OpenClaw** plugin format.
+SwarmClaw features a modular plugin system for agent capabilities, UI extensions, provider/connectors, and post-turn automation. It supports the native SwarmClaw hook/tool format and the **OpenClaw** register/activate formats.
 
-Plugins can be managed in **Settings → Plugins** and installed via the Marketplace, URL, or by dropping `.js` files into `data/plugins/`.
+Plugins can be managed in **Settings → Plugins** and installed via the Marketplace, HTTPS URL, or by dropping `.js` / `.mjs` files into `data/plugins/`.
 
 Docs:
 - Full docs: https://swarmclaw.ai/docs
@@ -453,17 +456,30 @@ Docs:
 Unlike standard tool systems, SwarmClaw plugins can modify the application itself:
 
 - **Agent Tools**: Define custom tools that agents can autonomously discover and use.
-- **Lifecycle Hooks**: Intercept events like `beforeAgentStart`, `afterToolExec`, and `onMessage`.
+- **Lifecycle Hooks**: Intercept events like `beforeAgentStart`, `beforeToolExec`, `afterToolExec`, `afterChatTurn`, and `onMessage`.
 - **UI Extensions**:
   - `sidebarItems`: Inject new navigation links into the main sidebar.
   - `headerWidgets`: Add status badges or indicators to the chat header (e.g., Wallet Balance).
   - `chatInputActions`: Add custom action buttons next to the chat input (e.g., "Quick Scan").
   - `plugin-ui` Messages: Render rich, interactive React cards in the chat stream.
 - **Deep Chat Hooks**:
-  - `transformInboundMessage`: Modify user messages before they reach the agent.
-  - `transformOutboundMessage`: Modify agent responses before they are saved or displayed.
+  - `transformInboundMessage`: Modify user messages before they reach the agent runtime.
+  - `transformOutboundMessage`: Modify agent responses before they are persisted or displayed.
+  - `beforeToolExec`: Can rewrite tool input before the selected tool executes.
 - **Custom Providers**: Add new LLM backends (e.g., a specialized local model or a new API).
 - **Custom Connectors**: Build new chat platform bridges (e.g., a proprietary internal messenger).
+- **Per-plugin Settings**: Declare `ui.settingsFields` and read/write them via `/api/plugins/settings`. Fields marked `type: 'secret'` are encrypted at rest.
+
+### Canonical Plugin IDs
+
+Built-in capabilities now resolve to a single canonical plugin family ID across agent configs, policy rules, approvals, and the Plugins UI. Legacy aliases still work, but the canonical IDs are what you should document and store going forward.
+
+- `manage_sessions` instead of `session_info`
+- `manage_connectors` instead of `connectors`
+- `http_request` instead of `http`
+- `spawn_subagent` instead of `subagent`
+- `manage_chatrooms` instead of `chatroom`
+- `schedule_wake` instead of `schedule`
 
 ### Autonomous Capability Discovery
 
@@ -494,12 +510,51 @@ module.exports = {
 };
 ```
 
+Hook signatures of note:
+
+- `beforeToolExec({ toolName, input })` may return a replacement input object.
+- `afterToolExec({ session, toolName, input, output })` observes completed tool executions.
+- `transformInboundMessage({ session, text })` and `transformOutboundMessage({ session, text })` run sequentially across enabled plugins.
+
+### Building Plugins
+
+The shortest reliable workflow for a new plugin:
+
+1. Create a focused `.js` or `.mjs` file under `data/plugins/`.
+2. Export `name`, `description`, any `hooks`, and optional `tools` / `ui.settingsFields`.
+3. Keep tool outputs structured when the agent needs to chain them into later steps.
+4. Use `settingsFields` for secrets or environment-specific values instead of hardcoding them.
+5. Enable the plugin in **Settings → Plugins** and test both the tool path and any hook behavior.
+6. If you host it remotely, install from a stable HTTPS URL so SwarmClaw can record source metadata and update it later.
+
+A fuller step-by-step walkthrough lives at https://swarmclaw.ai/docs/plugin-tutorial.
+
 ### Lifecycle Management
 
 - **Versioning**: All plugins support semantic versioning (e.g., `v1.2.3`).
-- **Updates**: Plugins can be updated individually or in bulk via the Plugins manager.
-- **Hot-Reload**: The system automatically reloads plugin logic when a file is updated or a new plugin is installed.
-- **Stability Guardrails**: Consecutive plugin failures are tracked in `data/plugin-failures.json`; failing plugins are auto-disabled, a warning notification is emitted in-app, and users can re-enable manually from the Plugins manager.
+- **Updates**: External plugins installed from a recorded source URL can be updated individually or in bulk via the Plugins manager. Built-ins update with the app release.
+- **Hot Reload**: Changes inside `data/plugins/` invalidate the plugin registry automatically, and installs/updates trigger an immediate reload.
+- **Stability Guardrails**: Consecutive plugin failures are tracked in `data/plugin-failures.json`; failing external plugins are auto-disabled, a warning notification is emitted in-app, and users can re-enable manually from the Plugins manager.
+- **Source Metadata**: Marketplace/URL installs record the normalized source URL and source hash in `data/plugins.json`.
+- **Settings Safety**: Plugin settings are validated against declared `settingsFields`; unknown keys are ignored and `secret` values are stored encrypted.
+
+### Browser, Watch, and Delegation Upgrades
+
+- **Persistent Browser Profiles**: The built-in `browser` plugin now keeps a reusable profile per chat/session, and subagents inherit the parent profile by default. Profiles live under `~/.swarmclaw/browser-profiles` unless you override `BROWSER_PROFILES_DIR`, so cookies, storage, and authenticated state survive longer-running work without polluting the project tree. Browser state is exposed at `GET /api/chats/[id]/browser`.
+- **Higher-Level Browser Actions**: In addition to raw Playwright-style actions, `browser` supports workflow-oriented actions such as `read_page`, `extract_links`, `extract_form_fields`, `extract_table`, `fill_form`, `submit_form`, `scroll_until`, `download_file`, `complete_web_task`, `verify_text`, `verify_element`, `verify_list`, `verify_value`, `profile`, and `reset_profile`.
+- **Structured Browser State**: Browser sessions persist recent observations, tabs, artifacts (screenshots / PDFs / downloads), current URL, and last errors in `browser_sessions`, which makes autonomous browser tasks easier to resume, inspect, and hand off across turns.
+- **Durable Watches**: `schedule_wake` now uses persisted watch jobs instead of an in-memory timer, and `monitor_tool` supports `create_watch`, `list_watches`, `get_watch`, and `cancel_watch` across `time`, `http`, `file`, `task`, `webhook`, and `page` conditions. The same watch system also powers the new `mailbox`, session-mailbox, and approval waits used by human-loop flows. Watches support common checks like status/status sets, regex or text matches, content changes, existence checks, inbound mailbox correlation IDs, and webhook event filters.
+- **Long-Running Delegation Handles**: `delegate` and `spawn_subagent` support handle-based flows instead of only synchronous final text. Use `background=true` or `waitForCompletion=false` to launch long-running work, then inspect or stop it with `action=status|list|wait|cancel`.
+- **Delegation Job Persistence**: Delegate and subagent runs are recorded in `delegation_jobs` with checkpoints, backend/session metadata, resume IDs, child session IDs, and terminal-status recovery after daemon restarts. Late completions no longer overwrite cancelled jobs.
+
+### New Primitive Plugins
+
+- **Mailbox / Inbox Automation**: The built-in `mailbox` plugin adds IMAP/SMTP inbox access with `status`, `list_messages`, `list_threads`, `search_messages`, `read_message`, `download_attachment`, `reply`, and `wait_for_email`. It supports durable inbound-email waits and reuses plugin settings / connector config where possible. Configure it in **Settings → Plugins** with `imapHost`, `smtpHost`, `user`, `password`, and optional reply defaults.
+- **Human-in-the-Loop Requests**: The built-in `ask_human` plugin provides `request_input`, `request_approval`, `wait_for_reply`, `wait_for_approval`, `list_mailbox`, `ack_mailbox`, and `status`. It is backed by session mailbox envelopes plus approval records so agents can pause and resume on real human responses instead of polling ad hoc state.
+- **Document Parsing / OCR**: The built-in `document` plugin adds `read`, `metadata`, `ocr`, `extract_tables`, `store`, `list`, `search`, `get`, and `delete`. It uses the shared document extraction helpers for PDFs, Office docs, OCR-able images, HTML, CSV/TSV/XLSX, ZIP inspection, and plain text files.
+- **Schema-Driven Extraction**: The built-in `extract` plugin adds `extract_structured` and `summarize`, using the current session model/provider to turn raw text or local files into validated JSON objects. This is the primitive to combine with browser / document / crawl output when an agent needs structured records instead of prose.
+- **Tabular Data Operations**: The built-in `table` plugin adds `read`, `load_csv`, `load_xlsx`, `summarize`, `filter`, `sort`, `group`, `pivot`, `dedupe`, `join`, and `write`. It operates on CSV, TSV, JSON array-of-objects, or XLSX inputs without forcing agents to drop into shell or Python for basic spreadsheet work, and transformed tables can be persisted with `outputPath` / `saveTo`.
+- **Multi-Page Crawling**: The built-in `crawl` plugin adds `crawl_site`, `follow_pagination`, `extract_sitemap`, `dedupe_pages`, and `batch_extract`. It handles BFS-style same-origin site traversal, accepts either a fresh start URL or an explicit page list, and can hand the aggregate page set directly into structured extraction for research-heavy autonomous tasks.
 
 ## Deploy to a VPS
 
@@ -600,7 +655,7 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example patch release (v0.7.2 style)
+# example patch release (v0.7.3 style)
 npm version patch
 git push origin main --follow-tags
 ```
@@ -610,16 +665,16 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.7.2 Release Readiness Notes
+#### v0.7.3 Release Readiness Notes
 
-Before shipping `v0.7.2`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.7.3`, confirm the following user-facing changes are reflected in docs:
 
-1. `sessions` → `chats` naming is consistent in README, site docs, and CLI/API examples.
-2. New built-in plugins/tools are documented (`image_gen`, `email`, `calendar`) including settings expectations.
-3. Plugin settings support is documented (`settingsFields`, `/api/plugins/settings` read/write endpoints).
-4. Usage telemetry docs include plugin rollups (`byPlugin`) and plugin token usage dashboard context.
-5. Gemini CLI delegation support and `geminiResumeId` task metadata are documented where CLI sessions are described.
-6. Site release notes include a `v0.7.2` section and docs index points to the current release notes version.
+1. New primitive plugins are documented in README and site docs: `mailbox`, `ask_human`, `document`, `extract`, `table`, and `crawl`.
+2. Browser persistence, higher-level browser actions, durable watch jobs, and delegation handles are covered in docs.
+3. Plugin docs mention canonical built-in IDs, source-backed installs/updates, hot reload, and encrypted `secret` settings.
+4. The plugin tutorial reflects the current hook behavior, including `beforeToolExec` input rewriting and `settingsFields`.
+5. Site install/version strings are updated to `v0.7.3`, including the release notes index, install snippets, and sidebar footer.
+6. Provider docs mention that configured OpenAI models can populate the model dropdown while still allowing custom/manual entries.
 
 ## CLI
 
