@@ -136,10 +136,12 @@ export function ChatArea() {
       if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
       setMessagesLoading(false)
     })
-    // If server reports session is still active, show streaming state
-    if (session?.active) {
+
+    const sessionAtLoad = useAppStore.getState().sessions[requestedSessionId]
+    if (sessionAtLoad?.active) {
       useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamText: '' })
     }
+
     // Refresh active state from server so returning to a session restores typing indicator.
     loadSessions().then(() => {
       if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
@@ -148,6 +150,7 @@ export function ChatArea() {
         useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamText: '' })
       }
     }).catch((err) => console.error('Failed to refresh messages:', err))
+
     devServer(requestedSessionId, 'status').then((r) => {
       if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
       setDevServer(r.running ? r : null)
@@ -155,23 +158,31 @@ export function ChatArea() {
       if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
       setDevServer(null)
     })
-    // Check browser status
-    if (sessionHasBrowserPlugin) {
-      checkBrowser(requestedSessionId).then((r) => {
-        if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
-        setBrowserActive(r.active)
-      }).catch((err) => {
-        if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
-        console.error('Browser check failed:', err)
-        setBrowserActive(false)
-      })
-    } else {
-      setBrowserActive(false)
-    }
+
     return () => {
       cancelled = true
     }
-  }, [loadSessions, session?.active, sessionHasBrowserPlugin, sessionId, setDevServer, setMessages])
+  }, [loadSessions, sessionId, setDevServer, setMessages])
+
+  useEffect(() => {
+    if (!sessionId) return
+    let cancelled = false
+    if (!sessionHasBrowserPlugin) {
+      setBrowserActive(false)
+      return
+    }
+    checkBrowser(sessionId).then((r) => {
+      if (cancelled || useAppStore.getState().currentSessionId !== sessionId) return
+      setBrowserActive(r.active)
+    }).catch((err) => {
+      if (cancelled || useAppStore.getState().currentSessionId !== sessionId) return
+      console.error('Browser check failed:', err)
+      setBrowserActive(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionHasBrowserPlugin, sessionId])
 
   // Auto-poll messages for sessions that are actively running on the server
   const isServerActive = session?.active === true
@@ -216,10 +227,16 @@ export function ChatArea() {
     shouldPollMessages ? 2000 : undefined,
   )
 
-  // When server-active flag drops, stop the streaming indicator
+  // Keep the local typing indicator aligned with the server's active state
   useEffect(() => {
     if (!sessionId) return
     const state = useChatStore.getState()
+    if (isServerActive) {
+      if (!state.streaming && !state.streamText) {
+        useChatStore.setState({ streaming: true, streamingSessionId: sessionId, streamText: '' })
+      }
+      return
+    }
     if (
       !isServerActive
       && state.streaming
@@ -230,7 +247,7 @@ export function ChatArea() {
       fetchMessages(sessionId).then(setMessages).catch(() => {})
       useChatStore.setState({ streaming: false, streamingSessionId: null, streamText: '' })
     }
-  }, [isServerActive, sessionId])
+  }, [isServerActive, sessionId, setMessages])
 
   // Poll browser status while session has browser tools
   const hasBrowserTool = session?.plugins?.includes('browser')
@@ -255,7 +272,7 @@ export function ChatArea() {
     if (!sessionId) return
     await devServer(sessionId, 'stop')
     setDevServer(null)
-  }, [sessionId])
+  }, [sessionId, setDevServer])
 
   const handleClear = useCallback(async () => {
     setConfirmClear(false)
@@ -263,7 +280,7 @@ export function ChatArea() {
     await clearMessages(sessionId)
     setMessages([])
     loadSessions()
-  }, [sessionId])
+  }, [loadSessions, sessionId, setMessages])
 
   const handleDelete = useCallback(async () => {
     setConfirmDelete(false)
@@ -271,7 +288,7 @@ export function ChatArea() {
     await deleteChat(sessionId)
     removeSessionFromStore(sessionId)
     setCurrentSession(null)
-  }, [sessionId])
+  }, [removeSessionFromStore, sessionId, setCurrentSession])
 
   const handlePrompt = useCallback((text: string) => {
     sendMessage(text)

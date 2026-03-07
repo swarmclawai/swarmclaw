@@ -46,6 +46,44 @@ export function CapabilityPolicySection({ appSettings, patchSettings, inputClass
         </div>
 
         <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-[12px] border border-white/[0.06] bg-bg px-4 py-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-[12px] font-600 text-text-2">Task Management</div>
+                  <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">
+                    Controls the task board and agent access to durable backlog tracking. Internal queue execution still works underneath.
+                  </p>
+                </div>
+                <button
+                  onClick={() => patchSettings({ taskManagementEnabled: !(appSettings.taskManagementEnabled ?? true) })}
+                  className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${(appSettings.taskManagementEnabled ?? true) ? 'bg-accent' : 'bg-white/[0.12]'}`}
+                  aria-label="Toggle task management"
+                >
+                  <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${(appSettings.taskManagementEnabled ?? true) ? 'translate-x-[18px]' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-[12px] border border-white/[0.06] bg-bg px-4 py-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-[12px] font-600 text-text-2">Project Management</div>
+                  <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">
+                    Controls the project operating-system UI and agent access to durable project context for objectives, credentials, and heartbeat plans.
+                  </p>
+                </div>
+                <button
+                  onClick={() => patchSettings({ projectManagementEnabled: !(appSettings.projectManagementEnabled ?? true) })}
+                  className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${(appSettings.projectManagementEnabled ?? true) ? 'bg-accent' : 'bg-white/[0.12]'}`}
+                  aria-label="Toggle project management"
+                >
+                  <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${(appSettings.projectManagementEnabled ?? true) ? 'translate-x-[18px]' : ''}`} />
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="rounded-[12px] border border-white/[0.06] bg-bg px-4 py-4">
             <div className="flex items-center justify-between gap-4">
               <div>

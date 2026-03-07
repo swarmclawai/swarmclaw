@@ -148,7 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.7.7 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.7.8 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -701,7 +701,7 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example patch release (v0.7.7 style)
+# example patch release (v0.7.8 style)
 npm version patch
 git push origin main --follow-tags
 ```
@@ -711,15 +711,16 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.7.7 Release Readiness Notes
+#### v0.7.8 Release Readiness Notes
 
-Before shipping `v0.7.7`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.7.8`, confirm the following user-facing changes are reflected in docs:
 
-1. OpenClaw docs cover Smart Deploy end-to-end: onboarding, Providers, gateway editor, official-only SSH/VPS flows, safe exposure presets, and restore/backup lifecycle controls.
-2. Agent and provider docs explain gateway routing by tags/use-case, richer external runtime visibility, and import/export/clone flows for saved gateways.
-3. Site and README install/version strings are updated to `v0.7.7`, including install snippets, release notes index text, and sidebar/footer labels.
-4. Release notes summarize the user-visible operator changes from the current worktree, especially SSH deploy, remote lifecycle controls, routing preferences, and onboarding persistence.
-5. CLI docs include the expanded `openclaw deploy-*`, `openclaw remote-*`, and verify surfaces and do not reference removed or unofficial deployment paths.
+1. Project docs explain the new project operating-system fields: objective, audience, pilot priorities, open objectives, credential requirements, success metrics, and heartbeat prompt/interval.
+2. Task and approval docs cover the new approval controls, task/project management toggles, and durable task continuation behavior (`continueFromTaskId`, dependency blocking, and session resume reuse).
+3. Connector/operator docs mention automatic connector recovery on disconnect or dev-server restart, including bounded exponential backoff instead of silent disablement.
+4. Chat/runtime docs note the project-aware agent context, Gemini resume-handle visibility, and improved web/connector input handling where relevant.
+5. Site and README install/version strings are updated to `v0.7.8`, including install snippets, release notes index text, and sidebar/footer labels.
+6. Release notes summarize the user-visible changes from the current worktree, especially project operating context, approval/task controls, connector resilience, and chat/runtime polish.
 
 ## CLI
 

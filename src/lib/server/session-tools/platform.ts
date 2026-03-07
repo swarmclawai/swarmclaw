@@ -2,9 +2,13 @@ import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { buildCrudTools } from './crud'
 import type { ToolBuildContext } from './context'
-import type { Plugin, PluginHooks } from '@/types'
+import type { Plugin, PluginHooks, Session } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { loadSettings } from '../storage'
+import { resolveSessionToolPolicy } from '../tool-capability-policy'
+import { loadRuntimeSettings } from '../runtime-settings'
+import { expandPluginIds } from '../tool-aliases'
 
 function parsePlatformData(value: unknown): Record<string, unknown> | null {
   if (!value) return null
@@ -39,6 +43,7 @@ function normalizePlatformResourceName(value: unknown): string | undefined {
   if (!normalized) return undefined
   const singularMap: Record<string, string> = {
     agent: 'agents',
+    project: 'projects',
     task: 'tasks',
     backlog_task: 'tasks',
     'backlog-task': 'tasks',
@@ -144,33 +149,69 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))]
 }
 
+function resolvePlatformResourceAccess(toolId: string, bctx: ToolBuildContext): { allowed: boolean; reason: string | null } {
+  if (bctx.hasPlugin(toolId)) return { allowed: true, reason: null }
+  if (!bctx.hasPlugin('manage_platform')) return { allowed: false, reason: null }
+  const settings = loadSettings()
+  const decision = resolveSessionToolPolicy(['manage_platform', toolId], settings)
+  const allowed = decision.enabledPlugins.includes(toolId)
+  const blocked = decision.blockedPlugins.find((entry) => entry.tool === toolId)
+  return { allowed, reason: blocked?.reason || null }
+}
+
+function buildPlatformContextFromSession(session: Session): ToolBuildContext {
+  const runtime = loadRuntimeSettings()
+  const sessionPlugins = Array.isArray(session.plugins) ? session.plugins : []
+  const legacyTools = Array.isArray(session.tools) ? session.tools : []
+  const activePlugins = expandPluginIds([...sessionPlugins, ...legacyTools, 'manage_platform'])
+  const activePluginSet = new Set(activePlugins)
+  const hasPlugin = (name: string) => activePluginSet.has(name)
+
+  return {
+    cwd: session.cwd || process.cwd(),
+    ctx: {
+      sessionId: session.id,
+      agentId: session.agentId ?? null,
+    },
+    hasPlugin,
+    hasTool: hasPlugin,
+    cleanupFns: [],
+    commandTimeoutMs: runtime.shellCommandTimeoutMs,
+    claudeTimeoutMs: runtime.claudeCodeTimeoutMs,
+    cliProcessTimeoutMs: runtime.cliProcessTimeoutMs,
+    persistDelegateResumeId: () => {},
+    readStoredDelegateResumeId: () => null,
+    resolveCurrentSession: () => session,
+    activePlugins,
+  }
+}
+
 /**
  * Unified Platform Execution Logic
  */
-async function executePlatformAction(args: any, bctx: any) {
+async function executePlatformAction(args: any, bctx: ToolBuildContext) {
   const normalized = normalizePlatformActionArgs((args ?? {}) as Record<string, unknown>)
   const { resource, action, id, data } = normalized
+  const resourceName = typeof resource === 'string' ? resource : ''
   
   // We reuse the existing CRUD tool logic but expose it via a single tool
   const crudTools = buildCrudTools({
     ...bctx,
-    hasPlugin: (id: string) => [
-      'manage_agents',
-      'manage_tasks',
-      'manage_schedules',
-      'manage_skills',
-      'manage_documents',
-      'manage_secrets',
-      'manage_connectors',
-      'manage_sessions'
-    ].includes(id)
+    hasPlugin: (toolId: string) => resolvePlatformResourceAccess(toolId, bctx).allowed,
   })
 
-  const targetToolName = `manage_${resource}`
+  const targetToolName = `manage_${resourceName}`
   const targetTool = crudTools.find(t => t.name === targetToolName)
   
   if (!targetTool) {
-    return `Error: Unknown resource type "${resource}". Valid resources: agents, tasks, schedules, skills, documents, secrets, connectors, sessions.`
+    const knownResources = ['agents', 'projects', 'tasks', 'schedules', 'skills', 'documents', 'secrets', 'connectors', 'sessions']
+    if (resourceName && knownResources.includes(resourceName)) {
+      const toolId = `manage_${resourceName}`
+      const access = resolvePlatformResourceAccess(toolId, bctx)
+      const suffix = access.reason ? ` (${access.reason})` : ''
+      return `Error: Resource "${resourceName}" is disabled by app settings or capability policy in this chat${suffix}.`
+    }
+    return `Error: Unknown resource type "${resourceName || resource}". Valid resources: ${knownResources.join(', ')}.`
   }
 
   // Forward to the specific CRUD tool implementation
@@ -182,10 +223,10 @@ async function executePlatformAction(args: any, bctx: any) {
  */
 const PlatformPlugin: Plugin = {
   name: 'Core Platform',
-  description: 'Unified management of agents, tasks, schedules, skills, documents, and secrets.',
+  description: 'Unified management of agents, projects, tasks, schedules, skills, documents, and secrets.',
   hooks: {
-    getCapabilityDescription: () => 'I can create and configure other agents (`manage_agents`), manage tasks (`manage_tasks`), set up schedules (`manage_schedules`), store and search documents (`manage_documents`), register webhooks (`manage_webhooks`), manage reusable skills (`manage_skills`), and store encrypted secrets (`manage_secrets`).',
-    getOperatingGuidance: () => ['Create/update tasks for long-lived goals to track progress.', 'Use schedules for follow-ups. Check existing schedules before creating new ones.', 'Inspect existing chats before creating duplicates.'],
+    getCapabilityDescription: () => 'I can manage durable execution context across agents, projects, tasks, schedules, documents, skills, webhooks, connectors, sessions, and encrypted secrets.',
+    getOperatingGuidance: () => ['Use projects to hold longer-lived goals, objectives, and credential requirements.', 'Create/update tasks for long-lived goals to track progress.', 'Use schedules for follow-ups and heartbeat-style check-ins. Check existing schedules before creating new ones.', 'Inspect existing chats before creating duplicates.'],
   } as PluginHooks,
   tools: [
     {
@@ -194,14 +235,14 @@ const PlatformPlugin: Plugin = {
       parameters: {
         type: 'object',
         properties: {
-          resource: { type: 'string', enum: ['agents', 'tasks', 'schedules', 'skills', 'documents', 'secrets', 'connectors', 'sessions'] },
+          resource: { type: 'string', enum: ['agents', 'projects', 'tasks', 'schedules', 'skills', 'documents', 'secrets', 'connectors', 'sessions'] },
           action: { type: 'string', enum: ['list', 'get', 'create', 'update', 'delete'] },
           id: { type: 'string' },
           data: { type: 'string' }
         },
         required: ['resource', 'action']
       },
-      execute: async (args, context) => executePlatformAction(args, { ...context.session, ctx: context.session })
+      execute: async (args, context) => executePlatformAction(args, buildPlatformContextFromSession(context.session))
     }
   ]
 }

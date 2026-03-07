@@ -247,12 +247,48 @@ function bindDelegateRuntime(runtime: DelegateRuntimeState | undefined, child: C
   child.once('error', clear)
 }
 
+function coerceOptionalBool(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['true', '1', 'yes', 'on'].includes(normalized)) return true
+    if (['false', '0', 'no', 'off'].includes(normalized)) return false
+  }
+  return null
+}
+
+function resumeStorageKeyForBackend(
+  backend: 'claude' | 'codex' | 'opencode' | 'gemini',
+): 'claudeCode' | 'codex' | 'opencode' | 'gemini' {
+  if (backend === 'claude') return 'claudeCode'
+  if (backend === 'codex') return 'codex'
+  if (backend === 'opencode') return 'opencode'
+  return 'gemini'
+}
+
+export function resolveDelegateResumeConfig(
+  normalized: Record<string, unknown>,
+  backend: 'claude' | 'codex' | 'opencode' | 'gemini',
+  bctx: { readStoredDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini') => string | null },
+): { resume: boolean; resumeId: string } {
+  const explicitResumeId = typeof normalized.resumeId === 'string' ? normalized.resumeId.trim() : ''
+  if (explicitResumeId) return { resume: true, resumeId: explicitResumeId }
+
+  const explicitResume = coerceOptionalBool(normalized.resume)
+  if (explicitResume !== null) return { resume: explicitResume, resumeId: '' }
+
+  const storedResumeId = bctx.readStoredDelegateResumeId?.(resumeStorageKeyForBackend(backend))
+  return {
+    resume: Boolean(storedResumeId),
+    resumeId: '',
+  }
+}
+
 async function runDelegateBackend(args: Record<string, unknown>, bctx: DelegateContext, runtime?: DelegateRuntimeState): Promise<string> {
   const normalized = normalizeDelegateArgs(args)
   const task = normalized.task as string
   const backend = ((normalized.backend as string) || 'claude') as DelegateBackend
-  const resume = normalized.resume as boolean
-  const resumeId = normalized.resumeId as string
+  const { resume, resumeId } = resolveDelegateResumeConfig(normalized, backend, bctx)
   const backends = {
     claude: findBinaryOnPath('claude'),
     codex: findBinaryOnPath('codex'),

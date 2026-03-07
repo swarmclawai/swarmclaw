@@ -16,6 +16,13 @@ function relativeDate(ts: number): string {
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+function formatHeartbeatInterval(intervalSec?: number | null): string {
+  if (!intervalSec || intervalSec <= 0) return 'Manual'
+  if (intervalSec % 3600 === 0) return `${intervalSec / 3600}h`
+  if (intervalSec % 60 === 0) return `${intervalSec / 60}m`
+  return `${intervalSec}s`
+}
+
 const STATUS_STYLES: Record<string, string> = {
   backlog: 'bg-white/[0.06] text-text-3',
   queued: 'bg-amber-500/15 text-amber-400',
@@ -92,6 +99,8 @@ export function ProjectDetail() {
   const tasks = useAppStore((s) => s.tasks) as Record<string, BoardTask>
   const schedules = useAppStore((s) => s.schedules) as Record<string, Schedule>
   const loadAgents = useAppStore((s) => s.loadAgents)
+  const secrets = useAppStore((s) => s.secrets)
+  const loadSecrets = useAppStore((s) => s.loadSecrets)
   const setEditingProjectId = useAppStore((s) => s.setEditingProjectId)
   const setProjectSheetOpen = useAppStore((s) => s.setProjectSheetOpen)
   const setActiveView = useAppStore((s) => s.setActiveView)
@@ -100,6 +109,8 @@ export function ProjectDetail() {
   const setTaskSheetOpen = useAppStore((s) => s.setTaskSheetOpen)
   const setEditingScheduleId = useAppStore((s) => s.setEditingScheduleId)
   const setScheduleSheetOpen = useAppStore((s) => s.setScheduleSheetOpen)
+  const setEditingSecretId = useAppStore((s) => s.setEditingSecretId)
+  const setSecretSheetOpen = useAppStore((s) => s.setSecretSheetOpen)
 
   const [assignPickerOpen, setAssignPickerOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -108,6 +119,11 @@ export function ProjectDetail() {
     const intervalId = window.setInterval(() => setNow(Date.now()), 60_000)
     return () => window.clearInterval(intervalId)
   }, [])
+
+  useEffect(() => {
+    if (!activeProjectFilter) return
+    void loadSecrets()
+  }, [activeProjectFilter, loadSecrets])
 
   const project = activeProjectFilter ? projects[activeProjectFilter] : null
 
@@ -126,6 +142,11 @@ export function ProjectDetail() {
   const projectSchedules = useMemo(
     () => Object.values(schedules).filter((s) => s.projectId === activeProjectFilter),
     [schedules, activeProjectFilter],
+  )
+
+  const projectSecrets = useMemo(
+    () => Object.values(secrets).filter((secret) => secret.projectId === activeProjectFilter),
+    [secrets, activeProjectFilter],
   )
 
   const completedTasks = projectTasks.filter((t) => t.status === 'completed').length
@@ -186,6 +207,23 @@ export function ProjectDetail() {
       .filter((schedule) => schedule.status === 'active' && !!schedule.nextRunAt && schedule.nextRunAt >= now)
       .sort((a, b) => (a.nextRunAt || 0) - (b.nextRunAt || 0))[0] || null,
     [now, projectSchedules],
+  )
+
+  const capabilityHints = Array.isArray(project?.capabilityHints) ? project.capabilityHints : []
+  const priorities = Array.isArray(project?.priorities) ? project.priorities : []
+  const openObjectives = Array.isArray(project?.openObjectives) ? project.openObjectives : []
+  const credentialRequirements = Array.isArray(project?.credentialRequirements) ? project.credentialRequirements : []
+  const successMetrics = Array.isArray(project?.successMetrics) ? project.successMetrics : []
+  const hasOperatingContext = Boolean(
+    project?.objective
+    || project?.audience
+    || priorities.length
+    || openObjectives.length
+    || capabilityHints.length
+    || credentialRequirements.length
+    || successMetrics.length
+    || project?.heartbeatPrompt
+    || project?.heartbeatIntervalSec,
   )
 
   const busiestAgent = useMemo(() => {
@@ -302,6 +340,185 @@ export function ProjectDetail() {
             <p className="text-[11px] text-text-3/40 mt-2">
               Created {relativeDate(project.createdAt)} &middot; Updated {relativeDate(project.updatedAt)}
             </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-4 mb-8">
+          <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] px-5 py-5">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <div>
+                <h2 className="font-display text-[18px] font-700 tracking-[-0.02em] text-text">Project Operating System</h2>
+                <p className="text-[12px] text-text-3/60 mt-1">Define what this project is trying to achieve, how agents should operate, and what long-lived context matters.</p>
+              </div>
+              <button
+                onClick={() => { setEditingProjectId(project.id); setProjectSheetOpen(true) }}
+                className="shrink-0 px-3 py-2 rounded-[10px] bg-white/[0.04] text-[12px] font-600 text-text-2 hover:bg-white/[0.08] transition-all cursor-pointer border-none"
+                style={{ fontFamily: 'inherit' }}
+              >
+                Configure
+              </button>
+            </div>
+
+            {hasOperatingContext ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-[12px] border border-white/[0.06] bg-surface/60 px-4 py-3.5">
+                  <div className="text-[11px] font-700 uppercase tracking-[0.08em] text-text-3/50 mb-2">Mission</div>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-[11px] font-600 text-text-3/50 mb-1">Objective</div>
+                      <p className="text-[13px] text-text leading-relaxed">{project.objective || 'Add a durable objective for this project.'}</p>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-600 text-text-3/50 mb-1">Audience</div>
+                      <p className="text-[13px] text-text-2/80 leading-relaxed">{project.audience || 'Set who this project is for so agents can answer from that context.'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-[12px] border border-white/[0.06] bg-surface/60 px-4 py-3.5">
+                  <div className="text-[11px] font-700 uppercase tracking-[0.08em] text-text-3/50 mb-2">Execution Focus</div>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-[11px] font-600 text-text-3/50 mb-1">Pilot priorities</div>
+                      {priorities.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {priorities.map((priority) => (
+                            <span key={priority} className="rounded-full bg-accent-soft px-2.5 py-1 text-[11px] font-600 text-accent-bright">
+                              {priority}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[12px] text-text-3/50">No priorities captured yet.</p>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-600 text-text-3/50 mb-1">Open objectives</div>
+                      {openObjectives.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {openObjectives.map((objective) => (
+                            <div key={objective} className="flex items-start gap-2 text-[12px] text-text-2">
+                              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                              <span>{objective}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[12px] text-text-3/50">No open objectives captured yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-[12px] border border-white/[0.06] bg-surface/60 px-4 py-3.5">
+                  <div className="text-[11px] font-700 uppercase tracking-[0.08em] text-text-3/50 mb-2">Operating Modes</div>
+                  {capabilityHints.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {capabilityHints.map((hint) => (
+                        <span key={hint} className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-600 text-text-2">
+                          {hint}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[12px] text-text-3/50">No capability hints yet. Add things like research, build, browsing, inbox ops, or credential bootstrapping.</p>
+                  )}
+                </div>
+
+                <div className="rounded-[12px] border border-white/[0.06] bg-surface/60 px-4 py-3.5">
+                  <div className="text-[11px] font-700 uppercase tracking-[0.08em] text-text-3/50 mb-2">Success Metrics</div>
+                  {successMetrics.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {successMetrics.map((metric) => (
+                        <div key={metric} className="flex items-start gap-2 text-[12px] text-text-2">
+                          <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />
+                          <span>{metric}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[12px] text-text-3/50">Define success metrics if this project has open-ended goals like revenue, outreach, or inbox response quality.</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-[12px] border border-dashed border-white/[0.08] px-5 py-6 text-center">
+                <p className="text-[13px] font-600 text-text-2">This project still needs operating context.</p>
+                <p className="mt-1 text-[12px] text-text-3/55">Add objective, open objectives, capability hints, credential needs, and heartbeat settings so agents can treat the project as a durable operating system.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] px-5 py-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Ops Readiness</h3>
+              <span className="text-[11px] text-text-3/40">{projectSecrets.length} secret{projectSecrets.length === 1 ? '' : 's'}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {[
+                { label: 'Linked secrets', value: projectSecrets.length, tone: 'text-emerald-400' },
+                { label: 'Credential reqs', value: credentialRequirements.length, tone: 'text-amber-400' },
+                { label: 'Heartbeat', value: project.heartbeatIntervalSec ? formatHeartbeatInterval(project.heartbeatIntervalSec) : 'Off', tone: 'text-sky-400' },
+                { label: 'Schedules', value: projectSchedules.length, tone: 'text-text-2' },
+              ].map((item) => (
+                <div key={item.label} className="rounded-[12px] border border-white/[0.06] bg-surface/60 px-3 py-3">
+                  <div className={`text-[18px] font-display font-700 tracking-[-0.02em] ${item.tone}`}>{item.value}</div>
+                  <div className="mt-1 text-[10px] font-600 uppercase tracking-[0.08em] text-text-3/45">{item.label}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <div className="text-[11px] font-600 text-text-3/50 mb-1">Credential requirements</div>
+                {credentialRequirements.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {credentialRequirements.map((item) => (
+                      <div key={item} className="flex items-start gap-2 text-[12px] text-text-2">
+                        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-text-3/50">No credentials requested yet.</p>
+                )}
+              </div>
+
+              <div>
+                <div className="text-[11px] font-600 text-text-3/50 mb-1">Heartbeat</div>
+                {project.heartbeatPrompt || project.heartbeatIntervalSec ? (
+                  <div className="rounded-[12px] border border-white/[0.06] bg-surface/60 px-3 py-3">
+                    <div className="text-[11px] font-700 uppercase tracking-[0.08em] text-sky-400">
+                      Every {formatHeartbeatInterval(project.heartbeatIntervalSec)}
+                    </div>
+                    <p className="mt-1 text-[12px] text-text-2 leading-relaxed">
+                      {project.heartbeatPrompt || 'No heartbeat prompt configured.'}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-text-3/50">No project heartbeat configured.</p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  onClick={() => { setEditingSecretId(null); setSecretSheetOpen(true) }}
+                  className="px-3 py-2 rounded-[10px] bg-accent-soft text-[12px] font-600 text-accent-bright hover:bg-accent-bright/15 transition-all cursor-pointer border-none"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  Add project secret
+                </button>
+                <button
+                  onClick={() => { setEditingScheduleId(null); setScheduleSheetOpen(true) }}
+                  className="px-3 py-2 rounded-[10px] bg-white/[0.04] text-[12px] font-600 text-text-2 hover:bg-white/[0.08] transition-all cursor-pointer border-none"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  Add heartbeat schedule
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

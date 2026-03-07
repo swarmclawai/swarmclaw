@@ -305,10 +305,36 @@ export interface PluginHooks {
   getOperatingGuidance?: () => string | string[] | null | undefined
 }
 
+export interface PluginToolPlanning {
+  /**
+   * Capability tags that the harness can use for prompt guidance and tool routing.
+   * Examples: research.search, research.fetch, browser.capture, artifact.pdf,
+   * delivery.media, delivery.voice_note.
+   */
+  capabilities?: string[]
+  /**
+   * Concrete usage guidance that should be injected into the system prompt when
+   * this tool is enabled.
+   */
+  disciplineGuidance?: string[]
+  /**
+   * Optional natural-language cues that indicate when this tool should be
+   * preferred or explicitly invoked. These are declarative hints so the harness
+   * does not need to hard-code every plugin-specific workflow centrally.
+   */
+  requestMatchers?: Array<{
+    capability?: string
+    patterns?: string[]
+    requireLiteralUrl?: boolean
+    forbidLiteralUrl?: boolean
+  }>
+}
+
 export interface PluginToolDef {
   name: string
   description: string
   parameters: Record<string, unknown>
+  planning?: PluginToolPlanning
   execute: (args: Record<string, unknown>, ctx: { session: Session; message: string }) => Promise<string | object> | string | object
 }
 
@@ -934,6 +960,15 @@ export interface Project {
   name: string
   description: string
   color?: string
+  objective?: string
+  audience?: string
+  priorities?: string[]
+  openObjectives?: string[]
+  capabilityHints?: string[]
+  credentialRequirements?: string[]
+  successMetrics?: string[]
+  heartbeatPrompt?: string
+  heartbeatIntervalSec?: number
   createdAt: number
   updatedAt: number
 }
@@ -1065,6 +1100,8 @@ export interface AppSettings {
   capabilityBlockedTools?: string[]
   capabilityBlockedCategories?: string[]
   capabilityAllowedTools?: string[]
+  taskManagementEnabled?: boolean
+  projectManagementEnabled?: boolean
   // Memory governance
   memoryWorkingTtlHours?: number
   memoryDefaultConfidence?: number
@@ -1128,6 +1165,7 @@ export interface OrchestratorSecret {
   encryptedValue: string
   scope: 'global' | 'agent'
   agentIds: string[]      // if scope === 'agent', which agents can use it
+  projectId?: string
   createdAt: number
   updatedAt: number
 }
@@ -1334,6 +1372,7 @@ export interface AgentPackEntry {
   tools?: string[]
   plugins?: string[]
   capabilities?: string[]
+  elevenLabsVoiceId?: string | null
   soul?: string
   systemPrompt?: string
 }

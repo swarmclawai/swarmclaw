@@ -42,7 +42,8 @@ async function executeMemoryAction(input: any, ctx: any) {
       ? ctx.id
       : null
   const currentSession = ctx && typeof ctx === 'object' && Array.isArray(ctx.messages) ? ctx : null
-  const rawScope = typeof scope === 'string' ? scope : 'auto'
+  const configuredScope = typeof ctx?.memoryScopeMode === 'string' ? ctx.memoryScopeMode : 'auto'
+  const rawScope = typeof scope === 'string' ? scope : configuredScope
   const scopeMode = normalizeMemoryScopeMode(rawScope === 'shared' ? 'global' : rawScope)
   const rerankMode = rerank === 'semantic' || rerank === 'lexical' ? rerank : 'balanced'
   
@@ -50,7 +51,11 @@ async function executeMemoryAction(input: any, ctx: any) {
     mode: scopeMode,
     agentId: currentAgentId,
     sessionId: (typeof scopeSessionId === 'string' && scopeSessionId.trim()) ? scopeSessionId.trim() : currentSessionId,
-    projectRoot: (typeof projectRoot === 'string' && projectRoot.trim()) ? projectRoot.trim() : ((project && typeof project === 'object' && 'rootPath' in project && typeof (project as Record<string, unknown>).rootPath === 'string') ? (project as Record<string, unknown>).rootPath as string : null),
+    projectRoot: (typeof projectRoot === 'string' && projectRoot.trim())
+      ? projectRoot.trim()
+      : ((project && typeof project === 'object' && 'rootPath' in project && typeof (project as Record<string, unknown>).rootPath === 'string')
+          ? (project as Record<string, unknown>).rootPath as string
+          : (typeof ctx?.projectRoot === 'string' && ctx.projectRoot.trim() ? ctx.projectRoot.trim() : null)),
   }
   
   const filterScope = (rows: MemoryEntry[]) => filterMemoriesByScope(rows, scopeFilter)
@@ -80,12 +85,19 @@ async function executeMemoryAction(input: any, ctx: any) {
     if (imagePath && fs.existsSync(imagePath)) {
       storedImage = await storeMemoryImageAsset(imagePath, genId(6))
     }
+    const metadata = n.metadata && typeof n.metadata === 'object' && !Array.isArray(n.metadata)
+      ? { ...(n.metadata as Record<string, unknown>) }
+      : {}
+    if (scopeMode === 'project' && scopeFilter.projectRoot && !metadata.projectRoot) {
+      metadata.projectRoot = scopeFilter.projectRoot
+    }
     const entry = memDb.add({
       agentId: scopeMode === 'global' ? null : currentAgentId,
       sessionId: ctx?.sessionId || null,
       category: category || 'note',
       title: key,
       content: value || '',
+      metadata,
       references: Array.isArray(references) ? references : [],
       filePaths: filePaths as any,
       imagePath: storedImage?.path || undefined,

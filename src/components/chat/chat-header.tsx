@@ -280,12 +280,16 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     const fromDelegateOpenCode = session.delegateResumeIds?.opencode
       ? { label: 'OpenCode', id: session.delegateResumeIds.opencode, command: `opencode run \"<task>\" --session ${session.delegateResumeIds.opencode}` }
       : null
+    const fromDelegateGemini = session.delegateResumeIds?.gemini
+      ? { label: 'Gemini', id: session.delegateResumeIds.gemini, command: `gemini --resume ${session.delegateResumeIds.gemini} --prompt \"<task>\"` }
+      : null
     return fromSessionClaude
       || fromSessionCodex
       || fromSessionOpenCode
       || fromDelegateClaude
       || fromDelegateCodex
       || fromDelegateOpenCode
+      || fromDelegateGemini
       || null
   }, [session.claudeSessionId, session.codexThreadId, session.opencodeSessionId, session.delegateResumeIds])
 

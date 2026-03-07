@@ -332,6 +332,7 @@ export interface ConnectorReconnectState {
   nextRetryAt: number
   backoffMs: number
   error: string
+  exhausted: boolean
 }
 
 const reconnectStateKey = '__swarmclaw_connector_reconnect_state__' as const
@@ -341,6 +342,55 @@ const reconnectState: Map<string, ConnectorReconnectState> =
 const RECONNECT_INITIAL_BACKOFF_MS = 1_000
 const RECONNECT_MAX_BACKOFF_MS = 5 * 60 * 1_000
 const RECONNECT_MAX_ATTEMPTS = 10
+
+interface ConnectorReconnectPolicy {
+  initialBackoffMs?: number
+  maxBackoffMs?: number
+  maxAttempts?: number
+}
+
+export function createConnectorReconnectState(
+  init: Partial<ConnectorReconnectState> = {},
+  policy: ConnectorReconnectPolicy = {},
+): ConnectorReconnectState {
+  return {
+    attempts: init.attempts ?? 0,
+    lastAttemptAt: init.lastAttemptAt ?? 0,
+    nextRetryAt: init.nextRetryAt ?? 0,
+    backoffMs: init.backoffMs ?? policy.initialBackoffMs ?? RECONNECT_INITIAL_BACKOFF_MS,
+    error: init.error ?? '',
+    exhausted: init.exhausted ?? false,
+  }
+}
+
+export function advanceConnectorReconnectState(
+  previous: ConnectorReconnectState,
+  error: string,
+  now = Date.now(),
+  policy: ConnectorReconnectPolicy = {},
+): ConnectorReconnectState {
+  const initialBackoffMs = policy.initialBackoffMs ?? RECONNECT_INITIAL_BACKOFF_MS
+  const maxBackoffMs = policy.maxBackoffMs ?? RECONNECT_MAX_BACKOFF_MS
+  const maxAttempts = policy.maxAttempts ?? RECONNECT_MAX_ATTEMPTS
+  const attempts = previous.attempts + 1
+  const backoffMs = Math.min(maxBackoffMs, initialBackoffMs * (2 ** Math.max(0, attempts - 1)))
+  return {
+    attempts,
+    lastAttemptAt: now,
+    nextRetryAt: now + backoffMs,
+    backoffMs,
+    error,
+    exhausted: attempts >= maxAttempts,
+  }
+}
+
+export function clearReconnectState(connectorId: string): void {
+  reconnectState.delete(connectorId)
+}
+
+export function setReconnectState(connectorId: string, state: ConnectorReconnectState): void {
+  reconnectState.set(connectorId, state)
+}
 
 /** Record a health event for a connector (persisted to connector_health collection) */
 function recordHealthEvent(connectorId: string, event: ConnectorHealthEventType, message?: string): void {
@@ -2008,33 +2058,43 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
   const connector = connectors[connectorId] as Connector | undefined
   if (!connector) throw new Error('Connector not found')
 
-  // Resolve bot token from credential
-  let botToken = ''
-  if (connector.credentialId) {
-    const creds = loadCredentials()
-    const cred = creds[connector.credentialId]
-    if (cred?.encryptedKey) {
-      try { botToken = decryptKey(cred.encryptedKey) } catch { /* ignore */ }
-    }
+  // Starting a connector expresses durable intent: keep it enabled across
+  // transient failures so daemon recovery and server restarts can retry it.
+  if (connector.isEnabled !== true) {
+    connector.isEnabled = true
+    connector.updatedAt = Date.now()
+    connectors[connectorId] = connector
+    saveConnectors(connectors)
+    notify('connectors')
   }
-  // Also check config for inline token (some platforms)
-  if (!botToken && connector.config.botToken) {
-    botToken = connector.config.botToken
-  }
-  if (!botToken && connector.platform === 'bluebubbles' && connector.config.password) {
-    botToken = connector.config.password
-  }
-
-  if (!botToken && connector.platform !== 'whatsapp' && connector.platform !== 'openclaw' && connector.platform !== 'signal' && connector.platform !== 'email') {
-    throw new Error('No bot token configured')
-  }
-
-  const platform = await getPlatform(connector.platform)
-
-  // Bump generation counter so stale events from previous instances are ignored
-  generationCounter.set(connectorId, (generationCounter.get(connectorId) ?? 0) + 1)
 
   try {
+    // Resolve bot token from credential
+    let botToken = ''
+    if (connector.credentialId) {
+      const creds = loadCredentials()
+      const cred = creds[connector.credentialId]
+      if (cred?.encryptedKey) {
+        try { botToken = decryptKey(cred.encryptedKey) } catch { /* ignore */ }
+      }
+    }
+    // Also check config for inline token (some platforms)
+    if (!botToken && connector.config.botToken) {
+      botToken = connector.config.botToken
+    }
+    if (!botToken && connector.platform === 'bluebubbles' && connector.config.password) {
+      botToken = connector.config.password
+    }
+
+    if (!botToken && connector.platform !== 'whatsapp' && connector.platform !== 'openclaw' && connector.platform !== 'signal' && connector.platform !== 'email') {
+      throw new Error('No bot token configured')
+    }
+
+    const platform = await getPlatform(connector.platform)
+
+    // Bump generation counter so stale events from previous instances are ignored
+    generationCounter.set(connectorId, (generationCounter.get(connectorId) ?? 0) + 1)
+
     const instance = await platform.start(
       connector,
       botToken,
@@ -2049,6 +2109,7 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
     connector.updatedAt = Date.now()
     connectors[connectorId] = connector
     saveConnectors(connectors)
+    clearReconnectState(connectorId)
     notify('connectors')
 
     console.log(`[connector] Started ${connector.platform} connector: ${connector.name}`)
@@ -2056,7 +2117,7 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err)
     connector.status = 'error'
-    connector.isEnabled = false
+    connector.isEnabled = true
     connector.lastError = errMsg
     connector.updatedAt = Date.now()
     connectors[connectorId] = connector
@@ -2074,6 +2135,7 @@ export async function stopConnector(connectorId: string): Promise<void> {
     await instance.stop()
     running.delete(connectorId)
   }
+  clearReconnectState(connectorId)
 
   for (const [debounceKey, entry] of pendingInboundDebounce.entries()) {
     if (entry.connector.id !== connectorId) continue
@@ -2141,6 +2203,7 @@ export async function repairConnector(connectorId: string): Promise<void> {
     await instance.stop()
     running.delete(connectorId)
   }
+  clearReconnectState(connectorId)
 
   // Clear auth directory
   const { clearAuthDir } = await import('./whatsapp')
@@ -2609,7 +2672,7 @@ export async function checkConnectorHealth(): Promise<void> {
       // Connector is healthy — clear any reconnect state
       if (reconnectState.has(id)) {
         console.log(`[connector-health] Connector "${instance.connector.name}" recovered`)
-        reconnectState.delete(id)
+        clearReconnectState(id)
       }
       continue
     }
@@ -2627,68 +2690,30 @@ export async function checkConnectorHealth(): Promise<void> {
 
     // If the connector is not enabled, don't attempt reconnect
     if (!connector.isEnabled) {
-      reconnectState.delete(id)
+      clearReconnectState(id)
       continue
     }
 
-    // Attempt reconnect with backoff
-    const state = reconnectState.get(id) ?? {
-      attempts: 0,
-      lastAttemptAt: 0,
-      nextRetryAt: 0,
-      backoffMs: RECONNECT_INITIAL_BACKOFF_MS,
-      error: '',
-    }
-
-    // Check if we've exceeded max attempts
-    if (state.attempts >= RECONNECT_MAX_ATTEMPTS) {
-      console.warn(`[connector-health] Connector "${connector.name}" exceeded ${RECONNECT_MAX_ATTEMPTS} reconnect attempts — marking as error`)
-      connector.status = 'error'
-      connector.lastError = `Auto-reconnect gave up after ${RECONNECT_MAX_ATTEMPTS} attempts: ${state.error}`
-      connector.updatedAt = Date.now()
-      connectors[id] = connector
-      connectorsDirty = true
-      reconnectState.delete(id)
-      notify('connectors')
-      continue
-    }
-
-    const now = Date.now()
-
-    // Check if enough time has passed for the next retry
-    if (now < state.nextRetryAt) {
-      // Not yet time to retry — keep state and skip
-      continue
-    }
-
-    state.attempts += 1
-    state.lastAttemptAt = now
-    reconnectState.set(id, state)
-
-    try {
-      console.log(`[connector-health] Reconnecting "${connector.name}" (attempt ${state.attempts}/${RECONNECT_MAX_ATTEMPTS})`)
-      await startConnector(id)
-      // Success — clear reconnect state
-      reconnectState.delete(id)
-      console.log(`[connector-health] Connector "${connector.name}" reconnected successfully`)
-      recordHealthEvent(id, 'reconnected', `Connector "${connector.name}" reconnected after ${state.attempts} attempt(s)`)
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      state.error = errorMsg
-      state.backoffMs = Math.min(RECONNECT_MAX_BACKOFF_MS, RECONNECT_INITIAL_BACKOFF_MS * (2 ** state.attempts))
-      state.nextRetryAt = now + state.backoffMs
-      reconnectState.set(id, state)
-      console.warn(`[connector-health] Reconnect failed for "${connector.name}" (attempt ${state.attempts}/${RECONNECT_MAX_ATTEMPTS}): ${errorMsg}. Next retry at ${new Date(state.nextRetryAt).toISOString()}`)
+    connector.status = 'error'
+    connector.lastError = connector.lastError || 'Connection lost'
+    connector.updatedAt = Date.now()
+    connectors[id] = connector
+    connectorsDirty = true
+    if (!reconnectState.has(id)) {
+      setReconnectState(id, createConnectorReconnectState({
+        error: connector.lastError || 'Connection lost',
+      }))
     }
   }
 
   if (connectorsDirty) {
     saveConnectors(connectors)
+    notify('connectors')
   }
 
   // Purge reconnect state for connectors that no longer exist
   for (const id of reconnectState.keys()) {
-    if (!connectors[id]) reconnectState.delete(id)
+    if (!connectors[id] || connectors[id]?.isEnabled !== true || running.has(id)) clearReconnectState(id)
   }
 }
 

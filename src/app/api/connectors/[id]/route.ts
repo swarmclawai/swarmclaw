@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server'
 import { loadConnectors, saveConnectors, logActivity } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { notFound } from '@/lib/server/collection-helpers'
+import { ensureDaemonStarted } from '@/lib/server/daemon-state'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  ensureDaemonStarted('api/connectors/[id]:get')
   const { id } = await params
   const connectors = loadConnectors()
   const connector = connectors[id]
@@ -11,8 +13,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   // Merge runtime status, QR code, and presence
   try {
-    const { getConnectorStatus, getConnectorQR, isConnectorAuthenticated, hasConnectorCredentials, getConnectorPresence } = await import('@/lib/server/connectors/manager')
-    connector.status = getConnectorStatus(id)
+    const { getConnectorStatus, getConnectorQR, isConnectorAuthenticated, hasConnectorCredentials, getConnectorPresence, getReconnectState } = await import('@/lib/server/connectors/manager')
+    const runtimeStatus = getConnectorStatus(id)
+    connector.status = runtimeStatus === 'running'
+      ? 'running'
+      : connector.lastError
+        ? 'error'
+        : 'stopped'
+    const rState = getReconnectState(id)
+    if (rState) {
+      const ext = connector as unknown as Record<string, unknown>
+      ext.reconnectAttempts = rState.attempts
+      ext.nextRetryAt = rState.nextRetryAt
+      ext.reconnectError = rState.error
+      ext.reconnectExhausted = rState.exhausted
+    }
     const qr = getConnectorQR(id)
     if (qr) connector.qrDataUrl = qr
     connector.authenticated = isConnectorAuthenticated(id)
@@ -26,6 +41,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  ensureDaemonStarted('api/connectors/[id]:put')
   const { id } = await params
   const body = await req.json()
   const connectors = loadConnectors()
@@ -38,12 +54,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     try {
       const manager = await import('@/lib/server/connectors/manager')
       if (body.action === 'start') {
+        manager.clearReconnectState(id)
         await manager.startConnector(id)
         logActivity({ entityType: 'connector', entityId: id, action: 'started', actor: 'user', summary: `Connector started: "${connector.name}"` })
       } else if (body.action === 'stop') {
         await manager.stopConnector(id)
         logActivity({ entityType: 'connector', entityId: id, action: 'stopped', actor: 'user', summary: `Connector stopped: "${connector.name}"` })
       } else {
+        manager.clearReconnectState(id)
         await manager.repairConnector(id)
         logActivity({ entityType: 'connector', entityId: id, action: 'started', actor: 'user', summary: `Connector repaired: "${connector.name}"` })
       }

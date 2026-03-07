@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 import { useWs } from '@/hooks/use-ws'
 import { ExecApprovalCard } from '@/components/chat/exec-approval-card'
 import { getApprovalPayload, getApprovalTitle } from '@/lib/approval-display'
-import type { ApprovalRequest } from '@/types'
+import type { AppSettings, ApprovalCategory, ApprovalRequest } from '@/types'
 
 const CATEGORY_LABELS: Record<string, string> = {
   tool_access: 'Plugin Access',
@@ -28,6 +28,15 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 type ApprovalScope = 'all' | 'execution' | 'workflow' | 'task'
 
+const AUTO_APPROVE_OPTIONS: Array<{ id: ApprovalCategory; label: string; description: string }> = [
+  { id: 'tool_access', label: 'Plugin Access', description: 'Auto-enable requested plugins for a chat.' },
+  { id: 'plugin_scaffold', label: 'Plugin Scaffold', description: 'Auto-create plugin files requested by agents.' },
+  { id: 'plugin_install', label: 'Plugin Install', description: 'Auto-install plugins from approved URLs.' },
+  { id: 'human_loop', label: 'Human Approval Requests', description: 'Auto-approve ask-human approval prompts.' },
+  { id: 'wallet_transfer', label: 'Wallet Transfers', description: 'Auto-approve wallet send requests. High risk.' },
+  { id: 'task_tool', label: 'Task Tool Calls', description: 'Auto-approve task-level tool approvals.' },
+]
+
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts
   if (diff < 60_000) return 'just now'
@@ -39,9 +48,11 @@ function relativeTime(ts: number): string {
 export function ApprovalsPanel() {
   const tasks = useAppStore((s) => s.tasks)
   const agents = useAppStore((s) => s.agents)
+  const appSettings = useAppStore((s) => s.appSettings)
   const serverApprovals = useAppStore((s) => s.approvals)
   const loadTasks = useAppStore((s) => s.loadTasks)
   const loadServerApprovals = useAppStore((s) => s.loadApprovals)
+  const loadAppSettings = useAppStore((s) => s.loadSettings)
 
   const execApprovals = useApprovalStore((s) => s.approvals)
   const loadExecApprovals = useApprovalStore((s) => s.loadApprovals)
@@ -73,11 +84,16 @@ export function ApprovalsPanel() {
   const [scope, setScope] = useState<ApprovalScope>('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [now, setNow] = useState(() => Date.now())
+  const [savingSetting, setSavingSetting] = useState<string | null>(null)
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNow(Date.now()), 60_000)
     return () => window.clearInterval(intervalId)
   }, [])
+
+  useEffect(() => {
+    void loadAppSettings()
+  }, [loadAppSettings])
 
   const taskApprovals = useMemo(() => {
     return Object.values(tasks)
@@ -180,6 +196,23 @@ export function ApprovalsPanel() {
     },
   ]
 
+  const autoApproved = useMemo(() => new Set(appSettings.approvalAutoApproveCategories || []), [appSettings.approvalAutoApproveCategories])
+  const approvalsEnabled = appSettings.approvalsEnabled ?? true
+  const outboundApprovalEnabled = appSettings.safetyRequireApprovalForOutbound ?? false
+
+  const saveApprovalSettings = async (patch: Partial<AppSettings>, successMessage: string, key: string) => {
+    try {
+      setSavingSetting(key)
+      const settings = await api<AppSettings>('PUT', '/settings', patch)
+      useAppStore.setState({ appSettings: settings })
+      toast.success(successMessage)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update approval settings')
+    } finally {
+      setSavingSetting((current) => (current === key ? null : current))
+    }
+  }
+
   const handleDecision = async (req: ApprovalRequest, approved: boolean) => {
     try {
       if (req.category === 'task_tool') {
@@ -193,23 +226,6 @@ export function ApprovalsPanel() {
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to submit decision')
     }
-  }
-
-  if (pendingCount === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-        <div className="w-16 h-16 rounded-[24px] bg-white/[0.02] border border-white/[0.04] flex items-center justify-center mb-6">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3/40">
-            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-            <path d="m9 12 2 2 4-4"/>
-          </svg>
-        </div>
-        <h2 className="font-display text-[18px] font-600 text-text-2 mb-2">No pending approvals</h2>
-        <p className="text-[13px] text-text-3/60 max-w-[320px]">
-          Your swarm is operating autonomously. Actions requiring oversight will appear here.
-        </p>
-      </div>
-    )
   }
 
   return (
@@ -235,6 +251,132 @@ export function ApprovalsPanel() {
               <p className="text-[10px] text-text-3/50 mt-1 leading-relaxed">{card.hint}</p>
             </div>
           ))}
+        </div>
+
+        <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-4 mb-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+              <div>
+                <h2 className="text-[13px] font-700 text-text">Approval Controls</h2>
+                <p className="text-[12px] text-text-3/70 mt-1 max-w-[640px]">
+                  Control whether actions queue for review, which approval types auto-run, and whether outbound connector sends need explicit confirmation.
+                </p>
+              </div>
+              <div className={`px-3 py-1.5 rounded-full text-[11px] font-700 ${
+                approvalsEnabled
+                  ? 'bg-amber-500/10 border border-amber-500/20 text-amber-300'
+                  : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'
+              }`}>
+                {approvalsEnabled ? 'Manual approvals enabled' : 'Approvals disabled'}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="rounded-[12px] border border-white/[0.06] bg-black/20 px-4 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-[12px] font-600 text-text-2">Platform Approvals</div>
+                    <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">
+                      Turn this off to auto-approve workflow approvals across the app. Audit records are still kept.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={savingSetting === 'approvalsEnabled'}
+                    onClick={() => {
+                      const next = !approvalsEnabled
+                      void saveApprovalSettings(
+                        { approvalsEnabled: next },
+                        next ? 'Platform approvals enabled' : 'Platform approvals disabled',
+                        'approvalsEnabled',
+                      )
+                    }}
+                    className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-50 ${approvalsEnabled ? 'bg-accent' : 'bg-white/[0.12]'}`}
+                    aria-label="Toggle platform approvals"
+                  >
+                    <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${approvalsEnabled ? 'translate-x-[18px]' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-[12px] border border-white/[0.06] bg-black/20 px-4 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-[12px] font-600 text-text-2">Outbound Send Approvals</div>
+                    <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">
+                      Require explicit approval before agents send messages or media over connectors.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={savingSetting === 'safetyRequireApprovalForOutbound'}
+                    onClick={() => {
+                      const next = !outboundApprovalEnabled
+                      void saveApprovalSettings(
+                        { safetyRequireApprovalForOutbound: next },
+                        next ? 'Outbound send approvals enabled' : 'Outbound send approvals disabled',
+                        'safetyRequireApprovalForOutbound',
+                      )
+                    }}
+                    className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-50 ${outboundApprovalEnabled ? 'bg-accent' : 'bg-white/[0.12]'}`}
+                    aria-label="Toggle outbound send approvals"
+                  >
+                    <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${outboundApprovalEnabled ? 'translate-x-[18px]' : ''}`} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div className="text-[12px] font-600 text-text-2">Auto-Approve Categories</div>
+                <div className="text-[11px] text-text-3/60">
+                  {autoApproved.size} enabled
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {AUTO_APPROVE_OPTIONS.map((option) => {
+                  const checked = autoApproved.has(option.id)
+                  return (
+                    <label
+                      key={option.id}
+                      className={`rounded-[12px] border px-3 py-3 cursor-pointer transition-all ${
+                        checked
+                          ? 'border-accent-bright/30 bg-accent-soft/60'
+                          : 'border-white/[0.06] bg-black/20 hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={savingSetting === `auto:${option.id}`}
+                          onChange={(e) => {
+                            const next = new Set(appSettings.approvalAutoApproveCategories || [])
+                            if (e.target.checked) next.add(option.id)
+                            else next.delete(option.id)
+                            void saveApprovalSettings(
+                              { approvalAutoApproveCategories: [...next] },
+                              checked ? `${option.label} now requires approval` : `${option.label} will auto-approve`,
+                              `auto:${option.id}`,
+                            )
+                          }}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <div className="text-[12px] font-600 text-text-2">{option.label}</div>
+                          <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">{option.description}</p>
+                        </div>
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-text-3/60 mt-2">
+                Use category auto-approval when you still want the approval system on, but you do not want these request types to pause execution.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-4 mb-6">
@@ -409,6 +551,23 @@ export function ApprovalsPanel() {
           <div className="rounded-[16px] border border-dashed border-white/[0.08] px-6 py-10 text-center">
             <p className="text-[13px] font-600 text-text-2 mb-1">No approvals match the current filters</p>
             <p className="text-[12px] text-text-3/60">Try clearing the search or switching the queue scope.</p>
+          </div>
+        )}
+
+        {pendingCount === 0 && (
+          <div className="flex flex-col items-center justify-center p-8 text-center">
+            <div className="w-16 h-16 rounded-[24px] bg-white/[0.02] border border-white/[0.04] flex items-center justify-center mb-6">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3/40">
+                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                <path d="m9 12 2 2 4-4"/>
+              </svg>
+            </div>
+            <h2 className="font-display text-[18px] font-600 text-text-2 mb-2">No pending approvals</h2>
+            <p className="text-[13px] text-text-3/60 max-w-[360px]">
+              {approvalsEnabled
+                ? 'Your swarm is operating autonomously. Actions requiring oversight will appear here.'
+                : 'Approvals are currently disabled, so eligible requests will auto-run instead of queuing here.'}
+            </p>
           </div>
         )}
       </div>

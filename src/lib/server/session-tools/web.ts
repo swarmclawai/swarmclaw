@@ -159,13 +159,30 @@ export function cleanupSessionBrowser(sessionId: string): void {
 export function getActiveBrowserCount(): number { return activeBrowsers.size }
 export function hasActiveBrowser(sessionId: string): boolean { return activeBrowsers.has(sessionId) }
 
+export function inferWebActionFromArgs(params: {
+  action?: string
+  query?: string
+  url?: string
+}): 'search' | 'fetch' | undefined {
+  if (params.action === 'search' || params.action === 'fetch') return params.action
+  if (typeof params.url === 'string' && /^https?:\/\//i.test(params.url.trim())) return 'fetch'
+  if (typeof params.query === 'string' && params.query.trim()) return 'search'
+  if (typeof params.url === 'string' && params.url.trim()) return 'search'
+  return undefined
+}
+
 /**
  * Unified Web Execution Logic
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function executeWebAction(args: Record<string, unknown>, bctx: any) {
   const normalized = normalizeToolInputArgs(args)
-  const { action, query, url, maxResults } = normalized as { action: string; query?: string; url?: string; maxResults?: number }
+  const { query, url, maxResults } = normalized as { query?: string; url?: string; maxResults?: number }
+  const action = inferWebActionFromArgs({
+    action: (normalized as { action?: string }).action,
+    query,
+    url,
+  })
   try {
     if (action === 'search') {
       const searchQuery = query || url
@@ -650,12 +667,141 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
     }
 
     const dismissCookieBanners = async (mcpCall: (toolName: string, args: Record<string, unknown>) => Promise<string>) => {
-      await new Promise((r) => setTimeout(r, 1500))
+      await new Promise((r) => setTimeout(r, 1200))
       const js = `() => {
-        const sel = ['button[id*="reject" i]', 'button[class*="reject" i]', 'a[id*="reject" i]', 'a[class*="reject" i]', '#onetrust-reject-all-handler', '#CybotCookiebotDialogBodyButtonDecline', '#didomi-notice-disagree-button', '.qc-cmp2-summary-buttons button:first-child', 'button.sp_choice_type_12'];
-        for (const s of sel) { const el = document.querySelector(s); if (el && el.offsetParent !== null) { el.click(); return 'dismissed:' + s; } }
-        const btns = [...document.querySelectorAll('button, a[role="button"]')]; const rejectRe = /^(reject|reject all|decline|deny|refuse|no,? thanks|only necessary|necessary only)$/i;
-        for (const b of btns) { const txt = (b.textContent || '').trim(); if (rejectRe.test(txt) && b.offsetParent !== null) { b.click(); return 'dismissed:text=' + txt; } }
+        const docs = [document];
+        const roots = [document];
+        const seenRoots = new Set([document]);
+        const pushRoot = (root) => {
+          if (!root || seenRoots.has(root)) return;
+          seenRoots.add(root);
+          roots.push(root);
+        };
+        const collectFrames = (doc) => {
+          try {
+            const frames = doc.querySelectorAll('iframe');
+            for (const frame of frames) {
+              try {
+                const child = frame.contentDocument || frame.contentWindow?.document;
+                if (child && !docs.includes(child)) {
+                  docs.push(child);
+                  pushRoot(child);
+                }
+              } catch {}
+            }
+          } catch {}
+        };
+        const collectShadowRoots = () => {
+          for (const root of [...roots]) {
+            try {
+              const all = root.querySelectorAll('*');
+              for (const el of all) {
+                if (el.shadowRoot) pushRoot(el.shadowRoot);
+              }
+            } catch {}
+          }
+        };
+        collectFrames(document);
+        collectShadowRoots();
+        const allRoots = [...new Set([...docs, ...roots])];
+        const visible = (el) => {
+          if (!el) return false;
+          const style = window.getComputedStyle(el);
+          if (!style || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        };
+        const normalizedText = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+        const candidateSelectors = [
+          '#onetrust-reject-all-handler',
+          '#CybotCookiebotDialogBodyButtonDecline',
+          '#didomi-notice-disagree-button',
+          '.qc-cmp2-summary-buttons button:first-child',
+          'button.sp_choice_type_12',
+          'button[id*="reject" i]',
+          'button[class*="reject" i]',
+          'button[id*="decline" i]',
+          'button[class*="decline" i]',
+          'button[id*="consent" i]',
+          'button[class*="consent" i]',
+          'a[id*="reject" i]',
+          'a[class*="reject" i]',
+          'a[id*="decline" i]',
+          'a[class*="decline" i]'
+        ];
+        for (const root of allRoots) {
+          for (const selector of candidateSelectors) {
+            try {
+              const el = root.querySelector(selector);
+              if (el && visible(el)) {
+                el.click();
+                return 'clicked:' + selector;
+              }
+            } catch {}
+          }
+        }
+        const buttonSelector = 'button, a[role="button"], [role="button"], input[type="button"], input[type="submit"]';
+        const rejectRe = /^(reject|reject all|decline|decline all|deny|deny all|refuse|no,? thanks|only necessary|necessary only|use necessary cookies only)$/i;
+        const acceptRe = /^(accept|accept all|allow all|agree|i agree|okay|ok|got it|continue|consent)$/i;
+        const closeRe = /^(close|dismiss|skip|not now|x|×)$/i;
+        const clickMatching = (matcher, label) => {
+          for (const root of allRoots) {
+            let buttons = [];
+            try { buttons = [...root.querySelectorAll(buttonSelector)]; } catch {}
+            for (const button of buttons) {
+              const txt = normalizedText(button.textContent || button.getAttribute?.('aria-label') || button.getAttribute?.('value'));
+              if (!txt || !matcher.test(txt) || !visible(button)) continue;
+              try {
+                button.click();
+                return label + ':' + txt.slice(0, 80);
+              } catch {}
+            }
+          }
+          return null;
+        };
+        const clicked = clickMatching(rejectRe, 'reject') || clickMatching(acceptRe, 'accept') || clickMatching(closeRe, 'close');
+        if (clicked) return clicked;
+        const overlaySelectors = [
+          '#onetrust-banner-sdk',
+          '#onetrust-consent-sdk',
+          '#CybotCookiebotDialog',
+          '.didomi-popup-container',
+          '.fc-consent-root',
+          '[id*="cookie" i]',
+          '[class*="cookie" i]',
+          '[id*="consent" i]',
+          '[class*="consent" i]',
+          '[id*="privacy" i]',
+          '[class*="privacy" i]',
+          '[id*="sp_message" i]',
+          '[class*="sp_message" i]'
+        ];
+        const hidden = [];
+        for (const root of allRoots) {
+          for (const selector of overlaySelectors) {
+            let nodes = [];
+            try { nodes = [...root.querySelectorAll(selector)]; } catch {}
+            for (const node of nodes) {
+              if (!visible(node)) continue;
+              const text = normalizedText(node.textContent).toLowerCase();
+              const attrs = normalizedText(node.id + ' ' + node.className).toLowerCase();
+              if (!text.includes('cookie') && !text.includes('consent') && !text.includes('privacy') && !attrs.includes('cookie') && !attrs.includes('consent') && !attrs.includes('privacy') && !attrs.includes('onetrust') && !attrs.includes('didomi') && !attrs.includes('sp_message')) continue;
+              try {
+                node.style.setProperty('display', 'none', 'important');
+                node.style.setProperty('visibility', 'hidden', 'important');
+                node.style.setProperty('pointer-events', 'none', 'important');
+                hidden.push(selector);
+              } catch {}
+            }
+          }
+        }
+        if (hidden.length) {
+          try {
+            document.documentElement.style.removeProperty('overflow');
+            document.body.style.removeProperty('overflow');
+          } catch {}
+          return 'hidden:' + hidden[0];
+        }
         return 'none';
       }`
       await mcpCall('browser_evaluate', { function: js })
@@ -1139,6 +1285,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
               } catch {
                 await new Promise((r) => setTimeout(r, 1200))
               }
+              try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ }
             }
 
             let result = await callMcpTool(mcpTool, args, { saveTo: typeof params.saveTo === 'string' ? params.saveTo : undefined })

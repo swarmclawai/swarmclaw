@@ -11,6 +11,12 @@ import {
   startConnector,
   getConnectorStatus,
   checkConnectorHealth,
+  createConnectorReconnectState,
+  advanceConnectorReconnectState,
+  clearReconnectState,
+  getAllReconnectStates,
+  getReconnectState,
+  setReconnectState,
 } from './connectors/manager'
 import { startHeartbeatService, stopHeartbeatService, getHeartbeatServiceStatus } from './heartbeat-service'
 import { hasOpenClawAgents, ensureGatewayConnected, disconnectGateway, getGateway } from './openclaw-gateway'
@@ -34,6 +40,7 @@ const QUEUE_CHECK_INTERVAL = 30_000 // 30 seconds
 const BROWSER_SWEEP_INTERVAL = 60_000 // 60 seconds
 const BROWSER_MAX_AGE = 10 * 60 * 1000 // 10 minutes idle = orphaned
 const HEALTH_CHECK_INTERVAL = 120_000 // 2 minutes
+const CONNECTOR_HEALTH_CHECK_INTERVAL = 5_000 // 5 seconds
 const MEMORY_CONSOLIDATION_INTERVAL = 6 * 3600_000 // 6 hours
 const MEMORY_CONSOLIDATION_INITIAL_DELAY = 60_000 // 1 minute after daemon start
 const STALE_MULTIPLIER = 4 // session is stale after N × heartbeat interval
@@ -87,12 +94,12 @@ const ds: {
   queueIntervalId: ReturnType<typeof setInterval> | null
   browserSweepId: ReturnType<typeof setInterval> | null
   healthIntervalId: ReturnType<typeof setInterval> | null
+  connectorHealthIntervalId: ReturnType<typeof setInterval> | null
   memoryConsolidationTimeoutId: ReturnType<typeof setTimeout> | null
   memoryConsolidationIntervalId: ReturnType<typeof setInterval> | null
   evalSchedulerIntervalId: ReturnType<typeof setInterval> | null
   /** Session IDs we've already alerted as stale (alert-once semantics). */
   staleSessionIds: Set<string>
-  connectorRestartState: Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>
   /** OpenClaw gateway agent IDs currently considered down. */
   openclawDownAgentIds: Set<string>
   /** Per-agent auto-repair state for OpenClaw gateways. */
@@ -107,11 +114,11 @@ const ds: {
   queueIntervalId: null,
   browserSweepId: null,
   healthIntervalId: null,
+  connectorHealthIntervalId: null,
   memoryConsolidationTimeoutId: null,
   memoryConsolidationIntervalId: null,
   evalSchedulerIntervalId: null,
   staleSessionIds: new Set<string>(),
-  connectorRestartState: new Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>(),
   openclawDownAgentIds: new Set<string>(),
   openclawRepairState: new Map<string, { attempts: number; lastAttemptAt: number; cooldownUntil: number }>(),
   lastIntegrityCheckAt: null,
@@ -123,7 +130,6 @@ const ds: {
 
 // Backfill fields for hot-reloaded daemon state objects from older code versions.
 if (!ds.staleSessionIds) ds.staleSessionIds = new Set<string>()
-if (!ds.connectorRestartState) ds.connectorRestartState = new Map<string, { lastAttemptAt: number; failCount: number; wakeAttempts: number }>()
 if (!ds.openclawDownAgentIds) ds.openclawDownAgentIds = new Set<string>()
 if (!ds.openclawRepairState) ds.openclawRepairState = new Map<string, { attempts: number; lastAttemptAt: number; cooldownUntil: number }>()
 if (ds.lastIntegrityCheckAt === undefined) ds.lastIntegrityCheckAt = null
@@ -132,6 +138,7 @@ if (ds.lastIntegrityDriftCount === undefined) ds.lastIntegrityDriftCount = 0
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 if ((ds as any).issueLastAlertAt) delete (ds as any).issueLastAlertAt
 if (ds.healthIntervalId === undefined) ds.healthIntervalId = null
+if (ds.connectorHealthIntervalId === undefined) ds.connectorHealthIntervalId = null
 if (ds.manualStopRequested === undefined) ds.manualStopRequested = false
 if (ds.memoryConsolidationTimeoutId === undefined) ds.memoryConsolidationTimeoutId = null
 if (ds.memoryConsolidationIntervalId === undefined) ds.memoryConsolidationIntervalId = null
@@ -156,6 +163,7 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     startQueueProcessor()
     startBrowserSweep()
     startHealthMonitor()
+    startConnectorHealthMonitor()
     startHeartbeatService()
     startMemoryConsolidation()
     startEvalScheduler()
@@ -173,6 +181,7 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     startQueueProcessor()
     startBrowserSweep()
     startHealthMonitor()
+    startConnectorHealthMonitor()
     startHeartbeatService()
     startMemoryConsolidation()
     startEvalScheduler()
@@ -201,6 +210,7 @@ export function stopDaemon(options?: { source?: string; manualStop?: boolean }) 
   stopQueueProcessor()
   stopBrowserSweep()
   stopHealthMonitor()
+  stopConnectorHealthMonitor()
   stopHeartbeatService()
   stopMemoryConsolidation()
   stopEvalScheduler()
@@ -278,7 +288,8 @@ async function sendHealthAlert(text: string) {
 }
 
 async function runConnectorHealthChecks(now: number) {
-  // First, check isAlive() on running instances and attempt reconnection for dead ones
+  // First, collapse dead runtime instances into persisted error state so the
+  // daemon can own the restart cadence and backoff policy.
   try {
     await checkConnectorHealth()
   } catch (err: unknown) {
@@ -289,48 +300,30 @@ async function runConnectorHealthChecks(now: number) {
   for (const connector of Object.values(connectors) as Record<string, unknown>[]) {
     if (!connector?.id || typeof connector.id !== 'string') continue
     if (connector.isEnabled !== true) {
-      ds.connectorRestartState.delete(connector.id)
+      clearReconnectState(connector.id)
       continue
     }
 
     const runtimeStatus = getConnectorStatus(connector.id)
     if (runtimeStatus === 'running') {
-      ds.connectorRestartState.delete(connector.id)
+      clearReconnectState(connector.id)
       continue
     }
 
-    const current = ds.connectorRestartState.get(connector.id) || { lastAttemptAt: 0, failCount: 0, wakeAttempts: 0 }
-    // Backfill wakeAttempts for state objects created before this field existed
-    if (typeof current.wakeAttempts !== 'number') current.wakeAttempts = 0
+    const current = getReconnectState(connector.id)
+      ?? createConnectorReconnectState(
+        { error: typeof connector.lastError === 'string' ? connector.lastError : '' },
+        { initialBackoffMs: CONNECTOR_RESTART_BASE_MS },
+      )
 
-    // Cap wake attempts — stop retrying after MAX_WAKE_ATTEMPTS consecutive failures
-    if (current.wakeAttempts >= MAX_WAKE_ATTEMPTS) {
-      console.warn(`[health] Connector "${connector.name}" exceeded ${MAX_WAKE_ATTEMPTS} wake attempts — giving up`)
-      connector.status = 'error'
-      connector.lastError = `Auto-restart gave up after ${MAX_WAKE_ATTEMPTS} consecutive failures`
-      connector.updatedAt = Date.now()
-      connectors[connector.id] = connector
-      saveConnectors(connectors)
-      ds.connectorRestartState.delete(connector.id)
-      createNotification({
-        type: 'error',
-        title: `Connector "${connector.name}" failed`,
-        message: `Auto-restart gave up after ${MAX_WAKE_ATTEMPTS} consecutive failures.`,
-        dedupKey: `connector-gave-up:${connector.id}`,
-        entityType: 'connector',
-        entityId: connector.id,
-      })
+    if (current.exhausted) {
       continue
     }
 
-    const backoffMs = Math.min(
-      CONNECTOR_RESTART_MAX_MS,
-      CONNECTOR_RESTART_BASE_MS * (2 ** Math.min(6, current.failCount)),
-    )
-    if ((now - current.lastAttemptAt) < backoffMs) continue
+    if (current.nextRetryAt > now) continue
 
     // Notify on first detection of a down connector
-    if (current.wakeAttempts === 0) {
+    if (current.attempts === 0) {
       createNotification({
         type: 'warning',
         title: `Connector "${connector.name}" is down`,
@@ -341,24 +334,43 @@ async function runConnectorHealthChecks(now: number) {
       })
     }
 
-    current.lastAttemptAt = now
-    ds.connectorRestartState.set(connector.id, current)
     try {
       await startConnector(connector.id)
-      ds.connectorRestartState.delete(connector.id)
+      clearReconnectState(connector.id)
       await sendHealthAlert(`Connector "${connector.name}" (${connector.platform}) was down and has been auto-restarted.`)
     } catch (err: unknown) {
-      current.failCount += 1
-      current.wakeAttempts += 1
-      ds.connectorRestartState.set(connector.id, current)
       const message = err instanceof Error ? err.message : String(err)
-      console.warn(`[health] Connector auto-restart failed for ${connector.name} (attempt ${current.wakeAttempts}/${MAX_WAKE_ATTEMPTS}): ${message}`)
+      const next = advanceConnectorReconnectState(current, message, now, {
+        initialBackoffMs: CONNECTOR_RESTART_BASE_MS,
+        maxBackoffMs: CONNECTOR_RESTART_MAX_MS,
+        maxAttempts: MAX_WAKE_ATTEMPTS,
+      })
+      setReconnectState(connector.id, next)
+      if (next.exhausted) {
+        console.warn(`[health] Connector "${connector.name}" exceeded ${MAX_WAKE_ATTEMPTS} auto-restart attempts — giving up until the server restarts or the user retries manually`)
+        connector.status = 'error'
+        connector.lastError = `Auto-restart gave up after ${MAX_WAKE_ATTEMPTS} attempts: ${message}`
+        connector.updatedAt = Date.now()
+        connectors[connector.id] = connector
+        saveConnectors(connectors)
+        notify('connectors')
+        createNotification({
+          type: 'error',
+          title: `Connector "${connector.name}" failed`,
+          message: `Auto-restart gave up after ${MAX_WAKE_ATTEMPTS} attempts.`,
+          dedupKey: `connector-gave-up:${connector.id}`,
+          entityType: 'connector',
+          entityId: connector.id,
+        })
+      } else {
+        console.warn(`[health] Connector auto-restart failed for ${connector.name} (attempt ${next.attempts}/${MAX_WAKE_ATTEMPTS}): ${message}`)
+      }
     }
   }
 
   // Purge restart state for connectors that no longer exist in storage
-  for (const id of ds.connectorRestartState.keys()) {
-    if (!connectors[id]) ds.connectorRestartState.delete(id)
+  for (const id of Object.keys(getAllReconnectStates())) {
+    if (!connectors[id] || connectors[id]?.isEnabled !== true) clearReconnectState(id)
   }
 }
 
@@ -776,8 +788,6 @@ async function runHealthChecks() {
 
   if (sessionsDirty) saveSessions(sessions)
 
-  await runConnectorHealthChecks(now)
-
   // Provider reachability checks
   try {
     await runProviderHealthChecks()
@@ -848,6 +858,26 @@ function stopHealthMonitor() {
   if (ds.healthIntervalId) {
     clearInterval(ds.healthIntervalId)
     ds.healthIntervalId = null
+  }
+}
+
+function startConnectorHealthMonitor() {
+  if (ds.connectorHealthIntervalId) return
+
+  const tick = () => {
+    runConnectorHealthChecks(Date.now()).catch((err) => {
+      console.error('[daemon] Connector health tick failed:', err instanceof Error ? err.message : String(err))
+    })
+  }
+
+  tick()
+  ds.connectorHealthIntervalId = setInterval(tick, CONNECTOR_HEALTH_CHECK_INTERVAL)
+}
+
+function stopConnectorHealthMonitor() {
+  if (ds.connectorHealthIntervalId) {
+    clearInterval(ds.connectorHealthIntervalId)
+    ds.connectorHealthIntervalId = null
   }
 }
 
@@ -951,12 +981,16 @@ function stopEvalScheduler() {
 }
 
 export async function runDaemonHealthCheckNow() {
-  await runHealthChecks()
+  await Promise.all([
+    runHealthChecks(),
+    runConnectorHealthChecks(Date.now()),
+  ])
 }
 
 export function getDaemonStatus() {
   const queue = loadQueue()
   const schedules = loadSchedules()
+  const reconnectStates = Object.values(getAllReconnectStates())
 
   // Find next scheduled task
   let nextScheduled: number | null = null
@@ -985,9 +1019,12 @@ export function getDaemonStatus() {
     heartbeat: getHeartbeatServiceStatus(),
     health: {
       monitorActive: !!ds.healthIntervalId,
+      connectorMonitorActive: !!ds.connectorHealthIntervalId,
       staleSessions: ds.staleSessionIds.size,
-      connectorsInBackoff: ds.connectorRestartState.size,
+      connectorsInBackoff: reconnectStates.filter((state) => !state.exhausted).length,
+      connectorsExhausted: reconnectStates.filter((state) => state.exhausted).length,
       checkIntervalSec: Math.trunc(HEALTH_CHECK_INTERVAL / 1000),
+      connectorCheckIntervalSec: Math.trunc(CONNECTOR_HEALTH_CHECK_INTERVAL / 1000),
       integrity: {
         enabled: loadSettings().integrityMonitorEnabled !== false,
         lastCheckedAt: ds.lastIntegrityCheckAt,

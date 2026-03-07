@@ -64,8 +64,9 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   monitor: { categories: ['execution'], concreteTools: ['monitor', 'monitor_tool'] },
   openclaw_workspace: { categories: ['filesystem', 'platform'], concreteTools: ['openclaw_workspace'] },
   openclaw_nodes: { categories: ['platform'], concreteTools: ['openclaw_nodes'] },
-  manage_platform: { categories: ['platform'], concreteTools: ['manage_platform', 'manage_agents', 'manage_tasks', 'manage_schedules', 'manage_skills', 'manage_documents', 'manage_webhooks', 'manage_connectors', 'manage_sessions', 'manage_secrets'] },
+  manage_platform: { categories: ['platform'], concreteTools: ['manage_platform', 'manage_agents', 'manage_projects', 'manage_tasks', 'manage_schedules', 'manage_skills', 'manage_documents', 'manage_webhooks', 'manage_connectors', 'manage_sessions', 'manage_secrets'] },
   manage_agents: { categories: ['platform'], concreteTools: ['manage_agents'] },
+  manage_projects: { categories: ['platform'], concreteTools: ['manage_projects'] },
   manage_tasks: { categories: ['platform'], concreteTools: ['manage_tasks'] },
   manage_schedules: { categories: ['platform'], concreteTools: ['manage_schedules'] },
   schedule_wake: { categories: ['platform'], concreteTools: ['schedule_wake'] },
@@ -179,6 +180,24 @@ function ensureSettings(settings?: AppSettings | Record<string, unknown> | null)
   return settings as Record<string, unknown>
 }
 
+export function isTaskManagementEnabled(settings?: AppSettings | Record<string, unknown> | null): boolean {
+  return ensureSettings(settings).taskManagementEnabled !== false
+}
+
+export function isProjectManagementEnabled(settings?: AppSettings | Record<string, unknown> | null): boolean {
+  return ensureSettings(settings).projectManagementEnabled !== false
+}
+
+function settingsBlockReason(toolName: string, settings?: AppSettings | Record<string, unknown> | null): string | null {
+  if (toolName === 'manage_tasks' && !isTaskManagementEnabled(settings)) {
+    return 'blocked because task management is disabled in app settings'
+  }
+  if (toolName === 'manage_projects' && !isProjectManagementEnabled(settings)) {
+    return 'blocked because project management is disabled in app settings'
+  }
+  return null
+}
+
 function parsePolicyConfig(settings: Record<string, unknown>) {
   const mode = normalizeMode(settings.capabilityPolicyMode)
   const safetyBlocked = new Set(getSettingsList(settings, 'safetyBlockedTools'))
@@ -216,6 +235,12 @@ export function resolveSessionToolPolicy(
 
   for (const pluginName of requestedPlugins) {
     const descriptor = TOOL_DESCRIPTORS[pluginName]
+    const settingsReason = settingsBlockReason(pluginName, normalizedSettings)
+
+    if (settingsReason) {
+      blockedPlugins.push({ tool: pluginName, reason: settingsReason, source: 'policy' })
+      continue
+    }
 
     if (safetyMatchesTool(safetyBlocked, pluginName, descriptor)) {
       blockedPlugins.push({ tool: pluginName, reason: 'blocked by safety policy', source: 'safety' })
@@ -269,6 +294,9 @@ export function resolveConcreteToolPolicyBlock(
     policyBlockedNames,
     policyAllowedNames,
   } = parsePolicyConfig(normalizedSettings)
+  const settingsReason = settingsBlockReason(name, normalizedSettings)
+
+  if (settingsReason) return settingsReason
 
   if (safetyBlocked.has(name)) return 'blocked by safety policy'
 

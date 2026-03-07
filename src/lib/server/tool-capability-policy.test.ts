@@ -56,3 +56,27 @@ test('concrete tool checks inherit blocked family rules', () => {
     null,
   )
 })
+
+test('task and project management can be disabled from app settings', () => {
+  const decision = resolveSessionToolPolicy(
+    ['manage_platform', 'manage_tasks', 'manage_projects'],
+    {
+      taskManagementEnabled: false,
+      projectManagementEnabled: false,
+    },
+  )
+
+  assert.deepEqual(decision.enabledPlugins, ['manage_platform'])
+  assert.equal(
+    decision.blockedPlugins.some((entry) => entry.tool === 'manage_tasks' && /disabled in app settings/.test(entry.reason)),
+    true,
+  )
+  assert.equal(
+    decision.blockedPlugins.some((entry) => entry.tool === 'manage_projects' && /disabled in app settings/.test(entry.reason)),
+    true,
+  )
+  assert.match(
+    resolveConcreteToolPolicyBlock('manage_tasks', decision, { taskManagementEnabled: false }),
+    /task management is disabled/i,
+  )
+})

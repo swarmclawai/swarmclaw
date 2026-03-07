@@ -126,6 +126,8 @@ export async function PUT(req: Request) {
   settings.taskQualityGateRequireVerification = parseBoolSetting(settings.taskQualityGateRequireVerification, false)
   settings.taskQualityGateRequireArtifact = parseBoolSetting(settings.taskQualityGateRequireArtifact, false)
   settings.taskQualityGateRequireReport = parseBoolSetting(settings.taskQualityGateRequireReport, false)
+  settings.taskManagementEnabled = parseBoolSetting(settings.taskManagementEnabled, true)
+  settings.projectManagementEnabled = parseBoolSetting(settings.projectManagementEnabled, true)
   settings.integrityMonitorEnabled = parseBoolSetting(settings.integrityMonitorEnabled, true)
   settings.sessionResetMode = settings.sessionResetMode === 'daily' ? 'daily' : settings.sessionResetMode === 'idle' ? 'idle' : null
   settings.sessionIdleTimeoutSec = parseIntSetting(

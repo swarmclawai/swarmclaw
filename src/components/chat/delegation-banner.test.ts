@@ -23,5 +23,18 @@ describe('parseTaskCompletion', () => {
     assert.equal(parsed?.reportPath, 'data/task-reports/abc12345.md')
     assert.equal(parsed?.workingDir, '/tmp/work')
   })
-})
 
+  it('captures Gemini resume lines from task completion payloads', () => {
+    const text = [
+      'Task completed: **[Ship follow-up](#task:task-gemini)**',
+      '',
+      'Gemini session: `gemini-session-7`',
+      '',
+      'All done.',
+    ].join('\n')
+    const parsed = parseTaskCompletion(text)
+
+    assert.ok(parsed)
+    assert.equal(parsed?.resumeInfo, 'Gemini session: `gemini-session-7`')
+  })
+})

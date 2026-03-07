@@ -1,4 +1,5 @@
 import type { AppSettings } from '@/types'
+import { getToolsForCapability, matchToolCapabilitiesForMessage, TOOL_CAPABILITY } from './tool-planning'
 
 export type TaskIntent =
   | 'coding'
@@ -25,6 +26,15 @@ function findFirstUrl(text: string): string | undefined {
 
 function containsAny(text: string, terms: string[]): boolean {
   return terms.some((term) => text.includes(term))
+}
+
+function dedupe(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)))
+}
+
+function preferredToolsForCapabilities(enabledPlugins: string[], capabilities: string[], fallback: string[] = []): string[] {
+  const preferred = capabilities.flatMap((capability) => getToolsForCapability(enabledPlugins, capability))
+  return dedupe(preferred.length > 0 ? preferred : fallback)
 }
 
 function normalizeDelegateOrder(value: unknown): DelegateTool[] {
@@ -59,6 +69,14 @@ export function routeTaskIntent(
   const text = (message || '').toLowerCase()
   const url = findFirstUrl(message || '')
   const delegateOrder = normalizeDelegateOrder(settings?.autonomyPreferredDelegates)
+  const matchedCapabilities = matchToolCapabilitiesForMessage(enabledPlugins, message)
+  const wantsVoiceNote = matchedCapabilities.has(TOOL_CAPABILITY.deliveryVoiceNote)
+  const wantsScreenshots = matchedCapabilities.has(TOOL_CAPABILITY.browserCapture)
+  const wantsMediaDelivery = matchedCapabilities.has(TOOL_CAPABILITY.deliveryMedia)
+  const wantsChannelDelivery = matchedCapabilities.has(TOOL_CAPABILITY.deliveryMessage)
+  const researchLike = matchedCapabilities.has(TOOL_CAPABILITY.researchSearch)
+    || matchedCapabilities.has(TOOL_CAPABILITY.researchFetch)
+    || !!url
 
   const coding = containsAny(text, [
     'build',
@@ -98,12 +116,20 @@ export function routeTaskIntent(
     'discord',
     'notify',
     'broadcast',
-  ])
+  ]) || (!researchLike && (wantsVoiceNote || wantsMediaDelivery || wantsChannelDelivery))
   if (outreach) {
     return {
       intent: 'outreach',
       confidence: 0.8,
-      preferredTools: ['connector_message_tool', 'manage_connectors', 'manage_sessions'],
+      preferredTools: preferredToolsForCapabilities(
+        enabledPlugins,
+        [
+          TOOL_CAPABILITY.deliveryVoiceNote,
+          TOOL_CAPABILITY.deliveryMedia,
+          TOOL_CAPABILITY.deliveryMessage,
+        ],
+        ['connector_message_tool', 'manage_connectors', 'manage_sessions'],
+      ),
       preferredDelegates: delegateOrder,
       primaryUrl: url,
     }
@@ -129,36 +155,46 @@ export function routeTaskIntent(
   }
 
   const browsing = !!url && (
-    containsAny(text, ['browser', 'click', 'fill form', 'log in', 'screenshot', 'navigate'])
-    || enabledPlugins.includes('browser')
+    matchedCapabilities.has(TOOL_CAPABILITY.browserNavigate)
+    || matchedCapabilities.has(TOOL_CAPABILITY.browserCapture)
+    || getToolsForCapability(enabledPlugins, TOOL_CAPABILITY.browserNavigate).length > 0
+    || getToolsForCapability(enabledPlugins, TOOL_CAPABILITY.browserCapture).length > 0
   )
   if (browsing) {
     return {
       intent: 'browsing',
       confidence: 0.7,
-      preferredTools: ['browser', 'web_fetch'],
+      preferredTools: preferredToolsForCapabilities(
+        enabledPlugins,
+        [
+          TOOL_CAPABILITY.browserCapture,
+          TOOL_CAPABILITY.browserNavigate,
+          TOOL_CAPABILITY.researchFetch,
+        ],
+        ['browser', 'web_fetch'],
+      ),
       preferredDelegates: delegateOrder,
       primaryUrl: url,
     }
   }
 
-  const research = containsAny(text, [
-    'research',
-    'look up',
-    'find out',
-    'search for',
-    'compare',
-    'latest',
-    'news',
-    'wikipedia',
-    'summarize this url',
-    'analyze website',
-  ]) || !!url
+  const research = researchLike
   if (research) {
+    const preferred = preferredToolsForCapabilities(
+      enabledPlugins,
+      [
+        TOOL_CAPABILITY.researchSearch,
+        TOOL_CAPABILITY.researchFetch,
+        ...(wantsScreenshots ? [TOOL_CAPABILITY.browserCapture] : []),
+        ...(wantsVoiceNote ? [TOOL_CAPABILITY.deliveryVoiceNote] : []),
+        ...(wantsMediaDelivery || wantsChannelDelivery ? [TOOL_CAPABILITY.deliveryMedia, TOOL_CAPABILITY.deliveryMessage] : []),
+      ],
+      ['web_search', 'web_fetch', 'browser'],
+    )
     return {
       intent: 'research',
       confidence: 0.7,
-      preferredTools: ['web_search', 'web_fetch', 'browser'],
+      preferredTools: preferred,
       preferredDelegates: delegateOrder,
       primaryUrl: url,
     }

@@ -18,7 +18,7 @@ import { getProvider } from '@/lib/providers'
 import { estimateCost, checkAgentBudgetLimits } from './cost'
 import { log } from './logger'
 import { logExecution } from './execution-log'
-import { streamAgentChat } from './stream-agent-chat'
+import { buildToolDisciplineLines, streamAgentChat } from './stream-agent-chat'
 import { runLinkUnderstanding } from './link-understanding'
 import { buildSessionTools } from './session-tools'
 import type { StructuredToolInterface } from '@langchain/core/tools'
@@ -46,6 +46,7 @@ import { buildIdentityContinuityContext, refreshSessionIdentityState } from './i
 import { syncSessionArchiveMemory } from './session-archive-memory'
 import { evaluateSessionFreshness, resetSessionRuntime, resolveSessionResetPolicy } from './session-reset-policy'
 import { pruneStreamingAssistantArtifacts, upsertStreamingAssistantArtifact } from '@/lib/chat-streaming-state'
+import { resolveActiveProjectContext } from './project-context'
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
 /** Slice history from the most recent context-clear marker forward */
@@ -191,6 +192,8 @@ function extractDelegateResponse(outputText: string): string | null {
 const MANAGE_PLATFORM_RESOURCE_TO_TOOL: Record<string, string> = {
   agent: 'manage_agents',
   agents: 'manage_agents',
+  project: 'manage_projects',
+  projects: 'manage_projects',
   task: 'manage_tasks',
   tasks: 'manage_tasks',
   schedule: 'manage_schedules',
@@ -671,6 +674,12 @@ function syncSessionFromAgent(sessionId: string): void {
   }
   const isShortcutChat = session.shortcutForAgentId === agent.id || agent.threadSessionId === sessionId
   if (isShortcutChat) {
+    const desiredPlugins = Array.isArray(agent.plugins) ? [...agent.plugins] : []
+    const currentPlugins = Array.isArray(session.plugins) ? [...session.plugins] : []
+    if (JSON.stringify(currentPlugins) !== JSON.stringify(desiredPlugins)) {
+      session.plugins = desiredPlugins
+      changed = true
+    }
     if (session.shortcutForAgentId !== agent.id) { session.shortcutForAgentId = agent.id; changed = true }
     if (session.name !== agent.name) { session.name = agent.name; changed = true }
   }
@@ -736,6 +745,14 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
     'When you have nothing to say, respond with ONLY: NO_MESSAGE',
   ]
   parts.push(thinkingHint.join('\n'))
+
+  const enabledPlugins = Array.isArray(session.plugins) ? session.plugins : (Array.isArray(agent.plugins) ? agent.plugins : [])
+  const toolDisciplineLines = buildToolDisciplineLines(enabledPlugins)
+  if (toolDisciplineLines.length > 0) parts.push(['## Tool Discipline', ...toolDisciplineLines].join('\n'))
+  const operatingGuidance = getPluginManager().collectOperatingGuidance(enabledPlugins)
+  if (operatingGuidance.length > 0) parts.push(['## Tool Guidance', ...operatingGuidance].join('\n'))
+  const capabilityLines = getPluginManager().collectCapabilityDescriptions(enabledPlugins)
+  if (capabilityLines.length > 0) parts.push(['## Tool Capabilities', ...capabilityLines].join('\n'))
 
   // 7. Heartbeat Guidance
   parts.push([
@@ -1261,12 +1278,18 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       return false
     }
     const agent = session.agentId ? loadAgents()[session.agentId] : null
+    const activeProjectContext = resolveActiveProjectContext(session)
     const { tools, cleanup } = await buildSessionTools(session.cwd, sessionForRun.plugins || sessionForRun.tools || [], {
       agentId: session.agentId || null,
       sessionId,
       platformAssignScope: agent?.platformAssignScope || 'self',
       mcpServerIds: agent?.mcpServerIds,
       mcpDisabledTools: agent?.mcpDisabledTools,
+      projectId: activeProjectContext.projectId,
+      projectRoot: activeProjectContext.projectRoot,
+      projectName: activeProjectContext.project?.name || null,
+      projectDescription: activeProjectContext.project?.description || null,
+      memoryScopeMode: (((session as unknown as Record<string, unknown>).memoryScopeMode as string | null | undefined) ?? agent?.memoryScopeMode ?? null),
     })
     try {
       const directTool = tools.find((t) => t?.name === toolName) as StructuredToolInterface | undefined
@@ -1508,6 +1531,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         claudeCode: normalizeResumeId(sr.claudeCode ?? cr.claudeCode),
         codex: normalizeResumeId(sr.codex ?? cr.codex),
         opencode: normalizeResumeId(sr.opencode ?? cr.opencode),
+        gemini: normalizeResumeId(sr.gemini ?? cr.gemini),
       }
       if (JSON.stringify(currentResume) !== JSON.stringify(nextResume)) {
         current.delegateResumeIds = nextResume

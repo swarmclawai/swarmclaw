@@ -189,7 +189,7 @@ function pickChannelTarget(params: {
   return { channelId }
 }
 
-function resolveConnectorMediaInput(params: {
+export function resolveConnectorMediaInput(params: {
   cwd: string
   mediaPath?: string
   imageUrl?: string
@@ -198,6 +198,23 @@ function resolveConnectorMediaInput(params: {
   let resolvedMediaPath = params.mediaPath?.trim() || undefined
   let resolvedImageUrl = params.imageUrl?.trim() || undefined
   let resolvedFileUrl = params.fileUrl?.trim() || undefined
+
+  // Be forgiving when the model passes a served upload URL or remote URL in mediaPath.
+  if (resolvedMediaPath?.startsWith('/api/uploads/')) {
+    const fromUpload = resolveUploadUrl(resolvedMediaPath)
+    if (fromUpload) {
+      resolvedMediaPath = fromUpload.mediaPath
+    } else {
+      return { error: `Error: File not found: ${resolvedMediaPath}` }
+    }
+  } else if (resolvedMediaPath && /^https?:\/\//i.test(resolvedMediaPath)) {
+    if (/\.(png|jpe?g|webp|gif|svg)(?:[?#].*)?$/i.test(resolvedMediaPath)) {
+      resolvedImageUrl = resolvedMediaPath
+    } else {
+      resolvedFileUrl = resolvedMediaPath
+    }
+    resolvedMediaPath = undefined
+  }
 
   if (resolvedMediaPath && !path.isAbsolute(resolvedMediaPath) && !resolvedMediaPath.startsWith('/api/uploads/')) {
     const candidatePaths = [
@@ -540,6 +557,14 @@ const ConnectorPlugin: Plugin = {
           messageId: { type: 'string' },
           targetMessage: { type: 'string', enum: ['last_inbound', 'last_outbound'] },
           emoji: { type: 'string' },
+          voiceText: { type: 'string' },
+          voiceId: { type: 'string' },
+          imageUrl: { type: 'string' },
+          fileUrl: { type: 'string' },
+          mediaPath: { type: 'string' },
+          mimeType: { type: 'string' },
+          fileName: { type: 'string' },
+          caption: { type: 'string' },
           replyToMessageId: { type: 'string' },
           threadId: { type: 'string' },
           delaySec: { type: 'number' },

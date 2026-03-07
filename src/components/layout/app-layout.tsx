@@ -141,6 +141,7 @@ export function AppLayout() {
   const execApprovals = useApprovalStore((s) => s.approvals)
   const loadExecApprovals = useApprovalStore((s) => s.loadApprovals)
   const pruneExecApprovals = useApprovalStore((s) => s.pruneExpired)
+  const appSettings = useAppStore((s) => s.appSettings)
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const hasSelectedSession = !!(currentSessionId && sessions[currentSessionId])
   
@@ -168,10 +169,22 @@ export function AppLayout() {
     pruneExecApprovals()
   }, 10000)
 
-  const appSettings = useAppStore((s) => s.appSettings)
   const [agentViewMode, setAgentViewMode] = useState<'chat' | 'config'>('chat')
   const [profileSheetOpen, setProfileSheetOpen] = useState(false)
   const [canvasDismissedFor, setCanvasDismissedFor] = useState<string | null>(null)
+
+  const isViewEnabled = useCallback((view: AppView) => {
+    if (view === 'projects') return appSettings.projectManagementEnabled !== false
+    if (view === 'tasks') return appSettings.taskManagementEnabled !== false
+    if (view === 'chatrooms') return plugins['chatroom']?.enabled !== false
+    if (view === 'schedules') return plugins['schedule']?.enabled !== false
+    if (view === 'memory') return plugins['memory']?.enabled !== false
+    if (view === 'connectors') return plugins['connectors']?.enabled !== false
+    if (view === 'webhooks') return plugins['http']?.enabled !== false
+    if (view === 'wallets') return plugins['wallet']?.enabled !== false
+    if (view === 'logs') return plugins['monitor']?.enabled !== false
+    return true
+  }, [appSettings.projectManagementEnabled, appSettings.taskManagementEnabled, plugins])
 
   const handleShortcutKey = useCallback((e: KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey
@@ -188,8 +201,10 @@ export function AppLayout() {
     }
     // Cmd+Shift+T / Ctrl+Shift+T — jump to tasks
     if (mod && e.shiftKey && e.key.toLowerCase() === 't') {
+      const state = useAppStore.getState()
+      if (state.appSettings.taskManagementEnabled === false) return
       e.preventDefault()
-      useAppStore.getState().setActiveView('tasks')
+      state.setActiveView('tasks')
     }
   }, [])
 
@@ -222,6 +237,13 @@ export function AppLayout() {
     }
   }, [appSettings.themeHue])
 
+  useEffect(() => {
+    if (!isViewEnabled(activeView)) {
+      setActiveView('home')
+      setSidebarOpen(false)
+    }
+  }, [activeView, isViewEnabled, setActiveView, setSidebarOpen])
+
   const [pluginSidebarItems, setPluginSidebarItems] = useState<Array<{ id: string; label: string; href: string }>>([])
 
   const refreshPluginState = useCallback(() => {
@@ -234,17 +256,6 @@ export function AppLayout() {
   useEffect(() => { refreshPluginState() }, [refreshPluginState])
 
   useWs('plugins', refreshPluginState)
-
-  const isViewEnabled = useCallback((view: AppView) => {
-    if (view === 'chatrooms') return plugins['chatroom']?.enabled !== false
-    if (view === 'schedules') return plugins['schedule']?.enabled !== false
-    if (view === 'memory') return plugins['memory']?.enabled !== false
-    if (view === 'connectors') return plugins['connectors']?.enabled !== false
-    if (view === 'webhooks') return plugins['http']?.enabled !== false
-    if (view === 'wallets') return plugins['wallet']?.enabled !== false
-    if (view === 'logs') return plugins['monitor']?.enabled !== false
-    return true
-  }, [plugins])
 
   const [railExpanded, setRailExpanded] = useState(() => {
     const stored = safeStorageGet(RAIL_EXPANDED_KEY)
@@ -262,6 +273,7 @@ export function AppLayout() {
   }
 
   const openNewSheet = () => {
+    if (!isViewEnabled(activeView)) return
     if (activeView === 'agents') setAgentSheetOpen(true)
     else if (activeView === 'schedules') setScheduleSheetOpen(true)
     else if (activeView === 'tasks') setTaskSheetOpen(true)
@@ -278,6 +290,7 @@ export function AppLayout() {
   }
 
   const handleNavClick = (view: AppView) => {
+    if (!isViewEnabled(view)) return
     if (FULL_WIDTH_VIEWS.has(view)) {
       setActiveView(view)
       setSidebarOpen(false)
@@ -491,11 +504,13 @@ export function AppLayout() {
                     </svg>
                   </NavItem>
                 )}
-                <NavItem view="projects" label="Projects" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('projects')}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7-7H4a2 2 0 0 0-2 2v17Z" /><path d="M14 2v7h7" />
-                  </svg>
-                </NavItem>
+                {isViewEnabled('projects') && (
+                  <NavItem view="projects" label="Projects" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('projects')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7-7H4a2 2 0 0 0-2 2v17Z" /><path d="M14 2v7h7" />
+                    </svg>
+                  </NavItem>
+                )}
               </div>
 
               <div className={`flex flex-col gap-0.5 ${railExpanded ? '' : 'items-center'}`}>
@@ -504,11 +519,13 @@ export function AppLayout() {
                 ) : (
                   <div className="my-1 h-px w-6 bg-white/[0.06]" />
                 )}
-                <NavItem view="tasks" label="Tasks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('tasks')} badge={pendingApprovalCount}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 14l2 2 4-4" />
-                  </svg>
-                </NavItem>
+                {isViewEnabled('tasks') && (
+                  <NavItem view="tasks" label="Tasks" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('tasks')} badge={pendingApprovalCount}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 14l2 2 4-4" />
+                    </svg>
+                  </NavItem>
+                )}
                 <NavItem view="approvals" label="Approvals" expanded={railExpanded} active={activeView} sidebarOpen={sidebarOpen} onClick={() => handleNavClick('approvals')} badge={pendingApprovalCount}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
-import { loadProjects, saveProjects, deleteProject, loadAgents, saveAgents, loadTasks, saveTasks, loadSchedules, saveSchedules, loadSkills, saveSkills } from '@/lib/server/storage'
+import { loadProjects, saveProjects, deleteProject, loadAgents, saveAgents, loadTasks, saveTasks, loadSchedules, saveSchedules, loadSkills, saveSkills, loadSecrets, saveSecrets } from '@/lib/server/storage'
 import { mutateItem, deleteItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
+import { ensureProjectWorkspace, normalizeProjectPatchInput } from '@/lib/server/project-utils'
 import { notify } from '@/lib/server/ws-hub'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,12 +18,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   const body = await req.json()
   const result = mutateItem(ops, id, (project) => {
-    Object.assign(project, body, { updatedAt: Date.now() })
+    const patch = normalizeProjectPatchInput(body && typeof body === 'object' ? body as Record<string, unknown> : {})
+    Object.assign(project, patch, { updatedAt: Date.now() })
     delete (project as Record<string, unknown>).id
     project.id = id
     return project
   })
   if (!result) return notFound()
+  ensureProjectWorkspace(id, result.name)
   return NextResponse.json(result)
 }
 
@@ -50,6 +53,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   clearProjectId(loadTasks, saveTasks, 'tasks')
   clearProjectId(loadSchedules, saveSchedules, 'schedules')
   clearProjectId(loadSkills, saveSkills, 'skills')
+  clearProjectId(loadSecrets, saveSecrets, 'secrets')
 
   return NextResponse.json({ ok: true })
 }

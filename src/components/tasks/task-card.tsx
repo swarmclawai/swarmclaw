@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { updateTask, archiveTask } from '@/lib/tasks'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { AgentAvatar } from '@/components/agents/agent-avatar'
 import type { BoardTask } from '@/types'
 
 function timeAgo(ts: number) {
@@ -46,6 +47,8 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
   const tasks = useAppStore((s) => s.tasks)
   const agent = agents[task.agentId]
   const project = task.projectId ? projects[task.projectId] : null
+  const creatorAgent = task.createdByAgentId ? agents[task.createdByAgentId] : null
+  const delegatorAgent = task.delegatedByAgentId ? agents[task.delegatedByAgentId] : null
 
   const priorityConfig = {
     critical: { label: 'Critical', cls: 'bg-red-500/10 text-red-400' },
@@ -203,6 +206,32 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
                 <span className="text-red-400" title="Failed">{task.totalFailed} fail</span>
               )}
             </>
+          )}
+        </div>
+      )}
+
+      {(creatorAgent || delegatorAgent || task.sourceType === 'schedule') && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {delegatorAgent && (
+            <span className="inline-flex items-center gap-1.5 rounded-[7px] bg-amber-500/10 px-2 py-1 text-[10px] font-600 text-amber-300">
+              <AgentAvatar seed={delegatorAgent.avatarSeed} avatarUrl={delegatorAgent.avatarUrl} name={delegatorAgent.name} size={14} />
+              Delegated by {delegatorAgent.name}
+            </span>
+          )}
+          {creatorAgent && creatorAgent.id !== delegatorAgent?.id && (
+            <span className="inline-flex items-center gap-1.5 rounded-[7px] bg-white/[0.05] px-2 py-1 text-[10px] font-600 text-text-2">
+              <AgentAvatar seed={creatorAgent.avatarSeed} avatarUrl={creatorAgent.avatarUrl} name={creatorAgent.name} size={14} />
+              Created by {creatorAgent.name}
+            </span>
+          )}
+          {task.sourceType === 'schedule' && (
+            <span className="inline-flex items-center gap-1.5 rounded-[7px] bg-purple-500/10 px-2 py-1 text-[10px] font-600 text-purple-300">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="12" r="8" />
+                <path d="M12 8v4l3 2" />
+              </svg>
+              {task.sourceScheduleName ? `Scheduled via ${task.sourceScheduleName}` : 'Scheduled task'}
+            </span>
           )}
         </div>
       )}

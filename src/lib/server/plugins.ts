@@ -111,7 +111,7 @@ interface OpenClawLegacyPlugin {
  */
 interface OpenClawPluginApi {
   registerHook: (event: string, handler: (...args: unknown[]) => unknown, meta?: { name?: string; description?: string }) => void
-  registerTool: (def: PluginToolDef | { name: string; description?: string; parameters?: Record<string, unknown>; execute: (...args: unknown[]) => unknown }) => void
+  registerTool: (def: PluginToolDef | { name: string; description?: string; parameters?: Record<string, unknown>; planning?: PluginToolDef['planning']; execute: (...args: unknown[]) => unknown }) => void
   registerCommand: (def: { name: string; description?: string; handler: (...args: unknown[]) => unknown }) => void
   registerService: (def: { id: string; start: () => void; stop?: () => void }) => void
   registerProvider: (def: Record<string, unknown>) => void
@@ -295,6 +295,7 @@ function coerceTools(rawTools: unknown): PluginToolDef[] {
         name,
         description: typeof rawTool.description === 'string' ? rawTool.description : `Plugin tool: ${name}`,
         parameters: isRecord(rawTool.parameters) ? rawTool.parameters : { type: 'object', properties: {} },
+        planning: isRecord(rawTool.planning) ? rawTool.planning as PluginToolDef['planning'] : undefined,
         execute: execute as PluginToolDef['execute'],
       })
     }
@@ -320,6 +321,7 @@ function coerceTools(rawTools: unknown): PluginToolDef[] {
         name,
         description: typeof rawTool.description === 'string' ? rawTool.description : `Plugin tool: ${name}`,
         parameters: isRecord(rawTool.parameters) ? rawTool.parameters : { type: 'object', properties: {} },
+        planning: isRecord(rawTool.planning) ? rawTool.planning as PluginToolDef['planning'] : undefined,
         execute: rawTool.execute as PluginToolDef['execute'],
       })
     }
@@ -397,6 +399,9 @@ function normalizePlugin(mod: unknown): Plugin | null {
             name: def.name,
             description: def.description || `Plugin tool: ${def.name}`,
             parameters: (def.parameters || { type: 'object', properties: {} }) as Record<string, unknown>,
+            planning: isRecord((def as Record<string, unknown>).planning)
+              ? (def as PluginToolDef).planning
+              : undefined,
             execute: def.execute as PluginToolDef['execute'],
           })
         }

@@ -11,11 +11,19 @@ import { loadRuntimeSettings, getAgentLoopRecursionLimit } from './runtime-setti
 
 import { logExecution } from './execution-log'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
-import { expandPluginIds } from './tool-aliases'
+import { canonicalizePluginId, expandPluginIds } from './tool-aliases'
 import type { Session, Message, UsageRecord, PluginInvocationRecord } from '@/types'
 import { extractSuggestions } from './suggestions'
 import { buildIdentityContinuityContext } from './identity-continuity'
 import { enqueueSystemEvent } from './system-events'
+import { resolveActiveProjectContext } from './project-context'
+import {
+  getEnabledToolPlanningView,
+  getFirstToolForCapability,
+  getToolsForCapability,
+  matchToolCapabilitiesForMessage,
+  TOOL_CAPABILITY,
+} from './tool-planning'
 
 /** Extract a breadcrumb title from notable tool completions (task/schedule/agent creation). */
 interface StreamAgentChatOpts {
@@ -46,7 +54,8 @@ function buildPluginCapabilityLines(enabledPlugins: string[], opts?: { platformA
 }
 
 export function buildToolDisciplineLines(enabledPlugins: string[]): string[] {
-  const uniqueTools = Array.from(new Set(enabledPlugins.filter(Boolean))).sort()
+  const planning = getEnabledToolPlanningView(enabledPlugins)
+  const uniqueTools = planning.displayToolIds
   if (uniqueTools.length === 0) return []
 
   const lines = [
@@ -59,33 +68,26 @@ export function buildToolDisciplineLines(enabledPlugins: string[]): string[] {
     lines.push(`Use direct platform tools exactly as named (${directPlatformTools.map((toolId) => `\`${toolId}\``).join(', ')}). Do not substitute \`manage_platform\` unless it is explicitly enabled.`)
   }
 
-  if (uniqueTools.includes('files')) {
-    lines.push('For `files`, include an explicit action whenever possible. Common patterns: `{"action":"list","dirPath":"."}`, `{"action":"read","filePath":"path/to/file.md"}`, and `{"action":"write","files":[{"path":"path/to/file.md","content":"..."}]}`.')
+  lines.push(...planning.disciplineGuidance)
+
+  const researchSearchTools = getToolsForCapability(enabledPlugins, TOOL_CAPABILITY.researchSearch)
+  const researchFetchTools = getToolsForCapability(enabledPlugins, TOOL_CAPABILITY.researchFetch)
+  const browserCaptureTools = getToolsForCapability(enabledPlugins, TOOL_CAPABILITY.browserCapture)
+  const deliveryMediaTools = getToolsForCapability(enabledPlugins, TOOL_CAPABILITY.deliveryMedia)
+  const deliveryVoiceTools = getToolsForCapability(enabledPlugins, TOOL_CAPABILITY.deliveryVoiceNote)
+
+  if ((researchSearchTools.length || researchFetchTools.length) && browserCaptureTools.length) {
+    const researchLabel = [...researchSearchTools, ...researchFetchTools].map((toolName) => `\`${toolName}\``).join('/')
+    lines.push(`Research tools like ${researchLabel} gather sources and text, but they do not capture screenshots. Use \`${browserCaptureTools[0]}\` for screenshots or rendered page evidence.`)
+    lines.push(`When a task asks for both research and screenshots, use ${researchLabel} first to identify the right source URLs, then use \`${browserCaptureTools[0]}\` to capture the relevant page.`)
   }
 
-  if (uniqueTools.includes('shell')) {
-    lines.push('For `shell`, use `{"action":"execute","command":"..."}` for commands and `{"action":"status","processId":"..."}` or `{"action":"log","processId":"..."}` for long-lived processes.')
+  if (browserCaptureTools.length && deliveryMediaTools.length) {
+    lines.push(`When the user asks you to send screenshots or other media, capture the artifact first with \`${browserCaptureTools[0]}\`, then deliver that exact file or upload URL through \`${deliveryMediaTools[0]}\` instead of saying the capability is unavailable.`)
   }
 
-  if (uniqueTools.includes('web')) {
-    lines.push('For `web`, use `{"action":"search","query":"..."}` to research and `{"action":"fetch","url":"https://..."}` to read a specific page.')
-  }
-
-  if (uniqueTools.includes('browser')) {
-    lines.push('For `browser`, when the task includes a literal URL, pass that exact URL string to `{"action":"navigate","url":"..."}`. Do not invent placeholder URLs like `[Your URL]`, `Example_URL`, or `MockMailPage_URL`.')
-    lines.push('For `browser` form work, prefer `{"action":"fill_form","fields":[{"element":"#email","value":"user@example.com"},{"element":"#password","value":"..."}]}`. A shorthand `form` object keyed by input id/name also works for simple forms.')
-  }
-
-  if (uniqueTools.includes('http_request')) {
-    lines.push('For `http_request`, send exact literal URLs from the task or from prior tool results. Keep JSON request bodies as raw JSON strings.')
-  }
-
-  if (uniqueTools.includes('email')) {
-    lines.push('For `email`, send mail with `{"action":"send","to":"user@example.com","subject":"...","body":"..."}`. If delivery depends on SMTP setup, check `{"action":"status"}` before claiming success.')
-  }
-
-  if (uniqueTools.includes('ask_human')) {
-    lines.push('For `ask_human`, when a workflow needs a code, approval, or out-of-band value from a person, do not guess or keep re-submitting blank forms. Use `{"action":"request_input","question":"..."}` and, for durable pauses, `{"action":"wait_for_reply","correlationId":"..."}`.')
+  if (deliveryVoiceTools.length) {
+    lines.push(`If the user asks for a voice note and \`${deliveryVoiceTools[0]}\` is enabled, try it before saying voice notes are unsupported.`)
   }
 
   return lines
@@ -99,9 +101,36 @@ export function looksLikeOpenEndedDeliverableTask(text: string): boolean {
   return isBroadGoal(text) && /(\.md\b|\.txt\b|copy|brief|proposal|plan|report|draft|document)/.test(normalized)
 }
 
-function getExplicitRequiredToolNames(userMessage: string, enabledPlugins: string[]): string[] {
+export function getExplicitRequiredToolNames(userMessage: string, enabledPlugins: string[]): string[] {
   const normalized = userMessage.toLowerCase()
   const required: string[] = []
+  const matchedCapabilities = matchToolCapabilitiesForMessage(enabledPlugins, userMessage)
+
+  const requireCapability = (capability: string) => {
+    const toolName = matchedCapabilities.get(capability)?.[0] || getFirstToolForCapability(enabledPlugins, capability)
+    if (toolName && !required.includes(toolName)) required.push(toolName)
+  }
+
+  if (matchedCapabilities.has(TOOL_CAPABILITY.researchSearch)) {
+    requireCapability(TOOL_CAPABILITY.researchSearch)
+  }
+
+  if (matchedCapabilities.has(TOOL_CAPABILITY.researchFetch)) {
+    requireCapability(TOOL_CAPABILITY.researchFetch)
+  }
+
+  if (matchedCapabilities.has(TOOL_CAPABILITY.browserCapture)) {
+    requireCapability(TOOL_CAPABILITY.browserCapture)
+  }
+
+  if (matchedCapabilities.has(TOOL_CAPABILITY.deliveryVoiceNote)) {
+    requireCapability(TOOL_CAPABILITY.deliveryVoiceNote)
+  }
+
+  if (matchedCapabilities.has(TOOL_CAPABILITY.deliveryMedia) || matchedCapabilities.has(TOOL_CAPABILITY.deliveryMessage)) {
+    requireCapability(TOOL_CAPABILITY.deliveryMedia)
+    requireCapability(TOOL_CAPABILITY.deliveryMessage)
+  }
 
   if (enabledPlugins.includes('ask_human')
     && (/\bask_human\b/.test(normalized) || /ask the human/.test(normalized) || /request_input/.test(normalized))) {
@@ -140,10 +169,10 @@ const GOAL_DECOMPOSITION_BLOCK = [
   '## Goal Decomposition',
   'When you receive a broad, open-ended goal:',
   '1. Break it into 3-7 concrete, sequentially-executable subtasks before taking action.',
-  '2. If manage_tasks is available, create a task for each subtask to track progress.',
-  '3. Present the plan as a short checklist or numbered list in plain language.',
-  '4. Execute the first subtask immediately — do not stop after planning.',
-  '5. After each subtask, update progress and move to the next.',
+  '2. If manage_tasks is available, use it only for durable tracking: multi-turn work, delegation, explicit backlog requests, or work you expect to resume later. Do not create a task for every micro-step.',
+  '3. Present the plan as a short checklist or numbered list in plain language. If durable tracking is unnecessary, keep it inline instead of creating tasks.',
+  '4. Execute the first substantive subtask immediately — do not stop after planning.',
+  '5. Update only the durable tasks you actually created; otherwise just continue executing and report progress plainly.',
 ].join('\n')
 
 function buildAgenticExecutionPolicy(opts: {
@@ -275,6 +304,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   let agentMcpServerIds: string[] | undefined
   let agentMcpDisabledTools: string[] | undefined
   let agentHeartbeatEnabled = false
+  let agentMemoryScopeMode: 'auto' | 'all' | 'global' | 'agent' | 'session' | 'project' | null = null
+  const activeProjectContext = resolveActiveProjectContext(session)
   if (session.agentId) {
     const agents = loadAgents()
     const agent = agents[session.agentId]
@@ -282,6 +313,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     agentMcpServerIds = agent?.mcpServerIds
     agentMcpDisabledTools = agent?.mcpDisabledTools
     agentHeartbeatEnabled = agent?.heartbeatEnabled === true
+    agentMemoryScopeMode = agent?.memoryScopeMode || null
     if (!hasProvidedSystemPrompt) {
       // Identity block — make sure the agent knows who it is
       const identityLines = [`## My Identity`, `My name is ${agent?.name || 'Agent'}.`]
@@ -334,6 +366,43 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     stateModifierParts.push(...pluginContextParts)
   } catch {
     // Plugin context injection is non-critical
+  }
+
+  if (!hasProvidedSystemPrompt && activeProjectContext.projectId) {
+    const projectLines = ['## Current Project']
+    if (activeProjectContext.project?.name) {
+      projectLines.push(`Active project: ${activeProjectContext.project.name}.`)
+    } else {
+      projectLines.push(`Active project ID: ${activeProjectContext.projectId}.`)
+    }
+    if (activeProjectContext.project?.description) {
+      projectLines.push(`Project description: ${activeProjectContext.project.description}`)
+      projectLines.push('Treat the project description above as authoritative context for who the project is for, what it is focused on, and which pilot priorities matter right now. If the user asks about the active project, answer from that description instead of saying the context is unavailable.')
+    }
+    if (activeProjectContext.objective) projectLines.push(`Project objective: ${activeProjectContext.objective}`)
+    if (activeProjectContext.audience) projectLines.push(`Who it is for: ${activeProjectContext.audience}`)
+    if (activeProjectContext.priorities.length > 0) projectLines.push(`Pilot priorities: ${activeProjectContext.priorities.join('; ')}`)
+    if (activeProjectContext.openObjectives.length > 0) projectLines.push(`Open objectives: ${activeProjectContext.openObjectives.join('; ')}`)
+    if (activeProjectContext.capabilityHints.length > 0) projectLines.push(`Suggested operating modes: ${activeProjectContext.capabilityHints.join('; ')}`)
+    if (activeProjectContext.credentialRequirements.length > 0) projectLines.push(`Credential and secret requirements: ${activeProjectContext.credentialRequirements.join('; ')}`)
+    if (activeProjectContext.successMetrics.length > 0) projectLines.push(`Success metrics: ${activeProjectContext.successMetrics.join('; ')}`)
+    if (activeProjectContext.heartbeatPrompt) projectLines.push(`Preferred heartbeat prompt: ${activeProjectContext.heartbeatPrompt}`)
+    if (activeProjectContext.heartbeatIntervalSec != null) projectLines.push(`Preferred heartbeat interval: ${activeProjectContext.heartbeatIntervalSec}s`)
+    if (activeProjectContext.resourceSummary) {
+      const summary = activeProjectContext.resourceSummary
+      const resourceBits = [
+        `open tasks ${summary.openTaskCount}`,
+        `active schedules ${summary.activeScheduleCount}`,
+        `project secrets ${summary.secretCount}`,
+      ]
+      if (summary.topTaskTitles.length > 0) projectLines.push(`Top open tasks: ${summary.topTaskTitles.join('; ')}`)
+      if (summary.scheduleNames.length > 0) projectLines.push(`Active schedules: ${summary.scheduleNames.join('; ')}`)
+      if (summary.secretNames.length > 0) projectLines.push(`Known project secrets: ${summary.secretNames.join('; ')}`)
+      projectLines.push(`Project resource summary: ${resourceBits.join(', ')}.`)
+    }
+    if (activeProjectContext.projectRoot) projectLines.push(`Workspace root: ${activeProjectContext.projectRoot}`)
+    projectLines.push('When creating project tasks, schedules, secrets, memories, or deliverables for this work, default them to the active project unless the user redirects you.')
+    stateModifierParts.push(projectLines.join('\n'))
   }
 
   // Tell the LLM about available plugins and their access status
@@ -407,6 +476,11 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     platformAssignScope: agentPlatformAssignScope,
     mcpServerIds: agentMcpServerIds,
     mcpDisabledTools: agentMcpDisabledTools,
+    projectId: activeProjectContext.projectId,
+    projectRoot: activeProjectContext.projectRoot,
+    projectName: activeProjectContext.project?.name || null,
+    projectDescription: activeProjectContext.project?.description || null,
+    memoryScopeMode: agentMemoryScopeMode,
   })
   const agent = createReactAgent({ llm, tools, stateModifier })
   const recursionLimit = getAgentLoopRecursionLimit(runtime)
@@ -707,7 +781,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
             needsTextSeparator = true
             lastSegment = ''
             const toolName = event.name || 'unknown'
-            usedToolNames.add(toolName)
+            usedToolNames.add(canonicalizePluginId(toolName) || toolName)
             const input = event.data?.input
             // Estimate input tokens for plugin invocation tracking
             const inputStr = typeof input === 'string' ? input : JSON.stringify(input)
@@ -851,7 +925,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
           langchainMessages.push(new AIMessage({ content: fullText }))
         }
         langchainMessages.push(new HumanMessage({
-          content: `You have not yet completed the required explicit tool step(s): ${requiredToolReminderNames.join(', ')}. Use those enabled tools now before declaring success. Do not replace ask_human with a plain-text request, and do not replace email delivery with browser work or prose.`,
+          content: `You have not yet completed the required explicit tool step(s): ${requiredToolReminderNames.join(', ')}. Use those enabled tools now before declaring success. Do not replace ask_human with a plain-text request, do not replace outbound delivery tools with prose, and do not replace screenshot requests with text-only summaries.`,
         }))
         lastSegment = ''
       } else if (shouldContinue === 'transient') {

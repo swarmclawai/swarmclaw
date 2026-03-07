@@ -101,6 +101,7 @@ export async function POST(req: Request) {
       claudeCode: null,
       codex: null,
       opencode: null,
+      gemini: null,
     },
     messages: Array.isArray(body.messages) ? body.messages : [],
     createdAt: Date.now(), lastActiveAt: Date.now(),

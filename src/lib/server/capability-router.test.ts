@@ -19,3 +19,25 @@ test('routeTaskIntent keeps coding prompts prioritized over memory keywords', ()
   )
   assert.equal(decision.intent, 'coding')
 })
+
+test('routeTaskIntent keeps hybrid research-plus-media prompts in research intent', () => {
+  const decision = routeTaskIntent(
+    'Can you tell me more if there is any news related to the US-Iran war, and can you send me some screenshots and give me a summary and maybe send me a voice note about it?',
+    ['web_search', 'web_fetch', 'browser', 'manage_connectors'],
+    null,
+  )
+
+  assert.equal(decision.intent, 'research')
+  assert.deepEqual(decision.preferredTools, ['web_search', 'web_fetch', 'browser', 'connector_message_tool'])
+})
+
+test('routeTaskIntent treats direct voice-note delivery as outreach', () => {
+  const decision = routeTaskIntent(
+    'Send me a voice note over WhatsApp summarizing what changed.',
+    ['manage_connectors'],
+    null,
+  )
+
+  assert.equal(decision.intent, 'outreach')
+  assert.deepEqual(decision.preferredTools, ['connector_message_tool'])
+})

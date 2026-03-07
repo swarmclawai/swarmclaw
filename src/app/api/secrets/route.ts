@@ -10,7 +10,7 @@ export async function GET(_req: Request) {
   const safe = Object.fromEntries(
     Object.entries(secrets).map(([id, s]: [string, any]) => [
       id,
-      { id: s.id, name: s.name, service: s.service, scope: s.scope, agentIds: s.agentIds, createdAt: s.createdAt, updatedAt: s.updatedAt },
+      { id: s.id, name: s.name, service: s.service, scope: s.scope, agentIds: s.agentIds, projectId: s.projectId, createdAt: s.createdAt, updatedAt: s.updatedAt },
     ])
   )
   return NextResponse.json(safe)
@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     encryptedValue: encryptKey(body.value),
     scope: body.scope || 'global',
     agentIds: body.agentIds || [],
+    projectId: typeof body.projectId === 'string' && body.projectId.trim() ? body.projectId.trim() : undefined,
     createdAt: now,
     updatedAt: now,
   }

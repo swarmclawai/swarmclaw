@@ -7,6 +7,7 @@ import { log } from './logger'
 import { isInternalHeartbeatRun } from './heartbeat-source'
 import { cleanupSessionBrowser } from './session-tools/web'
 import { cancelDelegationJobsForParentSession } from './delegation-jobs'
+import { handleMainLoopRunResult } from './main-agent-loop'
 
 export type SessionRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type SessionQueueMode = 'followup' | 'steer' | 'collect'
@@ -276,6 +277,36 @@ async function drainExecution(executionKey: string): Promise<void> {
       error: next.run.error || null,
       durationMs: (next.run.endedAt || now()) - (next.run.startedAt || now()),
     })
+    const followup = handleMainLoopRunResult({
+      sessionId: next.run.sessionId,
+      message: next.message,
+      internal: next.run.internal,
+      source: next.run.source,
+      resultText: result.text,
+      error: next.run.error,
+      toolEvents: result.toolEvents,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      estimatedCost: result.estimatedCost,
+    })
+    if (followup) {
+      setTimeout(() => {
+        try {
+          enqueueSessionRun({
+            sessionId: next.run.sessionId,
+            message: followup.message,
+            internal: true,
+            source: 'main-loop-followup',
+            mode: 'followup',
+            dedupeKey: followup.dedupeKey,
+          })
+        } catch (err: unknown) {
+          log.warn('session-run', `Main loop follow-up enqueue failed for ${next.run.sessionId}`, {
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }, Math.max(0, followup.delayMs || 0))
+    }
     next.resolve(result)
   } catch (err: any) {
     const aborted = next.signalController.signal.aborted

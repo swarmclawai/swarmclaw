@@ -20,6 +20,38 @@ import { SoulLibraryPicker } from './soul-library-picker'
 import { HintTip } from '@/components/shared/hint-tip'
 
 const HB_PRESETS = [1800, 3600, 7200, 21600, 43200] as const
+const FALLBACK_ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
+
+type AgentSheetSectionId = 'overview' | 'instructions' | 'model' | 'tools'
+
+function SectionCard({
+  title,
+  description,
+  action,
+  children,
+  className = '',
+}: {
+  title: string
+  description?: string
+  action?: React.ReactNode
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <section className={`mb-8 rounded-[20px] border border-white/[0.06] bg-surface/70 p-5 sm:p-6 ${className}`}>
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-display text-[17px] font-700 tracking-[-0.02em] text-text">{title}</h3>
+          {description && (
+            <p className="mt-1 text-[13px] leading-[1.6] text-text-3/75">{description}</p>
+          )}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
 
 function formatHbDuration(sec: number): string {
   if (sec >= 3600) {
@@ -106,6 +138,7 @@ export function AgentSheet() {
   const credentials = useAppStore((s) => s.credentials)
   const loadCredentials = useAppStore((s) => s.loadCredentials)
   const appSettings = useAppStore((s) => s.appSettings)
+  const loadSettings = useAppStore((s) => s.loadSettings)
   const dynamicSkills = useAppStore((s) => s.skills)
   const mcpServers = useAppStore((s) => s.mcpServers)
   const loadSkills = useAppStore((s) => s.loadSkills)
@@ -196,6 +229,12 @@ export function AgentSheet() {
   const [soulLibraryOpen, setSoulLibraryOpen] = useState(false)
   const promptFileRef = useRef<HTMLInputElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
+  const sectionRefs = useRef<Record<AgentSheetSectionId, HTMLDivElement | null>>({
+    overview: null,
+    instructions: null,
+    model: null,
+    tools: null,
+  })
 
   const handleFileUpload = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -212,6 +251,19 @@ export function AgentSheet() {
   const openclawGatewayProfiles = gatewayProfiles.filter((item) => item.provider === 'openclaw')
   const editing = editingId ? agents[editingId] : null
   const hasNativeCapabilities = NATIVE_CAPABILITY_PROVIDER_IDS.has(provider)
+  const globalVoiceId = typeof appSettings.elevenLabsVoiceId === 'string' ? appSettings.elevenLabsVoiceId.trim() : ''
+  const agentVoiceId = voiceId.trim()
+  const elevenLabsConfigured = appSettings.elevenLabsApiKeyConfigured === true
+  const voiceControlsAvailable = elevenLabsConfigured || appSettings.elevenLabsEnabled === true || !!globalVoiceId || !!agentVoiceId
+  const voicePlaybackEnabled = appSettings.elevenLabsEnabled === true
+  const effectiveVoiceId = agentVoiceId || globalVoiceId || FALLBACK_ELEVENLABS_VOICE_ID
+  const effectiveVoiceSource = agentVoiceId
+    ? 'Agent override'
+    : globalVoiceId
+      ? 'Global default'
+      : 'Built-in fallback'
+  const providerSummary = openclawEnabled ? 'OpenClaw gateway' : (currentProvider?.name || provider)
+  const modelSummary = openclawEnabled ? (gatewayProfileId ? 'Gateway-managed' : 'default') : (model || 'Select a model')
 
   const providerNeedsKey = !editing && (
     (currentProvider?.requiresApiKey && providerCredentials.length === 0 && !addingKey) ||
@@ -220,6 +272,7 @@ export function AgentSheet() {
 
   useEffect(() => {
     if (open) {
+      loadSettings()
       loadProviders()
       loadGatewayProfiles()
       loadCredentials()
@@ -412,6 +465,10 @@ export function AgentSheet() {
     setEditingId(null)
   }
 
+  const jumpToSection = (sectionId: AgentSheetSectionId) => {
+    sectionRefs.current[sectionId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   const applyGatewayProfileSelection = (nextGatewayProfileId: string | null) => {
     setGatewayProfileId(nextGatewayProfileId)
     const gateway = openclawGatewayProfiles.find((item) => item.id === nextGatewayProfileId)
@@ -578,6 +635,7 @@ export function AgentSheet() {
         tools: editing.tools,
         plugins: editing.plugins,
         capabilities: editing.capabilities,
+        elevenLabsVoiceId: editing.elevenLabsVoiceId || null,
         soul: editing.soul,
         systemPrompt: editing.systemPrompt,
       }],
@@ -605,11 +663,12 @@ export function AgentSheet() {
         if (!importedAgent || typeof importedAgent !== 'object') throw new Error('Invalid agent pack')
         // Strip IDs and timestamps
         const { id: _id, createdAt: _ca, updatedAt: _ua, threadSessionId: _ts, ...agentData } = importedAgent
+        void [_id, _ca, _ua, _ts]
         await createAgent({ ...agentData, name: agentData.name || 'Imported Agent' })
         await loadAgents()
         toast.success(data?.kind === 'swarmclaw-agent-pack' ? 'Agent pack imported' : 'Agent imported')
         onClose()
-      } catch (err) {
+      } catch {
         toast.error('Invalid agent JSON file')
       }
     }
@@ -720,6 +779,56 @@ export function AgentSheet() {
         </div>
       </div>
 
+      <div className="mb-8 rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4 sm:p-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="rounded-[14px] border border-white/[0.05] bg-black/10 p-3">
+            <p className="text-[11px] font-600 uppercase tracking-[0.08em] text-text-3">Provider</p>
+            <p className="mt-1 text-[14px] font-600 text-text">{providerSummary}</p>
+          </div>
+          <div className="rounded-[14px] border border-white/[0.05] bg-black/10 p-3">
+            <p className="text-[11px] font-600 uppercase tracking-[0.08em] text-text-3">Model</p>
+            <p className="mt-1 text-[14px] font-600 text-text">{modelSummary}</p>
+          </div>
+          <div className="rounded-[14px] border border-white/[0.05] bg-black/10 p-3">
+            <p className="text-[11px] font-600 uppercase tracking-[0.08em] text-text-3">Voice</p>
+            <p className="mt-1 text-[14px] font-600 text-text">{voiceControlsAvailable ? effectiveVoiceSource : 'Not configured'}</p>
+            {voiceControlsAvailable && (
+              <p className="mt-1 truncate text-[12px] text-text-3/75">{effectiveVoiceId}</p>
+            )}
+          </div>
+          <div className="rounded-[14px] border border-white/[0.05] bg-black/10 p-3">
+            <p className="text-[11px] font-600 uppercase tracking-[0.08em] text-text-3">Mode</p>
+            <p className="mt-1 text-[14px] font-600 text-text">{canDelegateToAgents ? 'Delegating agent' : 'Solo agent'}</p>
+            <p className="mt-1 text-[12px] text-text-3/75">
+              {routingTargets.length > 0 ? `${routingTargets.length} route${routingTargets.length === 1 ? '' : 's'} configured` : 'Single primary route'}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {([
+            ['overview', 'Overview'],
+            ['instructions', 'Instructions'],
+            ['model', 'Model Setup'],
+            ['tools', 'Tools'],
+          ] as const).map(([sectionId, label]) => (
+            <button
+              key={sectionId}
+              type="button"
+              onClick={() => jumpToSection(sectionId)}
+              className="rounded-[10px] border border-white/[0.08] bg-transparent px-3 py-2 text-[12px] font-600 text-text-3 transition-all hover:bg-white/[0.04] hover:text-text-2"
+              style={{ fontFamily: 'inherit' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div ref={(node) => { sectionRefs.current.overview = node }}>
+      <SectionCard
+        title="Overview"
+        description="Basic identity, defaults, voice, heartbeat, and budget controls for this agent."
+      >
       <div className="mb-8">
         <SectionLabel>Name</SectionLabel>
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. SEO Researcher" className={inputClass} style={{ fontFamily: 'inherit' }} />
@@ -756,7 +865,7 @@ export function AgentSheet() {
                         setAvatarSeed('')
                         toast.success('Avatar image uploaded')
                       }
-                    } catch (err: unknown) {
+                    } catch {
                       toast.error('Failed to upload image')
                     } finally {
                       setUploading(false)
@@ -935,20 +1044,58 @@ export function AgentSheet() {
       </div>
 
       {/* ElevenLabs Voice ID */}
-      {appSettings.elevenLabsEnabled && (
+      {voiceControlsAvailable && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-            ElevenLabs Voice ID <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
-          </label>
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">
+                Voice & Audio <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+              </label>
+              <p className="mt-1 text-[12px] leading-[1.6] text-text-3/70">
+                Set an agent-specific ElevenLabs voice or inherit the global default configured in Settings.
+              </p>
+            </div>
+            <div className={`rounded-[12px] border px-3 py-2 text-right ${
+              agentVoiceId
+                ? 'border-accent-bright/25 bg-accent-soft/20'
+                : 'border-white/[0.06] bg-white/[0.03]'
+            }`}>
+              <p className="text-[10px] font-700 uppercase tracking-[0.08em] text-text-3">
+                {effectiveVoiceSource}
+              </p>
+              <p className="mt-1 max-w-[240px] truncate font-mono text-[12px] text-text-2">{effectiveVoiceId}</p>
+            </div>
+          </div>
           <input
             type="text"
             value={voiceId}
             onChange={(e) => setVoiceId(e.target.value)}
-            placeholder="Leave blank for global default"
+            placeholder={globalVoiceId ? `Leave blank to use ${globalVoiceId}` : 'Leave blank for the global default'}
             className={inputClass}
             style={{ fontFamily: 'inherit' }}
           />
-          <p className="text-[11px] text-text-3/70 mt-1.5">Override the default voice for this agent. Leave blank to use the global default.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {agentVoiceId && (
+              <button
+                type="button"
+                onClick={() => setVoiceId('')}
+                className="rounded-[9px] border border-white/[0.08] bg-transparent px-2.5 py-1.5 text-[11px] font-600 text-text-3 transition-all hover:bg-white/[0.04] hover:text-text-2"
+                style={{ fontFamily: 'inherit' }}
+              >
+                Use global default
+              </button>
+            )}
+            {!voicePlaybackEnabled && (
+              <span className="rounded-[9px] border border-amber-400/20 bg-amber-400/[0.08] px-2.5 py-1.5 text-[11px] font-600 text-amber-300">
+                Voice playback is disabled globally
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-text-3/70 mt-2">
+            {globalVoiceId
+              ? `Global default: ${globalVoiceId}. This agent can override it with a different voice ID.`
+              : 'No global default voice ID is set yet. If left blank, the built-in ElevenLabs fallback will be used.'}
+          </p>
         </div>
       )}
 
@@ -1107,6 +1254,8 @@ export function AgentSheet() {
             : 'When a configured cap is exceeded, a warning is shown but runs continue.'}
         </p>
       </div>
+      </SectionCard>
+      </div>
 
       {/* Wallet Section */}
       {editingId && (
@@ -1128,6 +1277,11 @@ export function AgentSheet() {
         />
       )}
 
+      <div ref={(node) => { sectionRefs.current.instructions = node }}>
+      <SectionCard
+        title="Instructions & Continuity"
+        description="Define personality, system behavior, and long-running context this agent should preserve."
+      >
       {provider !== 'openclaw' && (
         <div className="mb-8">
           <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
@@ -1322,7 +1476,14 @@ export function AgentSheet() {
           />
         </div>
       </div>
+      </SectionCard>
+      </div>
 
+      <div ref={(node) => { sectionRefs.current.model = node }}>
+      <SectionCard
+        title="Model Setup"
+        description="Choose the provider, credentials, routing, and gateway preferences this agent should use."
+      >
       {/* OpenClaw Gateway Fields */}
       {openclawEnabled && (
         <div className="mb-8 space-y-5">
@@ -1411,13 +1572,13 @@ export function AgentSheet() {
                       onClick={async () => {
                         setSavingKey(true)
                         try {
-                          const cred = await api<any>('POST', '/credentials', { provider: 'openclaw', name: newKeyName.trim() || 'OpenClaw token', apiKey: newKeyValue.trim() })
+                          const cred = await api<{ id: string }>('POST', '/credentials', { provider: 'openclaw', name: newKeyName.trim() || 'OpenClaw token', apiKey: newKeyValue.trim() })
                           await loadCredentials()
                           setCredentialId(cred.id)
                           setAddingKey(false)
                           setNewKeyName('')
                           setNewKeyValue('')
-                        } catch (err: any) { toast.error(`Failed to save: ${err.message}`) }
+                        } catch (err: unknown) { toast.error(`Failed to save: ${err instanceof Error ? err.message : String(err)}`) }
                         finally { setSavingKey(false) }
                       }}
                       className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40"
@@ -1670,13 +1831,13 @@ export function AgentSheet() {
                   onClick={async () => {
                     setSavingKey(true)
                     try {
-                      const cred = await api<any>('POST', '/credentials', { provider, name: newKeyName.trim() || `${provider} key`, apiKey: newKeyValue.trim() })
+                      const cred = await api<{ id: string }>('POST', '/credentials', { provider, name: newKeyName.trim() || `${provider} key`, apiKey: newKeyValue.trim() })
                       await loadCredentials()
                       setCredentialId(cred.id)
                       setAddingKey(false)
                       setNewKeyName('')
                       setNewKeyValue('')
-                    } catch (err: any) { toast.error(`Failed to save: ${err.message}`) }
+                    } catch (err: unknown) { toast.error(`Failed to save: ${err instanceof Error ? err.message : String(err)}`) }
                     finally { setSavingKey(false) }
                   }}
                   className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40"
@@ -1877,7 +2038,14 @@ export function AgentSheet() {
           <p className="text-[11px] text-text-3/70 mt-2">No route pool yet. Add one if this agent should switch between cheaper, stronger, or gateway-specific models.</p>
         )}
       </div>
+      </SectionCard>
+      </div>
 
+      <div ref={(node) => { sectionRefs.current.tools = node }}>
+      <SectionCard
+        title="Tools & Delegation"
+        description="Enable plugins, skills, MCP tools, and delegation behavior for this agent."
+      >
       {/* Plugins — hidden for providers that manage capabilities outside LangGraph */}
       {!hasNativeCapabilities && (
         <div className="mb-8">
@@ -2024,7 +2192,7 @@ export function AgentSheet() {
           </label>
           <p className="text-[12px] text-text-3/60 mb-3">Connect external tool servers to this agent via MCP.</p>
           <div className="flex flex-wrap gap-2">
-            {Object.values(mcpServers).map((s: any) => {
+            {Object.values(mcpServers).map((s) => {
               const active = mcpServerIds.includes(s.id)
               return (
                 <button
@@ -2056,7 +2224,7 @@ export function AgentSheet() {
           </p>
           <div className="space-y-4">
             {mcpServerIds.map((serverId) => {
-              const server = (mcpServers as Record<string, any>)[serverId]
+              const server = mcpServers[serverId]
               const serverTools = mcpTools[serverId]
               if (!server || !serverTools?.length) return null
               const safeName = server.name.replace(/[^a-zA-Z0-9_]/g, '_')
@@ -2121,6 +2289,8 @@ export function AgentSheet() {
           />
         </div>
       )}
+      </SectionCard>
+      </div>
 
       {/* Provider key warning */}
       {providerNeedsKey && (

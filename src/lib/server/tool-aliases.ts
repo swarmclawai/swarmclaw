@@ -7,6 +7,7 @@ const PLUGIN_ALIAS_GROUPS: string[][] = [
   ['delegate', 'claude_code', 'codex_cli', 'opencode_cli', 'gemini_cli', 'delegate_to_claude_code', 'delegate_to_codex_cli', 'delegate_to_opencode_cli', 'delegate_to_gemini_cli'],
   ['manage_platform'],
   ['manage_agents'],
+  ['manage_projects'],
   ['manage_tasks'],
   ['manage_schedules'],
   ['manage_skills'],
@@ -43,6 +44,7 @@ const PLUGIN_IMPLICATIONS: Record<string, string[]> = {
   shell: ['process'],
   manage_platform: [
     'manage_agents',
+    'manage_projects',
     'manage_tasks',
     'manage_schedules',
     'manage_skills',

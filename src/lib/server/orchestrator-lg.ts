@@ -115,6 +115,7 @@ async function executeSubTaskViaCli(agent: Agent, task: string, parentSessionId:
       claudeCode: null,
       codex: null,
       opencode: null,
+      gemini: null,
     },
     messages: [],
     createdAt: Date.now(),

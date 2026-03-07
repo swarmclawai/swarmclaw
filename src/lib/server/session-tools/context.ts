@@ -9,6 +9,11 @@ export interface ToolContext {
   platformAssignScope?: 'self' | 'all'
   mcpServerIds?: string[]
   mcpDisabledTools?: string[]
+  projectId?: string | null
+  projectRoot?: string | null
+  projectName?: string | null
+  projectDescription?: string | null
+  memoryScopeMode?: 'auto' | 'all' | 'global' | 'agent' | 'session' | 'project' | null
 }
 
 export interface SessionToolsResult {

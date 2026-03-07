@@ -12,6 +12,7 @@ import { log } from './logger'
 import { WORKSPACE_DIR } from './data-dir'
 import { drainSystemEvents } from './system-events'
 import { buildIdentityContinuityContext } from './identity-continuity'
+import { buildMainLoopHeartbeatPrompt, isMainSession } from './main-agent-loop'
 import { ensureAgentThreadSession } from './agent-thread-session'
 
 const HEARTBEAT_TICK_MS = 5_000
@@ -434,7 +435,10 @@ async function tickHeartbeats() {
     if (!hasGoal && !heartbeatFileContent && !hasCustomPrompt) {
       continue
     }
-    const heartbeatMessage = buildAgentHeartbeatPrompt(session, agent, cfg.prompt, heartbeatFileContent)
+    const baseHeartbeatMessage = buildAgentHeartbeatPrompt(session, agent, cfg.prompt, heartbeatFileContent)
+    const heartbeatMessage = isMainSession(session)
+      ? buildMainLoopHeartbeatPrompt(session, baseHeartbeatMessage)
+      : baseHeartbeatMessage
 
     const enqueue = enqueueSessionRun({
       sessionId: session.id,

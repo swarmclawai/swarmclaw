@@ -36,7 +36,8 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
  * Granular CRUD tools are now unified under 'manage_platform'.
  */
 export const PLATFORM_TOOLS: ToolDefinition[] = [
-  { id: 'manage_platform', label: 'Platform', description: 'Unified management of agents, tasks, schedules, skills, documents, and secrets' },
+  { id: 'manage_platform', label: 'Platform', description: 'Unified management of agents, projects, tasks, schedules, skills, documents, and secrets' },
+  { id: 'manage_projects', label: 'Projects', description: 'Manage durable project context: objectives, priorities, heartbeat plans, credential needs, and linked resources' },
   { id: 'manage_connectors', label: 'Connectors', description: 'Manage chat platform bridges and send outbound messages' },
   { id: 'manage_chatrooms', label: 'Chatrooms', description: 'Manage SwarmClaw routing rules and multi-agent chatrooms' },
   { id: 'delegate_to_agent', label: 'Assign Agent', description: 'Delegate a task to another specific agent' },

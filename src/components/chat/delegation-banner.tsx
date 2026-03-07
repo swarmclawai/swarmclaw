@@ -169,7 +169,7 @@ export function parseTaskCompletion(text: string): TaskCompletionInfo | null {
       }
     } else if (section.startsWith('Task report: ')) {
       reportPath = section.replace('Task report: ', '').replace(/^`|`$/g, '')
-    } else if (/^(Claude session|Codex thread|OpenCode session|CLI session):/.test(section)) {
+    } else if (/^(Claude session|Codex thread|OpenCode session|Gemini session|CLI session):/.test(section)) {
       resumeInfo = section
     } else if (section.trim()) {
       resultParts.push(section)

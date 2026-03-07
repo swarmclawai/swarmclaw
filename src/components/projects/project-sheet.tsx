@@ -12,6 +12,25 @@ const PROJECT_COLORS = [
 ]
 
 const inputClass = 'w-full px-3 py-2.5 rounded-lg bg-white/[0.06] border border-white/[0.06] text-[13px] text-text-1 placeholder:text-text-3/40 focus:outline-none focus:border-accent/40 transition-colors'
+const sectionTitleClass = 'block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2'
+
+function listToText(values?: string[]) {
+  return Array.isArray(values) ? values.join('\n') : ''
+}
+
+function textToList(value: string) {
+  return value
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
+
+function parseOptionalInteger(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
 
 export function ProjectSheet() {
   const open = useAppStore((s) => s.projectSheetOpen)
@@ -24,6 +43,15 @@ export function ProjectSheet() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [color, setColor] = useState<string | undefined>(undefined)
+  const [objective, setObjective] = useState('')
+  const [audience, setAudience] = useState('')
+  const [prioritiesText, setPrioritiesText] = useState('')
+  const [openObjectivesText, setOpenObjectivesText] = useState('')
+  const [capabilityHintsText, setCapabilityHintsText] = useState('')
+  const [credentialRequirementsText, setCredentialRequirementsText] = useState('')
+  const [successMetricsText, setSuccessMetricsText] = useState('')
+  const [heartbeatPrompt, setHeartbeatPrompt] = useState('')
+  const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')
 
   const editing = editingId ? projects[editingId] : null
 
@@ -33,10 +61,28 @@ export function ProjectSheet() {
         setName(editing.name)
         setDescription(editing.description)
         setColor(editing.color)
+        setObjective(editing.objective || '')
+        setAudience(editing.audience || '')
+        setPrioritiesText(listToText(editing.priorities))
+        setOpenObjectivesText(listToText(editing.openObjectives))
+        setCapabilityHintsText(listToText(editing.capabilityHints))
+        setCredentialRequirementsText(listToText(editing.credentialRequirements))
+        setSuccessMetricsText(listToText(editing.successMetrics))
+        setHeartbeatPrompt(editing.heartbeatPrompt || '')
+        setHeartbeatIntervalSec(editing.heartbeatIntervalSec ? String(editing.heartbeatIntervalSec) : '')
       } else {
         setName('')
         setDescription('')
         setColor(PROJECT_COLORS[0])
+        setObjective('')
+        setAudience('')
+        setPrioritiesText('')
+        setOpenObjectivesText('')
+        setCapabilityHintsText('')
+        setCredentialRequirementsText('')
+        setSuccessMetricsText('')
+        setHeartbeatPrompt('')
+        setHeartbeatIntervalSec('')
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,6 +98,15 @@ export function ProjectSheet() {
       name: name.trim() || 'Unnamed Project',
       description,
       color,
+      objective: objective.trim() || undefined,
+      audience: audience.trim() || undefined,
+      priorities: textToList(prioritiesText),
+      openObjectives: textToList(openObjectivesText),
+      capabilityHints: textToList(capabilityHintsText),
+      credentialRequirements: textToList(credentialRequirementsText),
+      successMetrics: textToList(successMetricsText),
+      heartbeatPrompt: heartbeatPrompt.trim() || undefined,
+      heartbeatIntervalSec: parseOptionalInteger(heartbeatIntervalSec),
     }
     if (editing) {
       await updateProject(editing.id, data)
@@ -72,10 +127,10 @@ export function ProjectSheet() {
   }
 
   return (
-    <BottomSheet open={open} onClose={onClose}>
+    <BottomSheet open={open} onClose={onClose} wide>
       <h2 className="font-display text-[18px] font-700 text-text mb-6">{editing ? 'Edit Project' : 'New Project'}</h2>
       <div className="mb-6">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Name</label>
+        <label className={sectionTitleClass}>Name</label>
         <input
           type="text"
           value={name}
@@ -88,7 +143,7 @@ export function ProjectSheet() {
       </div>
 
       <div className="mb-6">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Description</label>
+        <label className={sectionTitleClass}>Description</label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -99,8 +154,125 @@ export function ProjectSheet() {
         />
       </div>
 
+      <div className="grid gap-6 sm:grid-cols-2 mb-6">
+        <div>
+          <label className={sectionTitleClass}>Objective</label>
+          <textarea
+            value={objective}
+            onChange={(e) => setObjective(e.target.value)}
+            placeholder="What durable outcome is this project driving?"
+            className={inputClass + ' min-h-[88px] resize-y'}
+            style={{ fontFamily: 'inherit' }}
+            rows={4}
+          />
+        </div>
+        <div>
+          <label className={sectionTitleClass}>Audience</label>
+          <textarea
+            value={audience}
+            onChange={(e) => setAudience(e.target.value)}
+            placeholder="Who is this project for?"
+            className={inputClass + ' min-h-[88px] resize-y'}
+            style={{ fontFamily: 'inherit' }}
+            rows={4}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-6 sm:grid-cols-2 mb-6">
+        <div>
+          <label className={sectionTitleClass}>Pilot Priorities</label>
+          <textarea
+            value={prioritiesText}
+            onChange={(e) => setPrioritiesText(e.target.value)}
+            placeholder={'One per line\nResearch the market\nBuild the pilot'}
+            className={inputClass + ' min-h-[110px] resize-y'}
+            style={{ fontFamily: 'inherit' }}
+            rows={5}
+          />
+          <p className="mt-2 text-[11px] text-text-3/45">One priority per line.</p>
+        </div>
+        <div>
+          <label className={sectionTitleClass}>Open Objectives</label>
+          <textarea
+            value={openObjectivesText}
+            onChange={(e) => setOpenObjectivesText(e.target.value)}
+            placeholder={'One per line\nDraft the research brief\nPrepare the rollout checklist'}
+            className={inputClass + ' min-h-[110px] resize-y'}
+            style={{ fontFamily: 'inherit' }}
+            rows={5}
+          />
+          <p className="mt-2 text-[11px] text-text-3/45">Use this for durable next outcomes, not one-off chat prompts.</p>
+        </div>
+      </div>
+
+      <div className="grid gap-6 sm:grid-cols-2 mb-6">
+        <div>
+          <label className={sectionTitleClass}>Capability Hints</label>
+          <textarea
+            value={capabilityHintsText}
+            onChange={(e) => setCapabilityHintsText(e.target.value)}
+            placeholder={'One per line\nResearch\nWeb browsing\nInbox automation'}
+            className={inputClass + ' min-h-[110px] resize-y'}
+            style={{ fontFamily: 'inherit' }}
+            rows={5}
+          />
+        </div>
+        <div>
+          <label className={sectionTitleClass}>Credential Requirements</label>
+          <textarea
+            value={credentialRequirementsText}
+            onChange={(e) => setCredentialRequirementsText(e.target.value)}
+            placeholder={'One per line\nGmail app password\nCRM API token'}
+            className={inputClass + ' min-h-[110px] resize-y'}
+            style={{ fontFamily: 'inherit' }}
+            rows={5}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-6 sm:grid-cols-2 mb-6">
+        <div>
+          <label className={sectionTitleClass}>Success Metrics</label>
+          <textarea
+            value={successMetricsText}
+            onChange={(e) => setSuccessMetricsText(e.target.value)}
+            placeholder={'One per line\nReduce response time below 10 minutes\nIncrease qualified replies'}
+            className={inputClass + ' min-h-[96px] resize-y'}
+            style={{ fontFamily: 'inherit' }}
+            rows={4}
+          />
+        </div>
+        <div className="grid gap-4">
+          <div>
+            <label className={sectionTitleClass}>Heartbeat Prompt</label>
+            <textarea
+              value={heartbeatPrompt}
+              onChange={(e) => setHeartbeatPrompt(e.target.value)}
+              placeholder="What should the project heartbeat ask the agent to review?"
+              className={inputClass + ' min-h-[72px] resize-y'}
+              style={{ fontFamily: 'inherit' }}
+              rows={3}
+            />
+          </div>
+          <div>
+            <label className={sectionTitleClass}>Heartbeat Interval (seconds)</label>
+            <input
+              type="number"
+              min={0}
+              step={60}
+              value={heartbeatIntervalSec}
+              onChange={(e) => setHeartbeatIntervalSec(e.target.value)}
+              placeholder="1800"
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+        </div>
+      </div>
+
       <div className="mb-8">
-        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Color</label>
+        <label className={sectionTitleClass}>Color</label>
         <div className="flex items-center gap-2">
           {PROJECT_COLORS.map((c) => (
             <button

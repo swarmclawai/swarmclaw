@@ -467,7 +467,7 @@ export function TaskSheet() {
         )}
 
         {/* CLI Sessions */}
-        {(editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId || editing.cliResumeId) && (
+        {(editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId || editing.geminiResumeId || editing.cliResumeId) && (
           <div className="mb-8">
             <SectionLabel>CLI Sessions</SectionLabel>
             <div className="flex flex-wrap gap-2">
@@ -489,7 +489,13 @@ export function TaskSheet() {
                   <code className="text-[11px] text-text-3 font-mono">{editing.opencodeResumeId}</code>
                 </div>
               )}
-              {!(editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId) && editing.cliResumeId && (
+              {editing.geminiResumeId && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
+                  <span className="text-[11px] font-600 text-fuchsia-400">Gemini</span>
+                  <code className="text-[11px] text-text-3 font-mono">{editing.geminiResumeId}</code>
+                </div>
+              )}
+              {!(editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId || editing.geminiResumeId) && editing.cliResumeId && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
                   <span className="text-[11px] font-600 text-text-2">{editing.cliProvider || 'CLI'}</span>
                   <code className="text-[11px] text-text-3 font-mono">{editing.cliResumeId}</code>
@@ -971,7 +977,7 @@ export function TaskSheet() {
         </div>
       )}
 
-      {editing && (editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId || editing.cliResumeId) && (
+      {editing && (editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId || editing.geminiResumeId || editing.cliResumeId) && (
         <div className="mb-8">
           <SectionLabel>CLI Sessions</SectionLabel>
           <div className="flex flex-wrap gap-2">
@@ -993,7 +999,13 @@ export function TaskSheet() {
                 <code className="text-[11px] text-text-3 font-mono">{editing.opencodeResumeId}</code>
               </div>
             )}
-            {!(editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId) && editing.cliResumeId && (
+            {editing.geminiResumeId && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
+                <span className="text-[11px] font-600 text-fuchsia-400">Gemini</span>
+                <code className="text-[11px] text-text-3 font-mono">{editing.geminiResumeId}</code>
+              </div>
+            )}
+            {!(editing.claudeResumeId || editing.codexResumeId || editing.opencodeResumeId || editing.geminiResumeId) && editing.cliResumeId && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/[0.06] bg-surface">
                 <span className="text-[11px] font-600 text-text-2">{editing.cliProvider || 'CLI'}</span>
                 <code className="text-[11px] text-text-3 font-mono">{editing.cliResumeId}</code>

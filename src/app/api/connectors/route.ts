@@ -2,19 +2,26 @@ import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { loadConnectors, saveConnectors } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
+import { ensureDaemonStarted } from '@/lib/server/daemon-state'
 import { ConnectorCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
 import type { Connector } from '@/types'
 export const dynamic = 'force-dynamic'
 
 
-export async function GET(_req: Request) {
+export async function GET() {
+  ensureDaemonStarted('api/connectors:get')
   const connectors = loadConnectors()
   // Merge runtime status from manager
   try {
     const { getConnectorStatus, isConnectorAuthenticated, hasConnectorCredentials, getConnectorQR, getReconnectState } = await import('@/lib/server/connectors/manager')
     for (const c of Object.values(connectors) as Connector[]) {
-      c.status = getConnectorStatus(c.id)
+      const runtimeStatus = getConnectorStatus(c.id)
+      c.status = runtimeStatus === 'running'
+        ? 'running'
+        : c.lastError
+          ? 'error'
+          : 'stopped'
       if (c.platform === 'whatsapp') {
         c.authenticated = isConnectorAuthenticated(c.id)
         c.hasCredentials = hasConnectorCredentials(c.id)
@@ -28,6 +35,7 @@ export async function GET(_req: Request) {
         ext.reconnectAttempts = rState.attempts
         ext.nextRetryAt = rState.nextRetryAt
         ext.reconnectError = rState.error
+        ext.reconnectExhausted = rState.exhausted
       }
     }
   } catch { /* manager not loaded yet */ }
@@ -35,6 +43,7 @@ export async function GET(_req: Request) {
 }
 
 export async function POST(req: Request) {
+  ensureDaemonStarted('api/connectors:post')
   const raw = await req.json()
   const parsed = ConnectorCreateSchema.safeParse(raw)
   if (!parsed.success) {
@@ -72,13 +81,8 @@ export async function POST(req: Request) {
     try {
       const { startConnector } = await import('@/lib/server/connectors/manager')
       await startConnector(id)
-      connector.isEnabled = true
-      connector.status = 'running'
-      connectors[id] = connector
-      saveConnectors(connectors)
-      notify('connectors')
     } catch { /* auto-start is best-effort */ }
   }
 
-  return NextResponse.json(connector)
+  return NextResponse.json(loadConnectors()[id] || connector)
 }

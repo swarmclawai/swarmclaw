@@ -19,6 +19,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (body.service !== undefined) secret.service = body.service
     if (body.scope !== undefined) secret.scope = body.scope
     if (body.agentIds !== undefined) secret.agentIds = body.agentIds
+    if (body.projectId !== undefined) secret.projectId = body.projectId || undefined
     secret.updatedAt = Date.now()
     return secret
   })

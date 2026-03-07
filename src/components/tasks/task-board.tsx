@@ -14,9 +14,21 @@ import { toast } from 'sonner'
 const ACTIVE_COLUMNS: BoardTaskStatus[] = ['backlog', 'queued', 'running', 'completed', 'failed']
 type BoardViewMode = 'board' | 'list'
 type AttentionFilter = 'all' | 'needs-attention' | 'approval' | 'blocked' | 'overdue' | 'failed'
+type TaskScopeFilter = 'user-facing' | 'all' | 'agent'
 
 function isTaskOverdue(task: BoardTask): boolean {
   return !!task.dueAt && task.dueAt < Date.now() && task.status !== 'completed' && task.status !== 'archived'
+}
+
+function isInternalAgentTask(task: BoardTask): boolean {
+  if (task.sourceType === 'schedule' || task.sourceType === 'delegation') return true
+  return Boolean(task.createdByAgentId || task.delegatedByAgentId)
+}
+
+function isTaskRelevantToAgent(task: BoardTask, agentId: string): boolean {
+  return task.agentId === agentId
+    || task.createdByAgentId === agentId
+    || task.delegatedByAgentId === agentId
 }
 
 function matchesAttentionFilter(task: BoardTask, filter: AttentionFilter): boolean {
@@ -139,6 +151,13 @@ export function TaskBoard() {
     if (typeof window === 'undefined') return ''
     return new URLSearchParams(window.location.search).get('tag') || ''
   })
+  const [taskScopeFilter, setTaskScopeFilter] = useState<TaskScopeFilter>(() => {
+    if (typeof window === 'undefined') return 'user-facing'
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('agent')) return 'agent'
+    const raw = params.get('taskView')
+    return raw === 'all' ? 'all' : 'user-facing'
+  })
   const [viewMode, setViewMode] = useState<BoardViewMode>('board')
   const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all')
 
@@ -156,13 +175,14 @@ export function TaskBoard() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams()
-    if (filterAgentId) params.set('agent', filterAgentId)
+    if (taskScopeFilter === 'agent' && filterAgentId) params.set('agent', filterAgentId)
+    else if (taskScopeFilter === 'all') params.set('taskView', 'all')
     if (filterTag) params.set('tag', filterTag)
     if (activeProjectFilter) params.set('project', activeProjectFilter)
     const qs = params.toString()
     const newUrl = `${window.location.pathname}${qs ? `?${qs}` : ''}`
     window.history.replaceState(null, '', newUrl)
-  }, [filterAgentId, filterTag, activeProjectFilter])
+  }, [filterAgentId, filterTag, activeProjectFilter, taskScopeFilter])
 
   const [loaded, setLoaded] = useState(Object.keys(tasks).length > 0)
   useEffect(() => { Promise.all([loadTasks(), loadAgents(), loadProjects()]).then(() => setLoaded(true)) }, [])
@@ -173,17 +193,28 @@ export function TaskBoard() {
 
   const columns: BoardTaskStatus[] = showArchived ? [...ACTIVE_COLUMNS, 'archived'] : ACTIVE_COLUMNS
 
-  const matchesBaseFilters = useCallback((task: BoardTask) => {
+  const matchesScopeFilters = useCallback((task: BoardTask) => {
     if (!showArchived && task.status === 'archived') return false
-    if (filterAgentId && task.agentId !== filterAgentId) return false
+    if (taskScopeFilter === 'user-facing' && isInternalAgentTask(task)) return false
+    if (taskScopeFilter === 'agent' && (!filterAgentId || !isTaskRelevantToAgent(task, filterAgentId))) return false
     if (filterTag && !(task.tags && task.tags.includes(filterTag))) return false
     if (activeProjectFilter && task.projectId !== activeProjectFilter) return false
+    return true
+  }, [activeProjectFilter, filterAgentId, filterTag, showArchived, taskScopeFilter])
+
+  const matchesBaseFilters = useCallback((task: BoardTask) => {
+    if (!matchesScopeFilters(task)) return false
     if (!matchesAttentionFilter(task, attentionFilter)) return false
     return true
-  }, [activeProjectFilter, attentionFilter, filterAgentId, filterTag, showArchived])
+  }, [attentionFilter, matchesScopeFilters])
+
+  const scopedTasks = useMemo(
+    () => Object.values(tasks).filter(matchesScopeFilters),
+    [tasks, matchesScopeFilters],
+  )
 
   const filteredTasks = useMemo(() => (
-    Object.values(tasks)
+    scopedTasks
       .filter(matchesBaseFilters)
       .sort((a, b) => {
         const rankDiff = attentionRank(a) - attentionRank(b)
@@ -192,7 +223,7 @@ export function TaskBoard() {
         if (dueDiff !== 0) return dueDiff
         return b.updatedAt - a.updatedAt
       })
-  ), [tasks, matchesBaseFilters])
+  ), [scopedTasks, matchesBaseFilters])
 
   const tasksByStatus = useCallback((status: BoardTaskStatus) =>
     filteredTasks
@@ -223,7 +254,7 @@ export function TaskBoard() {
 
   // Task counts per project (non-archived)
   const projectTaskCounts: Record<string, number> = {}
-  for (const t of Object.values(tasks)) {
+  for (const t of scopedTasks) {
     if (t.projectId && t.status !== 'archived') {
       projectTaskCounts[t.projectId] = (projectTaskCounts[t.projectId] || 0) + 1
     }
@@ -231,7 +262,7 @@ export function TaskBoard() {
 
   // Summary stats
   const stats = useMemo(() => {
-    const all = Object.values(tasks).filter((t) => t.status !== 'archived')
+    const all = scopedTasks.filter((t) => t.status !== 'archived')
     return {
       total: all.length,
       running: all.filter((t) => t.status === 'running').length,
@@ -242,7 +273,13 @@ export function TaskBoard() {
       approvals: all.filter((t) => !!t.pendingApproval).length,
       attention: all.filter((t) => matchesAttentionFilter(t, 'needs-attention')).length,
     }
-  }, [tasks])
+  }, [scopedTasks])
+
+  const activeScopeLabel = useMemo(() => {
+    if (taskScopeFilter === 'all') return 'All tasks'
+    if (taskScopeFilter === 'agent' && filterAgentId && agents[filterAgentId]) return `${agents[filterAgentId].name} activity`
+    return 'User-facing tasks'
+  }, [agents, filterAgentId, taskScopeFilter])
 
   const activeAttentionLabel = useMemo(() => {
     if (attentionFilter === 'all') return null
@@ -301,6 +338,16 @@ export function TaskBoard() {
             <p className="text-[13px] text-text-3">
               {stats.total} task{stats.total !== 1 ? 's' : ''}
             </p>
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/[0.04] px-2 py-1 text-[11px] font-600 text-text-2">
+              {taskScopeFilter === 'agent' && filterAgentId && agents[filterAgentId] ? (
+                <>
+                  <AgentAvatar seed={agents[filterAgentId].avatarSeed || null} avatarUrl={agents[filterAgentId].avatarUrl} name={agents[filterAgentId].name} size={14} />
+                  {activeScopeLabel}
+                </>
+              ) : (
+                activeScopeLabel
+              )}
+            </span>
             {stats.running > 0 && (
               <span className="inline-flex items-center gap-1 text-[11px] font-600 text-blue-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
@@ -338,41 +385,83 @@ export function TaskBoard() {
             <button
               onClick={() => setAgentDropdownOpen(!agentDropdownOpen)}
               className={`flex items-center gap-2 px-3 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border
-                ${filterAgentId
+                ${taskScopeFilter !== 'user-facing'
                   ? 'bg-white/[0.06] border-white/[0.1] text-text-2'
                   : 'bg-transparent border-white/[0.06] text-text-3 hover:bg-white/[0.03]'}`}
               style={{ fontFamily: 'inherit', minWidth: 130 }}
             >
-              {filterAgentId && agents[filterAgentId] ? (
+              {taskScopeFilter === 'agent' && filterAgentId && agents[filterAgentId] ? (
                 <>
                   <AgentAvatar seed={agents[filterAgentId].avatarSeed || null} avatarUrl={agents[filterAgentId].avatarUrl} name={agents[filterAgentId].name} size={18} />
                   {agents[filterAgentId].name}
                 </>
-              ) : 'All Agents'}
+              ) : taskScopeFilter === 'all' ? 'All Tasks' : 'User View'}
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="ml-auto opacity-50">
                 <path d="M2.5 4L5 6.5L7.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
             {agentDropdownOpen && (
-              <div className="absolute top-full right-0 mt-1 min-w-[200px] py-1 rounded-[12px] border border-white/[0.08] bg-surface-2 shadow-lg z-50">
+              <div className="absolute top-full right-0 mt-1 min-w-[240px] py-1 rounded-[12px] border border-white/[0.08] bg-surface-2 shadow-lg z-50">
                 <button
-                  onClick={() => { setFilterAgentId(''); setAgentDropdownOpen(false) }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] font-600 cursor-pointer border-none text-left transition-colors
-                    ${!filterAgentId ? 'bg-white/[0.06] text-text' : 'bg-transparent text-text-3 hover:bg-white/[0.04]'}`}
+                  onClick={() => {
+                    setTaskScopeFilter('user-facing')
+                    setFilterAgentId('')
+                    setAgentDropdownOpen(false)
+                  }}
+                  className={`w-full flex items-start gap-2.5 px-3 py-2.5 text-[13px] font-600 cursor-pointer border-none text-left transition-colors
+                    ${taskScopeFilter === 'user-facing' ? 'bg-white/[0.06] text-text' : 'bg-transparent text-text-3 hover:bg-white/[0.04]'}`}
                   style={{ fontFamily: 'inherit' }}
                 >
-                  All Agents
+                  <span className="mt-0.5 inline-flex h-5 items-center rounded-full bg-emerald-500/12 px-1.5 text-[10px] font-700 uppercase tracking-[0.08em] text-emerald-400">
+                    Default
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block">User-facing tasks</span>
+                    <span className="mt-0.5 block text-[11px] font-500 text-text-3/60">
+                      Hide scheduled, delegated, and agent-created internal work.
+                    </span>
+                  </span>
                 </button>
+                <button
+                  onClick={() => {
+                    setTaskScopeFilter('all')
+                    setFilterAgentId('')
+                    setAgentDropdownOpen(false)
+                  }}
+                  className={`w-full flex items-start gap-2.5 px-3 py-2.5 text-[13px] font-600 cursor-pointer border-none text-left transition-colors
+                    ${taskScopeFilter === 'all' ? 'bg-white/[0.06] text-text' : 'bg-transparent text-text-3 hover:bg-white/[0.04]'}`}
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  <span className="mt-0.5 inline-flex h-5 items-center rounded-full bg-white/[0.06] px-1.5 text-[10px] font-700 uppercase tracking-[0.08em] text-text-3">
+                    All
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block">All tasks</span>
+                    <span className="mt-0.5 block text-[11px] font-500 text-text-3/60">
+                      Include internal agent execution, schedules, and delegations.
+                    </span>
+                  </span>
+                </button>
+                <div className="my-1 border-t border-white/[0.06]" />
                 {Object.values(agents).sort((a, b) => a.name.localeCompare(b.name)).map((a) => (
                   <button
                     key={a.id}
-                    onClick={() => { setFilterAgentId(a.id); setAgentDropdownOpen(false) }}
+                    onClick={() => {
+                      setTaskScopeFilter('agent')
+                      setFilterAgentId(a.id)
+                      setAgentDropdownOpen(false)
+                    }}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] font-600 cursor-pointer border-none text-left transition-colors
-                      ${filterAgentId === a.id ? 'bg-white/[0.06] text-text' : 'bg-transparent text-text-3 hover:bg-white/[0.04]'}`}
+                      ${taskScopeFilter === 'agent' && filterAgentId === a.id ? 'bg-white/[0.06] text-text' : 'bg-transparent text-text-3 hover:bg-white/[0.04]'}`}
                     style={{ fontFamily: 'inherit' }}
                   >
                     <AgentAvatar seed={a.avatarSeed || null} avatarUrl={a.avatarUrl} name={a.name} size={20} />
-                    {a.name}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{a.name}</span>
+                      <span className="mt-0.5 block text-[11px] font-500 text-text-3/60">
+                        Assigned, created, or delegated by this agent
+                      </span>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -520,8 +609,33 @@ export function TaskBoard() {
         ))}
       </div>
 
-      {(activeProjectFilter && projects[activeProjectFilter]) || activeAttentionLabel ? (
+      {(activeProjectFilter && projects[activeProjectFilter]) || activeAttentionLabel || taskScopeFilter !== 'all' ? (
         <div className="flex flex-wrap items-center gap-2 px-8 pb-3">
+          {taskScopeFilter !== 'all' && (
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] border text-[12px] font-600 ${
+              taskScopeFilter === 'agent'
+                ? 'bg-accent-soft border-accent-bright/20 text-accent-bright'
+                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+            }`}>
+              {taskScopeFilter === 'agent' && filterAgentId && agents[filterAgentId] ? (
+                <>
+                  <AgentAvatar seed={agents[filterAgentId].avatarSeed || null} avatarUrl={agents[filterAgentId].avatarUrl} name={agents[filterAgentId].name} size={14} />
+                  {agents[filterAgentId].name} activity
+                </>
+              ) : (
+                'User-facing tasks'
+              )}
+              <button
+                onClick={() => {
+                  setTaskScopeFilter('all')
+                  setFilterAgentId('')
+                }}
+                className="ml-1 cursor-pointer border-none bg-transparent p-0 text-[14px] leading-none text-current opacity-80 hover:opacity-100"
+              >
+                &times;
+              </button>
+            </span>
+          )}
           {activeProjectFilter && projects[activeProjectFilter] && (
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-white/[0.04] border border-white/[0.06] text-[12px] font-600 text-text-2">
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: projects[activeProjectFilter].color || '#6366F1' }} />
@@ -593,7 +707,7 @@ export function TaskBoard() {
           ) : filteredTasks.length === 0 ? (
             <div className="max-w-3xl mx-auto rounded-[16px] border border-dashed border-white/[0.08] px-6 py-14 text-center">
               <p className="text-[14px] font-600 text-text-2 mb-1">No tasks match this view</p>
-              <p className="text-[12px] text-text-3/60">Try clearing one of the active filters or switching back to the full board.</p>
+              <p className="text-[12px] text-text-3/60">Try clearing one of the active filters or switching back to all tasks.</p>
             </div>
           ) : (
             <div className="max-w-4xl mx-auto">
