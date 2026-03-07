@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { api } from '@/lib/api-client'
+import { OpenClawDeployPanel } from '@/components/openclaw/openclaw-deploy-panel'
 import { useAppStore } from '@/stores/use-app-store'
 import type { ProviderType, Credential, GatewayProfile } from '@/types'
 import {
@@ -140,12 +141,6 @@ function isLocalOpenClawEndpoint(value: string | null | undefined): boolean {
   if (!parsed) return false
   const host = parsed.hostname.trim().toLowerCase()
   return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0'
-}
-
-function resolveOpenClawPort(value: string | null | undefined): number {
-  const parsed = parseProviderUrl(value)
-  const port = parsed ? Number(parsed.port) : NaN
-  return Number.isFinite(port) && port > 0 ? port : 18789
 }
 
 function resolveOpenClawDashboardUrl(value: string | null | undefined): string {
@@ -342,7 +337,6 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [checkErrorCode, setCheckErrorCode] = useState<string | null>(null)
   const [openclawDeviceId, setOpenclawDeviceId] = useState<string | null>(null)
   const [providerSuggestedModel, setProviderSuggestedModel] = useState('')
-  const [commandCopyState, setCommandCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   const [doctorState, setDoctorState] = useState<'idle' | 'checking' | 'done' | 'error'>('idle')
   const [doctorError, setDoctorError] = useState('')
@@ -381,9 +375,6 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     ? resolveOpenClawDashboardUrl(openClawEndpointValue)
     : null
   const openClawLocal = provider === 'openclaw' ? isLocalOpenClawEndpoint(openClawEndpointValue) : false
-  const openClawPort = provider === 'openclaw' ? resolveOpenClawPort(openClawEndpointValue) : 18789
-  const openClawLocalCommand = `npx openclaw gateway run --bind loopback --port ${openClawPort} --verbose`
-  const openClawLocalCommandPnpm = `pnpm openclaw gateway run --bind loopback --port ${openClawPort} --verbose`
 
   const resetProviderForm = () => {
     setProvider(null)
@@ -396,7 +387,6 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     setCheckErrorCode(null)
     setOpenclawDeviceId(null)
     setProviderSuggestedModel('')
-    setCommandCopyState('idle')
     setError('')
   }
 
@@ -447,9 +437,29 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     setCheckErrorCode(null)
     setOpenclawDeviceId(null)
     setProviderSuggestedModel(getDefaultModelForProvider(nextProvider))
-    setCommandCopyState('idle')
     setError('')
     setStep('connect')
+  }
+
+  const applyOpenClawDeployPatch = (patch: {
+    endpoint?: string
+    token?: string
+    name?: string
+  }) => {
+    if (patch.endpoint) {
+      setEndpoint(patch.endpoint)
+    }
+    if (patch.token) {
+      setApiKey(patch.token)
+      setCredentialId(null)
+    }
+    if (patch.name && (!providerLabel.trim() || providerLabel.trim() === (selectedProvider?.name || ''))) {
+      setProviderLabel(patch.name)
+    }
+    setCheckState('idle')
+    setCheckMessage('')
+    setCheckErrorCode(null)
+    setError('')
   }
 
   const runConnectionCheck = async (): Promise<boolean> => {
@@ -601,17 +611,6 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         model: nextModel,
       }
     }))
-  }
-
-  const copyOpenClawLocalCommand = async () => {
-    try {
-      await navigator.clipboard.writeText(openClawLocalCommand)
-      setCommandCopyState('copied')
-      window.setTimeout(() => setCommandCopyState('idle'), 1200)
-    } catch {
-      setCommandCopyState('failed')
-      window.setTimeout(() => setCommandCopyState('idle'), 1800)
-    }
   }
 
   const createAgentsAndFinish = async () => {
@@ -1063,6 +1062,16 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
               {provider === 'openclaw' && (
                 <div className="rounded-[14px] border border-white/[0.08] bg-surface p-4 space-y-4">
+                  <OpenClawDeployPanel
+                    compact
+                    endpoint={openClawEndpointValue}
+                    token={apiKey}
+                    suggestedName={providerLabel || selectedProvider.name}
+                    title="Smart Deploy OpenClaw"
+                    description="Launch the bundled official OpenClaw gateway locally, or generate an official-image VPS bundle for major providers without relying on third-party deployment services."
+                    onApply={applyOpenClawDeployPatch}
+                  />
+
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="rounded-[12px] border border-white/[0.06] bg-bg px-4 py-3">
                       <div className="text-[12px] uppercase tracking-[0.08em] text-text-3 mb-2">Remote gateway</div>
@@ -1077,37 +1086,12 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                       </p>
                     </div>
                     <div className="rounded-[12px] border border-white/[0.06] bg-bg px-4 py-3">
-                      <div className="text-[12px] uppercase tracking-[0.08em] text-text-3 mb-2">Run locally</div>
+                      <div className="text-[12px] uppercase tracking-[0.08em] text-text-3 mb-2">Safe defaults</div>
                       <p className="text-[13px] text-text-2 leading-relaxed">
-                        Use this when SwarmClaw and OpenClaw are on the same host. <code className="text-text-2">localhost</code> always refers to the SwarmClaw host.
+                        Smart Deploy generates a gateway token for you, defaults to the standard OpenClaw ports, and prefills this setup form automatically.
                       </p>
-                      <div className="mt-3 rounded-[10px] border border-white/[0.06] bg-surface px-3 py-2">
-                        <code className="block overflow-x-auto whitespace-nowrap text-[12px] text-text-2">
-                          {openClawLocalCommand}
-                        </code>
-                      </div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={copyOpenClawLocalCommand}
-                          className="px-3 py-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] text-[12px] text-text cursor-pointer hover:bg-white/[0.06] transition-all duration-200"
-                        >
-                          {commandCopyState === 'copied'
-                            ? 'Copied'
-                            : commandCopyState === 'failed'
-                              ? 'Copy failed'
-                              : 'Copy command'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { setEndpoint(selectedProvider.defaultEndpoint || 'http://localhost:18789/v1'); setCheckState('idle'); setCheckMessage(''); setCheckErrorCode(null) }}
-                          className="px-3 py-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] text-[12px] text-text cursor-pointer hover:bg-white/[0.06] transition-all duration-200"
-                        >
-                          Use local default
-                        </button>
-                      </div>
-                      <p className="mt-2 text-[11px] text-text-3">
-                        In a source checkout, use <code className="text-text-2">{openClawLocalCommandPnpm}</code>.
+                      <p className="mt-2 text-[12px] text-text-3 leading-relaxed">
+                        Local quickstart uses the bundled official OpenClaw CLI. Remote quickstart uses the official OpenClaw Docker image or the official repo for managed hosts.
                       </p>
                     </div>
                   </div>
