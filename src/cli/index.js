@@ -319,9 +319,49 @@ const COMMAND_GROUPS = [
         expectsJsonBody: true,
         defaultBody: { action: 'stop-local' },
       }),
+      cmd('deploy-local-restart', 'POST', '/openclaw/deploy', 'Restart the managed local OpenClaw deployment (use --data JSON for port/token overrides)', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'restart-local' },
+      }),
       cmd('deploy-bundle', 'POST', '/openclaw/deploy', 'Generate an OpenClaw remote deployment bundle (use --data JSON for template/target/token)', {
         expectsJsonBody: true,
         defaultBody: { action: 'bundle' },
+      }),
+      cmd('deploy-ssh', 'POST', '/openclaw/deploy', 'Push the official-image OpenClaw bundle to a remote host over SSH (use --data JSON for target/ssh/provider)', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'ssh-deploy' },
+      }),
+      cmd('deploy-verify', 'POST', '/openclaw/deploy', 'Verify an OpenClaw endpoint/token pair (use --data JSON for endpoint/token)', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'verify' },
+      }),
+      cmd('remote-start', 'POST', '/openclaw/deploy', 'Start a remote SSH-managed OpenClaw stack', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'remote-start' },
+      }),
+      cmd('remote-stop', 'POST', '/openclaw/deploy', 'Stop a remote SSH-managed OpenClaw stack', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'remote-stop' },
+      }),
+      cmd('remote-restart', 'POST', '/openclaw/deploy', 'Restart a remote SSH-managed OpenClaw stack', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'remote-restart' },
+      }),
+      cmd('remote-upgrade', 'POST', '/openclaw/deploy', 'Upgrade a remote SSH-managed OpenClaw stack', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'remote-upgrade' },
+      }),
+      cmd('remote-backup', 'POST', '/openclaw/deploy', 'Create a remote backup on an SSH-managed OpenClaw host', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'remote-backup' },
+      }),
+      cmd('remote-restore', 'POST', '/openclaw/deploy', 'Restore a remote backup on an SSH-managed OpenClaw host', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'remote-restore' },
+      }),
+      cmd('remote-rotate-token', 'POST', '/openclaw/deploy', 'Rotate the gateway token on an SSH-managed OpenClaw host', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'remote-rotate-token' },
       }),
       cmd('directory', 'GET', '/openclaw/directory', 'List directory entries from running OpenClaw connectors'),
       cmd('gateway-status', 'GET', '/openclaw/gateway', 'Check OpenClaw gateway connection status'),

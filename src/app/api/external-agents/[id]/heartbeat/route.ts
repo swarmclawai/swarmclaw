@@ -15,6 +15,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   runtime.lastSeenAt = now
   runtime.updatedAt = now
   runtime.status = body.status || 'online'
+  if (typeof body.lifecycleState === 'string' && body.lifecycleState) runtime.lifecycleState = body.lifecycleState
+  if (typeof body.version === 'string') runtime.version = body.version || null
+  if (typeof body.lastHealthNote === 'string') runtime.lastHealthNote = body.lastHealthNote || null
   if (body.tokenStats && typeof body.tokenStats === 'object') {
     runtime.tokenStats = {
       ...(runtime.tokenStats || {}),

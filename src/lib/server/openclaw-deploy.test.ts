@@ -18,12 +18,16 @@ test('docker smart deploy bundle uses official image and provider-specific metad
   assert.equal(bundle.providerLabel, 'DigitalOcean')
   assert.equal(bundle.endpoint, 'https://gateway.example.com/v1')
   assert.equal(bundle.wsUrl, 'wss://gateway.example.com')
+  assert.equal(bundle.useCase, 'single-vps')
+  assert.equal(bundle.exposure, 'caddy')
   assert.match(bundle.summary, /official OpenClaw Docker image/i)
   assert.deepEqual(bundle.files.map((file) => file.name), [
     'cloud-init.yaml',
     '.env',
     'docker-compose.yml',
     'bootstrap.sh',
+    'docker-compose.proxy.yml',
+    'Caddyfile',
   ])
 
   const envFile = bundle.files.find((file) => file.name === '.env')
@@ -36,6 +40,10 @@ test('docker smart deploy bundle uses official image and provider-specific metad
   assert.match(cloudInit.content, /docker\.io/)
   assert.match(cloudInit.content, /docker pull "\$\{OPENCLAW_IMAGE:-openclaw:latest\}"/)
   assert.match(cloudInit.content, /\/opt\/openclaw\/docker-compose\.yml/)
+
+  const caddyfile = bundle.files.find((file) => file.name === 'Caddyfile')
+  assert.ok(caddyfile)
+  assert.match(caddyfile.content, /gateway\.example\.com/)
 })
 
 test('render bundle stays aligned with the official repo flow', () => {

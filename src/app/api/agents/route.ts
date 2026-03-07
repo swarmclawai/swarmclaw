@@ -64,6 +64,8 @@ export async function POST(req: Request) {
     fallbackCredentialIds: body.fallbackCredentialIds,
     apiEndpoint: normalizeProviderEndpoint(body.provider, body.apiEndpoint || null),
     gatewayProfileId: body.gatewayProfileId,
+    preferredGatewayTags: body.preferredGatewayTags,
+    preferredGatewayUseCase: body.preferredGatewayUseCase,
     routingStrategy: body.routingStrategy,
     routingTargets: body.routingTargets?.map((target) => ({
       ...target,

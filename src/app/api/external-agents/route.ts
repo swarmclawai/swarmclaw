@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { formatZodError, ExternalAgentRegisterSchema } from '@/lib/validation/schemas'
-import { loadExternalAgents, saveExternalAgents } from '@/lib/server/storage'
+import { loadExternalAgents, loadGatewayProfiles, saveExternalAgents } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import type { ExternalAgentRuntime } from '@/types'
 import { z } from 'zod'
@@ -13,9 +13,20 @@ function withDerivedStatus(record: ExternalAgentRuntime): ExternalAgentRuntime {
   const staleMs = 3 * 60_000
   if (!lastSeenAt) return { ...record, status: record.status || 'offline' }
   if (record.status === 'offline') return record
+  const gateways = loadGatewayProfiles()
+  const gateway = record.gatewayProfileId ? gateways[record.gatewayProfileId] as Record<string, unknown> | undefined : undefined
+  const gatewayTags = Array.isArray(gateway?.tags)
+    ? gateway?.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+    : []
+  const gatewayUseCase = gateway?.deployment && typeof gateway.deployment === 'object' && typeof (gateway.deployment as Record<string, unknown>).useCase === 'string'
+    ? (gateway.deployment as Record<string, unknown>).useCase as string
+    : null
   return {
     ...record,
     status: now - lastSeenAt > staleMs ? 'stale' : (record.status || 'online'),
+    lifecycleState: record.lifecycleState || 'active',
+    gatewayTags: record.gatewayTags?.length ? record.gatewayTags : gatewayTags,
+    gatewayUseCase: record.gatewayUseCase || gatewayUseCase,
   }
 }
 
@@ -53,6 +64,11 @@ export async function POST(req: Request) {
     gatewayProfileId: body.gatewayProfileId || null,
     capabilities: body.capabilities,
     labels: body.labels,
+    lifecycleState: body.lifecycleState || existing?.lifecycleState || 'active',
+    gatewayTags: body.gatewayTags,
+    gatewayUseCase: body.gatewayUseCase || null,
+    version: body.version || null,
+    lastHealthNote: body.lastHealthNote || null,
     metadata: body.metadata,
     tokenStats: body.tokenStats,
     lastHeartbeatAt: existing?.lastHeartbeatAt || now,

@@ -626,7 +626,10 @@ function syncSessionFromAgent(sessionId: string): void {
   if (!agent) return
 
   let changed = false
-  const route = resolvePrimaryAgentRoute(agent)
+  const route = resolvePrimaryAgentRoute(agent, undefined, {
+    preferredGatewayTags: session.routePreferredGatewayTags || [],
+    preferredGatewayUseCase: session.routePreferredGatewayUseCase || null,
+  })
   if (!session.provider && agent.provider) { session.provider = agent.provider; changed = true }
   if ((session.model === undefined || session.model === null || session.model === '') && agent.model !== undefined) {
     session.model = agent.model
@@ -849,7 +852,10 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     ? session
     : { ...session, plugins: pluginsForRun }
   if (agentForSession) {
-    const preferredRoute = resolvePrimaryAgentRoute(agentForSession)
+    const preferredRoute = resolvePrimaryAgentRoute(agentForSession, undefined, {
+      preferredGatewayTags: session.routePreferredGatewayTags || [],
+      preferredGatewayUseCase: session.routePreferredGatewayUseCase || null,
+    })
     if (preferredRoute) {
       sessionForRun = applyResolvedRoute({ ...sessionForRun }, preferredRoute)
     }

@@ -19,9 +19,16 @@ export function createOrchestratorSession(
   task: string,
   parentSessionId?: string,
   cwd?: string,
+  routePreferences?: {
+    preferredGatewayTags?: string[]
+    preferredGatewayUseCase?: string | null
+  } | null,
 ): string {
   const sessions = loadSessions()
   const sessionId = genId()
+  const preferredGatewayTags = Array.isArray(routePreferences?.preferredGatewayTags)
+    ? routePreferences.preferredGatewayTags.filter((tag) => typeof tag === 'string' && tag.trim())
+    : []
   sessions[sessionId] = {
     id: sessionId,
     name: `[Orch] ${orchestrator.name}: ${task.slice(0, 40)}`,
@@ -31,6 +38,8 @@ export function createOrchestratorSession(
     model: orchestrator.model,
     credentialId: orchestrator.credentialId || null,
     apiEndpoint: orchestrator.apiEndpoint || null,
+    routePreferredGatewayTags: preferredGatewayTags,
+    routePreferredGatewayUseCase: routePreferences?.preferredGatewayUseCase || null,
     claudeSessionId: null,
     codexThreadId: null,
     opencodeSessionId: null,

@@ -10,6 +10,8 @@ const AgentRoutingTargetSchema = z.object({
   fallbackCredentialIds: z.array(z.string()).optional().default([]),
   apiEndpoint: z.string().nullable().optional().default(null),
   gatewayProfileId: z.string().nullable().optional().default(null),
+  preferredGatewayTags: z.array(z.string()).optional().default([]),
+  preferredGatewayUseCase: z.string().nullable().optional().default(null),
   priority: z.number().int().optional(),
 })
 
@@ -23,6 +25,8 @@ export const AgentCreateSchema = z.object({
   fallbackCredentialIds: z.array(z.string()).optional().default([]),
   apiEndpoint: z.string().nullable().optional().default(null),
   gatewayProfileId: z.string().nullable().optional().default(null),
+  preferredGatewayTags: z.array(z.string()).optional().default([]),
+  preferredGatewayUseCase: z.string().nullable().optional().default(null),
   routingStrategy: z.enum(['single', 'balanced', 'economy', 'premium', 'reasoning']).nullable().optional().default(null),
   routingTargets: z.array(AgentRoutingTargetSchema).optional().default([]),
   isOrchestrator: z.boolean().optional().default(false),
@@ -89,6 +93,11 @@ export const ExternalAgentRegisterSchema = z.object({
   gatewayProfileId: z.string().nullable().optional().default(null),
   capabilities: z.array(z.string()).optional().default([]),
   labels: z.array(z.string()).optional().default([]),
+  lifecycleState: z.enum(['active', 'draining', 'cordoned']).optional().default('active'),
+  gatewayTags: z.array(z.string()).optional().default([]),
+  gatewayUseCase: z.string().nullable().optional().default(null),
+  version: z.string().nullable().optional().default(null),
+  lastHealthNote: z.string().nullable().optional().default(null),
   metadata: z.record(z.string(), z.unknown()).nullable().optional().default(null),
   tokenStats: z.object({
     inputTokens: z.number().nonnegative().optional(),

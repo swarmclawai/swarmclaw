@@ -197,6 +197,74 @@ test('openclaw deploy bundle command merges action with provided JSON body', asy
   assert.equal(stderr.toString(), '')
 })
 
+test('openclaw deploy ssh command merges action with provided JSON body', async () => {
+  const stdout = makeWritable()
+  const stderr = makeWritable()
+  const calls = []
+
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return jsonResponse({ ok: true, processId: 'remote-1' })
+  }
+
+  const exitCode = await runCli(
+    ['openclaw', 'deploy-ssh', '--data', '{"target":"openclaw.example.com","ssh":{"host":"1.2.3.4"}}', '--json'],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: process.cwd(),
+    }
+  )
+
+  assert.equal(exitCode, 0)
+  assert.equal(calls.length, 1)
+  assert.match(calls[0].url, /\/api\/openclaw\/deploy$/)
+  assert.equal(calls[0].init.method, 'POST')
+  assert.deepEqual(JSON.parse(String(calls[0].init.body)), {
+    action: 'ssh-deploy',
+    target: 'openclaw.example.com',
+    ssh: { host: '1.2.3.4' },
+  })
+  assert.equal(stdout.toString().trim(), '{"ok":true,"processId":"remote-1"}')
+  assert.equal(stderr.toString(), '')
+})
+
+test('openclaw remote restore command merges action with provided JSON body', async () => {
+  const stdout = makeWritable()
+  const stderr = makeWritable()
+  const calls = []
+
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return jsonResponse({ ok: true, remote: { status: 'running' } })
+  }
+
+  const exitCode = await runCli(
+    ['openclaw', 'remote-restore', '--data', '{"backupPath":"/opt/openclaw/backups/latest.tgz","ssh":{"host":"1.2.3.4"}}', '--json'],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: process.cwd(),
+    }
+  )
+
+  assert.equal(exitCode, 0)
+  assert.equal(calls.length, 1)
+  assert.match(calls[0].url, /\/api\/openclaw\/deploy$/)
+  assert.equal(calls[0].init.method, 'POST')
+  assert.deepEqual(JSON.parse(String(calls[0].init.body)), {
+    action: 'remote-restore',
+    backupPath: '/opt/openclaw/backups/latest.tgz',
+    ssh: { host: '1.2.3.4' },
+  })
+  assert.equal(stdout.toString().trim(), '{"ok":true,"remote":{"status":"running"}}')
+  assert.equal(stderr.toString(), '')
+})
+
 test('runCli falls back to platform-api-key.txt when env key is missing', async () => {
   const stdout = makeWritable()
   const stderr = makeWritable()

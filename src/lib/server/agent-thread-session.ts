@@ -26,6 +26,8 @@ function buildThreadSession(agent: Agent, sessionId: string, user: string, creat
     fallbackCredentialIds: agent.fallbackCredentialIds || [],
     apiEndpoint: agent.apiEndpoint || null,
     gatewayProfileId: agent.gatewayProfileId || null,
+    routePreferredGatewayTags: existing?.routePreferredGatewayTags || [],
+    routePreferredGatewayUseCase: existing?.routePreferredGatewayUseCase || null,
     claudeSessionId: existing?.claudeSessionId || null,
     codexThreadId: existing?.codexThreadId || null,
     opencodeSessionId: existing?.opencodeSessionId || null,
@@ -77,7 +79,13 @@ function buildThreadSession(agent: Agent, sessionId: string, user: string, creat
     avatar: existing?.avatar,
     canvasContent: existing?.canvasContent || null,
   }
-  return applyResolvedRoute(baseSession, resolvePrimaryAgentRoute(agent))
+  return applyResolvedRoute(
+    baseSession,
+    resolvePrimaryAgentRoute(agent, undefined, {
+      preferredGatewayTags: baseSession.routePreferredGatewayTags || [],
+      preferredGatewayUseCase: baseSession.routePreferredGatewayUseCase || null,
+    }),
+  )
 }
 
 export function ensureAgentThreadSession(agentId: string, user = 'default'): Session | null {

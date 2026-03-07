@@ -20,6 +20,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   gateway.lastCheckedAt = Date.now()
   gateway.lastError = result.ok ? null : (result.error || result.hint || 'Gateway health check failed.')
   gateway.lastModelCount = Array.isArray(result.models) ? result.models.length : 0
+  gateway.deployment = {
+    ...(gateway.deployment || {}),
+    lastVerifiedAt: Date.now(),
+    lastVerifiedOk: result.ok,
+    lastVerifiedMessage: result.ok
+      ? `Verified ${Array.isArray(result.models) ? result.models.length : 0} model${result.models?.length === 1 ? '' : 's'}`
+      : (result.error || result.hint || 'Gateway health check failed.'),
+  }
   gateway.updatedAt = Date.now()
   saveGatewayProfiles(gateways)
   notify('gateways')

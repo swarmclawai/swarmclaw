@@ -54,11 +54,15 @@ The deployment flow stays **in-house and official-only**:
 
 Supported VPS presets currently include Hetzner, DigitalOcean, Vultr, Linode, Lightsail, Google Cloud, Azure, OCI, and a generic Ubuntu host path. Smart defaults prefill the gateway token, endpoint, storage paths, and copy-paste commands so the resulting gateway can be saved into SwarmClaw with minimal manual editing.
 
+For existing hosts, SwarmClaw can also push the same official-image bundle **over SSH** and then keep remote lifecycle controls attached to that saved gateway profile: start, stop, restart, upgrade, backup, restore, and token rotation.
+
 The OpenClaw Control Plane in SwarmClaw adds:
 - Reload mode switching (`hot`, `hybrid`, `full`)
 - Config issue detection and guided repair
 - Remote history sync
 - Live execution approval handling
+- Gateway import/export JSON, clone flows, and richer external runtime fleet visibility
+- Agent and route-target preferences for steering work toward OpenClaw gateways by tags or use case (`local-dev`, `single-vps`, `private-tailnet`, `browser-heavy`, `team-control`)
 
 The Agent Inspector Panel lets you edit OpenClaw files (`SOUL.md`, `IDENTITY.md`, `USER.md`), tune personality/system behavior, and manage OpenClaw-compatible skills. SwarmClaw also supports importing OpenClaw `SKILL.md` files from URL.
 
@@ -79,8 +83,12 @@ CLI operators can use the same deploy surface without opening the UI:
 ```bash
 swarmclaw openclaw deploy-status
 swarmclaw openclaw deploy-local-start --data '{"port":18789}'
+swarmclaw openclaw deploy-local-restart --data '{"port":18789}'
 swarmclaw openclaw deploy-bundle --data '{"template":"docker","provider":"hetzner","target":"openclaw.example.com"}'
-swarmclaw openclaw deploy-bundle --data '{"template":"render","target":"https://openclaw.example.com"}'
+swarmclaw openclaw deploy-ssh --data '{"target":"openclaw.example.com","provider":"hetzner","ssh":{"host":"your-vps-ip"}}'
+swarmclaw openclaw remote-backup --data '{"ssh":{"host":"your-vps-ip"}}'
+swarmclaw openclaw remote-restore --data '{"backupPath":"/opt/openclaw/backups/openclaw-backup-123.tgz","ssh":{"host":"your-vps-ip"}}'
+swarmclaw openclaw deploy-verify --data '{"endpoint":"https://openclaw.example.com/v1"}'
 ```
 
 ## SwarmClaw ClawHub Skill
@@ -140,7 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.7.6 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.7.7 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -693,7 +701,7 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example patch release (v0.7.6 style)
+# example patch release (v0.7.7 style)
 npm version patch
 git push origin main --follow-tags
 ```
@@ -703,15 +711,15 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.7.6 Release Readiness Notes
+#### v0.7.7 Release Readiness Notes
 
-Before shipping `v0.7.6`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.7.7`, confirm the following user-facing changes are reflected in docs:
 
-1. Sandbox docs are updated everywhere to reflect the current Deno-only `sandbox_exec` behavior and the guidance to prefer `http_request` for simple API calls.
-2. OpenClaw docs cover the current gateway/runtime behavior, including Smart Deploy, official-only Docker/repo paths, local one-click startup, and the main-provider-screen deploy entry points.
-3. Site and README install/version strings are updated to `v0.7.6`, including install snippets, release notes index text, and sidebar/footer labels.
-4. Release notes summarize the user-visible setup/auth/runtime changes from the current worktree, especially Smart Deploy, VPS presets, and onboarding/provider-screen improvements.
-5. CLI and tool docs include the new `openclaw deploy-*` surfaces and do not reference removed or non-functional bridges.
+1. OpenClaw docs cover Smart Deploy end-to-end: onboarding, Providers, gateway editor, official-only SSH/VPS flows, safe exposure presets, and restore/backup lifecycle controls.
+2. Agent and provider docs explain gateway routing by tags/use-case, richer external runtime visibility, and import/export/clone flows for saved gateways.
+3. Site and README install/version strings are updated to `v0.7.7`, including install snippets, release notes index text, and sidebar/footer labels.
+4. Release notes summarize the user-visible operator changes from the current worktree, especially SSH deploy, remote lifecycle controls, routing preferences, and onboarding persistence.
+5. CLI docs include the expanded `openclaw deploy-*`, `openclaw remote-*`, and verify surfaces and do not reference removed or unofficial deployment paths.
 
 ## CLI
 

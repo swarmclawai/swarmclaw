@@ -80,6 +80,36 @@ function normalizeInt(value: unknown, fallback: number, min: number, max: number
   return Math.max(min, Math.min(max, Math.trunc(parsed)))
 }
 
+const OPENCLAW_USE_CASE_TAGS = new Set([
+  'local-dev',
+  'single-vps',
+  'private-tailnet',
+  'browser-heavy',
+  'team-control',
+])
+
+function deriveTaskRoutePreferences(task: BoardTask): {
+  preferredGatewayTags?: string[]
+  preferredGatewayUseCase?: string | null
+} {
+  const tags = Array.isArray(task.tags)
+    ? [...new Set(task.tags.map((tag) => (typeof tag === 'string' ? tag.trim().toLowerCase() : '')).filter(Boolean))]
+    : []
+  const customUseCase = typeof task.customFields?.openclawUseCase === 'string'
+    ? task.customFields.openclawUseCase
+    : typeof task.customFields?.gatewayUseCase === 'string'
+      ? task.customFields.gatewayUseCase
+      : null
+  const preferredGatewayUseCase = customUseCase && OPENCLAW_USE_CASE_TAGS.has(customUseCase)
+    ? customUseCase
+    : (tags.find((tag) => OPENCLAW_USE_CASE_TAGS.has(tag)) || null)
+  const preferredGatewayTags = tags.filter((tag) => tag !== preferredGatewayUseCase)
+  return {
+    preferredGatewayTags,
+    preferredGatewayUseCase,
+  }
+}
+
 function resolveTaskPolicy(task: BoardTask): { maxAttempts: number; backoffSec: number } {
   const settings = loadSettings()
   const defaultMaxAttempts = normalizeInt(settings.defaultTaskMaxAttempts, 3, 1, 20)
@@ -1137,6 +1167,7 @@ export async function processNext() {
 
       // Resolve the agent's persistent thread session to use as parentSessionId
       const agentThreadSessionId = agent.threadSessionId || null
+      const taskRoutePreferences = deriveTaskRoutePreferences(task)
 
       if (isScheduleTask && sourceScheduleId) {
         const schedules = loadSchedules()
@@ -1151,7 +1182,13 @@ export async function processNext() {
           }
         }
         if (!sessionId) {
-          sessionId = createOrchestratorSession(agent, task.title, agentThreadSessionId || undefined, taskCwd)
+          sessionId = createOrchestratorSession(
+            agent,
+            task.title,
+            agentThreadSessionId || undefined,
+            taskCwd,
+            taskRoutePreferences,
+          )
         }
         if (linkedSchedule && linkedSchedule.lastSessionId !== sessionId) {
           linkedSchedule.lastSessionId = sessionId
@@ -1160,7 +1197,13 @@ export async function processNext() {
           saveSchedules(schedules)
         }
       } else {
-        sessionId = createOrchestratorSession(agent, task.title, agentThreadSessionId || undefined, taskCwd)
+        sessionId = createOrchestratorSession(
+          agent,
+          task.title,
+          agentThreadSessionId || undefined,
+          taskCwd,
+          taskRoutePreferences,
+        )
       }
 
       // Notify the agent's thread that a task has started

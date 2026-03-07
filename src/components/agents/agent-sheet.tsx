@@ -72,6 +72,24 @@ function parseIdentityList(value: string): string[] {
     })
 }
 
+function formatGatewayTagList(value: string[] | null | undefined): string {
+  return Array.isArray(value) ? value.join(', ') : ''
+}
+
+function parseGatewayTagList(value: string): string[] {
+  const seen = new Set<string>()
+  return value
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => {
+      if (!entry) return false
+      const key = entry.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
 export function AgentSheet() {
   const open = useAppStore((s) => s.agentSheetOpen)
   const setOpen = useAppStore((s) => s.setAgentSheetOpen)
@@ -113,6 +131,8 @@ export function AgentSheet() {
   const [credentialId, setCredentialId] = useState<string | null>(null)
   const [apiEndpoint, setApiEndpoint] = useState<string | null>(null)
   const [gatewayProfileId, setGatewayProfileId] = useState<string | null>(null)
+  const [preferredGatewayTagsText, setPreferredGatewayTagsText] = useState('')
+  const [preferredGatewayUseCase, setPreferredGatewayUseCase] = useState('')
   const [routingStrategy, setRoutingStrategy] = useState<AgentRoutingStrategy>('single')
   const [routingTargets, setRoutingTargets] = useState<AgentRoutingTarget[]>([])
   const [platformAssignScope, setPlatformAssignScope] = useState<'self' | 'all'>('self')
@@ -220,6 +240,8 @@ export function AgentSheet() {
         setCredentialId(editing.credentialId || null)
         setApiEndpoint(editing.apiEndpoint || null)
         setGatewayProfileId(editing.gatewayProfileId || null)
+        setPreferredGatewayTagsText(formatGatewayTagList(editing.preferredGatewayTags))
+        setPreferredGatewayUseCase(editing.preferredGatewayUseCase || '')
         setRoutingStrategy(editing.routingStrategy || 'single')
         setRoutingTargets(editing.routingTargets || [])
         setPlatformAssignScope(editing.platformAssignScope || 'self')
@@ -287,6 +309,8 @@ export function AgentSheet() {
         setCredentialId(null)
         setApiEndpoint(null)
         setGatewayProfileId(null)
+        setPreferredGatewayTagsText('')
+        setPreferredGatewayUseCase('')
         setRoutingStrategy('single')
         setRoutingTargets([])
         setPlatformAssignScope('self')
@@ -422,6 +446,8 @@ export function AgentSheet() {
       fallbackCredentialIds,
       apiEndpoint,
       gatewayProfileId,
+      preferredGatewayTags: parseGatewayTagList(preferredGatewayTagsText),
+      preferredGatewayUseCase: preferredGatewayUseCase || null,
       priority: routingTargets.length + 1,
     }
     setRoutingTargets((current) => [...current, nextTarget])
@@ -463,9 +489,13 @@ export function AgentSheet() {
       credentialId,
       apiEndpoint: normalizedEndpoint,
       gatewayProfileId,
+      preferredGatewayTags: parseGatewayTagList(preferredGatewayTagsText),
+      preferredGatewayUseCase: preferredGatewayUseCase || null,
       routingStrategy,
       routingTargets: routingTargets.map((target, index) => ({
         ...target,
+        preferredGatewayTags: parseGatewayTagList(formatGatewayTagList(target.preferredGatewayTags)),
+        preferredGatewayUseCase: target.preferredGatewayUseCase || null,
         priority: typeof target.priority === 'number' ? target.priority : index + 1,
       })),
       subAgentIds: canDelegateToAgents ? subAgentIds : [],
@@ -1698,6 +1728,34 @@ export function AgentSheet() {
         </div>
       )}
 
+      {(provider === 'openclaw' || routingTargets.some((target) => target.provider === 'openclaw') || openclawGatewayProfiles.length > 0) && (
+        <div className="mb-8">
+          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            Gateway Preferences <HintTip text="When multiple OpenClaw gateways are available, prefer matching tags or deployment templates before falling back to the default route." />
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input
+              type="text"
+              value={preferredGatewayTagsText}
+              onChange={(e) => setPreferredGatewayTagsText(e.target.value)}
+              placeholder="gpu, local, research"
+              className={inputClass}
+            />
+            <select value={preferredGatewayUseCase} onChange={(e) => setPreferredGatewayUseCase(e.target.value)} className={inputClass}>
+              <option value="">Any OpenClaw template</option>
+              <option value="local-dev">Local Dev</option>
+              <option value="single-vps">Single VPS</option>
+              <option value="private-tailnet">Private Tailnet</option>
+              <option value="browser-heavy">Browser Heavy</option>
+              <option value="team-control">Team Control</option>
+            </select>
+          </div>
+          <p className="text-[11px] text-text-3/70 mt-2">
+            These preferences bias scheduling toward matching OpenClaw control planes without hard-locking the agent to one gateway.
+          </p>
+        </div>
+      )}
+
       <div className="mb-8">
         <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
           Model Routing <HintTip text="Route this agent through a provider/model pool instead of a single fixed model. The base provider remains the default when no route matches." />
@@ -1752,25 +1810,45 @@ export function AgentSheet() {
                   />
                 </div>
                 {target.provider === 'openclaw' && openclawGatewayProfiles.length > 0 && (
-                  <select
-                    value={target.gatewayProfileId || ''}
-                    onChange={(e) => {
-                      const nextId = e.target.value || null
-                      const gateway = openclawGatewayProfiles.find((item) => item.id === nextId)
-                      updateRoutingTarget(target.id, {
-                        gatewayProfileId: nextId,
-                        apiEndpoint: gateway?.endpoint || target.apiEndpoint || null,
-                        credentialId: gateway?.credentialId || target.credentialId || null,
-                        model: target.model || 'default',
-                      })
-                    }}
-                    className={inputClass}
-                  >
-                    <option value="">Custom OpenClaw endpoint</option>
-                    {openclawGatewayProfiles.map((gateway) => (
-                      <option key={gateway.id} value={gateway.id}>{gateway.name}</option>
-                    ))}
-                  </select>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <select
+                      value={target.gatewayProfileId || ''}
+                      onChange={(e) => {
+                        const nextId = e.target.value || null
+                        const gateway = openclawGatewayProfiles.find((item) => item.id === nextId)
+                        updateRoutingTarget(target.id, {
+                          gatewayProfileId: nextId,
+                          apiEndpoint: gateway?.endpoint || target.apiEndpoint || null,
+                          credentialId: gateway?.credentialId || target.credentialId || null,
+                          model: target.model || 'default',
+                        })
+                      }}
+                      className={inputClass}
+                    >
+                      <option value="">Custom OpenClaw endpoint</option>
+                      {openclawGatewayProfiles.map((gateway) => (
+                        <option key={gateway.id} value={gateway.id}>{gateway.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={formatGatewayTagList(target.preferredGatewayTags)}
+                      onChange={(e) => updateRoutingTarget(target.id, { preferredGatewayTags: parseGatewayTagList(e.target.value) })}
+                      placeholder="Prefer tags"
+                      className={inputClass}
+                    />
+                    <select
+                      value={target.preferredGatewayUseCase || ''}
+                      onChange={(e) => updateRoutingTarget(target.id, { preferredGatewayUseCase: e.target.value || null })}
+                      className={inputClass}
+                    >
+                      <option value="">Any OpenClaw template</option>
+                      <option value="local-dev">Local Dev</option>
+                      <option value="single-vps">Single VPS</option>
+                      <option value="private-tailnet">Private Tailnet</option>
+                      <option value="browser-heavy">Browser Heavy</option>
+                      <option value="team-control">Team Control</option>
+                    </select>
+                  </div>
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
                   <input

@@ -54,6 +54,9 @@ interface ConfiguredProvider {
   endpoint: string | null
   defaultModel: string
   gatewayProfileId: string | null
+  notes?: string | null
+  tags?: string[]
+  deployment?: GatewayProfile['deployment'] | null
 }
 
 interface StarterDraftAgent {
@@ -88,6 +91,20 @@ const CONNECTOR_ICONS = [
   { name: 'Telegram', icon: 'T' },
   { name: 'WhatsApp', icon: 'W' },
 ]
+const OPENCLAW_USE_CASE_LABELS: Record<NonNullable<NonNullable<GatewayProfile['deployment']>['useCase']>, string> = {
+  'local-dev': 'Local Dev',
+  'single-vps': 'Single VPS',
+  'private-tailnet': 'Private Tailnet',
+  'browser-heavy': 'Browser Heavy',
+  'team-control': 'Team Control',
+}
+const OPENCLAW_EXPOSURE_LABELS: Record<NonNullable<NonNullable<GatewayProfile['deployment']>['exposure']>, string> = {
+  'private-lan': 'Private LAN',
+  tailscale: 'Tailscale',
+  caddy: 'Caddy',
+  nginx: 'Nginx',
+  'ssh-tunnel': 'SSH Tunnel',
+}
 
 function stepIndex(step: SetupStep): number {
   if (step === 'connect') return STEP_ORDER.indexOf('providers')
@@ -224,6 +241,12 @@ function ConfiguredProviderChips({ providers }: { providers: ConfiguredProvider[
             {cp.provider === 'openclaw' && formatEndpointHost(cp.endpoint)
               ? `· ${formatEndpointHost(cp.endpoint)}`
               : ''}
+            {cp.provider === 'openclaw' && cp.deployment?.useCase
+              ? ` · ${OPENCLAW_USE_CASE_LABELS[cp.deployment.useCase]}`
+              : ''}
+            {cp.provider === 'openclaw' && cp.deployment?.exposure
+              ? ` · ${OPENCLAW_EXPOSURE_LABELS[cp.deployment.exposure]}`
+              : ''}
             {cp.defaultModel ? ` · ${cp.defaultModel}` : ''}
           </span>
         </span>
@@ -332,6 +355,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [endpoint, setEndpoint] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [credentialId, setCredentialId] = useState<string | null>(null)
+  const [providerNotes, setProviderNotes] = useState('')
+  const [providerTags, setProviderTags] = useState<string[]>([])
+  const [providerDeployment, setProviderDeployment] = useState<GatewayProfile['deployment'] | null>(null)
   const [checkState, setCheckState] = useState<CheckState>('idle')
   const [checkMessage, setCheckMessage] = useState('')
   const [checkErrorCode, setCheckErrorCode] = useState<string | null>(null)
@@ -382,6 +408,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     setEndpoint('')
     setApiKey('')
     setCredentialId(null)
+    setProviderNotes('')
+    setProviderTags([])
+    setProviderDeployment(null)
     setCheckState('idle')
     setCheckMessage('')
     setCheckErrorCode(null)
@@ -432,6 +461,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     setEndpoint(meta?.defaultEndpoint || '')
     setApiKey('')
     setCredentialId(null)
+    setProviderNotes('')
+    setProviderTags([])
+    setProviderDeployment(null)
     setCheckState('idle')
     setCheckMessage('')
     setCheckErrorCode(null)
@@ -445,6 +477,8 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     endpoint?: string
     token?: string
     name?: string
+    notes?: string
+    deployment?: GatewayProfile['deployment'] | Record<string, unknown> | null
   }) => {
     if (patch.endpoint) {
       setEndpoint(patch.endpoint)
@@ -455,6 +489,22 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     }
     if (patch.name && (!providerLabel.trim() || providerLabel.trim() === (selectedProvider?.name || ''))) {
       setProviderLabel(patch.name)
+    }
+    if (patch.notes) {
+      setProviderNotes(patch.notes)
+    }
+    if (patch.deployment) {
+      const nextDeployment = patch.deployment as GatewayProfile['deployment']
+      setProviderDeployment((current) => ({
+        ...(current || {}),
+        ...(nextDeployment || {}),
+      }))
+      setProviderTags((current) => Array.from(new Set([
+        ...current,
+        'onboarding',
+        ...(nextDeployment?.useCase ? [nextDeployment.useCase] : []),
+        ...(nextDeployment?.exposure ? [nextDeployment.exposure] : []),
+      ])))
     }
     setCheckState('idle')
     setCheckMessage('')
@@ -552,6 +602,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         endpoint: supportsEndpoint ? (endpoint.trim() || selectedProvider.defaultEndpoint || null) : null,
         defaultModel: providerSuggestedModel || getDefaultModelForProvider(provider),
         gatewayProfileId: null,
+        notes: providerNotes.trim() || null,
+        tags: providerTags,
+        deployment: providerDeployment,
       }
 
       const nextConfigured = [...configuredProviders, configuredProvider]
@@ -645,8 +698,13 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             name: configuredProvider.name,
             endpoint: normalizedEndpoint,
             credentialId: configuredProvider.credentialId || null,
-            tags: ['onboarding'],
-            notes: `Created during setup for ${configuredProvider.name}.`,
+            tags: Array.from(new Set([
+              'onboarding',
+              ...(configuredProvider.tags || []),
+            ])),
+            notes: configuredProvider.notes || `Created during setup for ${configuredProvider.name}.`,
+            deployment: configuredProvider.deployment || null,
+            status: configuredProvider.deployment?.lastVerifiedOk ? 'healthy' : 'pending',
             isDefault: shouldCreateDefault,
           })
           gatewayProfileIdsByProviderConfig.set(configuredProvider.id, createdGateway.id)
@@ -1084,6 +1142,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                       <p className="mt-2 text-[12px] text-text-3 leading-relaxed">
                         If you only have a WebSocket gateway URL, you can still paste it here. SwarmClaw will normalize it for agent chat.
                       </p>
+                      <p className="mt-2 text-[12px] text-text-3 leading-relaxed">
+                        Safer remote defaults: use <code className="text-text-2">private-tailnet</code> with <code className="text-text-2">tailscale</code> or <code className="text-text-2">ssh-tunnel</code> unless you intentionally want public HTTPS ingress.
+                      </p>
                     </div>
                     <div className="rounded-[12px] border border-white/[0.06] bg-bg px-4 py-3">
                       <div className="text-[12px] uppercase tracking-[0.08em] text-text-3 mb-2">Safe defaults</div>
@@ -1092,6 +1153,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                       </p>
                       <p className="mt-2 text-[12px] text-text-3 leading-relaxed">
                         Local quickstart uses the bundled official OpenClaw CLI. Remote quickstart uses the official OpenClaw Docker image or the official repo for managed hosts.
+                      </p>
+                      <p className="mt-2 text-[12px] text-text-3 leading-relaxed">
+                        Choose <code className="text-text-2">local-dev</code> for one-machine setup, <code className="text-text-2">single-vps</code> for most hosted installs, or <code className="text-text-2">private-tailnet</code> when the gateway should stay private.
                       </p>
                     </div>
                   </div>
@@ -1103,6 +1167,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                     </p>
                     <p className="mt-2 text-[12px] text-text-3 leading-relaxed">
                       Current target: <span className="text-text-2">{openClawEndpointHost || 'localhost:18789'}</span>{openClawLocal ? ' · local route' : ' · remote route'}
+                    </p>
+                    <p className="mt-2 text-[12px] text-text-3 leading-relaxed">
+                      Use <code className="text-text-2">caddy</code> or <code className="text-text-2">nginx</code> only when you intentionally want HTTPS/public ingress managed on the gateway side.
                     </p>
                   </div>
                 </div>
@@ -1313,6 +1380,12 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                               {configuredProvider.name}
                               {configuredProvider.provider === 'openclaw' && formatEndpointHost(configuredProvider.endpoint)
                                 ? ` · ${formatEndpointHost(configuredProvider.endpoint)}`
+                                : ''}
+                              {configuredProvider.provider === 'openclaw' && configuredProvider.deployment?.useCase
+                                ? ` · ${OPENCLAW_USE_CASE_LABELS[configuredProvider.deployment.useCase]}`
+                                : ''}
+                              {configuredProvider.provider === 'openclaw' && configuredProvider.deployment?.exposure
+                                ? ` · ${OPENCLAW_EXPOSURE_LABELS[configuredProvider.deployment.exposure]}`
                                 : ''}
                               {configuredProvider.defaultModel ? ` · ${configuredProvider.defaultModel}` : ''}
                             </option>

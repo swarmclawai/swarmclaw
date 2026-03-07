@@ -18,7 +18,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const linkedAgent = nextAgentId ? loadAgents()[nextAgentId] : null
-  const linkedRoute = linkedAgent ? resolvePrimaryAgentRoute(linkedAgent) : null
+  const routePreferredGatewayTags = updates.routePreferredGatewayTags !== undefined
+    ? (Array.isArray(updates.routePreferredGatewayTags)
+      ? updates.routePreferredGatewayTags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+      : [])
+    : (sessions[id].routePreferredGatewayTags || [])
+  const routePreferredGatewayUseCase = updates.routePreferredGatewayUseCase !== undefined
+    ? (typeof updates.routePreferredGatewayUseCase === 'string' && updates.routePreferredGatewayUseCase.trim()
+      ? updates.routePreferredGatewayUseCase.trim()
+      : null)
+    : (sessions[id].routePreferredGatewayUseCase || null)
+  const linkedRoute = linkedAgent ? resolvePrimaryAgentRoute(linkedAgent, undefined, {
+    preferredGatewayTags: routePreferredGatewayTags,
+    preferredGatewayUseCase: routePreferredGatewayUseCase,
+  }) : null
 
   if (updates.name !== undefined) sessions[id].name = updates.name
   if (updates.cwd !== undefined) sessions[id].cwd = updates.cwd
@@ -38,6 +51,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   if (updates.gatewayProfileId !== undefined) sessions[id].gatewayProfileId = updates.gatewayProfileId
   else if (agentIdUpdateProvided && linkedRoute) sessions[id].gatewayProfileId = linkedRoute.gatewayProfileId ?? null
+
+  if (updates.routePreferredGatewayTags !== undefined) {
+    sessions[id].routePreferredGatewayTags = routePreferredGatewayTags
+  }
+  if (updates.routePreferredGatewayUseCase !== undefined) {
+    sessions[id].routePreferredGatewayUseCase = routePreferredGatewayUseCase
+  }
 
   if (updates.plugins !== undefined) sessions[id].plugins = updates.plugins
   else if (agentIdUpdateProvided && linkedAgent) sessions[id].plugins = Array.isArray(linkedAgent.plugins) ? linkedAgent.plugins : []

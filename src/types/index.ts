@@ -93,6 +93,8 @@ export interface Session {
   fallbackCredentialIds?: string[]
   apiEndpoint?: string | null
   gatewayProfileId?: string | null
+  routePreferredGatewayTags?: string[]
+  routePreferredGatewayUseCase?: string | null
   claudeSessionId: string | null
   codexThreadId?: string | null
   opencodeSessionId?: string | null
@@ -498,6 +500,8 @@ export interface Agent {
   fallbackCredentialIds?: string[]
   apiEndpoint?: string | null
   gatewayProfileId?: string | null
+  preferredGatewayTags?: string[]
+  preferredGatewayUseCase?: string | null
   routingStrategy?: AgentRoutingStrategy | null
   routingTargets?: AgentRoutingTarget[]
   isOrchestrator?: boolean
@@ -1168,6 +1172,58 @@ export interface ProviderConfig {
 
 export type GatewayProvider = 'openclaw'
 export type GatewayHealthState = 'unknown' | 'healthy' | 'degraded' | 'offline' | 'pending'
+export type OpenClawDeploymentMethod = 'local' | 'bundle' | 'ssh' | 'imported'
+export type OpenClawDeploymentProvider =
+  | 'local'
+  | 'hetzner'
+  | 'digitalocean'
+  | 'vultr'
+  | 'linode'
+  | 'lightsail'
+  | 'gcp'
+  | 'azure'
+  | 'oci'
+  | 'generic'
+  | 'render'
+  | 'fly'
+  | 'railway'
+export type OpenClawRemoteDeployTarget = 'docker' | 'render' | 'fly' | 'railway'
+export type OpenClawUseCaseTemplate = 'local-dev' | 'single-vps' | 'private-tailnet' | 'browser-heavy' | 'team-control'
+export type OpenClawExposurePreset = 'private-lan' | 'tailscale' | 'caddy' | 'nginx' | 'ssh-tunnel'
+
+export interface OpenClawGatewayStats {
+  nodeCount?: number
+  connectedNodeCount?: number
+  pendingNodePairings?: number
+  pairedDeviceCount?: number
+  pendingDevicePairings?: number
+  externalRuntimeCount?: number
+}
+
+export interface OpenClawDeploymentConfig {
+  method?: OpenClawDeploymentMethod | null
+  provider?: OpenClawDeploymentProvider | null
+  remoteTarget?: OpenClawRemoteDeployTarget | null
+  useCase?: OpenClawUseCaseTemplate | null
+  exposure?: OpenClawExposurePreset | null
+  managedBy?: 'swarmclaw' | 'manual' | null
+  targetHost?: string | null
+  sshHost?: string | null
+  sshUser?: string | null
+  sshPort?: number | null
+  sshKeyPath?: string | null
+  sshTargetDir?: string | null
+  image?: string | null
+  version?: string | null
+  lastDeployAt?: number | null
+  lastDeployAction?: string | null
+  lastDeployProcessId?: string | null
+  lastDeploySummary?: string | null
+  lastVerifiedAt?: number | null
+  lastVerifiedOk?: boolean | null
+  lastVerifiedMessage?: string | null
+  lastBackupPath?: string | null
+}
 
 export interface GatewayProfile {
   id: string
@@ -1184,6 +1240,8 @@ export interface GatewayProfile {
   lastModelCount?: number | null
   discoveredHost?: string | null
   discoveredPort?: number | null
+  deployment?: OpenClawDeploymentConfig | null
+  stats?: OpenClawGatewayStats | null
   isDefault?: boolean
   createdAt: number
   updatedAt: number
@@ -1256,6 +1314,8 @@ export interface AgentRoutingTarget {
   fallbackCredentialIds?: string[]
   apiEndpoint?: string | null
   gatewayProfileId?: string | null
+  preferredGatewayTags?: string[]
+  preferredGatewayUseCase?: string | null
   priority?: number
 }
 
@@ -1307,6 +1367,11 @@ export interface ExternalAgentRuntime {
   gatewayProfileId?: string | null
   capabilities?: string[]
   labels?: string[]
+  lifecycleState?: 'active' | 'draining' | 'cordoned'
+  gatewayTags?: string[]
+  gatewayUseCase?: string | null
+  version?: string | null
+  lastHealthNote?: string | null
   metadata?: Record<string, unknown> | null
   tokenStats?: {
     inputTokens?: number

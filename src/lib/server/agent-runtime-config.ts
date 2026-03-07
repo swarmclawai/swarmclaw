@@ -26,6 +26,11 @@ export interface ResolvedAgentRoute {
   source: 'agent' | 'routing-target'
 }
 
+interface GatewayRoutePreferences {
+  preferredGatewayTags?: string[]
+  preferredGatewayUseCase?: string | null
+}
+
 interface RouteSeed {
   id: string
   label?: string
@@ -35,6 +40,8 @@ interface RouteSeed {
   fallbackCredentialIds?: string[]
   apiEndpoint?: string | null
   gatewayProfileId?: string | null
+  preferredGatewayTags?: string[]
+  preferredGatewayUseCase?: string | null
   role?: AgentRoutingTarget['role']
   priority?: number
   source: ResolvedAgentRoute['source']
@@ -45,6 +52,68 @@ function ensureStringArray(value: unknown): string[] {
   return value
     .map((item) => (typeof item === 'string' ? item.trim() : ''))
     .filter(Boolean)
+}
+
+function normalizeText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function normalizeNullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function normalizeGatewayDeployment(
+  value: unknown,
+): GatewayProfile['deployment'] {
+  if (!value || typeof value !== 'object') return null
+  const deployment = value as Record<string, unknown>
+  type DeploymentConfig = NonNullable<GatewayProfile['deployment']>
+  return {
+    method: normalizeText(deployment.method) as DeploymentConfig['method'],
+    provider: normalizeText(deployment.provider) as DeploymentConfig['provider'],
+    remoteTarget: normalizeText(deployment.remoteTarget) as DeploymentConfig['remoteTarget'],
+    useCase: normalizeText(deployment.useCase) as DeploymentConfig['useCase'],
+    exposure: normalizeText(deployment.exposure) as DeploymentConfig['exposure'],
+    managedBy: normalizeText(deployment.managedBy) as DeploymentConfig['managedBy'],
+    targetHost: normalizeText(deployment.targetHost),
+    sshHost: normalizeText(deployment.sshHost),
+    sshUser: normalizeText(deployment.sshUser),
+    sshPort: normalizeNullableNumber(deployment.sshPort),
+    sshKeyPath: normalizeText(deployment.sshKeyPath),
+    sshTargetDir: normalizeText(deployment.sshTargetDir),
+    image: normalizeText(deployment.image),
+    version: normalizeText(deployment.version),
+    lastDeployAt: normalizeNullableNumber(deployment.lastDeployAt),
+    lastDeployAction: normalizeText(deployment.lastDeployAction),
+    lastDeployProcessId: normalizeText(deployment.lastDeployProcessId),
+    lastDeploySummary: normalizeText(deployment.lastDeploySummary),
+    lastVerifiedAt: normalizeNullableNumber(deployment.lastVerifiedAt),
+    lastVerifiedOk: typeof deployment.lastVerifiedOk === 'boolean' ? deployment.lastVerifiedOk : null,
+    lastVerifiedMessage: normalizeText(deployment.lastVerifiedMessage),
+    lastBackupPath: normalizeText(deployment.lastBackupPath),
+  }
+}
+
+function normalizeGatewayStats(value: unknown): GatewayProfile['stats'] {
+  if (!value || typeof value !== 'object') return null
+  const stats = value as Record<string, unknown>
+  return {
+    nodeCount: normalizeNullableNumber(stats.nodeCount) ?? undefined,
+    connectedNodeCount: normalizeNullableNumber(stats.connectedNodeCount) ?? undefined,
+    pendingNodePairings: normalizeNullableNumber(stats.pendingNodePairings) ?? undefined,
+    pairedDeviceCount: normalizeNullableNumber(stats.pairedDeviceCount) ?? undefined,
+    pendingDevicePairings: normalizeNullableNumber(stats.pendingDevicePairings) ?? undefined,
+    externalRuntimeCount: normalizeNullableNumber(stats.externalRuntimeCount) ?? undefined,
+  }
+}
+
+function normalizeRoutePreferences(
+  value?: GatewayRoutePreferences | null,
+): GatewayRoutePreferences {
+  return {
+    preferredGatewayTags: ensureStringArray(value?.preferredGatewayTags),
+    preferredGatewayUseCase: normalizeText(value?.preferredGatewayUseCase),
+  }
 }
 
 function normalizeGateway(raw: unknown, id: string): GatewayProfile | null {
@@ -72,6 +141,8 @@ function normalizeGateway(raw: unknown, id: string): GatewayProfile | null {
     lastModelCount: typeof gateway.lastModelCount === 'number' ? gateway.lastModelCount : null,
     discoveredHost: typeof gateway.discoveredHost === 'string' ? gateway.discoveredHost : null,
     discoveredPort: typeof gateway.discoveredPort === 'number' ? gateway.discoveredPort : null,
+    deployment: normalizeGatewayDeployment(gateway.deployment),
+    stats: normalizeGatewayStats(gateway.stats),
     isDefault: gateway.isDefault === true,
     createdAt: typeof gateway.createdAt === 'number' ? gateway.createdAt : Date.now(),
     updatedAt: typeof gateway.updatedAt === 'number' ? gateway.updatedAt : Date.now(),
@@ -107,6 +178,50 @@ function defaultGatewayProfile(gatewayProfiles: GatewayProfile[]): GatewayProfil
   return gatewayProfiles.find((profile) => profile.isDefault) || gatewayProfiles[0] || null
 }
 
+function gatewayPreferenceScore(
+  gatewayProfile: GatewayProfile,
+  preferences?: GatewayRoutePreferences | null,
+): number {
+  const normalized = normalizeRoutePreferences(preferences)
+  const preferredTags = normalized.preferredGatewayTags || []
+  const preferredUseCase = normalized.preferredGatewayUseCase || null
+  const gatewayTags = new Set(ensureStringArray(gatewayProfile.tags))
+  const gatewayUseCase = normalizeText(gatewayProfile.deployment?.useCase)
+
+  let score = 0
+  if (preferredUseCase) {
+    if (gatewayUseCase !== preferredUseCase) return -1
+    score += 30
+  }
+  if (preferredTags.length > 0) {
+    const matchedTagCount = preferredTags.filter((tag) => gatewayTags.has(tag)).length
+    if (matchedTagCount === 0) return -1
+    score += matchedTagCount * 10
+    if (matchedTagCount === preferredTags.length) score += 8
+  }
+  if (gatewayProfile.status === 'healthy') score += 4
+  else if (gatewayProfile.status === 'degraded') score += 2
+  if (gatewayProfile.isDefault) score += 3
+  return score
+}
+
+function pickPreferredGatewayProfile(
+  gatewayProfiles: GatewayProfile[],
+  preferences?: GatewayRoutePreferences | null,
+): GatewayProfile | null {
+  const normalized = normalizeRoutePreferences(preferences)
+  if (!(normalized.preferredGatewayTags?.length || normalized.preferredGatewayUseCase)) {
+    return null
+  }
+  return gatewayProfiles
+    .map((profile) => ({ profile, score: gatewayPreferenceScore(profile, normalized) }))
+    .filter((entry) => entry.score >= 0)
+    .sort((left, right) => {
+      if (left.score !== right.score) return right.score - left.score
+      return left.profile.name.localeCompare(right.profile.name)
+    })[0]?.profile || null
+}
+
 function roleWeight(strategy: AgentRoutingStrategy, role?: AgentRoutingTarget['role']): number {
   const normalized = role || 'primary'
   const matrix: Record<AgentRoutingStrategy, Record<string, number>> = {
@@ -135,14 +250,21 @@ function dedupeCredentialIds(primary: string | null | undefined, candidates: str
 function buildRouteFromSeed(
   seed: RouteSeed,
   gatewayProfiles: GatewayProfile[],
+  routePreferences?: GatewayRoutePreferences | null,
   agentGatewayProfileId?: string | null,
 ): ResolvedAgentRoute | null {
   const provider = (seed.provider || 'claude-cli') as ProviderType
-  let gatewayProfileId = seed.gatewayProfileId ?? null
-  if (!gatewayProfileId && provider === 'openclaw') {
-    gatewayProfileId = agentGatewayProfileId ?? defaultGatewayProfile(gatewayProfiles)?.id ?? null
+  const mergedPreferences = normalizeRoutePreferences({
+    preferredGatewayTags: seed.preferredGatewayTags ?? routePreferences?.preferredGatewayTags,
+    preferredGatewayUseCase: seed.preferredGatewayUseCase ?? routePreferences?.preferredGatewayUseCase,
+  })
+  let gatewayProfile = findGatewayProfile(gatewayProfiles, seed.gatewayProfileId ?? null)
+  if (!gatewayProfile && provider === 'openclaw') {
+    gatewayProfile = pickPreferredGatewayProfile(gatewayProfiles, mergedPreferences)
+      || findGatewayProfile(gatewayProfiles, agentGatewayProfileId ?? null)
+      || defaultGatewayProfile(gatewayProfiles)
   }
-  const gatewayProfile = findGatewayProfile(gatewayProfiles, gatewayProfileId)
+  const gatewayProfileId = gatewayProfile?.id ?? seed.gatewayProfileId ?? agentGatewayProfileId ?? null
 
   const providerFromGateway = gatewayProfile?.provider === 'openclaw' ? 'openclaw' : provider
   const apiEndpoint = normalizeProviderEndpoint(
@@ -189,8 +311,9 @@ function dedupeRoutes(routes: ResolvedAgentRoute[]): ResolvedAgentRoute[] {
 export function resolveAgentRouteCandidates(
   agent: Agent | null | undefined,
   preferredStrategy?: AgentRoutingStrategy | null,
+  routePreferences?: GatewayRoutePreferences | null,
 ): ResolvedAgentRoute[] {
-  return resolveAgentRouteCandidatesWithProfiles(agent, getGatewayProfiles('openclaw'), preferredStrategy)
+  return resolveAgentRouteCandidatesWithProfiles(agent, getGatewayProfiles('openclaw'), preferredStrategy, undefined, routePreferences)
 }
 
 export function resolveAgentRouteCandidatesWithProfiles(
@@ -198,9 +321,16 @@ export function resolveAgentRouteCandidatesWithProfiles(
   gatewayProfiles: GatewayProfile[],
   preferredStrategy?: AgentRoutingStrategy | null,
   isCoolingDown: (providerId: string) => boolean = isProviderCoolingDown,
+  routePreferences?: GatewayRoutePreferences | null,
 ): ResolvedAgentRoute[] {
   if (!agent) return []
   const strategy = preferredStrategy || agent.routingStrategy || 'single'
+  const resolvedPreferences = normalizeRoutePreferences({
+    preferredGatewayTags: routePreferences?.preferredGatewayTags?.length
+      ? routePreferences.preferredGatewayTags
+      : agent.preferredGatewayTags,
+    preferredGatewayUseCase: routePreferences?.preferredGatewayUseCase || agent.preferredGatewayUseCase,
+  })
   const seeds: RouteSeed[] = [
     {
       id: 'base',
@@ -211,6 +341,8 @@ export function resolveAgentRouteCandidatesWithProfiles(
       fallbackCredentialIds: agent.fallbackCredentialIds || [],
       apiEndpoint: agent.apiEndpoint ?? null,
       gatewayProfileId: agent.gatewayProfileId ?? null,
+      preferredGatewayTags: agent.preferredGatewayTags || [],
+      preferredGatewayUseCase: agent.preferredGatewayUseCase ?? null,
       role: 'primary',
       priority: 0,
       source: 'agent',
@@ -224,6 +356,8 @@ export function resolveAgentRouteCandidatesWithProfiles(
       fallbackCredentialIds: target.fallbackCredentialIds || [],
       apiEndpoint: target.apiEndpoint ?? null,
       gatewayProfileId: target.gatewayProfileId ?? null,
+      preferredGatewayTags: target.preferredGatewayTags || [],
+      preferredGatewayUseCase: target.preferredGatewayUseCase ?? null,
       role: target.role,
       priority: typeof target.priority === 'number' ? target.priority : index + 1,
       source: 'routing-target' as const,
@@ -232,7 +366,7 @@ export function resolveAgentRouteCandidatesWithProfiles(
 
   return dedupeRoutes(
     seeds
-      .map((seed) => buildRouteFromSeed(seed, gatewayProfiles, agent.gatewayProfileId ?? null))
+      .map((seed) => buildRouteFromSeed(seed, gatewayProfiles, resolvedPreferences, agent.gatewayProfileId ?? null))
       .filter((route): route is ResolvedAgentRoute => Boolean(route)),
   ).sort((left, right) => {
     const leftCooling = isCoolingDown(left.provider)
@@ -249,8 +383,9 @@ export function resolveAgentRouteCandidatesWithProfiles(
 export function resolvePrimaryAgentRoute(
   agent: Agent | null | undefined,
   preferredStrategy?: AgentRoutingStrategy | null,
+  routePreferences?: GatewayRoutePreferences | null,
 ): ResolvedAgentRoute | null {
-  return resolveAgentRouteCandidates(agent, preferredStrategy)[0] || null
+  return resolveAgentRouteCandidates(agent, preferredStrategy, routePreferences)[0] || null
 }
 
 export function applyResolvedRoute<T extends {

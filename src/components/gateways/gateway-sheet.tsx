@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { OpenClawDeployPanel } from '@/components/openclaw/openclaw-deploy-panel'
 import { useAppStore } from '@/stores/use-app-store'
@@ -12,6 +12,7 @@ import type {
   OpenClawNode,
   OpenClawNodePairRequest,
   OpenClawPairedDevice,
+  GatewayProfile,
 } from '@/types'
 
 interface DiscoveryResult {
@@ -35,6 +36,17 @@ interface NodeListResult {
 interface PairingListResult<T> {
   pending?: T[]
   paired?: OpenClawPairedDevice[]
+}
+
+interface GatewayImportShape {
+  name?: string
+  endpoint?: string
+  credentialId?: string | null
+  token?: string | null
+  notes?: string | null
+  tags?: string[]
+  isDefault?: boolean
+  deployment?: GatewayProfile['deployment']
 }
 
 export function GatewaySheet() {
@@ -73,6 +85,8 @@ export function GatewaySheet() {
   const [invokeParamsText, setInvokeParamsText] = useState('{}')
   const [invokeResult, setInvokeResult] = useState('')
   const [invoking, setInvoking] = useState(false)
+  const [deployment, setDeployment] = useState<GatewayProfile['deployment'] | null>(null)
+  const importFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -93,6 +107,7 @@ export function GatewaySheet() {
       setNotes(editing.notes || '')
       setTags((editing.tags || []).join(', '))
       setIsDefault(editing.isDefault === true)
+      setDeployment(editing.deployment || null)
       return
     }
     setName('')
@@ -102,6 +117,7 @@ export function GatewaySheet() {
     setNotes('')
     setTags('')
     setIsDefault(gatewayProfiles.length === 0)
+    setDeployment(null)
     setNodes([])
     setNodePairings([])
     setDevicePairings([])
@@ -143,10 +159,18 @@ export function GatewaySheet() {
       setNodePairings(nextNodePairings)
       setDevicePairings(nextDevicePairings)
       setPairedDevices(nextPairedDevices)
+      const nextStats: NonNullable<GatewayProfile['stats']> = {
+        nodeCount: nextNodes.length,
+        connectedNodeCount: nextNodes.filter((node) => node.connected).length,
+        pendingNodePairings: nextNodePairings.length,
+        pairedDeviceCount: nextPairedDevices.length,
+        pendingDevicePairings: nextDevicePairings.length,
+      }
       if (nextNodes[0]) {
         setInvokeNodeId((current) => current || nextNodes[0].nodeId)
         setInvokeCommand((current) => current || nextNodes[0].commands?.[0] || '')
       }
+      void api('PUT', `/gateways/${profileId}`, { stats: nextStats }).catch(() => {})
     } catch (err: unknown) {
       setNodesError(err instanceof Error ? err.message : 'Failed to load nodes for this gateway.')
     } finally {
@@ -182,6 +206,7 @@ export function GatewaySheet() {
         credentialId: nextCredentialId || null,
         notes: notes.trim() || null,
         tags: tags.split(',').map((item) => item.trim()).filter(Boolean),
+        deployment,
         isDefault,
       }
       if (editing) {
@@ -298,7 +323,7 @@ export function GatewaySheet() {
 
   const inputClass = 'w-full px-4 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[15px] outline-none transition-all duration-200 placeholder:text-text-3/50 focus-glow'
 
-  const applyDeployPatch = (patch: { endpoint?: string; token?: string; name?: string; notes?: string }) => {
+  const applyDeployPatch = (patch: { endpoint?: string; token?: string; name?: string; notes?: string; deployment?: GatewayProfile['deployment'] | Record<string, unknown> | null }) => {
     if (patch.endpoint) {
       setEndpoint(patch.endpoint)
       setCheckMessage('')
@@ -313,17 +338,97 @@ export function GatewaySheet() {
     if (patch.notes && !notes.trim()) {
       setNotes(patch.notes)
     }
+    if (patch.deployment) {
+      setDeployment((current) => ({
+        ...(current || {}),
+        ...(patch.deployment as GatewayProfile['deployment']),
+      }))
+    }
+  }
+
+  const handleExportGateway = () => {
+    const payload: GatewayImportShape = {
+      name: name.trim() || 'OpenClaw Gateway',
+      endpoint: endpoint.trim() || 'http://localhost:18789',
+      credentialId: credentialId || null,
+      token: tokenDraft.trim() || null,
+      notes: notes.trim() || null,
+      tags: tags.split(',').map((item) => item.trim()).filter(Boolean),
+      isDefault,
+      deployment,
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${(payload.name || 'openclaw-gateway').replace(/[^a-zA-Z0-9_-]/g, '_')}.gateway.json`
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success('Gateway config exported')
+  }
+
+  const handleImportGateway = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (loadEvent) => {
+      try {
+        const parsed = JSON.parse(String(loadEvent.target?.result || '{}')) as GatewayImportShape
+        setName(typeof parsed.name === 'string' ? parsed.name : '')
+        setEndpoint(typeof parsed.endpoint === 'string' ? parsed.endpoint : 'http://localhost:18789')
+        setCredentialId(typeof parsed.credentialId === 'string' ? parsed.credentialId : null)
+        setTokenDraft(typeof parsed.token === 'string' ? parsed.token : '')
+        setNotes(typeof parsed.notes === 'string' ? parsed.notes : '')
+        setTags(Array.isArray(parsed.tags) ? parsed.tags.join(', ') : '')
+        setIsDefault(parsed.isDefault === true)
+        setDeployment(parsed.deployment || null)
+        setCheckMessage('')
+        toast.success('Gateway config imported into this form')
+      } catch {
+        toast.error('Invalid gateway JSON')
+      } finally {
+        event.target.value = ''
+      }
+    }
+    reader.readAsText(file)
   }
 
   return (
     <BottomSheet open={open} onClose={onClose} wide>
+      <input
+        ref={importFileRef}
+        type="file"
+        accept="application/json,.json"
+        onChange={handleImportGateway}
+        className="hidden"
+      />
       <div className="mb-10">
-        <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
-          {editing ? 'Edit Gateway' : 'New Gateway'}
-        </h2>
-        <p className="text-[14px] text-text-3">
-          First-class OpenClaw gateway profiles for local or remote control planes.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
+              {editing ? 'Edit Gateway' : 'New Gateway'}
+            </h2>
+            <p className="text-[14px] text-text-3">
+              First-class OpenClaw gateway profiles for local or remote control planes.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => importFileRef.current?.click()}
+              className="px-3 py-2 rounded-[10px] border border-white/[0.08] bg-transparent text-text-2 text-[12px] font-600 hover:bg-white/[0.04] transition-all cursor-pointer"
+            >
+              Import JSON
+            </button>
+            <button
+              type="button"
+              onClick={handleExportGateway}
+              className="px-3 py-2 rounded-[10px] border border-white/[0.08] bg-transparent text-text-2 text-[12px] font-600 hover:bg-white/[0.04] transition-all cursor-pointer"
+            >
+              Export JSON
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="mb-6">
@@ -350,12 +455,39 @@ export function GatewaySheet() {
         <OpenClawDeployPanel
           endpoint={endpoint}
           token={tokenDraft}
+          deployment={deployment}
           suggestedName={name || null}
           title="Deploy OpenClaw From SwarmClaw"
           description="Use official OpenClaw sources only. Start it on this host, or generate a pre-configured remote bundle for VPS and hosted deployments."
           onApply={applyDeployPatch}
         />
       </div>
+
+      {deployment && (
+        <div className="mb-6 rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-4">
+          <div className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70 mb-2">Deploy metadata</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[12px] text-text-3/75">
+            <div className="rounded-[12px] border border-white/[0.06] bg-surface px-3 py-3">
+              <div className="uppercase tracking-[0.08em] text-text-3/55">Method</div>
+              <div className="mt-1 text-text-2">{deployment.method || 'manual'}</div>
+            </div>
+            <div className="rounded-[12px] border border-white/[0.06] bg-surface px-3 py-3">
+              <div className="uppercase tracking-[0.08em] text-text-3/55">Use case</div>
+              <div className="mt-1 text-text-2">{deployment.useCase || 'general'}</div>
+            </div>
+            <div className="rounded-[12px] border border-white/[0.06] bg-surface px-3 py-3">
+              <div className="uppercase tracking-[0.08em] text-text-3/55">Exposure</div>
+              <div className="mt-1 text-text-2">{deployment.exposure || 'manual'}</div>
+            </div>
+          </div>
+          {deployment.lastDeploySummary && (
+            <p className="mt-3 text-[12px] text-text-3 leading-relaxed">{deployment.lastDeploySummary}</p>
+          )}
+          {deployment.lastVerifiedMessage && (
+            <p className="mt-2 text-[12px] text-text-3 leading-relaxed">{deployment.lastVerifiedMessage}</p>
+          )}
+        </div>
+      )}
 
       {discoveries.length > 0 && (
         <div className="mb-6">

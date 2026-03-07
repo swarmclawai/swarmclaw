@@ -6,13 +6,24 @@ import { OpenClawDeployPanel } from '@/components/openclaw/openclaw-deploy-panel
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/api-client'
-import type { Credential } from '@/types'
+import type { Credential, GatewayProfile } from '@/types'
 
 interface OpenClawDeployDraft {
   endpoint: string
   token?: string
   name?: string
   notes?: string
+  deployment?: GatewayProfile['deployment']
+}
+
+function formatRuntimeTimestamp(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 'Never'
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(value)
 }
 
 export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
@@ -78,13 +89,14 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
     await loadGatewayProfiles()
   }
 
-  const handleDeployApply = (patch: { endpoint?: string; token?: string; name?: string; notes?: string }) => {
+  const handleDeployApply = (patch: { endpoint?: string; token?: string; name?: string; notes?: string; deployment?: GatewayProfile['deployment'] | Record<string, unknown> | null }) => {
     if (!patch.endpoint) return
     setDeployDraft({
       endpoint: patch.endpoint,
       token: patch.token,
       name: patch.name,
       notes: patch.notes,
+      deployment: (patch.deployment as GatewayProfile['deployment']) || null,
     })
   }
 
@@ -103,13 +115,45 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
       }
 
       const existing = gatewayProfiles.find((gateway) => gateway.endpoint === deployDraft.endpoint) || null
-      const nextTags = Array.from(new Set([...(existing?.tags || []), 'managed-deploy']))
+      const nextTags = Array.from(new Set([
+        ...(existing?.tags || []),
+        'managed-deploy',
+        ...(deployDraft.deployment?.useCase ? [deployDraft.deployment.useCase] : []),
+        ...(deployDraft.deployment?.exposure ? [deployDraft.deployment.exposure] : []),
+      ]))
+      const verify = await api<{
+        ok: boolean
+        verify?: {
+          ok: boolean
+          error?: string
+          hint?: string
+          models?: string[]
+        }
+      }>('POST', '/openclaw/deploy', {
+        action: 'verify',
+        endpoint: deployDraft.endpoint,
+        token: deployDraft.token?.trim() || undefined,
+      }).catch(() => ({ ok: false, verify: undefined as undefined }))
+      const verifiedOk = verify.verify?.ok === true
       const payload = {
         name: deployDraft.name || existing?.name || 'OpenClaw Gateway',
         endpoint: deployDraft.endpoint,
         credentialId: nextCredentialId || existing?.credentialId || null,
         notes: deployDraft.notes || existing?.notes || 'Managed OpenClaw deploy prepared from SwarmClaw.',
         tags: nextTags,
+        status: verifiedOk ? 'healthy' : (existing?.status || 'pending'),
+        deployment: {
+          ...(existing?.deployment || {}),
+          ...(deployDraft.deployment || {}),
+          managedBy: 'swarmclaw',
+          lastVerifiedAt: verify.verify ? Date.now() : (existing?.deployment?.lastVerifiedAt || null),
+          lastVerifiedOk: verify.verify ? verifiedOk : (existing?.deployment?.lastVerifiedOk ?? null),
+          lastVerifiedMessage: verify.verify
+            ? (verifiedOk
+              ? `Verified during save with ${verify.verify.models?.length || 0} model${(verify.verify.models?.length || 0) === 1 ? '' : 's'}.`
+              : (verify.verify.error || verify.verify.hint || 'Verification failed.'))
+            : (existing?.deployment?.lastVerifiedMessage || null),
+        },
         isDefault: existing?.isDefault === true || gatewayProfiles.length === 0,
       }
 
@@ -126,6 +170,48 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
       toast.error(err instanceof Error ? err.message : 'Failed to save prepared gateway')
     } finally {
       setSavingDeploy(false)
+    }
+  }
+
+  const handleCloneGateway = async (e: React.MouseEvent, gateway: GatewayProfile) => {
+    e.stopPropagation()
+    try {
+      await api('POST', '/gateways', {
+        name: `${gateway.name} Copy`,
+        endpoint: gateway.endpoint,
+        credentialId: gateway.credentialId || null,
+        notes: gateway.notes || null,
+        tags: gateway.tags || [],
+        deployment: gateway.deployment || null,
+        stats: gateway.stats || null,
+        isDefault: false,
+      })
+      await loadGatewayProfiles()
+      toast.success('Gateway cloned')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to clone gateway')
+    }
+  }
+
+  const handleRuntimeAction = async (
+    e: React.MouseEvent,
+    runtimeId: string,
+    action: 'activate' | 'drain' | 'cordon' | 'restart',
+  ) => {
+    e.stopPropagation()
+    try {
+      await api('PUT', `/external-agents/${runtimeId}`, { action })
+      await loadExternalAgents()
+      const actionLabel = action === 'activate'
+        ? 'Runtime activated'
+        : action === 'drain'
+          ? 'Runtime draining'
+          : action === 'cordon'
+            ? 'Runtime cordoned'
+            : 'Restart requested'
+      toast.success(actionLabel)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Runtime action failed')
     }
   }
 
@@ -151,6 +237,18 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
   }))
 
   const allItems = [...builtinItems, ...customItems]
+  const gatewayNameById = new Map(gatewayProfiles.map((gateway) => [gateway.id, gateway.name]))
+  const runtimeHealthByGateway = externalAgents.reduce<Record<string, { total: number; active: number; lastHeartbeatAt: number | null }>>((acc, runtime) => {
+    if (!runtime.gatewayProfileId) return acc
+    const current = acc[runtime.gatewayProfileId] || { total: 0, active: 0, lastHeartbeatAt: null }
+    current.total += 1
+    if (runtime.status === 'online' || runtime.status === 'idle') current.active += 1
+    if (typeof runtime.lastSeenAt === 'number' && (!current.lastHeartbeatAt || runtime.lastSeenAt > current.lastHeartbeatAt)) {
+      current.lastHeartbeatAt = runtime.lastSeenAt
+    }
+    acc[runtime.gatewayProfileId] = current
+    return acc
+  }, {})
 
   if (!loaded) {
     return (
@@ -286,6 +384,11 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
       )}
       <div className={inSidebar ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'}>
         {gatewayProfiles.map((gateway, idx) => (
+          (() => {
+            const runtimeStats = runtimeHealthByGateway[gateway.id] || { total: 0, active: 0, lastHeartbeatAt: null }
+            const deployment = gateway.deployment || null
+            const stats = gateway.stats || null
+            return (
           <div
             key={gateway.id}
             role="button"
@@ -328,9 +431,47 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
               {gateway.tags?.length ? gateway.tags.join(', ') : (gateway.notes || 'Dedicated OpenClaw control plane')}
             </div>
             {!inSidebar && (
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-text-3/65">
+                <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                  <div className="uppercase tracking-[0.08em] text-text-3/50">Deploy</div>
+                  <div className="mt-1 text-text-2">
+                    {deployment?.method || 'manual'}
+                    {deployment?.provider ? ` · ${deployment.provider}` : ''}
+                  </div>
+                </div>
+                <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                  <div className="uppercase tracking-[0.08em] text-text-3/50">Route hints</div>
+                  <div className="mt-1 text-text-2">
+                    {deployment?.useCase || 'general'}
+                    {deployment?.exposure ? ` · ${deployment.exposure}` : ''}
+                  </div>
+                </div>
+                <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                  <div className="uppercase tracking-[0.08em] text-text-3/50">Nodes / devices</div>
+                  <div className="mt-1 text-text-2">
+                    {stats?.connectedNodeCount ?? 0}/{stats?.nodeCount ?? 0} nodes · {stats?.pairedDeviceCount ?? 0} devices
+                  </div>
+                </div>
+                <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                  <div className="uppercase tracking-[0.08em] text-text-3/50">Runtimes</div>
+                  <div className="mt-1 text-text-2">
+                    {runtimeStats.active}/{runtimeStats.total} active
+                  </div>
+                </div>
+              </div>
+            )}
+            {!inSidebar && deployment?.lastVerifiedMessage && (
+              <div className="mt-3 text-[11px] text-text-3/60">
+                {deployment.lastVerifiedMessage}
+              </div>
+            )}
+            {!inSidebar && (
               <div className="mt-3 flex items-center gap-2">
                 <button onClick={(e) => void handleHealthCheckGateway(e, gateway.id)} className="px-2.5 py-1.5 rounded-[8px] border border-white/[0.08] bg-transparent text-[11px] font-700 text-text-2 hover:bg-white/[0.04] cursor-pointer transition-all">
                   Health
+                </button>
+                <button onClick={(e) => void handleCloneGateway(e, gateway)} className="px-2.5 py-1.5 rounded-[8px] border border-white/[0.08] bg-transparent text-[11px] font-700 text-text-2 hover:bg-white/[0.04] cursor-pointer transition-all">
+                  Clone
                 </button>
                 <button onClick={(e) => handleDeleteGateway(e, gateway.id)} className="px-2.5 py-1.5 rounded-[8px] border border-red-400/20 bg-red-400/[0.06] text-[11px] font-700 text-red-300 hover:bg-red-400/[0.1] cursor-pointer transition-all">
                   Delete
@@ -338,6 +479,8 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
               </div>
             )}
           </div>
+            )
+          })()
         ))}
         {gatewayProfiles.length === 0 && (
           <div className="p-4 rounded-[14px] border border-dashed border-white/[0.08] text-[13px] text-text-3/70">
@@ -363,23 +506,84 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div className="min-w-0">
                     <div className="font-display text-[14px] font-600 text-text truncate">{runtime.name}</div>
-                    <div className="text-[11px] text-text-3/60 truncate">{runtime.sourceType} · {runtime.transport || 'custom'}</div>
+                    <div className="text-[11px] text-text-3/60 truncate">
+                      {runtime.sourceType} · {runtime.transport || 'custom'}
+                      {runtime.version ? ` · ${runtime.version}` : ''}
+                    </div>
                   </div>
-                  <span className={`text-[10px] font-700 px-2 py-0.5 rounded-[5px] uppercase tracking-wider ${
-                    runtime.status === 'online'
-                      ? 'bg-emerald-400/10 text-emerald-300'
-                      : runtime.status === 'stale'
-                        ? 'bg-amber-400/10 text-amber-300'
-                        : 'bg-white/[0.04] text-text-3'
-                  }`}>
-                    {runtime.status}
-                  </span>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <span className={`text-[10px] font-700 px-2 py-0.5 rounded-[5px] uppercase tracking-wider ${
+                      runtime.lifecycleState === 'cordoned'
+                        ? 'bg-red-400/10 text-red-300'
+                        : runtime.lifecycleState === 'draining'
+                          ? 'bg-amber-400/10 text-amber-300'
+                          : 'bg-blue-400/10 text-blue-300'
+                    }`}>
+                      {runtime.lifecycleState || 'active'}
+                    </span>
+                    <span className={`text-[10px] font-700 px-2 py-0.5 rounded-[5px] uppercase tracking-wider ${
+                      runtime.status === 'online'
+                        ? 'bg-emerald-400/10 text-emerald-300'
+                        : runtime.status === 'stale'
+                          ? 'bg-amber-400/10 text-amber-300'
+                          : 'bg-white/[0.04] text-text-3'
+                    }`}>
+                      {runtime.status}
+                    </span>
+                  </div>
                 </div>
-                <div className="text-[12px] text-text-3/70">
-                  {runtime.provider || 'No provider'}
-                  {runtime.model ? ` · ${runtime.model}` : ''}
+                <div className="grid grid-cols-2 gap-2 text-[11px] text-text-3/65">
+                  <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                    <div className="uppercase tracking-[0.08em] text-text-3/50">Provider</div>
+                    <div className="mt-1 text-text-2">
+                      {runtime.provider || 'No provider'}
+                      {runtime.model ? ` · ${runtime.model}` : ''}
+                    </div>
+                  </div>
+                  <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                    <div className="uppercase tracking-[0.08em] text-text-3/50">Gateway</div>
+                    <div className="mt-1 text-text-2">
+                      {runtime.gatewayProfileId ? (gatewayNameById.get(runtime.gatewayProfileId) || runtime.gatewayProfileId) : 'Standalone'}
+                    </div>
+                  </div>
+                  <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                    <div className="uppercase tracking-[0.08em] text-text-3/50">Template</div>
+                    <div className="mt-1 text-text-2">{runtime.gatewayUseCase || 'general'}</div>
+                  </div>
+                  <div className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                    <div className="uppercase tracking-[0.08em] text-text-3/50">Last seen</div>
+                    <div className="mt-1 text-text-2">{formatRuntimeTimestamp(runtime.lastSeenAt || runtime.lastHeartbeatAt)}</div>
+                  </div>
                 </div>
-                <div className="text-[11px] text-text-3/55 mt-2 font-mono truncate">{runtime.endpoint || runtime.workspace || runtime.id}</div>
+                <div className="text-[11px] text-text-3/55 mt-3 font-mono truncate">{runtime.endpoint || runtime.workspace || runtime.id}</div>
+                {runtime.gatewayTags?.length ? (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {runtime.gatewayTags.slice(0, 6).map((tag) => (
+                      <span key={`${runtime.id}-${tag}`} className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.08em] text-text-3/70">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {runtime.lastHealthNote && (
+                  <div className="mt-3 text-[11px] text-text-3/65 leading-relaxed">
+                    {runtime.lastHealthNote}
+                  </div>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button onClick={(e) => void handleRuntimeAction(e, runtime.id, 'activate')} className="px-2.5 py-1.5 rounded-[8px] border border-white/[0.08] bg-transparent text-[11px] font-700 text-text-2 hover:bg-white/[0.04] cursor-pointer transition-all">
+                    Activate
+                  </button>
+                  <button onClick={(e) => void handleRuntimeAction(e, runtime.id, 'drain')} className="px-2.5 py-1.5 rounded-[8px] border border-amber-400/20 bg-amber-400/[0.06] text-[11px] font-700 text-amber-300 hover:bg-amber-400/[0.1] cursor-pointer transition-all">
+                    Drain
+                  </button>
+                  <button onClick={(e) => void handleRuntimeAction(e, runtime.id, 'cordon')} className="px-2.5 py-1.5 rounded-[8px] border border-red-400/20 bg-red-400/[0.06] text-[11px] font-700 text-red-300 hover:bg-red-400/[0.1] cursor-pointer transition-all">
+                    Cordon
+                  </button>
+                  <button onClick={(e) => void handleRuntimeAction(e, runtime.id, 'restart')} className="px-2.5 py-1.5 rounded-[8px] border border-white/[0.08] bg-transparent text-[11px] font-700 text-text-2 hover:bg-white/[0.04] cursor-pointer transition-all">
+                    Restart
+                  </button>
+                </div>
               </div>
             ))}
             {externalAgents.length === 0 && (

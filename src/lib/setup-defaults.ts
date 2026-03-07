@@ -48,7 +48,7 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
   {
     id: 'openclaw',
     name: 'OpenClaw',
-    description: 'Connect one or more local or remote OpenClaw gateways and map different starter agents to each one.',
+    description: 'Deploy or connect official-only local and remote OpenClaw gateways, then map starter agents across your swarm by role, tag, or use case.',
     requiresKey: false,
     supportsEndpoint: true,
     allowMultiple: true,
@@ -481,7 +481,7 @@ export const STARTER_KITS: StarterKit[] = [
     id: 'openclaw_fleet',
     name: 'OpenClaw Fleet',
     description: 'An OpenClaw-first starter setup for local or remote gateways.',
-    detail: 'Designed for users who want multiple OpenClaw-backed agents right away, including remote endpoint assignments.',
+    detail: 'Designed for users who want multiple OpenClaw-backed agents right away, with official-only local deploy, single-VPS, and private-tailnet defaults built into setup.',
     recommendedFor: ['manual'],
     badge: 'OpenClaw',
     agents: [

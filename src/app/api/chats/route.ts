@@ -61,7 +61,16 @@ export async function POST(req: Request) {
   const id = body.id || genId()
   const sessions = loadSessions()
   const agent = body.agentId ? loadAgents()[body.agentId] : null
-  const resolvedRoute = agent ? resolvePrimaryAgentRoute(agent) : null
+  const routePreferredGatewayTags = Array.isArray(body.routePreferredGatewayTags)
+    ? body.routePreferredGatewayTags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+    : []
+  const routePreferredGatewayUseCase = typeof body.routePreferredGatewayUseCase === 'string' && body.routePreferredGatewayUseCase.trim()
+    ? body.routePreferredGatewayUseCase.trim()
+    : null
+  const resolvedRoute = agent ? resolvePrimaryAgentRoute(agent, undefined, {
+    preferredGatewayTags: routePreferredGatewayTags,
+    preferredGatewayUseCase: routePreferredGatewayUseCase,
+  }) : null
   const requestedPlugins = Array.isArray(body.plugins) ? body.plugins : (Array.isArray(body.tools) ? body.tools : null)
   const resolvedPlugins = requestedPlugins ?? (Array.isArray(agent?.plugins) ? agent.plugins : (Array.isArray(agent?.tools) ? agent.tools : []))
 
@@ -83,6 +92,8 @@ export async function POST(req: Request) {
       body.provider || agent?.provider || 'claude-cli',
       body.apiEndpoint || agent?.apiEndpoint || null,
     ),
+    routePreferredGatewayTags,
+    routePreferredGatewayUseCase,
     claudeSessionId: null,
     codexThreadId: null,
     opencodeSessionId: null,

@@ -23,6 +23,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         body.apiEndpoint,
       )
     }
+    if (body.preferredGatewayTags !== undefined) {
+      agent.preferredGatewayTags = Array.isArray(body.preferredGatewayTags)
+        ? body.preferredGatewayTags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+        : []
+    }
+    if (body.preferredGatewayUseCase !== undefined) {
+      agent.preferredGatewayUseCase = typeof body.preferredGatewayUseCase === 'string' && body.preferredGatewayUseCase.trim()
+        ? body.preferredGatewayUseCase.trim()
+        : null
+    }
     if (body.routingTargets !== undefined && Array.isArray(body.routingTargets)) {
       agent.routingTargets = body.routingTargets.map((target: Record<string, unknown>, index: number) => ({
         id: typeof target.id === 'string' && target.id.trim() ? target.id.trim() : `route-${index + 1}`,
@@ -37,6 +47,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           typeof target.apiEndpoint === 'string' ? target.apiEndpoint : null,
         ),
         gatewayProfileId: target.gatewayProfileId ?? null,
+        preferredGatewayTags: Array.isArray(target.preferredGatewayTags)
+          ? target.preferredGatewayTags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+          : [],
+        preferredGatewayUseCase: typeof target.preferredGatewayUseCase === 'string' && target.preferredGatewayUseCase.trim()
+          ? target.preferredGatewayUseCase.trim()
+          : null,
         priority: typeof target.priority === 'number' ? target.priority : index + 1,
       }))
     }
