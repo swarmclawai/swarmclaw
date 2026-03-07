@@ -2,10 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
+import { OpenClawDeployPanel } from '@/components/openclaw/openclaw-deploy-panel'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { toast } from 'sonner'
-import type { OpenClawDevicePairRequest, OpenClawNode, OpenClawNodePairRequest, OpenClawPairedDevice } from '@/types'
+import type {
+  Credential,
+  OpenClawDevicePairRequest,
+  OpenClawNode,
+  OpenClawNodePairRequest,
+  OpenClawPairedDevice,
+} from '@/types'
 
 interface DiscoveryResult {
   host: string
@@ -46,6 +53,7 @@ export function GatewaySheet() {
   const [name, setName] = useState('')
   const [endpoint, setEndpoint] = useState('http://localhost:18789')
   const [credentialId, setCredentialId] = useState<string | null>(null)
+  const [tokenDraft, setTokenDraft] = useState('')
   const [notes, setNotes] = useState('')
   const [tags, setTags] = useState('')
   const [isDefault, setIsDefault] = useState(false)
@@ -81,6 +89,7 @@ export function GatewaySheet() {
       setName(editing.name)
       setEndpoint(editing.endpoint)
       setCredentialId(editing.credentialId || null)
+      setTokenDraft('')
       setNotes(editing.notes || '')
       setTags((editing.tags || []).join(', '))
       setIsDefault(editing.isDefault === true)
@@ -89,6 +98,7 @@ export function GatewaySheet() {
     setName('')
     setEndpoint('http://localhost:18789')
     setCredentialId(null)
+    setTokenDraft('')
     setNotes('')
     setTags('')
     setIsDefault(gatewayProfiles.length === 0)
@@ -157,10 +167,19 @@ export function GatewaySheet() {
   const handleSave = async () => {
     setSaving(true)
     try {
+      let nextCredentialId = credentialId
+      if (tokenDraft.trim()) {
+        const created = await api<Credential>('POST', '/credentials', {
+          provider: 'openclaw',
+          name: `${name.trim() || 'OpenClaw Gateway'} token`,
+          apiKey: tokenDraft.trim(),
+        })
+        nextCredentialId = created.id
+      }
       const payload = {
         name: name.trim() || 'OpenClaw Gateway',
         endpoint: endpoint.trim() || 'http://localhost:18789',
-        credentialId: credentialId || null,
+        credentialId: nextCredentialId || null,
         notes: notes.trim() || null,
         tags: tags.split(',').map((item) => item.trim()).filter(Boolean),
         isDefault,
@@ -172,7 +191,7 @@ export function GatewaySheet() {
         await api('POST', '/gateways', payload)
         toast.success('Gateway added')
       }
-      await loadGatewayProfiles()
+      await Promise.all([loadGatewayProfiles(), loadCredentials()])
       onClose()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to save gateway')
@@ -188,6 +207,7 @@ export function GatewaySheet() {
       const params = new URLSearchParams()
       params.set('endpoint', endpoint.trim() || 'http://localhost:18789')
       if (credentialId) params.set('credentialId', credentialId)
+      if (tokenDraft.trim()) params.set('token', tokenDraft.trim())
       const result = await api<{ ok: boolean; models: string[]; error?: string; hint?: string }>('GET', `/providers/openclaw/health?${params.toString()}`)
       if (result.ok) {
         setCheckMessage(`Connected. ${result.models?.length ? `${result.models.length} model${result.models.length === 1 ? '' : 's'} visible.` : 'Gateway responded normally.'}`)
@@ -278,6 +298,23 @@ export function GatewaySheet() {
 
   const inputClass = 'w-full px-4 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[15px] outline-none transition-all duration-200 placeholder:text-text-3/50 focus-glow'
 
+  const applyDeployPatch = (patch: { endpoint?: string; token?: string; name?: string; notes?: string }) => {
+    if (patch.endpoint) {
+      setEndpoint(patch.endpoint)
+      setCheckMessage('')
+    }
+    if (patch.token) {
+      setTokenDraft(patch.token)
+      setCredentialId(null)
+    }
+    if (patch.name && !name.trim()) {
+      setName(patch.name)
+    }
+    if (patch.notes && !notes.trim()) {
+      setNotes(patch.notes)
+    }
+  }
+
   return (
     <BottomSheet open={open} onClose={onClose} wide>
       <div className="mb-10">
@@ -307,6 +344,17 @@ export function GatewaySheet() {
         </div>
         <input value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="http://localhost:18789" className={`${inputClass} font-mono text-[14px]`} />
         <p className="text-[11px] text-text-3/60 mt-2">Remote HTTPS URLs and local loopback endpoints are both supported.</p>
+      </div>
+
+      <div className="mb-6">
+        <OpenClawDeployPanel
+          endpoint={endpoint}
+          token={tokenDraft}
+          suggestedName={name || null}
+          title="Deploy OpenClaw From SwarmClaw"
+          description="Use official OpenClaw sources only. Start it on this host, or generate a pre-configured remote bundle for VPS and hosted deployments."
+          onApply={applyDeployPatch}
+        />
       </div>
 
       {discoveries.length > 0 && (
@@ -342,6 +390,18 @@ export function GatewaySheet() {
             <option key={item.id} value={item.id}>{item.name}</option>
           ))}
         </select>
+        <input
+          value={tokenDraft}
+          onChange={(e) => {
+            setTokenDraft(e.target.value)
+            if (e.target.value) setCredentialId(null)
+          }}
+          placeholder="Or paste/generate a new gateway token"
+          className={`${inputClass} mt-3 font-mono text-[13px]`}
+        />
+        <p className="mt-2 text-[11px] text-text-3/60">
+          A pasted token is stored as a new encrypted OpenClaw credential when you save this gateway.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

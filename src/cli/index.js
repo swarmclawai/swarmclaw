@@ -310,6 +310,19 @@ const COMMAND_GROUPS = [
     description: 'OpenClaw discovery, gateway control, and runtime APIs',
     commands: [
       cmd('discover', 'GET', '/openclaw/discover', 'Discover OpenClaw gateways'),
+      cmd('deploy-status', 'GET', '/openclaw/deploy', 'Get managed OpenClaw deploy status'),
+      cmd('deploy-local-start', 'POST', '/openclaw/deploy', 'Start a managed local OpenClaw deployment (use --data JSON for port/token overrides)', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'start-local' },
+      }),
+      cmd('deploy-local-stop', 'POST', '/openclaw/deploy', 'Stop the managed local OpenClaw deployment', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'stop-local' },
+      }),
+      cmd('deploy-bundle', 'POST', '/openclaw/deploy', 'Generate an OpenClaw remote deployment bundle (use --data JSON for template/target/token)', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'bundle' },
+      }),
       cmd('directory', 'GET', '/openclaw/directory', 'List directory entries from running OpenClaw connectors'),
       cmd('gateway-status', 'GET', '/openclaw/gateway', 'Check OpenClaw gateway connection status'),
       cmd('gateway', 'POST', '/openclaw/gateway', 'Call OpenClaw gateway RPC/control action', { expectsJsonBody: true }),

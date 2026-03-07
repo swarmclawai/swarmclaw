@@ -1,9 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import { OpenClawDeployPanel } from '@/components/openclaw/openclaw-deploy-panel'
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/api-client'
+import type { Credential } from '@/types'
+
+interface OpenClawDeployDraft {
+  endpoint: string
+  token?: string
+  name?: string
+  notes?: string
+}
 
 export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
   const providers = useAppStore((s) => s.providers)
@@ -21,6 +31,8 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
   const setGatewaySheetOpen = useAppStore((s) => s.setGatewaySheetOpen)
   const setEditingGatewayId = useAppStore((s) => s.setEditingGatewayId)
   const [loaded, setLoaded] = useState(false)
+  const [deployDraft, setDeployDraft] = useState<OpenClawDeployDraft | null>(null)
+  const [savingDeploy, setSavingDeploy] = useState(false)
 
   const refresh = useCallback(async () => {
     await Promise.all([loadProviders(), loadProviderConfigs(), loadGatewayProfiles(), loadExternalAgents(), loadCredentials()])
@@ -64,6 +76,57 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
     e.stopPropagation()
     await api('GET', `/gateways/${id}/health`)
     await loadGatewayProfiles()
+  }
+
+  const handleDeployApply = (patch: { endpoint?: string; token?: string; name?: string; notes?: string }) => {
+    if (!patch.endpoint) return
+    setDeployDraft({
+      endpoint: patch.endpoint,
+      token: patch.token,
+      name: patch.name,
+      notes: patch.notes,
+    })
+  }
+
+  const handleSavePreparedGateway = async () => {
+    if (!deployDraft?.endpoint) return
+    setSavingDeploy(true)
+    try {
+      let nextCredentialId: string | null = null
+      if (deployDraft.token?.trim()) {
+        const credential = await api<Credential>('POST', '/credentials', {
+          provider: 'openclaw',
+          name: `${deployDraft.name || 'OpenClaw Gateway'} token`,
+          apiKey: deployDraft.token.trim(),
+        })
+        nextCredentialId = credential.id
+      }
+
+      const existing = gatewayProfiles.find((gateway) => gateway.endpoint === deployDraft.endpoint) || null
+      const nextTags = Array.from(new Set([...(existing?.tags || []), 'managed-deploy']))
+      const payload = {
+        name: deployDraft.name || existing?.name || 'OpenClaw Gateway',
+        endpoint: deployDraft.endpoint,
+        credentialId: nextCredentialId || existing?.credentialId || null,
+        notes: deployDraft.notes || existing?.notes || 'Managed OpenClaw deploy prepared from SwarmClaw.',
+        tags: nextTags,
+        isDefault: existing?.isDefault === true || gatewayProfiles.length === 0,
+      }
+
+      if (existing) {
+        await api('PUT', `/gateways/${existing.id}`, payload)
+      } else {
+        await api('POST', '/gateways', payload)
+      }
+
+      await Promise.all([loadGatewayProfiles(), loadCredentials()])
+      setDeployDraft(null)
+      toast.success(existing ? 'Gateway profile updated' : 'Gateway profile saved')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save prepared gateway')
+    } finally {
+      setSavingDeploy(false)
+    }
   }
 
   // Merge built-in providers with custom configs
@@ -180,15 +243,47 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
       <div className="mt-8 mb-4 flex items-center justify-between">
         <div className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">OpenClaw Gateways</div>
         {!inSidebar && (
-          <button
-            type="button"
-            onClick={() => handleEditGateway(null)}
-            className="px-3 py-1.5 rounded-[8px] border border-white/[0.08] bg-transparent text-[11px] font-700 text-text-2 hover:bg-white/[0.04] transition-all cursor-pointer"
-          >
-            + New Gateway
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleEditGateway(null)}
+              className="px-3 py-1.5 rounded-[8px] border border-white/[0.08] bg-transparent text-[11px] font-700 text-text-2 hover:bg-white/[0.04] transition-all cursor-pointer"
+            >
+              + New Gateway
+            </button>
+          </div>
         )}
       </div>
+      {!inSidebar && (
+        <div className="mb-4 rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-4">
+          <OpenClawDeployPanel
+            compact
+            title="Deploy OpenClaw Control Planes"
+            description="Use official OpenClaw sources only. Start a local control plane on this machine, or generate a pre-configured remote bundle for Docker VPS hosts like Hetzner, DigitalOcean, Vultr, Linode, Lightsail, plus Render, Fly.io, and Railway."
+            onApply={handleDeployApply}
+          />
+          {deployDraft?.endpoint && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-emerald-500/20 bg-emerald-500/[0.05] px-4 py-3">
+              <div>
+                <div className="text-[13px] font-700 text-emerald-300">Prepared gateway profile</div>
+                <div className="mt-1 text-[12px] text-text-3">
+                  {deployDraft.name || 'OpenClaw Gateway'} · <code className="text-text-2">{deployDraft.endpoint}</code>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSavePreparedGateway()}
+                  disabled={savingDeploy}
+                  className="rounded-[10px] bg-accent-bright px-3.5 py-2 text-[12px] font-700 text-white border-none cursor-pointer hover:brightness-110 transition-all disabled:opacity-40"
+                >
+                  {savingDeploy ? 'Saving…' : 'Save Prepared Gateway'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <div className={inSidebar ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'}>
         {gatewayProfiles.map((gateway, idx) => (
           <div
@@ -246,7 +341,7 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
         ))}
         {gatewayProfiles.length === 0 && (
           <div className="p-4 rounded-[14px] border border-dashed border-white/[0.08] text-[13px] text-text-3/70">
-            No gateway profiles yet. Add one to route OpenClaw agents by named control plane instead of a singleton default.
+            No gateway profiles yet. Use Smart Deploy above for a local runtime, a Docker VPS bundle, or a hosted OpenClaw deployment profile.
           </div>
         )}
       </div>

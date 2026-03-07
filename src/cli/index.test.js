@@ -163,6 +163,40 @@ test('runCli sends authenticated request and emits compact JSON when --json is s
   assert.equal(stderr.toString(), '')
 })
 
+test('openclaw deploy bundle command merges action with provided JSON body', async () => {
+  const stdout = makeWritable()
+  const stderr = makeWritable()
+  const calls = []
+
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return jsonResponse({ ok: true, bundle: { template: 'docker' } })
+  }
+
+  const exitCode = await runCli(
+    ['openclaw', 'deploy-bundle', '--data', '{"template":"docker","target":"openclaw.example.com"}', '--json'],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: process.cwd(),
+    }
+  )
+
+  assert.equal(exitCode, 0)
+  assert.equal(calls.length, 1)
+  assert.match(calls[0].url, /\/api\/openclaw\/deploy$/)
+  assert.equal(calls[0].init.method, 'POST')
+  assert.deepEqual(JSON.parse(String(calls[0].init.body)), {
+    action: 'bundle',
+    template: 'docker',
+    target: 'openclaw.example.com',
+  })
+  assert.equal(stdout.toString().trim(), '{"ok":true,"bundle":{"template":"docker"}}')
+  assert.equal(stderr.toString(), '')
+})
+
 test('runCli falls back to platform-api-key.txt when env key is missing', async () => {
   const stdout = makeWritable()
   const stderr = makeWritable()
