@@ -69,6 +69,13 @@ describe('canonicalizePluginId', () => {
     assert.equal(canonicalizePluginId('memory_tool'), 'memory')
   })
 
+  it('resolves narrow memory tools → memory', () => {
+    assert.equal(canonicalizePluginId('memory_search'), 'memory')
+    assert.equal(canonicalizePluginId('memory_get'), 'memory')
+    assert.equal(canonicalizePluginId('memory_store'), 'memory')
+    assert.equal(canonicalizePluginId('memory_update'), 'memory')
+  })
+
   it('keeps files (already canonical)', () => {
     assert.equal(canonicalizePluginId('files'), 'files')
   })

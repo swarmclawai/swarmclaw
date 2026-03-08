@@ -138,6 +138,18 @@ describe('memory tool knowledge actions (source verification)', () => {
     assert.equal(enumBody.includes("'knowledge_store'"), false)
     assert.equal(enumBody.includes("'knowledge_search'"), false)
   })
+
+  it('declares the narrow OpenClaw-style memory tool names', async () => {
+    const fs = await import('fs')
+    const src = fs.readFileSync(
+      new URL('./memory.ts', import.meta.url).pathname,
+      'utf-8',
+    )
+
+    for (const toolName of ['memory_search', 'memory_get', 'memory_store', 'memory_update']) {
+      assert.ok(src.includes(`name: '${toolName}'`), `memory.ts should declare ${toolName}`)
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------

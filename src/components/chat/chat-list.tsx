@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { ChatCard } from './chat-card'
 import { fetchMessages } from '@/lib/chats'
+import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/shared/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
@@ -38,6 +39,7 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   const [typeFilter, setTypeFilter] = useState<SessionFilter>('all')
   const [sortMode, setSortMode] = useState<SortMode>('lastActive')
   const [loaded, setLoaded] = useState(Object.keys(sessions).length > 0)
+  const [showLocalPlatformSessions, setShowLocalPlatformSessions] = useState(false)
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
   const [confirmClearIds, setConfirmClearIds] = useState<string[] | null>(null)
   const [clearing, setClearing] = useState(false)
@@ -50,16 +52,15 @@ export function ChatList({ inSidebar, onSelect }: Props) {
     void loadConnectors()
   }, [loadConnectors])
 
+  useEffect(() => {
+    setShowLocalPlatformSessions(isLocalhostBrowser())
+  }, [])
+
   const allUserSessions = useMemo(() => {
-    return Object.values(sessions).filter((s) => {
-      const owner = (s.user || '').toLowerCase()
-      const isPlatformOwned = owner === 'system' || owner === 'connector' || owner === 'swarm'
-      const isCurrentUserOwned = !!currentUser && owner === currentUser.toLowerCase()
-      const isUnownedLegacy = !owner
-      if (!isCurrentUserOwned && !isPlatformOwned && !isUnownedLegacy) return false
-      return true
-    })
-  }, [sessions, currentUser])
+    return Object.values(sessions).filter((s) => isVisibleSessionForViewer(s, currentUser, {
+      localhost: showLocalPlatformSessions,
+    }))
+  }, [sessions, currentUser, showLocalPlatformSessions])
 
   const filtered = useMemo(() => {
     return allUserSessions

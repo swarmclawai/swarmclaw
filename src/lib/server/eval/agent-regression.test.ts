@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { AGENT_REGRESSION_SCENARIOS, resolveRegressionApprovalSettings, resolveRegressionPlugins, scoreAssertions } from './agent-regression'
+import {
+  AGENT_REGRESSION_SCENARIOS,
+  DEFAULT_AGENT_REGRESSION_SCENARIO_IDS,
+  resolveRegressionApprovalSettings,
+  resolveRegressionPlugins,
+  scoreAssertions,
+} from './agent-regression'
 
 describe('agent regression helpers', () => {
   it('maps approval modes onto deterministic platform settings', () => {
@@ -42,10 +48,16 @@ describe('agent regression helpers', () => {
       'mock-signup-secret-email',
       'human-verified-signup',
       'research-build-deploy',
+      'blackboard-orchestrator-fit',
       'tool-call-efficiency',
       'file-creation-followthrough',
       'knowledge-first-file',
     ])
+  })
+
+  it('keeps exploratory scenarios out of the default suite score path', () => {
+    assert.ok(DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('research-build-deploy'))
+    assert.ok(!DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('blackboard-orchestrator-fit'))
   })
 
   it('can resolve regressions against the agent capability set instead of injected scenario plugins', () => {

@@ -8,7 +8,7 @@ import Database from 'better-sqlite3'
 import { DATA_DIR, IS_BUILD_BOOTSTRAP, WORKSPACE_DIR } from './data-dir'
 import { normalizeHeartbeatSettingFields } from '@/lib/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
-import type { ExternalAgentRuntime, GatewayProfile, Message } from '@/types'
+import type { AppNotification, ExternalAgentRuntime, GatewayProfile, Message } from '@/types'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
 // --- LRU Cache ---
@@ -1173,6 +1173,19 @@ export function saveNotification(id: string, data: unknown) {
 
 export function deleteNotification(id: string) {
   deleteCollectionItem('notifications', id)
+}
+
+export function findNotificationByDedupKey(dedupKey: string): AppNotification | null {
+  const raw = getCollectionRawCache('notifications')
+  for (const json of raw.values()) {
+    try {
+      const notification = JSON.parse(json) as AppNotification
+      if (notification.dedupKey === dedupKey) return notification
+    } catch {
+      // ignore malformed
+    }
+  }
+  return null
 }
 
 export function hasUnreadNotificationWithKey(dedupKey: string): boolean {

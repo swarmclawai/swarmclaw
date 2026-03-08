@@ -271,6 +271,13 @@ describe('requestedToolNamesFromMessage advanced', () => {
     assert.ok(result.includes('memory_tool'))
   })
 
+  it('extracts narrow memory tool names when explicitly requested', () => {
+    const result = requestedToolNamesFromMessage('Use `memory_search` first, then `memory_get`, and finish with `memory_store` if needed')
+    assert.ok(result.includes('memory_search'))
+    assert.ok(result.includes('memory_get'))
+    assert.ok(result.includes('memory_store'))
+  })
+
   it('extracts multiple tools from complex request', () => {
     const result = requestedToolNamesFromMessage('Use `web` to research, `browser` to screenshot, and `connector_message_tool` to send via Slack')
     assert.ok(result.includes('web'))

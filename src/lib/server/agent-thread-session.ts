@@ -18,6 +18,7 @@ function buildThreadSession(agent: Agent, sessionId: string, user: string, creat
   const baseSession: Session = {
     id: sessionId,
     name: agent.name,
+    openclawAgentId: agent.openclawAgentId || existing?.openclawAgentId || null,
     shortcutForAgentId: agent.id,
     cwd: existing?.cwd || WORKSPACE_DIR,
     user: existing?.user || user,

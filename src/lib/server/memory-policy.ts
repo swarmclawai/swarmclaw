@@ -4,6 +4,10 @@ const ACK_RE = /^(?:ok(?:ay)?|cool|nice|got it|makes sense|thanks|thank you|thx|
 const GREETING_RE = /^(?:hi|hello|hey|yo|morning|good morning|good afternoon|good evening)[.! ]*$/i
 const MEMORY_META_RE = /\b(?:remember|memory|memorize|store this|save this|forget)\b/i
 const LOW_SIGNAL_RESPONSE_RE = /^(?:HEARTBEAT_OK|NO_MESSAGE)\b/i
+const CURRENT_THREAD_RECALL_MARKER_RE = /\b(?:this conversation|this chat|this thread|current conversation|current chat|current thread|same thread|same chat|same conversation|earlier in (?:this )?(?:conversation|chat|thread)|from (?:this|our) (?:conversation|chat|thread)|you just stored|you just said|we just discussed|we just decided)\b/i
+const CURRENT_THREAD_RECALL_INTENT_RE = /\b(?:what|which|who|when|where|did|remind|recap|summarize|repeat|list|tell me|answer|confirm|recall|mention)\b/i
+const DIRECT_MEMORY_WRITE_MARKER_RE = /\b(?:remember|memorize|store|save|write to memory|add to memory|update.*memory|correct.*memory)\b/i
+const DIRECT_MEMORY_WRITE_FOLLOWUP_RE = /\b(?:confirm|recap|repeat|summarize|what you just stored|what you saved|what you updated)\b/i
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
@@ -18,6 +22,26 @@ export function shouldInjectMemoryContext(message: string): boolean {
   if (!trimmed) return false
   if (trimmed.length < 16 && (ACK_RE.test(trimmed) || GREETING_RE.test(trimmed))) return false
   if (trimmed.length < 24 && MEMORY_META_RE.test(trimmed)) return false
+  return true
+}
+
+export function isCurrentThreadRecallRequest(message: string): boolean {
+  const trimmed = normalizeWhitespace(message)
+  if (!trimmed) return false
+  if (!CURRENT_THREAD_RECALL_MARKER_RE.test(trimmed)) return false
+  if (/\b(?:remember|store|save)\b/i.test(trimmed) && !/\?\s*$/.test(trimmed) && !/\b(?:what|which|who|when|where|did|confirm|recap|summarize|repeat|list|tell me|answer|recall)\b/i.test(trimmed)) {
+    return false
+  }
+  return CURRENT_THREAD_RECALL_INTENT_RE.test(trimmed) || /\?\s*$/.test(trimmed)
+}
+
+export function isDirectMemoryWriteRequest(message: string): boolean {
+  const trimmed = normalizeWhitespace(message)
+  if (!trimmed) return false
+  const directWriteLike = DIRECT_MEMORY_WRITE_MARKER_RE.test(trimmed)
+  if (!directWriteLike) return false
+  if (/\?\s*$/.test(trimmed) && !DIRECT_MEMORY_WRITE_FOLLOWUP_RE.test(trimmed)) return false
+  if (isCurrentThreadRecallRequest(trimmed) && !DIRECT_MEMORY_WRITE_FOLLOWUP_RE.test(trimmed)) return false
   return true
 }
 

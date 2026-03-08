@@ -120,7 +120,7 @@ async function startSubagentJob(jobId: string, args: {
       const latest = getDelegationJob(jobId)
       if (latest?.status === 'cancelled') return
       appendDelegationCheckpoint(jobId, 'Child session completed', 'completed')
-      completeDelegationJob(jobId, result.text.slice(0, 8000), { childSessionId: sid })
+      completeDelegationJob(jobId, result.text.slice(0, 32_000), { childSessionId: sid })
     })
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err)
@@ -213,10 +213,10 @@ async function executeSubagentAction(args: any, context: { sessionId?: string; c
       agentId,
       agentName: started.agent.name,
       sessionId: started.sid,
-      response: result.text.slice(0, 8000),
+      response: result.text.slice(0, 32_000),
     })
-  } catch (err: any) {
-    return `Error: ${err.message}`
+  } catch (err: unknown) {
+    return `Error: ${err instanceof Error ? err.message : String(err)}`
   }
 }
 

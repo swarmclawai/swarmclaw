@@ -6,6 +6,7 @@ import { truncate, findBinaryOnPath, MAX_OUTPUT } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { canonicalizePluginId } from '../tool-aliases'
 import {
   appendDelegationCheckpoint,
   cancelDelegationJob,
@@ -277,6 +278,30 @@ function normalizeDelegateArgs(rawArgs: Record<string, unknown>): Record<string,
   return normalized
 }
 
+function resolveDirectLocalToolDelegationTarget(
+  normalized: Record<string, unknown>,
+  bctx: DelegateContext,
+): string | null {
+  const requestedTool = [
+    normalized.tool,
+    normalized.tool_name,
+    normalized.toolName,
+    normalized.tool_id,
+    normalized.toolId,
+  ].find((value) => typeof value === 'string' && value.trim()) as string | undefined
+  const trimmed = typeof requestedTool === 'string' ? requestedTool.trim() : ''
+  if (!trimmed) return null
+  if (coerceDelegateBackend(trimmed)) return null
+
+  const canonical = canonicalizePluginId(trimmed) || trimmed.toLowerCase()
+  if (canonical === 'delegate') return null
+  const hasLocalTool = bctx.hasPlugin?.(trimmed)
+    || bctx.hasPlugin?.(canonical)
+    || bctx.hasTool?.(trimmed)
+    || bctx.hasTool?.(canonical)
+  return hasLocalTool ? canonical : null
+}
+
 function resolveDelegateSessionId(bctx: DelegateContext): string | null {
   const nested = typeof bctx.ctx?.sessionId === 'string' ? bctx.ctx.sessionId.trim() : ''
   if (nested) return nested
@@ -459,6 +484,7 @@ async function waitForDelegateJob(jobId: string, timeoutSec = 30): Promise<strin
 async function executeDelegateAction(args: Record<string, unknown>, bctx: DelegateContext) {
   const normalized = normalizeDelegateArgs(args)
   const action = String(normalized.action || '').trim().toLowerCase()
+  const directLocalToolTarget = resolveDirectLocalToolDelegationTarget(normalized, bctx)
   const task = normalized.task as string
   const requestedBackend = ((normalized.backend as string) || 'claude') as DelegateBackend
   const jobId = typeof normalized.jobId === 'string' ? normalized.jobId.trim() : ''
@@ -486,6 +512,10 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
     if (!jobId) return 'Error: jobId is required.'
     const timeoutSec = typeof normalized.timeoutSec === 'number' ? normalized.timeoutSec : 30
     return waitForDelegateJob(jobId, timeoutSec)
+  }
+
+  if (directLocalToolTarget) {
+    return `Error: \`${directLocalToolTarget}\` is already available in this session. Call \`${directLocalToolTarget}\` directly instead of wrapping it inside \`delegate\`.`
   }
 
   if (!task) return 'Error: task is required.'

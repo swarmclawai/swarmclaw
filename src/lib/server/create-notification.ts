@@ -1,13 +1,14 @@
 import { genId } from '@/lib/id'
-import { saveNotification, hasUnreadNotificationWithKey } from '@/lib/server/storage'
+import { upsertNotificationRecord } from '@/lib/notification-utils'
+import { findNotificationByDedupKey, saveNotification } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { dispatchAlert } from '@/lib/server/alert-dispatch'
 import type { AppNotification } from '@/types'
 
 /**
- * Create and persist a notification, then push a WS invalidation.
- * If `dedupKey` is provided and an unread notification with the same key
- * already exists, returns `null` (no insert, no WS push).
+ * Create or refresh a notification, then push a WS invalidation.
+ * Repeated events with the same `dedupKey` update one notification record
+ * instead of creating a new row every time.
  */
 export function createNotification(opts: {
   type: AppNotification['type']
@@ -18,27 +19,32 @@ export function createNotification(opts: {
   entityType?: string
   entityId?: string
   dedupKey?: string
-}): AppNotification | null {
-  if (opts.dedupKey && hasUnreadNotificationWithKey(opts.dedupKey)) {
-    return null
-  }
+  dispatchExternally?: boolean
+}, deps: {
+  now?: () => number
+  save?: (id: string, data: AppNotification) => void
+  notifyTopic?: (topic: string) => void
+  dispatch?: (notification: AppNotification) => Promise<unknown>
+  findByDedupKey?: (dedupKey: string) => AppNotification | null
+  createId?: () => string
+} = {}): { notification: AppNotification; created: boolean } {
+  const now = deps.now?.() ?? Date.now()
+  const save = deps.save ?? saveNotification
+  const emit = deps.notifyTopic ?? notify
+  const sendAlert = deps.dispatch ?? dispatchAlert
+  const existing = opts.dedupKey
+    ? (deps.findByDedupKey ?? findNotificationByDedupKey)(opts.dedupKey)
+    : null
 
-  const id = genId()
-  const notification: AppNotification = {
-    id,
-    type: opts.type,
-    title: opts.title,
-    message: opts.message,
-    actionLabel: opts.actionLabel,
-    actionUrl: opts.actionUrl,
-    entityType: opts.entityType,
-    entityId: opts.entityId,
-    dedupKey: opts.dedupKey,
-    read: false,
-    createdAt: Date.now(),
+  const { notification, created } = upsertNotificationRecord(existing, opts, {
+    now,
+    createId: deps.createId ?? (() => genId()),
+  })
+
+  save(notification.id, notification)
+  emit('notifications')
+  if (created && opts.dispatchExternally !== false) {
+    sendAlert(notification).catch(() => {})
   }
-  saveNotification(id, notification)
-  notify('notifications')
-  dispatchAlert(notification).catch(() => {})
-  return notification
+  return { notification, created }
 }

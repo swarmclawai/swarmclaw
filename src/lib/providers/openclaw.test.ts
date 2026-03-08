@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 
-import { resolveGatewayAgentId } from './openclaw'
+import { buildOpenClawSessionKey, resolveGatewayAgentId } from './openclaw'
 import { loadAgents, saveAgents } from '../server/storage'
 import type { Agent } from '@/types'
 
@@ -51,4 +51,24 @@ test('resolveGatewayAgentId falls back to the session name when no OpenClaw agen
   })
 
   assert.equal(resolved, 'fallback-agent-name')
+})
+
+test('buildOpenClawSessionKey namespaces sessions by agent and local session id', () => {
+  const sessionKey = buildOpenClawSessionKey({
+    id: 'cmp-session-1',
+    agentId: 'openclaw-agent-test',
+    name: 'Ignored Name',
+  }, 'Research Operator')
+
+  assert.equal(sessionKey, 'agent:research-operator:swarm:cmp-session-1')
+})
+
+test('buildOpenClawSessionKey honors explicit OpenClaw session keys when provided', () => {
+  const sessionKey = buildOpenClawSessionKey({
+    id: 'cmp-session-2',
+    name: 'Ignored Name',
+    openclawSessionKey: 'agent:ops:benchmark:fixed-key',
+  })
+
+  assert.equal(sessionKey, 'agent:ops:benchmark:fixed-key')
 })

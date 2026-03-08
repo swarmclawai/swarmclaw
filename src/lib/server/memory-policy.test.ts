@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   inferAutomaticMemoryCategory,
+  isDirectMemoryWriteRequest,
+  isCurrentThreadRecallRequest,
   normalizeMemoryCategory,
   shouldAutoCaptureMemory,
   shouldInjectMemoryContext,
@@ -19,6 +21,32 @@ test('shouldInjectMemoryContext skips low-signal greetings and acknowledgements'
   assert.equal(shouldInjectMemoryContext('hello'), false)
   assert.equal(shouldInjectMemoryContext('Remember this for later'), false)
   assert.equal(shouldInjectMemoryContext('Compare the current deployment plan with what we decided yesterday'), true)
+})
+
+test('isCurrentThreadRecallRequest detects same-thread recall without matching store commands', () => {
+  assert.equal(
+    isCurrentThreadRecallRequest('What preferences did I tell you earlier in this conversation? Answer from this conversation only.'),
+    true,
+  )
+  assert.equal(
+    isCurrentThreadRecallRequest('You just stored my favorite language in this chat. What was it?'),
+    true,
+  )
+  assert.equal(
+    isCurrentThreadRecallRequest('Remember that my favorite programming language is Rust and I prefer functional programming patterns.'),
+    false,
+  )
+})
+
+test('isDirectMemoryWriteRequest detects remember-and-confirm turns without matching recall questions', () => {
+  assert.equal(
+    isDirectMemoryWriteRequest('Remember that my favorite programming language is Rust and I prefer functional programming patterns. Then confirm what you just stored.'),
+    true,
+  )
+  assert.equal(
+    isDirectMemoryWriteRequest('What preferences did I tell you earlier in this conversation?'),
+    false,
+  )
 })
 
 test('shouldAutoCaptureMemory filters noisy turns', () => {

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 
 import {
   AGENT_REGRESSION_SCENARIOS,
+  DEFAULT_AGENT_REGRESSION_SCENARIO_IDS,
   resolveRegressionApprovalSettings,
   resolveRegressionPlugins,
   scoreAssertions,
@@ -266,6 +267,10 @@ describe('AGENT_REGRESSION_SCENARIOS registry', () => {
       'mock-signup-secret-email',
       'human-verified-signup',
       'research-build-deploy',
+      'blackboard-orchestrator-fit',
+      'tool-call-efficiency',
+      'file-creation-followthrough',
+      'knowledge-first-file',
     ])
   })
 
@@ -280,6 +285,12 @@ describe('AGENT_REGRESSION_SCENARIOS registry', () => {
       assert.ok(typeof scenario.run === 'function',
         `scenario ${scenario.id} missing run function`)
     }
+  })
+
+  it('default suite ids exclude exploratory regressions unless explicitly requested', () => {
+    assert.ok(!DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('blackboard-orchestrator-fit'))
+    assert.ok(DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('approval-resume'))
+    assert.ok(DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('knowledge-first-file'))
   })
 
   it('no duplicate scenario IDs', () => {

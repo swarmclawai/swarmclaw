@@ -35,6 +35,7 @@ type MemoryActionContext = Partial<Session> & {
 }
 
 type MemorySearchSource = 'durable' | 'working' | 'archive' | 'all'
+type NarrowMemoryAction = 'search' | 'get' | 'store' | 'update'
 type CanonicalMemoryCandidate = {
   entry: MemoryEntry
   score: number
@@ -148,6 +149,24 @@ function normalizeMemoryText(value: unknown): string {
     .replace(/\s+/g, ' ')
     .replace(/[^\w\s:/.-]/g, '')
     .trim()
+}
+
+function buildNamedMemoryActionArgs(
+  action: NarrowMemoryAction,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...args, action }
+}
+
+function executeNamedMemoryAction(
+  action: NarrowMemoryAction,
+  args: Record<string, unknown>,
+  context: { session?: MemoryActionContext | null } | null | undefined,
+) {
+  return executeMemoryAction(
+    buildNamedMemoryActionArgs(action, normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)),
+    context?.session,
+  )
 }
 
 function stripGeneratedMemoryPrefix(value: string): string {
@@ -763,11 +782,14 @@ const MemoryPlugin: Plugin = {
         ctx.session.lastAutoMemoryAt = now
       } catch { /* auto-memory is best-effort */ }
     },
-    getCapabilityDescription: () => 'I have long-term memory (`memory_tool`) — I can remember things across conversations and recall them when needed.',
+    getCapabilityDescription: () => 'I have long-term memory (`memory_search`, `memory_get`, `memory_store`, `memory_update`, `memory_tool`) — I can remember things across conversations and recall them when needed.',
     getOperatingGuidance: () => [
-      'Memory: use memory_tool only when recalling past conversations or when explicitly asked to remember. For info already in the current conversation, respond directly without tool calls.',
-      'When the user directly says to remember, store, or correct a fact, do one memory_tool store/update call immediately. Treat the newest direct user statement as authoritative.',
-      'memory_tool store/update now merges canonical memories and retires superseded variants. After a successful store/update, do not keep re-searching unless the user explicitly asked you to verify.',
+      'Memory: use narrow memory tools first. For past-conversation recall, prefer `memory_search` then `memory_get`. For direct writes or corrections, prefer `memory_store` or `memory_update`. Keep `memory_tool` for list/delete/link/doctor or when you truly need the generic surface.',
+      'For info already in the current conversation, respond directly without calling any memory tool.',
+      'For questions about prior work, decisions, dates, people, preferences, or todos from earlier conversations: start with one durable `memory_search`, then use `memory_get` only if you need a more targeted read. Only use archive/session history when the user explicitly needs transcript-level detail or the durable search is insufficient.',
+      'When the user directly says to remember, store, or correct a fact, do one `memory_store` or `memory_update` call immediately. Treat the newest direct user statement as authoritative.',
+      'If someone says "remember this", write it down; do not rely on RAM alone.',
+      'Memory writes merge canonical memories and retire superseded variants. After a successful store/update, do not keep re-searching unless the user explicitly asked you to verify.',
       'By default, memory searches focus on durable memories. Only include archives or working execution notes when you explicitly need transcript or run-history context.',
       'For open goals, form a hypothesis and execute — do not keep re-asking broad questions.',
     ],
@@ -794,7 +816,101 @@ const MemoryPlugin: Plugin = {
       },
       execute: async (args, context) => {
         return executeMemoryAction(args, context.session)
-      }
+      },
+      planning: {
+        capabilities: ['memory.search', 'memory.write'],
+        disciplineGuidance: [
+          'Use `memory_tool` for broad memory administration such as list, delete, link, unlink, or doctor. Prefer the narrow memory tools for routine search/get/store/update work.',
+        ],
+      },
+    },
+    {
+      name: 'memory_search',
+      description: 'Search durable long-term memory for prior work, decisions, dates, people, preferences, or todos from earlier conversations. Prefer this before broader history tools.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+          scope: { type: 'string', enum: ['auto', 'all', 'global', 'shared', 'agent', 'session', 'project'] },
+          sources: { type: 'array', items: { type: 'string', enum: ['durable', 'working', 'archive', 'all'] } },
+          rerank: { type: 'string', enum: ['balanced', 'semantic', 'lexical'] },
+        },
+        required: ['query'],
+      },
+      planning: {
+        capabilities: ['memory.search'],
+        disciplineGuidance: [
+          'For earlier-conversation recall, start with `memory_search` instead of browsing archive/session history. Keep searches durable-first unless transcript or run-history detail is explicitly needed.',
+        ],
+      },
+      execute: async (args, context) => executeNamedMemoryAction('search', args, context),
+    },
+    {
+      name: 'memory_get',
+      description: 'Read a specific memory entry by id or key after search, keeping context focused.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          key: { type: 'string' },
+          scope: { type: 'string', enum: ['auto', 'all', 'global', 'shared', 'agent', 'session', 'project'] },
+        },
+        required: [],
+      },
+      planning: {
+        capabilities: ['memory.search'],
+        disciplineGuidance: [
+          'Use `memory_get` after `memory_search` when you need one targeted memory entry. Do not dump the whole memory list when a single entry is enough.',
+        ],
+      },
+      execute: async (args, context) => executeNamedMemoryAction('get', args, context),
+    },
+    {
+      name: 'memory_store',
+      description: 'Store a durable fact, preference, decision, or correction from the user. Use this immediately when the user says to remember something.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          value: { type: 'string' },
+          category: { type: 'string' },
+          key: { type: 'string' },
+          scope: { type: 'string', enum: ['auto', 'all', 'global', 'shared', 'agent', 'session', 'project'] },
+          sharedWith: { type: 'array', items: { type: 'string' } },
+        },
+        required: [],
+      },
+      planning: {
+        capabilities: ['memory.write'],
+        disciplineGuidance: [
+          'When the user says to remember or store a fact, call `memory_store` immediately. Do not delegate or use platform-management tools first.',
+        ],
+      },
+      execute: async (args, context) => executeNamedMemoryAction('store', args, context),
+    },
+    {
+      name: 'memory_update',
+      description: 'Update or correct an existing durable memory when new information supersedes the old value.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          key: { type: 'string' },
+          title: { type: 'string' },
+          value: { type: 'string' },
+          category: { type: 'string' },
+          query: { type: 'string' },
+          scope: { type: 'string', enum: ['auto', 'all', 'global', 'shared', 'agent', 'session', 'project'] },
+        },
+        required: [],
+      },
+      planning: {
+        capabilities: ['memory.write'],
+        disciplineGuidance: [
+          'When the user corrects or revises remembered information, prefer `memory_update` so the canonical durable memory is updated instead of creating noisy duplicates.',
+        ],
+      },
+      execute: async (args, context) => executeNamedMemoryAction('update', args, context),
     }
   ]
 }
@@ -813,6 +929,38 @@ export function buildMemoryTools(bctx: ToolBuildContext) {
         description: MemoryPlugin.tools![0].description,
         schema: z.object({}).passthrough()
       }
-    )
+    ),
+    tool(
+      async (args) => executeNamedMemoryAction('search', (args ?? {}) as Record<string, unknown>, { session: bctx.ctx }),
+      {
+        name: 'memory_search',
+        description: MemoryPlugin.tools![1].description,
+        schema: z.object({}).passthrough(),
+      },
+    ),
+    tool(
+      async (args) => executeNamedMemoryAction('get', (args ?? {}) as Record<string, unknown>, { session: bctx.ctx }),
+      {
+        name: 'memory_get',
+        description: MemoryPlugin.tools![2].description,
+        schema: z.object({}).passthrough(),
+      },
+    ),
+    tool(
+      async (args) => executeNamedMemoryAction('store', (args ?? {}) as Record<string, unknown>, { session: bctx.ctx }),
+      {
+        name: 'memory_store',
+        description: MemoryPlugin.tools![3].description,
+        schema: z.object({}).passthrough(),
+      },
+    ),
+    tool(
+      async (args) => executeNamedMemoryAction('update', (args ?? {}) as Record<string, unknown>, { session: bctx.ctx }),
+      {
+        name: 'memory_update',
+        description: MemoryPlugin.tools![4].description,
+        schema: z.object({}).passthrough(),
+      },
+    ),
   ]
 }

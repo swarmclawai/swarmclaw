@@ -118,6 +118,34 @@ function deriveTaskTitle(input: { title?: unknown; description?: unknown }): str
   return compact.slice(0, 120)
 }
 
+function validateAgentSoulPayload(value: unknown): string | null {
+  if (value === undefined) return null
+  if (typeof value === 'string') return null
+  return 'Error: manage_agents data.soul must be a plain instruction string. Use memory tools for user preferences, durable facts, and long-term memory instead.'
+}
+
+function findDuplicateManagedAgent(
+  all: Record<string, unknown>,
+  parsed: Record<string, unknown>,
+  ctx?: ToolBuildContext['ctx'],
+): Record<string, unknown> | null {
+  const requestedId = typeof parsed.id === 'string' ? parsed.id.trim() : ''
+  const requestedName = typeof parsed.name === 'string' ? parsed.name.trim().toLowerCase() : ''
+  if (!requestedId && !requestedName) return null
+
+  for (const candidate of Object.values(all)) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+    const record = candidate as Record<string, unknown>
+    if (requestedId && String(record.id || '').trim() === requestedId) return record
+    if (!requestedName) continue
+    const sameName = String(record.name || '').trim().toLowerCase() === requestedName
+    const sameSession = ctx?.sessionId && record.createdInSessionId === ctx.sessionId
+    if (sameName && sameSession) return record
+  }
+
+  return null
+}
+
 const VALID_CONNECTOR_PLATFORMS = new Set([
   'discord',
   'telegram',
@@ -562,7 +590,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
         description += `\n\nCurrent project context: "${ctx.projectName || ctx.projectId}" (projectId "${ctx.projectId}"). For get/update/delete, you may omit "id" to target this active project.`
       }
     } else if (toolKey === 'manage_agents') {
-      description += `\n\nAgents may self-edit their own soul. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field. Set "platformAssignScope":"all" to let an agent delegate work across the fleet; use "self" for solo execution.`
+      description += `\n\nAgents may self-edit their own soul only when explicitly changing persona or operating instructions. Do not use manage_agents to store user preferences, durable facts, or normal memory; use the memory tools for that. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field. Set "platformAssignScope":"all" to let an agent delegate work across the fleet; use "self" for solo execution.`
     } else if (toolKey === 'manage_schedules') {
       if (assignScope === 'self') {
         description += `\n\nOmit "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}"), or set it explicitly to yourself. You can only assign schedules to yourself. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Provide either taskPrompt, command, or action+path. Before create, call list/get to avoid duplicate schedules. Reuse or update an existing schedule you already created in this chat instead of making a near-duplicate. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true). For one-off reminders, prefer "once"; agent-created one-off schedules are cleaned up automatically after they finish. When the user says stop/pause/cancel a reminder, pause or delete every matching schedule you created in this chat, not just one row.`
@@ -575,7 +603,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
     } else if (toolKey === 'manage_webhooks') {
       description += '\n\nUse `source`, `events`, `agentId`, and `secret` when creating webhooks. Inbound calls should POST to `/api/webhooks/{id}` with header `x-webhook-secret` when a secret is configured.'
     } else if (toolKey === 'manage_secrets') {
-      description += '\n\nUse this for credential bootstrapping and durable secret storage. Create/update calls accept either `data` as JSON or direct top-level fields like `name`, `service`, `value`, `scope`, `agentIds`, and `projectId`.'
+      description += '\n\nUse this only for credential bootstrapping and sensitive secret storage such as API keys, passwords, tokens, recovery codes, and webhook secrets. Do not use it for normal memory, user preferences, durable facts, or project notes. Create/update calls accept either `data` as JSON or direct top-level fields like `name`, `service`, `value`, `scope`, `agentIds`, and `projectId`.'
       if (ctx?.projectId) {
         description += `\n\nCurrent project context: "${ctx.projectName || ctx.projectId}" (projectId "${ctx.projectId}"). Omit "projectId" to link the secret to this active project.`
       }
@@ -757,6 +785,16 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                     : null
                 }
               }
+              if (toolKey === 'manage_agents' && Object.prototype.hasOwnProperty.call(parsed, 'soul')) {
+                const soulError = validateAgentSoulPayload((parsed as Record<string, unknown>).soul)
+                if (soulError) return soulError
+              }
+              if (toolKey === 'manage_agents') {
+                const duplicateAgent = findDuplicateManagedAgent(all as Record<string, unknown>, parsed as Record<string, unknown>, ctx)
+                if (duplicateAgent) {
+                  return JSON.stringify({ ...duplicateAgent, deduplicated: true })
+                }
+              }
               // Task dedup
               if (toolKey === 'manage_tasks') {
                 const fp = computeTaskFingerprint(parsed.title || 'Untitled Task', parsed.agentId || ctx?.agentId || '')
@@ -851,6 +889,10 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   ? sanitizeConnectorCrudPayload(buildCrudPayload(normalized, action, data), { forUpdate: true })
                 : buildCrudPayload(normalized, action, data)
               const parsedRecord = parsed as Record<string, unknown>
+              if (toolKey === 'manage_agents' && Object.prototype.hasOwnProperty.call(parsedRecord, 'soul')) {
+                const soulError = validateAgentSoulPayload(parsedRecord.soul)
+                if (soulError) return soulError
+              }
               if (toolKey === 'manage_tasks') {
                 const continuationError = applyTaskContinuationDefaults(parsedRecord, all as Record<string, BoardTask>, parsedRecord)
                 if (continuationError) return continuationError

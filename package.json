@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Self-hosted AI agent orchestration dashboard — manage LLM providers, orchestrate agent swarms, schedule tasks, and bridge agents to chat platforms.",
   "license": "MIT",
   "publishConfig": {
@@ -9,7 +9,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/swarmclawai/swarmclaw.git"
+    "url": "git+https://github.com/swarmclawai/swarmclaw.git"
   },
   "keywords": [
     "ai",

@@ -26,6 +26,7 @@ import {
 } from './tool-planning'
 import { ToolLoopTracker } from './tool-loop-detection'
 import type { LoopDetectionResult } from './tool-loop-detection'
+import { isCurrentThreadRecallRequest, isDirectMemoryWriteRequest } from './memory-policy'
 
 /** Extract a breadcrumb title from notable tool completions (task/schedule/agent creation). */
 interface StreamAgentChatOpts {
@@ -125,6 +126,11 @@ export function buildToolDisciplineLines(enabledPlugins: string[]): string[] {
 
   if (uniqueTools.includes('manage_secrets')) {
     lines.push('When a workflow reveals a password, app password, API key, recovery token, or other secret, store it with `manage_secrets` and do not echo the raw value in assistant text. Refer to the secret by name, service, or secret id instead.')
+    lines.push('Use `manage_secrets` only for sensitive credentials or tokens. Do not use it for normal memory, user preferences, durable facts, or project notes.')
+  }
+
+  if (uniqueTools.includes('manage_capabilities')) {
+    lines.push('Use `manage_capabilities` only when a needed tool is actually unavailable. If a direct tool for the job is already enabled in this session, call that tool immediately instead of requesting access or re-running discovery.')
   }
 
   if (uniqueTools.includes('delegate') && (uniqueTools.includes('shell') || uniqueTools.includes('files') || uniqueTools.includes('edit_file'))) {
@@ -271,7 +277,12 @@ export function shouldTerminateOnSuccessfulMemoryMutation(params: {
 }): boolean {
   const canonicalToolName = canonicalizePluginId(params.toolName) || params.toolName
   if (canonicalToolName !== 'memory') return false
-  const action = resolveToolAction(params.toolInput)
+  const exactToolName = String(params.toolName || '').trim().toLowerCase()
+  const action = exactToolName === 'memory_store'
+    ? 'store'
+    : exactToolName === 'memory_update'
+      ? 'update'
+      : resolveToolAction(params.toolInput)
   if (action !== 'store' && action !== 'update') return false
   const output = extractSuggestions(params.toolOutput || '').clean.trim()
   if (!output || /^error[:\s]/i.test(output)) return false
@@ -386,9 +397,20 @@ export function shouldForceDeliverableFollowthrough(params: {
   // If the user asked for file output but no file-write tool was used, force continuation
   const userNormalized = params.userMessage.toLowerCase()
   if (/\b(save|write|output)\b[^.!?\n]{0,60}\b(to|as)\b[^.!?\n]{0,40}(\/|~\/|\.[a-z]{2,5}\b)/.test(userNormalized)) {
-    const fileToolNames = ['write_file', 'edit_file', 'files', 'shell', 'execute_command']
-    const usedFileTools = params.toolEvents.some((e) => e.name && fileToolNames.includes(e.name))
-    if (!usedFileTools) return true
+    // Check if a file-writing tool was actually used (not just file-reading).
+    // The `files` tool with action: 'read' or 'list' doesn't count as writing.
+    const usedFileWriteTools = params.toolEvents.some((e) => {
+      if (!e.name) return false
+      if (['write_file', 'edit_file'].includes(e.name)) return true
+      if (e.name === 'shell' || e.name === 'execute_command') return true
+      if (e.name === 'files') {
+        // Only count as a write if the tool input specifies action: "write"
+        const input = e.input || ''
+        return /"action"\s*:\s*"write"/i.test(input)
+      }
+      return false
+    })
+    if (!usedFileWriteTools) return true
   }
   if (looksLikeIncompleteDeliverableResponse(trimmed)) return true
   return trimmed.length < 120 && params.toolEvents.length >= 3
@@ -496,20 +518,39 @@ function buildDeliverableFollowthroughPrompt(params: {
   fullText: string
   toolEvents: MessageToolEvent[]
 }): string {
-  return [
+  const lines = [
     'You are in the middle of a multi-step deliverable and stopped after only a partial batch of work.',
     'Continue from the existing workspace and artifacts. Do not restart from scratch and do not ask the user to restate the request.',
     'Do not stop after one partial batch. Finish every requested deliverable that is still outstanding before concluding.',
     'If a requested artifact cannot be produced, say exactly which artifact is missing, what blocked it, and what you already completed.',
     'Use the existing files, screenshots, and generated outputs first. Inspect them if needed, then complete the remaining work.',
     'End with a concise grouped completion summary that lists exact file paths, upload URLs, localhost URLs/ports, and screenshots you produced.',
+  ]
+
+  // If the user explicitly asked for file output, remind the model to use file tools
+  const userNormalized = params.userMessage.toLowerCase()
+  const fileOutputMatch = userNormalized.match(/\b(?:save|write|output|export)\b[^.!?\n]{0,80}\b(?:to|as|at|in)\b[^.!?\n]{0,60}(\/[^\s,'"]+|~\/[^\s,'"]+|\.\/[^\s,'"]+)/i)
+  if (fileOutputMatch) {
+    const fileToolNames = ['write_file', 'edit_file', 'files', 'shell', 'execute_command']
+    const usedFileTools = params.toolEvents.some((e) => e.name && fileToolNames.includes(e.name))
+    if (!usedFileTools) {
+      lines.push(
+        '',
+        `CRITICAL: The user asked you to save output to a file path (${fileOutputMatch[1] || 'see objective'}). You have NOT used any file-writing tool yet.`,
+        'You MUST use the `files` or `write_file` tool to write the content to the requested path. Do not just include the content in your text response — actually write the file.',
+      )
+    }
+  }
+
+  lines.push(
     '',
     `Objective:\n${params.userMessage}`,
     '',
     `Current partial response:\n${params.fullText || '(none)'}`,
     '',
     `Recent tool evidence:\n${renderToolEvidence(params.toolEvents) || '(none)'}`,
-  ].join('\n')
+  )
+  return lines.join('\n')
 }
 
 /** Detect whether a user message is a broad, high-level goal that benefits from decomposition. */
@@ -529,6 +570,7 @@ const GOAL_DECOMPOSITION_BLOCK = [
   'When you receive a broad, open-ended goal:',
   '1. Break it into 3-7 concrete, sequentially-executable subtasks before taking action.',
   '2. If manage_tasks is available, use it only for durable tracking: multi-turn work, delegation, explicit backlog requests, or work you expect to resume later. Do not create a task for every micro-step.',
+  'Single-step instructions are not broad goals. For direct actions like storing a memory, answering a recall question, editing one file, or sending one message, execute the relevant tool immediately instead of creating tasks or delegating.',
   '3. Present the plan as a short checklist or numbered list in plain language. If durable tracking is unnecessary, keep it inline instead of creating tasks.',
   '4. Execute the first substantive subtask immediately — do not stop after planning.',
   '5. Update only the durable tasks you actually created; otherwise just continue executing and report progress plainly.',
@@ -541,12 +583,18 @@ function buildAgenticExecutionPolicy(opts: {
   heartbeatIntervalSec: number
   platformAssignScope?: 'self' | 'all'
   userMessage?: string
+  history?: Message[]
   responseStyle?: 'concise' | 'normal' | 'detailed' | null
   responseMaxChars?: number | null
 }) {
   const hasTooling = opts.enabledPlugins.length > 0
   const pluginLines = buildPluginCapabilityLines(opts.enabledPlugins, { platformAssignScope: opts.platformAssignScope })
   const toolDisciplineLines = buildToolDisciplineLines(opts.enabledPlugins)
+  const hasMemoryTools = opts.enabledPlugins.some((toolId) => (canonicalizePluginId(toolId) || toolId) === 'memory')
+  const directMemoryWriteRequest = Boolean(opts.userMessage && isDirectMemoryWriteRequest(opts.userMessage))
+  const directMemoryWriteOnlyTurn = directMemoryWriteRequest
+    && !isBroadGoal(opts.userMessage || '')
+    && !looksLikeOpenEndedDeliverableTask(opts.userMessage || '')
 
   const parts: string[] = []
 
@@ -556,7 +604,7 @@ function buildAgenticExecutionPolicy(opts: {
     hasTooling
       ? 'I take initiative — plan briefly, execute tools, evaluate, iterate until done. Never stop at advice when action is implied.'
       : 'No tools enabled. Be explicit about what tool access is needed.',
-    'IMPORTANT: If information was already mentioned in THIS conversation, answer from context — do NOT call memory_tool or web search to look it up again. Only use memory_tool to recall info from PREVIOUS conversations not in the current thread.',
+    'IMPORTANT: If information was already mentioned in THIS conversation, answer from context — do NOT call memory tools or web search to look it up again. Only use memory tools to recall info from PREVIOUS conversations not in the current thread.',
     'If a skill applies to the task, follow its recommended approach first. Skill-specific commands are faster and more reliable than generic web search. Minimize tool calls — combine steps where possible.',
     'If a task explicitly names an enabled tool, use that tool before declaring success. A prose request is not a substitute for `ask_human`, and browser work is not a substitute for `email` delivery.',
     'When `ask_human` is enabled, collect required human input through the tool instead of asking for it only in plain assistant text.',
@@ -566,6 +614,18 @@ function buildAgenticExecutionPolicy(opts: {
       ? 'Loop: ONGOING — keep iterating until done, blocked, or limits reached.'
       : 'Loop: BOUNDED — execute multiple steps but finish within recursion budget.',
   )
+
+  if (hasMemoryTools) {
+    parts.push(
+      '## Immediate Memory Routes',
+      'If the user asks you to remember, store, or correct a durable fact, call `memory_store` or `memory_update` immediately before any planning, delegation, task creation, or agent management.',
+      'If the user asks about prior work, decisions, dates, people, preferences, or todos from earlier conversations, start with `memory_search`. Use `memory_get` only when you need one targeted follow-up read.',
+      'Do not use `manage_tasks`, `manage_agents`, or `delegate` as a substitute for a direct memory write or recall step.',
+    )
+  }
+  if (hasMemoryTools && directMemoryWriteOnlyTurn) {
+    parts.push(buildDirectMemoryWriteBlock())
+  }
 
   // Plugin-specific operating guidance (collected dynamically from plugins)
   const guidanceLines = getPluginManager().collectOperatingGuidance(opts.enabledPlugins)
@@ -597,8 +657,84 @@ function buildAgenticExecutionPolicy(opts: {
   if (opts.userMessage && looksLikeOpenEndedDeliverableTask(opts.userMessage) && opts.enabledPlugins.some((toolId) => toolId === 'files' || toolId === 'edit_file')) {
     parts.push(OPEN_ENDED_REVISION_BLOCK)
   }
+  if (opts.userMessage && isCurrentThreadRecallRequest(opts.userMessage)) {
+    parts.push(buildCurrentThreadRecallBlock(opts.history || []))
+  }
 
   return parts.filter(Boolean).join('\n')
+}
+
+function compactThreadRecallText(text: string, maxChars = 180): string {
+  const compact = extractSuggestions(text || '').clean.replace(/\s+/g, ' ').trim()
+  if (!compact) return ''
+  return compact.length > maxChars ? `${compact.slice(0, maxChars - 3)}...` : compact
+}
+
+function buildCurrentThreadRecallBlock(history: Message[]): string {
+  const recentUserFacts = history
+    .filter((entry) => entry.role === 'user' && typeof entry.text === 'string' && entry.text.trim())
+    .slice(-3)
+  const relevant = history
+    .filter((entry) => (entry.role === 'user' || entry.role === 'assistant') && typeof entry.text === 'string' && entry.text.trim())
+    .slice(-6)
+  const lines = [
+    '## Current Thread Recall',
+    'The user is asking about information from this same conversation.',
+    'Treat the current chat history as the authoritative source for this request.',
+    'Do NOT call memory tools, web search, or session-history tools unless the user explicitly asks you to verify outside the current thread.',
+    'Answer directly from the existing conversation with the exact values already stated.',
+    'Prefer the user\'s own earlier words and facts over assistant summaries, persona defaults, soul/config values, or generic background context.',
+    'If the answer is present in the recent thread context below, do not say the information is missing, unknown, or from a first exchange.',
+  ]
+  if (recentUserFacts.length > 0) {
+    lines.push('Recent user-provided facts to trust first:')
+    for (const message of recentUserFacts) {
+      const snippet = compactThreadRecallText(message.text || '')
+      if (!snippet) continue
+      lines.push(`- user: ${snippet}`)
+    }
+    lines.push('These user messages override tool traces, failed tool attempts, persona defaults, and generic background context.')
+  }
+  if (relevant.length > 0) {
+    lines.push('Recent thread context:')
+    for (const message of relevant) {
+      const snippet = compactThreadRecallText(message.text || '')
+      if (!snippet) continue
+      lines.push(`- ${message.role}: ${snippet}`)
+    }
+  }
+  return lines.join('\n')
+}
+
+function buildDirectMemoryWriteBlock(): string {
+  return [
+    '## Direct Memory Write',
+    'This turn is a direct request to remember, store, or correct a durable fact.',
+    'Call `memory_store` or `memory_update` immediately, then confirm the stored value succinctly.',
+    'Do not inspect skills, browse the workspace, request capabilities, manage tasks, manage agents, or delegate before the direct memory write is complete.',
+  ].join('\n')
+}
+
+const CURRENT_THREAD_RECALL_BLOCKED_TOOL_IDS = new Set([
+  'memory',
+  'manage_sessions',
+  'web',
+  'context_mgmt',
+])
+
+export function shouldAllowToolForCurrentThreadRecall(toolName: string): boolean {
+  const canonicalToolName = canonicalizePluginId(toolName) || toolName.trim().toLowerCase()
+  return !CURRENT_THREAD_RECALL_BLOCKED_TOOL_IDS.has(canonicalToolName)
+}
+
+const DIRECT_MEMORY_WRITE_ALLOWED_TOOL_IDS = new Set([
+  'memory_store',
+  'memory_update',
+])
+
+export function shouldAllowToolForDirectMemoryWrite(toolName: string): boolean {
+  const rawToolName = toolName.trim().toLowerCase()
+  return DIRECT_MEMORY_WRITE_ALLOWED_TOOL_IDS.has(rawToolName)
 }
 
 export interface StreamAgentChatResult {
@@ -704,6 +840,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   const stateModifierParts: string[] = []
   const hasProvidedSystemPrompt = typeof systemPrompt === 'string' && systemPrompt.trim().length > 0
+  const currentThreadRecallRequest = isCurrentThreadRecallRequest(message)
 
   if (hasProvidedSystemPrompt) {
     stateModifierParts.push(systemPrompt!.trim())
@@ -897,6 +1034,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       heartbeatIntervalSec,
       platformAssignScope: agentPlatformAssignScope,
       userMessage: message,
+      history,
       responseStyle: agentResponseStyle,
       responseMaxChars: agentResponseMaxChars,
     }),
@@ -916,7 +1054,25 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     projectDescription: activeProjectContext.project?.description || null,
     memoryScopeMode: agentMemoryScopeMode,
   })
-  const agent = createReactAgent({ llm, tools, stateModifier })
+  const directMemoryWriteOnlyTurn = isDirectMemoryWriteRequest(message)
+    && !isBroadGoal(message)
+    && !looksLikeOpenEndedDeliverableTask(message)
+  const toolsForTurn = currentThreadRecallRequest
+    ? tools.filter((tool) => {
+        const toolName = typeof (tool as { name?: unknown }).name === 'string'
+          ? String((tool as { name?: unknown }).name)
+          : ''
+        return shouldAllowToolForCurrentThreadRecall(toolName)
+      })
+    : directMemoryWriteOnlyTurn
+      ? tools.filter((tool) => {
+          const toolName = typeof (tool as { name?: unknown }).name === 'string'
+            ? String((tool as { name?: unknown }).name)
+            : ''
+          return shouldAllowToolForDirectMemoryWrite(toolName)
+        })
+      : tools
+  const agent = createReactAgent({ llm, tools: toolsForTurn, stateModifier })
   const recursionLimit = getAgentLoopRecursionLimit(runtime)
 
   // Build message history for context
@@ -1496,10 +1652,18 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
       if (reachedExecutionBoundary) break
 
-      // Tool loop detection: critical severity stops the entire agent turn
+      // Tool loop detection: critical severity stops further tool calls.
+      // However, if tools already produced results but the model has no/trivial text,
+      // we attempt a tool_summary continuation instead of just erroring out.
       if (loopDetectionTriggered) {
-        write(`data: ${JSON.stringify({ t: 'err', text: loopDetectionTriggered.message })}\n\n`)
-        break
+        const loopTextIsTrivial = !fullText.trim() || (fullText.trim().length < 150 && streamedToolEvents.length >= 2)
+        if (loopTextIsTrivial && streamedToolEvents.length > 0 && toolSummaryRetryCount < MAX_TOOL_SUMMARY_RETRIES) {
+          // Override: let the tool_summary check below handle it instead of breaking
+          loopDetectionTriggered = null
+        } else {
+          write(`data: ${JSON.stringify({ t: 'err', text: loopDetectionTriggered.message })}\n\n`)
+          break
+        }
       }
 
       if (
@@ -1590,25 +1754,28 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         })}\n\n`)
       }
 
-      // Generic fallback: tools were called but the model produced no text response.
-      // This catches edge cases (e.g. after transient retry) where specialized
-      // followthrough conditions don't match. Ask the LLM to summarize tool results.
+      // Generic fallback: tools were called but the model produced no substantive text.
+      // Triggers when: (a) text is empty, or (b) text is trivially short (< 150 chars)
+      // and multiple tools ran — the agent likely emitted a "I'll do X" preamble but
+      // never synthesized the tool outputs into a real response.
+      const textIsTrivial = !fullText.trim() || (fullText.trim().length < 150 && streamedToolEvents.length >= 2)
       if (
         !shouldContinue
         && hasToolCalls
-        && !fullText.trim()
+        && textIsTrivial
         && streamedToolEvents.length > 0
         && toolSummaryRetryCount < MAX_TOOL_SUMMARY_RETRIES
       ) {
         shouldContinue = 'tool_summary'
         toolSummaryRetryCount++
-        logExecution(session.id, 'decision', `Tools called but no text generated — forcing summary continuation`, {
+        logExecution(session.id, 'decision', `Tools called but response text is trivial (${fullText.trim().length} chars) — forcing summary continuation`, {
           agentId: session.agentId,
-          detail: { toolEventCount: streamedToolEvents.length, toolSummaryRetryCount },
+          detail: { toolEventCount: streamedToolEvents.length, toolSummaryRetryCount, textLength: fullText.trim().length },
         })
+        const summaryReason = !fullText.trim() ? 'empty_response_after_tools' : 'trivial_preamble_after_tools'
         write(`data: ${JSON.stringify({
           t: 'status',
-          text: JSON.stringify({ toolSummary: toolSummaryRetryCount, reason: 'empty_response_after_tools' }),
+          text: JSON.stringify({ toolSummary: toolSummaryRetryCount, reason: summaryReason }),
         })}\n\n`)
       }
 
@@ -1669,7 +1836,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         }))
         lastSegment = ''
       } else if (shouldContinue === 'tool_summary') {
-        // Model called tools but produced no text — prompt it to summarize the results.
+        // Model called tools but produced no/trivial text — prompt it to synthesize results.
         if (continuationAssistantText) {
           langchainMessages.push(new AIMessage({ content: continuationAssistantText }))
         }
@@ -1677,13 +1844,18 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
           .filter((e) => e.output)
           .map((e) => `[${e.name}]: ${(e.output || '').slice(0, 500)}`)
           .slice(0, 6)
+        const preambleNote = fullText.trim()
+          ? `You started with "${fullText.trim().slice(0, 100)}..." but did not follow through with actual results.`
+          : 'Your tool calls completed but you did not provide a response.'
         langchainMessages.push(new HumanMessage({
           content: [
-            'Your tool calls completed but you did not provide a response.',
+            preambleNote,
             'Here are the tool results:',
             ...toolSummaryLines,
             '',
-            'Now answer the original question using these results. Be concise and direct.',
+            `Original request: ${message.slice(0, 500)}`,
+            '',
+            'Now answer the original request using these tool results. Be concise and direct. Present the findings clearly.',
           ].join('\n'),
         }))
         lastSegment = ''
@@ -1769,7 +1941,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   const totalTokens = totalInputTokens + totalOutputTokens
   if (totalTokens > 0) {
     const cost = estimateCost(session.model, totalInputTokens, totalOutputTokens)
-    const pluginDefinitionCosts = buildPluginDefinitionCosts(tools, toolToPluginMap)
+    const pluginDefinitionCosts = buildPluginDefinitionCosts(toolsForTurn, toolToPluginMap)
     const usageRecord: UsageRecord = {
       sessionId: session.id,
       messageIndex: history.length,

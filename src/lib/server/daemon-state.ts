@@ -5,9 +5,9 @@ import { startScheduler, stopScheduler } from './scheduler'
 import { sweepOrphanedBrowsers, getActiveBrowserCount } from './session-tools'
 import {
   autoStartConnectors,
-  stopAllConnectors,
   listRunningConnectors,
   sendConnectorMessage,
+  stopAllConnectors,
   startConnector,
   getConnectorStatus,
   checkConnectorHealth,
@@ -25,7 +25,7 @@ import { WORKSPACE_DIR } from './data-dir'
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { genId } from '@/lib/id'
 import path from 'node:path'
-import type { WebhookRetryEntry } from '@/types'
+import type { Session, WebhookRetryEntry } from '@/types'
 import { createNotification } from '@/lib/server/create-notification'
 import { pingProvider, OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
 import { runIntegrityMonitor } from '@/lib/server/integrity-monitor'
@@ -75,17 +75,41 @@ function parseHeartbeatIntervalSec(value: unknown, fallback = DEFAULT_HEARTBEAT_
   return Math.max(0, Math.min(3600, Math.trunc(parsed)))
 }
 
-function normalizeWhatsappTarget(raw?: string | null): string | null {
-  const input = (raw || '').trim()
-  if (!input) return null
-  if (input.includes('@')) return input
-  let digits = input.replace(/[^\d+]/g, '')
-  if (digits.startsWith('+')) digits = digits.slice(1)
-  if (digits.startsWith('0') && digits.length >= 10) {
-    digits = `44${digits.slice(1)}`
-  }
-  digits = digits.replace(/[^\d]/g, '')
-  return digits ? `${digits}@s.whatsapp.net` : null
+export function shouldNotifyProviderReachabilityIssue(provider: string): boolean {
+  return provider !== 'openclaw'
+}
+
+const SYNTHETIC_HEALTH_SESSION_USERS = new Set(['workbench', 'comparison-bench'])
+const SYNTHETIC_HEALTH_SESSION_PREFIXES = ['wb-', 'cmp-']
+
+function hasSyntheticHealthPrefix(value: unknown): boolean {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  return SYNTHETIC_HEALTH_SESSION_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+}
+
+export function shouldSuppressSessionHeartbeatHealthAlert(
+  session: Pick<Session, 'id' | 'name' | 'user' | 'shortcutForAgentId'>,
+): boolean {
+  const user = typeof session.user === 'string' ? session.user.trim().toLowerCase() : ''
+  if (SYNTHETIC_HEALTH_SESSION_USERS.has(user)) return true
+  if (hasSyntheticHealthPrefix(session.id)) return true
+  if (hasSyntheticHealthPrefix(session.shortcutForAgentId)) return true
+
+  const name = typeof session.name === 'string' ? session.name.trim().toLowerCase() : ''
+  return name.startsWith('workbench ')
+    || name.startsWith('assistant benchmark ')
+    || name.startsWith('comparison ')
+}
+
+export function shouldSuppressSyntheticAgentHealthAlert(agentId: string): boolean {
+  return hasSyntheticHealthPrefix(agentId)
+}
+
+export function buildSessionHeartbeatHealthDedupKey(
+  sessionId: string,
+  state: 'stale' | 'auto-disabled',
+): string {
+  return `health-alert:session-heartbeat:${state}:${sessionId}`
 }
 
 // Store daemon state on globalThis to survive HMR reloads
@@ -268,23 +292,24 @@ function stopQueueProcessor() {
   }
 }
 
-async function sendHealthAlert(text: string) {
+async function sendHealthAlert(input: string | {
+  text: string
+  dedupKey?: string
+  entityType?: string
+  entityId?: string
+}) {
+  const payload = typeof input === 'string' ? { text: input } : input
+  const text = payload.text
   console.warn(`[health] ${text}`)
-  try {
-    const running = listRunningConnectors('whatsapp')
-    if (!running.length) return
-    const candidate = running[0]
-    const target = candidate.recentChannelId
-      || normalizeWhatsappTarget(candidate.configuredTargets[0] || null)
-    if (!target) return
-    await sendConnectorMessage({
-      connectorId: candidate.id,
-      channelId: target,
-      text: `⚠️ SwarmClaw health alert: ${text}`,
-    })
-  } catch {
-    // alerts are best effort; log-only fallback is acceptable
-  }
+  createNotification({
+    type: 'warning',
+    title: 'SwarmClaw health alert',
+    message: text,
+    dedupKey: payload.dedupKey || `health-alert:${text}`,
+    entityType: payload.entityType,
+    entityId: payload.entityId,
+    dispatchExternally: false,
+  })
 }
 
 async function runConnectorHealthChecks(now: number) {
@@ -526,6 +551,7 @@ async function runProviderHealthChecks() {
 
   for (const agent of Object.values(agents) as Record<string, unknown>[]) {
     if (!agent?.id || typeof agent.id !== 'string') continue
+    if (shouldSuppressSyntheticAgentHealthAlert(agent.id)) continue
     const provider = typeof agent.provider === 'string' ? agent.provider : ''
     if (!provider || ['claude-cli', 'codex-cli', 'opencode-cli'].includes(provider)) continue
 
@@ -564,9 +590,11 @@ async function runProviderHealthChecks() {
     const result = await pingProvider(tuple.provider, apiKey, endpoint)
 
     if (!result.ok) {
-      const dedupKey = tuple.provider === 'openclaw'
-        ? `openclaw-down:${tuple.agentId}`
-        : `provider-down:${tuple.credentialId || tuple.provider}`
+      if (!shouldNotifyProviderReachabilityIssue(tuple.provider)) {
+        continue
+      }
+
+      const dedupKey = `provider-down:${tuple.credentialId || tuple.provider}`
 
       const entityType = tuple.credentialId ? 'credential' : undefined
       const entityId = tuple.credentialId || undefined
@@ -596,6 +624,7 @@ async function runOpenClawGatewayHealthChecks() {
 
   for (const agent of Object.values(agents) as Record<string, unknown>[]) {
     if (!agent?.id || typeof agent.id !== 'string') continue
+    if (shouldSuppressSyntheticAgentHealthAlert(agent.id)) continue
     if (agent.provider !== 'openclaw') continue
 
     const key = `openclaw:${agent.id}`
@@ -747,6 +776,11 @@ async function runHealthChecks() {
     if (session.heartbeatEnabled !== true) continue
 
     const sessionId = session.id
+    if (shouldSuppressSessionHeartbeatHealthAlert(session as Pick<Session, 'id' | 'name' | 'user' | 'shortcutForAgentId'>)) {
+      ds.staleSessionIds.delete(sessionId)
+      continue
+    }
+
     const sessionLabel = String(session.name || sessionId)
     const intervalSec = parseHeartbeatIntervalSec(session.heartbeatIntervalSec, DEFAULT_HEARTBEAT_INTERVAL_SEC)
     if (intervalSec <= 0) continue
@@ -762,9 +796,12 @@ async function runHealthChecks() {
         session.lastActiveAt = now
         sessionsDirty = true
         ds.staleSessionIds.delete(sessionId)
-        await sendHealthAlert(
-          `Auto-disabled heartbeat for stale session "${sessionLabel}" after ${Math.round(staleForMs / 60_000)}m of inactivity.`,
-        )
+        await sendHealthAlert({
+          text: `Auto-disabled heartbeat for stale session "${sessionLabel}" after ${Math.round(staleForMs / 60_000)}m of inactivity.`,
+          dedupKey: buildSessionHeartbeatHealthDedupKey(sessionId, 'auto-disabled'),
+          entityType: 'session',
+          entityId: sessionId,
+        })
         continue
       }
 
@@ -772,9 +809,12 @@ async function runHealthChecks() {
       // Only alert on transition from healthy → stale (once per stale episode)
       if (!ds.staleSessionIds.has(sessionId)) {
         ds.staleSessionIds.add(sessionId)
-        await sendHealthAlert(
-          `Session "${sessionLabel}" heartbeat appears stale (last active ${(Math.round(staleForMs / 1000))}s ago, interval ${intervalSec}s).`,
-        )
+        await sendHealthAlert({
+          text: `Session "${sessionLabel}" heartbeat appears stale (last active ${(Math.round(staleForMs / 1000))}s ago, interval ${intervalSec}s).`,
+          dedupKey: buildSessionHeartbeatHealthDedupKey(sessionId, 'stale'),
+          entityType: 'session',
+          entityId: sessionId,
+        })
       }
     }
   }
@@ -979,6 +1019,49 @@ function stopEvalScheduler() {
     ds.evalSchedulerIntervalId = null
   }
 }
+
+function refreshDaemonTimersForHotReload() {
+  if (!ds.running) return
+
+  if (ds.queueIntervalId) {
+    clearInterval(ds.queueIntervalId)
+    ds.queueIntervalId = null
+    startQueueProcessor()
+  }
+
+  if (ds.browserSweepId) {
+    clearInterval(ds.browserSweepId)
+    ds.browserSweepId = null
+    startBrowserSweep()
+  }
+
+  if (ds.healthIntervalId) {
+    clearInterval(ds.healthIntervalId)
+    ds.healthIntervalId = null
+    startHealthMonitor()
+  }
+
+  if (ds.connectorHealthIntervalId) {
+    clearInterval(ds.connectorHealthIntervalId)
+    ds.connectorHealthIntervalId = null
+    startConnectorHealthMonitor()
+  }
+
+  if (ds.memoryConsolidationTimeoutId || ds.memoryConsolidationIntervalId) {
+    stopMemoryConsolidation()
+    startMemoryConsolidation()
+  }
+
+  if (ds.evalSchedulerIntervalId) {
+    stopEvalScheduler()
+    startEvalScheduler()
+  }
+}
+
+// In dev/HMR, the daemon state survives on globalThis while interval callbacks keep
+// the old module closure alive. Refresh long-lived timers so they always run the
+// current module's logic instead of stale health-alert code paths.
+refreshDaemonTimersForHotReload()
 
 export async function runDaemonHealthCheckNow() {
   await Promise.all([

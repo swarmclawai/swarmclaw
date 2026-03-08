@@ -20,7 +20,7 @@ const PLUGIN_ALIAS_GROUPS: string[][] = [
   ['manage_sessions', 'session_info', 'sessions_tool', 'whoami_tool', 'search_history_tool'],
   ['schedule_wake', 'schedule'],
   ['http_request', 'http'],
-  ['memory', 'memory_tool'],
+  ['memory', 'memory_tool', 'memory_search', 'memory_get', 'memory_store', 'memory_update'],
   ['sandbox', 'sandbox_exec', 'sandbox_list_runtimes'],
   ['wallet', 'wallet_tool'],
   ['monitor', 'monitor_tool'],

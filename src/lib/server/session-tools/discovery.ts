@@ -142,12 +142,13 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
           const currentSession = allSessions[bctx.ctx.sessionId]
           const grantedTools = currentSession?.plugins || currentSession?.tools || []
           if (currentSession && pluginIdMatches(grantedTools, pluginId)) {
-          return JSON.stringify({
-            alreadyGranted: true,
-            pluginId,
-            message: `You already have access to "${pluginId}". If it was just granted, it will be available on the next agent turn.`,
-          })
-        }
+            return JSON.stringify({
+              alreadyGranted: true,
+              alreadyAvailable: true,
+              pluginId,
+              message: `You already have access to "${pluginId}" in this session. Call "${pluginId}" directly now instead of using manage_capabilities again.`,
+            })
+          }
         }
         const { requestApprovalMaybeAutoApprove } = await import('../approvals')
         const approval = await requestApprovalMaybeAutoApprove({

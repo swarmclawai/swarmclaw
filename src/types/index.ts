@@ -134,6 +134,7 @@ export type Credentials = Record<string, Credential>
 export interface Session {
   id: string
   name: string
+  openclawAgentId?: string | null
   shortcutForAgentId?: string | null
   cwd: string
   user: string
@@ -612,6 +613,7 @@ export interface NetworkInfo {
 export interface Agent {
   id: string
   name: string
+  openclawAgentId?: string | null
   description: string
   soul?: string
   identityState?: IdentityContinuityState | null
@@ -1133,6 +1135,8 @@ export interface AppNotification {
   dedupKey?: string
   read: boolean
   createdAt: number
+  updatedAt?: number
+  occurrenceCount?: number
 }
 
 // --- Session Runs ---

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
 import { toast } from 'sonner'
 
 interface CommandItem {
@@ -22,6 +23,7 @@ export function CommandPalette() {
 
   const agents = useAppStore((s) => s.agents)
   const sessions = useAppStore((s) => s.sessions)
+  const currentUser = useAppStore((s) => s.currentUser)
   const tasks = useAppStore((s) => s.tasks)
   const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
@@ -149,6 +151,7 @@ export function CommandPalette() {
 
     // Chats (sessions)
     for (const session of Object.values(sessions)) {
+      if (!isVisibleSessionForViewer(session, currentUser, { localhost: isLocalhostBrowser() })) continue
       const sessionAgent = session.agentId ? agents[session.agentId] : null
       result.push({
         id: `chat:${session.id}`,
@@ -174,7 +177,7 @@ export function CommandPalette() {
     }
 
     return result
-  }, [agents, openSettingsSection, sessions, setActiveView, setCurrentAgent, setCurrentSession, setEditingTaskId, setTaskSheetOpen, tasks])
+  }, [agents, currentUser, openSettingsSection, sessions, setActiveView, setCurrentAgent, setCurrentSession, setEditingTaskId, setTaskSheetOpen, tasks])
 
   const filtered = useMemo(() => {
     if (!query.trim()) return items.slice(0, 20)

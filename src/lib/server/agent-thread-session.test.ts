@@ -133,4 +133,45 @@ describe('ensureAgentThreadSession', () => {
     assert.equal(output.threadSessionId, null)
     assert.equal(output.sessionCount, 0)
   })
+
+  it('propagates explicit OpenClaw gateway agent ids into the shortcut session', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage.ts')
+      const storage = storageMod.default || storageMod['module.exports'] || storageMod
+      const helperMod = await import('./src/lib/server/agent-thread-session.ts')
+      const ensureAgentThreadSession = helperMod.ensureAgentThreadSession
+        || helperMod.default?.ensureAgentThreadSession
+        || helperMod['module.exports']?.ensureAgentThreadSession
+
+      const now = Date.now()
+      storage.saveAgents({
+        oc: {
+          id: 'oc',
+          name: 'OpenClaw Ops',
+          description: 'OpenClaw-backed helper',
+          provider: 'openclaw',
+          model: 'default',
+          credentialId: null,
+          apiEndpoint: null,
+          gatewayProfileId: 'gateway-test',
+          fallbackCredentialIds: [],
+          openclawAgentId: 'main',
+          heartbeatEnabled: true,
+          heartbeatIntervalSec: 600,
+          createdAt: now,
+          updatedAt: now,
+          plugins: [],
+        },
+      })
+
+      const session = ensureAgentThreadSession('oc')
+      const sessions = storage.loadSessions()
+
+      console.log(JSON.stringify({
+        session: session ? sessions[session.id] : null,
+      }))
+    `)
+
+    assert.equal(output.session.openclawAgentId, 'main')
+  })
 })

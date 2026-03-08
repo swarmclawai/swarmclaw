@@ -148,7 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.8.0 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.8.1 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -701,7 +701,7 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example minor release (v0.8.0 style)
+# example minor release (v0.8.1 style)
 npm version minor
 git push origin main --follow-tags
 ```
@@ -711,13 +711,13 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.8.0 Release Readiness Notes
+#### v0.8.1 Release Readiness Notes
 
-Before shipping `v0.8.0`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.8.1`, confirm the following user-facing changes are reflected in docs:
 
-1. Voice and connector docs mention that outbound voice-note sends now retry with the built-in ElevenLabs fallback voice when a configured default voice is rejected as paid-only.
-2. Release notes call out the Molly-style regression case explicitly: WhatsApp voice-note delivery should keep working even if the saved default voice ID points at a paid library voice.
-3. Site and README install/version strings are updated to `v0.8.0`, including install snippets, release notes index text, and sidebar/footer labels.
+1. Release notes call out notification deduping and occurrence counts so operators know repeated health/approval events now refresh one notification instead of piling up duplicates.
+2. Memory/tooling docs mention the new current-thread recall rule: same-thread recall should stay local to the chat, while direct memory writes should go straight to `memory_store` or `memory_update` rather than detouring through agent/task/delegation flows.
+3. Site and README install/version strings are updated to `v0.8.1`, including install snippets, release notes index text, and sidebar/footer labels.
 
 ## CLI
 

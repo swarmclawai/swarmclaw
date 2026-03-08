@@ -302,6 +302,25 @@ export function resolveGatewayAgentId(session: Record<string, unknown> & { id: s
   return 'main'
 }
 
+export function buildOpenClawSessionKey(
+  session: Record<string, unknown> & { id: string },
+  gatewayAgentId?: string,
+): string {
+  const explicit = typeof (session as { openclawSessionKey?: unknown }).openclawSessionKey === 'string'
+    ? String((session as { openclawSessionKey?: unknown }).openclawSessionKey).trim()
+    : ''
+  if (explicit) return explicit
+
+  const sessionId = typeof session.id === 'string' && session.id.trim()
+    ? session.id.trim()
+    : randomUUID()
+  const agentId = typeof gatewayAgentId === 'string' && gatewayAgentId.trim()
+    ? normalizeOpenClawAgentId(gatewayAgentId)
+    : resolveGatewayAgentId(session)
+
+  return `agent:${agentId}:swarm:${sessionId}`
+}
+
 async function rpcOnConnectedGateway(
   ws: InstanceType<typeof WebSocket>,
   method: string,
@@ -425,6 +444,7 @@ export function streamOpenClawChat({ session, message, imagePath, apiKey, write,
 
       const ws = result.ws
       const gatewayAgentId = await resolveConnectedGatewayAgentId(ws, session)
+      const sessionKey = buildOpenClawSessionKey(session, gatewayAgentId)
       const timeout = setTimeout(() => {
         ws.close()
         finish('OpenClaw gateway timed out after 120s.')
@@ -445,6 +465,8 @@ export function streamOpenClawChat({ session, message, imagePath, apiKey, write,
         params: {
           message: prompt,
           agentId: gatewayAgentId,
+          sessionKey,
+          label: typeof session.name === 'string' && session.name.trim() ? session.name.trim() : undefined,
           timeout: 120,
           idempotencyKey: randomUUID(),
         },

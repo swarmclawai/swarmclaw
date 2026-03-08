@@ -6,6 +6,7 @@ import { fetchChats, fetchDirs, fetchProviders, fetchCredentials } from '../lib/
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
 import { fetchTasks } from '../lib/tasks'
+import { findLatestObservablePlatformSession, isLocalhostBrowser } from '../lib/local-observability'
 import { api } from '../lib/api-client'
 import { safeStorageGet, safeStorageGetJson, safeStorageRemove, safeStorageSet } from '../lib/safe-storage'
 
@@ -247,7 +248,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadSessions: async () => {
     try {
       const sessions = await fetchChats()
-      set({ sessions })
+      const currentSessionId = get().currentSessionId
+      set({
+        sessions,
+        currentSessionId: currentSessionId && sessions[currentSessionId] ? currentSessionId : null,
+      })
     } catch {
       // ignore
     }
@@ -348,6 +353,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ currentAgentId: id })
     safeStorageSet('sc_agent', id)
+    if (isLocalhostBrowser()) {
+      let livePlatformSession = findLatestObservablePlatformSession(get().sessions, id)
+      if (!livePlatformSession) {
+        try {
+          const refreshedSessions = await fetchChats()
+          const currentSessionId = get().currentSessionId
+          set({
+            sessions: refreshedSessions,
+            currentSessionId: currentSessionId && refreshedSessions[currentSessionId] ? currentSessionId : null,
+          })
+          livePlatformSession = findLatestObservablePlatformSession(refreshedSessions, id)
+        } catch {
+          // ignore and fall back to the normal thread path below
+        }
+      }
+      if (livePlatformSession?.id) {
+        set({ currentSessionId: livePlatformSession.id })
+        return
+      }
+    }
     try {
       const user = get().currentUser || 'default'
       const session = await api<Session>('POST', `/agents/${id}/thread`, { user })

@@ -109,6 +109,11 @@ export function shouldApplySessionFreshnessReset(source: string): boolean {
   return source !== 'eval'
 }
 
+function shouldPersistInboundUserMessage(internal: boolean, source: string): boolean {
+  if (!internal) return true
+  return source === 'eval'
+}
+
 function extractEventJson(line: string): SSEEvent | null {
   if (!line.startsWith('data: ')) return null
   try {
@@ -456,6 +461,10 @@ export function requestedToolNamesFromMessage(message: string): string[] {
     'monitor_tool',
     'plugin_creator_tool',
     'memory_tool',
+    'memory_search',
+    'memory_get',
+    'memory_store',
+    'memory_update',
     'wallet_tool',
     'http_request',
     'send_file',
@@ -856,6 +865,11 @@ function syncSessionFromAgent(sessionId: string): void {
       session.projectId = desiredProjectId
       changed = true
     }
+    const desiredOpenClawAgentId = agent.openclawAgentId ?? null
+    if ((session.openclawAgentId ?? null) !== desiredOpenClawAgentId) {
+      session.openclawAgentId = desiredOpenClawAgentId
+      changed = true
+    }
   }
 
   if (changed) {
@@ -1212,8 +1226,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   const apiKey = resolveApiKeyForSession(sessionForRun, provider)
 
-  if (!internal) {
-    const linkAnalysis = await runLinkUnderstanding(message)
+  const shouldPersistUserMessage = shouldPersistInboundUserMessage(internal, source)
+  if (shouldPersistUserMessage) {
+    const linkAnalysis = !internal ? await runLinkUnderstanding(message) : []
     const nextUserMessage: Message = {
       role: 'user',
       text: message,
@@ -1234,9 +1249,11 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
     session.lastActiveAt = Date.now()
     saveSessions(sessions)
-    try {
-      await getPluginManager().runHook('onMessage', { session, message: nextUserMessage }, { enabledIds: pluginsForRun })
-    } catch { /* onMessage hooks are non-critical */ }
+    if (!internal) {
+      try {
+        await getPluginManager().runHook('onMessage', { session, message: nextUserMessage }, { enabledIds: pluginsForRun })
+      } catch { /* onMessage hooks are non-critical */ }
+    }
   }
 
   const systemPrompt = buildAgentSystemPrompt(session)

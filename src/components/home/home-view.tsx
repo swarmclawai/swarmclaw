@@ -6,6 +6,8 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { api } from '@/lib/api-client'
+import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
+import { getNotificationActivityAt, getNotificationOccurrenceCount } from '@/lib/notification-utils'
 import type { Agent, Session, ActivityEntry, BoardTask, AppNotification } from '@/types'
 import { HintTip } from '@/components/shared/hint-tip'
 
@@ -68,6 +70,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 export function HomeView() {
   const agents = useAppStore((s) => s.agents)
   const sessions = useAppStore((s) => s.sessions)
+  const currentUser = useAppStore((s) => s.currentUser)
   const tasks = useAppStore((s) => s.tasks)
   const connectors = useAppStore((s) => s.connectors)
   const schedules = useAppStore((s) => s.schedules)
@@ -95,9 +98,10 @@ export function HomeView() {
   const recentChats = useMemo(
     () =>
       Object.values(sessions)
+        .filter((session) => isVisibleSessionForViewer(session, currentUser, { localhost: isLocalhostBrowser() }))
         .sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0))
         .slice(0, 5),
-    [sessions],
+    [currentUser, sessions],
   )
 
   // Quick stats
@@ -382,7 +386,14 @@ export function HomeView() {
                       <span className="text-[13px] font-500 text-text">{n.title}</span>
                       {n.message && <p className="text-[11px] text-text-3/60 truncate mt-0.5 m-0">{n.message}</p>}
                     </div>
-                    <span className="text-[10px] text-text-3/40 shrink-0 mt-0.5">{timeAgo(n.createdAt)}</span>
+                    <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                      {getNotificationOccurrenceCount(n) > 1 && (
+                        <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-600 text-text-3/80">
+                          x{getNotificationOccurrenceCount(n)}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-text-3/40">{timeAgo(getNotificationActivityAt(n))}</span>
+                    </div>
                   </button>
                 ))}
               </div>

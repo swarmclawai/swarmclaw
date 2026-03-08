@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
+import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
 import type { AppView } from '@/types'
 
 interface SearchResult {
@@ -61,6 +62,8 @@ export function SearchDialog() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
+  const sessions = useAppStore((s) => s.sessions)
+  const currentUser = useAppStore((s) => s.currentUser)
   const setActiveView = useAppStore((s) => s.setActiveView)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
@@ -114,14 +117,19 @@ export function SearchDialog() {
     setLoading(true)
     try {
       const data = await api<{ results: SearchResult[] }>('GET', `/search?q=${encodeURIComponent(q)}`)
-      setResults(data.results)
+      setResults(data.results.filter((result) => {
+        if (result.type !== 'session' && result.type !== 'message') return true
+        const session = sessions[result.id]
+        if (!session) return true
+        return isVisibleSessionForViewer(session, currentUser, { localhost: isLocalhostBrowser() })
+      }))
       setSelectedIdx(0)
     } catch {
       setResults([])
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [currentUser, sessions])
 
   const handleQueryChange = (value: string) => {
     setQuery(value)

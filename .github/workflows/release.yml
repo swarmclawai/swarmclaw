@@ -103,19 +103,45 @@ jobs:
           fi
 
       - name: Publish to npm
+        id: npm_publish
         if: steps.npm_version.outputs.exists != 'true'
+        continue-on-error: true
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Summarize npm publish status
+        if: always()
+        run: |
+          if [ "${{ steps.npm_version.outputs.exists }}" = "true" ]; then
+            echo "npm publish skipped because @swarmclawai/swarmclaw@${{ steps.package_version.outputs.version }} already exists." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.npm_publish.outcome }}" = "success" ]; then
+            echo "npm publish succeeded for @swarmclawai/swarmclaw@${{ steps.package_version.outputs.version }}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "npm publish failed for @swarmclawai/swarmclaw@${{ steps.package_version.outputs.version }}. GitHub release creation will continue; rerun after restoring npm credentials or publish the version manually." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Prepare release body
+        id: release_body
+        if: always()
+        run: |
+          BODY_PATH="$(mktemp)"
+          if [ "${{ steps.npm_version.outputs.exists }}" = "true" ] || [ "${{ steps.npm_publish.outcome }}" = "success" ]; then
+            echo "## Install" >> "$BODY_PATH"
+            echo "- \`npm install -g @swarmclawai/swarmclaw@${{ github.ref_name }}\`" >> "$BODY_PATH"
+          else
+            echo "## Install" >> "$BODY_PATH"
+            echo "- npm package publish is pending for \`${{ github.ref_name }}\`; rerun this workflow after restoring npm credentials or publish the version manually." >> "$BODY_PATH"
+          fi
+          echo "## Docker" >> "$BODY_PATH"
+          echo "- \`docker pull ${{ steps.image.outputs.name }}:${{ github.ref_name }}\`" >> "$BODY_PATH"
+          echo "- \`docker pull ${{ steps.image.outputs.name }}:latest\`" >> "$BODY_PATH"
+          echo "path=$BODY_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
+        if: always()
         uses: softprops/action-gh-release@v2
         with:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
-          append_body: |
-            ## Install
-            - `npm install -g @swarmclawai/swarmclaw@${{ github.ref_name }}`
-            ## Docker
-            - `docker pull ${{ steps.image.outputs.name }}:${{ github.ref_name }}`
-            - `docker pull ${{ steps.image.outputs.name }}:latest`
+          body_path: ${{ steps.release_body.outputs.path }}

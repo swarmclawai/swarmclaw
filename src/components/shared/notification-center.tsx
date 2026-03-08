@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
+import { getNotificationActivityAt, getNotificationOccurrenceCount } from '@/lib/notification-utils'
 import type { AppNotification } from '@/types'
 
 function timeAgo(ts: number): string {
@@ -207,7 +208,12 @@ export function NotificationCenter({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[12px] font-600 text-text truncate flex-1">{n.title}</span>
-                    <span className="text-[10px] text-text-3/50 shrink-0">{timeAgo(n.createdAt)}</span>
+                    {getNotificationOccurrenceCount(n) > 1 && (
+                      <span className="shrink-0 rounded-full border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-600 text-text-3/80">
+                        x{getNotificationOccurrenceCount(n)}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-text-3/50 shrink-0">{timeAgo(getNotificationActivityAt(n))}</span>
                   </div>
                   {n.message && (
                     <p className="text-[11px] text-text-3 mt-0.5 leading-relaxed line-clamp-2 m-0">

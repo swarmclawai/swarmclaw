@@ -1,56 +1,119 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-08T15:07:07.554Z",
-  "totalIssues": 523,
-  "uniqueIssues": 163,
+  "generatedAt": "2026-03-08T19:19:05.839Z",
+  "totalIssues": 485,
+  "uniqueIssues": 172,
   "issues": [
     {
-      "filePath": ".tmp-agent-turn.ts",
+      "filePath": ".workbench/.tmp-comparison-results/run-2026-03-08T18-40-12-846Z-00a72ce7296b/swarm-codegen/duration-parser.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'e' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": ".workbench/.tmp-comparison-results/run-2026-03-08T18-45-31-447Z-136d61b2a5fe/swarm-codegen/duration-parser.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'assert' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308173813/wb-70716b2c/buggy.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 9
+      "count": 1
     },
     {
-      "filePath": ".tmp-iran-heartbeat-check.ts",
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308173813/wb-c130dcca/todo-api/src/routes/todos.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'todos' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308173813/wb-c5e2860c/slugify.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'it' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308180147/wb-11930a74/buggy.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 1
     },
     {
-      "filePath": ".tmp-molly-approval-smoke.ts",
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308183333/wb-1ce8bde1/buggy.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 25
-    },
-    {
-      "filePath": "scripts/compare-openclaw-swarmclaw.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'OPENCLAW_TOKEN' is assigned a value but never used.",
       "count": 1
     },
     {
-      "filePath": "scripts/compare-openclaw-swarmclaw.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'openclawMemorySearch' is defined but never used.",
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308183333/wb-5f409f93/todo-api/src/routes/todos.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'todos' is never reassigned. Use 'const' instead.",
       "count": 1
     },
     {
-      "filePath": "scripts/compare-openclaw-swarmclaw.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'spawn' is defined but never used.",
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308190158/wb-8c349085/todo-api/src/routes/todos.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'todos' is never reassigned. Use 'const' instead.",
       "count": 1
     },
     {
-      "filePath": "scripts/compare-openclaw-swarmclaw.ts",
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308190158/wb-8f8941d7/buggy.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308190158/wb-a1a93f50/slugify.test.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
-      "message": "'swarmclawGetMessages' is defined but never used.",
+      "message": "'test' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308190158/wb-c1748964/messy.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": ".workbench/.tmp-workbench-results/wb-20260308190158/wb-c1748964/messy.ts",
+      "ruleId": "no-var",
+      "severity": 2,
+      "message": "Unexpected var, use let or const instead.",
+      "count": 3
+    },
+    {
+      "filePath": ".workbench/compare-openclaw-swarmclaw.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_label' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": ".workbench/compare-openclaw-swarmclaw.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'IMPLEMENTED_SCENARIOS' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": ".workbench/compare-openclaw-swarmclaw.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'WORKSPACE_DIR' is defined but never used.",
       "count": 1
     },
     {
@@ -824,13 +887,6 @@
       "count": 18
     },
     {
-      "filePath": "src/lib/server/heartbeat-wake.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_key' is assigned a value but never used.",
-      "count": 1
-    },
-    {
       "filePath": "src/lib/server/langgraph-checkpoint.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -964,6 +1020,13 @@
       "count": 4
     },
     {
+      "filePath": "src/lib/server/session-tools/crud.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
       "filePath": "src/lib/server/session-tools/crud.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -1066,7 +1129,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 2
+      "count": 1
     },
     {
       "filePath": "src/lib/server/session-tools/wallet.ts",
@@ -1115,7 +1178,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 65
+      "count": 49
     },
     {
       "filePath": "src/lib/server/stream-agent-chat.ts",

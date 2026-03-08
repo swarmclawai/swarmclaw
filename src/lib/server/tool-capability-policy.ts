@@ -55,7 +55,7 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   codex_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_codex_cli'] },
   opencode_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_opencode_cli'] },
   gemini_cli: { categories: ['delegation', 'execution'], concreteTools: ['delegate_to_gemini_cli'] },
-  memory: { categories: ['memory'], concreteTools: ['memory', 'memory_tool', 'context_status', 'context_summarize'] },
+  memory: { categories: ['memory'], concreteTools: ['memory', 'memory_tool', 'memory_search', 'memory_get', 'memory_store', 'memory_update', 'context_status', 'context_summarize'] },
   sandbox: { categories: ['execution', 'filesystem'], concreteTools: ['sandbox', 'sandbox_exec', 'sandbox_list_runtimes'] },
   git: { categories: ['execution', 'filesystem'], concreteTools: ['git'] },
   http_request: { categories: ['network'], concreteTools: ['http_request'] },

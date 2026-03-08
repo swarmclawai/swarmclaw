@@ -128,6 +128,46 @@ describe('discovery approval flows', () => {
     assert.equal(output.plugins.includes('shell'), true)
   })
 
+  it('manage_capabilities request_access tells the agent to call already-available alias tools directly', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage.ts')
+      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storage = storageMod.default || storageMod
+      const toolsApi = toolsMod.default || toolsMod
+
+      const now = Date.now()
+      storage.saveSessions({
+        session_memory: {
+          id: 'session_memory',
+          name: 'Memory Alias Test',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'tester',
+          provider: 'openai',
+          model: 'gpt-test',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'default',
+          plugins: ['memory'],
+        },
+      })
+
+      const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, ['memory'], {
+        sessionId: 'session_memory',
+        agentId: 'default',
+        platformAssignScope: 'self',
+      })
+      const tool = built.tools.find((entry) => entry.name === 'manage_capabilities')
+      const raw = await tool.invoke({ action: 'request_access', query: 'memory_store', reason: 'Need to remember a user preference.' })
+      console.log(JSON.stringify({ raw }))
+    `)
+
+    assert.match(String(output.raw), /"alreadyAvailable":true/)
+    assert.match(String(output.raw), /memory_store\\\" directly now/i)
+  })
+
   it('granting manage_schedules does not surface the manage_platform umbrella tool', () => {
     const output = runWithTempDataDir(`
       const storageMod = await import('./src/lib/server/storage.ts')

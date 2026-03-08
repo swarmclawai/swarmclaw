@@ -11,6 +11,8 @@ import {
   looksLikeOpenEndedDeliverableTask,
   resolveContinuationAssistantText,
   resolveFinalStreamResponseText,
+  shouldAllowToolForDirectMemoryWrite,
+  shouldAllowToolForCurrentThreadRecall,
   shouldTerminateOnSuccessfulMemoryMutation,
   shouldForceDeliverableFollowthrough,
   shouldForceExternalExecutionFollowthrough,
@@ -63,6 +65,7 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(lines.some((line) => line.includes('{"action":"send","to":"user@example.com","subject":"...","body":"..."}')))
     assert.ok(lines.some((line) => line.includes('do not guess or keep re-submitting blank forms')))
     assert.ok(lines.some((line) => line.includes('store it with `manage_secrets`') && line.includes('do not echo the raw value')))
+    assert.ok(lines.some((line) => line.includes('Use `manage_secrets` only for sensitive credentials or tokens')))
   })
 
   it('adds bounded execution guidance for wallet-connected external-service tasks', () => {
@@ -71,6 +74,7 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(lines.some((line) => line.includes('inspect the available wallet first with `wallet_tool`')))
     assert.ok(lines.some((line) => line.includes('use a bounded loop') && line.includes('Do not keep browsing once the blocker is clear')))
     assert.ok(lines.some((line) => line.includes('do not shop across venues indefinitely')))
+    assert.ok(lines.some((line) => line.includes('If a direct tool for the job is already enabled in this session, call that tool immediately')))
   })
 
   it('tells agents to stay local when coding tools are already available', () => {
@@ -124,6 +128,40 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(streamAgentChatSource.includes('[Loop Budget Reached]'))
     assert.ok(streamAgentChatSource.includes('ToolLoopTracker'))
     assert.ok(!streamAgentChatSource.includes('langchainMessages.push(new AIMessage({ content: fullText }))'))
+  })
+
+  it('adds a dedicated current-thread recall block and removes long-term memory tools for those turns', () => {
+    assert.ok(streamAgentChatSource.includes('## Current Thread Recall'))
+    assert.ok(streamAgentChatSource.includes('## Immediate Memory Routes'))
+    assert.ok(streamAgentChatSource.includes('## Direct Memory Write'))
+    assert.ok(streamAgentChatSource.includes('call `memory_store` or `memory_update` immediately before any planning, delegation, task creation, or agent management'))
+    assert.ok(streamAgentChatSource.includes('Do not inspect skills, browse the workspace, request capabilities, manage tasks, manage agents, or delegate before the direct memory write is complete.'))
+    assert.ok(streamAgentChatSource.includes('Do NOT call memory tools, web search, or session-history tools'))
+    assert.ok(streamAgentChatSource.includes('const currentThreadRecallRequest = isCurrentThreadRecallRequest(message)'))
+    assert.ok(streamAgentChatSource.includes('const directMemoryWriteOnlyTurn = isDirectMemoryWriteRequest(message)'))
+    assert.ok(streamAgentChatSource.includes('shouldAllowToolForDirectMemoryWrite(toolName)'))
+    assert.ok(streamAgentChatSource.includes('shouldAllowToolForCurrentThreadRecall(toolName)'))
+  })
+
+  it('blocks memory, session-history, web, and context tools during same-thread recall turns', () => {
+    assert.equal(shouldAllowToolForCurrentThreadRecall('memory_tool'), false)
+    assert.equal(shouldAllowToolForCurrentThreadRecall('memory_search'), false)
+    assert.equal(shouldAllowToolForCurrentThreadRecall('memory_get'), false)
+    assert.equal(shouldAllowToolForCurrentThreadRecall('memory_store'), false)
+    assert.equal(shouldAllowToolForCurrentThreadRecall('memory_update'), false)
+    assert.equal(shouldAllowToolForCurrentThreadRecall('search_history_tool'), false)
+    assert.equal(shouldAllowToolForCurrentThreadRecall('sessions_tool'), false)
+    assert.equal(shouldAllowToolForCurrentThreadRecall('web_search'), false)
+    assert.equal(shouldAllowToolForCurrentThreadRecall('context_status'), false)
+    assert.equal(shouldAllowToolForCurrentThreadRecall('files'), true)
+  })
+
+  it('only allows direct memory write tools during pure remember/store turns', () => {
+    assert.equal(shouldAllowToolForDirectMemoryWrite('memory_store'), true)
+    assert.equal(shouldAllowToolForDirectMemoryWrite('memory_update'), true)
+    assert.equal(shouldAllowToolForDirectMemoryWrite('memory_tool'), false)
+    assert.equal(shouldAllowToolForDirectMemoryWrite('manage_capabilities'), false)
+    assert.equal(shouldAllowToolForDirectMemoryWrite('files'), false)
   })
 
   it('canonicalizes required tool names when checking completion', () => {
@@ -256,7 +294,7 @@ describe('resolveContinuationAssistantText', () => {
   })
 
   it('rolls back partial iteration text before transient retries restart the turn', () => {
-    assert.ok(streamAgentChatSource.includes('const iterationStartState = {'))
+    assert.ok(streamAgentChatSource.includes('const iterationStartState:'))
     assert.ok(streamAgentChatSource.includes('fullText = iterationStartState.fullText'))
     assert.ok(streamAgentChatSource.includes('lastSegment = iterationStartState.lastSegment'))
     assert.ok(streamAgentChatSource.includes('lastSettledSegment = iterationStartState.lastSettledSegment'))
@@ -271,6 +309,25 @@ describe('shouldTerminateOnSuccessfulMemoryMutation', () => {
         toolName: 'memory_tool',
         toolInput: { action: 'store', title: 'Project Kodiak details' },
         toolOutput: 'Stored memory "Project Kodiak details" (id: abc123). No further memory lookup is needed unless the user asked you to verify.',
+      }),
+      true,
+    )
+  })
+
+  it('treats successful narrow memory write tools as terminal', () => {
+    assert.equal(
+      shouldTerminateOnSuccessfulMemoryMutation({
+        toolName: 'memory_store',
+        toolInput: { title: 'Project Kodiak details', value: 'freeze date April 18, 2026' },
+        toolOutput: 'Stored memory "Project Kodiak details" (id: abc123). No further memory lookup is needed unless the user asked you to verify.',
+      }),
+      true,
+    )
+    assert.equal(
+      shouldTerminateOnSuccessfulMemoryMutation({
+        toolName: 'memory_update',
+        toolInput: { id: 'abc123', value: 'freeze date April 21, 2026' },
+        toolOutput: 'Updated memory "Project Kodiak details" (id: abc123). No further memory lookup is needed unless the user asked you to verify.',
       }),
       true,
     )

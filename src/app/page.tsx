@@ -7,6 +7,7 @@ import { getStoredAccessKey, clearStoredAccessKey, api } from '@/lib/api-client'
 import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 import { connectWs, disconnectWs } from '@/lib/ws-client'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { isLocalhostBrowser } from '@/lib/local-observability'
 import { useWs } from '@/hooks/use-ws'
 import { AccessKeyGate } from '@/components/auth/access-key-gate'
 import { UserPicker } from '@/components/auth/user-picker'
@@ -269,6 +270,14 @@ export default function Home() {
   }, [authenticated])
 
   useWs('sessions', loadSessions, 5000)
+
+  useEffect(() => {
+    if (!authenticated || !isLocalhostBrowser()) return
+    const pollId = setInterval(() => {
+      void loadSessions()
+    }, 5000)
+    return () => clearInterval(pollId)
+  }, [authenticated, loadSessions])
 
   // Auto-select agent's thread on load — resolves a persisted agentId into a session,
   // or falls back to defaultAgentId from settings, then first agent.

@@ -224,6 +224,7 @@ export function AppLayout() {
       actionUrl: GITHUB_REPO_URL,
       entityType: 'support',
       entityId: 'github-star',
+      dedupKey: 'support:github-star',
     }).then(() => {
       void useAppStore.getState().loadNotifications()
     }).catch(() => {})

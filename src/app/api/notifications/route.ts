@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
-import { genId } from '@/lib/id'
-import { loadNotifications, saveNotification, deleteNotification } from '@/lib/server/storage'
+import { getNotificationActivityAt } from '@/lib/notification-utils'
+import { createNotification } from '@/lib/server/create-notification'
+import { loadNotifications, deleteNotification } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import type { AppNotification } from '@/types'
 export const dynamic = 'force-dynamic'
@@ -20,7 +21,7 @@ export async function GET(req: Request) {
     entries = entries.filter((e) => !e.read)
   }
 
-  entries.sort((a, b) => b.createdAt - a.createdAt)
+  entries.sort((a, b) => getNotificationActivityAt(b) - getNotificationActivityAt(a))
   entries = entries.slice(0, limit)
 
   return NextResponse.json(entries)
@@ -30,9 +31,10 @@ export async function POST(req: Request) {
   const body = (await req.json()) as Record<string, unknown>
   const actionLabel = typeof body.actionLabel === 'string' ? body.actionLabel : undefined
   const actionUrl = typeof body.actionUrl === 'string' ? body.actionUrl : undefined
-  const id = genId()
-  const notification: AppNotification = {
-    id,
+  const dedupKey = typeof body.dedupKey === 'string' && body.dedupKey.trim()
+    ? body.dedupKey.trim()
+    : undefined
+  const { notification, created } = createNotification({
     type: (['info', 'success', 'warning', 'error'].includes(body.type as string) ? body.type : 'info') as AppNotification['type'],
     title: typeof body.title === 'string' ? body.title : 'Notification',
     message: typeof body.message === 'string' ? body.message : undefined,
@@ -40,13 +42,10 @@ export async function POST(req: Request) {
     actionUrl,
     entityType: typeof body.entityType === 'string' ? body.entityType : undefined,
     entityId: typeof body.entityId === 'string' ? body.entityId : undefined,
-    read: false,
-    createdAt: Date.now(),
-  }
+    dedupKey,
+  })
 
-  saveNotification(id, notification)
-  notify('notifications')
-  return NextResponse.json(notification, { status: 201 })
+  return NextResponse.json(notification, { status: created ? 201 : 200 })
 }
 
 export async function DELETE(req: Request) {

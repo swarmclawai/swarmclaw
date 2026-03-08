@@ -28,6 +28,7 @@ import {
   loadTasks,
   loadWatchJobs,
   saveSchedules,
+  saveAgents,
   saveSecrets,
   saveSessions,
   saveSettings,
@@ -104,6 +105,7 @@ interface AgentRegressionScenarioDefinition {
   id: string
   name: string
   plugins: string[]
+  defaultInSuite?: boolean
   run: (ctx: ScenarioContext) => Promise<AgentRegressionScenarioResult>
 }
 
@@ -927,6 +929,15 @@ function cleanupScenarioState(ctx: ScenarioContext): void {
     deleteApproval(approval.id)
   }
 
+  const agents = loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>
+  let agentsChanged = false
+  for (const [agentId, agent] of Object.entries(agents)) {
+    if (agent?.createdInSessionId !== ctx.sessionId) continue
+    delete agents[agentId]
+    agentsChanged = true
+  }
+  if (agentsChanged) saveAgents(agents)
+
   const watchJobs = loadWatchJobs() as Record<string, Record<string, unknown>>
   for (const [watchJobId, watchJob] of Object.entries(watchJobs)) {
     if (watchJob?.sessionId === ctx.sessionId) deleteWatchJob(watchJobId)
@@ -1710,6 +1721,201 @@ async function runResearchBuildDeployScenario(ctx: ScenarioContext): Promise<Age
   }
 }
 
+async function runBlackboardOrchestratorScenario(ctx: ScenarioContext): Promise<AgentRegressionScenarioResult> {
+  const noteRelativePath = 'ops/blackboard-fit.md'
+  const notePath = scenarioFile(ctx, noteRelativePath)
+  const prefix = `Eval ${ctx.sessionId.slice(-8)}`
+  const departments = [
+    { agentName: `${prefix} Research Orchestrator`, taskTitle: `${prefix} research-blackboard` },
+    { agentName: `${prefix} Product Orchestrator`, taskTitle: `${prefix} product-blackboard` },
+    { agentName: `${prefix} Revenue Orchestrator`, taskTitle: `${prefix} revenue-blackboard` },
+    { agentName: `${prefix} Operations Orchestrator`, taskTitle: `${prefix} operations-blackboard` },
+    { agentName: `${prefix} Support Orchestrator`, taskTitle: `${prefix} support-blackboard` },
+  ]
+
+  const agentsBefore = loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>
+  const currentAgent = agentsBefore[ctx.agentId]
+  const previousAssignScope = typeof currentAgent?.platformAssignScope === 'string'
+    ? currentAgent.platformAssignScope
+    : undefined
+  if (currentAgent) {
+    currentAgent.platformAssignScope = 'all'
+    currentAgent.updatedAt = Date.now()
+    agentsBefore[ctx.agentId] = currentAgent
+    saveAgents(agentsBefore)
+    ctx.agent.platformAssignScope = 'all'
+  }
+
+  try {
+    const prompt = [
+      'Evaluate whether SwarmClaw can support a zero-work KING COO orchestrator model.',
+      'Do not do any department implementation work yourself.',
+      'Use manage_agents to create exactly five full agents with these exact names:',
+      ...departments.map((department) => `- ${department.agentName}`),
+      'Give each agent a short soul that describes a department orchestrator or execution lead.',
+      'Use manage_tasks to create exactly five backlog tasks with these exact titles and assign one task to each new agent:',
+      ...departments.map((department) => `- ${department.taskTitle}`),
+      `Write "${noteRelativePath}" with sections "Supported Today", "Native Gaps", and "Bridging Plan".`,
+      'In that note, mention that SwarmClaw already has native agents, task queues, memory, and chatroom/connector communication primitives.',
+      'Also state clearly that SurrealDB would currently be an external integration or custom backing store, not a native built-in blackboard database.',
+      'In your final response list the created agent ids, the created task ids, reference the note path, and say explicitly that the orchestrator stayed coordinator-only.',
+    ].join('\n')
+
+    await runTurn(ctx, prompt)
+
+    let createdAgents = Object.values(loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>)
+      .filter((agent) => agent?.createdInSessionId === ctx.sessionId)
+    let createdTasks = Object.values(loadTasks() as Record<string, Record<string, unknown>>)
+      .filter((task) => task?.createdInSessionId === ctx.sessionId)
+
+    if (createdAgents.length < departments.length || createdTasks.length < departments.length || !fs.existsSync(notePath)) {
+      await runTurn(
+        ctx,
+        'Finish the orchestration setup exactly as requested. Create any missing agents, create any missing backlog tasks assigned to those agents, and write the missing architecture note. Do not do department implementation work yourself.',
+      )
+      createdAgents = Object.values(loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>)
+        .filter((agent) => agent?.createdInSessionId === ctx.sessionId)
+      createdTasks = Object.values(loadTasks() as Record<string, Record<string, unknown>>)
+        .filter((task) => task?.createdInSessionId === ctx.sessionId)
+    }
+
+    const expectedAgentNames = new Set(departments.map((department) => department.agentName))
+    const expectedTaskTitles = new Set(departments.map((department) => department.taskTitle))
+    const createdAgentIds = new Set(
+      createdAgents
+        .map((agent) => (typeof agent.id === 'string' ? agent.id : ''))
+        .filter(Boolean),
+    )
+    const createdTaskTitles = new Set(
+      createdTasks
+        .map((task) => (typeof task.title === 'string' ? task.title : ''))
+        .filter(Boolean),
+    )
+    const allTasksAssignedToCreatedAgents = createdTasks.length > 0 && createdTasks.every((task) => (
+      typeof task.agentId === 'string' && createdAgentIds.has(task.agentId)
+    ))
+    const noTasksAssignedToCoordinator = createdTasks.every((task) => task.agentId !== ctx.agentId)
+    const statusesAcceptable = createdTasks.every((task) => ['backlog', 'queued'].includes(String(task.status || '')))
+
+    let noteText = readIfExists(notePath)
+    let responseBlob = ctx.responseTexts.join('\n').toLowerCase()
+    const hasCoordinatorSummary = () => (
+      responseBlob.includes(noteRelativePath.toLowerCase())
+      && (
+        responseBlob.includes('coordinator-only')
+        || responseBlob.includes('stayed coordinator')
+        || responseBlob.includes('did not do department implementation')
+      )
+    )
+    const hasFitGapNote = () => {
+      const noteLower = noteText.toLowerCase()
+      return noteText.includes('## Supported Today')
+        && noteText.includes('## Native Gaps')
+        && noteText.includes('## Bridging Plan')
+        && noteLower.includes('surrealdb')
+        && (noteLower.includes('external integration') || noteLower.includes('not a native') || noteLower.includes('custom backing store'))
+        && noteLower.includes('task')
+        && noteLower.includes('agent')
+        && (noteLower.includes('chatroom') || noteLower.includes('connector'))
+        && noteLower.includes('memory')
+    }
+
+    if (!hasFitGapNote() || !hasCoordinatorSummary()) {
+      await runTurn(
+        ctx,
+        [
+          `If "${noteRelativePath}" is missing or incomplete, write it now with the required sections and SurrealDB gap explanation.`,
+          'Then reply with a concise summary that lists the created agent ids, the created task ids, references the note path exactly, and says the orchestrator stayed coordinator-only.',
+        ].join(' '),
+      )
+      noteText = readIfExists(notePath)
+      responseBlob = ctx.responseTexts.join('\n').toLowerCase()
+    }
+
+    const assertions: RegressionAssertion[] = [
+      {
+        name: 'manage_agents used',
+        passed: ctx.toolNames.has('manage_agents'),
+        weight: 2,
+      },
+      {
+        name: 'manage_tasks used',
+        passed: ctx.toolNames.has('manage_tasks'),
+        weight: 2,
+      },
+      {
+        name: 'five orchestrator agents created',
+        passed: createdAgents.length === departments.length
+          && createdAgents.every((agent) => expectedAgentNames.has(String(agent.name || ''))),
+        details: createdAgents.map((agent) => `${agent.id}:${agent.name}`).join(' | '),
+        weight: 3,
+      },
+      {
+        name: 'five backlog tasks assigned to created agents',
+        passed: createdTasks.length === departments.length
+          && [...expectedTaskTitles].every((title) => createdTaskTitles.has(title))
+          && allTasksAssignedToCreatedAgents
+          && statusesAcceptable,
+        details: createdTasks.map((task) => `${task.id}:${task.title}:${task.agentId}:${task.status}`).join(' | '),
+        weight: 3,
+      },
+      {
+        name: 'coordinator kept execution off itself',
+        passed: noTasksAssignedToCoordinator,
+        weight: 2,
+      },
+      {
+        name: 'fit-gap note explains native primitives and SurrealDB gap',
+        passed: hasFitGapNote(),
+        details: truncatePreview(noteText),
+        weight: 3,
+      },
+      {
+        name: 'final response references coordinator-only orchestration note',
+        passed: hasCoordinatorSummary(),
+      },
+    ]
+
+    const scored = scoreAssertions(assertions)
+    return {
+      scenarioId: 'blackboard-orchestrator-fit',
+      name: 'Blackboard Orchestrator Fit',
+      approvalMode: ctx.approvalMode,
+      pluginMode: ctx.pluginMode,
+      ...scored,
+      assertions,
+      sessionId: ctx.sessionId,
+      workspaceDir: ctx.workspaceDir,
+      requiredPlugins: [...ctx.requiredPlugins],
+      effectivePlugins: [...ctx.effectivePlugins],
+      missingPlugins: [...ctx.missingPlugins],
+      toolNames: Array.from(ctx.toolNames),
+      approvalIds: [],
+      approvals: buildApprovalEvidence(ctx.sessionId),
+      responseTexts: [...ctx.responseTexts],
+      turns: [...ctx.turns],
+      artifacts: buildArtifactEvidence(ctx, [noteRelativePath]),
+      evidencePaths: writeScenarioEvidenceFiles(ctx),
+    }
+  } finally {
+    const latestAgents = loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>
+    if (latestAgents[ctx.agentId]) {
+      if (previousAssignScope) {
+        latestAgents[ctx.agentId].platformAssignScope = previousAssignScope
+      } else {
+        delete latestAgents[ctx.agentId].platformAssignScope
+      }
+      latestAgents[ctx.agentId].updatedAt = Date.now()
+      saveAgents(latestAgents)
+    }
+    if (previousAssignScope) {
+      ctx.agent.platformAssignScope = previousAssignScope
+    } else {
+      delete ctx.agent.platformAssignScope
+    }
+  }
+}
+
 /**
  * Tool-call efficiency scenario: verifies the agent uses minimal tool calls
  * for simple data-retrieval tasks. Catches regressions like:
@@ -1989,6 +2195,13 @@ export const AGENT_REGRESSION_SCENARIOS: AgentRegressionScenarioDefinition[] = [
     run: runResearchBuildDeployScenario,
   },
   {
+    id: 'blackboard-orchestrator-fit',
+    name: 'Blackboard Orchestrator Fit',
+    plugins: ['manage_agents', 'manage_tasks', 'files'],
+    defaultInSuite: false,
+    run: runBlackboardOrchestratorScenario,
+  },
+  {
     id: 'tool-call-efficiency',
     name: 'Tool Call Efficiency',
     plugins: ['shell', 'web'],
@@ -2008,8 +2221,15 @@ export const AGENT_REGRESSION_SCENARIOS: AgentRegressionScenarioDefinition[] = [
   },
 ]
 
+export const DEFAULT_AGENT_REGRESSION_SCENARIO_IDS = AGENT_REGRESSION_SCENARIOS
+  .filter((scenario) => scenario.defaultInSuite !== false)
+  .map((scenario) => scenario.id)
+
 function resolveScenarioDefinitions(ids?: string[]): AgentRegressionScenarioDefinition[] {
-  if (!ids?.length) return AGENT_REGRESSION_SCENARIOS
+  if (!ids?.length) {
+    const wanted = new Set(DEFAULT_AGENT_REGRESSION_SCENARIO_IDS)
+    return AGENT_REGRESSION_SCENARIOS.filter((scenario) => wanted.has(scenario.id))
+  }
   const wanted = new Set(ids)
   return AGENT_REGRESSION_SCENARIOS.filter((scenario) => wanted.has(scenario.id))
 }

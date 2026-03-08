@@ -131,6 +131,42 @@ describe('delegate fallback', () => {
     assert.match(String(output.response || ''), /codex fallback ok/i)
   })
 
+  it('rejects delegating a locally available tool call', () => {
+    const output = runWithFakeDelegates(`
+      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
+
+      const tools = buildDelegateTools({
+        cwd: process.cwd(),
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        hasPlugin: (name) => name === 'delegate' || name === 'memory' || name === 'memory_store',
+        hasTool: (name) => name === 'delegate' || name === 'memory' || name === 'memory_store',
+        cleanupFns: [],
+        commandTimeoutMs: 5000,
+        claudeTimeoutMs: 5000,
+        cliProcessTimeoutMs: 5000,
+        persistDelegateResumeId: () => {},
+        readStoredDelegateResumeId: () => null,
+        resolveCurrentSession: () => null,
+        activePlugins: ['delegate', 'memory'],
+      })
+
+      const delegateTool = tools.find((tool) => tool.name === 'delegate')
+      const raw = await delegateTool.invoke({
+        input: JSON.stringify({
+          tool: 'memory_store',
+          args: {
+            title: 'User programming preferences',
+            value: 'Favorite language: Rust',
+          },
+        }),
+      })
+      console.log(JSON.stringify({ raw }))
+    `)
+
+    assert.match(String(output.raw || ''), /Call `memory` directly|Call `memory_store` directly|already available in this session/i)
+  })
+
   it('synthesizes a delegated task from write-style payloads', () => {
     const output = runWithFakeDelegates(`
       const mod = await import('./src/lib/server/session-tools/delegate.ts')
