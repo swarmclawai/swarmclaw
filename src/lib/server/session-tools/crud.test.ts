@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import type { Agent } from '@/types'
 
 const originalEnv = {
   DATA_DIR: process.env.DATA_DIR,
@@ -30,11 +31,12 @@ before(async () => {
   loadAgents = storageMod.loadAgents
   saveAgents = storageMod.saveAgents
 
-  const agents = loadAgents({ includeTrashed: true })
+  const agents = loadAgents({ includeTrashed: true }) as Record<string, Agent>
   agents['agent-soul-test'] = {
     id: 'agent-soul-test',
     name: 'Soul Test Agent',
     description: 'Agent used for CRUD soul validation tests',
+    systemPrompt: '',
     provider: 'ollama',
     model: 'glm-5:cloud',
     plugins: ['manage_agents'],
@@ -42,7 +44,7 @@ before(async () => {
     platformAssignScope: 'self',
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  } as any
+  }
   saveAgents(agents)
 })
 
@@ -124,8 +126,8 @@ describe('manage_agents soul validation', () => {
 
     const first = JSON.parse(String(firstRaw)) as Record<string, unknown>
     const second = JSON.parse(String(secondRaw)) as Record<string, unknown>
-    const created = Object.values(loadAgents({ includeTrashed: true }))
-      .filter((agent: any) => agent.createdInSessionId === 'agent-dedupe-session')
+    const created = Object.values(loadAgents({ includeTrashed: true }) as Record<string, Agent & { createdInSessionId?: string }>)
+      .filter((agent) => agent.createdInSessionId === 'agent-dedupe-session')
 
     assert.equal(created.length, 1)
     assert.equal(second.id, first.id)

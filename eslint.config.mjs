@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     // Agent-generated workspace and runtime data
     "data/**",
     "artifacts/**",
+    ".workbench/**",
   ]),
 ]);
 

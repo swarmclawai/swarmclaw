@@ -591,10 +591,7 @@ function buildAgenticExecutionPolicy(opts: {
   const pluginLines = buildPluginCapabilityLines(opts.enabledPlugins, { platformAssignScope: opts.platformAssignScope })
   const toolDisciplineLines = buildToolDisciplineLines(opts.enabledPlugins)
   const hasMemoryTools = opts.enabledPlugins.some((toolId) => (canonicalizePluginId(toolId) || toolId) === 'memory')
-  const directMemoryWriteRequest = Boolean(opts.userMessage && isDirectMemoryWriteRequest(opts.userMessage))
-  const directMemoryWriteOnlyTurn = directMemoryWriteRequest
-    && !isBroadGoal(opts.userMessage || '')
-    && !looksLikeOpenEndedDeliverableTask(opts.userMessage || '')
+  const directMemoryWriteOnlyTurn = Boolean(opts.userMessage && isNarrowDirectMemoryWriteTurn(opts.userMessage))
 
   const parts: string[] = []
 
@@ -713,6 +710,16 @@ function buildDirectMemoryWriteBlock(): string {
     'Call `memory_store` or `memory_update` immediately, then confirm the stored value succinctly.',
     'Do not inspect skills, browse the workspace, request capabilities, manage tasks, manage agents, or delegate before the direct memory write is complete.',
   ].join('\n')
+}
+
+const DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE = /\b(?:then|and then|after that)?\s*(?:confirm|recap|repeat|summarize|tell me|say)\b[\s\S]{0,120}\b(?:stored|saved|updated|remembered|wrote|write)\b/i
+
+export function isNarrowDirectMemoryWriteTurn(message: string): boolean {
+  const trimmed = String(message || '').trim()
+  if (!trimmed || !isDirectMemoryWriteRequest(trimmed)) return false
+  if (looksLikeOpenEndedDeliverableTask(trimmed)) return false
+  if (!isBroadGoal(trimmed)) return true
+  return DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE.test(trimmed)
 }
 
 const CURRENT_THREAD_RECALL_BLOCKED_TOOL_IDS = new Set([
