@@ -194,6 +194,31 @@ export function buildIdentityContext(session: Record<string, unknown> | undefine
   return `## Your Identity\n${lines.join('\n')}`
 }
 
+// ── Blocked-item suppression ────────────────────────────────────────────
+// Ported from OpenClaw's duplicate-suppression pattern: instead of letting
+// the LLM see blocked tasks every tick (and parrot "still blocked"), we
+// strip those lines before they ever reach the prompt.  A line is
+// considered blocked if it contains "(blocked" anywhere (case-insensitive),
+// which covers "(blocked, no update)", "(blocked: awaiting …)", etc.
+const BLOCKED_MARKER_RE = /\(blocked\b/i
+
+/**
+ * Remove blocked checklist items from HEARTBEAT.md content so the LLM
+ * doesn't keep surfacing them.  Headers and non-list lines pass through
+ * unchanged.
+ */
+export function stripBlockedItems(content: string): string {
+  if (!content) return ''
+  const lines = content.split('\n')
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim()
+    // Only filter checklist / list items that are explicitly marked blocked
+    if (/^[-*+]\s/.test(trimmed) && BLOCKED_MARKER_RE.test(trimmed)) return false
+    return true
+  })
+  return filtered.join('\n')
+}
+
 /** Detect HEARTBEAT.md files that contain only skeleton structure (headers, empty list items) but no real content. */
 export function isHeartbeatContentEffectivelyEmpty(content: string | undefined | null): boolean {
   if (!content || typeof content !== 'string') return true
@@ -236,8 +261,9 @@ export function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackProm
     })
     .join('\n')
 
-  // Don't inject effectively-empty HEARTBEAT.md content
-  const effectiveFileContent = isHeartbeatContentEffectivelyEmpty(heartbeatFileContent) ? '' : heartbeatFileContent
+  // Strip blocked items, then check if anything meaningful remains
+  const strippedContent = stripBlockedItems(heartbeatFileContent)
+  const effectiveFileContent = isHeartbeatContentEffectivelyEmpty(strippedContent) ? '' : strippedContent
 
   return [
     'AGENT_HEARTBEAT_TICK',
