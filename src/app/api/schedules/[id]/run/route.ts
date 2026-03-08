@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { notFound } from '@/lib/server/collection-helpers'
 import { loadSchedules, saveSchedules, loadAgents, loadTasks, saveTasks } from '@/lib/server/storage'
+import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agent-availability'
 import { enqueueTask } from '@/lib/server/queue'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
 import { getScheduleSignatureKey } from '@/lib/schedule-dedupe'
@@ -20,6 +21,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const agents = loadAgents()
   const agent = agents[schedule.agentId]
   if (!agent) return NextResponse.json({ error: 'Agent not found' }, { status: 400 })
+  if (isAgentDisabled(agent)) {
+    return NextResponse.json({ error: buildAgentDisabledMessage(agent, 'run schedules') }, { status: 409 })
+  }
 
   const tasks = loadTasks()
   const scheduleSignature = getScheduleSignatureKey(schedule)

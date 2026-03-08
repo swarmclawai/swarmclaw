@@ -2,7 +2,7 @@ import fs from 'fs'
 import http from 'http'
 import https from 'https'
 import type { StreamChatOptions } from './index'
-import { PROVIDER_DEFAULTS } from './provider-defaults'
+import { resolveOllamaRuntimeConfig } from '@/lib/server/ollama-runtime'
 
 const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|webp|bmp)$/i
 const TEXT_EXTS = /\.(txt|md|csv|json|xml|html|js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|yml|yaml|toml|env|log|sh|sql|css|scss)$/i
@@ -10,9 +10,19 @@ const TEXT_EXTS = /\.(txt|md|csv|json|xml|html|js|ts|tsx|jsx|py|go|rs|java|c|cpp
 export function streamOllamaChat({ session, message, imagePath, apiKey, write, active, loadHistory, onUsage, signal }: StreamChatOptions): Promise<string> {
   return new Promise((resolve) => {
     const messages = buildMessages(session, message, imagePath, loadHistory)
-    const model = session.model || 'llama3'
-    // Cloud: no endpoint but API key present → use Ollama cloud
-    const endpoint = session.apiEndpoint || (apiKey ? PROVIDER_DEFAULTS.ollamaCloud : PROVIDER_DEFAULTS.ollama)
+    const runtime = resolveOllamaRuntimeConfig({
+      model: session.model,
+      apiKey,
+      apiEndpoint: session.apiEndpoint,
+    })
+    const model = runtime.model || 'llama3'
+    const endpoint = runtime.endpoint
+    if (runtime.useCloud && !runtime.apiKey) {
+      write(`data: ${JSON.stringify({ t: 'err', text: 'Ollama Cloud model requires an API key. Set OLLAMA_API_KEY or attach an Ollama credential.' })}\n\n`)
+      active.delete(session.id)
+      resolve('')
+      return
+    }
 
     const parsed = new URL(endpoint)
     const isHttps = parsed.protocol === 'https:'
@@ -43,8 +53,8 @@ export function streamOllamaChat({ session, message, imagePath, apiKey, write, a
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     }
-    if (apiKey) {
-      headers['Authorization'] = `Bearer ${apiKey}`
+    if (runtime.apiKey) {
+      headers['Authorization'] = `Bearer ${runtime.apiKey}`
     }
 
     const apiReq = transport.request({

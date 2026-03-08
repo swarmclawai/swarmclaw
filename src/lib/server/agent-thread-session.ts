@@ -1,6 +1,7 @@
 import { genId } from '@/lib/id'
 import type { Agent, Session } from '@/types'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from './agent-runtime-config'
+import { isAgentDisabled } from './agent-availability'
 import { WORKSPACE_DIR } from './data-dir'
 import { loadAgents, loadSessions, saveAgents, saveSessions } from './storage'
 
@@ -44,6 +45,9 @@ function buildThreadSession(agent: Agent, sessionId: string, user: string, creat
     heartbeatEnabled: agent.heartbeatEnabled || false,
     heartbeatIntervalSec: agent.heartbeatIntervalSec || null,
     heartbeatTarget: existing?.heartbeatTarget || null,
+    memoryScopeMode: agent.memoryScopeMode || null,
+    memoryTierPreference: agent.memoryTierPreference || null,
+    projectId: agent.projectId || existing?.projectId || null,
     sessionResetMode: existing?.sessionResetMode || null,
     sessionIdleTimeoutSec: existing?.sessionIdleTimeoutSec || null,
     sessionMaxAgeSec: existing?.sessionMaxAgeSec || null,
@@ -95,6 +99,7 @@ export function ensureAgentThreadSession(agentId: string, user = 'default'): Ses
 
   const sessions = loadSessions()
   const now = Date.now()
+  const disabled = isAgentDisabled(agent)
 
   const existingId = typeof agent.threadSessionId === 'string' ? agent.threadSessionId : ''
   if (existingId && sessions[existingId]) {
@@ -118,6 +123,8 @@ export function ensureAgentThreadSession(agentId: string, user = 'default'): Ses
     saveSessions(sessions)
     return session
   }
+
+  if (disabled) return null
 
   const sessionId = `agent-chat-${agentId}-${genId()}`
   const session = buildThreadSession(agent, sessionId, user, now)

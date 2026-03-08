@@ -148,7 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.7.8 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.8.0 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -464,7 +464,7 @@ Policy is enforced in both chat tool construction and direct forced tool invocat
 
 Configure these in **Settings**:
 
-- **Voice** — set `ElevenLabs API Key`, `ElevenLabs Voice ID`, and `Speech Recognition Language`
+- **Voice** — set `ElevenLabs API Key`, `ElevenLabs Voice ID`, and `Speech Recognition Language`. Outbound voice-note sends retry with the built-in fallback ElevenLabs voice when a saved default voice is rejected as paid-only.
 - **Heartbeat** — set `Heartbeat Interval (Seconds)` and `Heartbeat Prompt` for ongoing chat pings
 - **Global heartbeat safety** — use `Stop All Heartbeats` to disable heartbeat across all chats and cancel in-flight heartbeat runs.
 
@@ -529,7 +529,7 @@ Built-in capabilities now resolve to a single canonical plugin family ID across 
 
 Agents in SwarmClaw are "aware" of the plugin system. If an agent lacks a tool needed for a task, it can:
 1. **Discover**: Scan the system for all installed plugins.
-2. **Search Marketplace**: Autonomously search **ClawHub** and the **SwarmClaw Registry** for new capabilities.
+2. **Search Marketplace**: Autonomously search **ClawHub** and the **SwarmForge-backed first-party marketplace** for new capabilities.
 3. **Request Access**: Prompt the user in-chat to enable a specific installed plugin.
 4. **Install Request**: Suggest installing a new plugin from a marketplace URL to fill a capability gap (requires user approval).
 
@@ -663,8 +663,8 @@ npm run dev:webpack  # Fallback to webpack dev server (if Turbopack crashes)
 npm run dev:clean    # Clear .next cache then restart dev server
 npm run build        # Production build
 npm run build:ci     # CI build (skips ESLint; lint baseline runs separately)
-npm run start        # Start production server
-npm run start:standalone # Start standalone server after build
+npm run start        # Start the standalone production server after build
+npm run start:standalone # Alias for the standalone production server
 npm run lint         # ESLint
 npm run lint:baseline # Fail only on net-new lint issues vs .eslint-baseline.json
 npm run lint:baseline:update # Refresh lint baseline intentionally
@@ -701,8 +701,8 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example patch release (v0.7.8 style)
-npm version patch
+# example minor release (v0.8.0 style)
+npm version minor
 git push origin main --follow-tags
 ```
 
@@ -711,16 +711,13 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.7.8 Release Readiness Notes
+#### v0.8.0 Release Readiness Notes
 
-Before shipping `v0.7.8`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.8.0`, confirm the following user-facing changes are reflected in docs:
 
-1. Project docs explain the new project operating-system fields: objective, audience, pilot priorities, open objectives, credential requirements, success metrics, and heartbeat prompt/interval.
-2. Task and approval docs cover the new approval controls, task/project management toggles, and durable task continuation behavior (`continueFromTaskId`, dependency blocking, and session resume reuse).
-3. Connector/operator docs mention automatic connector recovery on disconnect or dev-server restart, including bounded exponential backoff instead of silent disablement.
-4. Chat/runtime docs note the project-aware agent context, Gemini resume-handle visibility, and improved web/connector input handling where relevant.
-5. Site and README install/version strings are updated to `v0.7.8`, including install snippets, release notes index text, and sidebar/footer labels.
-6. Release notes summarize the user-visible changes from the current worktree, especially project operating context, approval/task controls, connector resilience, and chat/runtime polish.
+1. Voice and connector docs mention that outbound voice-note sends now retry with the built-in ElevenLabs fallback voice when a configured default voice is rejected as paid-only.
+2. Release notes call out the Molly-style regression case explicitly: WhatsApp voice-note delivery should keep working even if the saved default voice ID points at a paid library voice.
+3. Site and README install/version strings are updated to `v0.8.0`, including install snippets, release notes index text, and sidebar/footer labels.
 
 ## CLI
 

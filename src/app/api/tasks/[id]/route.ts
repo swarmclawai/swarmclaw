@@ -126,7 +126,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       enqueueSystemEvent(tasks[id].sessionId, `Task ${tasks[id].status}: ${tasks[id].title}`)
     }
     if (tasks[id].agentId) {
-      requestHeartbeatNow({ agentId: tasks[id].agentId, reason: 'task-completed' })
+      requestHeartbeatNow({
+        agentId: tasks[id].agentId,
+        eventId: `task:${id}:${tasks[id].status}`,
+        reason: 'task-completed',
+        source: `task:${id}`,
+        resumeMessage: `Task ${tasks[id].status}: ${tasks[id].title}`,
+        detail: tasks[id].status === 'failed'
+          ? String(tasks[id].error || '').slice(0, 400)
+          : JSON.stringify(tasks[id].result || '').slice(0, 400),
+      })
     }
   }
 

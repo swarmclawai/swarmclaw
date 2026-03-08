@@ -1,0 +1,132 @@
+import type { MemoryEntry } from '@/types'
+
+const ACK_RE = /^(?:ok(?:ay)?|cool|nice|got it|makes sense|thanks|thank you|thx|roger|copy|sounds good|sgtm|yep|yup|y|nope?|nah|kk|done)[.! ]*$/i
+const GREETING_RE = /^(?:hi|hello|hey|yo|morning|good morning|good afternoon|good evening)[.! ]*$/i
+const MEMORY_META_RE = /\b(?:remember|memory|memorize|store this|save this|forget)\b/i
+const LOW_SIGNAL_RESPONSE_RE = /^(?:HEARTBEAT_OK|NO_MESSAGE)\b/i
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function lower(value: string | null | undefined): string {
+  return normalizeWhitespace(value || '').toLowerCase()
+}
+
+export function shouldInjectMemoryContext(message: string): boolean {
+  const trimmed = normalizeWhitespace(message)
+  if (!trimmed) return false
+  if (trimmed.length < 16 && (ACK_RE.test(trimmed) || GREETING_RE.test(trimmed))) return false
+  if (trimmed.length < 24 && MEMORY_META_RE.test(trimmed)) return false
+  return true
+}
+
+export function shouldAutoCaptureMemoryTurn(message: string, response: string): boolean {
+  const normalizedMessage = normalizeWhitespace(message)
+  const normalizedResponse = normalizeWhitespace(response)
+  if (normalizedMessage.length < 20 || normalizedResponse.length < 40) return false
+  if (ACK_RE.test(normalizedMessage) || GREETING_RE.test(normalizedMessage)) return false
+  if (LOW_SIGNAL_RESPONSE_RE.test(normalizedResponse)) return false
+  if (MEMORY_META_RE.test(normalizedMessage) && normalizedMessage.length < 120) return false
+  if (/^(?:sorry|i can(?:not|'t)|unable to|i do not have|i don't have)\b/i.test(normalizedResponse)) return false
+  return true
+}
+
+export function shouldAutoCaptureMemory(
+  input: { message?: string | null; response?: string | null } | string,
+  response?: string,
+): boolean {
+  if (typeof input === 'string') {
+    return shouldAutoCaptureMemoryTurn(input, response || '')
+  }
+  return shouldAutoCaptureMemoryTurn(input.message || '', input.response || '')
+}
+
+export function normalizeMemoryCategory(
+  input: string | null | undefined,
+  title: string | null | undefined,
+  content: string | null | undefined,
+): string {
+  const explicit = lower(input)
+  const sample = `${lower(title)}\n${lower(content)}`
+
+  const mapExplicit = (value: string): string | null => {
+    if (!value || value === 'note' || value === 'notes') return null
+    if (['preference', 'preferences', 'likes', 'dislikes'].includes(value)) return 'identity/preferences'
+    if (['identity', 'profile', 'persona'].includes(value)) return 'identity/profile'
+    if (['relationship', 'relationships', 'people'].includes(value)) return 'identity/relationships'
+    if (['decision', 'decisions', 'choice'].includes(value)) return 'projects/decisions'
+    if (['learning', 'learnings', 'lesson', 'lessons'].includes(value)) return 'projects/learnings'
+    if (['project', 'projects', 'task', 'tasks'].includes(value)) return 'projects/context'
+    if (['error', 'errors', 'incident', 'incidents', 'failure', 'failures'].includes(value)) return 'execution/errors'
+    if (['breadcrumb', 'execution', 'run', 'runs'].includes(value)) return 'operations/execution'
+    if (['fact', 'facts', 'knowledge', 'reference'].includes(value)) return 'knowledge/facts'
+    if (['working', 'scratch', 'draft'].includes(value)) return 'working/scratch'
+    if (value.includes('/')) return value
+    return value
+  }
+
+  const explicitMapped = mapExplicit(explicit)
+  if (explicitMapped) return explicitMapped
+
+  if (/\b(?:prefer(?:s|ence)?|likes?|dislikes?|favorite|timezone|pronouns|call me)\b/.test(sample)) {
+    return 'identity/preferences'
+  }
+  if (/\b(?:wife|husband|partner|friend|manager|teammate|client|customer|relationship)\b/.test(sample)) {
+    return 'identity/relationships'
+  }
+  if (/\b(?:decided|decision|approved|picked|selected|going with|will use)\b/.test(sample)) {
+    return 'projects/decisions'
+  }
+  if (/\b(?:learned|lesson|fixed|solved|root cause|failure|bug|regression|postmortem)\b/.test(sample)) {
+    return 'projects/learnings'
+  }
+  if (/\b(?:error|incident|stack trace|exception|crash)\b/.test(sample)) {
+    return 'execution/errors'
+  }
+  if (/\b(?:project|repo|repository|ticket|task|milestone|deadline|roadmap)\b/.test(sample)) {
+    return 'projects/context'
+  }
+  if (/\b(?:config|credential|endpoint|workspace|path|env var|environment|docker|sandbox)\b/.test(sample)) {
+    return 'operations/environment'
+  }
+  if (/\b(?:fact|documentation|reference|api|schema)\b/.test(sample)) {
+    return 'knowledge/facts'
+  }
+  return explicit && explicit !== 'note' && explicit !== 'notes' ? explicit : 'knowledge/facts'
+}
+
+export function buildMemoryDoctorReport(entries: MemoryEntry[], agentId?: string | null): string {
+  const topLevelCounts = new Map<string, number>()
+  let pinned = 0
+  let linked = 0
+  let shared = 0
+
+  for (const entry of entries) {
+    const category = normalizeMemoryCategory(entry.category, entry.title, entry.content)
+    const topLevel = category.split('/')[0] || 'other'
+    topLevelCounts.set(topLevel, (topLevelCounts.get(topLevel) || 0) + 1)
+    if (entry.pinned) pinned += 1
+    if (entry.linkedMemoryIds?.length) linked += 1
+    if (entry.sharedWith?.length) shared += 1
+  }
+
+  const categories = [...topLevelCounts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .map(([name, count]) => `- ${name}: ${count}`)
+
+  return [
+    'Memory Doctor',
+    `Agent scope: ${agentId || 'global/all'}`,
+    `Visible memories: ${entries.length}`,
+    `Pinned: ${pinned}`,
+    `Linked: ${linked}`,
+    `Shared: ${shared}`,
+    categories.length ? 'Top-level categories:' : 'Top-level categories: none',
+    ...(categories.length ? categories : []),
+  ].join('\n')
+}
+
+export function inferAutomaticMemoryCategory(message: string, response: string): string {
+  return normalizeMemoryCategory('note', message, response)
+}

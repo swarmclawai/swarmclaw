@@ -6,7 +6,12 @@ import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/api-client'
 import type { Connector } from '@/types'
-import { ConnectorPlatformIcon, ConnectorPlatformBadge, CONNECTOR_PLATFORM_META, getConnectorPlatformLabel } from '@/components/shared/connector-platform-icon'
+import {
+  ConnectorPlatformIcon,
+  ConnectorPlatformBadge,
+  getConnectorPlatformLabel,
+  resolveConnectorPlatformMeta,
+} from '@/components/shared/connector-platform-icon'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 
 function relativeTime(ts: number): string {
@@ -181,7 +186,7 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
           const agent = c.agentId ? agents[c.agentId] : null
           const chatroom = c.chatroomId ? chatrooms[c.chatroomId] : null
           const isRunning = c.status === 'running'
-          const meta = CONNECTOR_PLATFORM_META[c.platform]
+          const meta = resolveConnectorPlatformMeta(c.platform)
           const group = getConnectorGroup(c)
           return (
             <button

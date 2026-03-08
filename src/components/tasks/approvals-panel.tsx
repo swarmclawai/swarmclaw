@@ -13,27 +13,33 @@ import type { AppSettings, ApprovalCategory, ApprovalRequest } from '@/types'
 const CATEGORY_LABELS: Record<string, string> = {
   tool_access: 'Plugin Access',
   wallet_transfer: 'Wallet Transfer',
+  wallet_action: 'Wallet Action',
   plugin_scaffold: 'Plugin Creation',
   plugin_install: 'Plugin Install',
+  connector_sender: 'Connector Sender',
   task_tool: 'Task Plugin Call',
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
   tool_access: '🔑',
   wallet_transfer: '💰',
+  wallet_action: '✍️',
   plugin_scaffold: '🔌',
   plugin_install: '📦',
+  connector_sender: '📲',
   task_tool: '🤖',
 }
 
 type ApprovalScope = 'all' | 'execution' | 'workflow' | 'task'
 
-const AUTO_APPROVE_OPTIONS: Array<{ id: ApprovalCategory; label: string; description: string }> = [
+const AUTO_APPROVE_OPTIONS: Array<{ id: ApprovalCategory; label: string; description: string; risk?: 'high' | 'very-high' }> = [
   { id: 'tool_access', label: 'Plugin Access', description: 'Auto-enable requested plugins for a chat.' },
   { id: 'plugin_scaffold', label: 'Plugin Scaffold', description: 'Auto-create plugin files requested by agents.' },
   { id: 'plugin_install', label: 'Plugin Install', description: 'Auto-install plugins from approved URLs.' },
+  { id: 'connector_sender', label: 'Connector Senders', description: 'Auto-approve new connector senders and add them to the allowlist.' },
   { id: 'human_loop', label: 'Human Approval Requests', description: 'Auto-approve ask-human approval prompts.' },
-  { id: 'wallet_transfer', label: 'Wallet Transfers', description: 'Auto-approve wallet send requests. High risk.' },
+  { id: 'wallet_transfer', label: 'Wallet Transfers', description: 'Auto-approve wallet send requests.', risk: 'high' },
+  { id: 'wallet_action', label: 'Wallet Actions', description: 'Auto-approve wallet signatures and arbitrary transaction requests.', risk: 'very-high' },
   { id: 'task_tool', label: 'Task Tool Calls', description: 'Auto-approve task-level tool approvals.' },
 ]
 
@@ -174,31 +180,37 @@ export function ApprovalsPanel() {
       label: 'Execution',
       value: sortedExecApprovals.length,
       tone: 'text-amber-400',
+      dotClass: 'bg-amber-400',
       hint: 'Command approvals from OpenClaw',
     },
     {
       label: 'Workflow',
       value: sessionApprovals.length,
       tone: 'text-sky-400',
+      dotClass: 'bg-sky-400',
       hint: 'Agent and plugin governance requests',
     },
     {
       label: 'Task Calls',
       value: taskApprovals.length,
       tone: 'text-violet-400',
+      dotClass: 'bg-violet-400',
       hint: 'Tasks waiting on tool approval',
     },
     {
       label: 'Recently Active',
       value: workflowApprovals.filter((req) => now - req.updatedAt < 60 * 60 * 1000).length,
       tone: 'text-emerald-400',
+      dotClass: 'bg-emerald-400',
       hint: 'Updated in the last hour',
     },
   ]
 
   const autoApproved = useMemo(() => new Set(appSettings.approvalAutoApproveCategories || []), [appSettings.approvalAutoApproveCategories])
-  const approvalsEnabled = appSettings.approvalsEnabled ?? true
+  const approvalsEnabled = appSettings.approvalsEnabled ?? false
   const outboundApprovalEnabled = appSettings.safetyRequireApprovalForOutbound ?? false
+  const autoApproveEnabledCount = autoApproved.size
+  const autoApproveManualCount = AUTO_APPROVE_OPTIONS.length - autoApproveEnabledCount
 
   const saveApprovalSettings = async (patch: Partial<AppSettings>, successMessage: string, key: string) => {
     try {
@@ -230,117 +242,181 @@ export function ApprovalsPanel() {
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-8">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-1">Approvals</h1>
             <p className="text-[13px] text-text-3">Execution, task, and governance requests queued for review</p>
           </div>
-          <div className="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] font-600">
-            {pendingCount} Pending
+          <div className="flex flex-wrap items-center gap-2">
+            <div className={`px-3 py-1.5 rounded-full border text-[11px] font-700 ${
+              approvalsEnabled
+                ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+            }`}>
+              {approvalsEnabled ? 'Manual approvals enabled' : 'Approvals auto-run'}
+            </div>
+            <div className="px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06] text-text-2 text-[11px] font-600">
+              {pendingCount} pending
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           {summaryCards.map((card) => (
-            <div key={card.label} className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] px-4 py-3.5">
+            <div key={card.label} className="relative overflow-hidden rounded-[16px] border border-white/[0.06] bg-white/[0.02] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[11px] font-700 uppercase tracking-[0.08em] text-text-3/65">{card.label}</div>
+                <div className={`h-2.5 w-2.5 rounded-full ${card.dotClass}`} />
+              </div>
               <div className={`text-[22px] font-display font-700 tracking-[-0.03em] ${card.tone}`}>
                 {card.value}
               </div>
-              <div className="text-[11px] font-600 text-text-2 mt-0.5">{card.label}</div>
-              <p className="text-[10px] text-text-3/50 mt-1 leading-relaxed">{card.hint}</p>
+              <p className="text-[10px] text-text-3/55 mt-1.5 leading-relaxed">{card.hint}</p>
             </div>
           ))}
         </div>
 
-        <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-4 mb-6">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+        <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <div className="rounded-[18px] border border-white/[0.06] bg-white/[0.02] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div className="flex items-center justify-between gap-3 mb-4">
               <div>
-                <h2 className="text-[13px] font-700 text-text">Approval Controls</h2>
-                <p className="text-[12px] text-text-3/70 mt-1 max-w-[640px]">
-                  Control whether actions queue for review, which approval types auto-run, and whether outbound connector sends need explicit confirmation.
-                </p>
+                <div className="text-[11px] font-700 uppercase tracking-[0.08em] text-text-3/65">Approval Mode</div>
+                <div className="text-[16px] font-display font-700 tracking-[-0.02em] text-text mt-1">
+                  {approvalsEnabled ? 'Manual review queue' : 'Auto-run workflow mode'}
+                </div>
               </div>
-              <div className={`px-3 py-1.5 rounded-full text-[11px] font-700 ${
+              <div className={`px-2.5 py-1 rounded-full text-[10px] font-700 border ${
                 approvalsEnabled
-                  ? 'bg-amber-500/10 border border-amber-500/20 text-amber-300'
-                  : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'
+                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
               }`}>
-                {approvalsEnabled ? 'Manual approvals enabled' : 'Approvals disabled'}
+                {approvalsEnabled ? 'On' : 'Off'}
               </div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="rounded-[12px] border border-white/[0.06] bg-black/20 px-4 py-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-[12px] font-600 text-text-2">Platform Approvals</div>
-                    <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">
-                      Turn this off to auto-approve workflow approvals across the app. Audit records are still kept.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={savingSetting === 'approvalsEnabled'}
-                    onClick={() => {
-                      const next = !approvalsEnabled
-                      void saveApprovalSettings(
-                        { approvalsEnabled: next },
-                        next ? 'Platform approvals enabled' : 'Platform approvals disabled',
-                        'approvalsEnabled',
-                      )
-                    }}
-                    className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-50 ${approvalsEnabled ? 'bg-accent' : 'bg-white/[0.12]'}`}
-                    aria-label="Toggle platform approvals"
-                  >
-                    <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${approvalsEnabled ? 'translate-x-[18px]' : ''}`} />
-                  </button>
+            <p className="text-[12px] text-text-3/70 leading-relaxed">
+              {approvalsEnabled
+                ? 'Requests pause here until someone approves or rejects them. Auto-approve lets you carve out safe request classes without disabling oversight entirely.'
+                : 'Workflow approvals will auto-run by default. Use outbound and category-specific controls below to keep higher-risk actions gated.'}
+            </p>
+            <div className="grid grid-cols-1 gap-2 mt-5">
+              <div className="rounded-[12px] border border-white/[0.06] bg-black/20 px-3.5 py-3">
+                <div className="text-[10px] font-700 uppercase tracking-[0.08em] text-text-3/55">Queue</div>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <span className="text-[13px] font-600 text-text-2">Pending right now</span>
+                  <span className="text-[13px] font-700 text-text">{pendingCount}</span>
                 </div>
               </div>
-
-              <div className="rounded-[12px] border border-white/[0.06] bg-black/20 px-4 py-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-[12px] font-600 text-text-2">Outbound Send Approvals</div>
-                    <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">
-                      Require explicit approval before agents send messages or media over connectors.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={savingSetting === 'safetyRequireApprovalForOutbound'}
-                    onClick={() => {
-                      const next = !outboundApprovalEnabled
-                      void saveApprovalSettings(
-                        { safetyRequireApprovalForOutbound: next },
-                        next ? 'Outbound send approvals enabled' : 'Outbound send approvals disabled',
-                        'safetyRequireApprovalForOutbound',
-                      )
-                    }}
-                    className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-50 ${outboundApprovalEnabled ? 'bg-accent' : 'bg-white/[0.12]'}`}
-                    aria-label="Toggle outbound send approvals"
-                  >
-                    <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${outboundApprovalEnabled ? 'translate-x-[18px]' : ''}`} />
-                  </button>
+              <div className="rounded-[12px] border border-white/[0.06] bg-black/20 px-3.5 py-3">
+                <div className="text-[10px] font-700 uppercase tracking-[0.08em] text-text-3/55">Auto-Approve</div>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <span className="text-[13px] font-600 text-text-2">Categories enabled</span>
+                  <span className="text-[13px] font-700 text-text">{autoApproveEnabledCount}</span>
+                </div>
+                <div className="text-[11px] text-text-3/55 mt-1">{autoApproveManualCount} still require manual review</div>
+              </div>
+              <div className="rounded-[12px] border border-white/[0.06] bg-black/20 px-3.5 py-3">
+                <div className="text-[10px] font-700 uppercase tracking-[0.08em] text-text-3/55">Outbound Sends</div>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <span className="text-[13px] font-600 text-text-2">Connector message sends</span>
+                  <span className={`text-[11px] font-700 ${outboundApprovalEnabled ? 'text-amber-300' : 'text-emerald-300'}`}>
+                    {outboundApprovalEnabled ? 'Needs approval' : 'Direct send'}
+                  </span>
                 </div>
               </div>
             </div>
+          </div>
 
-            <div>
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <div className="text-[12px] font-600 text-text-2">Auto-Approve Categories</div>
-                <div className="text-[11px] text-text-3/60">
-                  {autoApproved.size} enabled
+          <div className="rounded-[18px] border border-white/[0.06] bg-white/[0.02] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+                <div>
+                  <h2 className="text-[13px] font-700 text-text">Approval Controls</h2>
+                  <p className="text-[12px] text-text-3/70 mt-1 max-w-[640px]">
+                    Control whether actions queue for review, which approval types auto-run, and whether outbound connector sends need explicit confirmation.
+                  </p>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-[14px] border border-white/[0.06] bg-black/20 px-4 py-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-[12px] font-600 text-text-2">Platform Approvals</div>
+                      <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">
+                        Turn this off to auto-approve workflow approvals across the app. Audit records are still kept.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={savingSetting === 'approvalsEnabled'}
+                      onClick={() => {
+                        const next = !approvalsEnabled
+                        void saveApprovalSettings(
+                          { approvalsEnabled: next },
+                          next ? 'Platform approvals enabled' : 'Platform approvals disabled',
+                          'approvalsEnabled',
+                        )
+                      }}
+                      className={`inline-flex h-[22px] w-10 shrink-0 items-center rounded-full border border-white/[0.08] p-[3px] transition-colors duration-200 cursor-pointer disabled:opacity-50 ${
+                        approvalsEnabled ? 'justify-end bg-accent' : 'justify-start bg-white/[0.16]'
+                      }`}
+                      aria-label="Toggle platform approvals"
+                    >
+                      <span className="h-4 w-4 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.35)]" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-[14px] border border-white/[0.06] bg-black/20 px-4 py-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-[12px] font-600 text-text-2">Outbound Send Approvals</div>
+                      <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">
+                        Require explicit approval before agents send messages or media over connectors.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={savingSetting === 'safetyRequireApprovalForOutbound'}
+                      onClick={() => {
+                        const next = !outboundApprovalEnabled
+                        void saveApprovalSettings(
+                          { safetyRequireApprovalForOutbound: next },
+                          next ? 'Outbound send approvals enabled' : 'Outbound send approvals disabled',
+                          'safetyRequireApprovalForOutbound',
+                        )
+                      }}
+                      className={`inline-flex h-[22px] w-10 shrink-0 items-center rounded-full border border-white/[0.08] p-[3px] transition-colors duration-200 cursor-pointer disabled:opacity-50 ${
+                        outboundApprovalEnabled ? 'justify-end bg-accent' : 'justify-start bg-white/[0.16]'
+                      }`}
+                      aria-label="Toggle outbound send approvals"
+                    >
+                      <span className="h-4 w-4 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.35)]" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                  <div>
+                    <div className="text-[12px] font-600 text-text-2">Auto-Approve Categories</div>
+                    <p className="text-[11px] text-text-3/60 mt-1">
+                      Keep the approval system on, but let low-friction request types flow through automatically.
+                    </p>
+                  </div>
+                  <div className="text-[11px] text-text-3/60">
+                    {autoApproveEnabledCount} enabled
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                 {AUTO_APPROVE_OPTIONS.map((option) => {
                   const checked = autoApproved.has(option.id)
                   return (
                     <label
                       key={option.id}
-                      className={`rounded-[12px] border px-3 py-3 cursor-pointer transition-all ${
+                      className={`rounded-[14px] border px-3 py-3 cursor-pointer transition-all ${
                         checked
                           ? 'border-accent-bright/30 bg-accent-soft/60'
                           : 'border-white/[0.06] bg-black/20 hover:bg-white/[0.04]'
@@ -364,24 +440,35 @@ export function ApprovalsPanel() {
                           className="mt-0.5"
                         />
                         <div>
-                          <div className="text-[12px] font-600 text-text-2">{option.label}</div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="text-[12px] font-600 text-text-2">{option.label}</div>
+                            {option.risk && (
+                              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-700 uppercase tracking-[0.08em] ${
+                                option.risk === 'very-high'
+                                  ? 'bg-red-500/10 text-red-300 border border-red-500/20'
+                                  : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                              }`}>
+                                {option.risk === 'very-high' ? 'Very high risk' : 'High risk'}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-text-3/60 mt-1 leading-relaxed">{option.description}</p>
                         </div>
                       </div>
                     </label>
                   )
                 })}
+                </div>
               </div>
-              <p className="text-[11px] text-text-3/60 mt-2">
-                Use category auto-approval when you still want the approval system on, but you do not want these request types to pause execution.
-              </p>
             </div>
           </div>
         </div>
 
-        <div className="rounded-[16px] border border-white/[0.06] bg-white/[0.02] p-4 mb-6">
-          <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
+        <div className="rounded-[18px] border border-white/[0.06] bg-white/[0.02] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex-1">
+              <div className="text-[11px] font-700 uppercase tracking-[0.08em] text-text-3/60 mb-2">Queue Filters</div>
+              <div className="flex flex-wrap gap-2">
               {([
                 ['all', `All (${pendingCount})`],
                 ['execution', `Execution (${sortedExecApprovals.length})`],
@@ -401,10 +488,11 @@ export function ApprovalsPanel() {
                   {label}
                 </button>
               ))}
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="text-[11px] text-text-3/60 font-600">
+            <div className="flex items-center gap-2 justify-between lg:justify-end">
+              <div className="text-[11px] text-text-3/60 font-600 whitespace-nowrap">
                 Showing {visibleCount} of {pendingCount}
               </div>
               {workflowCategories.length > 1 && scope !== 'execution' && (
@@ -425,7 +513,7 @@ export function ApprovalsPanel() {
             </div>
           </div>
 
-          <div className="mt-3">
+          <div className="mt-1">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -437,7 +525,7 @@ export function ApprovalsPanel() {
         </div>
 
         {filteredExecApprovals.length > 0 && (
-          <div className="mb-6">
+          <div>
             <h2 className="text-[12px] font-700 uppercase tracking-[0.1em] text-amber-400/90 mb-2">Execution Approvals</h2>
             <div className="grid grid-cols-1 gap-3">
               {filteredExecApprovals.map((approval) => (
@@ -548,26 +636,34 @@ export function ApprovalsPanel() {
         )}
 
         {visibleCount === 0 && pendingCount > 0 && (
-          <div className="rounded-[16px] border border-dashed border-white/[0.08] px-6 py-10 text-center">
+          <div className="rounded-[18px] border border-dashed border-white/[0.08] bg-white/[0.015] px-6 py-10 text-center">
             <p className="text-[13px] font-600 text-text-2 mb-1">No approvals match the current filters</p>
             <p className="text-[12px] text-text-3/60">Try clearing the search or switching the queue scope.</p>
           </div>
         )}
 
         {pendingCount === 0 && (
-          <div className="flex flex-col items-center justify-center p-8 text-center">
-            <div className="w-16 h-16 rounded-[24px] bg-white/[0.02] border border-white/[0.04] flex items-center justify-center mb-6">
+          <div className="rounded-[20px] border border-white/[0.06] bg-white/[0.02] px-8 py-12 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div className="w-16 h-16 rounded-[24px] bg-white/[0.02] border border-white/[0.04] flex items-center justify-center mx-auto mb-6">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-3/40">
                 <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
                 <path d="m9 12 2 2 4-4"/>
               </svg>
             </div>
-            <h2 className="font-display text-[18px] font-600 text-text-2 mb-2">No pending approvals</h2>
-            <p className="text-[13px] text-text-3/60 max-w-[360px]">
+            <h2 className="font-display text-[20px] font-600 text-text-2 mb-2">No pending approvals</h2>
+            <p className="text-[13px] text-text-3/60 max-w-[420px] mx-auto">
               {approvalsEnabled
                 ? 'Your swarm is operating autonomously. Actions requiring oversight will appear here.'
                 : 'Approvals are currently disabled, so eligible requests will auto-run instead of queuing here.'}
             </p>
+            <div className={`inline-flex items-center gap-2 mt-5 px-3 py-1.5 rounded-full border text-[11px] font-700 ${
+              approvalsEnabled
+                ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${approvalsEnabled ? 'bg-amber-300' : 'bg-emerald-300'}`} />
+              {approvalsEnabled ? 'Manual approvals active' : 'Workflow approvals auto-run'}
+            </div>
           </div>
         )}
       </div>

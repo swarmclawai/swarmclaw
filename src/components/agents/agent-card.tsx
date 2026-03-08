@@ -63,6 +63,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
     },
   ].filter((entry) => entry.budget !== null)
   const canDelegateToAgents = agent.platformAssignScope === 'all'
+  const agentDisabled = agent.disabled === true
   useWs(`heartbeat:agent:${agent.id}`, () => {
     setHeartbeatPulse(true)
     setTimeout(() => setHeartbeatPulse(false), 1500)
@@ -125,6 +126,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
         onClick={handleClick}
         className={`group relative py-3.5 px-4 cursor-pointer rounded-[14px]
           transition-all duration-200 active:scale-[0.98]
+          ${agentDisabled ? 'opacity-70' : ''}
           ${isSelected
             ? 'bg-white/[0.04] border border-white/[0.08]'
             : 'bg-transparent border border-transparent hover:bg-white/[0.05] hover:border-white/[0.08]'}`}
@@ -197,6 +199,11 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
               {pendingApprovalCount} {pendingApprovalCount === 1 ? 'approval' : 'approvals'}
             </span>
           )}
+          {agentDisabled && (
+            <span className="shrink-0 text-[10px] font-600 uppercase tracking-wider text-amber-300 bg-amber-400/[0.08] border border-amber-400/15 px-2 py-0.5 rounded-[6px]">
+              disabled
+            </span>
+          )}
           {isDefault && (
             <span className="shrink-0 text-[10px] font-600 uppercase tracking-wider text-accent-bright bg-accent-soft px-2 py-0.5 rounded-[6px]">
               default
@@ -205,12 +212,12 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
           {canDelegateToAgents && (
             <button
               onClick={handleRunClick}
-              disabled={running}
+              disabled={running || agentDisabled}
               className="shrink-0 text-[10px] font-600 uppercase tracking-wider px-2.5 py-1 rounded-[6px] cursor-pointer
                 transition-all border-none bg-accent-bright/20 text-accent-bright hover:bg-accent-bright/30 disabled:opacity-40"
               style={{ fontFamily: 'inherit' }}
             >
-              {running ? '...' : 'Run'}
+              {agentDisabled ? 'Off' : running ? '...' : 'Run'}
             </button>
           )}
           {canDelegateToAgents && (

@@ -57,6 +57,12 @@ export function deriveOpenClawWsUrl(input?: string | null): string {
   return value.endsWith('/') ? value.slice(0, -1) : value
 }
 
+export function isLocalOpenClawEndpoint(input?: string | null): boolean {
+  const parsed = parseUrl(input || '') || parseUrl(DEFAULT_OPENCLAW_ENDPOINT)!
+  const host = parsed.hostname.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1')
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0'
+}
+
 export function normalizeProviderEndpoint(provider: string | null | undefined, endpoint: string | null | undefined): string | null {
   if (typeof endpoint !== 'string') return null
   const trimmed = endpoint.trim()
@@ -64,4 +70,3 @@ export function normalizeProviderEndpoint(provider: string | null | undefined, e
   if (provider === 'openclaw') return normalizeOpenClawEndpoint(trimmed)
   return trimmed.replace(/\/+$/, '')
 }
-

@@ -5,6 +5,7 @@ import fs from 'fs'
 import { loadConnectors, loadSettings, UPLOAD_DIR } from '../storage'
 import { genId } from '@/lib/id'
 import { synthesizeElevenLabsMp3 } from '../elevenlabs'
+import { isAudioMime, mimeFromPath } from '../connectors/media'
 import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
@@ -16,6 +17,78 @@ const AUTONOMOUS_OUTREACH_COOLDOWN_MS = 2 * 60 * 60 * 1000
 const recentConnectorActionCache = new Map<string, { at: number; result: string }>()
 const connectorTurnSendBudget = new Map<string, { count: number; at: number; lastResult?: string }>()
 const autonomousOutreachBudget = new Map<string, { at: number; result?: string }>()
+
+export const CONNECTOR_MESSAGE_TOOL_ACTIONS = [
+  'list_running',
+  'list_targets',
+  'start',
+  'stop',
+  'send',
+  'send_voice_note',
+  'schedule_followup',
+  'react',
+  'edit',
+  'delete',
+  'pin',
+  'message_react',
+  'message_edit',
+  'message_delete',
+  'message_pin',
+] as const
+
+export const CONNECTOR_MESSAGE_TOOL_PARAMETERS = {
+  type: 'object',
+  properties: {
+    action: { type: 'string', enum: [...CONNECTOR_MESSAGE_TOOL_ACTIONS] },
+    connectorId: { type: 'string' },
+    connector: { type: 'string' },
+    connector_id: { type: 'string' },
+    runningConnectorId: { type: 'string' },
+    id: { type: 'string' },
+    platform: { type: 'string' },
+    to: { type: 'string' },
+    channel: { type: 'string' },
+    channelId: { type: 'string' },
+    recipientId: { type: 'string' },
+    phoneNumber: { type: 'string' },
+    configuredTarget: { type: 'string' },
+    target: { type: 'string' },
+    recipient: { type: 'string' },
+    path: { type: 'string' },
+    targets: { type: 'string' },
+    message: { type: 'string' },
+    text: { type: 'string' },
+    content: { type: 'string' },
+    body: { type: 'string' },
+    messageId: { type: 'string' },
+    targetMessage: { type: 'string', enum: ['last_inbound', 'last_outbound'] },
+    emoji: { type: 'string' },
+    voiceText: { type: 'string' },
+    voiceId: { type: 'string' },
+    imageUrl: { type: 'string' },
+    fileUrl: { type: 'string' },
+    mediaPath: { type: 'string' },
+    mimeType: { type: 'string' },
+    fileName: { type: 'string' },
+    caption: { type: 'string' },
+    replyToMessageId: { type: 'string' },
+    threadId: { type: 'string' },
+    delaySec: { type: 'number' },
+    followUpMessage: { type: 'string' },
+    followupMessage: { type: 'string' },
+    followUpDelaySec: { type: 'number' },
+    dedupeKey: { type: 'string' },
+    approved: { type: 'boolean' },
+    ptt: { type: 'boolean' },
+  },
+} as const
+
+const LEGACY_CONNECTOR_ACTION_ALIASES: Record<string, string> = {
+  message_react: 'react',
+  message_edit: 'edit',
+  message_delete: 'delete',
+  message_pin: 'pin',
+}
 
 function pruneOldConnectorToolState(now: number): void {
   for (const [key, entry] of recentConnectorActionCache.entries()) {
@@ -109,6 +182,130 @@ function normalizeDedupedReplayResult(raw: string, fallback: { connectorId: stri
   }
 }
 
+export function normalizeConnectorActionName(action: string): string {
+  const normalized = String(action || '').trim()
+  return LEGACY_CONNECTOR_ACTION_ALIASES[normalized] || normalized
+}
+
+export function inferConnectorActionName(input: Record<string, unknown>): string | null {
+  const explicit = typeof input.action === 'string' ? input.action.trim() : ''
+  if (explicit) return explicit
+  if (typeof input.voiceText === 'string' && input.voiceText.trim()) return 'send_voice_note'
+  if (
+    typeof input.followUpMessage === 'string'
+    || typeof input.followupMessage === 'string'
+    || typeof input.followUpDelaySec === 'number'
+    || typeof input.delaySec === 'number'
+  ) return 'schedule_followup'
+  if (
+    typeof input.message === 'string'
+    || typeof input.text === 'string'
+    || typeof input.content === 'string'
+    || typeof input.body === 'string'
+    || typeof input.mediaPath === 'string'
+    || typeof input.imageUrl === 'string'
+    || typeof input.fileUrl === 'string'
+  ) return 'send'
+  return null
+}
+
+function pickConnectorString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed || null
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const picked = pickConnectorString(entry)
+      if (picked) return picked
+    }
+  }
+  return null
+}
+
+function resolveRunningConnectorId(
+  running: Array<{ id?: string; name?: string }>,
+  value: unknown,
+): string | null {
+  const candidate = pickConnectorString(value)
+  if (!candidate) return null
+  const matched = running.find((connector) => (
+    String(connector.id || '').trim() === candidate
+    || String(connector.name || '').trim() === candidate
+  ))
+  return matched ? String(matched.id || '').trim() || null : null
+}
+
+export function normalizeConnectorActionInputAliases(
+  input: Record<string, unknown>,
+  running: Array<{ id?: string; name?: string }> = [],
+): Record<string, unknown> {
+  const normalized = { ...input }
+  const actionName = normalizeConnectorActionName(inferConnectorActionName(normalized) || String(normalized.action || ''))
+  const messageActionUsesRawId = actionName === 'react'
+    || actionName === 'edit'
+    || actionName === 'delete'
+    || actionName === 'pin'
+  const messageAlias = pickConnectorString(
+    normalized.message
+    ?? normalized.text
+    ?? normalized.content
+    ?? normalized.body,
+  )
+  if (!pickConnectorString(normalized.message) && messageAlias) {
+    normalized.message = messageAlias
+  }
+
+  const followUpAlias = pickConnectorString(
+    normalized.followUpMessage
+    ?? normalized.followupMessage,
+  )
+  if (!pickConnectorString(normalized.followUpMessage) && followUpAlias) {
+    normalized.followUpMessage = followUpAlias
+  }
+
+  const rawId = pickConnectorString(normalized.id)
+  const explicitConnectorId = pickConnectorString(
+    normalized.connectorId
+    ?? normalized.runningConnectorId
+    ?? normalized.connector
+    ?? normalized.connector_id,
+  )
+  const aliasConnectorId = explicitConnectorId
+    ? resolveRunningConnectorId(running, explicitConnectorId) || explicitConnectorId
+    : resolveRunningConnectorId(running, normalized.channel) || resolveRunningConnectorId(running, rawId)
+
+  if (!pickConnectorString(normalized.connectorId) && aliasConnectorId) {
+    normalized.connectorId = aliasConnectorId
+  }
+
+  const rawIdIsConnector = !!(rawId && resolveRunningConnectorId(running, rawId))
+  if (!pickConnectorString(normalized.messageId) && rawId && !rawIdIsConnector && messageActionUsesRawId) {
+    normalized.messageId = rawId
+  }
+  const targetAlias = pickConnectorString(
+    normalized.to
+    ?? normalized.channelId
+    ?? normalized.recipientId
+    ?? normalized.phoneNumber
+    ?? normalized.configuredTarget
+    ?? normalized.target
+    ?? normalized.recipient
+    ?? normalized.path
+    ?? normalized.targets,
+  )
+
+  if (!pickConnectorString(normalized.to)) {
+    if (targetAlias) {
+      normalized.to = targetAlias
+    } else if (rawId && !rawIdIsConnector && !messageActionUsesRawId) {
+      normalized.to = rawId
+    }
+  }
+
+  return normalized
+}
+
 /** Resolve /api/uploads/filename URLs to actual disk paths */
 function resolveUploadUrl(url: string | undefined): { mediaPath: string; mimeType?: string } | null {
   if (!url) return null
@@ -140,13 +337,83 @@ function parseCsv(raw: string | undefined): string[] {
   return raw.split(',').map((s) => s.trim()).filter(Boolean)
 }
 
+function trimToString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function resolveSessionConnectorTargets(
+  session: {
+    connectorContext?: Record<string, unknown>
+    messages?: Array<Record<string, unknown>>
+  } | null | undefined,
+  connectorId: string,
+): Array<{ channelId: string; senderId?: string; senderName?: string }> {
+  const targets: Array<{ channelId: string; senderId?: string; senderName?: string }> = []
+  const seen = new Set<string>()
+  const pushTarget = (target: { channelId: string; senderId?: string; senderName?: string } | null) => {
+    if (!target?.channelId || seen.has(target.channelId)) return
+    seen.add(target.channelId)
+    targets.push(target)
+  }
+
+  const context = session?.connectorContext
+  if (trimToString(context?.connectorId) === connectorId) {
+    const channelId = trimToString(context?.channelId)
+    pushTarget(channelId
+      ? {
+          channelId,
+          senderId: trimToString(context?.senderId) || undefined,
+          senderName: trimToString(context?.senderName) || undefined,
+        }
+      : null)
+  }
+
+  const messages = Array.isArray(session?.messages) ? session.messages : []
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const source = messages[i]?.source as Record<string, unknown> | undefined
+    if (!source || trimToString(source.connectorId) !== connectorId) continue
+    const channelId = trimToString(source.channelId)
+    if (!channelId) continue
+    pushTarget({
+      channelId,
+      senderId: trimToString(source.senderId) || undefined,
+      senderName: trimToString(source.senderName) || undefined,
+    })
+  }
+
+  return targets
+}
+
 function pickChannelTarget(params: {
   connector: { config?: Record<string, string> }
+  connectorId: string
   to?: string
   recentChannelId: string | null
+  currentSession?: {
+    connectorContext?: Record<string, unknown>
+    messages?: Array<Record<string, unknown>>
+  } | null
 }): { channelId: string; error?: string } {
   let channelId = params.to?.trim() || ''
   const connector = params.connector
+  const sessionTargets = resolveSessionConnectorTargets(params.currentSession, params.connectorId)
+
+  if (!channelId && sessionTargets.length === 1) {
+    channelId = sessionTargets[0].channelId
+  }
+  if (!channelId && sessionTargets.length > 1) {
+    const choices = sessionTargets.map((target) => (
+      target.senderName
+        ? `${target.senderName} (${target.channelId})`
+        : target.senderId
+          ? `${target.senderId} (${target.channelId})`
+          : target.channelId
+    ))
+    return {
+      channelId: '',
+      error: `Error: this chat currently references multiple connector recipients for this connector: ${JSON.stringify(choices)}. Re-call with the "to" parameter so the message goes to the right person.`,
+    }
+  }
 
   if (!channelId) {
     const outbound = connector.config?.outboundJid?.trim()
@@ -290,33 +557,10 @@ interface ConnectorActionContext {
 }
 
 async function executeConnectorAction(input: ConnectorActionInput, bctx: ConnectorActionContext) {
-  const normalized = normalizeToolInputArgs((input ?? {}) as Record<string, unknown>)
-  const {
-    action,
-    connectorId,
-    platform,
-    to,
-    message,
-    voiceText,
-    voiceId,
-    imageUrl,
-    fileUrl,
-    mediaPath,
-    mimeType,
-    fileName,
-    caption,
-    messageId,
-    targetMessage,
-    emoji,
-    replyToMessageId,
-    threadId,
-    dedupeKey,
-    approved,
-    ptt,
-  } = normalized as ConnectorActionInput
+  const baseNormalized = normalizeToolInputArgs((input ?? {}) as Record<string, unknown>)
 
   try {
-    const actionName = String(action)
+    const tentativePlatform = pickConnectorString(baseNormalized.platform)
     const {
       listRunningConnectors,
       sendConnectorMessage,
@@ -324,7 +568,34 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
       scheduleConnectorFollowUp,
       performConnectorMessageAction,
     } = await import('../connectors/manager')
-    const running = listRunningConnectors(platform || undefined)
+    const running = listRunningConnectors(tentativePlatform || undefined)
+    const normalized = normalizeConnectorActionInputAliases(baseNormalized, running)
+    const inferredAction = inferConnectorActionName(normalized)
+    const {
+      action,
+      connectorId,
+      platform,
+      to,
+      message,
+      voiceText,
+      voiceId,
+      imageUrl,
+      fileUrl,
+      mediaPath,
+      mimeType,
+      fileName,
+      caption,
+      messageId,
+      targetMessage,
+      emoji,
+      replyToMessageId,
+      threadId,
+      dedupeKey,
+      approved,
+      ptt,
+    } = normalized as ConnectorActionInput
+    const actionName = normalizeConnectorActionName(String(inferredAction || action || ''))
+    if (!actionName) return 'Error: action is required.'
 
     if (actionName === 'list_running' || actionName === 'list_targets') {
       return JSON.stringify(running)
@@ -391,8 +662,10 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
 
       const target = pickChannelTarget({
         connector,
+        connectorId: selected.id,
         to,
         recentChannelId: getConnectorRecentChannelId(selected.id),
+        currentSession,
       })
       if (target.error) return target.error
 
@@ -416,22 +689,61 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
       }
 
       if (actionName === 'send_voice_note') {
+        const media = resolveConnectorMediaInput({ cwd: bctx.cwd, mediaPath, imageUrl, fileUrl })
+        if (media.error) return media.error
+        if (media.imageUrl || media.fileUrl) {
+          return 'Error: send_voice_note requires an audio mediaPath or voiceText. Remote image/file URLs are not valid voice-note inputs.'
+        }
         const ttsText = (voiceText || message || '').trim()
-        if (!ttsText) return 'Error: voiceText or message is required.'
-        const audioBuffer = await synthesizeElevenLabsMp3({ text: ttsText, voiceId: voiceId?.trim() || undefined })
-        const voiceFileName = `${Date.now()}-${genId()}-voicenote.mp3`
-        const voicePath = path.join(UPLOAD_DIR, voiceFileName)
-        fs.writeFileSync(voicePath, audioBuffer)
+        if (!media.mediaPath && !ttsText) return 'Error: voiceText, message, or an audio mediaPath is required.'
+        const voiceActionKey = buildConnectorActionKey([
+          sessionId,
+          actionName,
+          selected.id,
+          channelId,
+          media.mediaPath || '',
+          ttsText,
+          voiceId?.trim() || '',
+          fileName?.trim() || '',
+          caption?.trim() || '',
+          ptt ?? true,
+        ])
+        const cachedVoice = recentConnectorActionCache.get(voiceActionKey)
+        if (cachedVoice && now - cachedVoice.at <= CONNECTOR_ACTION_DEDUPE_TTL_MS) {
+          return cachedVoice.result
+        }
+        let voicePath = media.mediaPath
+        let outboundMimeType = mimeType?.trim() || undefined
+        if (voicePath) {
+          outboundMimeType = outboundMimeType || mimeFromPath(voicePath)
+          if (!isAudioMime(outboundMimeType)) {
+            return `Error: send_voice_note mediaPath must point to an audio file. Resolved MIME type was "${outboundMimeType}".`
+          }
+        } else {
+          const audioBuffer = await synthesizeElevenLabsMp3({ text: ttsText, voiceId: voiceId?.trim() || undefined })
+          const voiceFileName = `${Date.now()}-${genId()}-voicenote.mp3`
+          voicePath = path.join(UPLOAD_DIR, voiceFileName)
+          fs.writeFileSync(voicePath, audioBuffer)
+          outboundMimeType = 'audio/mpeg'
+        }
 
         const sent = await sendConnectorMessage({
-          connectorId: selected.id, channelId, text: '', mediaPath: voicePath, mimeType: 'audio/mpeg',
+          connectorId: selected.id, channelId, text: '', mediaPath: voicePath, mimeType: outboundMimeType,
           fileName: fileName?.trim() || 'voicenote.mp3', caption: caption?.trim() || undefined, ptt: ptt ?? true,
           sessionId,
           replyToMessageId: replyToMessageId?.trim() || undefined,
           threadId: threadId?.trim() || undefined,
         })
-        const result = JSON.stringify({ status: 'voice_sent', connectorId: sent.connectorId, platform: sent.platform, to: sent.channelId, voiceFile: voicePath })
+        const result = JSON.stringify({
+          status: 'voice_sent',
+          connectorId: sent.connectorId,
+          platform: sent.platform,
+          to: sent.channelId,
+          messageId: sent.messageId || null,
+          voiceFile: voicePath,
+        })
         connectorTurnSendBudget.set(turnKey, { count: (existingBudget?.count || 0) + 1, at: now, lastResult: result })
+        recentConnectorActionCache.set(voiceActionKey, { at: now, result })
         return result
       }
 
@@ -503,8 +815,10 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
       const { selected } = resolved
       const target = pickChannelTarget({
         connector: resolved.connector,
+        connectorId: selected.id,
         to,
         recentChannelId: getConnectorRecentChannelId(selected.id),
+        currentSession,
       })
       if (target.error) return target.error
       const result = await performConnectorMessageAction({
@@ -546,34 +860,7 @@ const ConnectorPlugin: Plugin = {
     {
       name: 'connector_message_tool',
       description: 'Send and manage outbound messages across chat platforms.',
-      parameters: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['list_running', 'start', 'stop', 'send', 'send_voice_note', 'schedule_followup', 'react', 'edit', 'delete', 'pin'] },
-          connectorId: { type: 'string' },
-          platform: { type: 'string' },
-          to: { type: 'string' },
-          message: { type: 'string' },
-          messageId: { type: 'string' },
-          targetMessage: { type: 'string', enum: ['last_inbound', 'last_outbound'] },
-          emoji: { type: 'string' },
-          voiceText: { type: 'string' },
-          voiceId: { type: 'string' },
-          imageUrl: { type: 'string' },
-          fileUrl: { type: 'string' },
-          mediaPath: { type: 'string' },
-          mimeType: { type: 'string' },
-          fileName: { type: 'string' },
-          caption: { type: 'string' },
-          replyToMessageId: { type: 'string' },
-          threadId: { type: 'string' },
-          delaySec: { type: 'number' },
-          followUpMessage: { type: 'string' },
-          followUpDelaySec: { type: 'number' },
-          dedupeKey: { type: 'string' },
-        },
-        required: ['action']
-      },
+      parameters: CONNECTOR_MESSAGE_TOOL_PARAMETERS,
       execute: async (args, context) => executeConnectorAction(args as ConnectorActionInput, { ...context.session, cwd: context.session.cwd || process.cwd() })
     }
   ]

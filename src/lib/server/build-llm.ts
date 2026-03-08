@@ -4,11 +4,17 @@ import { loadCredentials, decryptKey, loadAgents, loadSettings } from './storage
 import { getProviderList } from '../providers'
 import { normalizeOpenClawEndpoint } from '../openclaw-endpoint'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '../provider-sets'
+import { resolveOllamaRuntimeConfig } from './ollama-runtime'
 
 const OLLAMA_CLOUD_URL = 'https://ollama.com/v1'
 const OLLAMA_LOCAL_URL = 'http://localhost:11434/v1'
 export const OPENAI_COMPAT_MODEL_TIMEOUT_MS = 180_000
 export const OPENAI_COMPAT_MODEL_MAX_RETRIES = 0
+
+function toOpenAiCompatibleBaseUrl(endpoint: string | null | undefined, fallback: string): string {
+  const normalized = (endpoint || fallback).replace(/\/+$/, '')
+  return normalized.endsWith('/v1') ? normalized : `${normalized}/v1`
+}
 
 /**
  * Build a LangChain chat model from provider config.
@@ -46,12 +52,16 @@ export function buildChatModel(opts: {
   }
 
   if (provider === 'ollama') {
-    const baseURL = apiKey && apiKey !== 'ollama'
+    const runtime = resolveOllamaRuntimeConfig({ model, apiKey, apiEndpoint })
+    if (runtime.useCloud && !runtime.apiKey) {
+      throw new Error('Ollama Cloud model requires an API key. Set OLLAMA_API_KEY or attach an Ollama credential.')
+    }
+    const baseURL = runtime.useCloud
       ? OLLAMA_CLOUD_URL
-      : (endpoint ? `${endpoint}/v1` : OLLAMA_LOCAL_URL)
+      : toOpenAiCompatibleBaseUrl(runtime.endpoint, OLLAMA_LOCAL_URL)
     return new ChatOpenAI({
-      model: model || 'qwen3.5',
-      apiKey: apiKey || 'ollama',
+      model: runtime.model || 'qwen3.5',
+      apiKey: runtime.useCloud ? runtime.apiKey || undefined : 'ollama',
       timeout: OPENAI_COMPAT_MODEL_TIMEOUT_MS,
       maxRetries: OPENAI_COMPAT_MODEL_MAX_RETRIES,
       configuration: { baseURL },

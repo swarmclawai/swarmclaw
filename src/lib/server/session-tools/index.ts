@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { Session } from '@/types'
-import { loadSettings, loadSessions, saveSessions, loadMcpServers } from '../storage'
+import { loadApprovals, loadSettings, loadSessions, saveSessions, loadMcpServers } from '../storage'
 import { loadRuntimeSettings } from '../runtime-settings'
 import { log } from '../logger'
 import { resolveSessionToolPolicy } from '../tool-capability-policy'
@@ -29,7 +29,6 @@ import { buildCrudTools } from './crud'
 import { buildSessionInfoTools } from './session-info'
 import { buildOpenClawNodeTools } from './openclaw-nodes'
 import { buildContextTools } from './context-mgmt'
-import { buildConnectorTools } from './connector'
 import { buildDiscoveryTools } from './discovery'
 import { buildMonitorTools } from './monitor'
 import { buildSampleUITools } from './sample-ui'
@@ -44,6 +43,7 @@ import { buildDocumentTools } from './document'
 import { buildExtractTools } from './extract'
 import { buildTableTools } from './table'
 import { buildCrawlTools } from './crawl'
+import './connector'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 
 import { getPluginManager } from '../plugins'
@@ -51,6 +51,23 @@ import { jsonSchemaToZod } from '../mcp-client'
 
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
+
+function approvedToolAccessIds(ctx?: ToolContext): string[] {
+  if (!ctx?.sessionId && !ctx?.agentId) return []
+  const approvals = loadApprovals()
+  const granted = new Set<string>()
+  for (const request of Object.values(approvals) as Array<Record<string, unknown>>) {
+    if (request?.status !== 'approved' || request?.category !== 'tool_access') continue
+    const sessionMatch = ctx.sessionId && request.sessionId === ctx.sessionId
+    const agentMatch = ctx.agentId && request.agentId === ctx.agentId
+    if (!sessionMatch && !agentMatch) continue
+    const toolId = typeof request.data === 'object' && request.data && !Array.isArray(request.data)
+      ? String((request.data as Record<string, unknown>).toolId || (request.data as Record<string, unknown>).pluginId || '').trim()
+      : ''
+    if (toolId) granted.add(toolId)
+  }
+  return [...granted]
+}
 
 export async function buildSessionTools(cwd: string, enabledPlugins: string[], ctx?: ToolContext): Promise<SessionToolsResult> {
   const tools: StructuredToolInterface[] = []
@@ -62,7 +79,26 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
     const claudeTimeoutMs = runtime.claudeCodeTimeoutMs
     const cliProcessTimeoutMs = runtime.cliProcessTimeoutMs
     const appSettings = loadSettings()
-    const toolPolicy = resolveSessionToolPolicy(enabledPlugins, appSettings)
+    const grantedToolIds = approvedToolAccessIds(ctx)
+    const effectiveEnabledPlugins = Array.from(new Set([
+      ...(Array.isArray(enabledPlugins) ? enabledPlugins : []),
+      ...grantedToolIds,
+    ]))
+    if (ctx?.sessionId && grantedToolIds.length > 0) {
+      const sessions = loadSessions()
+      const currentSession = sessions[ctx.sessionId]
+      if (currentSession) {
+        const currentPlugins = Array.isArray(currentSession.plugins) ? currentSession.plugins : []
+        const mergedPlugins = Array.from(new Set([...currentPlugins, ...grantedToolIds]))
+        if (mergedPlugins.length !== currentPlugins.length) {
+          currentSession.plugins = mergedPlugins
+          currentSession.updatedAt = Date.now()
+          sessions[ctx.sessionId] = currentSession
+          saveSessions(sessions)
+        }
+      }
+    }
+    const toolPolicy = resolveSessionToolPolicy(effectiveEnabledPlugins, appSettings)
     const expandedEnabled = expandPluginIds(toolPolicy.enabledPlugins)
     const expandedBlocked = expandPluginIds(toolPolicy.blockedPlugins.map((entry) => entry.tool))
     const blockedSet = new Set(expandedBlocked)
@@ -72,7 +108,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       && !filteredEnabled.includes('process')
       && !blockedSet.has('process')
       ? [...filteredEnabled, 'process']
-      : filteredEnabled).filter(t => pluginManager.isEnabled(t))
+      : filteredEnabled).filter((pluginId) => !pluginManager.isExplicitlyDisabled(pluginId))
     const activePluginSet = new Set(activePlugins)
     const hasPlugin = (pluginName: string) => activePluginSet.has(pluginName)
     /** @deprecated Use hasPlugin */
@@ -155,7 +191,6 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       ['manage_sessions', buildSessionInfoTools],
       ['openclaw_nodes', buildOpenClawNodeTools],
       ['context_mgmt', buildContextTools],
-      ['manage_connectors', buildConnectorTools],
       ['discovery', buildDiscoveryTools],
       ['monitor', buildMonitorTools],
       ['sample_ui', buildSampleUITools],
@@ -206,13 +241,13 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
         tools.push(
           tool(
             async (args) => {
-              if (!pluginManager.isEnabled(entry.pluginId)) {
+              if (pluginManager.isExplicitlyDisabled(entry.pluginId)) {
                 throw new Error(`Plugin "${entry.pluginId}" is disabled`)
               }
               try {
                 const normalizedArgs = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
                 const res = await pt.execute(normalizedArgs, {
-                  session: { ...ctx, cwd } as any,
+                  session: { ...(ctx || {}), ...bctx } as any,
                   message: '',
                 })
                 pluginManager.recordExternalToolSuccess(entry.pluginId)
@@ -293,14 +328,14 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
               type: 'tool_request',
               toolId,
               autoApproved: true,
-              message: `Tool access for "${toolId}" was granted. Proceed to use it directly.`,
+              message: `Tool access for "${toolId}" was granted. It will be available on the next agent turn.`,
             })
           }
           return JSON.stringify({
             type: 'tool_request',
             toolId,
             reason,
-            message: `Tool access request sent to user for "${toolId}". Once granted, continue immediately with the original task using the newly available tool.`,
+            message: `Tool access request sent to user for "${toolId}". Once granted, use it on the next agent turn.`,
           })
         },
         {

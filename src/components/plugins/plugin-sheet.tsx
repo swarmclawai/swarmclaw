@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { api } from '@/lib/api-client'
+import { getPluginSourceLabel } from '@/lib/plugin-sources'
 import { toast } from 'sonner'
 import type { PluginMeta, PluginSettingsField, MarketplacePlugin } from '@/types'
 
@@ -176,7 +177,13 @@ export function PluginSheet() {
     const toastId = toast.loading(`Installing ${p.name}...`)
     try {
       const safeFilename = `${p.id.replace(/[^a-zA-Z0-9.-]/g, '_')}.js`
-      await api('POST', '/plugins/install', { url: p.url, filename: safeFilename })
+      await api('POST', '/plugins/install', {
+        url: p.url,
+        filename: safeFilename,
+        installMethod: 'marketplace',
+        sourceLabel: p.source,
+        installSource: p.catalogSource || p.source,
+      })
       await loadPlugins()
       toast.success(`Installed ${p.name}`, { id: toastId })
     } catch (err: unknown) {
@@ -231,18 +238,30 @@ export function PluginSheet() {
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
               <div className="rounded-[10px] bg-bg/50 border border-white/[0.05] px-2.5 py-2">
-                <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60 mb-0.5">Source</div>
+                <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60 mb-0.5">Type</div>
                 <div className="text-[11px] text-text-2">
-                  {editing.isBuiltin ? 'Core Platform' : editing.source === 'marketplace' ? 'Marketplace Extension' : 'Local Extension'}
+                  {editing.isBuiltin
+                    ? 'Core Platform'
+                    : editing.source === 'marketplace'
+                      ? 'Marketplace Extension'
+                      : editing.source === 'manual'
+                        ? 'Manual URL Extension'
+                        : 'Local Extension'}
                 </div>
               </div>
               <div className="rounded-[10px] bg-bg/50 border border-white/[0.05] px-2.5 py-2">
-                <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60 mb-0.5">Author</div>
-                <div className="text-[11px] text-text-2">{editing.author || 'Unknown'}</div>
+                <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60 mb-0.5">Publisher</div>
+                <div className="text-[11px] text-text-2">{getPluginSourceLabel(editing.sourceLabel)}</div>
+              </div>
+              <div className="rounded-[10px] bg-bg/50 border border-white/[0.05] px-2.5 py-2">
+                <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60 mb-0.5">Installed Via</div>
+                <div className="text-[11px] text-text-2">{getPluginSourceLabel(editing.installSource || editing.sourceLabel)}</div>
               </div>
             </div>
+
+            <div className="text-[11px] text-text-3/60 mt-2">{editing.author || 'Unknown author'}</div>
 
             <div className="text-[11px] font-mono text-text-3/60 mt-3 break-all">{editing.filename}</div>
             <div className="flex items-center gap-1.5 mt-2 flex-wrap">
@@ -254,6 +273,16 @@ export function PluginSheet() {
                 ))
               ) : (
                 <span className="text-[10px] text-text-3/50">No declared tools/hooks metadata</span>
+              )}
+              {editing.sourceLabel && (
+                <span className="text-[10px] font-700 px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-300">
+                  {getPluginSourceLabel(editing.sourceLabel)}
+                </span>
+              )}
+              {editing.installSource && editing.installSource !== editing.sourceLabel && (
+                <span className="text-[10px] font-700 px-1.5 py-0.5 rounded-full bg-white/[0.05] text-text-3/75">
+                  via {getPluginSourceLabel(editing.installSource)}
+                </span>
               )}
             </div>
 
@@ -392,7 +421,14 @@ export function PluginSheet() {
                     const q = search.toLowerCase()
                     const filtered = marketplace
                       .filter((p) => {
-                        if (q && !p.name.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q) && !(p.tags ?? []).some((t) => t.toLowerCase().includes(q))) return false
+                        const sourceTerms = [getPluginSourceLabel(p.source).toLowerCase(), getPluginSourceLabel(p.catalogSource).toLowerCase()]
+                        if (
+                          q
+                          && !p.name.toLowerCase().includes(q)
+                          && !p.description.toLowerCase().includes(q)
+                          && !(p.tags ?? []).some((t) => t.toLowerCase().includes(q))
+                          && !sourceTerms.some((term) => term.includes(q))
+                        ) return false
                         if (activeTag && !(p.tags ?? []).includes(activeTag)) return false
                         return true
                       })
@@ -457,6 +493,18 @@ export function PluginSheet() {
                                         <span className="text-[14px] font-600 text-text">{p.name}</span>
                                         <span className="text-[10px] font-mono text-text-3/70">v{p.version}</span>
                                         {p.openclaw && <span className="text-[9px] font-600 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">OpenClaw</span>}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                                        {p.source && (
+                                          <span className="text-[10px] font-700 px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-300">
+                                            {getPluginSourceLabel(p.source)}
+                                          </span>
+                                        )}
+                                        {p.catalogSource && p.catalogSource !== p.source && (
+                                          <span className="text-[10px] font-700 px-1.5 py-0.5 rounded-full bg-white/[0.05] text-text-3/75">
+                                            via {getPluginSourceLabel(p.catalogSource)}
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="text-[11px] text-text-3/60 mt-1">{p.description}</div>
                                       <div className="flex items-center gap-2 mt-2">

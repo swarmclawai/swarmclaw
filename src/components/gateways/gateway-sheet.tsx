@@ -233,9 +233,9 @@ export function GatewaySheet() {
       params.set('endpoint', endpoint.trim() || 'http://localhost:18789')
       if (credentialId) params.set('credentialId', credentialId)
       if (tokenDraft.trim()) params.set('token', tokenDraft.trim())
-      const result = await api<{ ok: boolean; models: string[]; error?: string; hint?: string }>('GET', `/providers/openclaw/health?${params.toString()}`)
+      const result = await api<{ ok: boolean; models: string[]; message?: string; error?: string; hint?: string }>('GET', `/providers/openclaw/health?${params.toString()}`)
       if (result.ok) {
-        setCheckMessage(`Connected. ${result.models?.length ? `${result.models.length} model${result.models.length === 1 ? '' : 's'} visible.` : 'Gateway responded normally.'}`)
+        setCheckMessage(result.message || `Connected. ${result.models?.length ? `${result.models.length} model${result.models.length === 1 ? '' : 's'} visible.` : 'Gateway responded normally.'}`)
       } else {
         setCheckMessage(result.error || result.hint || 'Gateway health check failed.')
       }

@@ -167,4 +167,146 @@ describe('discovery approval flows', () => {
     assert.equal(output.toolNames.includes('manage_schedules'), true)
     assert.equal(output.toolNames.includes('manage_platform'), false)
   })
+
+  it('session-granted builtins disabled by default still appear in the next turn tool list', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage.ts')
+      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storage = storageMod.default || storageMod
+      const toolsApi = toolsMod.default || toolsMod
+
+      const now = Date.now()
+      storage.saveSessions({
+        session_email: {
+          id: 'session_email',
+          name: 'Email Tool Test',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'tester',
+          provider: 'openai',
+          model: 'gpt-test',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'default',
+          plugins: ['email'],
+        },
+      })
+
+      const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, ['email'], {
+        sessionId: 'session_email',
+        agentId: 'default',
+        platformAssignScope: 'self',
+      })
+      console.log(JSON.stringify({
+        toolNames: built.tools.map((entry) => entry.name).sort(),
+      }))
+    `)
+
+    assert.equal(output.toolNames.includes('email'), true)
+  })
+
+  it('discover reports session-granted builtin tools as available now', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage.ts')
+      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storage = storageMod.default || storageMod
+      const toolsApi = toolsMod.default || toolsMod
+
+      const now = Date.now()
+      storage.saveSessions({
+        session_discover_email: {
+          id: 'session_discover_email',
+          name: 'Discovery Email Test',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'tester',
+          provider: 'openai',
+          model: 'gpt-test',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'default',
+          plugins: ['email'],
+        },
+      })
+
+      const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, ['email'], {
+        sessionId: 'session_discover_email',
+        agentId: 'default',
+        platformAssignScope: 'self',
+      })
+      const tool = built.tools.find((entry) => entry.name === 'manage_capabilities')
+      const raw = await tool.invoke({ action: 'discover', reason: 'Check runtime tool availability.' })
+      const plugins = JSON.parse(raw)
+      const email = plugins.find((entry) => entry.id === 'email')
+      console.log(JSON.stringify({
+        email,
+      }))
+    `)
+
+    assert.equal(output.email.granted, true)
+    assert.equal(output.email.availableNow, true)
+  })
+
+  it('hydrates agent-approved tools into stale connector sessions on the next turn', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage.ts')
+      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storage = storageMod.default || storageMod
+      const toolsApi = toolsMod.default || toolsMod
+      const approvals = approvalsMod.default || approvalsMod
+
+      const now = Date.now()
+      storage.saveSettings({ approvalsEnabled: true })
+      storage.saveSessions({
+        connector_session: {
+          id: 'connector_session',
+          name: 'Connector Session',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'connector',
+          provider: 'openai',
+          model: 'gpt-test',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'agent_1',
+          plugins: ['browser'],
+        },
+      })
+
+      const approval = approvals.requestApproval({
+        category: 'tool_access',
+        title: 'Enable connector tool',
+        description: 'Grant connector messaging',
+        data: { toolId: 'connector_message_tool', pluginId: 'connector_message_tool' },
+        agentId: 'agent_1',
+        sessionId: null,
+      })
+      await approvals.submitDecision(approval.id, true)
+
+      const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, ['browser'], {
+        sessionId: 'connector_session',
+        agentId: 'agent_1',
+        platformAssignScope: 'self',
+      })
+      try {
+        const session = storage.loadSessions().connector_session
+        console.log(JSON.stringify({
+          toolNames: built.tools.map((entry) => entry.name).sort(),
+          plugins: session.plugins || [],
+        }))
+      } finally {
+        await built.cleanup()
+      }
+    `)
+
+    assert.equal(output.toolNames.includes('connector_message_tool'), true)
+    assert.equal(output.plugins.includes('connector_message_tool'), true)
+  })
 })

@@ -3,6 +3,7 @@ import { genId } from '@/lib/id'
 import { loadAgents, loadSchedules, saveSchedules } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { normalizeSchedulePayload } from '@/lib/server/schedule-normalization'
+import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agent-availability'
 import { resolveScheduleName } from '@/lib/schedule-name'
 import { findDuplicateSchedule } from '@/lib/schedule-dedupe'
 import { notify } from '@/lib/server/ws-hub'
@@ -45,8 +46,12 @@ export async function POST(req: Request) {
 
   const candidate = normalizedSchedule.value
   const agents = loadAgents()
-  if (!agents[String(candidate.agentId)]) {
+  const agent = agents[String(candidate.agentId)]
+  if (!agent) {
     return NextResponse.json({ error: `Agent not found: ${String(candidate.agentId)}` }, { status: 400 })
+  }
+  if (isAgentDisabled(agent)) {
+    return NextResponse.json({ error: buildAgentDisabledMessage(agent, 'take scheduled work') }, { status: 409 })
   }
   const scheduleType = asScheduleType(candidate.scheduleType)
   const candidateAgentId = asString(candidate.agentId) || null

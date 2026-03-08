@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useAppStore } from '@/stores/use-app-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { toast } from 'sonner'
 
 export function AgentSwitchDialog() {
   const [open, setOpen] = useState(false)
@@ -47,10 +48,15 @@ export function AgentSwitchDialog() {
   }, [agents, query])
 
   const handleSelect = useCallback((agentId: string) => {
+    const agent = agents[agentId]
+    if (agent?.disabled === true && !agent.threadSessionId) {
+      toast.error(`${agent.name} is disabled. Re-enable it to start a new chat.`)
+      return
+    }
     setOpen(false)
     void setCurrentAgent(agentId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [agents, setCurrentAgent])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -119,6 +125,11 @@ export function AgentSwitchDialog() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-500 text-text truncate">{agent.name}</span>
+                  {agent.disabled === true && (
+                    <span className="px-1.5 py-0.5 rounded-[4px] bg-amber-400/[0.08] text-[10px] font-500 text-amber-300 shrink-0">
+                      disabled
+                    </span>
+                  )}
                   {agent.id === currentAgentId && (
                     <span className="px-1.5 py-0.5 rounded-[4px] bg-accent-bright/15 text-[10px] font-500 text-accent-bright shrink-0">
                       current

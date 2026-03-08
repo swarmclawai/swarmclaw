@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws'
 import { randomUUID } from 'crypto'
 import { wsConnect, buildOpenClawConnectParams } from '../providers/openclaw'
+import { deriveOpenClawWsUrl } from '@/lib/openclaw-endpoint'
 import { loadAgents, loadCredentials, decryptKey } from './storage'
 import { notify, notifyWithPayload } from './ws-hub'
 import { getGatewayProfile, getGatewayProfiles, resolvePrimaryAgentRoute } from './agent-runtime-config'
@@ -71,7 +72,7 @@ export function resolveGatewayConfig(target?: {
     return {
       key: `profile:${profile.id}`,
       profileId: profile.id,
-      wsUrl: profile.wsUrl ? normalizeWsUrl(profile.wsUrl) : normalizeWsUrl(profile.endpoint),
+      wsUrl: profile.wsUrl ? normalizeWsUrl(profile.wsUrl) : deriveOpenClawWsUrl(profile.endpoint),
       token: resolveTokenForCredential(profile.credentialId),
     }
   }
@@ -82,10 +83,15 @@ export function resolveGatewayConfig(target?: {
     const agent = agents[agentId]
     const route = resolvePrimaryAgentRoute(agent)
     if (route?.provider === 'openclaw') {
+      const routeProfile = route.gatewayProfileId ? getGatewayProfile(route.gatewayProfileId) : null
       return {
         key: route.gatewayProfileId ? `profile:${route.gatewayProfileId}` : `agent:${agentId}`,
         profileId: route.gatewayProfileId ?? null,
-        wsUrl: normalizeWsUrl(route.apiEndpoint || 'ws://127.0.0.1:18789'),
+        wsUrl: routeProfile?.wsUrl
+          ? normalizeWsUrl(routeProfile.wsUrl)
+          : route.apiEndpoint
+            ? deriveOpenClawWsUrl(route.apiEndpoint)
+            : 'ws://127.0.0.1:18789',
         token: resolveTokenForCredential(route.credentialId),
       }
     }
@@ -97,7 +103,7 @@ export function resolveGatewayConfig(target?: {
     return {
       key: `profile:${profile.id}`,
       profileId: profile.id,
-      wsUrl: profile.wsUrl ? normalizeWsUrl(profile.wsUrl) : normalizeWsUrl(profile.endpoint),
+      wsUrl: profile.wsUrl ? normalizeWsUrl(profile.wsUrl) : deriveOpenClawWsUrl(profile.endpoint),
       token: resolveTokenForCredential(profile.credentialId),
     }
   }
@@ -106,7 +112,7 @@ export function resolveGatewayConfig(target?: {
   for (const agent of Object.values(agents)) {
     if (agent?.provider !== 'openclaw') continue
     const wsUrl = agent.apiEndpoint
-      ? normalizeWsUrl(agent.apiEndpoint)
+      ? deriveOpenClawWsUrl(agent.apiEndpoint)
       : 'ws://127.0.0.1:18789'
     return {
       key: `agent:${agent.id}`,

@@ -3,6 +3,14 @@ import crypto, { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import type { StreamChatOptions } from './index'
+import type { Agent } from '@/types'
+import { deriveOpenClawWsUrl } from '@/lib/openclaw-endpoint'
+import { normalizeOpenClawAgentId } from '@/lib/openclaw-agent-id'
+import { loadAgents } from '../server/storage'
+import {
+  resolveOpenClawGatewayAgentIdFromList,
+  type OpenClawGatewayAgentSummary,
+} from '../server/openclaw-agent-resolver'
 
 // --- Device Identity (Ed25519 keypair for gateway auth) ---
 
@@ -104,13 +112,6 @@ export function getDeviceId(): string {
 }
 
 // --- Protocol helpers ---
-
-function normalizeWsUrl(raw: string): string {
-  let url = raw.replace(/\/+$/, '')
-  if (!/^(https?|wss?):\/\//i.test(url)) url = `http://${url}`
-  url = url.replace(/^ws:/i, 'http:').replace(/^wss:/i, 'https:')
-  return url.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:')
-}
 
 /**
  * Build connect params for the OpenClaw gateway protocol.
@@ -277,6 +278,121 @@ async function connectToGateway(
   return wsConnect(wsUrl, token, true, timeoutMs)
 }
 
+export function resolveGatewayAgentId(session: Record<string, unknown> & { id: string }): string {
+  const explicit = typeof session.openclawAgentId === 'string' && session.openclawAgentId.trim()
+    ? session.openclawAgentId.trim()
+    : ''
+  if (explicit) return normalizeOpenClawAgentId(explicit)
+
+  const agentId = typeof session.shortcutForAgentId === 'string' && session.shortcutForAgentId.trim()
+    ? session.shortcutForAgentId.trim()
+    : typeof session.agentId === 'string' && session.agentId.trim()
+      ? session.agentId.trim()
+      : ''
+  if (agentId) {
+    const agents = loadAgents({ includeTrashed: true })
+    const agent = agents[agentId] as { name?: string; provider?: string } | undefined
+    if (agent?.provider === 'openclaw' && typeof agent.name === 'string' && agent.name.trim()) {
+      return normalizeOpenClawAgentId(agent.name)
+    }
+  }
+
+  const sessionName = typeof session.name === 'string' && session.name.trim() ? session.name.trim() : ''
+  if (sessionName) return normalizeOpenClawAgentId(sessionName)
+  return 'main'
+}
+
+async function rpcOnConnectedGateway(
+  ws: InstanceType<typeof WebSocket>,
+  method: string,
+  params: unknown,
+  timeoutMs = 5_000,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const requestId = randomUUID()
+    let settled = false
+
+    const cleanup = () => {
+      clearTimeout(timer)
+      ws.off('message', onMessage)
+      ws.off('close', onClose)
+      ws.off('error', onError)
+    }
+
+    const finish = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      fn()
+    }
+
+    const onMessage = (data: unknown) => {
+      try {
+        const msg = JSON.parse(String(data))
+        if (msg.type !== 'res' || msg.id !== requestId) return
+        if (msg.ok) {
+          finish(() => resolve(msg.payload))
+        } else {
+          const message = typeof msg.error?.message === 'string'
+            ? msg.error.message
+            : `${method} failed`
+          finish(() => reject(new Error(message)))
+        }
+      } catch {
+        // Ignore unrelated or malformed frames while waiting for our response.
+      }
+    }
+
+    const onClose = () => finish(() => reject(new Error('Gateway closed before RPC completed')))
+    const onError = (err: Error) => finish(() => reject(err))
+    const timer = setTimeout(() => {
+      finish(() => reject(new Error(`${method} timed out`)))
+    }, timeoutMs)
+
+    ws.on('message', onMessage)
+    ws.on('close', onClose)
+    ws.on('error', onError)
+    ws.send(JSON.stringify({ type: 'req', id: requestId, method, params }))
+  })
+}
+
+async function resolveConnectedGatewayAgentId(
+  ws: InstanceType<typeof WebSocket>,
+  session: Record<string, unknown> & { id: string },
+): Promise<string> {
+  const fallback = resolveGatewayAgentId(session)
+  const explicitAgentId = typeof session.openclawAgentId === 'string' && session.openclawAgentId.trim()
+    ? session.openclawAgentId.trim()
+    : ''
+  const localAgentId = typeof session.shortcutForAgentId === 'string' && session.shortcutForAgentId.trim()
+    ? session.shortcutForAgentId.trim()
+    : typeof session.agentId === 'string' && session.agentId.trim()
+      ? session.agentId.trim()
+      : ''
+  const agentRef = explicitAgentId || localAgentId || fallback
+
+  try {
+    const payload = await rpcOnConnectedGateway(ws, 'agents.list', {})
+    const gatewayAgents = Array.isArray((payload as { agents?: unknown[] } | undefined)?.agents)
+      ? (payload as { agents: OpenClawGatewayAgentSummary[] }).agents
+      : []
+    if (gatewayAgents.length === 0) return fallback
+
+    const localAgents = localAgentId ? loadAgents({ includeTrashed: true }) : {}
+    const localAgent = localAgentId
+      ? (localAgents[localAgentId] as Agent | undefined) || null
+      : null
+
+    return resolveOpenClawGatewayAgentIdFromList({
+      agentRef,
+      gatewayAgents,
+      localAgent: localAgent?.provider === 'openclaw' ? localAgent : null,
+    }) || fallback
+  } catch {
+    return fallback
+  }
+}
+
 // --- Provider ---
 
 export function streamOpenClawChat({ session, message, imagePath, apiKey, write, active, signal }: StreamChatOptions): Promise<string> {
@@ -285,9 +401,8 @@ export function streamOpenClawChat({ session, message, imagePath, apiKey, write,
     prompt = `[The user has shared an image at: ${imagePath}]\n\n${message}`
   }
 
-  const wsUrl = session.apiEndpoint ? normalizeWsUrl(session.apiEndpoint) : 'ws://127.0.0.1:18789'
+  const wsUrl = session.apiEndpoint ? deriveOpenClawWsUrl(session.apiEndpoint) : 'ws://127.0.0.1:18789'
   const token = apiKey || session.apiKey || undefined
-
   return new Promise((resolve) => {
     let fullResponse = ''
     let settled = false
@@ -302,13 +417,14 @@ export function streamOpenClawChat({ session, message, imagePath, apiKey, write,
       resolve(fullResponse)
     }
 
-    connectToGateway(wsUrl, token).then((result) => {
+    connectToGateway(wsUrl, token).then(async (result) => {
       if (!result.ok || !result.ws) {
         finish(result.message)
         return
       }
 
       const ws = result.ws
+      const gatewayAgentId = await resolveConnectedGatewayAgentId(ws, session)
       const timeout = setTimeout(() => {
         ws.close()
         finish('OpenClaw gateway timed out after 120s.')
@@ -328,7 +444,7 @@ export function streamOpenClawChat({ session, message, imagePath, apiKey, write,
         method: 'agent',
         params: {
           message: prompt,
-          agentId: 'main',
+          agentId: gatewayAgentId,
           timeout: 120,
           idempotencyKey: randomUUID(),
         },

@@ -6,6 +6,7 @@ import type {
   ProviderType,
 } from '@/types'
 import { deriveOpenClawWsUrl, normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import { getProvider } from '@/lib/providers'
 import { loadGatewayProfiles } from './storage'
 import { isProviderCoolingDown } from './provider-health'
 
@@ -75,6 +76,8 @@ function normalizeGatewayDeployment(
     useCase: normalizeText(deployment.useCase) as DeploymentConfig['useCase'],
     exposure: normalizeText(deployment.exposure) as DeploymentConfig['exposure'],
     managedBy: normalizeText(deployment.managedBy) as DeploymentConfig['managedBy'],
+    localInstanceId: normalizeText(deployment.localInstanceId),
+    localPort: normalizeNullableNumber(deployment.localPort),
     targetHost: normalizeText(deployment.targetHost),
     sshHost: normalizeText(deployment.sshHost),
     sshUser: normalizeText(deployment.sshUser),
@@ -247,6 +250,12 @@ function dedupeCredentialIds(primary: string | null | undefined, candidates: str
   return result
 }
 
+function resolveProviderDefaultEndpoint(provider: string): string | null {
+  const info = getProvider(provider)
+  if (!info?.defaultEndpoint) return null
+  return normalizeProviderEndpoint(provider, info.defaultEndpoint) || info.defaultEndpoint.replace(/\/+$/, '')
+}
+
 function buildRouteFromSeed(
   seed: RouteSeed,
   gatewayProfiles: GatewayProfile[],
@@ -267,10 +276,9 @@ function buildRouteFromSeed(
   const gatewayProfileId = gatewayProfile?.id ?? seed.gatewayProfileId ?? agentGatewayProfileId ?? null
 
   const providerFromGateway = gatewayProfile?.provider === 'openclaw' ? 'openclaw' : provider
-  const apiEndpoint = normalizeProviderEndpoint(
-    providerFromGateway,
-    seed.apiEndpoint ?? gatewayProfile?.endpoint ?? null,
-  )
+  const explicitEndpoint = seed.apiEndpoint ?? gatewayProfile?.endpoint ?? null
+  const apiEndpoint = normalizeProviderEndpoint(providerFromGateway, explicitEndpoint)
+    ?? resolveProviderDefaultEndpoint(providerFromGateway)
   const model = (seed.model || '').trim() || (providerFromGateway === 'openclaw' ? DEFAULT_OPENCLAW_MODEL : '')
   if (!providerFromGateway || !model) return null
 

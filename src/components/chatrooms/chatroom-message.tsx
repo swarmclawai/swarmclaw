@@ -14,7 +14,7 @@ import { AgentHoverCard } from './agent-hover-card'
 import { ChatroomToolRequestBanner } from './chatroom-tool-request-banner'
 import { isStructuredMarkdown } from '@/components/chat/markdown-utils'
 import { TransferAgentPicker } from '@/components/chat/transfer-agent-picker'
-import { ConnectorPlatformIcon, CONNECTOR_PLATFORM_META } from '@/components/shared/connector-platform-icon'
+import { ConnectorPlatformIcon, getConnectorPlatformLabel } from '@/components/shared/connector-platform-icon'
 import type { ChatroomMessage, Chatroom, Agent } from '@/types'
 
 interface Props {
@@ -227,7 +227,7 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
                 <span className="text-[13px] font-600 text-text flex items-center gap-1.5">
                   {message.source && <ConnectorPlatformIcon platform={message.source.platform} size={12} />}
                   {isUser && message.source?.senderName
-                    ? `${message.source.senderName} via ${CONNECTOR_PLATFORM_META[message.source.platform]?.label || message.source.platform}`
+                    ? `${message.source.senderName} via ${getConnectorPlatformLabel(message.source.platform)}`
                     : message.senderName}
                 </span>
               )}

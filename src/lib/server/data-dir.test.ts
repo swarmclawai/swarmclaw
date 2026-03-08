@@ -53,4 +53,41 @@ describe('data-dir resolution', () => {
       fs.rmSync(tempDir, { recursive: true, force: true })
     }
   })
+
+  it('uses isolated temp dirs during build bootstrap when DATA_DIR is unset', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-data-dir-build-'))
+    const fakeHome = path.join(tempDir, 'home')
+
+    try {
+      const env = { ...process.env, HOME: fakeHome, npm_lifecycle_event: 'build:ci' }
+      delete env.DATA_DIR
+      delete env.WORKSPACE_DIR
+      delete env.BROWSER_PROFILES_DIR
+
+      const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', `
+        const modNs = await import('./src/lib/server/data-dir.ts')
+        const mod = modNs.default || modNs['module.exports'] || modNs
+        console.log(JSON.stringify({
+          isBuildBootstrap: mod.IS_BUILD_BOOTSTRAP,
+          dataDir: mod.DATA_DIR,
+          workspaceDir: mod.WORKSPACE_DIR,
+          browserProfilesDir: mod.BROWSER_PROFILES_DIR,
+        }))
+      `], {
+        cwd: repoRoot,
+        env,
+        encoding: 'utf-8',
+      })
+
+      assert.equal(result.status, 0, result.stderr || result.stdout || 'subprocess failed')
+      const payload = extractLastJson(result.stdout || '')
+      const expectedDataDir = path.join(os.tmpdir(), 'swarmclaw-build-data')
+      assert.equal(payload.isBuildBootstrap, true)
+      assert.equal(payload.dataDir, expectedDataDir)
+      assert.equal(payload.workspaceDir, path.join(expectedDataDir, 'workspace'))
+      assert.equal(payload.browserProfilesDir, path.join(expectedDataDir, 'browser-profiles'))
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
 })

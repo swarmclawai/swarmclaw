@@ -1,12 +1,46 @@
 import { NextResponse } from 'next/server'
 import { loadWallets, upsertWallet, deleteWallet as deleteWalletFromStore, loadAgents, saveAgents } from '@/lib/server/storage'
-import { getBalance, lamportsToSol } from '@/lib/server/solana'
 import { notify } from '@/lib/server/ws-hub'
-import type { AgentWallet } from '@/types'
+import { getWalletLimitAtomic, normalizeAtomicString } from '@/lib/wallet'
+import type { AgentWallet, WalletAssetBalance, WalletPortfolioSummary } from '@/types'
+import { buildEmptyWalletPortfolio } from '@/lib/server/wallet-portfolio'
+import {
+  getAgentActiveWalletId,
+  getWalletPortfolioSnapshot,
+  linkWalletToAgent,
+  setAgentActiveWallet,
+  stripWalletPrivateKey,
+  unlinkWalletFromAgent,
+} from '@/lib/server/wallet-service'
 export const dynamic = 'force-dynamic'
+const WALLET_DETAIL_PORTFOLIO_TIMEOUT_MS = 2500
 
-function stripPrivateKey(wallet: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(wallet).filter(([k]) => k !== 'encryptedPrivateKey'))
+function withPortfolio(
+  wallet: AgentWallet,
+  portfolio: {
+    balanceAtomic: string
+    balanceFormatted: string
+    balanceSymbol: string
+    balanceDisplay: string
+    balanceLamports?: number
+    balanceSol?: number
+    assets: WalletAssetBalance[]
+    summary: WalletPortfolioSummary
+  },
+  isActive: boolean,
+) {
+  return {
+    ...stripWalletPrivateKey(wallet as unknown as Record<string, unknown>),
+    balanceAtomic: portfolio.balanceAtomic,
+    balanceFormatted: portfolio.balanceFormatted,
+    balanceSymbol: portfolio.balanceSymbol,
+    balanceDisplay: portfolio.balanceDisplay,
+    balanceLamports: portfolio.balanceLamports,
+    balanceSol: portfolio.balanceSol,
+    assets: portfolio.assets,
+    portfolioSummary: portfolio.summary,
+    isActive,
+  }
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -15,21 +49,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const wallet = wallets[id]
   if (!wallet) return NextResponse.json({ error: 'Wallet not found' }, { status: 404 })
 
-  // Fetch live on-chain balance
-  let balanceLamports = 0
-  let balanceSol = 0
+  let portfolio = buildEmptyWalletPortfolio(wallet)
   try {
-    balanceLamports = await getBalance(wallet.publicKey)
-    balanceSol = lamportsToSol(balanceLamports)
+    portfolio = await getWalletPortfolioSnapshot(wallet, {
+      timeoutMs: WALLET_DETAIL_PORTFOLIO_TIMEOUT_MS,
+      allowStale: true,
+    })
   } catch {
     // RPC failure — return 0
   }
 
-  return NextResponse.json({
-    ...stripPrivateKey(wallet as unknown as Record<string, unknown>),
-    balanceLamports,
-    balanceSol,
-  })
+  const agents = loadAgents()
+  const isActive = getAgentActiveWalletId(agents[wallet.agentId]) === wallet.id
+  return NextResponse.json(withPortfolio(wallet, portfolio, isActive))
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -39,6 +71,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!wallet) return NextResponse.json({ error: 'Wallet not found' }, { status: 404 })
 
   const body = await req.json()
+  const shouldMakeActive = body.makeActive === true
 
   // Reassign wallet to a different agent
   if (typeof body.agentId === 'string' && body.agentId !== wallet.agentId) {
@@ -46,39 +79,51 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const newAgent = agents[body.agentId]
     if (!newAgent) return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
 
-    // Check new agent doesn't already have a wallet
+    // Only one wallet per chain per agent.
     const allWallets = loadWallets() as Record<string, AgentWallet>
-    const conflict = Object.values(allWallets).find((w) => w.agentId === body.agentId && w.id !== id)
-    if (conflict) return NextResponse.json({ error: 'Target agent already has a wallet' }, { status: 409 })
+    const conflict = Object.values(allWallets).find((w) => w.agentId === body.agentId && w.id !== id && w.chain === wallet.chain)
+    if (conflict) return NextResponse.json({ error: `Target agent already has a ${wallet.chain} wallet` }, { status: 409 })
 
-    // Unlink old agent
     const oldAgent = agents[wallet.agentId]
     if (oldAgent) {
-      oldAgent.walletId = null
+      unlinkWalletFromAgent(oldAgent, id)
       oldAgent.updatedAt = Date.now()
       agents[wallet.agentId] = oldAgent
     }
 
-    // Link new agent
-    newAgent.walletId = id
+    linkWalletToAgent(newAgent, id, shouldMakeActive || getAgentActiveWalletId(newAgent) == null)
     newAgent.updatedAt = Date.now()
     agents[body.agentId] = newAgent
     saveAgents(agents)
     notify('agents')
 
     wallet.agentId = body.agentId
+  } else if (shouldMakeActive) {
+    const agents = loadAgents()
+    const agent = agents[wallet.agentId]
+    if (agent) {
+      setAgentActiveWallet(agent, id)
+      agent.updatedAt = Date.now()
+      agents[wallet.agentId] = agent
+      saveAgents(agents)
+      notify('agents')
+    }
   }
 
   if (body.label !== undefined) wallet.label = body.label
-  if (typeof body.spendingLimitLamports === 'number') wallet.spendingLimitLamports = body.spendingLimitLamports
-  if (typeof body.dailyLimitLamports === 'number') wallet.dailyLimitLamports = body.dailyLimitLamports
+  if (body.spendingLimitAtomic !== undefined || body.spendingLimitLamports !== undefined) {
+    wallet.spendingLimitAtomic = normalizeAtomicString(body.spendingLimitAtomic ?? body.spendingLimitLamports, getWalletLimitAtomic(wallet, 'perTx'))
+  }
+  if (body.dailyLimitAtomic !== undefined || body.dailyLimitLamports !== undefined) {
+    wallet.dailyLimitAtomic = normalizeAtomicString(body.dailyLimitAtomic ?? body.dailyLimitLamports, getWalletLimitAtomic(wallet, 'daily'))
+  }
   if (typeof body.requireApproval === 'boolean') wallet.requireApproval = body.requireApproval
   wallet.updatedAt = Date.now()
 
   upsertWallet(id, wallet)
   notify('wallets')
 
-  return NextResponse.json(stripPrivateKey(wallet as unknown as Record<string, unknown>))
+  return NextResponse.json(stripWalletPrivateKey(wallet as unknown as Record<string, unknown>))
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -88,20 +133,19 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!wallet) return NextResponse.json({ error: 'Wallet not found' }, { status: 404 })
 
   // Check if balance > 0 and warn
-  let balanceLamports = 0
+  let portfolio = buildEmptyWalletPortfolio(wallet)
   try {
-    balanceLamports = await getBalance(wallet.publicKey)
+    portfolio = await getWalletPortfolioSnapshot(wallet, {
+      timeoutMs: WALLET_DETAIL_PORTFOLIO_TIMEOUT_MS,
+      allowStale: true,
+    })
   } catch { /* ignore */ }
-
-  if (balanceLamports > 0) {
-    // Still delete, but include warning
-  }
 
   // Unlink from agent
   const agents = loadAgents()
   const agent = agents[wallet.agentId]
   if (agent) {
-    agent.walletId = null
+    unlinkWalletFromAgent(agent, id)
     agent.updatedAt = Date.now()
     agents[wallet.agentId] = agent
     saveAgents(agents)
@@ -113,6 +157,8 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
   return NextResponse.json({
     ok: true,
-    warning: balanceLamports > 0 ? `Wallet had ${lamportsToSol(balanceLamports)} SOL remaining` : undefined,
+    warning: portfolio.summary.nonZeroAssets > 0
+      ? `Wallet still had ${portfolio.summary.nonZeroAssets} asset${portfolio.summary.nonZeroAssets === 1 ? '' : 's'} remaining, including ${portfolio.balanceDisplay}`
+      : undefined,
   })
 }

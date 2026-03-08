@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { toast } from 'sonner'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import type { Agent, ChatroomRoutingRule } from '@/types'
@@ -165,6 +166,7 @@ export function ChatroomSheet() {
   const [saving, setSaving] = useState(false)
   const [addingRule, setAddingRule] = useState(false)
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const editing = editingId ? chatrooms[editingId] : null
 
@@ -186,6 +188,7 @@ export function ChatroomSheet() {
     }
     setAddingRule(false)
     setEditingRuleId(null)
+    setConfirmDelete(false)
   }, [editing, open])
 
   const handleSave = async () => {
@@ -222,11 +225,11 @@ export function ChatroomSheet() {
 
   const handleDelete = async () => {
     if (!editing || saving) return
-    if (!confirm(`Delete chatroom "${editing.name}"?`)) return
     setSaving(true)
     try {
       await deleteChatroom(editing.id)
       toast.success('Chatroom deleted')
+      setConfirmDelete(false)
       setChatroomSheetOpen(false)
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete chatroom')
@@ -503,7 +506,7 @@ export function ChatroomSheet() {
           </button>
           {editing && (
             <button
-              onClick={handleDelete}
+              onClick={() => setConfirmDelete(true)}
               disabled={saving}
               className="py-2.5 px-4 rounded-[8px] text-[13px] font-600 text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
             >
@@ -512,6 +515,17 @@ export function ChatroomSheet() {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete Chatroom?"
+        message={editing ? `Delete "${editing.name}"? This removes the chatroom and its configuration.` : 'Delete this chatroom?'}
+        confirmLabel={saving ? 'Deleting...' : 'Delete'}
+        confirmDisabled={saving}
+        cancelDisabled={saving}
+        danger
+        onConfirm={() => { void handleDelete() }}
+        onCancel={() => { if (!saving) setConfirmDelete(false) }}
+      />
     </BottomSheet>
   )
 }

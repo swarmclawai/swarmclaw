@@ -14,6 +14,7 @@ import { drainSystemEvents } from './system-events'
 import { buildIdentityContinuityContext } from './identity-continuity'
 import { buildMainLoopHeartbeatPrompt, isMainSession } from './main-agent-loop'
 import { ensureAgentThreadSession } from './agent-thread-session'
+import { isAgentDisabled } from './agent-availability'
 
 const HEARTBEAT_TICK_MS = 5_000
 
@@ -134,7 +135,7 @@ interface HeartbeatFileSession {
 
 const DEFAULT_HEARTBEAT_PROMPT = 'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.'
 
-function readHeartbeatFile(session: HeartbeatFileSession): string {
+export function readHeartbeatFile(session: HeartbeatFileSession): string {
   try {
     const filePath = path.join(session.cwd || WORKSPACE_DIR, 'HEARTBEAT.md')
     if (fs.existsSync(filePath)) {
@@ -196,7 +197,7 @@ export function isHeartbeatContentEffectivelyEmpty(content: string | undefined |
   return true
 }
 
-function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: string, heartbeatFileContent: string): string {
+export function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: string, heartbeatFileContent: string): string {
   if (!agent) return fallbackPrompt
 
   const identityContext = buildIdentityContext(session, agent)
@@ -285,7 +286,7 @@ function resolveNum(obj: Record<string, any>, key: string, current: number): num
   return current
 }
 
-function heartbeatConfigForSession(session: any, settings: Record<string, any>, agents: Record<string, any>): HeartbeatConfig {
+export function heartbeatConfigForSession(session: any, settings: Record<string, any>, agents: Record<string, any>): HeartbeatConfig {
   // Global defaults — 30 min interval (was 120s)
   let intervalSec = resolveInterval(settings, DEFAULT_HEARTBEAT_INTERVAL_SEC)
   const globalPrompt = (typeof settings.heartbeatPrompt === 'string' && settings.heartbeatPrompt.trim())
@@ -366,11 +367,11 @@ async function tickHeartbeats() {
 
   const agents = loadAgents()
   for (const agent of Object.values(agents) as any[]) {
-    if (!agent?.id || agent.heartbeatEnabled !== true) continue
+    if (!agent?.id || agent.heartbeatEnabled !== true || isAgentDisabled(agent)) continue
     ensureAgentThreadSession(String(agent.id))
   }
   const sessions = loadSessions()
-  const hasScopedAgents = Object.values(agents).some((a: any) => a?.heartbeatEnabled === true)
+  const hasScopedAgents = Object.values(agents).some((a: any) => a?.heartbeatEnabled === true && !isAgentDisabled(a))
 
   // Prune tracked sessions that no longer exist or have heartbeat disabled
   for (const trackedId of state.lastBySession.keys()) {
@@ -391,6 +392,7 @@ async function tickHeartbeats() {
 
     // Check if this session or its agent has explicit heartbeat opt-in
     const agent = session.agentId ? agents[session.agentId] : null
+    if (isAgentDisabled(agent)) continue
     const explicitOptIn = session.heartbeatEnabled === true || (agent && agent.heartbeatEnabled === true)
 
     // If global loopMode is bounded, only allow sessions with explicit opt-in
@@ -428,12 +430,15 @@ async function tickHeartbeats() {
 
     const rawHeartbeatFileContent = readHeartbeatFile(session)
     const heartbeatFileContent = isHeartbeatContentEffectivelyEmpty(rawHeartbeatFileContent) ? '' : rawHeartbeatFileContent
-    const hasGoal = !!(agent?.heartbeatGoal || agent?.description || agent?.systemPrompt || agent?.soul)
+    const hasExplicitGoal = !!(agent?.heartbeatGoal || agent?.heartbeatNextAction)
+    const hasAgentContext = !!(agent?.description || agent?.systemPrompt || agent?.soul)
     const hasCustomPrompt = cfg.prompt !== DEFAULT_HEARTBEAT_PROMPT
-    // Skip heartbeat only if there's truly nothing to drive it:
-    // no agent goal, no HEARTBEAT.md content, AND no custom prompt configured
-    if (!hasGoal && !heartbeatFileContent && !hasCustomPrompt) {
-      continue
+    const hasUserMessages = lastUserMessageAt(session) > 0
+    // Skip heartbeat if there's nothing to drive it. An agent description alone
+    // is not enough — the session needs at least one user message or an explicit
+    // heartbeat goal/HEARTBEAT.md content. This prevents noise on unused sessions.
+    if (!hasExplicitGoal && !heartbeatFileContent && !hasCustomPrompt) {
+      if (!hasAgentContext || !hasUserMessages) continue
     }
     const baseHeartbeatMessage = buildAgentHeartbeatPrompt(session, agent, cfg.prompt, heartbeatFileContent)
     const heartbeatMessage = isMainSession(session)

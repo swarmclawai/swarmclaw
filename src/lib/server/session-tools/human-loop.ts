@@ -58,7 +58,12 @@ async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { ses
     if (action === 'ack_mailbox') {
       const sessionId = typeof normalized.sessionId === 'string' ? normalized.sessionId : bctx.sessionId
       if (!sessionId) return 'Error: sessionId or current session is required.'
-      const envelopeId = typeof normalized.envelopeId === 'string' ? normalized.envelopeId.trim() : ''
+      let envelopeId = typeof normalized.envelopeId === 'string' ? normalized.envelopeId.trim() : ''
+      if (!envelopeId) {
+        const newestReply = listMailbox(sessionId, { limit: 50 })
+          .find((envelope) => envelope.type === 'human_reply' && envelope.status !== 'ack')
+        if (newestReply) envelopeId = newestReply.id
+      }
       if (!envelopeId) return 'Error: envelopeId is required.'
       const envelope = ackMailboxEnvelope(sessionId, envelopeId)
       return envelope ? JSON.stringify(envelope) : `Error: mailbox envelope "${envelopeId}" not found.`
@@ -108,7 +113,10 @@ async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { ses
           containsText: typeof normalized.containsText === 'string' ? normalized.containsText : undefined,
         },
       })
-      return JSON.stringify(job)
+      return JSON.stringify({
+        ...job,
+        message: 'Durable wait registered. Stop active tool use now and continue on the next agent turn when the human reply arrives.',
+      })
     }
 
     if (action === 'wait_for_approval') {
@@ -135,7 +143,10 @@ async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { ses
             : ['approved', 'rejected'],
         },
       })
-      return JSON.stringify(job)
+      return JSON.stringify({
+        ...job,
+        message: 'Durable approval wait registered. Stop active tool use now and continue on the next agent turn when the approval decision arrives.',
+      })
     }
 
     if (action === 'status') {
@@ -150,7 +161,7 @@ async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { ses
         const watch = getWatchJob(watchJobId)
         return watch ? JSON.stringify(watch) : `Error: watch job "${watchJobId}" not found.`
       }
-      return 'Error: approvalId or watchJobId is required for status.'
+      return 'Error: approvalId or watchJobId is required for status. Use list_mailbox to inspect replies, or wait_for_reply / wait_for_approval to create a durable watch first.'
     }
 
     return `Error: Unknown action "${action}".`
@@ -166,11 +177,30 @@ const HumanLoopPlugin: Plugin = {
   hooks: {
     getCapabilityDescription: () =>
       'I can request structured human input or explicit approvals with `ask_human`, then pause on durable wait handles until the response arrives.',
+    getApprovalGuidance: ({ approval, phase, approved }) => {
+      if (approval.category !== 'human_loop') return null
+      if (phase === 'request') {
+        return [
+          'When this approval is decided, continue the blocked task instead of asking the same human approval question again.',
+          'Use `ask_human` only for fresh questions, durable waits, or status checks. Do not duplicate the same approval request while it is pending.',
+        ]
+      }
+      if (phase === 'connector_reminder') {
+        return 'Approving this lets the agent resume the blocked task without repeating the same human-loop request.'
+      }
+      if (approved !== true) {
+        return 'Do not repeat the rejected human-loop approval request unless the question or requested action materially changes.'
+      }
+      return [
+        'Resume the blocked task immediately after approval.',
+        'Do not call `ask_human` action `request_approval` again for the same exact question.',
+      ]
+    },
   } as PluginHooks,
   tools: [
     {
       name: 'ask_human',
-      description: 'Human-loop tool. Actions: request_input, request_approval, wait_for_reply, wait_for_approval, list_mailbox, ack_mailbox, status.',
+      description: 'Human-loop tool. Use request_input(question, ...) to ask a human, wait_for_reply(correlationId) for durable waiting, list_mailbox to read replies, ack_mailbox(envelopeId) to acknowledge them, and status(approvalId or watchJobId) only when you have an id.',
       parameters: {
         type: 'object',
         properties: {

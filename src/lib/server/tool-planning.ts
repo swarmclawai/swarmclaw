@@ -11,6 +11,8 @@ export const TOOL_CAPABILITY = {
   deliveryMessage: 'delivery.message',
   deliveryMedia: 'delivery.media',
   deliveryVoiceNote: 'delivery.voice_note',
+  walletInspect: 'wallet.inspect',
+  walletExecute: 'wallet.execute',
 } as const
 
 export interface ToolPlanningEntry {
@@ -59,7 +61,7 @@ const CORE_TOOL_PLANNING: Record<string, ToolPlanningEntry[]> = {
       requestMatchers: [
         {
           capability: TOOL_CAPABILITY.researchSearch,
-          patterns: ['research', 'look up', 'find out', 'search for', 'compare', 'latest', 'news', 'headline', 'current event', 'recent update', "what's new", 'what happened'],
+          patterns: ['research', 'look up', 'find out', 'search for', 'compare', 'latest', 'news', 'headline', 'current event', 'recent update', 'update', 'updates', 'breaking', 'developments', 'keep watching', 'watch for', 'watching for', 'monitor', 'track', "what's new", 'what happened'],
           forbidLiteralUrl: true,
         },
       ],
@@ -121,7 +123,7 @@ const CORE_TOOL_PLANNING: Record<string, ToolPlanningEntry[]> = {
         },
         {
           capability: TOOL_CAPABILITY.deliveryMedia,
-          patterns: ['screenshot', 'screen shot', 'snapshot', 'image', 'photo', 'file', 'pdf', 'attachment'],
+          patterns: ['screenshot', 'screen shot', 'snapshot', 'image', 'photo', 'send file', 'send a file', 'pdf', 'attachment'],
         },
         {
           capability: TOOL_CAPABILITY.deliveryVoiceNote,

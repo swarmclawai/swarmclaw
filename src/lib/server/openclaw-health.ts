@@ -1,4 +1,5 @@
 import { deriveOpenClawWsUrl, normalizeOpenClawEndpoint } from '@/lib/openclaw-endpoint'
+import { wsConnect } from '@/lib/providers/openclaw'
 import { decryptKey, loadCredentials } from './storage'
 
 export interface OpenClawHealthInput {
@@ -13,18 +14,47 @@ export interface OpenClawHealthResult {
   ok: boolean
   endpoint: string
   wsUrl: string
+  wsConnected: boolean
+  httpCompatible: boolean | null
   authProvided: boolean
   model: string | null
   models: string[]
   modelsStatus: number | null
   chatStatus: number | null
+  message: string
   completionSample?: string
+  warning?: string
   error?: string
   hint?: string
 }
 
+export interface OpenClawHttpProbeStatus {
+  httpCompatible: boolean
+  warning?: string
+  hint?: string
+  modelsEndpointOptional: boolean
+}
+
+type JsonRecord = Record<string, unknown>
+
 function normalizeToken(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function asRecord(value: unknown): JsonRecord | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : null
+}
+
+function getErrorName(err: unknown): string | undefined {
+  if (err instanceof Error) return err.name
+  const record = asRecord(err)
+  return typeof record?.name === 'string' ? record.name : undefined
+}
+
+function getErrorMessage(err: unknown): string | undefined {
+  if (err instanceof Error) return err.message
+  const record = asRecord(err)
+  return typeof record?.message === 'string' ? record.message : undefined
 }
 
 function resolveCredentialToken(credentialId?: string | null): string | null {
@@ -40,21 +70,30 @@ function resolveCredentialToken(credentialId?: string | null): string | null {
   }
 }
 
-function extractModels(payload: any): string[] {
-  const models = Array.isArray(payload?.data) ? payload.data : []
+function extractModels(payload: unknown): string[] {
+  const payloadRecord = asRecord(payload)
+  const models = Array.isArray(payloadRecord?.data) ? payloadRecord.data : []
   return models
-    .map((item: any) => (typeof item?.id === 'string' ? item.id.trim() : ''))
+    .map((item) => {
+      const record = asRecord(item)
+      return typeof record?.id === 'string' ? record.id.trim() : ''
+    })
     .filter(Boolean)
 }
 
-function extractChatText(payload: any): string {
-  const content = payload?.choices?.[0]?.message?.content
+function extractChatText(payload: unknown): string {
+  const payloadRecord = asRecord(payload)
+  const choices = Array.isArray(payloadRecord?.choices) ? payloadRecord.choices : []
+  const firstChoice = asRecord(choices[0])
+  const message = asRecord(firstChoice?.message)
+  const content = message?.content
   if (typeof content === 'string') return content.trim()
   if (Array.isArray(content)) {
     return content
-      .map((block: any) => {
-        if (typeof block?.text === 'string') return block.text
-        if (typeof block?.content === 'string') return block.content
+      .map((block) => {
+        const record = asRecord(block)
+        if (typeof record?.text === 'string') return record.text
+        if (typeof record?.content === 'string') return record.content
         return ''
       })
       .join(' ')
@@ -87,9 +126,105 @@ function describeHttpError(status: number): { error: string; hint?: string } {
   }
 }
 
+function describeGatewayError(errorCode: string | undefined, message: string): { error: string; hint?: string } {
+  if (errorCode === 'AUTH_TOKEN_MISSING') {
+    return {
+      error: message || 'OpenClaw gateway requires a token.',
+      hint: 'Attach an OpenClaw credential or token before running the gateway health check.',
+    }
+  }
+  if (errorCode === 'AUTH_TOKEN_INVALID') {
+    return {
+      error: message || 'OpenClaw gateway rejected the supplied token.',
+      hint: 'Update the saved OpenClaw token or re-pair this gateway with a valid operator token.',
+    }
+  }
+  if (errorCode === 'PAIRING_REQUIRED') {
+    return {
+      error: message || 'OpenClaw gateway requires device pairing.',
+      hint: 'Approve this SwarmClaw device in the OpenClaw gateway before using it from the app.',
+    }
+  }
+  if (errorCode === 'DEVICE_AUTH_INVALID') {
+    return {
+      error: message || 'OpenClaw gateway rejected the saved device identity.',
+      hint: 'Re-pair this SwarmClaw device with the gateway or reset the saved device identity and try again.',
+    }
+  }
+  return {
+    error: message || 'Failed to connect to OpenClaw gateway.',
+    hint: 'Verify the OpenClaw gateway is running and reachable at this host/port.',
+  }
+}
+
+function pushIssue(issues: string[], next: string | undefined): void {
+  if (typeof next !== 'string') return
+  const value = next.trim()
+  if (!value) return
+  issues.push(value)
+}
+
+function isModelsEndpointWarning(issue: string): boolean {
+  return issue.startsWith('OpenAI-compatible models endpoint failed:')
+    || issue.startsWith('OpenAI-compatible models probe timed out')
+}
+
+export function resolveOpenClawHttpProbeStatus(input: {
+  modelsStatus: number | null
+  chatStatus: number | null
+  warnings: string[]
+  warningHint?: string
+}): OpenClawHttpProbeStatus {
+  const modelsOk = !!input.modelsStatus && input.modelsStatus >= 200 && input.modelsStatus < 300
+  const chatOk = !!input.chatStatus && input.chatStatus >= 200 && input.chatStatus < 300
+  const modelsEndpointOptional = chatOk && input.modelsStatus === 404
+  const filteredWarnings = modelsEndpointOptional
+    ? input.warnings.filter((issue) => !isModelsEndpointWarning(issue))
+    : input.warnings
+  const warning = filteredWarnings.join(' ') || undefined
+
+  return {
+    httpCompatible: chatOk && (modelsOk || modelsEndpointOptional),
+    warning,
+    hint: warning ? input.warningHint : undefined,
+    modelsEndpointOptional,
+  }
+}
+
+function summarizeOpenClawHealth(input: {
+  ok: boolean
+  models: string[]
+  modelsStatus: number | null
+  httpCompatible: boolean | null
+  modelsEndpointOptional?: boolean
+  warning?: string
+  error?: string
+}): string {
+  if (!input.ok) return input.error || 'OpenClaw gateway health check failed.'
+  const parts = ['Connected to OpenClaw gateway via WebSocket.']
+  if (input.modelsStatus && input.modelsStatus >= 200 && input.modelsStatus < 300) {
+    parts.push(
+      input.models.length > 0
+        ? `${input.models.length} model${input.models.length === 1 ? '' : 's'} visible.`
+        : 'HTTP models endpoint responded with no models.',
+    )
+  }
+  if (input.httpCompatible === true) {
+    if (input.modelsEndpointOptional) {
+      parts.push('OpenAI-compatible chat checks passed. This gateway does not advertise `/v1/models`, which is acceptable for OpenClaw.')
+    } else {
+      parts.push('OpenAI-compatible HTTP checks passed.')
+    }
+  } else if (input.warning) {
+    parts.push(input.warning)
+    parts.push('SwarmClaw can still use this gateway over WebSocket.')
+  }
+  return parts.join(' ')
+}
+
 function createTimeoutError(message: string): Error {
-  const timeoutErr = new Error(message)
-  ;(timeoutErr as any).name = 'TimeoutError'
+  const timeoutErr = new Error(message) as Error & { name: string }
+  timeoutErr.name = 'TimeoutError'
   return timeoutErr
 }
 
@@ -116,7 +251,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout?
   }
 }
 
-async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<{ response: Response; body: any }> {
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<{ response: Response; body: unknown }> {
   const controller = new AbortController()
   try {
     const response = await withTimeout(
@@ -131,7 +266,7 @@ async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: n
       () => controller.abort(),
       `Response read timed out after ${timeoutMs}ms`,
     )
-    let body: any = {}
+    let body: unknown = {}
     if (text) {
       try {
         body = JSON.parse(text)
@@ -140,8 +275,8 @@ async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: n
       }
     }
     return { response, body }
-  } catch (err: any) {
-    if (err?.name === 'AbortError') throw createTimeoutError(`Request timed out after ${timeoutMs}ms`)
+  } catch (err: unknown) {
+    if (getErrorName(err) === 'AbortError') throw createTimeoutError(`Request timed out after ${timeoutMs}ms`)
     throw err
   }
 }
@@ -163,8 +298,31 @@ export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<O
   let modelsStatus: number | null = null
   let chatStatus: number | null = null
   let completionSample = ''
-  let lastError = ''
-  let lastHint: string | undefined
+  let warningHint: string | undefined
+  const warnings: string[] = []
+
+  const wsResult = await wsConnect(wsUrl, token || undefined, true, timeoutMs)
+  if (wsResult.ws) {
+    try { wsResult.ws.close() } catch { /* noop */ }
+  }
+  if (!wsResult.ok) {
+    const gatewayError = describeGatewayError(wsResult.errorCode, wsResult.message)
+    return {
+      ok: false,
+      endpoint,
+      wsUrl,
+      wsConnected: false,
+      httpCompatible: null,
+      authProvided,
+      model: null,
+      models: [],
+      modelsStatus: null,
+      chatStatus: null,
+      message: gatewayError.error,
+      error: gatewayError.error,
+      hint: gatewayError.hint,
+    }
+  }
 
   try {
     const { response: modelsRes, body } = await fetchJsonWithTimeout(`${endpoint}/models`, {
@@ -176,27 +334,17 @@ export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<O
       models = extractModels(body)
     } else {
       const err = describeHttpError(modelsRes.status)
-      lastError = err.error
-      lastHint = err.hint
+      pushIssue(warnings, `OpenAI-compatible models endpoint failed: ${err.error}`)
+      warningHint = err.hint || warningHint
     }
-  } catch (err: any) {
-    if (err?.name === 'TimeoutError') {
-      lastError = `OpenClaw models probe timed out after ${timeoutMs}ms.`
-    } else {
-      lastError = err?.message || 'Failed to connect to OpenClaw endpoint.'
-    }
-    return {
-      ok: false,
-      endpoint,
-      wsUrl,
-      authProvided,
-      model: null,
-      models: [],
-      modelsStatus: null,
-      chatStatus: null,
-      error: lastError,
-      hint: 'Verify the OpenClaw gateway is running and reachable at this host/port.',
-    }
+  } catch (err: unknown) {
+    pushIssue(
+      warnings,
+      getErrorName(err) === 'TimeoutError'
+        ? `OpenAI-compatible models probe timed out after ${timeoutMs}ms.`
+        : (getErrorMessage(err) || 'Failed to connect to the OpenAI-compatible models endpoint.'),
+    )
+    warningHint = 'The gateway is reachable, but the optional HTTP `/v1/models` endpoint did not respond normally.'
   }
 
   const model = normalizeToken(input.model) || models[0] || 'default'
@@ -216,30 +364,50 @@ export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<O
     chatStatus = chatRes.status
     if (!chatRes.ok) {
       const err = describeHttpError(chatRes.status)
-      lastError = err.error
-      lastHint = err.hint || lastHint
+      pushIssue(warnings, `OpenAI-compatible chat endpoint failed: ${err.error}`)
+      warningHint = err.hint || warningHint
     } else {
       completionSample = extractChatText(body).slice(0, 240)
     }
-  } catch (err: any) {
-    if (err?.name === 'TimeoutError') {
-      lastError = `OpenClaw chat probe timed out after ${timeoutMs}ms.`
-    } else {
-      lastError = err?.message || 'OpenClaw chat probe failed.'
-    }
+  } catch (err: unknown) {
+    pushIssue(
+      warnings,
+      getErrorName(err) === 'TimeoutError'
+        ? `OpenAI-compatible chat probe timed out after ${timeoutMs}ms.`
+        : (getErrorMessage(err) || 'OpenAI-compatible chat probe failed.'),
+    )
+    warningHint = warningHint || 'The gateway is reachable, but the optional HTTP `/v1/chat/completions` endpoint did not respond normally.'
   }
 
+  const http = resolveOpenClawHttpProbeStatus({
+    modelsStatus,
+    chatStatus,
+    warnings,
+    warningHint,
+  })
+  const message = summarizeOpenClawHealth({
+    ok: true,
+    models,
+    modelsStatus,
+    httpCompatible: http.httpCompatible,
+    modelsEndpointOptional: http.modelsEndpointOptional,
+    warning: http.warning,
+  })
+
   return {
-    ok: !!chatStatus && chatStatus >= 200 && chatStatus < 300,
+    ok: true,
     endpoint,
     wsUrl,
+    wsConnected: true,
+    httpCompatible: http.httpCompatible,
     authProvided,
     model,
     models,
     modelsStatus,
     chatStatus,
+    message,
     completionSample: completionSample || undefined,
-    error: lastError || undefined,
-    hint: lastHint,
+    warning: http.warning,
+    hint: http.hint,
   }
 }

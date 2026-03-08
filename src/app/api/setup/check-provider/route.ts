@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { loadCredentials, decryptKey } from '@/lib/server/storage'
 import { getDeviceId, wsConnect } from '@/lib/providers/openclaw'
 import { OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
+import { resolveOllamaRuntimeConfig } from '@/lib/server/ollama-runtime'
 
 type SetupProvider =
   | 'openai'
@@ -26,6 +27,12 @@ interface SetupCheckBody {
 
 function clean(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+export function normalizeOllamaSetupEndpoint(endpoint: string, useCloud: boolean): string {
+  const normalized = endpoint.replace(/\/+$/, '')
+  if (useCloud) return normalized
+  return normalized.replace(/\/v1$/i, '')
 }
 
 function parseBody(input: unknown): SetupCheckBody {
@@ -101,9 +108,28 @@ async function checkAnthropic(apiKey: string, modelRaw: string): Promise<{ ok: b
   return { ok: true, message: text ? `Connected to Anthropic. Sample: ${text.slice(0, 120)}` : 'Connected to Anthropic.' }
 }
 
-async function checkOllama(endpointRaw: string): Promise<{ ok: boolean; message: string; normalizedEndpoint: string; recommendedModel?: string }> {
-  const normalizedEndpoint = (endpointRaw || 'http://localhost:11434').replace(/\/+$/, '')
-  const res = await fetch(`${normalizedEndpoint}/api/tags`, {
+async function checkOllama(params: {
+  endpointRaw: string
+  modelRaw: string
+  apiKey?: string
+}): Promise<{ ok: boolean; message: string; normalizedEndpoint: string; recommendedModel?: string }> {
+  const runtime = resolveOllamaRuntimeConfig({
+    model: params.modelRaw,
+    apiKey: params.apiKey,
+    apiEndpoint: params.endpointRaw,
+  })
+  const normalizedEndpoint = normalizeOllamaSetupEndpoint(runtime.endpoint, runtime.useCloud)
+  const tagsPath = runtime.useCloud ? '/v1/models' : '/api/tags'
+  const headers = runtime.apiKey ? { authorization: `Bearer ${runtime.apiKey}` } : undefined
+  if (runtime.useCloud && !runtime.apiKey) {
+    return {
+      ok: false,
+      message: 'Ollama Cloud model requires an API key. Set OLLAMA_API_KEY or attach an Ollama credential.',
+      normalizedEndpoint,
+    }
+  }
+  const res = await fetch(`${normalizedEndpoint}${tagsPath}`, {
+    headers,
     signal: AbortSignal.timeout(8_000),
     cache: 'no-store',
   })
@@ -112,20 +138,24 @@ async function checkOllama(endpointRaw: string): Promise<{ ok: boolean; message:
     return { ok: false, message: detail, normalizedEndpoint }
   }
   const payload = await res.json().catch(() => ({} as any))
-  const models = Array.isArray(payload?.models) ? payload.models : []
-  const firstModel = typeof models[0]?.name === 'string'
-    ? String(models[0].name).replace(/:latest$/, '')
-    : undefined
+  const models = runtime.useCloud
+    ? (Array.isArray(payload?.data) ? payload.data : [])
+    : (Array.isArray(payload?.models) ? payload.models : [])
+  const firstModel = runtime.useCloud
+    ? (typeof models[0]?.id === 'string' ? String(models[0].id) : undefined)
+    : (typeof models[0]?.name === 'string' ? String(models[0].name).replace(/:latest$/, '') : undefined)
   if (models.length === 0) {
     return {
       ok: true,
-      message: 'Connected to Ollama, but no models are installed yet. Run `ollama pull <model>` to add one.',
+      message: runtime.useCloud
+        ? 'Connected to Ollama Cloud, but no models were returned.'
+        : 'Connected to Ollama, but no models are installed yet. Run `ollama pull <model>` to add one.',
       normalizedEndpoint,
     }
   }
   return {
     ok: true,
-    message: `Connected to Ollama. ${models.length} model(s) available.`,
+    message: `Connected to ${runtime.useCloud ? 'Ollama Cloud' : 'Ollama'}. ${models.length} model(s) available.`,
     normalizedEndpoint,
     recommendedModel: firstModel,
   }
@@ -205,7 +235,7 @@ export async function POST(req: Request) {
         return NextResponse.json(result)
       }
       case 'ollama': {
-        const result = await checkOllama(endpoint)
+        const result = await checkOllama({ endpointRaw: endpoint, modelRaw: model, apiKey })
         return NextResponse.json(result)
       }
       case 'openclaw': {

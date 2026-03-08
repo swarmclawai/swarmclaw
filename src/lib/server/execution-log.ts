@@ -20,6 +20,7 @@ export type LogCategory =
   | 'mission_checkpoint' // periodic mission state snapshot
   | 'mission_complete'   // mission reached ok status
   | 'budget_warning'     // mission approaching or exceeding budget
+  | 'loop_detection'     // repeated tool call pattern detected
 
 export interface ExecutionLogEntry {
   id: string

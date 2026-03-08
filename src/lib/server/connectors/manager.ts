@@ -30,6 +30,7 @@ import { evaluateRoutingRules } from '../chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '../provider-health'
 import { syncSessionArchiveMemory } from '../session-archive-memory'
 import { buildIdentityContinuityContext } from '../identity-continuity'
+import { ensureAgentThreadSession } from '../agent-thread-session'
 import { getProvider } from '@/lib/providers'
 import type { Agent, Connector, MessageSource, Chatroom, ChatroomMessage, Session } from '@/types'
 import type { ConnectorInstance, InboundMessage, InboundMedia } from './types'
@@ -59,6 +60,16 @@ import {
   textMentionsAlias,
 } from './policy'
 import { buildConnectorThreadContextBlock, resolveThreadPersonaLabel } from './thread-context'
+import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '../assistant-control'
+import { requestApprovalMaybeAutoApprove } from '../approvals'
+
+let streamAgentChatImpl = streamAgentChat
+
+export function setStreamAgentChatForTest(
+  handler: typeof streamAgentChat | null,
+): void {
+  streamAgentChatImpl = handler || streamAgentChat
+}
 
 function resolveUploadPathFromUrl(rawUrl: string): string | null {
   if (!rawUrl) return null
@@ -111,6 +122,32 @@ function parseConnectorToolResult(toolOutput: string): { status?: string; to?: s
   } catch {
     return null
   }
+}
+
+function parseConnectorToolInput(toolInput: string): Record<string, unknown> | null {
+  const raw = toolInput.trim()
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function visibleConnectorToolText(input: Record<string, unknown> | null): string {
+  if (!input) return ''
+  const voiceText = typeof input.voiceText === 'string' ? input.voiceText.trim() : ''
+  if (voiceText) return voiceText
+  const message = typeof input.message === 'string' ? input.message.trim() : ''
+  if (message) return message
+  const caption = typeof input.caption === 'string' ? input.caption.trim() : ''
+  if (caption) return caption
+  const text = typeof input.text === 'string' ? input.text.trim() : ''
+  if (text) return text
+  return ''
 }
 
 function canonicalUploadMediaKey(filePath: string): string {
@@ -435,17 +472,19 @@ function rememberRecentInbound(key: string, now = Date.now(), ttlMs = 120_000): 
 function findDirectSessionForInbound(connector: Connector, msg: InboundMessage): ConnectorSession | null {
   if (connector.chatroomId) return null
   const effectiveAgentId = msg.agentIdOverride || connector.agentId
+  const channelIds = new Set([msg.channelId, msg.channelIdAlt].filter(Boolean))
+  const senderIds = new Set([msg.senderId, msg.senderIdAlt].filter(Boolean))
   const sessions = Object.values(loadSessions() as Record<string, ConnectorSession>)
   const candidates = sessions.filter((session) =>
     session?.agentId === effectiveAgentId
       && session?.connectorContext?.connectorId === connector.id
-      && session?.connectorContext?.channelId === msg.channelId,
+      && channelIds.has(session?.connectorContext?.channelId || ''),
   )
   if (msg.threadId) {
     const threadExact = candidates.find((session) => session?.connectorContext?.threadId === msg.threadId)
     if (threadExact) return threadExact
   }
-  const senderExact = candidates.find((session) => session?.connectorContext?.senderId === msg.senderId)
+  const senderExact = candidates.find((session) => senderIds.has(session?.connectorContext?.senderId || ''))
   if (senderExact) return senderExact
   return candidates[0] || null
 }
@@ -687,8 +726,10 @@ function parseConnectorCommand(text: string): ParsedConnectorCommand | null {
 
 function persistSessionRecord(session: ConnectorSession): void {
   const sessions = loadSessions()
+  session.updatedAt = Date.now()
   sessions[session.id] = session
   saveSessions(sessions)
+  notify('sessions')
 }
 
 function updateSessionConnectorContext(session: ConnectorSession, connector: Connector, msg: InboundMessage, sessionKey: string): void {
@@ -910,6 +951,9 @@ function resolveDirectSession(params: {
   })
   const sessions = loadSessions()
   let session = Object.values(sessions as Record<string, ConnectorSession>).find((item) => item?.name === sessionKey)
+  if (!session) {
+    session = findDirectSessionForInbound(connector, msg) || undefined
+  }
   let wasCreated = false
   if (!session) {
     const id = genId()
@@ -980,18 +1024,91 @@ function resolveDirectSession(params: {
   }
 }
 
-function pushSessionMessage(session: ConnectorSession, role: 'user' | 'assistant', text: string): void {
+function mirrorConnectorMessageToAgentThread(
+  session: ConnectorSession,
+  message: Record<string, unknown>,
+): void {
+  if (!session.agentId) return
+  if (typeof session.name !== 'string' || !session.name.startsWith('connector:')) return
+
+  const agents = loadAgents()
+  const agent = agents[session.agentId]
+  const threadSession = agent?.threadSessionId
+    ? loadSessions()[agent.threadSessionId]
+    : ensureAgentThreadSession(session.agentId)
+  if (!threadSession || threadSession.id === session.id) return
+
+  const last = Array.isArray(threadSession.messages) ? threadSession.messages[threadSession.messages.length - 1] : null
+  const source = message.source as MessageSource | undefined
+  const lastSource = (last?.source || null) as MessageSource | null
+  if (
+    last
+    && last.role === message.role
+    && last.text === message.text
+    && lastSource?.platform === source?.platform
+    && lastSource?.connectorId === source?.connectorId
+    && lastSource?.channelId === source?.channelId
+    && lastSource?.messageId === source?.messageId
+  ) {
+    return
+  }
+
+  if (!Array.isArray(threadSession.messages)) threadSession.messages = []
+  threadSession.messages.push({
+    ...message,
+    time: typeof message.time === 'number' ? message.time : Date.now(),
+    historyExcluded: true,
+  } as Session['messages'][number])
+  threadSession.lastActiveAt = Date.now()
+
+  const sessions = loadSessions()
+  sessions[threadSession.id] = threadSession
+  saveSessions(sessions)
+  notify('sessions')
+  notify(`messages:${threadSession.id}`)
+}
+
+function pushSessionMessage(
+  session: ConnectorSession,
+  role: 'user' | 'assistant',
+  text: string,
+  extra: Record<string, unknown> = {},
+): void {
   if (!text.trim()) return
   if (!Array.isArray(session.messages)) session.messages = []
-  session.messages.push({ role, text: text.trim(), time: Date.now() })
+  const message = { role, text: text.trim(), time: Date.now(), ...extra }
+  session.messages.push(message)
   session.lastActiveAt = Date.now()
+  mirrorConnectorMessageToAgentThread(session, message)
+}
+
+function modelHistoryTail(
+  messages: Session['messages'] | null | undefined,
+  limit = 20,
+) : Session['messages'] {
+  const filtered = (Array.isArray(messages) ? messages : []).filter((message) => message?.historyExcluded !== true)
+  return filtered.slice(-limit)
 }
 
 function persistSession(session: ConnectorSession): void {
   const sessions = loadSessions()
+  session.updatedAt = Date.now()
   sessions[session.id] = session
   saveSessions(sessions)
+  notify('sessions')
   notify(`messages:${session.id}`)
+}
+
+function isRecoverableConnectorSendError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  return /connection closed|not connected|socket closed|connection terminated|stream errored|connector .* is not running/i.test(message)
+}
+
+function connectorEmptyReplyFallback(streamErrorText: string): string {
+  if (/abort|timed?\s*out|network|socket|connection/i.test(streamErrorText)) {
+    return 'Sorry, I hit a temporary issue while responding. Please try again.'
+  }
+  return 'Sorry, I could not produce a reply just now. Please try again.'
 }
 
 function summarizeForCompaction(messages: Array<{ role?: string; text?: string }>): string {
@@ -1016,11 +1133,16 @@ function resolvePairingAccess(connector: Connector, msg: InboundMessage): {
   const policy = parsePairingPolicy(connector.config?.dmPolicy, 'open')
   const configAllowFrom = parseAllowFromCsv(connector.config?.allowFrom)
   const stored = listStoredAllowedSenders(connector.id)
-  const isAllowed = isSenderAllowed({
-    connectorId: connector.id,
-    senderId: msg.senderId,
-    configAllowFrom,
-  })
+  const isAllowed = [
+    msg.senderId,
+    msg.senderIdAlt,
+  ]
+    .filter((senderId): senderId is string => typeof senderId === 'string' && !!senderId.trim())
+    .some((senderId) => isSenderAllowed({
+      connectorId: connector.id,
+      senderId,
+      configAllowFrom,
+    }))
   return {
     policy,
     configAllowFrom,
@@ -1104,38 +1226,79 @@ async function handlePairCommand(params: {
   ].join('\n')
 }
 
-function enforceInboundAccessPolicy(connector: Connector, msg: InboundMessage): string | null {
+function resolveInboundApprovalSenderId(msg: InboundMessage): string {
+  const alt = typeof msg.senderIdAlt === 'string' ? msg.senderIdAlt.trim() : ''
+  if (alt) return alt
+  return typeof msg.senderId === 'string' ? msg.senderId.trim() : ''
+}
+
+function buildInboundApprovalSubject(msg: InboundMessage): string {
+  const senderName = typeof msg.senderName === 'string' ? msg.senderName.trim() : ''
+  const senderId = resolveInboundApprovalSenderId(msg)
+  if (senderName && senderId && senderName !== senderId) return `${senderName} (${senderId})`
+  return senderName || senderId || 'this sender'
+}
+
+async function enforceInboundAccessPolicy(params: {
+  connector: Connector
+  msg: InboundMessage
+  session: ConnectorSession
+  agent: ConnectorAgent
+}): Promise<string | null> {
+  const { connector, msg, session, agent } = params
   if (msg.isGroup) return null
-  const { policy, configAllowFrom, isAllowed } = resolvePairingAccess(connector, msg)
-  const storedAllowFrom = listStoredAllowedSenders(connector.id)
+  const { policy, isAllowed } = resolvePairingAccess(connector, msg)
   if (policy === 'open') return null
 
   if (policy === 'disabled') return NO_MESSAGE_SENTINEL
   if (isAllowed) return null
 
+  const senderId = resolveInboundApprovalSenderId(msg)
+  const senderSubject = buildInboundApprovalSubject(msg)
+  const approval = await requestApprovalMaybeAutoApprove({
+    category: 'connector_sender',
+    title: `Approve ${senderSubject} on ${connector.name}`,
+    description: `Allow ${senderSubject} to message ${agent.name} via ${connector.platform}/${connector.name}.`,
+    data: {
+      connectorId: connector.id,
+      connectorName: connector.name,
+      platform: connector.platform,
+      senderId,
+      senderIdRaw: typeof msg.senderId === 'string' ? msg.senderId.trim() : '',
+      senderName: typeof msg.senderName === 'string' ? msg.senderName.trim() : '',
+      channelId: typeof msg.channelId === 'string' ? msg.channelId.trim() : '',
+      policy,
+    },
+    agentId: agent.id,
+    sessionId: session.id,
+  })
+
+  if (approval.status === 'approved') return null
+
   if (policy === 'allowlist') {
-    if (!configAllowFrom.length && !storedAllowFrom.length) {
-      return 'This connector is set to allowlist mode, but no allowFrom entries are configured.'
-    }
-    return 'You are not authorized for this connector. Ask an approved user to add your sender ID via /pair allow <senderId>.'
+    return [
+      `${senderSubject} is pending approval for this connector.`,
+      'A SwarmClaw approval request has been created for this sender.',
+      'An approved operator can allow this sender in the app or via /pair allow <senderId>.',
+    ].join('\n')
   }
 
   if (policy === 'pairing') {
     const request = createOrTouchPairingRequest({
       connectorId: connector.id,
-      senderId: msg.senderId,
+      senderId,
       senderName: msg.senderName,
       channelId: msg.channelId,
     })
     return [
-      'Pairing is required before this connector will respond.',
-      `Your pairing code: ${request.code}`,
-      'Ask an approved sender to run /pair approve <code>.',
-      'Tip: if this is first-time setup with no approvals yet, run /pair approve <code> from this chat to bootstrap.',
+      `${senderSubject} is pending approval for this connector.`,
+      'A SwarmClaw approval request has been created for this sender.',
+      `Pairing code: ${request.code}`,
+      'Approve in the app, or ask an approved sender to run /pair approve <code>.',
     ].join('\n')
   }
 
-  return null
+  return 'This sender is not authorized for this connector.'
 }
 
 async function handleConnectorCommand(params: {
@@ -1493,7 +1656,7 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
         history,
       })
 
-      const responseText = result.finalResponse || result.fullText
+      const responseText = stripHiddenControlTokens(result.finalResponse || result.fullText)
       if (responseText.trim() && !isNoMessage(responseText)) {
         // Persist agent response to chatroom
         const agentSource: MessageSource = {
@@ -1601,6 +1764,19 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     msg,
     agent,
   })
+  const rawText = (msg.text || '').trim()
+  const inboundText = formatInboundUserText(msg)
+  const messageSource: MessageSource = {
+    platform: connector.platform,
+    connectorId: connector.id,
+    connectorName: connector.name,
+    channelId: msg.channelId,
+    senderId: msg.senderId,
+    senderName: msg.senderName,
+    messageId: msg.messageId,
+    replyToMessageId: msg.replyToMessageId,
+    threadId: msg.threadId,
+  }
 
   const parsedCommand = parseConnectorCommand(msg.text || '')
   if (parsedCommand?.name === 'pair') {
@@ -1621,8 +1797,36 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     return commandResult
   }
 
-  const accessPolicyResult = enforceInboundAccessPolicy(connector, msg)
+  const accessPolicyResult = await enforceInboundAccessPolicy({
+    connector,
+    msg,
+    session,
+    agent,
+  })
   if (accessPolicyResult) {
+    if (accessPolicyResult !== NO_MESSAGE_SENTINEL) {
+      const assistantSource: MessageSource = {
+        platform: connector.platform,
+        connectorId: connector.id,
+        connectorName: connector.name,
+        channelId: msg.channelId,
+        senderId: msg.senderId,
+        senderName: msg.senderName,
+        replyToMessageId: msg.messageId,
+        threadId: msg.threadId,
+      }
+      pushSessionMessage(session, 'user', rawText || inboundText, {
+        source: messageSource,
+        historyExcluded: true,
+      })
+      pushSessionMessage(session, 'assistant', accessPolicyResult, {
+        source: assistantSource,
+        historyExcluded: true,
+      })
+      updateSessionConnectorContext(session, connector, msg, sessionKey)
+      persistSessionRecord(session)
+      notify(`messages:${session.id}`)
+    }
     logExecution(session.id, 'decision', 'Connector inbound blocked by access policy', {
       agentId: agent.id,
       detail: {
@@ -1685,7 +1889,18 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
       `Inbound message from ${msg.platform}: ${preview}`,
       'connector-message',
     )
-    requestHeartbeatNow({ agentId: effectiveAgentId, reason: 'connector-message' })
+    requestHeartbeatNow({
+      agentId: effectiveAgentId,
+      eventId: `${connector.id}:${msg.messageId || msg.replyToMessageId || Date.now()}`,
+      reason: 'connector-message',
+      source: `connector:${msg.platform}`,
+      resumeMessage: `Inbound ${msg.platform} message from ${msg.senderName || msg.senderId || 'unknown sender'}.`,
+      detail: [
+        (msg.text || '').trim() ? `Text: ${(msg.text || '').slice(0, 240)}` : '',
+        msg.imageUrl ? 'Includes image input.' : '',
+        Array.isArray(msg.media) && msg.media.length > 0 ? `Media count: ${msg.media.length}` : '',
+      ].filter(Boolean).join(' '),
+    })
 
     logExecution(session.id, 'trigger', `${msg.platform} message from ${msg.senderName}`, {
       agentId: agent.id,
@@ -1786,32 +2001,15 @@ If media sending fails, report the exact error and retry with a corrected path/t
   const firstImageUrl = msg.imageUrl || (firstImage?.url) || undefined
   const firstImagePath = firstImage?.localPath || undefined
   const inboundAttachmentPaths = buildInboundAttachmentPaths(msg)
-  const inboundText = formatInboundUserText(msg)
   const modelInputText = inboundText
   // Store the raw user text for display (source.senderName handles attribution).
   // The formatted text with [SenderName] prefix is only used for LLM history context.
-  const rawText = (msg.text || '').trim()
-  const messageSource: MessageSource = {
-    platform: connector.platform,
-    connectorId: connector.id,
-    connectorName: connector.name,
-    channelId: msg.channelId,
-    senderId: msg.senderId,
-    senderName: msg.senderName,
-    messageId: msg.messageId,
-    replyToMessageId: msg.replyToMessageId,
-    threadId: msg.threadId,
-  }
-  session.messages.push({
-    role: 'user',
-    text: rawText || inboundText,
-    time: Date.now(),
+  pushSessionMessage(session, 'user', rawText || inboundText, {
     imageUrl: firstImageUrl,
     imagePath: firstImagePath,
     attachedFiles: inboundAttachmentPaths.length ? inboundAttachmentPaths : undefined,
     source: messageSource,
   })
-  session.lastActiveAt = Date.now()
   updateSessionConnectorContext(session, connector, msg, sessionKey)
   persistSessionRecord(session)
   notify(`messages:${session.id}`)
@@ -1821,13 +2019,16 @@ If media sending fails, report the exact error and retry with a corrected path/t
   let mediaExtractionText = ''
   let connectorToolDeliveredCurrentChannel = false
   let connectorToolDeliveredMessageId: string | undefined
+  let streamErrorText = ''
+  const connectorToolInputsByCallId = new Map<string, Record<string, unknown>>()
+  const connectorToolMirrorTexts: string[] = []
   const hasTools = session.plugins?.length && session.provider !== 'claude-cli'
   console.log(`[connector] Routing message to agent "${agent.name}" (${session.provider}/${session.model}), hasTools=${!!hasTools}`)
 
   if (hasTools) {
     try {
       const toolMediaOutputs: string[] = []
-      const result = await streamAgentChat({
+      const result = await streamAgentChatImpl({
         session: session as Session,
         message: modelInputText,
         imagePath: firstImagePath,
@@ -1836,11 +2037,27 @@ If media sending fails, report the exact error and retry with a corrected path/t
         systemPrompt,
         write: (raw) => {
           for (const event of parseSseDataEvents(raw)) {
+            if (event.t === 'err') {
+              const errText = typeof event.text === 'string' ? event.text.trim() : ''
+              if (errText) streamErrorText = errText
+              continue
+            }
+            if (event.t === 'tool_call' && event.toolName === 'connector_message_tool') {
+              const toolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : ''
+              const toolInput = typeof event.toolInput === 'string' ? event.toolInput : ''
+              if (toolCallId && toolInput) {
+                const parsedInput = parseConnectorToolInput(toolInput)
+                if (parsedInput) connectorToolInputsByCallId.set(toolCallId, parsedInput)
+              }
+              continue
+            }
             if (event.t !== 'tool_result') continue
             const toolOutput = typeof event.toolOutput === 'string' ? event.toolOutput : ''
             if (!toolOutput) continue
             toolMediaOutputs.push(toolOutput)
             if (event.toolName === 'connector_message_tool') {
+              const toolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : ''
+              const mirrorInput = toolCallId ? connectorToolInputsByCallId.get(toolCallId) || null : null
               const parsed = parseConnectorToolResult(toolOutput)
               if (!parsed?.status || !parsed.to) continue
               const sentLikeStatus = parsed.status === 'sent' || parsed.status === 'voice_sent'
@@ -1854,11 +2071,13 @@ If media sending fails, report the exact error and retry with a corrected path/t
               if (inboundTarget && outboundTarget && inboundTarget === outboundTarget) {
                 connectorToolDeliveredCurrentChannel = true
                 if (parsed.messageId) connectorToolDeliveredMessageId = parsed.messageId
+                const mirrorText = visibleConnectorToolText(mirrorInput)
+                if (mirrorText) connectorToolMirrorTexts.push(mirrorText)
               }
             }
           }
         },
-        history: session.messages.slice(-20),
+        history: modelHistoryTail(session.messages),
       })
       // Use finalResponse for connectors — strips intermediate planning/tool-use text
       fullText = result.finalResponse || result.fullText
@@ -1891,26 +2110,54 @@ If media sending fails, report the exact error and retry with a corrected path/t
         }
       },
       active: new Map(),
-      loadHistory: () => session.messages.slice(-20),
+      loadHistory: () => modelHistoryTail(session.messages),
     })
     mediaExtractionText = fullText
   }
 
+  if (!fullText.trim() && !connectorToolDeliveredCurrentChannel) {
+    fullText = connectorEmptyReplyFallback(streamErrorText)
+  }
+
+  const suppressHiddenResponse = shouldSuppressHiddenControlText(fullText)
+  fullText = stripHiddenControlTokens(fullText)
+
   // If the agent chose NO_MESSAGE, skip saving it to history — the user's message
   // is already recorded, and saving the sentinel would pollute the LLM's context
-  if (isNoMessage(fullText)) {
+  if (suppressHiddenResponse || isNoMessage(fullText)) {
     if (connectorToolDeliveredCurrentChannel) {
+      const mirroredToolText = connectorToolMirrorTexts
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .join('\n\n')
+      if (mirroredToolText) {
+        const assistantSource: MessageSource = {
+          platform: connector.platform,
+          connectorId: connector.id,
+          connectorName: connector.name,
+          channelId: msg.channelId,
+          senderId: msg.senderId,
+          senderName: msg.senderName,
+          messageId: connectorToolDeliveredMessageId,
+          replyToMessageId: msg.messageId,
+          threadId: msg.threadId,
+        }
+        pushSessionMessage(session, 'assistant', mirroredToolText, {
+          source: assistantSource,
+        })
+      }
       session.connectorContext = {
         ...(session.connectorContext || {}),
         lastOutboundAt: Date.now(),
         lastOutboundMessageId: connectorToolDeliveredMessageId || session.connectorContext?.lastOutboundMessageId || null,
       }
       persistSessionRecord(session)
+      notify(`messages:${session.id}`)
       await maybeSendStatusReaction(connector, msg, 'sent')
     } else {
       await maybeSendStatusReaction(connector, msg, 'silent')
     }
-    console.log(`[connector] Agent returned NO_MESSAGE — suppressing outbound reply`)
+    console.log(`[connector] Agent returned hidden control sentinel — suppressing outbound reply`)
     logExecution(session.id, 'decision', 'Agent suppressed outbound (NO_MESSAGE)', {
       agentId: agent.id,
       detail: { platform: msg.platform, channelId: msg.channelId },
@@ -1936,12 +2183,13 @@ If media sending fails, report the exact error and retry with a corrected path/t
     connectorId: connector.id,
     connectorName: connector.name,
     channelId: msg.channelId,
+    senderId: msg.senderId,
+    senderName: msg.senderName,
     replyToMessageId: msg.messageId,
     threadId: msg.threadId,
   }
   if (fullText.trim()) {
-    session.messages.push({ role: 'assistant', text: fullText.trim(), time: Date.now(), source: assistantSource })
-    session.lastActiveAt = Date.now()
+    pushSessionMessage(session, 'assistant', fullText.trim(), { source: assistantSource })
     persistSessionRecord(session)
     notify(`messages:${session.id}`)
   }
@@ -2020,6 +2268,8 @@ If media sending fails, report the exact error and retry with a corrected path/t
 }
 
 routeMessageHandlerRef.current = routeMessage
+
+export const routeConnectorMessageForTest = routeMessage
 
 /** Start a connector (serialized per ID to prevent concurrent start/stop races) */
 export async function startConnector(connectorId: string): Promise<void> {
@@ -2439,6 +2689,30 @@ export async function performConnectorMessageAction(params: {
   }
 }
 
+export function sanitizeConnectorOutboundContent(params: {
+  text?: string
+  caption?: string
+}): {
+  sanitizedText: string
+  suppressHiddenText: boolean
+  sanitizedCaptionText: string
+  sanitizedCaption?: string
+} {
+  const sanitizedText = stripHiddenControlTokens(params.text || '')
+  const suppressHiddenText = shouldSuppressHiddenControlText(params.text || '')
+  const sanitizedCaptionText = stripHiddenControlTokens(params.caption || '').trim()
+  const sanitizedCaption = shouldSuppressHiddenControlText(params.caption || '')
+    ? undefined
+    : (sanitizedCaptionText || undefined)
+
+  return {
+    sanitizedText,
+    suppressHiddenText,
+    sanitizedCaptionText,
+    sanitizedCaption,
+  }
+}
+
 /**
  * Send an outbound message through a running connector.
  * Intended for proactive agent notifications (e.g. WhatsApp updates).
@@ -2483,16 +2757,18 @@ export async function sendConnectorMessage(params: {
 
   if (!connector || !connectorId) throw new Error('Connector resolution failed.')
 
-  const instance = running.get(connectorId)
-  if (!instance) {
-    throw new Error(`Connector "${connectorId}" is not running.`)
-  }
-  if (typeof instance.sendMessage !== 'function') {
-    throw new Error(`Connector "${connector.name}" (${connector.platform}) does not support outbound sends.`)
-  }
+  const {
+    sanitizedText,
+    suppressHiddenText,
+    sanitizedCaptionText,
+    sanitizedCaption,
+  } = sanitizeConnectorOutboundContent({
+    text: params.text,
+    caption: params.caption,
+  })
 
   // Apply NO_MESSAGE filter at the delivery layer so all outbound paths respect it
-  if (isNoMessage(params.text) && !params.imageUrl && !params.fileUrl && !params.mediaPath) {
+  if ((suppressHiddenText || isNoMessage(sanitizedText)) && !params.imageUrl && !params.fileUrl && !params.mediaPath) {
     console.log(`[connector] sendConnectorMessage: NO_MESSAGE — suppressing outbound send`)
     return { connectorId, platform: connector.platform, channelId: params.channelId }
   }
@@ -2502,14 +2778,14 @@ export async function sendConnectorMessage(params: {
     ? normalizeWhatsappTarget(params.channelId)
     : params.channelId
 
-  let outboundText = params.text || ''
+  let outboundText = sanitizedText
   let outboundOptions: Parameters<NonNullable<ConnectorInstance['sendMessage']>>[2] | undefined = {
     imageUrl: params.imageUrl,
     fileUrl: params.fileUrl,
     mediaPath: params.mediaPath,
     mimeType: params.mimeType,
     fileName: params.fileName,
-    caption: params.caption,
+    caption: sanitizedCaption,
     replyToMessageId: params.replyToMessageId,
     threadId: params.threadId,
     ptt: params.ptt,
@@ -2520,8 +2796,8 @@ export async function sendConnectorMessage(params: {
       || params.fileUrl
       || (params.mediaPath ? uploadApiUrlFromPath(params.mediaPath) : null)
     const fallbackParts = [
-      (params.text || '').trim(),
-      (params.caption || '').trim(),
+      sanitizedText.trim(),
+      sanitizedCaptionText,
       mediaLink ? `Attachment: ${mediaLink}` : '',
       !mediaLink && params.mediaPath ? `Attachment: ${path.basename(params.mediaPath)}` : '',
     ].filter(Boolean)
@@ -2529,7 +2805,29 @@ export async function sendConnectorMessage(params: {
     outboundOptions = undefined
   }
 
-  const result = await instance.sendMessage(channelId, outboundText, outboundOptions)
+  const sendThroughCurrentInstance = async () => {
+    const liveInstance = running.get(connectorId)
+    if (!liveInstance) {
+      throw new Error(`Connector "${connectorId}" is not running.`)
+    }
+    if (typeof liveInstance.sendMessage !== 'function') {
+      throw new Error(`Connector "${connector.name}" (${connector.platform}) does not support outbound sends.`)
+    }
+    return liveInstance.sendMessage(channelId, outboundText, outboundOptions)
+  }
+
+  let result
+  try {
+    result = await sendThroughCurrentInstance()
+  } catch (err: unknown) {
+    if (!isRecoverableConnectorSendError(err)) throw err
+    const errMsg = err instanceof Error ? err.message : String(err)
+    console.warn(`[connector] Outbound send failed for ${connectorId}; attempting automatic restart`, { error: errMsg })
+    recordHealthEvent(connectorId, 'disconnected', `Outbound send failed: ${errMsg}`)
+    await startConnector(connectorId)
+    result = await sendThroughCurrentInstance()
+  }
+
   if (params.sessionId) {
     const sessions = loadSessions()
     const session = sessions[params.sessionId]
@@ -2562,6 +2860,7 @@ export async function sendConnectorMessage(params: {
       }
       sessions[session.id] = session
       saveSessions(sessions)
+      notify('sessions')
       notify(`messages:${session.id}`)
     }
   }

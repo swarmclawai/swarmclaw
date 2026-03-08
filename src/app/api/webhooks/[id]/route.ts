@@ -13,6 +13,18 @@ import { triggerWebhookWatchJobs } from '@/lib/server/watch-jobs'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ops: CollectionOps<any> = { load: loadWebhooks, save: saveWebhooks }
 
+type WebhookPostDeps = {
+  enqueueRun: typeof enqueueSessionRun
+  enqueueEvent: typeof enqueueSystemEvent
+  requestHeartbeat: typeof requestHeartbeatNow
+}
+
+const defaultWebhookPostDeps: WebhookPostDeps = {
+  enqueueRun: enqueueSessionRun,
+  enqueueEvent: enqueueSystemEvent,
+  requestHeartbeat: requestHeartbeatNow,
+}
+
 function normalizeEvents(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value
@@ -58,8 +70,11 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   return NextResponse.json({ ok: true })
 }
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export async function handleWebhookPost(
+  req: Request,
+  id: string,
+  deps: WebhookPostDeps = defaultWebhookPostDeps,
+) {
   const webhooks = loadWebhooks()
   const webhook = webhooks[id]
   if (!webhook) return notFound('Webhook not found')
@@ -176,7 +191,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       agentId: agent.id,
       parentSessionId: null,
       tools: agent.tools || [],
-      heartbeatEnabled: agent.heartbeatEnabled ?? true,
+      heartbeatEnabled: agent.heartbeatEnabled ?? false,
       heartbeatIntervalSec: agent.heartbeatIntervalSec ?? null,
     }
     sessions[session.id as string] = session
@@ -200,7 +215,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   ].join('\n')
 
   try {
-    const run = enqueueSessionRun({
+    const run = deps.enqueueRun({
       sessionId: sid,
       message: prompt,
       source: 'webhook',
@@ -209,9 +224,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     })
 
     // Enqueue system event + heartbeat wake
-    enqueueSystemEvent(sid, `Webhook received: ${webhook.name || id} (${incomingEvent})`)
+    deps.enqueueEvent(sid, `Webhook received: ${webhook.name || id} (${incomingEvent})`)
     if (webhook.agentId) {
-      requestHeartbeatNow({ agentId: webhook.agentId, reason: 'webhook' })
+      deps.requestHeartbeat({
+        agentId: webhook.agentId,
+        eventId: `webhook:${id}:${incomingEvent}:${Date.now()}`,
+        reason: 'webhook',
+        source: `webhook:${id}`,
+        resumeMessage: `Webhook received: ${webhook.name || id} (${incomingEvent})`,
+        detail: payloadPreview || '(empty payload)',
+      })
     }
 
     appendWebhookLog(genId(8), {
@@ -261,4 +283,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       error: errorMsg,
     })
   }
+}
+
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  return handleWebhookPost(req, id)
 }

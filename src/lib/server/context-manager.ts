@@ -204,7 +204,7 @@ export function consolidateToMemory(
     if (hasDecision || hasKeyFact || hasResult) {
       // Create a concise summary (first 500 chars)
       const summary = text.length > 500 ? text.slice(0, 500) + '...' : text
-      const category = hasDecision ? 'decision' : hasResult ? 'result' : 'note'
+      const category = 'working/scratch'
       const title = `[auto-consolidated] ${text.slice(0, 60).replace(/\n/g, ' ')}`
 
       db.add({
@@ -213,6 +213,11 @@ export function consolidateToMemory(
         category,
         title,
         content: summary,
+        metadata: {
+          origin: 'auto-consolidated',
+          kind: hasDecision ? 'decision' : hasResult ? 'result' : 'note',
+          tier: 'working',
+        },
       })
       stored++
     }

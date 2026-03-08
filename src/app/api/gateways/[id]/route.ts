@@ -35,6 +35,8 @@ function normalizeDeployment(value: unknown): OpenClawDeploymentConfig | null {
     useCase: normalizeText(deployment.useCase) as OpenClawDeploymentConfig['useCase'],
     exposure: normalizeText(deployment.exposure) as OpenClawDeploymentConfig['exposure'],
     managedBy: normalizeText(deployment.managedBy) as OpenClawDeploymentConfig['managedBy'],
+    localInstanceId: normalizeText(deployment.localInstanceId),
+    localPort: normalizeNullableNumber(deployment.localPort),
     targetHost: normalizeText(deployment.targetHost),
     sshHost: normalizeText(deployment.sshHost),
     sshUser: normalizeText(deployment.sshUser),

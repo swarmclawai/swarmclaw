@@ -4,7 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { DATA_DIR } from '../data-dir'
 import type { ToolBuildContext } from './context'
-import type { Plugin, PluginHooks } from '@/types'
+import type { ApprovalRequest, Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 
@@ -240,6 +240,38 @@ Key rules:
   }
 }
 
+function trimString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function buildPluginCreatorApprovalResumeInput(approval: ApprovalRequest): Record<string, unknown> | null {
+  if (approval.category === 'plugin_scaffold') {
+    const filename = trimString(approval.data.filename)
+    const code = trimString(approval.data.code)
+    if (!filename || !code) return null
+    return {
+      action: 'scaffold',
+      filename,
+      code,
+      packageJson: approval.data.packageJson,
+      packageManager: trimString(approval.data.packageManager) || undefined,
+      approved: true,
+    }
+  }
+  if (approval.category === 'plugin_install') {
+    const filename = trimString(approval.data.filename)
+    if (!filename) return null
+    return {
+      action: 'install_dependencies',
+      filename,
+      packageJson: approval.data.packageJson,
+      packageManager: trimString(approval.data.packageManager) || undefined,
+      approved: true,
+    }
+  }
+  return null
+}
+
 /**
  * Register as a Built-in Plugin
  */
@@ -253,6 +285,30 @@ const PluginCreatorPlugin: Plugin = {
       'Put API keys in plugin settings or SwarmClaw secrets instead of hardcoding them in plugin source.',
       'Call `get_spec` before scaffolding so the plugin follows the current contract.',
     ],
+    getApprovalGuidance: ({ approval, phase, approved }) => {
+      if (approval.category !== 'plugin_scaffold' && approval.category !== 'plugin_install') return null
+      if (phase === 'request') {
+        return [
+          'When this approval is granted, continue with `plugin_creator_tool` for the exact approved action instead of asking again in prose.',
+          'Do not change the approved filename, dependency manifest, or package manager unless tool evidence proves the approved action can no longer execute as approved.',
+        ]
+      }
+      if (phase === 'connector_reminder') {
+        return 'Approving this lets the agent resume the exact plugin scaffolding or dependency install step automatically.'
+      }
+      if (approved !== true) {
+        return 'Do not retry the rejected plugin scaffolding or install request unless the exact requested action materially changes.'
+      }
+      const resumeInput = buildPluginCreatorApprovalResumeInput(approval)
+      const lines = [
+        'Resume immediately with `plugin_creator_tool` using the exact approved action.',
+        'Do not re-explain or re-request the same plugin action once approval has been granted.',
+      ]
+      if (resumeInput) {
+        lines.push(`Exact tool input: ${JSON.stringify(resumeInput)}`)
+      }
+      return lines
+    },
   } as PluginHooks,
   tools: [
     {

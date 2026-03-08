@@ -13,7 +13,9 @@ import { extractTaskResult, formatResultBody } from './task-result'
 import { getCheckpointSaver } from './langgraph-checkpoint'
 import { cascadeUnblock } from './dag-validation'
 import { performGuardianRollback } from './guardian'
+import { shouldAutoDeleteScheduleAfterTerminalRun } from '@/lib/schedule-origin'
 import type { Agent, BoardTask, Connector, Message, Session } from '@/types'
+import { buildAgentDisabledMessage, isAgentDisabled } from './agent-availability'
 
 // HMR-safe: pin processing flag to globalThis so hot reloads don't reset it
 const _queueState = ((globalThis as Record<string, unknown>).__swarmclaw_queue__ ??= { processing: false, pendingKick: false }) as { processing: boolean; pendingKick: boolean }
@@ -23,9 +25,11 @@ interface SessionMessageLike {
   text?: string
   time?: number
   kind?: string
+  historyExcluded?: boolean
   source?: {
     connectorId?: string
     channelId?: string
+    threadId?: string
   }
   toolEvents?: Array<{ name?: string; output?: string }>
   streaming?: boolean
@@ -37,7 +41,17 @@ interface SessionLike {
   user?: string
   cwd?: string
   messages?: SessionMessageLike[]
+  connectorContext?: {
+    connectorId?: string | null
+    channelId?: string | null
+    threadId?: string | null
+    senderId?: string | null
+    senderName?: string | null
+  }
   lastActiveAt?: number
+  heartbeatEnabled?: boolean | null
+  active?: boolean
+  currentRunId?: string | null
 }
 
 interface ScheduleTaskMeta extends BoardTask {
@@ -58,7 +72,10 @@ interface RunningConnectorLike {
 interface ConnectorTaskFollowupTarget {
   connectorId: string
   channelId: string
+  threadId?: string | null
 }
+
+const DISABLED_AGENT_RETRY_MS = 60_000
 
 function sameReasons(a?: string[] | null, b?: string[] | null): boolean {
   const av = Array.isArray(a) ? a : []
@@ -666,12 +683,10 @@ export function resolveTaskOriginConnectorFollowupTarget(params: {
   const delegatedByAgentId = typeof metaTask.delegatedByAgentId === 'string'
     ? metaTask.delegatedByAgentId.trim()
     : ''
+  const allowedOwners = new Set([task.agentId, delegatedByAgentId].filter(Boolean))
   const sourceSessionId = typeof metaTask.createdInSessionId === 'string'
     ? metaTask.createdInSessionId.trim()
     : ''
-  if (!sourceSessionId) return null
-  const sourceSession = sessions[sourceSessionId]
-  if (!sourceSession || !Array.isArray(sourceSession.messages)) return null
 
   const runningById = new Map<string, RunningConnectorLike>()
   for (const entry of running) {
@@ -679,9 +694,64 @@ export function resolveTaskOriginConnectorFollowupTarget(params: {
     runningById.set(entry.id, entry)
   }
 
+  const normalizeTarget = (raw: {
+    connectorId?: string | null
+    channelId?: string | null
+    threadId?: string | null
+  }): ConnectorTaskFollowupTarget | null => {
+    const connectorId = typeof raw.connectorId === 'string' ? raw.connectorId.trim() : ''
+    if (!connectorId) return null
+    const connector = connectors[connectorId]
+    if (!connector) return null
+    const ownerId = typeof connector.agentId === 'string' ? connector.agentId.trim() : ''
+    if (ownerId && !allowedOwners.has(ownerId)) return null
+
+    const runtime = runningById.get(connectorId)
+    if (runtime && !runtime.supportsSend) return null
+
+    const channelId = typeof raw.channelId === 'string' ? raw.channelId.trim() : ''
+    if (!channelId) return null
+    const normalizedChannelId = connector.platform === 'whatsapp'
+      ? normalizeWhatsappTarget(channelId)
+      : channelId
+    const threadId = typeof raw.threadId === 'string' ? raw.threadId.trim() : ''
+    return {
+      connectorId,
+      channelId: normalizedChannelId,
+      ...(threadId ? { threadId } : {}),
+    }
+  }
+
+  const explicitTarget = normalizeTarget({
+    connectorId: typeof metaTask.followupConnectorId === 'string' ? metaTask.followupConnectorId : null,
+    channelId: typeof metaTask.followupChannelId === 'string' ? metaTask.followupChannelId : null,
+    threadId: typeof metaTask.followupThreadId === 'string' ? metaTask.followupThreadId : null,
+  })
+  if (explicitTarget) return explicitTarget
+
+  if (!sourceSessionId) return null
+  const sourceSession = sessions[sourceSessionId]
+  if (!sourceSession) return null
+
+  const sessionContextTarget = normalizeTarget({
+    connectorId: typeof sourceSession.connectorContext?.connectorId === 'string'
+      ? sourceSession.connectorContext.connectorId
+      : null,
+    channelId: typeof sourceSession.connectorContext?.channelId === 'string'
+      ? sourceSession.connectorContext.channelId
+      : null,
+    threadId: typeof sourceSession.connectorContext?.threadId === 'string'
+      ? sourceSession.connectorContext.threadId
+      : null,
+  })
+  if (sessionContextTarget) return sessionContextTarget
+
+  if (!Array.isArray(sourceSession.messages)) return null
+
   for (let i = sourceSession.messages.length - 1; i >= 0; i--) {
     const message = sourceSession.messages[i]
     if (!message || message.role !== 'user') continue
+    if (message.historyExcluded === true) continue
 
     const connectorId = typeof message.source?.connectorId === 'string'
       ? message.source.connectorId.trim()
@@ -690,15 +760,7 @@ export function resolveTaskOriginConnectorFollowupTarget(params: {
 
     const connector = connectors[connectorId]
     if (!connector) continue
-    const ownerId = typeof connector.agentId === 'string' ? connector.agentId.trim() : ''
-    if (ownerId) {
-      const allowedOwners = new Set([task.agentId, delegatedByAgentId].filter(Boolean))
-      if (!allowedOwners.has(ownerId)) continue
-    }
-
     const runtime = runningById.get(connectorId)
-    if (runtime && !runtime.supportsSend) continue
-
     const sourceChannel = typeof message.source?.channelId === 'string'
       ? message.source.channelId.trim()
       : ''
@@ -707,18 +769,57 @@ export function resolveTaskOriginConnectorFollowupTarget(params: {
       || connector.config?.outboundJid
       || connector.config?.outboundTarget
       || ''
-    const rawChannel = sourceChannel || fallbackChannel
-    if (!rawChannel) continue
-
-    return {
+    const target = normalizeTarget({
       connectorId,
-      channelId: connector.platform === 'whatsapp'
-        ? normalizeWhatsappTarget(rawChannel)
-        : rawChannel,
-    }
+      channelId: sourceChannel || fallbackChannel,
+      threadId: typeof message.source?.threadId === 'string' ? message.source.threadId : null,
+    })
+    if (target) return target
   }
 
   return null
+}
+
+export function collectTaskConnectorFollowupTargets(params: {
+  task: BoardTask
+  sessions: Record<string, SessionLike>
+  connectors: Record<string, Connector>
+  running: RunningConnectorLike[]
+}): ConnectorTaskFollowupTarget[] {
+  const { task, sessions, connectors, running } = params
+  const originTarget = resolveTaskOriginConnectorFollowupTarget({ task, sessions, connectors, running })
+  if (originTarget) return [originTarget]
+
+  const targets: ConnectorTaskFollowupTarget[] = []
+  const seen = new Set<string>()
+  const pushTarget = (target: ConnectorTaskFollowupTarget | null | undefined) => {
+    if (!target?.connectorId || !target?.channelId) return
+    const key = `${target.connectorId}|${target.channelId}|${target.threadId || ''}`
+    if (seen.has(key)) return
+    seen.add(key)
+    targets.push(target)
+  }
+
+  for (const entry of running) {
+    if (!entry.supportsSend || !entry.id) continue
+    const connector = connectors[entry.id]
+    if (!connector) continue
+    if (connector.agentId !== task.agentId) continue
+    if (!isEnabledFlag(connector.config?.taskFollowups)) continue
+    const channelTargetRaw = entry.configuredTargets[0]
+      || connector.config?.outboundJid
+      || connector.config?.outboundTarget
+      || ''
+    if (!channelTargetRaw) continue
+    pushTarget({
+      connectorId: entry.id,
+      channelId: connector.platform === 'whatsapp'
+        ? normalizeWhatsappTarget(channelTargetRaw)
+        : channelTargetRaw,
+    })
+  }
+
+  return targets
 }
 
 // Task result extraction now uses Zod-validated structured data
@@ -777,6 +878,132 @@ async function executeTaskRun(
   }
 
   return text
+}
+
+function hasFinishedExecutionSession(session: SessionLike | Session | null | undefined): boolean {
+  if (!session) return false
+  return session.active === false && !session.currentRunId
+}
+
+export function reconcileFinishedRunningTasks(): { reconciled: number; deadLettered: number } {
+  const tasks = loadTasks()
+  const sessions = loadSessions() as Record<string, SessionLike>
+  const settings = loadSettings()
+  const queue = loadQueue()
+  const now = Date.now()
+  let reconciled = 0
+  let deadLettered = 0
+  let tasksDirty = false
+  let sessionsDirty = false
+  let queueDirty = false
+  const terminalTasks: BoardTask[] = []
+
+  for (const task of Object.values(tasks) as BoardTask[]) {
+    if (task.status !== 'running') continue
+    const sessionId = typeof task.sessionId === 'string' ? task.sessionId : ''
+    if (!sessionId) continue
+    const session = sessions[sessionId]
+    if (!hasFinishedExecutionSession(session)) continue
+
+    const fallbackText = latestAssistantText(session)
+    if (!fallbackText && !task.result) continue
+
+    applyTaskPolicyDefaults(task)
+    const taskResult = extractTaskResult(
+      session,
+      task.result || fallbackText || null,
+      { sinceTime: typeof task.startedAt === 'number' ? task.startedAt : null },
+    )
+    const enrichedResult = formatResultBody(taskResult)
+    task.result = enrichedResult.slice(0, 4000) || null
+    task.artifacts = taskResult.artifacts.slice(0, 24)
+    task.outputFiles = extractLikelyOutputFiles(enrichedResult).slice(0, 24)
+    task.updatedAt = now
+    const report = ensureTaskCompletionReport(task)
+    if (report?.relativePath) task.completionReportPath = report.relativePath
+    const validation = validateTaskCompletion(task, { report, settings })
+    task.validation = validation
+    if (!task.comments) task.comments = []
+
+    if (validation.ok) {
+      task.status = 'completed'
+      task.completedAt = now
+      task.retryScheduledAt = null
+      task.deadLetteredAt = null
+      task.error = null
+      task.checkpoint = {
+        ...(task.checkpoint || {}),
+        lastRunId: sessionId,
+        lastSessionId: sessionId,
+        note: 'Recovered completed task state from finished session.',
+        updatedAt: now,
+      }
+      task.comments.push({
+        id: genId(),
+        author: 'System',
+        text: 'Recovered completed task state from a finished execution session.',
+        createdAt: now,
+      })
+      reconciled++
+      terminalTasks.push(task)
+    } else {
+      const failureReason = formatValidationFailure(validation.reasons).slice(0, 500)
+      const retryState = scheduleRetryOrDeadLetter(task, failureReason)
+      task.completedAt = retryState === 'dead_lettered' ? null : task.completedAt
+      task.comments.push({
+        id: genId(),
+        author: 'System',
+        text: `Recovered finished session but the task result failed validation.\n\n${validation.reasons.map((reason) => `- ${reason}`).join('\n')}`,
+        createdAt: now,
+      })
+      if (retryState === 'retry') {
+        pushQueueUnique(queue, task.id)
+        queueDirty = true
+        reconciled++
+        pushMainLoopEventToMainSessions({
+          type: 'task_retry_scheduled',
+          text: `Task retry scheduled: "${task.title}" (${task.id}) attempt ${task.attempts}/${task.maxAttempts} in ${task.retryBackoffSec}s.`,
+        })
+      } else {
+        deadLettered++
+        terminalTasks.push(task)
+      }
+    }
+
+    if (session.heartbeatEnabled !== false) {
+      session.heartbeatEnabled = false
+      session.lastActiveAt = now
+      sessionsDirty = true
+    }
+    tasksDirty = true
+  }
+
+  if (tasksDirty) {
+    saveTasks(tasks)
+    notify('tasks')
+    notify('runs')
+  }
+  if (sessionsDirty) saveSessions(sessions as Record<string, Session>)
+  if (queueDirty) saveQueue(queue)
+
+  for (const task of terminalTasks) {
+    if (task.status === 'completed') {
+      pushMainLoopEventToMainSessions({
+        type: 'task_completed',
+        text: `Task completed: "${task.title}" (${task.id})`,
+      })
+    } else if (task.status === 'failed') {
+      pushMainLoopEventToMainSessions({
+        type: 'task_failed',
+        text: `Task failed validation: "${task.title}" (${task.id})`,
+      })
+    }
+    notifyMainChatScheduleResult(task)
+    notifyAgentThreadTaskResult(task)
+    cleanupTerminalOneOffSchedule(task)
+  }
+
+  return { reconciled, deadLettered }
 }
 
 function notifyMainChatScheduleResult(task: BoardTask): void {
@@ -844,6 +1071,22 @@ function notifyMainChatScheduleResult(task: BoardTask): void {
   if (changed) saveSessions(sessions)
 }
 
+function cleanupTerminalOneOffSchedule(task: BoardTask): void {
+  const scheduleTask = task as ScheduleTaskMeta
+  const sourceType = typeof scheduleTask.sourceType === 'string' ? scheduleTask.sourceType : ''
+  if (sourceType !== 'schedule') return
+  const scheduleId = typeof scheduleTask.sourceScheduleId === 'string' ? scheduleTask.sourceScheduleId : ''
+  if (!scheduleId) return
+
+  const schedules = loadSchedules()
+  const schedule = schedules[scheduleId]
+  if (!shouldAutoDeleteScheduleAfterTerminalRun(schedule)) return
+
+  delete schedules[scheduleId]
+  saveSchedules(schedules)
+  notify('schedules')
+}
+
 async function notifyConnectorTaskFollowups(params: {
   task: BoardTask
   statusLabel: string
@@ -858,53 +1101,22 @@ async function notifyConnectorTaskFollowups(params: {
   const running = (await import('./connectors/manager')).listRunningConnectors()
   const manager = await import('./connectors/manager')
   const sessions = loadSessions()
-
-  const candidateByKey = new Map<string, ConnectorTaskFollowupTarget>()
-  const addCandidate = (candidate: ConnectorTaskFollowupTarget | null | undefined) => {
-    if (!candidate?.connectorId || !candidate?.channelId) return
-    const key = `${candidate.connectorId}|${candidate.channelId}`
-    if (!candidateByKey.has(key)) candidateByKey.set(key, candidate)
-  }
-
+  const targets = collectTaskConnectorFollowupTargets({
+    task,
+    sessions: sessions as Record<string, SessionLike>,
+    connectors,
+    running: running as RunningConnectorLike[],
+  })
+  if (!targets.length) return
   const originTarget = resolveTaskOriginConnectorFollowupTarget({
     task,
     sessions: sessions as Record<string, SessionLike>,
     connectors,
     running: running as RunningConnectorLike[],
   })
-  addCandidate(originTarget)
   const preferredTargetKey = originTarget
-    ? `${originTarget.connectorId}|${originTarget.channelId}`
+    ? `${originTarget.connectorId}|${originTarget.channelId}|${originTarget.threadId || ''}`
     : ''
-
-  for (const entry of running) {
-    if (!entry.supportsSend || !entry.id) continue
-    const connector = connectors[entry.id]
-    if (!connector) continue
-    if (connector.agentId !== task.agentId) continue
-    if (!isEnabledFlag(connector.config?.taskFollowups)) continue
-    const channelTargetRaw = entry.recentChannelId
-      || entry.configuredTargets[0]
-      || connector.config?.outboundJid
-      || connector.config?.outboundTarget
-      || ''
-    if (!channelTargetRaw) continue
-    addCandidate({
-      connectorId: entry.id,
-      channelId: connector.platform === 'whatsapp'
-        ? normalizeWhatsappTarget(channelTargetRaw)
-        : channelTargetRaw,
-    })
-  }
-  const targets = [...candidateByKey.values()].sort((a, b) => {
-    if (!preferredTargetKey) return 0
-    const aKey = `${a.connectorId}|${a.channelId}`
-    const bKey = `${b.connectorId}|${b.channelId}`
-    if (aKey === preferredTargetKey && bKey !== preferredTargetKey) return -1
-    if (bKey === preferredTargetKey && aKey !== preferredTargetKey) return 1
-    return 0
-  })
-  if (!targets.length) return
 
   const summary = summaryText.trim().slice(0, 1400)
   for (const target of targets) {
@@ -925,7 +1137,7 @@ async function notifyConnectorTaskFollowups(params: {
           `Task ${statusLabel}: ${task.title}`,
           summary || 'No summary provided.',
         ].join('\n\n')
-    const targetKey = `${target.connectorId}|${target.channelId}`
+    const targetKey = `${target.connectorId}|${target.channelId}|${target.threadId || ''}`
     const preferredChannelNote = !template && preferredTargetKey && targetKey === preferredTargetKey
       ? '\n\n(Update sent in the same channel that requested this task.)'
       : ''
@@ -936,6 +1148,7 @@ async function notifyConnectorTaskFollowups(params: {
       await manager.sendConnectorMessage({
         connectorId: target.connectorId,
         channelId: target.channelId,
+        threadId: target.threadId || undefined,
         text: outboundMessage,
         ...(resolvedMediaPath
           ? {
@@ -1351,6 +1564,21 @@ export async function processNext() {
         })
         continue
       }
+      if (isAgentDisabled(agent)) {
+        const now = Date.now()
+        task.retryScheduledAt = now + DISABLED_AGENT_RETRY_MS
+        task.updatedAt = now
+        task.error = buildAgentDisabledMessage(agent, 'process queued tasks')
+        saveTasks(tasks)
+        notify('tasks')
+        pushQueueUnique(queue, taskId)
+        saveQueue(queue)
+        pushMainLoopEventToMainSessions({
+          type: 'task_deferred',
+          text: `Task deferred: "${task.title}" (${task.id}) — agent ${task.agentId} is disabled.`,
+        })
+        continue
+      }
 
       // Mark as running
       applyTaskPolicyDefaults(task)
@@ -1606,6 +1834,7 @@ export async function processNext() {
           })
           notifyMainChatScheduleResult(doneTask)
           notifyAgentThreadTaskResult(doneTask)
+          cleanupTerminalOneOffSchedule(doneTask)
           // Clean up LangGraph checkpoints for completed tasks
           getCheckpointSaver().deleteThread(taskId).catch((e) =>
             console.warn(`[queue] Failed to clean up checkpoints for task ${taskId}:`, e)
@@ -1633,6 +1862,7 @@ export async function processNext() {
             if (doneTask?.status === 'failed') {
               notifyMainChatScheduleResult(doneTask)
               notifyAgentThreadTaskResult(doneTask)
+              cleanupTerminalOneOffSchedule(doneTask)
             }
             console.warn(`[queue] Task "${task.title}" failed completion validation`)
           }
@@ -1682,6 +1912,7 @@ export async function processNext() {
           if (latest?.status === 'failed') {
             notifyMainChatScheduleResult(latest)
             notifyAgentThreadTaskResult(latest)
+            cleanupTerminalOneOffSchedule(latest)
           }
         }
       }
@@ -1719,14 +1950,15 @@ export function cleanupFinishedTaskSessions() {
 
 /** Recover running tasks that appear stalled and requeue/dead-letter them per retry policy. */
 export function recoverStalledRunningTasks(): { recovered: number; deadLettered: number } {
+  const finished = reconcileFinishedRunningTasks()
   const settings = loadSettings()
   const stallTimeoutMin = normalizeInt(settings.taskStallTimeoutMin, 45, 5, 24 * 60)
   const staleMs = stallTimeoutMin * 60_000
   const now = Date.now()
   const tasks = loadTasks()
   const queue = loadQueue()
-  let recovered = 0
-  let deadLettered = 0
+  let recovered = finished.reconciled
+  let deadLettered = finished.deadLettered
   let changed = false
 
   for (const task of Object.values(tasks) as BoardTask[]) {

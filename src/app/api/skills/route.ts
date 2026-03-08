@@ -5,7 +5,7 @@ import { normalizeSkillPayload } from '@/lib/server/skills-normalize'
 export const dynamic = 'force-dynamic'
 
 
-export async function GET(_req: Request) {
+export async function GET() {
   return NextResponse.json(loadSkills())
 }
 
@@ -26,6 +26,18 @@ export async function POST(req: Request) {
     description: normalized.description || '',
     sourceUrl: normalized.sourceUrl,
     sourceFormat: normalized.sourceFormat,
+    author: normalized.author,
+    tags: normalized.tags,
+    version: normalized.version,
+    homepage: normalized.homepage,
+    primaryEnv: normalized.primaryEnv,
+    skillKey: normalized.skillKey,
+    always: normalized.always,
+    installOptions: normalized.installOptions,
+    skillRequirements: normalized.skillRequirements,
+    detectedEnvVars: normalized.detectedEnvVars,
+    security: normalized.security,
+    frontmatter: normalized.frontmatter,
     scope,
     agentIds,
     createdAt: Date.now(),

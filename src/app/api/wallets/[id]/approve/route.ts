@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { loadWallets, loadWalletTransactions, upsertWalletTransaction } from '@/lib/server/storage'
-import { sendSol } from '@/lib/server/solana'
 import { notify } from '@/lib/server/ws-hub'
 import type { AgentWallet, WalletTransaction } from '@/types'
+import { getWalletAtomicAmount } from '@/lib/wallet'
+import { sendWalletNativeAsset, validateWalletSendLimits } from '@/lib/server/wallet-service'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -41,10 +42,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Approve — sign and submit
   try {
-    const { signature, fee } = await sendSol(wallet.encryptedPrivateKey, tx.toAddress, tx.amountLamports)
+    const limitError = validateWalletSendLimits({ wallet, amountAtomic: getWalletAtomicAmount(tx), excludeTransactionId: transactionId })
+    if (limitError) {
+      tx.status = 'failed'
+      upsertWalletTransaction(transactionId, tx)
+      notify('wallets')
+      return NextResponse.json({
+        error: limitError,
+        transactionId,
+        status: 'failed',
+      }, { status: limitError === 'Amount must be positive' ? 400 : 403 })
+    }
+
+    const { signature, feeAtomic } = await sendWalletNativeAsset(wallet, tx.toAddress, getWalletAtomicAmount(tx))
     tx.status = 'confirmed'
     tx.signature = signature
-    tx.feeLamports = fee
+    tx.feeAtomic = feeAtomic
+    tx.feeLamports = wallet.chain === 'solana' && feeAtomic ? Number.parseInt(feeAtomic, 10) : undefined
     tx.approvedBy = 'user'
     upsertWalletTransaction(transactionId, tx)
     notify('wallets')

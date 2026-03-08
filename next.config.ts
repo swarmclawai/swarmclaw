@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 import { execSync } from "child_process";
 import { networkInterfaces } from "os";
+import path from "path";
+import { fileURLToPath } from "url";
 import { DIRECT_NAV_SEGMENTS } from "./view-route-paths";
+
+const PROJECT_ROOT = path.dirname(fileURLToPath(import.meta.url))
 
 function getGitSha(): string {
   try {
@@ -40,10 +44,17 @@ function getAllowedDevOrigins(): string[] {
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  outputFileTracingExcludes: {
+    '/api/**': ['data/browser-profiles/**/*', 'data/browser-profiles-regression/**/*'],
+    instrumentation: ['data/browser-profiles/**/*', 'data/browser-profiles-regression/**/*'],
+    '/instrumentation': ['data/browser-profiles/**/*', 'data/browser-profiles-regression/**/*'],
+    'next-server': ['data/browser-profiles/**/*', 'data/browser-profiles-regression/**/*'],
+  },
   turbopack: {
     // Pin workspace root to the project directory so a stale lockfile
-    // in a parent folder (e.g. ~/) doesn't confuse native module resolution.
-    root: process.cwd(),
+    // in a parent folder (e.g. ~/) or a nested launch cwd doesn't confuse
+    // native module resolution.
+    root: PROJECT_ROOT,
   },
   experimental: {
     // Disable Turbopack persistent cache — concurrent HMR writes cause

@@ -3,19 +3,28 @@ import { loadApprovals, upsertApproval, loadSessions, saveSessions, loadSettings
 import type { ApprovalRequest, ApprovalCategory, Message } from '@/types'
 import { notify } from './ws-hub'
 import { log } from './logger'
+import { requestHeartbeatNow } from './heartbeat-wake'
+import { enqueueSystemEvent } from './system-events'
+import { enqueueSessionRun } from './session-run-manager'
+import { buildApprovalMatchKey, buildApprovalMatchKeyFromRequest } from './approval-match'
+import { getPluginManager } from './plugins'
+import { addAllowedSender } from './connectors/pairing'
 
 const AUTO_APPROVABLE_CATEGORIES: ApprovalCategory[] = [
   'tool_access',
   'wallet_transfer',
+  'wallet_action',
   'plugin_scaffold',
   'plugin_install',
   'task_tool',
   'human_loop',
+  'connector_sender',
 ]
 const DEFAULT_APPROVAL_CONNECTOR_NOTIFY_DELAY_SEC = 300
 const MIN_APPROVAL_CONNECTOR_NOTIFY_DELAY_SEC = 30
 const MAX_APPROVAL_CONNECTOR_NOTIFY_DELAY_SEC = 86_400
 const APPROVAL_CONNECTOR_NOTIFY_RETRY_COOLDOWN_MS = 10 * 60 * 1000
+const RECENT_APPROVED_APPROVAL_REUSE_WINDOW_MS = 10 * 60 * 1000
 
 interface RunningConnectorSummary {
   id: string
@@ -35,6 +44,53 @@ export interface PendingApprovalConnectorNotification {
 
 function trimToString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizePluginList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter(Boolean)
+}
+
+function getApprovalTargetPlugins(request: ApprovalRequest): string[] {
+  return [
+    trimToString(request.data.pluginId),
+    trimToString(request.data.toolId),
+    trimToString(request.data.toolName),
+  ].filter(Boolean)
+}
+
+function getEnabledPluginsForApproval(request: ApprovalRequest): string[] {
+  const sessions = loadSessions()
+  const agents = loadAgents()
+  const sessionPlugins = request.sessionId ? normalizePluginList(sessions[request.sessionId]?.plugins) : []
+  const agentPlugins = request.agentId ? normalizePluginList(agents[request.agentId]?.plugins) : []
+  const targetPlugins = getApprovalTargetPlugins(request)
+  return Array.from(new Set([...sessionPlugins, ...agentPlugins, ...targetPlugins]))
+}
+
+function getApprovalGuidance(
+  request: ApprovalRequest,
+  phase: 'request' | 'resume' | 'connector_reminder',
+  approved?: boolean,
+): string[] {
+  const enabledPlugins = getEnabledPluginsForApproval(request)
+  if (enabledPlugins.length === 0) return []
+  return getPluginManager().collectApprovalGuidance(enabledPlugins, {
+    approval: request,
+    phase,
+    approved,
+  })
+}
+
+function appendGuidanceToLines(lines: string[], guidance: string[], label = 'Plugin guidance:'): string[] {
+  if (guidance.length === 0) return lines
+  lines.push(label)
+  for (const line of guidance) {
+    lines.push(`- ${line}`)
+  }
+  return lines
 }
 
 function clampApprovalConnectorNotifyDelaySec(value: unknown): number {
@@ -62,6 +118,39 @@ function getApprovalConnectorNotifySettings(): { enabled: boolean; delayMs: numb
 
 function approvalsAreDisabled(): boolean {
   return loadSettings().approvalsEnabled === false
+}
+
+function canReuseApprovedDecision(category: ApprovalCategory, approval: ApprovalRequest, now: number): boolean {
+  if (category === 'tool_access') return true
+  return (now - approval.updatedAt) <= RECENT_APPROVED_APPROVAL_REUSE_WINDOW_MS
+}
+
+function findReusableApproval(params: {
+  category: ApprovalCategory
+  data: Record<string, unknown>
+  agentId?: string | null
+  sessionId?: string | null
+  taskId?: string | null
+}): ApprovalRequest | null {
+  const targetKey = buildApprovalMatchKey(params)
+  if (!targetKey) return null
+
+  const approvals = loadApprovals() as Record<string, ApprovalRequest>
+  const now = Date.now()
+  let recentApproved: ApprovalRequest | null = null
+
+  for (const approval of Object.values(approvals)) {
+    if (approval.category !== params.category) continue
+    if (buildApprovalMatchKeyFromRequest(approval) !== targetKey) continue
+    if (approval.status === 'pending') return approval
+    if (approval.status !== 'approved') continue
+    if (!canReuseApprovedDecision(params.category, approval, now)) continue
+    if (!recentApproved || approval.updatedAt > recentApproved.updatedAt) {
+      recentApproved = approval
+    }
+  }
+
+  return recentApproved
 }
 
 function getMessageSourceConnectorTarget(
@@ -161,10 +250,12 @@ function buildApprovalConnectorReminderText(request: ApprovalRequest): string {
   if (description) lines.push(`Details: ${description.slice(0, 500)}`)
   lines.push(`Pending for about ${ageMin} minute${ageMin === 1 ? '' : 's'}.`)
   lines.push('Open the Approvals panel to approve or reject it.')
+  appendGuidanceToLines(lines, getApprovalGuidance(request, 'connector_reminder'), 'Agent guidance:')
   return lines.join('\n')
 }
 
 function buildApprovalChatMessage(request: ApprovalRequest): string {
+  const guidance = getApprovalGuidance(request, 'request')
   const targetId = getApprovalTargetId(request.data)
   switch (request.category) {
     case 'tool_access':
@@ -175,6 +266,7 @@ function buildApprovalChatMessage(request: ApprovalRequest): string {
         toolId: targetId || '',
         reason: trimToString(request.description),
         message: `Plugin access request sent to user for "${targetId || 'requested tool'}". Once granted, I'll automatically continue.`,
+        guidance: guidance.length > 0 ? guidance : undefined,
       })
     case 'plugin_scaffold':
       return JSON.stringify({
@@ -182,6 +274,7 @@ function buildApprovalChatMessage(request: ApprovalRequest): string {
         approvalId: request.id,
         filename: trimToString(request.data.filename),
         message: `I've submitted a request to create plugin "${trimToString(request.data.filename) || 'plugin.js'}". The user needs to approve it via the Approvals page or the approval card in chat. Once approved, the plugin file will be written automatically — no need to call this tool again.`,
+        guidance: guidance.length > 0 ? guidance : undefined,
       })
     case 'plugin_install':
       return JSON.stringify({
@@ -191,6 +284,7 @@ function buildApprovalChatMessage(request: ApprovalRequest): string {
         pluginId: trimToString(request.data.pluginId),
         reason: trimToString(request.description),
         message: `I'm requesting to install a new plugin${trimToString(request.data.url) ? ` from ${trimToString(request.data.url)}` : ''}. This will add new capabilities to the platform.`,
+        guidance: guidance.length > 0 ? guidance : undefined,
       })
     case 'wallet_transfer':
       return JSON.stringify({
@@ -200,7 +294,25 @@ function buildApprovalChatMessage(request: ApprovalRequest): string {
         toAddress: trimToString(request.data.toAddress),
         memo: trimToString(request.data.memo),
         message: `I'm requesting to send ${request.data.amountSol ?? 'funds'} to ${trimToString(request.data.toAddress) || 'the specified address'}. Please approve this transaction.`,
+        guidance: guidance.length > 0 ? guidance : undefined,
       })
+    case 'wallet_action':
+      return JSON.stringify({
+        type: 'plugin_wallet_action_request',
+        approvalId: request.id,
+        action: trimToString(request.data.action),
+        chain: trimToString(request.data.chain),
+        network: trimToString(request.data.network),
+        summary: trimToString(request.data.summary),
+        message: trimToString(request.description) || `I'm requesting approval for wallet action "${trimToString(request.data.action) || request.title}".`,
+        guidance: guidance.length > 0 ? guidance : undefined,
+      })
+    case 'connector_sender':
+      return [
+        `[Approval requested] ${request.title}`,
+        trimToString(request.description) || `Allow ${trimToString(request.data.senderName) || trimToString(request.data.senderId) || 'this sender'} on ${trimToString(request.data.connectorName) || 'the connector'}.`,
+        'Approve or reject this sender in the chat approval card or the Approvals panel.',
+      ].filter(Boolean).join('\n')
     default: {
       const lines = [
         `[Approval requested] ${request.title}`,
@@ -208,8 +320,89 @@ function buildApprovalChatMessage(request: ApprovalRequest): string {
       const description = trimToString(request.description)
       if (description) lines.push(`Details: ${description}`)
       lines.push('Approve or reject this request in the chat approval card or the Approvals panel.')
+      appendGuidanceToLines(lines, guidance)
       return lines.join('\n')
     }
+  }
+}
+
+function buildApprovalDecisionResumeText(request: ApprovalRequest, approved: boolean): string {
+  const statusLabel = approved ? 'approved' : 'rejected'
+  const lines = [`[Approval ${statusLabel}] ${request.title}`]
+  const description = trimToString(request.description)
+  if (description) lines.push(`Details: ${description}`)
+  lines.push(`Approval id: ${request.id}`)
+  lines.push(approved
+    ? 'Continue the work that was blocked on this approval.'
+    : 'The requested action was rejected. Adjust the plan and continue safely.')
+  return lines.join('\n')
+}
+
+function buildApprovalDecisionResumeMessage(request: ApprovalRequest, approved: boolean): string {
+  const guidance = getApprovalGuidance(request, 'resume', approved)
+  const lines = [
+    'APPROVAL_DECISION_EVENT',
+    `Approval id: ${request.id}`,
+    `Category: ${request.category}`,
+    `Status: ${approved ? 'approved' : 'rejected'}`,
+    `Title: ${request.title}`,
+  ]
+  const description = trimToString(request.description)
+  if (description) lines.push(`Details: ${description}`)
+
+  const action = trimToString(request.data.action)
+  const chain = trimToString(request.data.chain)
+  const network = trimToString(request.data.network)
+  const summary = trimToString(request.data.summary)
+  if (action) lines.push(`Action: ${action}`)
+  if (chain) lines.push(`Chain: ${chain}`)
+  if (network) lines.push(`Network: ${network}`)
+  if (summary) lines.push(`Summary: ${summary}`)
+  if (request.category === 'wallet_action' || request.category === 'wallet_transfer') {
+    lines.push(`Approved payload: ${JSON.stringify(request.data)}`)
+  }
+
+  if (approved) {
+    lines.push('Resume the exact work that was blocked on this approval now.')
+    lines.push('Use this exact approvalId for the matching blocked tool action if the tool requires one.')
+    lines.push('If the exact blocked action still applies, execute it before doing more research or recomputing alternatives.')
+    lines.push('If tool evidence proves the approved action can no longer be executed as approved, request a fresh approval for the new exact action instead of reusing the old approvalId.')
+  } else {
+    lines.push('The requested action was rejected. Adjust the plan safely and continue without retrying the rejected action.')
+  }
+
+  appendGuidanceToLines(lines, guidance)
+  return lines.join('\n')
+}
+
+function wakeForApprovalDecision(request: ApprovalRequest, approved: boolean): void {
+  if (request.category === 'connector_sender') return
+  const reason = approved ? 'approval-approved' : 'approval-rejected'
+  if (request.sessionId) {
+    enqueueSystemEvent(
+      request.sessionId,
+      buildApprovalDecisionResumeText(request, approved),
+      `approval:${request.id}:${approved ? 'approved' : 'rejected'}`,
+    )
+    enqueueSessionRun({
+      sessionId: request.sessionId,
+      message: buildApprovalDecisionResumeMessage(request, approved),
+      internal: true,
+      source: 'approval-decision',
+      mode: 'collect',
+      dedupeKey: `approval-decision:${request.id}`,
+    })
+    return
+  }
+  if (request.agentId) {
+    requestHeartbeatNow({
+      agentId: request.agentId,
+      eventId: `approval:${request.id}:${approved ? 'approved' : 'rejected'}`,
+      reason,
+      source: `approval:${request.category}`,
+      resumeMessage: buildApprovalDecisionResumeText(request, approved),
+      detail: request.title || request.category,
+    })
   }
 }
 
@@ -232,6 +425,7 @@ function pushApprovalRequestMessage(request: ApprovalRequest): void {
     text,
     time: Date.now(),
     kind: 'system',
+    ...(request.category === 'connector_sender' ? { historyExcluded: true } : {}),
   })
   session.lastActiveAt = Date.now()
   sessions[sessionId] = session
@@ -407,6 +601,14 @@ async function applyApprovedSideEffects(request: ApprovalRequest): Promise<void>
       }
     }
   }
+
+  if (request.category === 'connector_sender') {
+    const connectorId = trimToString(request.data.connectorId)
+    const senderId = trimToString(request.data.senderId)
+    if (connectorId && senderId) {
+      addAllowedSender(connectorId, senderId)
+    }
+  }
 }
 
 async function persistApprovalDecision(request: ApprovalRequest, approved: boolean): Promise<ApprovalRequest> {
@@ -444,6 +646,14 @@ export async function requestApprovalMaybeAutoApprove(params: {
   sessionId?: string | null
   taskId?: string | null
 }): Promise<ApprovalRequest> {
+  const reusable = findReusableApproval(params)
+  if (reusable) {
+    if (reusable.status === 'pending' && (approvalsAreDisabled() || isApprovalCategoryAutoApproved(reusable.category))) {
+      return persistApprovalDecision(reusable, true)
+    }
+    return reusable
+  }
+
   const request = requestApproval(params)
   if (!approvalsAreDisabled() && !isApprovalCategoryAutoApproved(request.category)) {
     pushApprovalRequestMessage(request)
@@ -457,7 +667,10 @@ export async function submitDecision(id: string, approved: boolean): Promise<voi
   const approvals = loadApprovals() as Record<string, ApprovalRequest>
   const request = approvals[id]
   if (!request) throw new Error('Approval request not found')
-  await persistApprovalDecision(request, approved)
+  if (request.status === (approved ? 'approved' : 'rejected')) return
+  if (request.status !== 'pending') return
+  const updated = await persistApprovalDecision(request, approved)
+  wakeForApprovalDecision(updated, approved)
 }
 
 export function listPendingApprovalsNeedingConnectorNotification(params?: {

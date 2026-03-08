@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { AUTH_COOKIE_NAME } from '@/lib/auth'
+import {
+  buildPluginInstallCorsHeaders,
+  isPluginInstallCorsPath,
+  resolvePluginInstallCorsOrigin,
+} from '@/lib/plugin-install-cors'
 
 /* ------------------------------------------------------------------ */
 /*  Rate-limit state — HMR-safe via globalThis                        */
@@ -40,6 +45,16 @@ function getClientIp(request: NextRequest): string {
   return (request as unknown as { ip?: string }).ip ?? 'unknown'
 }
 
+function withPluginInstallCorsHeaders(pathname: string, origin: string | null, headers?: HeadersInit): Headers {
+  const merged = new Headers(headers)
+  if (!isPluginInstallCorsPath(pathname)) return merged
+  const corsHeaders = buildPluginInstallCorsHeaders(origin)
+  new Headers(corsHeaders).forEach((value, key) => {
+    merged.set(key, value)
+  })
+  return merged
+}
+
 /* ------------------------------------------------------------------ */
 /*  Proxy                                                              */
 /* ------------------------------------------------------------------ */
@@ -51,10 +66,21 @@ function getClientIp(request: NextRequest): string {
  */
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const corsOrigin = resolvePluginInstallCorsOrigin(request.headers.get('origin'))
   const isWebhookTrigger = request.method === 'POST'
     && /^\/api\/webhooks\/[^/]+\/?$/.test(pathname)
   const isConnectorWebhook = request.method === 'POST'
     && /^\/api\/connectors\/[^/]+\/webhook\/?$/.test(pathname)
+
+  if (request.method === 'OPTIONS' && isPluginInstallCorsPath(pathname)) {
+    if (!corsOrigin) {
+      return NextResponse.json({ error: 'Origin not allowed' }, { status: 403 })
+    }
+    return new NextResponse(null, {
+      status: 204,
+      headers: buildPluginInstallCorsHeaders(corsOrigin),
+    })
+  }
 
   // Only protect API routes (not auth or inbound webhooks)
   if (
@@ -83,7 +109,10 @@ export function proxy(request: NextRequest) {
     const retryAfter = Math.ceil((entry.lockedUntil - Date.now()) / 1000)
     return NextResponse.json(
       { error: 'Too many failed attempts. Try again later.', retryAfter },
-      { status: 429, headers: { 'Retry-After': String(retryAfter) } },
+      {
+        status: 429,
+        headers: withPluginInstallCorsHeaders(pathname, corsOrigin, { 'Retry-After': String(retryAfter) }),
+      },
     )
   }
 
@@ -106,7 +135,10 @@ export function proxy(request: NextRequest) {
     const remaining = Math.max(0, MAX_ATTEMPTS - current.count)
     return NextResponse.json(
       { error: 'Unauthorized' },
-      { status: 401, headers: { 'X-RateLimit-Remaining': String(remaining) } },
+      {
+        status: 401,
+        headers: withPluginInstallCorsHeaders(pathname, corsOrigin, { 'X-RateLimit-Remaining': String(remaining) }),
+      },
     )
   }
 

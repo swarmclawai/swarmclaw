@@ -36,7 +36,7 @@ interface ChatState {
   streamText: string
 
   // Task 1: Rich status indicator
-  streamPhase: 'thinking' | 'tool' | 'responding'
+  streamPhase: 'thinking' | 'tool' | 'responding' | 'connecting'
   streamToolName: string
 
   // Task 2: Typing cadence simulation
@@ -359,6 +359,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
           return { toolEvents: events }
         })
+      } else if (event.t === 'reset') {
+        // Server rolled back state after a transient error — clear accumulated
+        // text and tool events so the retry starts with a clean slate.
+        fullText = event.text || ''
+        toolCallCounter = 0
+        soundFiredStart = false
+        if (_cadenceInterval) clearCadence()
+        _cadencePos = 0
+        _cadenceBuffer = ''
+        set({ streamText: fullText, displayText: fullText, toolEvents: [], streamPhase: 'connecting' })
       } else if (event.t === 'err') {
         const errText = event.text || 'Unknown'
         if (!shouldIgnoreTransientError(errText)) {
@@ -510,6 +520,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       (event: SSEEvent) => {
         if (event.t === 'd' || event.t === 'r') {
           fullText += event.text || ''
+        } else if (event.t === 'reset') {
+          fullText = event.text || ''
+          heartbeatToolEvents.length = 0
+          toolCallCounter = 0
         } else if (event.t === 'md') {
           // metadata only
         } else if (event.t === 'tool_call') {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { createAgent, updateAgent, deleteAgent } from '@/lib/agents'
 import { api } from '@/lib/api-client'
@@ -18,11 +18,19 @@ import { copyTextToClipboard } from '@/lib/clipboard'
 import { SectionLabel } from '@/components/shared/section-label'
 import { SoulLibraryPicker } from './soul-library-picker'
 import { HintTip } from '@/components/shared/hint-tip'
+import { isOllamaCloudModel } from '@/lib/ollama-model'
 
 const HB_PRESETS = [1800, 3600, 7200, 21600, 43200] as const
 const FALLBACK_ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
 
 type AgentSheetSectionId = 'overview' | 'instructions' | 'model' | 'tools'
+type SafeAgentWallet = Omit<AgentWallet, 'encryptedPrivateKey'> & {
+  balanceAtomic?: string
+  balanceLamports?: number
+  balanceFormatted?: string
+  balanceSymbol?: string
+  isActive?: boolean
+}
 
 function SectionCard({
   title,
@@ -190,6 +198,7 @@ export function AgentSheet() {
   const [memoryScopeMode, setMemoryScopeMode] = useState<'auto' | 'all' | 'global' | 'agent' | 'session' | 'project'>('auto')
   const [memoryTierPreference, setMemoryTierPreference] = useState<'working' | 'durable' | 'archive' | 'blended'>('blended')
   const [autoRecovery, setAutoRecovery] = useState(false)
+  const [disabled, setDisabled] = useState(false)
   const [voiceId, setVoiceId] = useState('')
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(false)
   const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
@@ -211,7 +220,7 @@ export function AgentSheet() {
   const [dailyBudget, setDailyBudget] = useState('')
   const [monthlyBudget, setMonthlyBudget] = useState('')
   const [budgetAction, setBudgetAction] = useState<'warn' | 'block'>('warn')
-  const [agentWallet, setAgentWallet] = useState<(Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }) | null>(null)
+  const [agentWallets, setAgentWallets] = useState<SafeAgentWallet[]>([])
   const [addingKey, setAddingKey] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyValue, setNewKeyValue] = useState('')
@@ -244,6 +253,21 @@ export function AgentSheet() {
     reader.readAsText(file)
     e.target.value = ''
   }
+
+  const loadAgentWallets = useCallback(async (agentId: string) => {
+    try {
+      const wallets = await api<Record<string, SafeAgentWallet>>('GET', `/wallets?agentId=${encodeURIComponent(agentId)}`)
+      const matches = Object.values(wallets)
+        .filter((wallet) => wallet.agentId === agentId)
+        .sort((a, b) => {
+          if ((a.isActive ? 1 : 0) !== (b.isActive ? 1 : 0)) return a.isActive ? -1 : 1
+          return a.chain.localeCompare(b.chain)
+        })
+      setAgentWallets(matches)
+    } catch {
+      setAgentWallets([])
+    }
+  }, [])
 
   const currentProvider = providers.find((p) => p.id === provider)
   const providerCredentials = Object.values(credentials).filter((c) => c.provider === provider)
@@ -307,7 +331,11 @@ export function AgentSheet() {
         setFallbackCredentialIds(editing.fallbackCredentialIds || [])
         setCapabilities(Array.isArray(editing.capabilities) ? editing.capabilities : [])
         setCapInput('')
-        setOllamaMode(editing.credentialId && editing.provider === 'ollama' ? 'cloud' : 'local')
+        setOllamaMode(
+          editing.provider === 'ollama' && (Boolean(editing.credentialId) || isOllamaCloudModel(editing.model))
+            ? 'cloud'
+            : 'local'
+        )
         setOpenclawEnabled(editing.provider === 'openclaw')
         setProjectId(editing.projectId)
         setAvatarSeed(editing.avatarSeed || crypto.randomUUID().slice(0, 8))
@@ -316,6 +344,7 @@ export function AgentSheet() {
         setMemoryScopeMode(editing.memoryScopeMode || 'auto')
         setMemoryTierPreference(editing.memoryTierPreference || 'blended')
         setAutoRecovery(editing.autoRecovery || false)
+        setDisabled(editing.disabled === true)
         setVoiceId(editing.elevenLabsVoiceId || '')
         setHeartbeatEnabled(editing.heartbeatEnabled || false)
         setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
@@ -341,14 +370,7 @@ export function AgentSheet() {
         setDailyBudget(typeof editing.dailyBudget === 'number' && editing.dailyBudget > 0 ? String(editing.dailyBudget) : '')
         setMonthlyBudget(typeof editing.monthlyBudget === 'number' && editing.monthlyBudget > 0 ? String(editing.monthlyBudget) : '')
         setBudgetAction(editing.budgetAction || 'warn')
-        // Load wallet if agent has one
-        if (editing.walletId) {
-          api<Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }>('GET', `/wallets/${editing.walletId}`)
-            .then(setAgentWallet)
-            .catch(() => setAgentWallet(null))
-        } else {
-          setAgentWallet(null)
-        }
+        void loadAgentWallets(editing.id)
       } else {
         setName('')
         setDescription('')
@@ -383,6 +405,7 @@ export function AgentSheet() {
         setMemoryScopeMode('auto')
         setMemoryTierPreference('blended')
         setAutoRecovery(false)
+        setDisabled(false)
         setVoiceId('')
         setHeartbeatEnabled(false)
         setHeartbeatIntervalSec('')
@@ -404,6 +427,7 @@ export function AgentSheet() {
         setDailyBudget('')
         setMonthlyBudget('')
         setBudgetAction('warn')
+        setAgentWallets([])
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -571,6 +595,7 @@ export function AgentSheet() {
       memoryScopeMode,
       memoryTierPreference,
       autoRecovery,
+      disabled,
       elevenLabsVoiceId: voiceId.trim() || null,
       heartbeatEnabled,
       heartbeatInterval: heartbeatIntervalSec ? formatHbDuration(Number(heartbeatIntervalSec)) : null,
@@ -744,9 +769,18 @@ export function AgentSheet() {
     <BottomSheet open={open} onClose={onClose} wide>
       <div className="mb-10 flex items-start justify-between">
         <div>
-          <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
-            {editing ? 'Edit Agent' : 'New Agent'}
-          </h2>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <h2 className="font-display text-[28px] font-700 tracking-[-0.03em]">
+              {editing ? 'Edit Agent' : 'New Agent'}
+            </h2>
+            <span className={`rounded-[999px] px-2.5 py-1 text-[10px] font-700 uppercase tracking-[0.1em] ${
+              disabled
+                ? 'border border-amber-400/20 bg-amber-400/[0.08] text-amber-300'
+                : 'border border-emerald-400/20 bg-emerald-400/[0.08] text-emerald-300'
+            }`}>
+              {disabled ? 'Disabled' : 'Enabled'}
+            </span>
+          </div>
           <p className="text-[14px] text-text-3">Define an AI agent and optional multi-agent delegation behavior</p>
         </div>
         <div className="flex items-center gap-3 mt-1.5">
@@ -1032,6 +1066,28 @@ export function AgentSheet() {
       {/* Auto-Recovery */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-1.5">
+          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">
+            Agent Availability
+            <HintTip text="Disabled agents stay visible, but cannot take chats, heartbeats, schedules, or queued work until re-enabled." />
+          </label>
+          <div
+            onClick={() => setDisabled(!disabled)}
+            className={`w-9 h-5 rounded-full transition-all relative cursor-pointer ${disabled ? 'bg-amber-400' : 'bg-accent-bright'}`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${disabled ? 'left-0.5' : 'left-[18px]'}`} />
+          </div>
+        </div>
+        <p className="text-[11px] text-text-3/70">
+          {disabled
+            ? 'This agent is paused. Existing chats remain viewable, but new work is blocked until you switch it back on.'
+            : 'This agent is active and can accept chats, heartbeats, schedules, and queued work.'}
+          {' '}Gateway and remote runtime shutdown stay managed separately in Providers and OpenClaw Deploy.
+        </p>
+      </div>
+
+      {/* Auto-Recovery */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-1.5">
           <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Guardian Auto-Recovery <HintTip text="Automatically resets the agent's workspace if it gets into a broken state" /></label>
           <div
             onClick={() => setAutoRecovery(!autoRecovery)}
@@ -1261,18 +1317,11 @@ export function AgentSheet() {
       {editingId && (
         <WalletSection
           agentId={editingId}
-          wallet={agentWallet}
+          wallets={agentWallets}
+          activeWalletId={editing?.activeWalletId || editing?.walletId || agentWallets.find((wallet) => wallet.isActive)?.id || null}
           onWalletCreated={async () => {
             await loadAgents()
-            // Fetch the wallet for this agent
-            try {
-              const wallets = await api<Record<string, Omit<AgentWallet, 'encryptedPrivateKey'>>>('GET', '/wallets')
-              const match = Object.values(wallets).find((w) => w.agentId === editingId)
-              if (match) {
-                const detail = await api<Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }>('GET', `/wallets/${match.id}`)
-                setAgentWallet(detail)
-              }
-            } catch { /* ignore */ }
+            await loadAgentWallets(editingId)
           }}
         />
       )}

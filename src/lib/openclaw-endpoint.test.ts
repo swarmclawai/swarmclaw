@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   deriveOpenClawWsUrl,
+  isLocalOpenClawEndpoint,
   normalizeOpenClawEndpoint,
   normalizeProviderEndpoint,
 } from './openclaw-endpoint.ts'
@@ -45,4 +46,11 @@ test('normalizeProviderEndpoint only rewrites openclaw provider', () => {
     normalizeProviderEndpoint('openai', null),
     null,
   )
+})
+
+test('isLocalOpenClawEndpoint detects loopback hosts', () => {
+  assert.equal(isLocalOpenClawEndpoint('ws://localhost:18789'), true)
+  assert.equal(isLocalOpenClawEndpoint('http://127.0.0.1:18789/v1'), true)
+  assert.equal(isLocalOpenClawEndpoint('http://[::1]:18789/v1'), true)
+  assert.equal(isLocalOpenClawEndpoint('https://openclaw.example.com/v1'), false)
 })

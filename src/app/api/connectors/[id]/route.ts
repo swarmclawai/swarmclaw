@@ -87,8 +87,33 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   connectors[id] = connector
   saveConnectors(connectors)
+
+  try {
+    const manager = await import('@/lib/server/connectors/manager')
+    const wasRunning = manager.getConnectorStatus(id) === 'running'
+    const shouldStop = body.isEnabled === false
+    const shouldReload = wasRunning && (
+      body.name !== undefined
+      || body.agentId !== undefined
+      || body.chatroomId !== undefined
+      || body.credentialId !== undefined
+      || body.config !== undefined
+      || body.isEnabled !== undefined
+    )
+    const shouldStart = body.isEnabled === true && !wasRunning
+
+    if (shouldStop) {
+      await manager.stopConnector(id)
+    } else if (shouldReload || shouldStart) {
+      manager.clearReconnectState(id)
+      await manager.startConnector(id)
+    }
+  } catch {
+    // Keep the saved connector update even if the runtime reload fails.
+  }
+
   notify('connectors')
-  return NextResponse.json(connector)
+  return NextResponse.json(loadConnectors()[id] || connector)
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

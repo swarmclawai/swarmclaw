@@ -1,10 +1,12 @@
 'use client'
 
+import { useState } from 'react'
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import type { Session } from '@/types'
 import { api } from '@/lib/api-client'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { ConnectorPlatformBadge, getSessionConnector } from '@/components/shared/connector-platform-icon'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { toast } from 'sonner'
@@ -44,18 +46,26 @@ export function ChatCard({ session, active, onClick }: Props) {
   const streamPhase = useChatStore((s) => s.streamPhase)
   const streamToolName = useChatStore((s) => s.streamToolName)
   const lastReadTimestamps = useAppStore((s) => s.lastReadTimestamps)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const isTyping = streamingSessionId === session.id
 
-  const handleDelete = async (e: React.MouseEvent) => {
+  const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm(`Delete chat session "${session.name}"?`)) return
-    
+    setConfirmDelete(true)
+  }
+
+  const handleDelete = async () => {
+    setDeleting(true)
     try {
       await api('DELETE', `/chats/${session.id}`)
       removeSession(session.id)
       toast.success('Session deleted')
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete session')
+    } finally {
+      setDeleting(false)
+      setConfirmDelete(false)
     }
   }
 
@@ -84,14 +94,15 @@ export function ChatCard({ session, active, onClick }: Props) {
     && agent?.heartbeatEnabled !== false
 
   return (
-    <div
-      onClick={onClick}
-      className={`group/card relative py-3.5 px-4 cursor-pointer rounded-[14px]
-        transition-all duration-200 active:scale-[0.98]
-        ${active
-          ? 'bg-accent-soft border border-accent-bright/10'
-          : 'bg-transparent border border-transparent hover:bg-white/[0.02] hover:border-white/[0.03]'}`}
-    >
+    <>
+      <div
+        onClick={onClick}
+        className={`group/card relative py-3.5 px-4 cursor-pointer rounded-[14px]
+          transition-all duration-200 active:scale-[0.98]
+          ${active
+            ? 'bg-accent-soft border border-accent-bright/10'
+            : 'bg-transparent border border-transparent hover:bg-white/[0.02] hover:border-white/[0.03]'}`}
+      >
       {active && (
         <div className="absolute left-0 top-3.5 bottom-3.5 w-[2.5px] rounded-full bg-accent-bright" />
       )}
@@ -134,7 +145,7 @@ export function ChatCard({ session, active, onClick }: Props) {
           {timeAgo(session.lastActiveAt)}
         </span>
         <button
-          onClick={handleDelete}
+          onClick={handleDeleteClick}
           className="shrink-0 opacity-0 group-hover/card:opacity-100 transition-opacity duration-150
             text-text-3 hover:text-red-400 p-0.5 -mr-1 cursor-pointer bg-transparent border-none"
           title="Delete chat"
@@ -163,6 +174,18 @@ export function ChatCard({ session, active, onClick }: Props) {
       ) : (
         <div className="text-[13px] text-text-2/50 truncate mt-1 leading-relaxed">{preview}</div>
       )}
-    </div>
+      </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete Chat?"
+        message={`Delete chat session "${session.name}"?`}
+        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        confirmDisabled={deleting}
+        cancelDisabled={deleting}
+        danger
+        onConfirm={() => { void handleDelete() }}
+        onCancel={() => { if (!deleting) setConfirmDelete(false) }}
+      />
+    </>
   )
 }

@@ -9,9 +9,11 @@ interface Props {
   onClose: () => void
   children: ReactNode
   wide?: boolean
+  title?: string
+  description?: string
 }
 
-export function BottomSheet({ open, onClose, children, wide }: Props) {
+export function BottomSheet({ open, onClose, children, wide, title, description }: Props) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose() }}>
       <DialogPrimitive.Portal>
@@ -27,10 +29,18 @@ export function BottomSheet({ open, onClose, children, wide }: Props) {
             ${wide ? 'sm:max-w-[760px]' : 'sm:max-w-[560px]'}`}
           style={{ animationDuration: '220ms' }}
         >
-          <div className="relative shrink-0 px-4 pt-3 sm:px-5 sm:pt-5">
+          <div className="relative shrink-0 px-4 pt-4 pr-14 sm:px-5 sm:pt-6 sm:pr-16">
             <div className="mx-auto h-1 w-10 rounded-full bg-white/[0.08] sm:hidden" />
+            <DialogPrimitive.Title className="sr-only">
+              {title || 'Dialog'}
+            </DialogPrimitive.Title>
+            {description ? (
+              <DialogPrimitive.Description className="sr-only">
+                {description}
+              </DialogPrimitive.Description>
+            ) : null}
             <DialogPrimitive.Close
-              className="absolute right-3 top-2.5 inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-white/[0.06] bg-white/[0.03] text-text-3 transition-all hover:bg-white/[0.06] hover:text-text-2 focus:outline-none focus:ring-2 focus:ring-accent-bright/30 sm:right-4 sm:top-4"
+              className="absolute right-4 top-3.5 inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-white/[0.06] bg-white/[0.03] text-text-3 transition-all hover:bg-white/[0.06] hover:text-text-2 focus:outline-none focus:ring-2 focus:ring-accent-bright/30 sm:right-5 sm:top-5"
             >
               <XIcon className="size-4" />
               <span className="sr-only">Close</span>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { api } from '@/lib/api-client'
 import { toast } from 'sonner'
 
@@ -62,6 +63,8 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
   const [invokeResult, setInvokeResult] = useState<McpInvokeResult | null>(null)
   const [conformanceByServer, setConformanceByServer] = useState<Record<string, McpConformanceResult>>({})
   const [conformanceLoading, setConformanceLoading] = useState<Record<string, boolean>>({})
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   useEffect(() => {
@@ -109,17 +112,24 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
     setMcpServerSheetOpen(true)
   }
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
     const server = mcpServers[id]
-    if (!confirm(`Delete MCP server "${server?.name || id}"?`)) return
-    
+    setConfirmDelete({ id, name: server?.name || id })
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!confirmDelete) return
+    setDeletingId(confirmDelete.id)
     try {
-      await api('DELETE', `/mcp-servers/${id}`)
+      await api('DELETE', `/mcp-servers/${confirmDelete.id}`)
       toast.success('MCP server deleted')
       await loadMcpServers()
+      setConfirmDelete(null)
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete server')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -280,7 +290,7 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
               ) : inspectorError ? (
                 <p className="text-[12px] text-red-300">{inspectorError}</p>
               ) : (
-                <div className="space-y-3">
+    <div className="space-y-3">
                   {activeConformance && (
                     <div className={`rounded-[10px] border p-3 ${activeConformance.ok ? 'border-emerald-400/20 bg-emerald-500/[0.06]' : 'border-amber-400/20 bg-amber-500/[0.06]'}`}>
                       <p className={`text-[12px] font-600 mb-1 ${activeConformance.ok ? 'text-emerald-300' : 'text-amber-300'}`}>
@@ -441,6 +451,17 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
           </div>
         </>
       )}
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Delete MCP Server?"
+        message={confirmDelete ? `Delete "${confirmDelete.name}"? This will remove the MCP server from the app.` : 'Delete this MCP server?'}
+        confirmLabel={deletingId ? 'Deleting...' : 'Delete'}
+        confirmDisabled={!!deletingId}
+        cancelDisabled={!!deletingId}
+        danger
+        onConfirm={() => { void handleDeleteConfirm() }}
+        onCancel={() => { if (!deletingId) setConfirmDelete(null) }}
+      />
     </div>
   )
 }

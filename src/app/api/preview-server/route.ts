@@ -4,6 +4,7 @@ import http from 'http'
 import fs from 'fs'
 import path from 'path'
 import { localIP } from '@/lib/server/storage'
+import { resolveDevServerLaunchDir } from '@/lib/server/devserver-launch'
 
 // ---------------------------------------------------------------------------
 // MIME types for static server
@@ -75,6 +76,13 @@ interface ProjectInfo {
   type: 'npm' | 'static'
   devCommand?: string[]   // e.g. ['npm', 'run', 'dev']
   framework?: string      // e.g. 'vite', 'next', 'cra'
+}
+
+function buildFrameworkArgs(framework: string | undefined, port: number): string[] {
+  if (framework === 'next') {
+    return ['--', '--hostname', '0.0.0.0', '--port', String(port)]
+  }
+  return ['--', '--port', String(port), '--host', '0.0.0.0']
 }
 
 function detectProject(dir: string): ProjectInfo {
@@ -168,7 +176,7 @@ function createStaticServer(dir: string): http.Server {
 // npm dev server
 // ---------------------------------------------------------------------------
 
-async function startNpmServer(dir: string, command: string[], port: number): Promise<PreviewServer> {
+async function startNpmServer(dir: string, command: string[], port: number, framework?: string): Promise<PreviewServer> {
   // Install deps if node_modules missing
   if (!fs.existsSync(path.join(dir, 'node_modules'))) {
     console.log(`[preview] Installing dependencies in ${dir}`)
@@ -190,7 +198,7 @@ async function startNpmServer(dir: string, command: string[], port: number): Pro
   const args = [...command.slice(1)]
   const cmdName = command[0]
 
-  const proc = spawn(cmdName, [...args, '--', '--port', String(port), '--host', '0.0.0.0'], {
+  const proc = spawn(cmdName, [...args, ...buildFrameworkArgs(framework, port)], {
     cwd: dir,
     stdio: ['ignore', 'pipe', 'pipe'],
     env,
@@ -234,6 +242,10 @@ async function startNpmServer(dir: string, command: string[], port: number): Pro
 
   // Wait for the server to start and detect the actual port
   await new Promise((resolve) => setTimeout(resolve, 5000))
+  if (proc.exitCode !== null) {
+    servers.delete(dirKey(dir))
+    throw new Error(`npm dev server exited early with code ${proc.exitCode}\n${log.slice(-4000)}`)
+  }
   entry.port = detectedPort
   entry.log = log
 
@@ -263,7 +275,8 @@ export async function POST(req: Request) {
   }
 
   const dir = resolveServeDir(filePath)
-  const key = dirKey(dir)
+  const launch = resolveDevServerLaunchDir(dir)
+  const key = dirKey(launch.launchDir)
 
   if (action === 'start') {
     if (servers.has(key)) {
@@ -274,16 +287,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Directory not found' }, { status: 404 })
     }
 
-    const project = detectProject(dir)
+    const project = detectProject(launch.launchDir)
     const port = await findFreePort()
 
     if (project.type === 'npm' && project.devCommand) {
-      console.log(`[preview] Detected ${project.framework} project in ${dir}, running: ${project.devCommand.join(' ')}`)
+      console.log(`[preview] Detected ${project.framework} project in ${launch.launchDir}, running: ${project.devCommand.join(' ')}`)
       try {
-        const entry = await startNpmServer(dir, project.devCommand, port)
+        const entry = await startNpmServer(launch.launchDir, project.devCommand, port, project.framework)
         return NextResponse.json({
           ...buildResponse(entry),
           framework: project.framework,
+          inputDir: dir,
+          launchDir: launch.launchDir,
         })
       } catch (err: unknown) {
         console.error(`[preview] npm server failed, falling back to static:`, err)
@@ -313,15 +328,15 @@ export async function POST(req: Request) {
       }
       if (srv.server) srv.server.close()
       servers.delete(key)
-      console.log(`[preview] Stopped server for ${dir}`)
+      console.log(`[preview] Stopped server for ${launch.launchDir}`)
     }
-    return NextResponse.json({ running: false, dir })
+    return NextResponse.json({ running: false, dir: launch.launchDir })
 
   } else if (action === 'status') {
     if (servers.has(key)) {
       return NextResponse.json(buildResponse(servers.get(key)!))
     }
-    return NextResponse.json({ running: false, dir })
+    return NextResponse.json({ running: false, dir: launch.launchDir })
 
   } else if (action === 'list') {
     const list = Array.from(servers.values()).map((s) => ({
@@ -331,8 +346,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ servers: list })
 
   } else if (action === 'detect') {
-    const project = detectProject(dir)
-    return NextResponse.json({ dir, ...project })
+    const project = detectProject(launch.launchDir)
+    return NextResponse.json({ dir, launchDir: launch.launchDir, frameworkHint: launch.framework, ...project })
   }
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })

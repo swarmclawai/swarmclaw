@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { AGENT_REGRESSION_SCENARIOS, resolveRegressionApprovalSettings, scoreAssertions } from './agent-regression'
+import { AGENT_REGRESSION_SCENARIOS, resolveRegressionApprovalSettings, resolveRegressionPlugins, scoreAssertions } from './agent-regression'
 
 describe('agent regression helpers', () => {
   it('maps approval modes onto deterministic platform settings', () => {
@@ -42,6 +42,23 @@ describe('agent regression helpers', () => {
       'mock-signup-secret-email',
       'human-verified-signup',
       'research-build-deploy',
+      'tool-call-efficiency',
+      'file-creation-followthrough',
+      'knowledge-first-file',
     ])
+  })
+
+  it('can resolve regressions against the agent capability set instead of injected scenario plugins', () => {
+    const resolved = resolveRegressionPlugins(
+      ['delegate', 'browser', 'manage_secrets', 'email'],
+      {
+        plugins: ['codex_cli', 'browser', 'manage_secrets', 'files'],
+      },
+      'agent',
+    )
+
+    assert.deepEqual(resolved.requiredPlugins, ['delegate', 'browser', 'manage_secrets', 'email'])
+    assert.deepEqual(resolved.effectivePlugins, ['codex_cli', 'browser', 'manage_secrets', 'files'])
+    assert.deepEqual(resolved.missingPlugins, ['email'])
   })
 })

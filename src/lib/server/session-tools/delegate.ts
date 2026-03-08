@@ -147,6 +147,41 @@ function coerceDelegateBackend(value: unknown): DelegateBackend | null {
   return null
 }
 
+function asDelegateRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function pickNonEmptyDelegateString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (!trimmed) continue
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      continue
+    }
+    return trimmed
+  }
+  return null
+}
+
+function pickDelegateTaskText(record: Record<string, unknown> | null): string | null {
+  if (!record) return null
+  return pickNonEmptyDelegateString(
+    record.task,
+    record.prompt,
+    record.request,
+    record.instructions,
+    record.instruction,
+    record.description,
+    record.input,
+    record.reason,
+    record.goal,
+    record.objective,
+  )
+}
+
 function buildDelegateTaskFromPayload(normalized: Record<string, unknown>): string | null {
   const action = String(normalized.action || '').trim().toLowerCase()
   const target = [
@@ -200,20 +235,41 @@ function buildDelegateTaskFromPayload(normalized: Record<string, unknown>): stri
 
 function normalizeDelegateArgs(rawArgs: Record<string, unknown>): Record<string, unknown> {
   const normalized = normalizeToolInputArgs(rawArgs)
+  const nestedData = asDelegateRecord(normalized.data)
+  const delegatePayload = {
+    ...(nestedData || {}),
+    ...normalized,
+  }
   const backend = coerceDelegateBackend(
-    normalized.backend
-    ?? normalized.tool_name
-    ?? normalized.toolName
-    ?? normalized.delegate
-    ?? normalized.provider,
+    delegatePayload.backend
+    ?? delegatePayload.tool_name
+    ?? delegatePayload.toolName
+    ?? delegatePayload.tool
+    ?? delegatePayload.delegate
+    ?? delegatePayload.provider
+    ?? delegatePayload.subagent_tool_id
+    ?? delegatePayload.subagent_name,
   )
   if (backend && !normalized.backend) normalized.backend = backend
-  if (typeof normalized.task !== 'string' && typeof normalized.prompt === 'string') normalized.task = normalized.prompt
-  const action = String(normalized.action || '').trim().toLowerCase()
+  if (typeof normalized.task !== 'string' || !normalized.task.trim()) {
+    const directTask = pickDelegateTaskText(delegatePayload) || pickDelegateTaskText(nestedData)
+    if (directTask) normalized.task = directTask
+  }
+  const lifecycleJobId = pickNonEmptyDelegateString(
+    normalized.jobId,
+    normalized.id,
+    nestedData?.jobId,
+    nestedData?.id,
+  )
+  if (lifecycleJobId && (!normalized.jobId || typeof normalized.jobId !== 'string')) {
+    normalized.jobId = lifecycleJobId
+  }
+  const action = String(normalized.action ?? nestedData?.action ?? '').trim().toLowerCase()
   const isLifecycleAction = ['status', 'list', 'wait', 'cancel'].includes(action)
+  if (action) normalized.action = action
   if (!isLifecycleAction) {
     if (typeof normalized.task !== 'string' || !normalized.task.trim()) {
-      const synthesized = buildDelegateTaskFromPayload(normalized)
+      const synthesized = buildDelegateTaskFromPayload(delegatePayload)
       if (synthesized) normalized.task = synthesized
     }
     normalized.action = 'start'

@@ -167,6 +167,10 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
   }, [filteredAgents.map((a) => a.id).join(',')])
 
   const handleSelect = async (agent: Agent) => {
+    if (agent.disabled === true && !agent.threadSessionId) {
+      toast.error(`${agent.name} is disabled. Re-enable it to start a new chat.`)
+      return
+    }
     await setCurrentAgent(agent.id)
     // Load messages for the thread
     const state = useAppStore.getState()
@@ -274,7 +278,8 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
           const lastMsg = threadSession?.messages?.at(-1)
           const heartbeatOn = defaultAgent.heartbeatEnabled === true && (defaultAgent.plugins?.length ?? 0) > 0
           const recentlyActive = (threadSession?.lastActiveAt ?? 0) > Date.now() - 30 * 60 * 1000
-          const isWorking = runningAgentIds.has(defaultAgent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(defaultAgent.id)
+          const isDisabled = defaultAgent.disabled === true
+          const isWorking = !isDisabled && (runningAgentIds.has(defaultAgent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(defaultAgent.id))
           const isTyping = streamingSessionId === defaultAgent.threadSessionId
           const preview = lastMsg?.text?.slice(0, 100)?.replace(/\n/g, ' ') || 'Your primary shortcut chat.'
           const isActive = currentAgentId === defaultAgent.id
@@ -313,6 +318,11 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
                       <span className="font-display text-[14px] font-700 truncate text-text tracking-[-0.01em]">
                         {defaultAgent.name}
                       </span>
+                      {isDisabled && (
+                        <span className="px-1.5 py-0.5 rounded-[6px] bg-amber-400/[0.08] text-amber-300 text-[9px] font-700 uppercase tracking-[0.08em]">
+                          Disabled
+                        </span>
+                      )}
                       <span className="px-1.5 py-0.5 rounded-[6px] bg-accent-bright/12 text-accent-bright text-[9px] font-700 uppercase tracking-[0.08em]">
                         Shortcut
                       </span>
@@ -359,7 +369,8 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
           const isActive = currentAgentId === agent.id
           const heartbeatOn = agent.heartbeatEnabled === true && (agent.plugins?.length ?? 0) > 0
           const recentlyActive = (threadSession?.lastActiveAt ?? 0) > Date.now() - 30 * 60 * 1000
-          const isWorking = runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(agent.id)
+          const isDisabled = agent.disabled === true
+          const isWorking = !isDisabled && (runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(agent.id))
           const isTyping = streamingSessionId === agent.threadSessionId
           const preview = lastMsg?.text?.slice(0, 80)?.replace(/\n/g, ' ') || ''
 
@@ -395,6 +406,11 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
                     <span className="font-display text-[13.5px] font-600 truncate flex-1 tracking-[-0.01em]">
                       {agent.name}
                     </span>
+                    {isDisabled && (
+                      <span className="px-1.5 py-0.5 rounded-[6px] bg-amber-400/[0.08] text-amber-300 text-[9px] font-700 uppercase tracking-[0.08em] shrink-0">
+                        Disabled
+                      </span>
+                    )}
                     {appSettings.defaultAgentId === agent.id && (
                       <span className="px-1.5 py-0.5 rounded-[6px] bg-accent-bright/10 text-accent-bright text-[9px] font-700 uppercase tracking-[0.08em] shrink-0">
                         Default

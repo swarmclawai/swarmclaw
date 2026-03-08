@@ -25,21 +25,26 @@ describe('searchClawHub', () => {
   // We'll test the default URL by importing once.
 
   it('constructs correct URL with query params and returns parsed JSON', async () => {
-    const mockData = { skills: [{ id: 's1', name: 'test-skill' }], total: 1, page: 1 }
+    const mockRaw = { items: [{ slug: 's1', displayName: 'test-skill' }], total: 1 }
     let capturedUrl = ''
 
     globalThis.fetch = async (input: RequestInfo | URL) => {
       capturedUrl = String(input)
-      return new Response(JSON.stringify(mockData), { status: 200 })
+      return new Response(JSON.stringify(mockRaw), { status: 200 })
     }
 
     const { searchClawHub } = await import('./clawhub-client.ts')
     const result = await searchClawHub('hello world', 2, 10)
 
-    assert.ok(capturedUrl.includes('/skills?q=hello%20world&page=2&limit=10'))
-    assert.deepStrictEqual(result.skills, mockData.skills)
+    assert.ok(capturedUrl.includes('/skills?'), `expected skills query in URL: ${capturedUrl}`)
+    assert.ok(capturedUrl.includes('q=hello'), `expected q param: ${capturedUrl}`)
+    assert.ok(capturedUrl.includes('limit=10'), `expected limit=10: ${capturedUrl}`)
+    assert.ok(capturedUrl.includes('page=2'), `expected page=2: ${capturedUrl}`)
+    assert.equal(result.skills.length, 1)
+    assert.equal(result.skills[0].id, 's1')
+    assert.equal(result.skills[0].name, 'test-skill')
     assert.equal(result.total, 1)
-    assert.equal(result.page, 1)
+    assert.equal(result.page, 2)
   })
 
   it('uses default page=1 and limit=20', async () => {
@@ -53,8 +58,9 @@ describe('searchClawHub', () => {
     const { searchClawHub } = await import('./clawhub-client.ts')
     await searchClawHub('test')
 
-    assert.ok(capturedUrl.includes('page=1'))
-    assert.ok(capturedUrl.includes('limit=20'))
+    // page=1 is omitted from the URL since the server defaults to page 1
+    assert.ok(!capturedUrl.includes('page='), `page param should be omitted for default: ${capturedUrl}`)
+    assert.ok(capturedUrl.includes('limit=20'), `expected limit=20: ${capturedUrl}`)
   })
 
   it('uses default base URL when CLAWHUB_API_URL is not set', async () => {
@@ -68,7 +74,7 @@ describe('searchClawHub', () => {
     const { searchClawHub } = await import('./clawhub-client.ts')
     await searchClawHub('q')
 
-    assert.ok(capturedUrl.startsWith('https://clawhub.openclaw.dev/api/skills'))
+    assert.ok(capturedUrl.startsWith('https://clawhub.ai/api/v1/skills'), `expected clawhub.ai base URL: ${capturedUrl}`)
   })
 
   it('returns empty results on non-200 response', async () => {

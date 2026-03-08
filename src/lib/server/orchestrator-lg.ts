@@ -399,7 +399,7 @@ export async function executeLangGraphOrchestrator(
 
   const checkpointSaver = getCheckpointSaver()
   const isStrictMode = settings.capabilityPolicyMode === 'strict'
-  const approvalInterruptsEnabled = isStrictMode && settings.approvalsEnabled !== false
+  const approvalInterruptsEnabled = isStrictMode && settings.approvalsEnabled === true
   const allTools = [delegateTool, storeMemoryTool, searchMemoryTool, getSecretTool, commentOnTaskTool, createTaskTool, markCompleteTool]
   const llmWithTools = llm.bindTools(allTools)
   const toolNode = new ToolNode(allTools)
@@ -763,7 +763,7 @@ export async function resumeLangGraphOrchestrator(
   const checkpointSaver = getCheckpointSaver()
   const settings = loadSettings()
   const isStrictMode = settings.capabilityPolicyMode === 'strict'
-  const approvalInterruptsEnabled = isStrictMode && settings.approvalsEnabled !== false
+  const approvalInterruptsEnabled = isStrictMode && settings.approvalsEnabled === true
 
   const allTools = [delegateTool, storeMemoryTool, searchMemoryTool, getSecretTool, commentOnTaskTool, createTaskTool, markCompleteTool]
   const llmWithTools = llm.bindTools(allTools)

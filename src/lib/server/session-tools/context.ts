@@ -48,15 +48,24 @@ function normalizeWorkspaceAlias(cwd: string, filePath: string): string {
   return trimmed
 }
 
+/**
+ * Safe absolute paths that agents are allowed to write to outside the workspace.
+ * Kept minimal to prevent accidental writes to sensitive system locations.
+ */
+const ALLOWED_ABSOLUTE_PREFIXES = ['/tmp/', '/var/tmp/']
+
 export function safePath(cwd: string, filePath: string): string {
   const path = require('path')
   const normalized = normalizeWorkspaceAlias(cwd, filePath)
   const resolvedRoot = path.resolve(cwd)
   const resolved = path.resolve(resolvedRoot, normalized)
-  if (!resolved.startsWith(resolvedRoot)) {
-    throw new Error('Path traversal not allowed')
+  // Allow workspace-relative paths
+  if (resolved.startsWith(resolvedRoot)) return resolved
+  // Allow explicitly safe absolute paths (e.g., /tmp/)
+  if (path.isAbsolute(normalized) && ALLOWED_ABSOLUTE_PREFIXES.some((p: string) => resolved.startsWith(p))) {
+    return resolved
   }
-  return resolved
+  throw new Error('Path traversal not allowed')
 }
 
 export function truncate(text: string, max: number): string {

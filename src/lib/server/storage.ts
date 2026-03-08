@@ -2,9 +2,10 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import os from 'os'
+import type { ChildProcess } from 'node:child_process'
 import Database from 'better-sqlite3'
 
-import { DATA_DIR, WORKSPACE_DIR } from './data-dir'
+import { DATA_DIR, IS_BUILD_BOOTSTRAP, WORKSPACE_DIR } from './data-dir'
 import { normalizeHeartbeatSettingFields } from '@/lib/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
 import type { ExternalAgentRuntime, GatewayProfile, Message } from '@/types'
@@ -110,7 +111,6 @@ for (const dir of [DATA_DIR, UPLOAD_DIR, WORKSPACE_DIR]) {
 }
 
 // --- SQLite Database ---
-const IS_BUILD_BOOTSTRAP = process.env.SWARMCLAW_BUILD_MODE === '1'
 const DB_PATH = IS_BUILD_BOOTSTRAP ? ':memory:' : path.join(DATA_DIR, 'swarmclaw.db')
 const db = new Database(DB_PATH)
 if (!IS_BUILD_BOOTSTRAP) {
@@ -120,6 +120,12 @@ if (!IS_BUILD_BOOTSTRAP) {
 db.pragma('foreign_keys = ON')
 
 const collectionCacheKey = '__swarmclaw_storage_collection_cache__' as const
+type StoredObject = Record<string, unknown>
+type ActiveProcess = ChildProcess | {
+  runId?: string | null
+  source?: string
+  kill: (signal?: NodeJS.Signals | number) => boolean | void
+}
 type StorageGlobals = typeof globalThis & {
   [collectionCacheKey]?: Map<string, LRUMap<string, string>>
 }
@@ -194,11 +200,11 @@ function getCollectionRawCache(table: string): LRUMap<string, string> {
   return loaded
 }
 
-function normalizeStoredRecord(table: string, value: any): any {
+function normalizeStoredRecord(table: string, value: unknown): unknown {
   if (table !== 'sessions') return value
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value
 
-  const session = value as Record<string, any>
+  const session = value as StoredObject
   if (session.sessionType !== 'human') session.sessionType = 'human'
   const isLegacyShortcut = (
     (typeof session.id === 'string' && session.id.startsWith('agent-thread-'))
@@ -282,7 +288,7 @@ function deleteCollectionItem(table: string, id: string) {
  * loading/saving the entire collection. Prevents race conditions when
  * concurrent processes are modifying different items.
  */
-function upsertCollectionItem(table: string, id: string, value: any) {
+function upsertCollectionItem(table: string, id: string, value: unknown) {
   const serialized = JSON.stringify(normalizeStoredRecord(table, value))
   db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`).run(id, serialized)
   // Update the in-memory cache
@@ -292,7 +298,7 @@ function upsertCollectionItem(table: string, id: string, value: any) {
   }
 }
 
-function loadCollectionItem(table: string, id: string): any | null {
+function loadCollectionItem(table: string, id: string): unknown | null {
   const row = db.prepare(`SELECT data FROM ${table} WHERE id = ?`).get(id) as { data: string } | undefined
   if (!row) return null
   try {
@@ -302,7 +308,7 @@ function loadCollectionItem(table: string, id: string): any | null {
   }
 }
 
-function upsertCollectionItems(table: string, entries: Array<[string, any]>): void {
+function upsertCollectionItems(table: string, entries: Array<[string, unknown]>): void {
   if (!entries.length) return
   const prepared = entries
     .map(([id, value]) => [id, JSON.stringify(normalizeStoredRecord(table, value))] as const)
@@ -325,24 +331,24 @@ function upsertCollectionItems(table: string, entries: Array<[string, any]>): vo
   }
 }
 
-export function loadStoredItem(table: StorageCollection, id: string): any | null {
+export function loadStoredItem(table: StorageCollection, id: string): unknown | null {
   return loadCollectionItem(table, id)
 }
 
-export function upsertStoredItem(table: StorageCollection, id: string, value: any): void {
+export function upsertStoredItem(table: StorageCollection, id: string, value: unknown): void {
   upsertCollectionItem(table, id, value)
 }
 
-export function upsertStoredItems(table: StorageCollection, entries: Array<[string, any]>): void {
+export function upsertStoredItems(table: StorageCollection, entries: Array<[string, unknown]>): void {
   upsertCollectionItems(table, entries)
 }
 
-function loadSingleton(table: string, fallback: any): any {
+function loadSingleton<T>(table: string, fallback: T): T {
   const row = db.prepare(`SELECT data FROM ${table} WHERE id = 1`).get() as { data: string } | undefined
-  return row ? JSON.parse(row.data) : fallback
+  return row ? JSON.parse(row.data) as T : fallback
 }
 
-function saveSingleton(table: string, data: any) {
+function saveSingleton(table: string, data: unknown) {
   db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (1, ?)`).run(JSON.stringify(data))
 }
 
@@ -594,37 +600,43 @@ export function markSetupComplete(): void {
 export function loadSessions(): Record<string, any> {
   const sessions = loadCollection('sessions')
   const agents = loadCollection('agents')
-  let changed = false
+  const changedEntries: Array<[string, any]> = []
 
   for (const [id, session] of Object.entries(sessions)) {
     if (!session || typeof session !== 'object') continue
+    let touched = false
 
     if (typeof session.id !== 'string' || !session.id.trim()) {
       session.id = id
-      changed = true
+      touched = true
     }
-
 
     const agentId = typeof session.agentId === 'string' ? session.agentId.trim() : ''
     if (agentId && !Object.prototype.hasOwnProperty.call(agents, agentId)) {
       session.agentId = null
-      changed = true
+      touched = true
     }
 
     // Migrate tools → plugins
     if (Array.isArray(session.tools) && !Array.isArray(session.plugins)) {
       session.plugins = session.tools
       delete session.tools
-      changed = true
+      touched = true
     }
+
+    if (touched) changedEntries.push([id, session])
   }
 
-  if (changed) saveCollection('sessions', sessions)
+  // Upsert only changed entries — never full-replace, which deletes concurrent sessions
+  if (changedEntries.length > 0) upsertCollectionItems('sessions', changedEntries)
   return sessions
 }
 
 export function saveSessions(s: Record<string, any>) {
-  saveCollection('sessions', s)
+  // Upsert-only — never delete sessions that aren't in the map.
+  // Explicit deletion goes through deleteSession(id).
+  const entries = Object.entries(s)
+  if (entries.length > 0) upsertCollectionItems('sessions', entries)
 }
 
 export function disableAllSessionHeartbeats(): number {
@@ -636,9 +648,9 @@ export function disableAllSessionHeartbeats(): number {
 
   const tx = db.transaction(() => {
     for (const row of rows) {
-      let parsed: any
+      let parsed: StoredObject | null = null
       try {
-        parsed = JSON.parse(row.data)
+        parsed = JSON.parse(row.data) as StoredObject
       } catch {
         continue
       }
@@ -754,7 +766,7 @@ export function loadTasks(): Record<string, any> {
 export function saveTasks(t: Record<string, any>) {
   saveCollection('tasks', t)
 }
-export function upsertTask(id: string, task: any) {
+export function upsertTask(id: string, task: unknown) {
   upsertCollectionItem('tasks', id, task)
 }
 export function deleteTask(id: string) { deleteCollectionItem('tasks', id) }
@@ -809,6 +821,9 @@ function isProvidedSecretValue(value: unknown): value is string {
 
 function buildPersistedSettings(input: Record<string, any>, existing?: PersistedSettingsRecord): PersistedSettingsRecord {
   const next = cloneRecord(input) as PersistedSettingsRecord
+  if (typeof next.approvalsEnabled !== 'boolean' && typeof existing?.approvalsEnabled !== 'boolean') {
+    next.approvalsEnabled = false
+  }
   Object.assign(next, normalizeRuntimeSettingFields(next))
   Object.assign(next, normalizeHeartbeatSettingFields(next))
   const encrypted = {
@@ -900,15 +915,13 @@ export async function getSecret(key: string): Promise<{
   if (!needle) return null
 
   const secrets = loadSecrets()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const matches = Object.values(secrets).find((secret: any) => {
+  const matches = Object.values(secrets).find((secret): secret is StoredObject => {
     if (!secret || typeof secret !== 'object') return false
     const id = typeof secret.id === 'string' ? secret.id.toLowerCase() : ''
     const name = typeof secret.name === 'string' ? secret.name.toLowerCase() : ''
     const service = typeof secret.service === 'string' ? secret.service.toLowerCase() : ''
     return id === needle || name === needle || service === needle
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  }) as any | undefined
+  })
 
   if (!matches) return null
 
@@ -919,15 +932,23 @@ export async function getSecret(key: string): Promise<{
         : (typeof matches.value === 'string' ? matches.value : '')
     if (!decryptedValue) return null
 
+    const id = typeof matches.id === 'string' ? matches.id : ''
+    const name = typeof matches.name === 'string' ? matches.name : ''
+    const service = typeof matches.service === 'string' ? matches.service : ''
+    const scope = typeof matches.scope === 'string' ? matches.scope : ''
+    const createdAt = typeof matches.createdAt === 'number' ? matches.createdAt : 0
+    const updatedAt = typeof matches.updatedAt === 'number' ? matches.updatedAt : 0
+    if (!id || !name || !service || !scope) return null
+
     return {
-      id: matches.id,
-      name: matches.name,
-      service: matches.service,
+      id,
+      name,
+      service,
       value: decryptedValue,
-      scope: matches.scope,
+      scope,
       agentIds: Array.isArray(matches.agentIds) ? matches.agentIds : [],
-      createdAt: matches.createdAt,
-      updatedAt: matches.updatedAt,
+      createdAt,
+      updatedAt,
     }
   } catch {
     return null
@@ -1016,7 +1037,7 @@ export function saveUsage(u: Record<string, any[]>) {
   transaction()
 }
 
-export function appendUsage(sessionId: string, record: any) {
+export function appendUsage(sessionId: string, record: unknown) {
   const ins = db.prepare('INSERT INTO usage (session_id, data) VALUES (?, ?)')
   ins.run(sessionId, JSON.stringify(record))
 }
@@ -1058,8 +1079,8 @@ export function saveWebhooks(w: Record<string, any>) {
 }
 
 // --- Active processes ---
-export const active = new Map<string, any>()
-export const devServers = new Map<string, { proc: any; url: string }>()
+export const active = new Map<string, ActiveProcess>()
+export const devServers = new Map<string, { proc: ChildProcess; url: string }>()
 
 // --- Utilities ---
 export function localIP(): string {
@@ -1097,6 +1118,10 @@ export function loadWebhookLogs(): Record<string, unknown> {
   return loadCollection('webhook_logs')
 }
 
+export function saveWebhookLogs(entries: Record<string, unknown>) {
+  saveCollection('webhook_logs', entries)
+}
+
 export function appendWebhookLog(id: string, entry: unknown) {
   upsertCollectionItem('webhook_logs', id, entry)
 }
@@ -1123,6 +1148,10 @@ export function logActivity(entry: {
 // --- Webhook Retry Queue ---
 export function loadWebhookRetryQueue(): Record<string, unknown> {
   return loadCollection('webhook_retry_queue')
+}
+
+export function saveWebhookRetryQueue(entries: Record<string, unknown>) {
+  saveCollection('webhook_retry_queue', entries)
 }
 
 export function upsertWebhookRetry(id: string, entry: unknown) {

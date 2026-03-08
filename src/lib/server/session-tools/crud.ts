@@ -21,7 +21,7 @@ import {
   decryptKey,
 } from '../storage'
 import { resolveScheduleName } from '@/lib/schedule-name'
-import { findDuplicateSchedule, type ScheduleLike } from '@/lib/schedule-dedupe'
+import { findDuplicateSchedule, findEquivalentSchedules, type ScheduleLike } from '@/lib/schedule-dedupe'
 import { computeTaskFingerprint, findDuplicateTask } from '@/lib/task-dedupe'
 import {
   hasManagedAgentAssignmentInput,
@@ -118,6 +118,95 @@ function deriveTaskTitle(input: { title?: unknown; description?: unknown }): str
   return compact.slice(0, 120)
 }
 
+const VALID_CONNECTOR_PLATFORMS = new Set([
+  'discord',
+  'telegram',
+  'slack',
+  'whatsapp',
+  'openclaw',
+  'bluebubbles',
+  'signal',
+  'teams',
+  'googlechat',
+  'matrix',
+  'email',
+  'webchat',
+  'mockmail',
+])
+
+const VALID_CONNECTOR_STATUSES = new Set(['stopped', 'running', 'error'])
+
+function normalizeConnectorConfig(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const normalized: Record<string, string> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const normalizedKey = typeof key === 'string' ? key.trim() : ''
+    if (!normalizedKey) continue
+    if (typeof value === 'string') {
+      normalized[normalizedKey] = value
+      continue
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      normalized[normalizedKey] = String(value)
+    }
+  }
+  return normalized
+}
+
+function sanitizeConnectorCrudPayload(
+  raw: Record<string, unknown>,
+  options: { forUpdate?: boolean } = {},
+): Record<string, unknown> {
+  const { forUpdate = false } = options
+  const out: Record<string, unknown> = {}
+  const setString = (key: 'name' | 'platform' | 'status') => {
+    if (!Object.prototype.hasOwnProperty.call(raw, key)) return
+    const value = typeof raw[key] === 'string' ? raw[key].trim() : ''
+    if (!value) return
+    if (key === 'platform' && !VALID_CONNECTOR_PLATFORMS.has(value)) return
+    if (key === 'status' && !VALID_CONNECTOR_STATUSES.has(value)) return
+    out[key] = value
+  }
+  const setNullableId = (key: 'agentId' | 'chatroomId' | 'credentialId') => {
+    if (!Object.prototype.hasOwnProperty.call(raw, key)) return
+    const value = typeof raw[key] === 'string' ? raw[key].trim() : ''
+    out[key] = value || null
+  }
+
+  setString('name')
+  setString('platform')
+  setString('status')
+  setNullableId('agentId')
+  setNullableId('chatroomId')
+  setNullableId('credentialId')
+
+  if (Object.prototype.hasOwnProperty.call(raw, 'config')) {
+    out.config = normalizeConnectorConfig(raw.config)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(raw, 'isEnabled')) {
+    out.isEnabled = raw.isEnabled === true
+  } else if (Object.prototype.hasOwnProperty.call(raw, 'enabled')) {
+    out.isEnabled = raw.enabled === true
+  }
+
+  if (!forUpdate) {
+    const platform = typeof out.platform === 'string' ? out.platform : 'discord'
+    return {
+      name: typeof out.name === 'string' && out.name ? out.name : 'Unnamed Connector',
+      platform,
+      agentId: Object.prototype.hasOwnProperty.call(out, 'agentId') ? out.agentId : null,
+      chatroomId: Object.prototype.hasOwnProperty.call(out, 'chatroomId') ? out.chatroomId : null,
+      credentialId: Object.prototype.hasOwnProperty.call(out, 'credentialId') ? out.credentialId : null,
+      config: Object.prototype.hasOwnProperty.call(out, 'config') ? out.config : {},
+      isEnabled: Object.prototype.hasOwnProperty.call(out, 'isEnabled') ? out.isEnabled : false,
+      ...(typeof out.status === 'string' ? { status: out.status } : {}),
+    }
+  }
+
+  return out
+}
+
 const TASK_STATUS_VALUES = new Set([
   'backlog',
   'queued',
@@ -155,6 +244,95 @@ function normalizeTaskIdList(value: unknown): string[] {
 function pickFirstTaskId(value: unknown): string | null {
   const ids = normalizeTaskIdList(value)
   return ids[0] || null
+}
+
+function buildScheduleCreatorScope(schedule: Record<string, unknown> | null | undefined): {
+  agentId?: string | null
+  sessionId?: string | null
+} | null {
+  if (!schedule || typeof schedule !== 'object') return null
+  const agentId = typeof schedule.createdByAgentId === 'string' && schedule.createdByAgentId.trim()
+    ? schedule.createdByAgentId.trim()
+    : null
+  const sessionId = typeof schedule.createdInSessionId === 'string' && schedule.createdInSessionId.trim()
+    ? schedule.createdInSessionId.trim()
+    : null
+  if (!agentId && !sessionId) return null
+  return { agentId, sessionId }
+}
+
+function deriveScheduleFollowupTarget(sessionId: string | null | undefined): {
+  followupConnectorId?: string | null
+  followupChannelId?: string | null
+  followupThreadId?: string | null
+  followupSenderId?: string | null
+  followupSenderName?: string | null
+} {
+  const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : ''
+  if (!normalizedSessionId) return {}
+
+  const session = loadSessions()[normalizedSessionId] as {
+    connectorContext?: Record<string, unknown>
+    messages?: Array<Record<string, unknown>>
+  } | undefined
+  if (!session) return {}
+
+  const pickSourceFields = (source: Record<string, unknown> | null | undefined) => {
+    const connectorId = typeof source?.connectorId === 'string' ? source.connectorId.trim() : ''
+    const channelId = typeof source?.channelId === 'string' ? source.channelId.trim() : ''
+    if (!connectorId || !channelId) return {}
+    const threadId = typeof source?.threadId === 'string' ? source.threadId.trim() : ''
+    const senderId = typeof source?.senderId === 'string' ? source.senderId.trim() : ''
+    const senderName = typeof source?.senderName === 'string' ? source.senderName.trim() : ''
+    return {
+      followupConnectorId: connectorId,
+      followupChannelId: channelId,
+      followupThreadId: threadId || null,
+      followupSenderId: senderId || null,
+      followupSenderName: senderName || null,
+    }
+  }
+
+  const contextTarget = pickSourceFields(session.connectorContext || undefined)
+  if (contextTarget.followupConnectorId && contextTarget.followupChannelId) return contextTarget
+
+  const messages = Array.isArray(session.messages) ? session.messages : []
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if ((typeof message?.role === 'string' ? message.role : '') !== 'user') continue
+    if (message?.historyExcluded === true) continue
+    const messageTarget = pickSourceFields(message?.source as Record<string, unknown> | undefined)
+    if (messageTarget.followupConnectorId && messageTarget.followupChannelId) return messageTarget
+  }
+
+  return {}
+}
+
+function findRelatedScheduleIds(
+  schedules: Record<string, ScheduleLike>,
+  schedule: Record<string, unknown> | null | undefined,
+  opts: { ignoreId?: string | null } = {},
+): string[] {
+  if (!schedule || typeof schedule !== 'object') return []
+  const scope = buildScheduleCreatorScope(schedule)
+  if (!scope?.sessionId) return []
+  const matches = findEquivalentSchedules(schedules, {
+    id: typeof schedule.id === 'string' ? schedule.id : null,
+    agentId: typeof schedule.agentId === 'string' ? schedule.agentId : null,
+    taskPrompt: typeof schedule.taskPrompt === 'string' ? schedule.taskPrompt : null,
+    scheduleType: typeof schedule.scheduleType === 'string' ? schedule.scheduleType : null,
+    cron: typeof schedule.cron === 'string' ? schedule.cron : null,
+    intervalMs: typeof schedule.intervalMs === 'number' ? schedule.intervalMs : null,
+    runAt: typeof schedule.runAt === 'number' ? schedule.runAt : null,
+    createdByAgentId: scope.agentId,
+    createdInSessionId: scope.sessionId,
+  }, {
+    ignoreId: opts.ignoreId || (typeof schedule.id === 'string' ? schedule.id : null),
+    creatorScope: scope,
+  })
+  return Array.from(new Set(matches
+    .map((entry) => (typeof entry.id === 'string' ? entry.id : ''))
+    .filter(Boolean)))
 }
 
 function applyTaskContinuationDefaults(
@@ -285,11 +463,7 @@ const RESOURCE_DEFAULTS: Record<string, (parsed: any) => any> = {
     ...p,
   }),
   manage_connectors: (p) => ({
-    name: p.name || 'Unnamed Connector',
-    platform: p.platform || 'discord',
-    agentId: p.agentId || null,
-    enabled: p.enabled ?? false,
-    ...p,
+    ...sanitizeConnectorCrudPayload(p as Record<string, unknown>),
   }),
   manage_webhooks: (p) => ({
     name: p.name || 'Unnamed Webhook',
@@ -391,9 +565,9 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
       description += `\n\nAgents may self-edit their own soul. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field. Set "platformAssignScope":"all" to let an agent delegate work across the fleet; use "self" for solo execution.`
     } else if (toolKey === 'manage_schedules') {
       if (assignScope === 'self') {
-        description += `\n\nOmit "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}"), or set it explicitly to yourself. You can only assign schedules to yourself. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Provide either taskPrompt, command, or action+path. Before create, call list/get to avoid duplicate schedules. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true).`
+        description += `\n\nOmit "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}"), or set it explicitly to yourself. You can only assign schedules to yourself. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Provide either taskPrompt, command, or action+path. Before create, call list/get to avoid duplicate schedules. Reuse or update an existing schedule you already created in this chat instead of making a near-duplicate. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true). For one-off reminders, prefer "once"; agent-created one-off schedules are cleaned up automatically after they finish. When the user says stop/pause/cancel a reminder, pause or delete every matching schedule you created in this chat, not just one row.`
       } else {
-        description += `\n\nOmit "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}"), or set "agentId" to another agent when needed. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Provide either taskPrompt, command, or action+path. Before create, call list/get to avoid duplicate schedules. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true).` + agentSummary
+        description += `\n\nOmit "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}"), or set "agentId" to another agent when needed. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Provide either taskPrompt, command, or action+path. Before create, call list/get to avoid duplicate schedules. Reuse or update an existing schedule you already created in this chat instead of making a near-duplicate. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true). For one-off reminders, prefer "once"; agent-created one-off schedules are cleaned up automatically after they finish. When the user says stop/pause/cancel a reminder, pause or delete every matching schedule you created in this chat, not just one row.` + agentSummary
       }
       if (ctx?.projectId) {
         description += `\n\nCurrent project context: "${ctx.projectName || ctx.projectId}" (projectId "${ctx.projectId}"). Omit "projectId" to use this active project by default.`
@@ -593,11 +767,15 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 }
               }
               const newId = genId()
+              const scheduleFollowupTarget = toolKey === 'manage_schedules'
+                ? deriveScheduleFollowupTarget(ctx?.sessionId || null)
+                : {}
               const entry = {
                 id: newId,
                 ...parsed,
                 createdByAgentId: ctx?.agentId || null,
                 createdInSessionId: ctx?.sessionId || null,
+                ...scheduleFollowupTarget,
                 createdAt: now,
                 updatedAt: now,
               }
@@ -665,8 +843,12 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
               if (!effectiveId) return 'Error: "id" is required for update action.'
               const all = res.load()
               if (!all[effectiveId]) return `Not found: ${res.label} "${effectiveId}"`
+              const previousEntry = all[effectiveId]
+              let affectedScheduleIds: string[] | null = null
               const parsed = toolKey === 'manage_projects'
                 ? normalizeProjectPatchInput(buildCrudPayload(normalized, action, data))
+                : toolKey === 'manage_connectors'
+                  ? sanitizeConnectorCrudPayload(buildCrudPayload(normalized, action, data), { forUpdate: true })
                 : buildCrudPayload(normalized, action, data)
               const parsedRecord = parsed as Record<string, unknown>
               if (toolKey === 'manage_tasks') {
@@ -733,6 +915,21 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   ...all[effectiveId],
                   ...normalizedSchedule.value,
                   updatedAt: Date.now(),
+                }
+                const nextStatus = typeof all[effectiveId].status === 'string' ? all[effectiveId].status.trim().toLowerCase() : ''
+                if (nextStatus === 'paused' || nextStatus === 'completed' || nextStatus === 'failed') {
+                  const relatedIds = findRelatedScheduleIds(all as Record<string, ScheduleLike>, previousEntry, {
+                    ignoreId: effectiveId,
+                  })
+                  for (const relatedId of relatedIds) {
+                    if (!all[relatedId]) continue
+                    all[relatedId] = {
+                      ...all[relatedId],
+                      status: nextStatus,
+                      updatedAt: Date.now(),
+                    }
+                  }
+                  affectedScheduleIds = [effectiveId, ...relatedIds]
                 }
               }
               if (toolKey === 'manage_secrets') {
@@ -807,6 +1004,12 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
               if (toolKey === 'manage_projects') {
                 return JSON.stringify(buildProjectSnapshot(all[effectiveId]))
               }
+              if (toolKey === 'manage_schedules' && affectedScheduleIds?.length) {
+                return JSON.stringify({
+                  ...all[effectiveId],
+                  affectedScheduleIds,
+                })
+              }
               return JSON.stringify(all[effectiveId])
             }
             if (action === 'delete') {
@@ -817,7 +1020,12 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
               if (toolKey === 'manage_secrets' && !canAccessSecret(all[effectiveId])) {
                 return 'Error: you do not have access to this secret.'
               }
-              delete all[effectiveId]
+              const deletedIds = toolKey === 'manage_schedules'
+                ? [effectiveId, ...findRelatedScheduleIds(all as Record<string, ScheduleLike>, all[effectiveId], { ignoreId: effectiveId })]
+                : [effectiveId]
+              for (const deleteId of deletedIds) {
+                delete all[deleteId]
+              }
               res.save(all)
               if (toolKey === 'manage_projects') {
                 const clearProjectId = (load: () => Record<string, Record<string, unknown>>, save: (d: Record<string, Record<string, unknown>>) => void) => {
@@ -837,7 +1045,10 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 clearProjectId(loadSkills, saveSkills)
                 clearProjectId(loadSecrets, saveSecrets)
               }
-              return JSON.stringify({ deleted: effectiveId })
+              return JSON.stringify({
+                deleted: effectiveId,
+                deletedIds,
+              })
             }
             return `Unknown action "${action}". Valid: list, get, create, update, delete`
           } catch (err: any) {

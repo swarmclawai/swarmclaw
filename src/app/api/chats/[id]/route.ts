@@ -111,7 +111,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const sessions = loadSessions()
   if (!sessions[id]) return notFound()
   if (active.has(id)) {
-    try { active.get(id).kill() } catch {}
+    try { active.get(id)?.kill() } catch {}
     active.delete(id)
   }
   deleteSession(id)

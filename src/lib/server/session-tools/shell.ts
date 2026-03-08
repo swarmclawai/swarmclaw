@@ -27,6 +27,20 @@ function resolveShellWorkdir(baseCwd: string, requestedWorkdir?: string): string
   return safePath(baseCwd, raw)
 }
 
+export function rewriteShellWorkspaceAliases(baseCwd: string, command: string): string {
+  const cwd = typeof baseCwd === 'string' ? baseCwd.trim() : ''
+  if (!cwd) return command
+
+  let rewritten = command
+  rewritten = rewritten.replace(/(^|[\s"'`(=;])\/workspace(?=\/|\b)/g, `$1${cwd}`)
+  rewritten = rewritten.replace(/(^|[\s"'`(=;])workspace\//g, `$1${cwd}/`)
+  return rewritten
+}
+
+export function stripManagedBackgroundSuffix(command: string): string {
+  return command.replace(/\s*&\s*$/, '').trim()
+}
+
 function isLikelyServerCommand(command: string): boolean {
   const cmd = command.trim()
   return /\bnpm\s+run\s+(dev|start|serve)\b/.test(cmd) || 
@@ -126,11 +140,16 @@ async function executeShellAction(args: Record<string, unknown>, bctx: { cwd: st
     switch (action) {
       case 'execute': {
         if (!command) return 'Error: command or cmd is required for execute action.'
-        const effectiveBackground = !!background || (typeof command === 'string' && isLikelyServerCommand(command))
+        const rewrittenCommand = rewriteShellWorkspaceAliases(bctx.cwd, command)
+        const effectiveBackground = !!background || (typeof rewrittenCommand === 'string' && isLikelyServerCommand(rewrittenCommand))
+        const managedCommand = effectiveBackground ? stripManagedBackgroundSuffix(rewrittenCommand) : rewrittenCommand
+        const envMap = coerceEnvMap(env) || {}
+        if (!envMap.WORKSPACE) envMap.WORKSPACE = bctx.cwd
+        if (!envMap.SESSION_CWD) envMap.SESSION_CWD = bctx.cwd
         const result = await startManagedProcess({
-          command: command,
+          command: managedCommand,
           cwd: resolveShellWorkdir(bctx.cwd, workdir),
-          env: coerceEnvMap(env),
+          env: envMap,
           agentId: bctx.agentId || null,
           sessionId: bctx.sessionId || null,
           background: effectiveBackground,

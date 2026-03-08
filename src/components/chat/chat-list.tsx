@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { Skeleton } from '@/components/shared/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Dropdown, DropdownItem } from '@/components/shared/dropdown'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 
 interface Props {
   inSidebar?: boolean
@@ -38,6 +39,8 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   const [sortMode, setSortMode] = useState<SortMode>('lastActive')
   const [loaded, setLoaded] = useState(Object.keys(sessions).length > 0)
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
+  const [confirmClearIds, setConfirmClearIds] = useState<string[] | null>(null)
+  const [clearing, setClearing] = useState(false)
 
   useEffect(() => {
     if (Object.keys(sessions).length > 0 && !loaded) setLoaded(true)
@@ -116,6 +119,18 @@ export function ChatList({ inSidebar, onSelect }: Props) {
     onSelect?.()
   }
 
+  const handleClearFiltered = async () => {
+    if (!confirmClearIds || confirmClearIds.length === 0) return
+    setClearing(true)
+    try {
+      await clearSessions(confirmClearIds)
+      toast.success(`${confirmClearIds.length} chat${confirmClearIds.length === 1 ? '' : 's'} deleted`)
+      setConfirmClearIds(null)
+    } finally {
+      setClearing(false)
+    }
+  }
+
   // Truly empty — no sessions at all for this user
   if (!allUserSessions.length) {
     // Show skeleton cards while data is loading
@@ -178,11 +193,9 @@ export function ChatList({ inSidebar, onSelect }: Props) {
               </svg>
             </button>
             <Dropdown open={bulkMenuOpen} onClose={() => setBulkMenuOpen(false)}>
-              <DropdownItem onClick={async () => {
+              <DropdownItem onClick={() => {
                 setBulkMenuOpen(false)
-                if (!window.confirm(`Delete ${filtered.length} chat${filtered.length === 1 ? '' : 's'}?`)) return
-                await clearSessions(filtered.map((s) => s.id))
-                toast.success(`${filtered.length} chat${filtered.length === 1 ? '' : 's'} deleted`)
+                setConfirmClearIds(filtered.map((s) => s.id))
               }}>
                 Clear filtered chats
               </DropdownItem>
@@ -249,6 +262,17 @@ export function ChatList({ inSidebar, onSelect }: Props) {
           </p>
         </div>
       )}
+      <ConfirmDialog
+        open={!!confirmClearIds}
+        title="Clear Filtered Chats?"
+        message={confirmClearIds ? `Delete ${confirmClearIds.length} chat${confirmClearIds.length === 1 ? '' : 's'} from the current view?` : 'Delete filtered chats?'}
+        confirmLabel={clearing ? 'Deleting...' : 'Delete'}
+        confirmDisabled={clearing}
+        cancelDisabled={clearing}
+        danger
+        onConfirm={() => { void handleClearFiltered() }}
+        onCancel={() => { if (!clearing) setConfirmClearIds(null) }}
+      />
     </div>
   )
 }

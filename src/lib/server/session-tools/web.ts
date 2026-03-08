@@ -2,12 +2,13 @@ import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath, pathToFileURL } from 'url'
 import * as cheerio from 'cheerio'
 import { UPLOAD_DIR } from '../storage'
 import type { ToolBuildContext } from './context'
 import { spawnSync } from 'child_process'
 import { safePath, truncate, MAX_OUTPUT, findBinaryOnPath } from './context'
-import { getSearchProvider } from './search-providers'
+import { getSearchProvider, type SearchResult } from './search-providers'
 import { dedupeScreenshotMarkdownLines } from './web-output'
 import { withRetry } from '../tool-retry'
 import type { Plugin, PluginHooks } from '@/types'
@@ -16,44 +17,55 @@ import { normalizeToolInputArgs } from './normalize-tool-args'
 import {
   ensureSessionBrowserProfileId,
   getBrowserProfileDir,
+  loadBrowserSessionRecord,
   markBrowserSessionClosed,
   recordBrowserObservation,
   removeBrowserSessionRecord,
   upsertBrowserSessionRecord,
 } from '../browser-state'
 
-// --- Search result compression logic ---
-async function compressSearchResults(results: any[], query: string, bctx: any): Promise<string | null> {
-  const session = bctx.resolveCurrentSession?.()
-  if (!session?.provider || !session?.model) return null
-  const { getProvider } = await import('@/lib/providers')
-  const { loadCredentials, decryptKey } = await import('../storage')
-  const providerEntry = getProvider(session.provider)
-  if (!providerEntry?.handler?.streamChat) return null
-  let apiKey: string | undefined
-  if (session.credentialId) {
-    const creds = loadCredentials()
-    const cred = creds[session.credentialId]
-    if (cred) apiKey = decryptKey(cred.encryptedKey)
-  }
-  const systemPrompt = 'You are a search result summarizer. Condense search results into a concise reference. Keep key facts, URLs, and data points. Remove filler and redundancy. Output plain text, not JSON.'
-  const message = `Query: "${query}"\n\nResults:\n${JSON.stringify(results, null, 1)}\n\nSummarize these results concisely.`
-  let compressed = ''
-  await providerEntry.handler.streamChat({
-    session: { ...session, messages: [] }, message, apiKey, systemPrompt,
-    write: (raw: string) => {
-      const lines = raw.split('\n').filter(Boolean)
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        try {
-          const ev = JSON.parse(line.slice(6))
-          if (ev.t === 'd' && ev.text) compressed += ev.text
-        } catch { /* ignore */ }
+function cleanSearchField(value: string | undefined): string {
+  return (value || '').replace(/\s+/g, ' ').trim()
+}
+
+export function formatWebSearchResults(query: string, results: SearchResult[], maxChars = MAX_OUTPUT): string {
+  const cleanedQuery = cleanSearchField(query)
+  const header = cleanedQuery ? `Search results for: ${cleanedQuery}` : 'Search results'
+  const sections: string[] = [header]
+  const joinSections = (items: string[]) => items.filter(Boolean).join('\n\n')
+
+  for (let index = 0; index < results.length; index++) {
+    const result = results[index]
+    const title = cleanSearchField(result?.title) || cleanSearchField(result?.url) || `Result ${index + 1}`
+    const url = cleanSearchField(result?.url)
+    const snippet = cleanSearchField(result?.snippet)
+    const lines = [`${index + 1}. ${title}`]
+    if (url) lines.push(`URL: ${url}`)
+    if (snippet) lines.push(`Snippet: ${snippet}`)
+    const candidate = joinSections([...sections, lines.join('\n')])
+    if (candidate.length <= maxChars) {
+      sections.push(lines.join('\n'))
+      continue
+    }
+
+    if (url) {
+      const minimalLines = [`${index + 1}. ${title}`, `URL: ${url}`]
+      const minimalCandidate = joinSections([...sections, minimalLines.join('\n')])
+      if (minimalCandidate.length <= maxChars) {
+        sections.push(minimalLines.join('\n'))
       }
-    },
-    active: new Map(), loadHistory: () => [],
-  })
-  return compressed.trim() || null
+    }
+
+    const omitted = results.length - index
+    if (omitted > 0) {
+      const remainingNotice = `(${omitted} additional result${omitted === 1 ? '' : 's'} omitted for brevity)`
+      const withNotice = joinSections([...sections, remainingNotice])
+      if (withNotice.length <= maxChars) sections.push(remainingNotice)
+    }
+    return truncate(joinSections(sections), maxChars)
+  }
+
+  return truncate(joinSections(sections), maxChars)
 }
 
 type BrowserRuntimeEntry = {
@@ -171,11 +183,202 @@ export function inferWebActionFromArgs(params: {
   return undefined
 }
 
+function parseStructuredJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  const trimmed = value.trim()
+  if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) return value
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return value
+  }
+}
+
+function parseJsonObjectValue(value: unknown): Record<string, unknown> | null {
+  const parsed = parseStructuredJsonValue(value)
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : null
+}
+
+function parseJsonArrayValue(value: unknown): unknown[] | null {
+  const parsed = parseStructuredJsonValue(value)
+  return Array.isArray(parsed) ? parsed : null
+}
+
+function pickNonEmptyBrowserString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (trimmed) return trimmed
+  }
+  return undefined
+}
+
+function wrapBrowserEvaluateFunction(code: string): string {
+  const trimmed = code.trim()
+  if (!trimmed) return trimmed
+  if (/^(?:async\s+)?function\b/.test(trimmed)) return trimmed
+  if (/^(?:async\s*)?\([^)]*\)\s*=>/.test(trimmed)) return trimmed
+  return /[;{}]/.test(trimmed)
+    ? `() => { ${trimmed} }`
+    : `() => (${trimmed})`
+}
+
+function wrapBrowserRunCodeFunction(code: string): string {
+  const trimmed = code.trim()
+  if (!trimmed) return trimmed
+  if (/^(?:async\s+)?function\b/.test(trimmed)) return trimmed
+  if (/^(?:async\s*)?\([^)]*\)\s*=>/.test(trimmed)) return trimmed
+  return /[;{}]/.test(trimmed)
+    ? `async (page) => { ${trimmed} }`
+    : `async (page) => (${trimmed})`
+}
+
+export function normalizeBrowserActionParams(rawParams: Record<string, unknown>): Record<string, unknown> {
+  const normalized = normalizeToolInputArgs(rawParams)
+  const action = String(normalized.action || '').trim().toLowerCase()
+  const params: Record<string, unknown> = { ...normalized }
+
+  const parsedFields = parseJsonArrayValue(params.fields)
+  if (parsedFields) params.fields = parsedFields
+
+  const parsedForm = parseJsonObjectValue(params.form)
+  if (parsedForm) params.form = parsedForm
+
+  if (typeof params.selector === 'string' && !pickNonEmptyBrowserString(params.element)) {
+    params.element = params.selector
+  }
+
+  if (action === 'submit_form' && typeof params.selector === 'string' && !pickNonEmptyBrowserString(params.submitElement)) {
+    params.submitElement = params.selector
+  }
+
+  if (action === 'select') {
+    const parsedValues = parseJsonArrayValue(params.values ?? params.option ?? params.value)
+    if (parsedValues) params.values = parsedValues
+    else if (params.values === undefined) {
+      const scalar = pickNonEmptyBrowserString(params.option, params.value, params.text)
+      if (scalar) params.values = [scalar]
+    }
+  }
+
+  if (action === 'evaluate' && !pickNonEmptyBrowserString(params.function)) {
+    const code = pickNonEmptyBrowserString(params.code, params.script, params.javascript, params.js)
+    if (code) params.function = wrapBrowserEvaluateFunction(code)
+  }
+
+  if (action === 'run_code') {
+    const code = pickNonEmptyBrowserString(params.code, params.function, params.script, params.javascript, params.js)
+    if (code) params.code = wrapBrowserRunCodeFunction(code)
+  }
+
+  return params
+}
+
+function pickBrowserTargetFromParams(params: Record<string, unknown>): string | null {
+  for (const value of [
+    params.url,
+    params.filePath,
+    params.path,
+    params.href,
+    params.link,
+    params.target,
+    params.page,
+  ]) {
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (trimmed) return trimmed
+  }
+  return null
+}
+
+function resolveUploadFilePath(target: string): string | null {
+  const normalized = target.replace(/^sandbox:/, '')
+  const match = normalized.match(/^\/api\/uploads\/([^?#]+)/)
+  if (!match) return null
+  let decoded = match[1]
+  try {
+    decoded = decodeURIComponent(decoded)
+  } catch {
+    // keep raw segment
+  }
+  const safeName = decoded.replace(/[^a-zA-Z0-9._-]/g, '')
+  const resolved = path.join(UPLOAD_DIR, safeName)
+  return fs.existsSync(resolved) ? resolved : null
+}
+
+function resolveBrowserFileUrlPath(target: string): string | null {
+  if (!/^file:/i.test(target)) return null
+  try {
+    const resolved = fileURLToPath(target)
+    return fs.existsSync(resolved) ? resolved : null
+  } catch {
+    return null
+  }
+}
+
+function tryResolveBrowserLocalPath(cwd: string, target: string): string | null {
+  const uploadPath = resolveUploadFilePath(target)
+  if (uploadPath) return uploadPath
+
+  const fileUrlPath = resolveBrowserFileUrlPath(target)
+  if (fileUrlPath) return fileUrlPath
+
+  if (/^(?:https?:|about:|data:)/i.test(target)) return null
+
+  const normalized = target.replace(/^sandbox:/, '')
+  const looksLikePath = normalized.startsWith('/')
+    || normalized.startsWith('./')
+    || normalized.startsWith('../')
+    || normalized.includes('/')
+    || /\.(?:html?|xhtml|txt|md|json|ya?ml|csv|ts|tsx|js|jsx|mjs|cjs|css|png|jpe?g|gif|webp|svg|pdf)$/i.test(normalized)
+  if (!looksLikePath) return null
+
+  const candidates = new Set<string>()
+  if (path.isAbsolute(normalized)) candidates.add(normalized)
+  try { candidates.add(safePath(cwd, normalized)) } catch { /* ignore */ }
+  try { candidates.add(path.resolve(cwd, normalized)) } catch { /* ignore */ }
+
+  for (const candidate of candidates) {
+    if (!candidate || !fs.existsSync(candidate)) continue
+    const stat = fs.statSync(candidate)
+    if (stat.isDirectory()) {
+      const indexPath = path.join(candidate, 'index.html')
+      if (fs.existsSync(indexPath)) return indexPath
+      return null
+    }
+    return candidate
+  }
+  return null
+}
+
+function localHtmlFileToDataUrl(filePath: string): string | null {
+  const ext = path.extname(filePath).toLowerCase()
+  if (ext !== '.html' && ext !== '.htm') return null
+  try {
+    const html = fs.readFileSync(filePath, 'utf8')
+    const hasRelativeAssetReferences = /<(?:script|img|source|video|audio)\b[^>]+\b(?:src|poster)\s*=\s*["'](?![a-z]+:|\/\/|#|\/)([^"']+)["']|<link\b[^>]+\bhref\s*=\s*["'](?![a-z]+:|\/\/|#|\/)([^"']+)["']/i.test(html)
+    if (hasRelativeAssetReferences) return null
+    return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+  } catch {
+    return null
+  }
+}
+
+export function resolveBrowserNavigationTarget(cwd: string, target: string): string {
+  const trimmed = target.trim()
+  if (!trimmed) return trimmed
+  const localPath = tryResolveBrowserLocalPath(cwd, trimmed)
+  if (localPath) return localHtmlFileToDataUrl(localPath) || pathToFileURL(localPath).toString()
+  return trimmed.replace(/^sandbox:/, '')
+}
+
 /**
  * Unified Web Execution Logic
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function executeWebAction(args: Record<string, unknown>, bctx: any) {
+async function executeWebAction(args: Record<string, unknown>) {
   const normalized = normalizeToolInputArgs(args)
   const { query, url, maxResults } = normalized as { query?: string; url?: string; maxResults?: number }
   const action = inferWebActionFromArgs({
@@ -193,12 +396,7 @@ async function executeWebAction(args: Record<string, unknown>, bctx: any) {
       const provider = await getSearchProvider(settings)
       const results = await provider.search(searchQuery, limit)
       if (results.length === 0) return 'No results found.'
-      const raw = JSON.stringify(results, null, 2)
-      if (raw.length > 2000) {
-        const compressed = await compressSearchResults(results, searchQuery, bctx)
-        if (compressed) return compressed
-      }
-      return raw
+      return formatWebSearchResults(searchQuery, results)
     } else if (action === 'fetch') {
       const fetchUrl = url || query
       if (!fetchUrl) return 'Error: "url" is required for fetch action.'
@@ -255,7 +453,7 @@ const WebPlugin: Plugin = {
         },
         required: ['action']
       },
-      execute: async (args, context) => executeWebAction(args, { ...context.session, resolveCurrentSession: () => context.session })
+      execute: async (args) => executeWebAction(args)
     }
   ]
 }
@@ -272,7 +470,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
   if (bctx.hasPlugin('web')) {
     tools.push(
       tool(
-        async (args) => executeWebAction(args, bctx),
+        async (args) => executeWebAction(args),
         {
           name: 'web',
           description: WebPlugin.tools![0].description,
@@ -346,13 +544,30 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
           pendingBrowserInitializations.set(sessionKey, connectPromise)
           const entry = await connectPromise
           acquireExistingEntry(entry)
+          const lastState = loadBrowserSessionRecord(sessionKey)
+          const restoreUrl = typeof lastState?.currentUrl === 'string' ? lastState.currentUrl.trim() : ''
+          if (restoreUrl && restoreUrl !== 'about:blank') {
+            try {
+              await entry.client.callTool({ name: 'browser_navigate', arguments: { url: restoreUrl } })
+            } catch (err: unknown) {
+              upsertBrowserSessionRecord({
+                sessionId: sessionKey,
+                profileId: profileInfo.profileId,
+                profileDir,
+                inheritedFromSessionId: profileInfo.inheritedFromSessionId,
+                status: 'error',
+                lastAction: 'browser_restore',
+                lastError: err instanceof Error ? err.message : String(err),
+              })
+            }
+          }
           upsertBrowserSessionRecord({
             sessionId: sessionKey,
             profileId: profileInfo.profileId,
             profileDir,
             inheritedFromSessionId: profileInfo.inheritedFromSessionId,
             status: 'active',
-            lastAction: 'browser_open',
+            lastAction: restoreUrl && restoreUrl !== 'about:blank' ? 'browser_restore' : 'browser_open',
           })
         } finally {
           if (pendingBrowserInitializations.get(sessionKey)) {
@@ -420,6 +635,105 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
     const callBrowserEvaluate = (fn: string) => callMcpTool('browser_evaluate', {
       function: fn,
     })
+
+    const performSelectorDomAction = async (
+      action: 'click' | 'type' | 'select' | 'hover',
+      params: Record<string, unknown>,
+    ): Promise<{ ok: true; output: string } | { ok: false; error: string } | null> => {
+      const selector = pickNonEmptyBrowserString(params.element, params.selector)
+      if (!selector) return null
+      if (typeof params.ref === 'string' && params.ref.trim()) return null
+
+      const payload =
+        action === 'click'
+          ? `() => {
+              const selector = ${JSON.stringify(selector)};
+              try {
+                const element = document.querySelector(selector);
+                if (!element) return { ok: false, error: 'No element matched selector.' };
+                element.click?.();
+                return { ok: true, action: 'click', selector };
+              } catch (error) {
+                return { ok: false, error: String(error) };
+              }
+            }`
+          : action === 'hover'
+            ? `() => {
+                const selector = ${JSON.stringify(selector)};
+                try {
+                  const element = document.querySelector(selector);
+                  if (!element) return { ok: false, error: 'No element matched selector.' };
+                  element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                  element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+                  return { ok: true, action: 'hover', selector };
+                } catch (error) {
+                  return { ok: false, error: String(error) };
+                }
+              }`
+            : action === 'type'
+              ? `() => {
+                  const selector = ${JSON.stringify(selector)};
+                  const value = ${JSON.stringify(String(params.text ?? params.value ?? ''))};
+                  const submit = ${params.submit === true ? 'true' : 'false'};
+                  try {
+                    const element = document.querySelector(selector);
+                    if (!element) return { ok: false, error: 'No element matched selector.' };
+                    element.focus?.();
+                    if ('value' in element) element.value = value;
+                    else if (element.isContentEditable) element.textContent = value;
+                    else return { ok: false, error: 'Matched element is not editable.' };
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (submit) {
+                      if (element.form?.requestSubmit) element.form.requestSubmit();
+                      else {
+                        element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+                        element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+                      }
+                    }
+                    return { ok: true, action: 'type', selector, valueLength: value.length };
+                  } catch (error) {
+                    return { ok: false, error: String(error) };
+                  }
+                }`
+              : `() => {
+                  const selector = ${JSON.stringify(selector)};
+                  const desired = ${JSON.stringify(
+                    Array.isArray(params.values)
+                      ? params.values.map((value) => String(value ?? ''))
+                      : [String(params.value ?? params.option ?? '')],
+                  )};
+                  try {
+                    const element = document.querySelector(selector);
+                    if (!element) return { ok: false, error: 'No element matched selector.' };
+                    if (!(element instanceof HTMLSelectElement)) return { ok: false, error: 'Matched element is not a <select>.' };
+                    const selected = [];
+                    for (const option of Array.from(element.options)) {
+                      const match = desired.includes(option.value) || desired.includes(option.text);
+                      option.selected = match;
+                      if (match) selected.push(option.value || option.text || '');
+                    }
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                    return { ok: true, action: 'select', selector, selected };
+                  } catch (error) {
+                    return { ok: false, error: String(error) };
+                  }
+                }`
+
+      const raw = await callBrowserEvaluate(payload)
+      const parsed = extractJsonPayload(raw)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { ok: false, error: cleanPlaywrightOutput(raw) || `DOM ${action} fallback failed.` }
+      }
+      if ((parsed as Record<string, unknown>).ok !== true) {
+        return {
+          ok: false,
+          error: String((parsed as Record<string, unknown>).error || `DOM ${action} fallback failed.`),
+        }
+      }
+      return { ok: true, output: stringifyStructured(parsed) }
+    }
 
     const captureStructuredObservation = async () => {
       const expression = `() => {
@@ -811,9 +1125,9 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       const fields = Array.isArray(params.fields)
         ? params.fields
         : (() => {
-            const form = params.form
-            if (!form || typeof form !== 'object' || Array.isArray(form)) return []
-            return Object.entries(form as Record<string, unknown>).map(([key, value]) => {
+          const form = params.form
+          if (!form || typeof form !== 'object' || Array.isArray(form)) return []
+          return Object.entries(form as Record<string, unknown>).map(([key, value]) => {
               const escapedId = String(key).replace(/[^a-zA-Z0-9_-]/g, '')
               const escapedAttr = String(key).replace(/["\\]/g, '\\$&')
               const inferredType = typeof value === 'boolean'
@@ -838,11 +1152,43 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         const ref = typeof entry.ref === 'string' ? entry.ref : undefined
         const element = typeof entry.element === 'string' ? entry.element : undefined
         const fieldType = String(entry.type || 'text').toLowerCase()
-        const value = entry.value
+        const value = entry.value ?? entry.text
         if (!ref && !element) continue
+        const selectValues = Array.isArray(entry.values)
+          ? entry.values.map((item) => String(item ?? ''))
+          : Array.isArray(parseJsonArrayValue(entry.values ?? entry.option ?? value))
+            ? (parseJsonArrayValue(entry.values ?? entry.option ?? value) as unknown[]).map((item) => String(item ?? ''))
+            : [String(entry.option ?? value ?? '')]
+        if (!ref && element) {
+          if (fieldType === 'select') {
+            const result = await performSelectorDomAction('select', { element, values: selectValues })
+            if (!result) return { ok: false, error: 'Selector fallback failed for select field.' }
+            if (!result.ok) return result
+          } else if (fieldType === 'checkbox' || fieldType === 'radio') {
+            if (value === true || value === 'true' || value === 'on' || value === 'checked') {
+              const result = await performSelectorDomAction('click', { element })
+              if (!result) return { ok: false, error: 'Selector fallback failed for checkbox field.' }
+              if (!result.ok) return result
+            }
+          } else {
+            const result = await performSelectorDomAction('type', {
+              element,
+              text: String(value ?? ''),
+              submit: params.submit === true,
+            })
+            if (!result) return { ok: false, error: 'Selector fallback failed for input field.' }
+            if (!result.ok) return result
+          }
+          filled.push({
+            ref: null,
+            element,
+            type: fieldType,
+            value: value ?? null,
+          })
+          continue
+        }
         if (fieldType === 'select') {
-          const values = Array.isArray(value) ? value.map(String) : [String(value ?? '')]
-          await callMcpTool('browser_select_option', { ref, element, values })
+          await callMcpTool('browser_select_option', { ref, element, values: selectValues })
         } else if (fieldType === 'checkbox' || fieldType === 'radio') {
           if (value === true || value === 'true' || value === 'on' || value === 'checked') {
             await callMcpTool('browser_click', { ref, element })
@@ -866,11 +1212,19 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
     }
 
     const submitForm = async (params: Record<string, unknown>) => {
-      if (typeof params.submitRef === 'string' || typeof params.submitElement === 'string') {
-        await callMcpTool('browser_click', {
-          ref: typeof params.submitRef === 'string' ? params.submitRef : undefined,
-          element: typeof params.submitElement === 'string' ? params.submitElement : undefined,
-        })
+      const submitRef = pickNonEmptyBrowserString(params.submitRef)
+      const submitElement = pickNonEmptyBrowserString(params.submitElement, params.selector, params.element)
+      if (submitRef || submitElement) {
+        if (submitRef) {
+          await callMcpTool('browser_click', {
+            ref: submitRef,
+            element: submitElement,
+          })
+        } else if (submitElement) {
+          const result = await performSelectorDomAction('click', { element: submitElement })
+          if (!result) return { ok: false, error: 'submitElement is required for selector-based submit.' }
+          if (!result.ok) return result
+        }
       } else {
         await callBrowserEvaluate(`() => {
           const form = document.forms[0];
@@ -1057,8 +1411,9 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
     const completeWebTask = async (params: Record<string, unknown>) => {
       const steps: string[] = []
       if (typeof params.url === 'string' && params.url.trim()) {
-        await callMcpTool('browser_navigate', { url: params.url.trim() })
-        steps.push(`navigate:${params.url.trim()}`)
+        const navigationTarget = resolveBrowserNavigationTarget(cwd, params.url.trim())
+        await callMcpTool('browser_navigate', { url: navigationTarget })
+        steps.push(`navigate:${navigationTarget}`)
         try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ }
       }
 
@@ -1073,7 +1428,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         if (scroll.ok) initialPage = scroll.page
       }
 
-      if (Array.isArray(params.fields) && params.fields.length > 0) {
+      if ((Array.isArray(params.fields) && params.fields.length > 0) || (params.form && typeof params.form === 'object' && !Array.isArray(params.form))) {
         const filled = await performFillForm(params)
         if (!filled.ok) return filled
         steps.push('fill_form')
@@ -1137,7 +1492,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
     tools.push(
       tool(
         async (rawParams) => {
-          const params = normalizeToolInputArgs((rawParams ?? {}) as Record<string, unknown>)
+          const params = normalizeBrowserActionParams((rawParams ?? {}) as Record<string, unknown>)
           try {
             const action = String(params.action || '').trim()
 
@@ -1175,9 +1530,9 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             }
 
             if (action === 'read_page') {
-              const url = typeof params.url === 'string' ? params.url : ''
-              if (url) {
-                await callMcpTool('browser_navigate', { url })
+              const target = pickBrowserTargetFromParams(params)
+              if (target) {
+                await callMcpTool('browser_navigate', { url: resolveBrowserNavigationTarget(cwd, target) })
                 try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ }
               }
               return stringifyStructured(await captureStructuredObservation())
@@ -1252,6 +1607,18 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
               if (v !== undefined && v !== null && v !== '') args[k] = v
             }
 
+            if (action === 'navigate') {
+              const target = pickBrowserTargetFromParams(params)
+              if (!target) return 'Error: url or filePath is required for navigate.'
+              args.url = resolveBrowserNavigationTarget(cwd, target)
+              delete args.filePath
+              delete args.path
+              delete args.href
+              delete args.link
+              delete args.target
+              delete args.page
+            }
+
             if (action === 'tabs') {
               args.action = typeof params.tabAction === 'string' ? params.tabAction : 'list'
               delete args.tabAction
@@ -1264,9 +1631,13 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
               args.values = Array.isArray(args.option) ? args.option : [String(args.option)]
               delete args.option
             }
+            if (action === 'select' && args.values === undefined && args.value !== undefined) {
+              args.values = Array.isArray(args.value) ? args.value : [String(args.value)]
+              delete args.value
+            }
 
             if ((action === 'screenshot' || action === 'snapshot') && args.url) {
-              const navUrl = args.url
+              const navUrl = resolveBrowserNavigationTarget(cwd, String(args.url))
               delete args.url
               await callMcpTool('browser_navigate', { url: navUrl })
               try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ }
@@ -1286,6 +1657,14 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
                 await new Promise((r) => setTimeout(r, 1200))
               }
               try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ }
+            }
+
+            if (['click', 'hover', 'type', 'select'].includes(action) && !args.ref && typeof args.element === 'string') {
+              const selectorResult = await performSelectorDomAction(action as 'click' | 'hover' | 'type' | 'select', args)
+              if (!selectorResult) return `Error: ${action} requires a target element.`
+              if (!selectorResult.ok) return `Error: ${selectorResult.error}`
+              try { await captureStructuredObservation() } catch { /* ignore */ }
+              return selectorResult.output
             }
 
             let result = await callMcpTool(mcpTool, args, { saveTo: typeof params.saveTo === 'string' ? params.saveTo : undefined })
@@ -1366,9 +1745,34 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
           const cmdArgs = (normalized.args ?? normalized.arguments) as string | undefined
           try {
             if (!command) return 'Error: command is required.'
-            const spawnArgs = ['browser', command, '--json']
-            if (cmdArgs) spawnArgs.push(...cmdArgs.split(/\s+/).filter(Boolean))
-            const result = spawnSync(openclawPath, spawnArgs, { encoding: 'utf-8', timeout: 60_000, maxBuffer: MAX_OUTPUT })
+            const parsedArgs = cmdArgs ? cmdArgs.split(/\s+/).filter(Boolean) : []
+            const runBrowserCommand = (browserCommand: string, browserArgs: string[]) => {
+              const spawnArgs = ['browser', '--json', browserCommand, ...browserArgs]
+              return spawnSync(openclawPath, spawnArgs, {
+                encoding: 'utf-8',
+                timeout: 60_000,
+                maxBuffer: MAX_OUTPUT,
+              })
+            }
+
+            if (command === 'capture') {
+              const outputs: string[] = []
+              if (parsedArgs.length > 0) {
+                const openResult = runBrowserCommand('open', parsedArgs)
+                if (openResult.status !== 0) {
+                  return `Error (exit ${openResult.status}): ${openResult.stderr || openResult.stdout || 'unknown'}`
+                }
+                if (openResult.stdout?.trim()) outputs.push(openResult.stdout.trim())
+              }
+              const screenshotResult = runBrowserCommand('screenshot', [])
+              if (screenshotResult.status !== 0) {
+                return `Error (exit ${screenshotResult.status}): ${screenshotResult.stderr || screenshotResult.stdout || 'unknown'}`
+              }
+              if (screenshotResult.stdout?.trim()) outputs.push(screenshotResult.stdout.trim())
+              return truncate(outputs.join('\n').trim() || '(no output)', MAX_OUTPUT)
+            }
+
+            const result = runBrowserCommand(command, parsedArgs)
             if (result.status !== 0) return `Error (exit ${result.status}): ${result.stderr || result.stdout || 'unknown'}`
             return truncate(result.stdout || '(no output)', MAX_OUTPUT)
           } catch (err: unknown) { return `Error: ${err instanceof Error ? err.message : String(err)}` }

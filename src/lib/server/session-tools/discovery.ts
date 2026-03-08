@@ -1,12 +1,32 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { ToolBuildContext } from './context'
-import { getPluginManager } from '../plugins'
+import { getPluginManager, normalizeMarketplacePluginUrl } from '../plugins'
 import type { Plugin, PluginHooks, ClawHubSkill } from '@/types'
 import { searchClawHub } from '../clawhub-client'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { pluginIdMatches } from '../tool-aliases'
 import { loadSessions } from '../storage'
+import { inferPluginPublisherSourceFromUrl } from '@/lib/plugin-sources'
+
+function trimString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function buildDiscoveryApprovalResumeInput(approval: import('@/types').ApprovalRequest): Record<string, unknown> | null {
+  if (approval.category !== 'plugin_install') return null
+  const url = trimString(approval.data.url)
+  if (!url) return null
+  const pluginId = trimString(approval.data.pluginId)
+  const reason = trimString(approval.data.reason)
+  return {
+    action: 'install_request',
+    url,
+    pluginId: pluginId || undefined,
+    reason: reason || `Approved install request for ${url}`,
+    approved: true,
+  }
+}
 
 /**
  * Unified Discovery Logic
@@ -41,11 +61,15 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
       case 'list':
       case 'discover': {
         const plugins = manager.listPlugins()
+        const currentSession = bctx?.ctx?.sessionId ? loadSessions()[bctx.ctx.sessionId] : null
+        const sessionPlugins = currentSession?.plugins || currentSession?.tools || []
         return JSON.stringify(plugins.map(p => ({
           id: p.filename,
           name: p.name,
           description: p.description,
           enabled: p.enabled,
+          granted: pluginIdMatches(sessionPlugins, p.filename),
+          availableNow: pluginIdMatches(sessionPlugins, p.filename) && !manager.isExplicitlyDisabled(p.filename),
           isBuiltin: !p.filename.endsWith('.js') && !p.filename.endsWith('.mjs')
         })), null, 2)
       }
@@ -62,6 +86,7 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
               description: s.description,
               author: s.author,
               source: 'clawhub',
+              catalogSource: 'clawhub',
               url: (s as ClawHubSkill & { rawUrl?: string }).rawUrl ?? s.url
             })))
           }
@@ -71,14 +96,32 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
 
         try {
           console.log('[discovery] Searching SwarmClaw registry...')
-          const scRes = await fetch('https://swarmclaw.ai/registry/plugins.json', { signal: AbortSignal.timeout(5000) })
-          if (scRes.ok) {
+          const registryResults = new Map<string, Record<string, unknown>>()
+          const registries = [
+            { url: 'https://swarmclaw.ai/registry/plugins.json', catalogSource: 'swarmclaw-site' },
+            { url: 'https://raw.githubusercontent.com/swarmclawai/swarmforge/main/registry.json', catalogSource: 'swarmforge' },
+          ] as const
+          for (const registry of registries) {
+            const scRes = await fetch(registry.url, { signal: AbortSignal.timeout(5000) })
+            if (!scRes.ok) continue
             const scPlugins = await scRes.json()
             const filtered = (scPlugins as Record<string, unknown>[]).filter((p: Record<string, unknown>) =>
               !q || (String(p.name || '')).toLowerCase().includes(q.toLowerCase()) || (String(p.description || '')).toLowerCase().includes(q.toLowerCase())
             )
-            results.push(...filtered.map(p => ({ ...p, source: 'swarmclaw' })))
+            for (const p of filtered) {
+              const id = String(p.id || p.name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '_')
+              if (!id || registryResults.has(id)) continue
+              const url = normalizeMarketplacePluginUrl(String(p.url || ''))
+              registryResults.set(id, {
+                ...p,
+                id,
+                url,
+                source: inferPluginPublisherSourceFromUrl(url) || 'swarmforge',
+                catalogSource: registry.catalogSource,
+              })
+            }
           }
+          results.push(...registryResults.values())
         } catch (err: unknown) {
           console.error('[discovery] SC Registry search failed:', err instanceof Error ? err.message : String(err))
         }
@@ -99,12 +142,12 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
           const currentSession = allSessions[bctx.ctx.sessionId]
           const grantedTools = currentSession?.plugins || currentSession?.tools || []
           if (currentSession && pluginIdMatches(grantedTools, pluginId)) {
-            return JSON.stringify({
-              alreadyGranted: true,
-              pluginId,
-              message: `You already have access to "${pluginId}" — proceed to use it directly.`,
-            })
-          }
+          return JSON.stringify({
+            alreadyGranted: true,
+            pluginId,
+            message: `You already have access to "${pluginId}". If it was just granted, it will be available on the next agent turn.`,
+          })
+        }
         }
         const { requestApprovalMaybeAutoApprove } = await import('../approvals')
         const approval = await requestApprovalMaybeAutoApprove({
@@ -121,7 +164,7 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
             pluginId,
             toolId: pluginId,
             autoApproved: true,
-            message: `Access to "${pluginId}" was auto-approved and granted. Proceed to use it directly.`,
+            message: `Access to "${pluginId}" was auto-approved and granted. It will be available on the next agent turn.`,
           })
         }
         return JSON.stringify({
@@ -182,7 +225,32 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
 const DiscoveryPlugin: Plugin = {
   name: 'Core Discovery',
   description: 'Discover available plugins, search marketplaces, request access, or suggest new installs.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getApprovalGuidance: ({ approval, phase, approved }) => {
+      if (approval.category !== 'plugin_install') return null
+      if (phase === 'request') {
+        return [
+          'When this approval is granted, continue with `manage_capabilities` for the exact approved install request instead of asking again in prose.',
+          'Do not change the approved plugin URL or pluginId unless newer tool evidence proves the approved source is invalid.',
+        ]
+      }
+      if (phase === 'connector_reminder') {
+        return 'Approving this lets the agent resume the approved plugin install request without repeating marketplace research.'
+      }
+      if (approved !== true) {
+        return 'Do not retry the rejected install request unless the plugin source or requested capability materially changes.'
+      }
+      const resumeInput = buildDiscoveryApprovalResumeInput(approval)
+      const lines = [
+        'Resume immediately with `manage_capabilities` for the approved install request.',
+        'Do not repeat the same marketplace search or install request once approval has been granted.',
+      ]
+      if (resumeInput) {
+        lines.push(`Exact tool input: ${JSON.stringify(resumeInput)}`)
+      }
+      return lines
+    },
+  } as PluginHooks,
   tools: [
     {
       name: 'manage_capabilities',

@@ -4,31 +4,264 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   normalizeMessageContent,
   downloadMediaMessage,
+  type WAMessage,
 } from '@whiskeysockets/baileys'
 import QRCode from 'qrcode'
 import path from 'path'
 import fs from 'fs'
+import os from 'os'
+import { spawnSync } from 'child_process'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
 import { saveInboundMediaBuffer, mimeFromPath, isImageMime, isAudioMime } from './media'
-import { isNoMessage } from './manager'
+import { isNoMessage, recordConnectorOutboundDelivery } from './manager'
 import { formatTextForWhatsApp } from './whatsapp-text'
 
 import { DATA_DIR } from '../data-dir'
+import { loadConnectors } from '../storage'
 
 const AUTH_DIR = path.join(DATA_DIR, 'whatsapp-auth')
 const INBOUND_DEDUPE_TTL_MS = 2 * 60 * 1000
+const WHATSAPP_SINGLE_MESSAGE_MAX = 4096
+const WHATSAPP_TEXT_CHUNK_MAX = 4000
+const WHATSAPP_VOICE_NOTE_MIME = 'audio/ogg; codecs=opus'
+const WHATSAPP_VOICE_NOTE_EXTS = new Set(['.ogg', '.opus'])
 
-/** Normalize a phone number for JID matching — strip leading 0 or + */
-function normalizeNumber(num: string): string {
-  let n = num.replace(/[\s\-()]/g, '')
+let cachedFfmpegBinary: string | null | undefined
+
+export function buildWhatsAppTextPayloads(text: string): Array<{ text: string; linkPreview: null }> {
+  const chunks = text.length <= WHATSAPP_SINGLE_MESSAGE_MAX
+    ? [text]
+    : (text.match(new RegExp(`[\\s\\S]{1,${WHATSAPP_TEXT_CHUNK_MAX}}`, 'g')) || [text])
+  return chunks.map((chunk) => ({ text: chunk, linkPreview: null }))
+}
+
+function normalizeMimeType(mimeType?: string): string {
+  return String(mimeType || '').toLowerCase().split(';')[0].trim()
+}
+
+function looksLikeWhatsAppVoiceNote(params: { mimeType?: string; fileName?: string }): boolean {
+  const mime = normalizeMimeType(params.mimeType)
+  if (mime === 'audio/ogg' || mime === 'audio/opus') return true
+  const ext = path.extname(String(params.fileName || '')).toLowerCase()
+  return WHATSAPP_VOICE_NOTE_EXTS.has(ext)
+}
+
+function resolveAudioExt(params: { mimeType?: string; fileName?: string }): string {
+  const ext = path.extname(String(params.fileName || '')).toLowerCase()
+  if (ext) return ext
+  const mime = normalizeMimeType(params.mimeType)
+  if (mime === 'audio/mpeg' || mime === 'audio/mp3') return '.mp3'
+  if (mime === 'audio/wav' || mime === 'audio/x-wav') return '.wav'
+  if (mime === 'audio/mp4' || mime === 'audio/m4a' || mime === 'audio/x-m4a') return '.m4a'
+  if (mime === 'audio/ogg' || mime === 'audio/opus') return '.ogg'
+  return '.bin'
+}
+
+function resolveFfmpegBinary(): string | null {
+  if (cachedFfmpegBinary !== undefined) return cachedFfmpegBinary
+  const candidates = ['ffmpeg', '/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg']
+  for (const candidate of candidates) {
+    const probe = spawnSync(candidate, ['-version'], { encoding: 'utf-8', timeout: 2_000 })
+    if ((probe.status ?? 1) === 0) {
+      cachedFfmpegBinary = candidate
+      return candidate
+    }
+  }
+  cachedFfmpegBinary = null
+  return null
+}
+
+function transcodeToWhatsAppVoiceNote(params: {
+  buffer: Buffer
+  mimeType?: string
+  fileName?: string
+}): { buffer: Buffer; mimeType: string } | null {
+  const ffmpeg = resolveFfmpegBinary()
+  if (!ffmpeg) return null
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-wa-voice-'))
+  const inputPath = path.join(tempDir, `input${resolveAudioExt(params)}`)
+  const outputPath = path.join(tempDir, 'voice-note.ogg')
+
+  try {
+    fs.writeFileSync(inputPath, params.buffer)
+    const result = spawnSync(ffmpeg, [
+      '-y',
+      '-i', inputPath,
+      '-vn',
+      '-ac', '1',
+      '-ar', '48000',
+      '-c:a', 'libopus',
+      '-b:a', '32k',
+      '-vbr', 'on',
+      '-compression_level', '10',
+      '-application', 'voip',
+      '-f', 'ogg',
+      outputPath,
+    ], {
+      encoding: 'utf-8',
+      timeout: 20_000,
+    })
+    if ((result.status ?? 1) !== 0 || !fs.existsSync(outputPath)) {
+      const stderr = (result.stderr || '').trim()
+      console.warn(`[whatsapp] Failed to transcode voice note to opus/ogg${stderr ? `: ${stderr}` : ''}`)
+      return null
+    }
+    return {
+      buffer: fs.readFileSync(outputPath),
+      mimeType: WHATSAPP_VOICE_NOTE_MIME,
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
+export function normalizeWhatsAppAudioForSend(params: {
+  buffer: Buffer
+  mimeType?: string
+  fileName?: string
+  ptt?: boolean
+  transcode?: (params: { buffer: Buffer; mimeType?: string; fileName?: string }) => { buffer: Buffer; mimeType: string } | null
+}): { buffer: Buffer; mimeType: string } {
+  const mimeType = params.mimeType || 'application/octet-stream'
+  if (params.ptt === false) return { buffer: params.buffer, mimeType }
+  if (looksLikeWhatsAppVoiceNote(params)) {
+    return {
+      buffer: params.buffer,
+      mimeType: normalizeMimeType(mimeType) === 'audio/ogg' ? WHATSAPP_VOICE_NOTE_MIME : mimeType,
+    }
+  }
+  const transcode = params.transcode || transcodeToWhatsAppVoiceNote
+  const converted = transcode({
+    buffer: params.buffer,
+    mimeType: params.mimeType,
+    fileName: params.fileName,
+  })
+  return converted || { buffer: params.buffer, mimeType }
+}
+
+function jidUserPart(raw: string): string {
+  const trimmed = String(raw || '').trim().toLowerCase()
+  if (!trimmed) return ''
+  const withoutServer = trimmed.includes('@') ? trimmed.split('@')[0] : trimmed
+  return withoutServer.split(':')[0]
+}
+
+/** Normalize a phone number or JID user part for inbound matching */
+export function normalizeWhatsAppIdentifier(raw: string): string {
+  let n = jidUserPart(raw).replace(/[\s\-()]/g, '')
   // UK local: 07xxx → 447xxx
   if (n.startsWith('0') && n.length >= 10) {
     n = '44' + n.slice(1)
   }
   // Strip leading +
   if (n.startsWith('+')) n = n.slice(1)
-  return n
+  return n.replace(/[^a-z0-9]/g, '')
+}
+
+function parseAllowedIdentifiers(raw: unknown): string[] | null {
+  if (typeof raw !== 'string') return null
+  const out = raw
+    .split(',')
+    .map((entry) => normalizeWhatsAppIdentifier(entry))
+    .filter(Boolean)
+  return out.length ? out : null
+}
+
+function messageContextInfo(content: any): any {
+  return content?.extendedTextMessage?.contextInfo
+    || content?.imageMessage?.contextInfo
+    || content?.videoMessage?.contextInfo
+    || content?.documentMessage?.contextInfo
+    || content?.audioMessage?.contextInfo
+    || content?.stickerMessage?.contextInfo
+    || null
+}
+
+export function collectWhatsAppAddressCandidates(msg: Pick<WAMessage, 'key'>): string[] {
+  const key = msg?.key || {}
+  const raw = [
+    key.remoteJid,
+    key.remoteJidAlt,
+    key.participant,
+    key.participantAlt,
+  ]
+  const normalized = raw
+    .map((entry) => normalizeWhatsAppIdentifier(String(entry || '')))
+    .filter(Boolean)
+  return Array.from(new Set(normalized))
+}
+
+export function isWhatsAppInboundAllowed(params: {
+  allowedJids: string[] | null
+  msg: Pick<WAMessage, 'key'>
+  isSelfChat?: boolean
+}): boolean {
+  if (!params.allowedJids?.length || params.isSelfChat) return true
+  const candidates = collectWhatsAppAddressCandidates(params.msg)
+  return candidates.some((candidate) =>
+    params.allowedJids!.some((allowed) => candidate.includes(allowed) || allowed.includes(candidate)),
+  )
+}
+
+export function buildWhatsAppInboundMessage(params: {
+  msg: WAMessage
+  media?: NonNullable<InboundMessage['media']>
+  selfJids?: string[]
+}): InboundMessage | null {
+  const { msg } = params
+  const media = Array.isArray(params.media) ? params.media : []
+  const jid = msg.key.remoteJid || ''
+  if (!jid) return null
+
+  const content: any = normalizeMessageContent(msg.message as any) || msg.message || {}
+  const text = content?.conversation
+    || content?.extendedTextMessage?.text
+    || content?.imageMessage?.caption
+    || content?.videoMessage?.caption
+    || content?.documentMessage?.caption
+    || ''
+  if (!text && media.length === 0) return null
+
+  const isGroup = jid.endsWith('@g.us')
+  const channelIdAlt = typeof msg.key.remoteJidAlt === 'string' && msg.key.remoteJidAlt.trim()
+    ? msg.key.remoteJidAlt.trim()
+    : undefined
+  const senderId = isGroup
+    ? (msg.key.participant || jid)
+    : jid
+  const senderIdAlt = isGroup
+    ? (msg.key.participantAlt || undefined)
+    : channelIdAlt
+  const senderName = msg.pushName || jidUserPart(senderIdAlt || senderId) || jidUserPart(jid)
+  const contextInfo = messageContextInfo(content)
+  const mentionedJids = Array.isArray(contextInfo?.mentionedJid)
+    ? contextInfo.mentionedJid.map((entry: unknown) => String(entry || '')).filter(Boolean)
+    : []
+  const selfIds = Array.isArray(params.selfJids) ? params.selfJids.map((entry: unknown) => normalizeWhatsAppIdentifier(String(entry || ''))).filter(Boolean) : []
+  const mentionsBot = selfIds.length > 0
+    ? mentionedJids.some((entry: string) => selfIds.includes(normalizeWhatsAppIdentifier(entry)))
+    : false
+
+  return {
+    platform: 'whatsapp',
+    channelId: jid,
+    channelIdAlt,
+    channelName: isGroup ? (channelIdAlt || jid) : `DM:${senderName}`,
+    senderId,
+    senderIdAlt,
+    senderName,
+    text: text || '(media message)',
+    isGroup,
+    messageId: msg.key.id || undefined,
+    imageUrl: media.find((item) => item.type === 'image')?.url,
+    media,
+    replyToMessageId: typeof contextInfo?.stanzaId === 'string' && contextInfo.stanzaId.trim()
+      ? contextInfo.stanzaId.trim()
+      : undefined,
+    mentionsBot,
+  }
 }
 
 /** Check if auth directory has saved credentials */
@@ -96,7 +329,17 @@ const whatsapp: PlatformConnector = {
               sent = await sock.sendMessage(channelId, { document: buf, fileName: fName, mimetype: mime, caption })
             }
           } else if (isAudioMime(mime)) {
-            sent = await sock.sendMessage(channelId, { audio: buf, mimetype: mime, ptt: options.ptt !== false })
+            const normalizedAudio = normalizeWhatsAppAudioForSend({
+              buffer: buf,
+              mimeType: mime,
+              fileName: fName,
+              ptt: options.ptt !== false,
+            })
+            sent = await sock.sendMessage(channelId, {
+              audio: normalizedAudio.buffer,
+              mimetype: normalizedAudio.mimeType,
+              ptt: options.ptt !== false,
+            })
           } else {
             sent = await sock.sendMessage(channelId, { document: buf, fileName: fName, mimetype: mime, caption })
           }
@@ -123,10 +366,9 @@ const whatsapp: PlatformConnector = {
         }
 
         const payload = normalizedText || normalizedCaption || ''
-        const chunks = payload.length <= 4096 ? [payload] : (payload.match(/[\s\S]{1,4000}/g) || [payload])
         let lastMessageId: string | undefined
-        for (const chunk of chunks) {
-          const sent = await sock.sendMessage(channelId, { text: chunk })
+        for (const chunk of buildWhatsAppTextPayloads(payload)) {
+          const sent = await sock.sendMessage(channelId, chunk)
           if (sent?.key?.id) {
             lastMessageId = sent.key.id
             sentMessageIds.add(sent.key.id)
@@ -142,17 +384,8 @@ const whatsapp: PlatformConnector = {
       },
     }
 
-    // Normalize allowed JIDs for matching
-    const allowedJids = connector.config.allowedJids
-      ? connector.config.allowedJids.split(',').map((s) => normalizeNumber(s.trim())).filter(Boolean)
-      : null
-
     // Track message IDs sent by the bot to avoid infinite loops in self-chat
     const sentMessageIds = new Set<string>()
-
-    if (allowedJids) {
-      console.log(`[whatsapp] Allowed JIDs (normalized): ${allowedJids.join(', ')}`)
-    }
 
     const startSocket = () => {
       // Close previous socket to prevent stale event handlers
@@ -284,28 +517,22 @@ const whatsapp: PlatformConnector = {
           if (msg.key.fromMe && !isSelfChat) continue
 
           const jid = msg.key.remoteJid || ''
+          const latestConnector = (loadConnectors()[connector.id] as Connector | undefined) || connector
+          const allowedJids = parseAllowedIdentifiers(latestConnector.config?.allowedJids)
 
           // Match allowed JIDs using normalized numbers
           // Self-chat always passes the filter (it's the bot's own account)
-          if (allowedJids && !isSelfChat) {
-            const jidNumber = jid.split('@')[0]
-            const matched = allowedJids.some((n) => jidNumber.includes(n) || n.includes(jidNumber))
-            console.log(`[whatsapp] JID filter: jidNumber=${jidNumber}, allowedJids=${allowedJids.join(',')}, matched=${matched}`)
+          if (allowedJids?.length && !isSelfChat) {
+            const matched = isWhatsAppInboundAllowed({ allowedJids, msg, isSelfChat })
+            console.log(`[whatsapp] JID filter: candidates=${collectWhatsAppAddressCandidates(msg).join(',')}, allowedJids=${allowedJids.join(',')}, matched=${matched}`)
             if (!matched) {
               console.log(`[whatsapp] Skipping message from non-allowed JID: ${jid}`)
               continue
             }
           }
 
-          const content: any = normalizeMessageContent(msg.message as any) || msg.message || {}
-          const text = content?.conversation
-            || content?.extendedTextMessage?.text
-            || content?.imageMessage?.caption
-            || content?.videoMessage?.caption
-            || content?.documentMessage?.caption
-            || ''
-
           const media: NonNullable<InboundMessage['media']> = []
+          const content: any = normalizeMessageContent(msg.message as any) || msg.message || {}
           const mediaCandidate:
             | { kind: 'image' | 'video' | 'audio' | 'document' | 'file'; payload: any }
             | null =
@@ -342,23 +569,14 @@ const whatsapp: PlatformConnector = {
             }
           }
 
-          if (!text && media.length === 0) continue
+          const selfJids = [
+            sock?.user?.id || '',
+            sock?.user?.lid || '',
+          ].filter(Boolean)
+          const inbound = buildWhatsAppInboundMessage({ msg, media, selfJids })
+          if (!inbound) continue
 
-          const senderName = msg.pushName || jid.split('@')[0]
-          const isGroup = jid.endsWith('@g.us')
-
-          console.log(`[whatsapp] Message from ${senderName} (${jid}): ${text.slice(0, 80)}`)
-
-          const inbound: InboundMessage = {
-            platform: 'whatsapp',
-            channelId: jid,
-            channelName: isGroup ? jid : `DM:${senderName}`,
-            senderId: msg.key.participant || jid,
-            senderName,
-            text: text || '(media message)',
-            imageUrl: media.find((m) => m.type === 'image')?.url,
-            media,
-          }
+          console.log(`[whatsapp] Message from ${inbound.senderName} (${jid}): ${inbound.text.slice(0, 80)}`)
 
           try {
             await sock!.sendPresenceUpdate('composing', jid)
@@ -366,7 +584,13 @@ const whatsapp: PlatformConnector = {
             await sock!.sendPresenceUpdate('paused', jid)
 
             if (!isNoMessage(response)) {
-              await instance.sendMessage?.(jid, response)
+              const sent = await instance.sendMessage?.(jid, response)
+              await recordConnectorOutboundDelivery({
+                connectorId: connector.id,
+                inbound,
+                messageId: sent?.messageId,
+                state: 'sent',
+              })
             }
           } catch (err: any) {
             console.error(`[whatsapp] Error handling message:`, err.message)

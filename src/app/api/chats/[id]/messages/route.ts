@@ -2,17 +2,19 @@ import { NextResponse } from 'next/server'
 import { active, loadStoredItem, upsertStoredItem } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { getSessionRunState } from '@/lib/server/session-run-manager'
-import { pruneStreamingAssistantArtifacts } from '@/lib/chat-streaming-state'
+import { materializeStreamingAssistantArtifacts } from '@/lib/chat-streaming-state'
+import { appendSessionNote } from '@/lib/server/session-note'
+import type { Message, Session } from '@/types'
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = loadStoredItem('sessions', id)
+  const session = loadStoredItem('sessions', id) as Session | null
   if (!session) return notFound()
   session.messages = Array.isArray(session.messages) ? session.messages : []
 
   const run = getSessionRunState(id)
   const hasLiveRun = active.has(id) || !!run.runningRunId
-  if (!hasLiveRun && pruneStreamingAssistantArtifacts(session.messages)) {
+  if (!hasLiveRun && materializeStreamingAssistantArtifacts(session.messages)) {
     upsertStoredItem('sessions', id, session)
   }
 
@@ -46,27 +48,49 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const body = await req.json() as { kind?: string }
-  if (body.kind !== 'context-clear') {
-    return NextResponse.json({ error: 'Only context-clear kind is supported' }, { status: 400 })
+  const body = await req.json() as {
+    kind?: string
+    role?: Message['role']
+    text?: string
+    messageKind?: Message['kind']
   }
-  const session = loadStoredItem('sessions', id)
-  if (!session) return notFound()
 
-  session.messages.push({
-    role: 'user',
-    text: '',
-    kind: 'context-clear',
-    time: Date.now(),
-  })
-  upsertStoredItem('sessions', id, session)
-  return NextResponse.json({ ok: true })
+  if (body.kind === 'context-clear') {
+    const session = loadStoredItem('sessions', id) as Session | null
+    if (!session) return notFound()
+
+    session.messages.push({
+      role: 'user',
+      text: '',
+      kind: 'context-clear',
+      time: Date.now(),
+    })
+    upsertStoredItem('sessions', id, session)
+    return NextResponse.json({ ok: true })
+  }
+
+  if (body.kind === 'note') {
+    const inserted = appendSessionNote({
+      sessionId: id,
+      text: body.text || '',
+      role: body.role || 'assistant',
+      kind: body.messageKind || 'system',
+    })
+    if (!inserted) {
+      const session = loadStoredItem('sessions', id) as Session | null
+      if (!session) return notFound()
+      return NextResponse.json({ error: 'Note text is required' }, { status: 400 })
+    }
+    return NextResponse.json(inserted)
+  }
+
+  return NextResponse.json({ error: 'Only context-clear and note kinds are supported' }, { status: 400 })
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json() as { messageIndex: number; bookmarked: boolean }
-  const session = loadStoredItem('sessions', id)
+  const session = loadStoredItem('sessions', id) as Session | null
   if (!session) return notFound()
 
   const { messageIndex, bookmarked } = body
@@ -82,7 +106,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json() as { messageIndex: number }
-  const session = loadStoredItem('sessions', id)
+  const session = loadStoredItem('sessions', id) as Session | null
   if (!session) return notFound()
 
   const { messageIndex } = body

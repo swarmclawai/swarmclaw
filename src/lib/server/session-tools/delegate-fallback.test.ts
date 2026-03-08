@@ -206,6 +206,109 @@ describe('delegate fallback', () => {
     assert.match(String(output.response || ''), /codex fallback ok/i)
   })
 
+  it('uses nested data.task payloads from recent tool-call wrappers', () => {
+    const output = runWithFakeDelegates(`
+      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
+
+      const tools = buildDelegateTools({
+        cwd: process.cwd(),
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        hasPlugin: (name) => name === 'delegate',
+        hasTool: (name) => name === 'delegate',
+        cleanupFns: [],
+        commandTimeoutMs: 5000,
+        claudeTimeoutMs: 5000,
+        cliProcessTimeoutMs: 5000,
+        persistDelegateResumeId: () => {},
+        readStoredDelegateResumeId: () => null,
+        resolveCurrentSession: () => null,
+        activePlugins: ['delegate'],
+      })
+
+      const delegateTool = tools.find((tool) => tool.name === 'delegate')
+      const raw = await delegateTool.invoke({
+        input: JSON.stringify({
+          data: {
+            task: 'Create a simple to-do list application.',
+          },
+        }),
+      })
+      console.log(raw)
+    `)
+
+    assert.equal(output.backend, 'codex')
+    assert.equal(output.status, 'completed')
+    assert.match(String(output.response || ''), /codex fallback ok/i)
+  })
+
+  it('falls back to reason text when malformed delegate wrappers omit task', () => {
+    const output = runWithFakeDelegates(`
+      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
+
+      const tools = buildDelegateTools({
+        cwd: process.cwd(),
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        hasPlugin: (name) => name === 'delegate',
+        hasTool: (name) => name === 'delegate',
+        cleanupFns: [],
+        commandTimeoutMs: 5000,
+        claudeTimeoutMs: 5000,
+        cliProcessTimeoutMs: 5000,
+        persistDelegateResumeId: () => {},
+        readStoredDelegateResumeId: () => null,
+        resolveCurrentSession: () => null,
+        activePlugins: ['delegate'],
+      })
+
+      const delegateTool = tools.find((tool) => tool.name === 'delegate')
+      const raw = await delegateTool.invoke({
+        input: JSON.stringify({
+          parameters: {
+            tool_id: 'delegate',
+            reason: 'Building a simple front-end to-do list app is well-suited for a delegated agent.',
+            subagent_tool_id: 'agent_coder',
+            subagent_name: 'Coder',
+          },
+        }),
+      })
+      console.log(raw)
+    `)
+
+    assert.equal(output.backend, 'codex')
+    assert.equal(output.status, 'completed')
+    assert.match(String(output.response || ''), /codex fallback ok/i)
+  })
+
+  it('accepts legacy id fields for lifecycle delegate actions', () => {
+    const output = runWithFakeDelegates(`
+      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
+
+      const tools = buildDelegateTools({
+        cwd: process.cwd(),
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        hasPlugin: (name) => name === 'delegate',
+        hasTool: (name) => name === 'delegate',
+        cleanupFns: [],
+        commandTimeoutMs: 5000,
+        claudeTimeoutMs: 5000,
+        cliProcessTimeoutMs: 5000,
+        persistDelegateResumeId: () => {},
+        readStoredDelegateResumeId: () => null,
+        resolveCurrentSession: () => null,
+        activePlugins: ['delegate'],
+      })
+
+      const delegateTool = tools.find((tool) => tool.name === 'delegate')
+      const raw = await delegateTool.invoke({ action: 'status', id: 'job-123' })
+      console.log(JSON.stringify({ raw }))
+    `)
+
+    assert.match(String(output.raw || ''), /delegation job "job-123" not found/i)
+  })
+
   it('ranks authenticated delegate backends ahead of unauthenticated ones', () => {
     const output = runWithFakeDelegates(`
       const mod = await import('./src/lib/server/provider-health.ts')

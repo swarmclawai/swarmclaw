@@ -125,6 +125,7 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
         ok: boolean
         verify?: {
           ok: boolean
+          message?: string
           error?: string
           hint?: string
           models?: string[]
@@ -150,7 +151,7 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
           lastVerifiedOk: verify.verify ? verifiedOk : (existing?.deployment?.lastVerifiedOk ?? null),
           lastVerifiedMessage: verify.verify
             ? (verifiedOk
-              ? `Verified during save with ${verify.verify.models?.length || 0} model${(verify.verify.models?.length || 0) === 1 ? '' : 's'}.`
+              ? (verify.verify.message || `Verified during save with ${verify.verify.models?.length || 0} model${(verify.verify.models?.length || 0) === 1 ? '' : 's'}.`)
               : (verify.verify.error || verify.verify.hint || 'Verification failed.'))
             : (existing?.deployment?.lastVerifiedMessage || null),
         },

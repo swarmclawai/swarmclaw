@@ -586,6 +586,7 @@ const COMMAND_GROUPS = [
       cmd('delete', 'DELETE', '/tasks/:id', 'Delete task'),
       cmd('purge', 'DELETE', '/tasks', 'Bulk delete tasks', { expectsJsonBody: true }),
       cmd('approve', 'POST', '/tasks/:id/approve', 'Approve or reject a pending tool execution', { expectsJsonBody: true }),
+      cmd('import-github', 'POST', '/tasks/import/github', 'Import GitHub issues into tasks', { expectsJsonBody: true }),
       cmd('metrics', 'GET', '/tasks/metrics', 'Get task board metrics (supports --query range=24h|7d|30d)'),
     ],
   },

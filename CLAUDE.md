@@ -78,6 +78,9 @@ Core type definitions in `src/types/index.ts`: `Agent`, `Session`, `Message`, `P
 - `data/plugins/` — Plugin JS files
 - `.env.local` — Auto-generated config (`ACCESS_KEY`, `CREDENTIAL_SECRET`, `PORT=3456`)
 
+### Dev Server
+- **NEVER kill the dev server (`npm run dev`, port 3456) without asking the user first.** The user is often actively working against it, and other agents may be running tests against it. Always confirm before stopping, restarting, or killing the dev server process.
+
 ### Commit Messages
 - Never reference "Claude", "Anthropic", or "Co-Authored-By" in commit messages
 - Write commit messages as if a human authored the code

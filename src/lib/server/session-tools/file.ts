@@ -47,6 +47,25 @@ function getFileEntryContent(entry: Record<string, unknown> | undefined): string
   return typeof raw === 'string' ? raw : JSON.stringify(raw)
 }
 
+function parseFileEntries(value: unknown): Array<Record<string, unknown>> | undefined {
+  const candidates = [value]
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed.startsWith('[')) {
+      try {
+        candidates.unshift(JSON.parse(trimmed))
+      } catch {
+        // ignore malformed JSON payloads and fall back to the raw string
+      }
+    }
+  }
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue
+    return candidate.filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object' && !Array.isArray(entry))
+  }
+  return undefined
+}
+
 function inferFileAction(
   normalized: Record<string, unknown>,
   files: Array<Record<string, unknown>> | undefined,
@@ -75,9 +94,7 @@ export function normalizeFileArgs(rawArgs: Record<string, unknown>): Record<stri
     ...normalized,
     ...(actionPayload?.value || {}),
   }
-  const files = Array.isArray(merged.files)
-    ? merged.files.filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object' && !Array.isArray(entry))
-    : undefined
+  const files = parseFileEntries(merged.files)
 
   let action = pickNonEmptyString(normalized.action, actionPayload?.action)
   if (!action && Array.isArray(files) && files.length > 0) {
@@ -131,6 +148,24 @@ function resolveFileToolPath(cwd: string, target: string): string {
   }
 }
 
+const BINARY_FILE_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.svg', '.pdf',
+  '.zip', '.gz', '.tar', '.tgz', '.7z', '.rar',
+  '.mp3', '.wav', '.ogg', '.m4a', '.mp4', '.mov', '.avi', '.webm',
+  '.woff', '.woff2', '.ttf', '.otf',
+  '.exe', '.dll', '.so', '.dylib', '.bin',
+])
+
+function isLikelyBinaryFile(resolvedPath: string, data: Buffer): boolean {
+  const ext = path.extname(resolvedPath).toLowerCase()
+  if (BINARY_FILE_EXTENSIONS.has(ext)) return true
+  const sample = data.subarray(0, Math.min(data.length, 512))
+  for (const byte of sample) {
+    if (byte === 0) return true
+  }
+  return false
+}
+
 /**
  * Unified File Execution Logic
  */
@@ -154,7 +189,11 @@ export async function executeFileAction(args: Record<string, unknown>, bctx: { c
         const target = filePath || getFileEntryPath(files?.[0])
         if (!target) return 'Error: no filePath or path provided.'
         const resolved = resolveFileToolPath(bctx.cwd, target)
-        return truncate(fs.readFileSync(resolved, 'utf-8'), MAX_FILE)
+        const data = fs.readFileSync(resolved)
+        if (isLikelyBinaryFile(resolved, data)) {
+          return `Binary file: ${target} (${data.byteLength} bytes). I did not inline its contents. Use send_file with this path to share it.`
+        }
+        return truncate(data.toString('utf-8'), MAX_FILE)
       }
       
       case 'write': {

@@ -3,11 +3,13 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
-import { updateTask, bulkUpdateTasks } from '@/lib/tasks'
+import { updateTask, bulkUpdateTasks, importGitHubIssues, type GitHubIssueImportResult } from '@/lib/tasks'
 import { TaskColumn } from './task-column'
 import { TaskCard } from './task-card'
 import { Skeleton } from '@/components/shared/skeleton'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { BottomSheet } from '@/components/shared/bottom-sheet'
+import { inputClass } from '@/components/shared/form-styles'
 import type { BoardTask, BoardTaskStatus } from '@/types'
 import { toast } from 'sonner'
 
@@ -160,6 +162,15 @@ export function TaskBoard() {
   })
   const [viewMode, setViewMode] = useState<BoardViewMode>('board')
   const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all')
+  const [githubImportOpen, setGitHubImportOpen] = useState(false)
+  const [githubRepo, setGitHubRepo] = useState('')
+  const [githubToken, setGitHubToken] = useState('')
+  const [githubState, setGitHubState] = useState<'open' | 'closed' | 'all'>('open')
+  const [githubLimit, setGitHubLimit] = useState('25')
+  const [githubLabels, setGitHubLabels] = useState('')
+  const [githubImporting, setGitHubImporting] = useState(false)
+  const [githubImportError, setGitHubImportError] = useState<string | null>(null)
+  const [githubImportResult, setGitHubImportResult] = useState<GitHubIssueImportResult | null>(null)
 
   // Seed activeProjectFilter from URL on mount
   useEffect(() => {
@@ -185,7 +196,9 @@ export function TaskBoard() {
   }, [filterAgentId, filterTag, activeProjectFilter, taskScopeFilter])
 
   const [loaded, setLoaded] = useState(Object.keys(tasks).length > 0)
-  useEffect(() => { Promise.all([loadTasks(), loadAgents(), loadProjects()]).then(() => setLoaded(true)) }, [])
+  useEffect(() => {
+    Promise.all([loadTasks(), loadAgents(), loadProjects()]).then(() => setLoaded(true))
+  }, [loadAgents, loadProjects, loadTasks])
   useWs('tasks', loadTasks, 5000)
 
   // Collect all unique tags across tasks
@@ -251,6 +264,59 @@ export function TaskBoard() {
   }, [tasks])
 
   const archivedCount = Object.values(tasks).filter((t) => t.status === 'archived').length
+
+  const resetGitHubImportState = useCallback(() => {
+    setGitHubImportError(null)
+    setGitHubImportResult(null)
+  }, [])
+
+  const handleGitHubImport = useCallback(async () => {
+    if (!githubRepo.trim()) {
+      setGitHubImportError('Repository is required.')
+      return
+    }
+
+    setGitHubImporting(true)
+    setGitHubImportError(null)
+    setGitHubImportResult(null)
+
+    try {
+      const rawLimit = Number.parseInt(githubLimit, 10)
+      const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(rawLimit, 200)) : 25
+      const result = await importGitHubIssues({
+        repo: githubRepo.trim(),
+        token: githubToken.trim() || undefined,
+        state: githubState,
+        limit,
+        labels: githubLabels
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+        projectId: activeProjectFilter,
+      })
+      setGitHubImportResult(result)
+      await loadTasks()
+      const summary = result.created.length > 0
+        ? `Imported ${result.created.length} issue(s) from ${result.repo}`
+        : `No new issues imported from ${result.repo}`
+      const suffix = result.skipped.length > 0 ? `, skipped ${result.skipped.length} existing` : ''
+      toast.success(summary + suffix)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'GitHub import failed'
+      setGitHubImportError(message)
+      toast.error(message)
+    } finally {
+      setGitHubImporting(false)
+    }
+  }, [
+    activeProjectFilter,
+    githubLabels,
+    githubLimit,
+    githubRepo,
+    githubState,
+    githubToken,
+    loadTasks,
+  ])
 
   // Task counts per project (non-archived)
   const projectTaskCounts: Record<string, number> = {}
@@ -542,6 +608,16 @@ export function TaskBoard() {
           </button>
           <button
             onClick={() => {
+              resetGitHubImportState()
+              setGitHubImportOpen(true)
+            }}
+            className="px-4 py-2 rounded-[10px] text-[13px] font-600 cursor-pointer transition-all border border-white/[0.08] bg-white/[0.04] text-text-2 hover:bg-white/[0.08]"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Import GitHub
+          </button>
+          <button
+            onClick={() => {
               setEditingTaskId(null)
               setTaskSheetOpen(true)
             }}
@@ -742,6 +818,201 @@ export function TaskBoard() {
           )}
         </div>
       )}
+
+      <BottomSheet
+        open={githubImportOpen}
+        onClose={() => {
+          setGitHubImportOpen(false)
+          setGitHubImportError(null)
+        }}
+        wide
+        title="Import GitHub Issues"
+        description="Pull issues from a GitHub repository into the task board as backlog items."
+      >
+        <div className="mx-auto w-full max-w-2xl">
+          <div className="mb-6">
+            <h2 className="font-display text-[24px] font-800 tracking-[-0.03em] text-text">Import GitHub Issues</h2>
+            <p className="mt-2 text-[14px] text-text-3">
+              Pull issues from a GitHub repository into the task board as backlog items.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px]">
+            <label className="block">
+              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">Repository</span>
+              <input
+                value={githubRepo}
+                onChange={(e) => setGitHubRepo(e.target.value)}
+                placeholder="owner/repo or https://github.com/owner/repo"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">State</span>
+              <select
+                value={githubState}
+                onChange={(e) => setGitHubState(e.target.value as 'open' | 'closed' | 'all')}
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              >
+                <option value="open">Open issues</option>
+                <option value="closed">Closed issues</option>
+                <option value="all">All issues</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">Limit</span>
+              <input
+                type="number"
+                min={1}
+                max={200}
+                value={githubLimit}
+                onChange={(e) => setGitHubLimit(e.target.value)}
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">Labels</span>
+              <input
+                value={githubLabels}
+                onChange={(e) => setGitHubLabels(e.target.value)}
+                placeholder="bug, api, high priority"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </label>
+          </div>
+
+          <label className="mt-4 block">
+            <span className="mb-2 block text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/70">GitHub token</span>
+            <input
+              type="password"
+              value={githubToken}
+              onChange={(e) => setGitHubToken(e.target.value)}
+              placeholder="Optional. Needed for private repos or higher rate limits."
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+          </label>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-white/[0.05] px-3 py-1 text-[12px] font-600 text-text-2">
+              Imported tasks land in backlog
+            </span>
+            {activeProjectFilter && projects[activeProjectFilter] && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[12px] font-600 text-accent-bright">
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: projects[activeProjectFilter].color || '#6366F1' }} />
+                Project: {projects[activeProjectFilter].name}
+              </span>
+            )}
+          </div>
+
+          {githubImportError && (
+            <div className="mt-4 rounded-[14px] border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] text-red-200">
+              {githubImportError}
+            </div>
+          )}
+
+          {githubImportResult && (
+            <div className="mt-5 rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[14px] font-700 text-text">{githubImportResult.repo}</span>
+                <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[11px] font-600 text-text-3">
+                  {githubImportResult.fetched} fetched
+                </span>
+                <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-600 text-emerald-300">
+                  {githubImportResult.created.length} created
+                </span>
+                <span className="rounded-full bg-amber-500/10 px-2 py-1 text-[11px] font-600 text-amber-300">
+                  {githubImportResult.skipped.length} skipped
+                </span>
+              </div>
+
+              {githubImportResult.created.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Created</p>
+                  <div className="mt-2 flex flex-col gap-2">
+                    {githubImportResult.created.slice(0, 8).map((item) => (
+                      item.url ? (
+                        <a
+                          key={`created-${item.taskId || item.number}`}
+                          href={item.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[13px] text-text-2 no-underline transition-colors hover:bg-white/[0.05]"
+                        >
+                          #{item.number} {item.title}
+                        </a>
+                      ) : (
+                        <div
+                          key={`created-${item.taskId || item.number}`}
+                          className="rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[13px] text-text-2"
+                        >
+                          #{item.number} {item.title}
+                        </div>
+                      )
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {githubImportResult.skipped.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3/60">Skipped existing</p>
+                  <div className="mt-2 flex flex-col gap-2">
+                    {githubImportResult.skipped.slice(0, 8).map((item) => (
+                      item.url ? (
+                        <a
+                          key={`skipped-${item.taskId || item.number}`}
+                          href={item.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[13px] text-text-3 no-underline transition-colors hover:bg-white/[0.05] hover:text-text-2"
+                        >
+                          #{item.number} {item.title}
+                        </a>
+                      ) : (
+                        <div
+                          key={`skipped-${item.taskId || item.number}`}
+                          className="rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[13px] text-text-3"
+                        >
+                          #{item.number} {item.title}
+                        </div>
+                      )
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <button
+              onClick={() => {
+                setGitHubImportOpen(false)
+                setGitHubImportError(null)
+              }}
+              className="px-4 py-2 rounded-[10px] border border-white/[0.08] bg-transparent text-[13px] font-600 text-text-3 transition-colors hover:bg-white/[0.04] hover:text-text-2"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Close
+            </button>
+            <button
+              onClick={handleGitHubImport}
+              disabled={githubImporting}
+              className="px-5 py-2.5 rounded-[12px] border-none bg-accent-bright text-white text-[14px] font-700 transition-all disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ fontFamily: 'inherit' }}
+            >
+              {githubImporting ? 'Importing...' : 'Import issues'}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
 
       {/* Bulk action bar */}
       {selectionMode && (

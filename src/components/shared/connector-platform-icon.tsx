@@ -24,10 +24,35 @@ export const CONNECTOR_PLATFORM_META: Record<ConnectorPlatform, { label: string;
   googlechat: { label: 'Google Chat', color: '#00AC47' },
   matrix: { label: 'Matrix', color: '#0DBD8B' },
   email: { label: 'Email', color: '#EA4335' },
+  webchat: { label: 'Web Chat', color: '#0EA5E9' },
+  mockmail: { label: 'MockMail', color: '#7C3AED' },
 }
 
-export function getConnectorPlatformLabel(platform: ConnectorPlatform): string {
-  return CONNECTOR_PLATFORM_META[platform]?.label || platform
+const FALLBACK_CONNECTOR_PLATFORM_META = { label: 'Connector', color: '#64748B' } as const
+
+function formatUnknownConnectorPlatformLabel(platform: string): string {
+  const trimmed = platform.trim()
+  if (!trimmed) return FALLBACK_CONNECTOR_PLATFORM_META.label
+  return trimmed
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ')
+}
+
+export function resolveConnectorPlatformMeta(platform: string): { label: string; color: string } {
+  const known = CONNECTOR_PLATFORM_META[platform as ConnectorPlatform]
+  if (known) return known
+  return {
+    label: formatUnknownConnectorPlatformLabel(platform),
+    color: FALLBACK_CONNECTOR_PLATFORM_META.color,
+  }
+}
+
+export function getConnectorPlatformLabel(platform: string): string {
+  return resolveConnectorPlatformMeta(platform).label
 }
 
 export function getConnectorIdFromSessionName(sessionName?: string | null): string | null {
@@ -46,7 +71,7 @@ export function getSessionConnector(
 }
 
 interface ConnectorPlatformIconProps {
-  platform: ConnectorPlatform
+  platform: string
   size?: number
   className?: string
 }
@@ -131,12 +156,20 @@ export function ConnectorPlatformIcon({
         </svg>
       )
     default:
-      return null
+      return (
+        <span
+          aria-hidden
+          className={cn('inline-flex items-center justify-center rounded-full font-700 uppercase', className)}
+          style={{ width: size, height: size, fontSize: Math.max(8, Math.floor(size * 0.5)), lineHeight: 1 }}
+        >
+          {getConnectorPlatformLabel(platform).charAt(0)}
+        </span>
+      )
   }
 }
 
 interface ConnectorPlatformBadgeProps {
-  platform: ConnectorPlatform
+  platform: string
   size?: number
   iconSize?: number
   className?: string
@@ -152,7 +185,7 @@ export function ConnectorPlatformBadge({
   roundedClassName = 'rounded-[10px]',
   title,
 }: ConnectorPlatformBadgeProps) {
-  const meta = CONNECTOR_PLATFORM_META[platform]
+  const meta = resolveConnectorPlatformMeta(platform)
   const glyphSize = iconSize ?? Math.max(12, Math.floor(size * 0.52))
 
   return (

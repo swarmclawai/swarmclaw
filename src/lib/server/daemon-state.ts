@@ -441,7 +441,7 @@ async function processWebhookRetries() {
         agentId: agent.id,
         parentSessionId: null,
         plugins: agent.plugins || agent.tools || [],
-        heartbeatEnabled: (agent.heartbeatEnabled as boolean | undefined) ?? true,
+        heartbeatEnabled: (agent.heartbeatEnabled as boolean | undefined) ?? false,
         heartbeatIntervalSec: (agent.heartbeatIntervalSec as number | null | undefined) ?? null,
       }
       sessions[session.id as string] = session

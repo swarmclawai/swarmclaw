@@ -43,6 +43,7 @@ export const AgentCreateSchema = z.object({
   thinkingLevel: z.string().optional(),
   soul: z.string().optional(),
   identityState: z.record(z.string(), z.unknown()).nullable().optional().default(null),
+  disabled: z.boolean().optional().default(false),
   heartbeatEnabled: z.boolean().optional().default(false),
   heartbeatInterval: z.union([z.string(), z.number()]).nullable().optional().default(null),
   heartbeatIntervalSec: z.number().int().nonnegative().nullable().optional().default(null),

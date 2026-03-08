@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { toast } from 'sonner'
 
 interface CommandItem {
   id: string
@@ -129,10 +130,16 @@ export function CommandPalette() {
       result.push({
         id: `agent:${agent.id}`,
         label: agent.name,
-        description: `Open ${agent.name}'s chat`,
+        description: agent.disabled === true
+          ? `${agent.name} is disabled`
+          : `Open ${agent.name}'s chat`,
         keywords: [agent.provider, agent.model, agent.description || ''].filter(Boolean),
         category: 'agent',
         onSelect: async () => {
+          if (agent.disabled === true && !agent.threadSessionId) {
+            toast.error(`${agent.name} is disabled. Re-enable it to start a new chat.`)
+            return
+          }
           await setCurrentAgent(agent.id)
           setActiveView('agents')
           setOpen(false)

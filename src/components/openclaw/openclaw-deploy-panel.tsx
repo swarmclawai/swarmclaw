@@ -10,6 +10,9 @@ type UseCaseTemplate = 'local-dev' | 'single-vps' | 'private-tailnet' | 'browser
 type ExposurePreset = 'private-lan' | 'tailscale' | 'caddy' | 'nginx' | 'ssh-tunnel'
 
 interface LocalDeployStatus {
+  id: string
+  name: string
+  isPrimary: boolean
   running: boolean
   processId: string | null
   pid: number | null
@@ -18,6 +21,8 @@ interface LocalDeployStatus {
   wsUrl: string
   token: string | null
   startedAt: number | null
+  createdAt: number
+  updatedAt: number
   tail: string
   lastError: string | null
   launchCommand: string
@@ -25,12 +30,17 @@ interface LocalDeployStatus {
 }
 
 interface RemoteDeployStatus {
+  id: string
+  name: string
+  isPrimary: boolean
   active: boolean
   processId: string | null
   pid: number | null
   action: string | null
   target: string | null
   startedAt: number | null
+  createdAt: number
+  updatedAt: number
   status: 'idle' | 'running' | 'exited' | 'killed' | 'failed' | 'timeout'
   exitCode: number | null
   tail: string
@@ -63,16 +73,24 @@ interface DeployBundle {
 
 interface DeployStatusResponse {
   local: LocalDeployStatus
-  remote?: RemoteDeployStatus
+  locals?: LocalDeployStatus[]
+  localPrimaryId?: string | null
+  remote?: RemoteDeployStatus | null
+  remotes?: RemoteDeployStatus[]
+  remotePrimaryId?: string | null
 }
 
 interface DeployActionResponse {
   ok: boolean
   local?: LocalDeployStatus
+  locals?: LocalDeployStatus[]
+  localPrimaryId?: string | null
   token?: string
   bundle?: DeployBundle
   processId?: string | null
   remote?: RemoteDeployStatus
+  remotes?: RemoteDeployStatus[]
+  remotePrimaryId?: string | null
   summary?: string
   commandPreview?: string
   verify?: {
@@ -81,6 +99,7 @@ interface DeployActionResponse {
     wsUrl: string
     authProvided: boolean
     models: string[]
+    message?: string
     error?: string
     hint?: string
   }
@@ -239,6 +258,12 @@ function inferRemoteTarget(value: string | null | undefined): string {
   return base.replace(/\/+$/, '')
 }
 
+function inferRemoteHost(value: string | null | undefined): string {
+  const parsed = parseMaybeUrl(value)
+  if (!parsed || isLocalEndpoint(value)) return ''
+  return parsed.hostname
+}
+
 function badgeTone(active: boolean): string {
   return active
     ? 'border-accent-bright/30 bg-accent-bright/10 text-accent-bright'
@@ -259,7 +284,9 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
 
   const [activeTab, setActiveTab] = useState<'local' | 'remote'>('local')
   const [localStatus, setLocalStatus] = useState<LocalDeployStatus | null>(null)
+  const [localStatuses, setLocalStatuses] = useState<LocalDeployStatus[]>([])
   const [remoteStatus, setRemoteStatus] = useState<RemoteDeployStatus | null>(null)
+  const [remoteStatuses, setRemoteStatuses] = useState<RemoteDeployStatus[]>([])
   const [localPort, setLocalPort] = useState(() => inferPort(endpoint))
   const [deployToken, setDeployToken] = useState(token || '')
   const [remoteTarget, setRemoteTarget] = useState(() => inferRemoteTarget(endpoint))
@@ -270,7 +297,7 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
   const [remoteProvider, setRemoteProvider] = useState<RemoteProvider>('hetzner')
   const [useCase, setUseCase] = useState<UseCaseTemplate>(() => deployment?.useCase || 'single-vps')
   const [exposure, setExposure] = useState<ExposurePreset>(() => deployment?.exposure || 'caddy')
-  const [sshHost, setSshHost] = useState(() => deployment?.sshHost || inferRemoteTarget(endpoint))
+  const [sshHost, setSshHost] = useState(() => deployment?.sshHost || inferRemoteHost(endpoint))
   const [sshUser, setSshUser] = useState(() => deployment?.sshUser || 'root')
   const [sshPort, setSshPort] = useState(() => deployment?.sshPort || 22)
   const [sshKeyPath, setSshKeyPath] = useState(() => deployment?.sshKeyPath || '')
@@ -295,7 +322,7 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
       setActiveTab('local')
     } else if (endpoint && inferRemoteTarget(endpoint)) {
       setRemoteTarget(inferRemoteTarget(endpoint))
-      setSshHost((current) => current || inferRemoteTarget(endpoint))
+      setSshHost((current) => current || inferRemoteHost(endpoint))
       setActiveTab('remote')
     }
   }, [endpoint])
@@ -318,7 +345,12 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
       .then((result) => {
         if (!cancelled) {
           setLocalStatus(result.local)
-          setRemoteStatus(result.remote || null)
+          setLocalStatuses(Array.isArray(result.locals) ? result.locals : [])
+          const nextRemotes = Array.isArray(result.remotes)
+            ? result.remotes
+            : (result.remote ? [result.remote] : [])
+          setRemoteStatuses(nextRemotes)
+          setRemoteStatus(nextRemotes.find((item) => item.isPrimary) || nextRemotes[0] || null)
           if (result.local.token) {
             setDeployToken((current) => current || result.local.token || '')
           }
@@ -330,23 +362,47 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
     }
   }, [])
 
+  const hasActiveRemote = useMemo(
+    () => remoteStatuses.some((status) => status.active) || !!remoteStatus?.active,
+    [remoteStatus?.active, remoteStatuses],
+  )
+
   useEffect(() => {
-    if (!remoteStatus?.active) return
+    if (!hasActiveRemote) return
     const timer = window.setInterval(() => {
       api<DeployStatusResponse>('GET', '/openclaw/deploy')
         .then((result) => {
           setLocalStatus(result.local)
-          setRemoteStatus(result.remote || null)
+          setLocalStatuses(Array.isArray(result.locals) ? result.locals : [])
+          const nextRemotes = Array.isArray(result.remotes)
+            ? result.remotes
+            : (result.remote ? [result.remote] : [])
+          setRemoteStatuses(nextRemotes)
+          setRemoteStatus((current) => {
+            const currentId = current?.id || ''
+            return nextRemotes.find((item) => item.id === currentId)
+              || nextRemotes.find((item) => item.isPrimary)
+              || nextRemotes[0]
+              || null
+          })
         })
         .catch(() => {})
     }, 2500)
     return () => window.clearInterval(timer)
-  }, [remoteStatus?.active])
+  }, [hasActiveRemote])
 
   const selectedFile = useMemo(() => {
     if (!bundle) return null
     return bundle.files.find((file) => file.name === bundleFile) || bundle.files[0] || null
   }, [bundle, bundleFile])
+  const visibleLocalStatuses = useMemo(
+    () => localStatuses,
+    [localStatuses],
+  )
+  const visibleRemoteStatuses = useMemo(
+    () => remoteStatuses,
+    [remoteStatuses],
+  )
   const localLaunchCommand = useMemo(() => {
     const typedToken = deployToken.trim()
     if (typedToken) return buildLocalRunCommand(localPort, typedToken)
@@ -368,6 +424,35 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
     }, 2200)
   }
 
+  const syncLocalResponse = (result: Pick<DeployActionResponse, 'local' | 'locals'>) => {
+    if (result.local) setLocalStatus(result.local)
+    if (Array.isArray(result.locals)) {
+      setLocalStatuses(result.locals)
+    } else if (result.local) {
+      setLocalStatuses([result.local])
+    }
+  }
+
+  const syncRemoteResponse = (result: Pick<DeployActionResponse, 'remote' | 'remotes'>) => {
+    const remotes = Array.isArray(result.remotes) ? result.remotes : null
+    if (remotes) {
+      setRemoteStatuses(remotes)
+      setRemoteStatus((current) => {
+        const currentId = current?.id || ''
+        return (result.remote && remotes.find((item) => item.id === result.remote?.id))
+          || remotes.find((item) => item.id === currentId)
+          || result.remote
+          || remotes[0]
+          || null
+      })
+      return
+    }
+    if (result.remote) {
+      setRemoteStatus(result.remote)
+      setRemoteStatuses([result.remote])
+    }
+  }
+
   const onCopied = async (key: string, value: string) => {
     const ok = await copyTextToClipboard(value)
     if (!ok) return
@@ -379,6 +464,13 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
 
   const applyDeploymentPatch = async (patch: ApplyPatch) => {
     await Promise.resolve(onApply?.(patch))
+  }
+
+  const handleSelectRemote = (status: RemoteDeployStatus) => {
+    setRemoteStatus(status)
+    if (status.target) {
+      setSshHost(status.target)
+    }
   }
 
   const buildRemoteDeploymentPatch = (overrides?: Partial<NonNullable<ApplyPatch['deployment']>>): NonNullable<ApplyPatch['deployment']> => ({
@@ -413,7 +505,7 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
         token: deployToken.trim() || undefined,
       })
       if (!result.ok || !result.local) throw new Error(result.error || 'Local OpenClaw deploy failed.')
-      setLocalStatus(result.local)
+      syncLocalResponse(result)
       if (result.token) setDeployToken(result.token)
       const verify = await api<DeployActionResponse>('POST', '/openclaw/deploy', {
         action: 'verify',
@@ -422,7 +514,7 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
       }).catch(() => ({ ok: false } as DeployActionResponse))
       if (verify.verify) {
         setVerifySummary(verify.verify.ok
-          ? `Verified ${verify.verify.endpoint} with ${verify.verify.models.length} model${verify.verify.models.length === 1 ? '' : 's'}.`
+          ? (verify.verify.message || `Verified ${verify.verify.endpoint} with ${verify.verify.models.length} model${verify.verify.models.length === 1 ? '' : 's'}.`)
           : (verify.verify.error || verify.verify.hint || 'Verification failed.'))
       }
       await applyDeploymentPatch({
@@ -441,7 +533,9 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
           lastVerifiedAt: verify.verify ? Date.now() : null,
           lastVerifiedOk: verify.verify?.ok ?? null,
           lastVerifiedMessage: verify.verify
-            ? (verify.verify.error || verify.verify.hint || 'Verified successfully.')
+            ? (verify.verify.ok
+              ? (verify.verify.message || 'Verified successfully.')
+              : (verify.verify.error || verify.verify.hint || 'Verification failed.'))
             : null,
         },
       })
@@ -457,9 +551,9 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
     setLoading('stopping-local')
     setError('')
     try {
-      const result = await api<DeployActionResponse>('POST', '/openclaw/deploy', { action: 'stop-local' })
+      const result = await api<DeployActionResponse>('POST', '/openclaw/deploy', { action: 'stop-local', localId: localStatus?.id || undefined })
       if (!result.ok || !result.local) throw new Error(result.error || 'Failed to stop local OpenClaw.')
-      setLocalStatus(result.local)
+      syncLocalResponse(result)
       showMessage('Stopped managed local OpenClaw runtime.')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to stop local OpenClaw.')
@@ -474,11 +568,12 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
     try {
       const result = await api<DeployActionResponse>('POST', '/openclaw/deploy', {
         action: 'restart-local',
+        localId: localStatus?.id || undefined,
         port: localPort,
         token: deployToken.trim() || undefined,
       })
       if (!result.ok || !result.local) throw new Error(result.error || 'Failed to restart local OpenClaw.')
-      setLocalStatus(result.local)
+      syncLocalResponse(result)
       if (result.token) setDeployToken(result.token)
       await applyDeploymentPatch({
         endpoint: result.local.endpoint,
@@ -498,6 +593,45 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
       showMessage('Restarted managed local OpenClaw runtime.')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to restart local OpenClaw.')
+    } finally {
+      setLoading('idle')
+    }
+  }
+
+  const handleRestartSpecificLocal = async (status: LocalDeployStatus) => {
+    setLoading('restarting-local')
+    setError('')
+    try {
+      const result = await api<DeployActionResponse>('POST', '/openclaw/deploy', {
+        action: 'restart-local',
+        localId: status.id,
+        port: status.port,
+        token: status.token || undefined,
+      })
+      if (!result.ok || !result.local) throw new Error(result.error || 'Failed to restart local OpenClaw.')
+      syncLocalResponse(result)
+      if (result.token) setDeployToken(result.token)
+      showMessage(`Restarted ${status.name}.`)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to restart local OpenClaw.')
+    } finally {
+      setLoading('idle')
+    }
+  }
+
+  const handleStopSpecificLocal = async (status: LocalDeployStatus) => {
+    setLoading('stopping-local')
+    setError('')
+    try {
+      const result = await api<DeployActionResponse>('POST', '/openclaw/deploy', {
+        action: 'stop-local',
+        localId: status.id,
+      })
+      if (!result.ok || !result.local) throw new Error(result.error || 'Failed to stop local OpenClaw.')
+      syncLocalResponse(result)
+      showMessage(`Stopped ${status.name}.`)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to stop local OpenClaw.')
     } finally {
       setLoading('idle')
     }
@@ -556,7 +690,7 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
       })
       if (!result.verify) throw new Error(result.error || 'Verification failed.')
       const summary = result.verify.ok
-        ? `Verified ${result.verify.endpoint} with ${result.verify.models.length} model${result.verify.models.length === 1 ? '' : 's'}.`
+        ? (result.verify.message || `Verified ${result.verify.endpoint} with ${result.verify.models.length} model${result.verify.models.length === 1 ? '' : 's'}.`)
         : (result.verify.error || result.verify.hint || 'Verification failed.')
       setVerifySummary(summary)
       await applyDeploymentPatch({
@@ -582,8 +716,12 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
     setError('')
     setVerifySummary('')
     try {
+      const trimmedHost = sshHost.trim()
+      const selectedRemoteMatchesHost = !!remoteStatus?.id && !!trimmedHost && remoteStatus.target === trimmedHost
       const result = await api<DeployActionResponse>('POST', '/openclaw/deploy', {
         action: 'ssh-deploy',
+        remoteId: selectedRemoteMatchesHost ? remoteStatus?.id : undefined,
+        name: selectedRemoteMatchesHost ? remoteStatus?.name : undefined,
         template: remoteTemplate,
         target: remoteTarget.trim(),
         scheme: remoteScheme,
@@ -592,7 +730,7 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
         useCase,
         exposure,
         ssh: {
-          host: sshHost.trim(),
+          host: trimmedHost,
           user: sshUser.trim() || undefined,
           port: sshPort,
           keyPath: sshKeyPath.trim() || undefined,
@@ -605,19 +743,19 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
         setBundleFile(result.bundle.files[0]?.name || '')
       }
       if (result.token) setDeployToken(result.token)
-      setRemoteStatus(result.remote || null)
+      syncRemoteResponse(result)
       setCommandPreview(result.commandPreview || '')
       await applyDeploymentPatch({
         endpoint: result.bundle?.endpoint || endpoint || undefined,
         token: result.token || deployToken,
-        name: suggestedName || result.bundle?.title || `SSH OpenClaw ${sshHost.trim()}`,
-        notes: `Official OpenClaw deployed over SSH to ${sshHost.trim()}.`,
+        name: suggestedName || result.bundle?.title || `SSH OpenClaw ${trimmedHost}`,
+        notes: `Official OpenClaw deployed over SSH to ${trimmedHost}.`,
         deployment: buildRemoteDeploymentPatch({
           method: 'ssh',
           provider: remoteProvider,
           lastDeployAt: Date.now(),
           lastDeployAction: 'ssh-deploy',
-          lastDeploySummary: result.summary || `Started SSH deploy to ${sshHost.trim()}.`,
+          lastDeploySummary: result.summary || `Started SSH deploy to ${trimmedHost}.`,
           lastDeployProcessId: result.processId || null,
         }),
       })
@@ -635,8 +773,13 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
     setLoading('remote-action')
     setError('')
     try {
+      if (!remoteStatus?.id && !sshHost.trim()) {
+        throw new Error('Pick or configure a remote deployment first.')
+      }
       const result = await api<DeployActionResponse>('POST', '/openclaw/deploy', {
         action,
+        remoteId: remoteStatus?.id || undefined,
+        name: remoteStatus?.name || undefined,
         token: action === 'remote-rotate-token' ? (deployToken.trim() || undefined) : undefined,
         backupPath: action === 'remote-restore' ? (restoreBackupPath.trim() || undefined) : undefined,
         ssh: {
@@ -649,7 +792,7 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
       })
       if (!result.ok) throw new Error(result.error || 'Remote lifecycle action failed.')
       if (result.token) setDeployToken(result.token)
-      setRemoteStatus(result.remote || null)
+      syncRemoteResponse(result)
       setCommandPreview(result.commandPreview || '')
       if (result.remote?.lastBackupPath) {
         setRestoreBackupPath(result.remote.lastBackupPath)
@@ -832,6 +975,75 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
               <pre className="mt-3 overflow-x-auto rounded-[10px] border border-white/[0.05] bg-black/20 px-3 py-2 text-[11px] text-text-2/80 whitespace-pre-wrap">
                 {localStatus.tail}
               </pre>
+            )}
+
+            {visibleLocalStatuses.length > 0 && (
+              <div className="mt-3 space-y-2">
+                <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60">Managed instances</div>
+                {visibleLocalStatuses.map((status) => (
+                  <div key={status.id} className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[13px] font-600 text-text">
+                          {status.name}
+                          {status.isPrimary ? ' · primary' : ''}
+                        </div>
+                        <div className="mt-1 text-[11px] text-text-3 font-mono">
+                          {status.endpoint}
+                        </div>
+                      </div>
+                      <div className={`rounded-full px-2.5 py-1 text-[10px] font-700 uppercase tracking-[0.08em] ${
+                        status.running
+                          ? 'bg-emerald-500/10 text-emerald-300'
+                          : 'bg-white/[0.05] text-text-3'
+                      }`}>
+                        {status.running ? 'running' : 'idle'}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleRestartSpecificLocal(status)}
+                        disabled={loading !== 'idle'}
+                        className="rounded-[10px] border border-white/[0.08] bg-transparent px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer hover:bg-white/[0.04] transition-all disabled:opacity-40"
+                      >
+                        Restart
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleVerify(status.endpoint, status.token || deployToken || undefined)}
+                        disabled={loading !== 'idle'}
+                        className="rounded-[10px] border border-white/[0.08] bg-transparent px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer hover:bg-white/[0.04] transition-all disabled:opacity-40"
+                      >
+                        Verify
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleStopSpecificLocal(status)}
+                        disabled={loading !== 'idle' || !status.running}
+                        className="rounded-[10px] border border-white/[0.08] bg-transparent px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer hover:bg-white/[0.04] transition-all disabled:opacity-40"
+                      >
+                        Stop
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onCopied(`local-endpoint-${status.id}`, status.endpoint)}
+                        className="rounded-[10px] border border-white/[0.08] bg-transparent px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer hover:bg-white/[0.04] transition-all"
+                      >
+                        {copiedKey === `local-endpoint-${status.id}` ? 'Copied endpoint' : 'Copy endpoint'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onCopied(`local-token-${status.id}`, status.token || '')}
+                        disabled={!status.token}
+                        className="rounded-[10px] border border-white/[0.08] bg-transparent px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer hover:bg-white/[0.04] transition-all disabled:opacity-40"
+                      >
+                        {copiedKey === `local-token-${status.id}` ? 'Copied token' : 'Copy token'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -1093,10 +1305,46 @@ export function OpenClawDeployPanel(props: OpenClawDeployPanelProps) {
             </div>
           )}
 
-          {(verifySummary || commandPreview || remoteStatus) && (
+          {(verifySummary || commandPreview || remoteStatus || visibleRemoteStatuses.length > 0) && (
             <div className="rounded-[12px] border border-white/[0.06] bg-bg px-4 py-4">
               {verifySummary && (
                 <div className="text-[12px] text-text-2 leading-relaxed">{verifySummary}</div>
+              )}
+              {visibleRemoteStatuses.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/60">Managed remote deployments</div>
+                  {visibleRemoteStatuses.map((status) => (
+                    <div key={status.id} className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-[13px] font-600 text-text">
+                            {status.name}
+                            {status.isPrimary ? ' · primary' : ''}
+                          </div>
+                          <div className="mt-1 text-[11px] text-text-3 font-mono break-all">
+                            {status.target || 'n/a'}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className={`rounded-full px-2.5 py-1 text-[10px] font-700 uppercase tracking-[0.08em] ${
+                            status.active
+                              ? 'bg-emerald-500/10 text-emerald-300'
+                              : 'bg-white/[0.05] text-text-3'
+                          }`}>
+                            {status.status}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectRemote(status)}
+                            className="rounded-[10px] border border-white/[0.08] bg-transparent px-3 py-1.5 text-[11px] font-700 text-text-2 cursor-pointer hover:bg-white/[0.04] transition-all"
+                          >
+                            {remoteStatus?.id === status.id ? 'Selected' : 'Select'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
               {remoteStatus && (
                 <div className="mt-3 grid gap-3 md:grid-cols-3">

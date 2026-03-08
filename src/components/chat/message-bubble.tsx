@@ -17,8 +17,9 @@ import { isStructuredMarkdown } from './markdown-utils'
 import { FilePathChip, FILE_PATH_RE, DIR_PATH_RE } from './file-path-chip'
 import { TransferAgentPicker } from './transfer-agent-picker'
 import { DelegationBanner, DelegationSourceBanner, TaskCompletionCard, parseTaskCompletion } from './delegation-banner'
-import { ConnectorPlatformIcon, CONNECTOR_PLATFORM_META } from '@/components/shared/connector-platform-icon'
+import { ConnectorPlatformIcon, getConnectorPlatformLabel } from '@/components/shared/connector-platform-icon'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { formatMessageTimestamp } from '@/lib/chat-display'
 
 /** Parse delegation-source metadata prefix from system messages */
 const DELEGATION_SOURCE_RE = /^\[delegation-source:([^:]*):([^:]*):([^\]]*)\]/
@@ -33,21 +34,16 @@ function tryParseJson(s: string): Record<string, unknown> | null {
   try { return JSON.parse(s) } catch { return null }
 }
 
-function fmtTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-function relativeTime(ts: number): string {
-  const now = Date.now()
-  const diff = now - ts
-  if (diff < 60_000) return 'just now'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
-  const d = new Date(ts)
-  const today = new Date()
-  if (d.toDateString() === today.toDateString()) return fmtTime(ts)
-  if (diff < 604_800_000) return d.toLocaleDateString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+function connectorThreadMeta(message: Message, isUser: boolean): string | null {
+  const source = message.source
+  if (!source) return null
+  const connectorName = source.connectorName?.trim() || getConnectorPlatformLabel(source.platform)
+  if (isUser) {
+    const sender = source.senderName?.trim() || source.senderId?.trim() || source.channelId?.trim()
+    return sender ? `${connectorName} · ${sender}` : connectorName
+  }
+  const recipient = source.senderName?.trim() || source.senderId?.trim() || source.channelId?.trim()
+  return recipient ? `${connectorName} · to ${recipient}` : connectorName
 }
 
 interface HeartbeatMeta {
@@ -92,11 +88,7 @@ const STATUS_COLORS: Record<string, string> = {
   blocked: '#EF4444',
 }
 
-function isGeneratedBrowserScreenshot(url: string): boolean {
-  const match = url.match(/\/api\/uploads\/([^/?#]+)/)
-  if (!match?.[1]) return false
-  return /^(browser|screenshot)-\d+\./i.test(match[1])
-}
+const emptyToolEvents: NonNullable<Message['toolEvents']> = []
 
 // AttachmentChip, parseAttachmentUrl, regex constants, and FILE_TYPE_COLORS
 // are now imported from @/components/shared/attachment-chip
@@ -180,6 +172,15 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     } catch { /* ignore */ }
     return null
   }, [message.text, isUser])
+
+  const walletActionRequest = useMemo(() => {
+    if (isUser) return null
+    try {
+      const data = JSON.parse(message.text)
+      if (data.type === 'plugin_wallet_action_request') return data
+    } catch { /* ignore */ }
+    return null
+  }, [message.text, isUser])
   const currentUser = useAppStore((s) => s.currentUser)
   const [copied, setCopied] = useState(false)
   const [heartbeatExpanded, setHeartbeatExpanded] = useState(false)
@@ -187,43 +188,48 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
   const [transferPickerOpen, setTransferPickerOpen] = useState(false)
-  const toolEvents = message.toolEvents || []
-  const hasToolEvents = !isUser && toolEvents.length > 0
-  const visibleToolEvents = toolEventsExpanded ? [...toolEvents].reverse() : toolEvents.slice(-1)
-  const isStructured = !isUser && !isHeartbeat && isStructuredMarkdown(message.text)
+  const toolEvents = message.toolEvents ?? emptyToolEvents
+  // Separate send_file events — they render as inline attachments, not in the tool accordion
+  const nonSendFileEvents = useMemo(() => toolEvents.filter((ev) => ev.name !== 'send_file' || ev.error), [toolEvents])
+  const hasToolEvents = !isUser && nonSendFileEvents.length > 0
+  const visibleToolEvents = toolEventsExpanded ? [...nonSendFileEvents].reverse() : nonSendFileEvents.slice(-1)
 
-  // When collapsed, collect media from hidden tool events so files are always visible
-  const hiddenMedia = useMemo(() => {
-    if (toolEventsExpanded || toolEvents.length <= 1) return null
-    // Collect URLs from the visible (last) tool event to avoid showing duplicates
-    const lastOutput = toolEvents[toolEvents.length - 1]?.output || ''
-    const visibleMedia = extractMedia(lastOutput)
-    const hasNamedVisibleImage = visibleMedia.images.some((url) => !isGeneratedBrowserScreenshot(url))
-    const seen = new Set<string>([
-      ...visibleMedia.images,
-      ...visibleMedia.videos,
-      ...visibleMedia.pdfs.map((p) => p.url),
-      ...visibleMedia.files.map((f) => f.url),
-    ])
-    const images: string[] = []
-    const videos: string[] = []
+  // Extract ALL media from ALL tool events for inline display after the message text.
+  // Covers send_file, browser screenshots, file tool outputs — everything.
+  const allToolMedia = useMemo(() => {
+    const images: { name: string; url: string }[] = []
+    const videos: { name: string; url: string }[] = []
     const pdfs: { name: string; url: string }[] = []
     const files: { name: string; url: string }[] = []
-    for (const ev of toolEvents.slice(0, -1)) {
-      if (!ev.output) continue
+    const seen = new Set<string>()
+
+    for (const ev of toolEvents) {
+      if (ev.error || !ev.output) continue
       const m = extractMedia(ev.output)
       for (const url of m.images) {
-        if (hasNamedVisibleImage && isGeneratedBrowserScreenshot(url)) continue
-        if (!seen.has(url)) { seen.add(url); images.push(url) }
+        if (!seen.has(url)) { seen.add(url); images.push({ name: url.split('/').pop() || 'Image', url }) }
       }
-      for (const url of m.videos) { if (!seen.has(url)) { seen.add(url); videos.push(url) } }
-      for (const p of m.pdfs) { if (!seen.has(p.url)) { seen.add(p.url); pdfs.push(p) } }
-      for (const f of m.files) { if (!seen.has(f.url)) { seen.add(f.url); files.push(f) } }
+      for (const url of m.videos) {
+        if (!seen.has(url)) { seen.add(url); videos.push({ name: url.split('/').pop() || 'Video', url }) }
+      }
+      for (const p of m.pdfs) {
+        if (!seen.has(p.url)) { seen.add(p.url); pdfs.push(p) }
+      }
+      for (const f of m.files) {
+        // Reclassify image-extension files as images (send_file uses [label](url) not ![](url))
+        if (/\.(png|jpe?g|gif|webp|svg|avif)$/i.test(f.url)) {
+          if (!seen.has(f.url)) { seen.add(f.url); images.push(f) }
+        } else {
+          if (!seen.has(f.url)) { seen.add(f.url); files.push(f) }
+        }
+      }
     }
+
     if (!images.length && !videos.length && !pdfs.length && !files.length) return null
     return { images, videos, pdfs, files }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [message.toolEvents, toolEventsExpanded])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message.toolEvents])
+  const isStructured = !isUser && !isHeartbeat && isStructuredMarkdown(message.text)
 
   // Collect all media URLs already rendered via tool events to avoid duplicates in markdown
   const toolEventMediaUrls = useMemo(() => {
@@ -256,6 +262,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     })
   }, [message.text])
 
+  const connectorMeta = connectorThreadMeta(message, isUser)
+
   return (
     <div
       className={`group ${isUser ? 'flex flex-col items-end' : 'flex flex-col items-start relative pl-[44px]'}`}
@@ -270,37 +278,46 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
         </div>
       )}
       {/* Sender label + timestamp */}
-      <div className={`flex items-center gap-2.5 mb-2 px-1 ${isUser ? 'flex-row-reverse' : ''}`}>
-        <span className={`text-[12px] font-600 flex items-center gap-1.5 ${isUser ? 'text-accent-bright/70' : 'text-text-3'}`}>
-          {message.source && (
-            <ConnectorPlatformIcon platform={message.source.platform} size={12} />
-          )}
-          {isUser
-            ? (message.source?.senderName
-                ? `${message.source.senderName} via ${CONNECTOR_PLATFORM_META[message.source.platform]?.label || message.source.platform}`
-                : (currentUser ? currentUser.charAt(0).toUpperCase() + currentUser.slice(1) : 'You'))
-            : (assistantName || 'Claude')}
-        </span>
-        <span className="text-[11px] text-text-3/70 font-mono" title={message.time ? new Date(message.time).toLocaleString() : ''}>
-          {message.time ? relativeTime(message.time) : ''}
-        </span>
+      <div className={`flex flex-col gap-0.5 mb-2 px-1 ${isUser ? 'items-end' : 'items-start'}`}>
+        <div className={`flex items-center gap-2.5 ${isUser ? 'flex-row-reverse' : ''}`}>
+          <span className={`text-[12px] font-600 flex items-center gap-1.5 ${isUser ? 'text-accent-bright/70' : 'text-text-3'}`}>
+            {message.source && (
+              <ConnectorPlatformIcon platform={message.source.platform} size={12} />
+            )}
+            {isUser
+              ? (message.source?.senderName
+                  ? `${message.source.senderName} via ${getConnectorPlatformLabel(message.source.platform)}`
+                  : (currentUser ? currentUser.charAt(0).toUpperCase() + currentUser.slice(1) : 'You'))
+              : (message.source
+                  ? `${assistantName || 'Claude'} via ${getConnectorPlatformLabel(message.source.platform)}`
+                  : (assistantName || 'Claude'))}
+          </span>
+          <span className="text-[11px] text-text-3/70 font-mono" title={message.time ? new Date(message.time).toLocaleString() : ''}>
+            {message.time ? formatMessageTimestamp(message) : ''}
+          </span>
+        </div>
+        {connectorMeta && (
+          <div className={`text-[10px] font-mono text-text-3/55 ${isUser ? 'text-right' : ''}`}>
+            {connectorMeta}
+          </div>
+        )}
       </div>
 
       {/* Tool call events (assistant messages only) */}
       {hasToolEvents && (
         <div className="max-w-[85%] md:max-w-[72%] flex flex-col gap-2 mb-2">
-          {toolEvents.length > 1 && (
+          {nonSendFileEvents.length > 1 && (
             <button
               type="button"
               onClick={() => setToolEventsExpanded((v) => !v)}
               className="self-start px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-[11px] text-text-3 border border-white/[0.06] cursor-pointer transition-colors"
             >
-              {toolEventsExpanded ? 'Show latest only' : `Show all tool calls (${toolEvents.length})`}
+              {toolEventsExpanded ? 'Show latest only' : `Show all tool calls (${nonSendFileEvents.length})`}
             </button>
           )}
           <div className={`${toolEventsExpanded ? 'max-h-[320px] overflow-y-auto pr-1 flex flex-col gap-2' : 'flex flex-col gap-2'}`}>
             {visibleToolEvents.map((event, i) => {
-              const key = `${message.time}-tool-${toolEventsExpanded ? `all-${i}` : `latest-${toolEvents.length - 1}`}`
+              const key = `${message.time}-tool-${toolEventsExpanded ? `all-${i}` : `latest-${nonSendFileEvents.length - 1}`}`
 
               if (event.name === 'delegate_to_agent') {
                 const inp = tryParseJson(event.input || '{}')
@@ -349,83 +366,6 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
               )
             })}
           </div>
-        </div>
-      )}
-
-      {/* Media from hidden tool calls (shown when collapsed so files are never buried) */}
-      {hiddenMedia && (
-        <div className="max-w-[85%] md:max-w-[72%] flex flex-col gap-2 mb-2">
-          {hiddenMedia.images.map((src, i) => (
-            <div key={`himg-${i}`} className="relative group/img">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={src}
-                alt={`Screenshot ${i + 1}`}
-                loading="lazy"
-                className="max-w-[400px] rounded-[10px] border border-white/10 cursor-pointer hover:border-white/25 transition-all"
-                onClick={() => {
-                  import('@/stores/use-chat-store').then(({ useChatStore }) =>
-                    useChatStore.getState().setPreviewContent({ type: 'image', url: src, title: `Screenshot ${i + 1}` })
-                  )
-                }}
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-              />
-              <a
-                href={src}
-                download
-                onClick={(e) => e.stopPropagation()}
-                className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-[8px] p-1.5 hover:bg-black/80 opacity-0 group-hover/img:opacity-100 transition-opacity"
-                title="Download"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-              </a>
-            </div>
-          ))}
-          {hiddenMedia.videos.map((src, i) => (
-            <video key={`hvid-${i}`} src={src} controls playsInline preload="none" className="max-w-full rounded-[10px] border border-white/10" />
-          ))}
-          {hiddenMedia.pdfs.map((file, i) => (
-            <div key={`hpdf-${i}`} className="rounded-[10px] border border-white/10 overflow-hidden">
-              <iframe src={file.url} loading="lazy" className="w-full h-[400px] bg-white" title={file.name} />
-              <a
-                href={file.url}
-                download
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-2 px-3 py-2 bg-surface/80 border-t border-white/10 text-[12px] text-text-2 hover:text-text no-underline transition-colors"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-                {file.name}
-              </a>
-            </div>
-          ))}
-          {hiddenMedia.files.map((file, i) => (
-            <a
-              key={`hfile-${i}`}
-              href={file.url}
-              download
-              onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/10 bg-surface/60 hover:bg-surface-2 transition-colors text-[13px] text-text-2 hover:text-text no-underline"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-              {file.name}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="ml-auto opacity-50">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-            </a>
-          ))}
         </div>
       )}
 
@@ -493,7 +433,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
             <div className="p-3 rounded-[12px] bg-black/40 border border-white/5 flex flex-col gap-2">
               <div className="flex justify-between items-center">
                 <span className="text-[11px] text-text-3/60 font-600 uppercase">Amount</span>
-                <span className="text-[13px] font-700 text-sky-400">{walletRequest.amountSol} SOL</span>
+                <span className="text-[13px] font-700 text-sky-400">{walletRequest.amountDisplay || `${walletRequest.amountSol} SOL`}</span>
               </div>
               <div className="flex flex-col gap-1">
                 <span className="text-[11px] text-text-3/60 font-600 uppercase">To Address</span>
@@ -508,13 +448,59 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
             </div>
             <div className="flex gap-2 mt-1">
               <button
-                onClick={() => useChatStore.getState().sendMessage(`I approve this transfer of ${walletRequest.amountSol} SOL to ${walletRequest.toAddress}. Proceed with wallet_tool and set approved=true.`)}
+                onClick={() => useChatStore.getState().sendMessage(`I approve this transfer of ${walletRequest.amountDisplay || `${walletRequest.amountSol} SOL`} to ${walletRequest.toAddress}. Proceed with wallet_tool and set approved=true.`)}
                 className="px-4 py-2 rounded-[12px] bg-sky-500 text-black text-[13px] font-700 hover:bg-sky-400 transition-all active:scale-[0.98]"
               >
                 Approve & Send
               </button>
               <button
                 onClick={() => useChatStore.getState().sendMessage(`I do not approve this transaction. Cancel it.`)}
+                className="px-4 py-2 rounded-[12px] bg-white/[0.05] hover:bg-white/[0.1] text-text-2 text-[13px] font-600 transition-all border border-white/10"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ) : walletActionRequest ? (
+          <div className="flex flex-col gap-3 p-4 rounded-[18px] bg-violet-500/[0.03] border border-violet-500/20 shadow-[0_0_20px_rgba(139,92,246,0.05)]">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-5 h-5 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 2v8" />
+                  <path d="M8 6h8" />
+                  <path d="m5 19 4-4 3 3 7-7" />
+                </svg>
+              </div>
+              <span className="text-[11px] font-700 uppercase tracking-wider text-violet-400/80">Wallet Action Request</span>
+            </div>
+            <p className="text-[13px] text-text-2/90 leading-relaxed">{walletActionRequest.message}</p>
+            <div className="p-3 rounded-[12px] bg-black/40 border border-white/5 flex flex-col gap-2">
+              <div className="flex justify-between items-center gap-3">
+                <span className="text-[11px] text-text-3/60 font-600 uppercase">Action</span>
+                <span className="text-[13px] font-700 text-violet-400">{walletActionRequest.action || 'wallet_action'}</span>
+              </div>
+              {(walletActionRequest.chain || walletActionRequest.network) && (
+                <div className="flex justify-between items-center gap-3">
+                  <span className="text-[11px] text-text-3/60 font-600 uppercase">Chain</span>
+                  <span className="text-[12px] text-text-2/80">{[walletActionRequest.chain, walletActionRequest.network].filter(Boolean).join(' / ')}</span>
+                </div>
+              )}
+              {walletActionRequest.summary && (
+                <div className="flex flex-col gap-1 border-t border-white/5 pt-2">
+                  <span className="text-[11px] text-text-3/60 font-600 uppercase">Summary</span>
+                  <span className="text-[12px] text-text-2/80 whitespace-pre-wrap break-words">{walletActionRequest.summary}</span>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={() => useChatStore.getState().sendMessage(`I approve this wallet action (${walletActionRequest.action || 'wallet_action'}). Proceed with wallet_tool and set approved=true.`)}
+                className="px-4 py-2 rounded-[12px] bg-violet-500 text-black text-[13px] font-700 hover:bg-violet-400 transition-all active:scale-[0.98]"
+              >
+                Approve Action
+              </button>
+              <button
+                onClick={() => useChatStore.getState().sendMessage('I do not approve this wallet action. Cancel it.')}
                 className="px-4 py-2 rounded-[12px] bg-white/[0.05] hover:bg-white/[0.1] text-text-2 text-[13px] font-600 transition-all border border-white/10"
               >
                 Reject
@@ -804,6 +790,83 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           </div>
         )}
       </div>
+      )}
+
+      {/* Inline media from all tool outputs — images, videos, PDFs, files */}
+      {allToolMedia && (
+        <div className="max-w-[85%] md:max-w-[72%] flex flex-col gap-2 mt-1 mb-2">
+          {allToolMedia.images.map((img, i) => (
+            <div key={`tm-img-${i}`} className="relative group/img">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={img.url}
+                alt={img.name}
+                loading="lazy"
+                className="max-w-[400px] rounded-[10px] border border-white/10 cursor-pointer hover:border-white/25 transition-all"
+                onClick={() => {
+                  import('@/stores/use-chat-store').then(({ useChatStore }) =>
+                    useChatStore.getState().setPreviewContent({ type: 'image', url: img.url, title: img.name })
+                  )
+                }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+              <a
+                href={img.url}
+                download
+                onClick={(e) => e.stopPropagation()}
+                className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-[8px] p-1.5 hover:bg-black/80 opacity-0 group-hover/img:opacity-100 transition-opacity"
+                title="Download"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </a>
+            </div>
+          ))}
+          {allToolMedia.videos.map((vid, i) => (
+            <video key={`tm-vid-${i}`} src={vid.url} controls playsInline preload="none" className="max-w-full rounded-[10px] border border-white/10" />
+          ))}
+          {allToolMedia.pdfs.map((file, i) => (
+            <div key={`tm-pdf-${i}`} className="rounded-[10px] border border-white/10 overflow-hidden">
+              <iframe src={file.url} loading="lazy" className="w-full h-[400px] bg-white" title={file.name} />
+              <a
+                href={file.url}
+                download
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-2 px-3 py-2 bg-surface/80 border-t border-white/10 text-[12px] text-text-2 hover:text-text no-underline transition-colors"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {file.name}
+              </a>
+            </div>
+          ))}
+          {allToolMedia.files.map((file, i) => (
+            <a
+              key={`tm-file-${i}`}
+              href={file.url}
+              download
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-white/10 bg-surface/60 hover:bg-surface-2 transition-colors text-[13px] text-text-2 hover:text-text no-underline"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              {file.name}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="ml-auto opacity-50">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </a>
+          ))}
+        </div>
       )}
 
       {/* Tool access request banners */}

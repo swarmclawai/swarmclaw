@@ -83,6 +83,24 @@ describe('normalizeFileArgs', () => {
     assert.deepEqual(out.files, [{ name: 'report.md', content: '# report' }])
   })
 
+  it('parses stringified bulk file arrays from wrapped payloads', () => {
+    const out = normalizeFileArgs({
+      input: JSON.stringify({
+        action: 'write',
+        files: JSON.stringify([
+          { path: 'offer-pack/offer-brief.md', content: '# brief' },
+          { path: 'offer-pack/landing-copy.md', content: '# landing' },
+        ]),
+      }),
+    })
+
+    assert.equal(out.action, 'write')
+    assert.deepEqual(out.files, [
+      { path: 'offer-pack/offer-brief.md', content: '# brief' },
+      { path: 'offer-pack/landing-copy.md', content: '# landing' },
+    ])
+  })
+
   it('treats trailing-slash write targets as directory creation', async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'file-write-dir-'))
     const out = await executeFileAction({
@@ -94,5 +112,23 @@ describe('normalizeFileArgs', () => {
     assert.equal(out, 'Created directory weather_update/')
     assert.equal(fs.statSync(path.join(cwd, 'weather_update')).isDirectory(), true)
     fs.rmSync(cwd, { recursive: true, force: true })
+  })
+
+  it('does not inline binary screenshot data when reading image files', async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'file-read-binary-'))
+    const imagePath = path.join(cwd, 'screenshot-main.png')
+    fs.writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x03]))
+
+    try {
+      const out = await executeFileAction({
+        action: 'read',
+        filePath: 'screenshot-main.png',
+      }, { cwd })
+
+      assert.match(out, /Binary file: screenshot-main\.png/)
+      assert.match(out, /Use send_file/)
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true })
+    }
   })
 })

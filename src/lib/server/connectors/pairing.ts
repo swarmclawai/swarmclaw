@@ -39,6 +39,23 @@ function normalizeSenderId(value: string): string {
   return value.trim().toLowerCase()
 }
 
+function senderIdVariants(value: string): string[] {
+  const normalized = normalizeSenderId(value)
+  if (!normalized) return []
+
+  const variants = new Set<string>([normalized])
+  const jidUser = normalized.split('@')[0]?.split(':')[0]?.trim()
+  if (jidUser) variants.add(jidUser)
+
+  const digits = normalized.replace(/[^\d]/g, '')
+  if (digits) {
+    variants.add(digits)
+    variants.add(`${digits}@s.whatsapp.net`)
+  }
+
+  return [...variants]
+}
+
 function dedupe(items: string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -237,15 +254,19 @@ export function isSenderAllowed(params: {
   senderId: string
   configAllowFrom?: string[]
 }): boolean {
-  const normalized = normalizeSenderId(params.senderId)
-  if (!normalized) return false
+  const senderVariants = new Set(senderIdVariants(params.senderId))
+  if (senderVariants.size === 0) return false
 
-  const configSet = new Set((params.configAllowFrom || []).map((item) => normalizeSenderId(item)).filter(Boolean))
-  if (configSet.has(normalized)) return true
+  const configMatches = (params.configAllowFrom || []).some((item) =>
+    senderIdVariants(item).some((variant) => senderVariants.has(variant)),
+  )
+  if (configMatches) return true
 
   const store = loadStore()
   const state = ensureConnectorState(store, params.connectorId)
-  return state.allowedSenderIds.includes(normalized)
+  return state.allowedSenderIds.some((item) =>
+    senderIdVariants(item).some((variant) => senderVariants.has(variant)),
+  )
 }
 
 export function clearConnectorPairingState(connectorId: string): void {

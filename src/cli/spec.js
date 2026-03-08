@@ -447,6 +447,7 @@ const COMMAND_GROUPS = {
       delete: { description: 'Archive task', method: 'DELETE', path: '/tasks/:id', params: ['id'] },
       archive: { description: 'Archive task', method: 'DELETE', path: '/tasks/:id', params: ['id'] },
       approve: { description: 'Approve or reject a pending tool execution', method: 'POST', path: '/tasks/:id/approve', params: ['id'] },
+      'import-github': { description: 'Import GitHub issues into tasks', method: 'POST', path: '/tasks/import/github' },
       metrics: { description: 'Get task board metrics (supports --query range=24h|7d|30d)', method: 'GET', path: '/tasks/metrics' },
     },
   },

@@ -4,6 +4,13 @@ import crypto from 'crypto'
 import { createRequire } from 'module'
 import { spawn } from 'child_process'
 import type { Plugin, PluginHooks, PluginMeta, PluginToolDef, PluginUIExtension, PluginProviderExtension, PluginConnectorExtension, Session, PluginPackageManager, PluginDependencyInstallStatus } from '@/types'
+import {
+  inferPluginInstallSourceFromUrl,
+  inferPluginPublisherSourceFromUrl,
+  isMarketplaceInstallSource,
+  normalizePluginInstallSource,
+  normalizePluginPublisherSource,
+} from '@/lib/plugin-sources'
 import { DATA_DIR } from './data-dir'
 import { canonicalizePluginId, expandPluginIds, getPluginAliases } from './tool-aliases'
 import { log } from './logger'
@@ -34,6 +41,9 @@ interface PluginFailureRecord {
 interface PluginConfigEntry {
   enabled?: boolean
   createdByAgentId?: string
+  source?: PluginMeta['source']
+  sourceLabel?: PluginMeta['sourceLabel']
+  installSource?: PluginMeta['installSource']
   sourceUrl?: string
   sourceHash?: string
   installedAt?: number
@@ -97,12 +107,124 @@ type HookRegistrar = {
 type HookContext<K extends keyof PluginHooks> =
   PluginHooks[K] extends ((ctx: infer C) => unknown) | undefined ? C : never
 
+type ApprovalGuidanceHook = NonNullable<PluginHooks['getApprovalGuidance']>
+
 /** Legacy OpenClaw format: activate(ctx)/deactivate() */
 interface OpenClawLegacyPlugin {
   name: string
   version?: string
   activate: (ctx: HookRegistrar & { registerTool: (def: PluginToolDef) => void; log: PluginLogger }) => void
   deactivate?: () => void
+}
+
+function trimString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeApprovalGuidanceLines(
+  value: string | string[] | null | undefined,
+): string[] {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed ? [trimmed] : []
+  }
+  if (!Array.isArray(value)) return []
+  return value
+    .map((line) => (typeof line === 'string' ? line.trim() : ''))
+    .filter(Boolean)
+}
+
+function dedupeApprovalGuidanceLines(lines: string[]): string[] {
+  return Array.from(new Set(lines.map((line) => line.trim()).filter(Boolean)))
+}
+
+function formatApprovalToolLabel(toolNames: string[]): string {
+  const uniqueNames = Array.from(new Set(toolNames.map((name) => name.trim()).filter(Boolean)))
+  if (uniqueNames.length === 0) return 'its tools'
+  if (uniqueNames.length === 1) return `\`${uniqueNames[0]}\``
+  if (uniqueNames.length === 2) return `\`${uniqueNames[0]}\` and \`${uniqueNames[1]}\``
+  return `${uniqueNames.slice(0, -1).map((name) => `\`${name}\``).join(', ')}, and \`${uniqueNames.at(-1)}\``
+}
+
+function buildDefaultPluginApprovalGuidance(params: {
+  pluginId: string
+  pluginName: string
+  tools: PluginToolDef[]
+}): ApprovalGuidanceHook {
+  const toolNames = params.tools
+    .map((tool) => (typeof tool?.name === 'string' ? tool.name.trim() : ''))
+    .filter(Boolean)
+  const toolLabel = formatApprovalToolLabel(toolNames)
+  const matchIds = new Set(
+    dedupeApprovalGuidanceLines([
+      params.pluginId,
+      ...toolNames,
+      ...expandPluginIds([params.pluginId]),
+      ...toolNames.flatMap((toolName) => expandPluginIds([toolName])),
+    ]).map((value) => canonicalizePluginId(value) || value.toLowerCase()),
+  )
+
+  return ({ approval, phase, approved }) => {
+    if (approval.category !== 'tool_access') return null
+    const requestedIds = [
+      trimString(approval.data.pluginId),
+      trimString(approval.data.toolId),
+      trimString(approval.data.toolName),
+    ].filter(Boolean)
+    const matchesPlugin = requestedIds.some((value) => {
+      const candidates = [value, ...expandPluginIds([value])]
+      return candidates.some((candidate) => matchIds.has(canonicalizePluginId(candidate) || candidate.toLowerCase()))
+    })
+    if (!matchesPlugin) return null
+
+    if (phase === 'connector_reminder') {
+      return `Approving this lets the agent use ${toolLabel} from ${params.pluginName}.`
+    }
+    if (approved === true) {
+      return [
+        `Access to ${params.pluginName} is approved. Continue with ${toolLabel} on the next turn.`,
+        'Do not request the same access again in prose once it has been approved.',
+      ]
+    }
+    if (approved === false) {
+      return `Do not request access to ${params.pluginName} again unless the task or required capability materially changes.`
+    }
+    return [
+      `If access to ${params.pluginName} is granted, continue with ${toolLabel} on the next turn.`,
+      'Do not ask for the same access again in prose while this approval is pending.',
+    ]
+  }
+}
+
+function composeApprovalGuidance(
+  defaultHook: ApprovalGuidanceHook,
+  customHook?: PluginHooks['getApprovalGuidance'],
+): ApprovalGuidanceHook {
+  return (ctx) => {
+    const combined = dedupeApprovalGuidanceLines([
+      ...normalizeApprovalGuidanceLines(defaultHook(ctx)),
+      ...normalizeApprovalGuidanceLines(customHook?.(ctx)),
+    ])
+    return combined.length > 0 ? combined : null
+  }
+}
+
+function buildPluginHooks(
+  pluginId: string,
+  pluginName: string,
+  hooks: PluginHooks | undefined,
+  tools: PluginToolDef[] | undefined,
+): PluginHooks {
+  const nextHooks: PluginHooks = { ...(hooks || {}) }
+  nextHooks.getApprovalGuidance = composeApprovalGuidance(
+    buildDefaultPluginApprovalGuidance({
+      pluginId,
+      pluginName,
+      tools: tools || [],
+    }),
+    hooks?.getApprovalGuidance,
+  )
+  return nextHooks
 }
 
 /**
@@ -213,6 +335,30 @@ function toRawPluginUrl(url: string): string {
     return url.endsWith('/raw') ? url : `${url}/raw`
   }
   return url
+}
+
+function inferStoredPluginSource(config: PluginConfigEntry | null | undefined): PluginMeta['source'] {
+  if (config?.source === 'local' || config?.source === 'manual' || config?.source === 'marketplace') {
+    return config.source
+  }
+  if (config?.sourceUrl) {
+    const installSource = normalizePluginInstallSource(config?.installSource)
+      || inferPluginInstallSourceFromUrl(config.sourceUrl)
+    return isMarketplaceInstallSource(installSource) ? 'marketplace' : 'manual'
+  }
+  return 'local'
+}
+
+function inferStoredPublisherSource(config: PluginConfigEntry | null | undefined): NonNullable<PluginMeta['sourceLabel']> {
+  return normalizePluginPublisherSource(config?.sourceLabel)
+    || inferPluginPublisherSourceFromUrl(config?.sourceUrl)
+    || (config?.sourceUrl ? 'manual' : 'local')
+}
+
+function inferStoredInstallSource(config: PluginConfigEntry | null | undefined): NonNullable<PluginMeta['installSource']> {
+  return normalizePluginInstallSource(config?.installSource)
+    || inferPluginInstallSourceFromUrl(config?.sourceUrl)
+    || (config?.sourceUrl ? 'manual' : 'local')
 }
 
 export function normalizeMarketplacePluginUrl(url: string): string {
@@ -835,9 +981,11 @@ class PluginManager {
             author: p.author || 'SwarmClaw',
             version: p.version || '1.0.0',
             source: 'local',
+            sourceLabel: 'builtin',
+            installSource: 'builtin',
             openclaw: p.openclaw === true,
           },
-          hooks: p.hooks || {},
+          hooks: buildPluginHooks(id, p.name, p.hooks, p.tools),
           tools: p.tools || [],
           ui: p.ui,
           providers: p.providers,
@@ -855,7 +1003,7 @@ class PluginManager {
       
       let dynamicRequire: NodeRequire | null = null
       try {
-        dynamicRequire = createRequire(import.meta.url || __filename)
+        dynamicRequire = createRequire(path.join(process.cwd(), 'package.json'))
       } catch (err: unknown) {
         log.warn('plugins', 'createRequire failed; external plugins disabled', {
           error: err instanceof Error ? err.message : String(err),
@@ -886,10 +1034,13 @@ class PluginManager {
                 enabled: true,
                 author: plugin.author,
                 version: plugin.version || '0.0.1',
-                source: explicitConfig?.sourceUrl ? 'marketplace' : 'local',
+                source: inferStoredPluginSource(explicitConfig),
+                sourceLabel: inferStoredPublisherSource(explicitConfig),
+                installSource: inferStoredInstallSource(explicitConfig),
+                sourceUrl: explicitConfig?.sourceUrl,
                 openclaw: plugin.openclaw === true,
               },
-              hooks: plugin.hooks || {},
+              hooks: buildPluginHooks(file, plugin.name, plugin.hooks, plugin.tools),
               tools: plugin.tools || [],
               ui: plugin.ui,
               providers: plugin.providers,
@@ -1146,6 +1297,44 @@ class PluginManager {
     return lines
   }
 
+  /** Collect approval guidance from all enabled plugins for a specific approval event */
+  collectApprovalGuidance(
+    enabledPlugins: string[],
+    ctx: {
+      approval: import('@/types').ApprovalRequest
+      phase: 'request' | 'resume' | 'connector_reminder'
+      approved?: boolean
+    },
+  ): string[] {
+    this.load()
+    const enabledSet = new Set(expandPluginIds(enabledPlugins))
+    const lines: string[] = []
+
+    for (const [id, p] of this.plugins.entries()) {
+      if (!enabledSet.has(id)) continue
+      const hook = p.hooks.getApprovalGuidance
+      if (!hook) continue
+      try {
+        const result = hook(ctx)
+        if (result === null || result === undefined) continue
+        if (typeof result === 'string' && result.trim()) {
+          lines.push(result)
+        } else if (Array.isArray(result)) {
+          for (const line of result) {
+            if (typeof line === 'string' && line.trim()) lines.push(line)
+          }
+        }
+      } catch (err: unknown) {
+        log.error('plugins', 'getApprovalGuidance hook failed', {
+          pluginId: id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+
+    return lines
+  }
+
   /** Collect all settings fields declared by enabled plugins */
   collectSettingsFields(enabledPlugins: string[]): Array<{ pluginId: string; pluginName: string; fields: import('@/types').PluginSettingsField[] }> {
     this.load()
@@ -1323,6 +1512,11 @@ class PluginManager {
     return true
   }
 
+  isExplicitlyDisabled(filename: string): boolean {
+    const explicit = this.readConfigEntry(filename)
+    return explicit?.enabled === false
+  }
+
   listPlugins(): PluginMeta[] {
     try {
       this.load()
@@ -1363,6 +1557,9 @@ class PluginManager {
           author: p.author || 'SwarmClaw',
           version: (p as { version?: string }).version || loaded?.meta.version || '1.0.0',
           source: loaded?.meta.source || 'local',
+          sourceLabel: 'builtin',
+          installSource: 'builtin',
+          sourceUrl: loaded?.meta.sourceUrl,
           openclaw: p.openclaw === true,
           failureCount: failure?.count,
           lastFailureAt: failure?.lastFailedAt,
@@ -1391,7 +1588,10 @@ class PluginManager {
               isBuiltin: false,
               author: loaded?.meta.author,
               version: loaded?.meta.version || '0.0.1',
-              source: loaded?.meta.source || (explicitCfg?.sourceUrl ? 'marketplace' : 'local'),
+              source: loaded?.meta.source || inferStoredPluginSource(explicitCfg),
+              sourceLabel: loaded?.meta.sourceLabel || inferStoredPublisherSource(explicitCfg),
+              installSource: loaded?.meta.installSource || inferStoredInstallSource(explicitCfg),
+              sourceUrl: loaded?.meta.sourceUrl || explicitCfg?.sourceUrl,
               openclaw: loaded?.meta.openclaw,
               createdByAgentId: explicitCfg?.createdByAgentId || null,
               failureCount: failure?.count,

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { api } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -25,6 +26,8 @@ export function SecretSheet() {
   const [scope, setScope] = useState<'global' | 'agent'>('global')
   const [agentIds, setAgentIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const editing = editingId ? secrets[editingId] : null
   const agentList = Object.values(agents)
@@ -50,6 +53,8 @@ export function SecretSheet() {
   }, [editing, open])
 
   const handleClose = () => {
+    setConfirmDelete(false)
+    setDeleting(false)
     setOpen(false)
     setEditingId(null)
   }
@@ -87,14 +92,17 @@ export function SecretSheet() {
 
   const handleDelete = async () => {
     if (!editing) return
-    if (!confirm(`Delete secret "${editing.name}"?`)) return
+    setDeleting(true)
     try {
       await api('DELETE', `/secrets/${editing.id}`)
       toast.success('Secret deleted')
       await loadSecrets()
+      setConfirmDelete(false)
       handleClose()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete secret')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -184,7 +192,7 @@ export function SecretSheet() {
         <div className="flex gap-3 pt-3">
           {editing && (
             <button
-              onClick={handleDelete}
+              onClick={() => setConfirmDelete(true)}
               className="px-5 py-3 rounded-[14px] border border-danger/30 bg-transparent text-danger text-[14px] font-600 cursor-pointer hover:bg-danger/10 transition-colors"
               style={{ fontFamily: 'inherit' }}
             >
@@ -202,6 +210,17 @@ export function SecretSheet() {
             {saving ? 'Saving...' : editing ? 'Update' : 'Save'}
           </button>
         </div>
+        <ConfirmDialog
+          open={confirmDelete}
+          title="Delete Secret?"
+          message={editing ? `Delete "${editing.name}"? This will remove the stored secret from the app.` : 'Delete this secret?'}
+          confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+          confirmDisabled={deleting}
+          cancelDisabled={deleting}
+          danger
+          onConfirm={() => { void handleDelete() }}
+          onCancel={() => { if (!deleting) setConfirmDelete(false) }}
+        />
       </div>
     </BottomSheet>
   )

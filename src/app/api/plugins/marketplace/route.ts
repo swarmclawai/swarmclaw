@@ -1,11 +1,25 @@
 import { NextResponse } from 'next/server'
+import { inferPluginPublisherSourceFromUrl } from '@/lib/plugin-sources'
 import { searchClawHub } from '@/lib/server/clawhub-client'
+import type { PluginCatalogSource } from '@/types'
 
 export const dynamic = 'force-dynamic'
 
-const REGISTRY_URLS = [
-  'https://raw.githubusercontent.com/swarmclawai/swarmforge/main/registry.json',
-  'https://swarmclaw.ai/registry/plugins.json',
+interface RegistryPluginEntry {
+  id?: string
+  name?: string
+  description?: string
+  url?: string
+  author?: string
+  version?: string
+  tags?: string[]
+  openclaw?: boolean
+  downloads?: number
+}
+
+const REGISTRY_URLS: Array<{ url: string; catalogSource: PluginCatalogSource }> = [
+  { url: 'https://swarmclaw.ai/registry/plugins.json', catalogSource: 'swarmclaw-site' },
+  { url: 'https://raw.githubusercontent.com/swarmclawai/swarmforge/main/registry.json', catalogSource: 'swarmforge' },
 ]
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
@@ -33,33 +47,42 @@ export async function GET(req: Request) {
   }
 
   const allPlugins: Record<string, unknown>[] = []
+  const registryPlugins = new Map<string, Record<string, unknown>>()
 
   // 1. Fetch SwarmClaw Registry
-  for (const registryUrl of REGISTRY_URLS) {
+  for (const registry of REGISTRY_URLS) {
     try {
-      const res = await fetch(registryUrl, { cache: 'no-store' })
+      const res = await fetch(registry.url, { cache: 'no-store' })
       if (!res.ok) continue
 
       const data = await res.json()
-      const filtered = (data as Array<{ name: string; description: string; url?: string }>).filter((p) => {
+      const entries = Array.isArray(data) ? data as RegistryPluginEntry[] : []
+      const filtered = entries.filter((p) => {
         if (!p || typeof p.name !== 'string' || typeof p.description !== 'string') return false
         return !query || p.name.toLowerCase().includes(query.toLowerCase()) || p.description.toLowerCase().includes(query.toLowerCase())
       })
 
-      allPlugins.push(...filtered.map((p: { id?: string; name?: string; url?: string }) => ({
-        ...p,
-        id: p.id || (p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '_'),
-        url: normalizeRegistryPluginUrl(p.url) || p.url,
-        source: 'swarmclaw',
-      })))
-      break
+      for (const p of filtered) {
+        const normalizedUrl = normalizeRegistryPluginUrl(p.url) || p.url
+        const id = p.id || (p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '_')
+        if (registryPlugins.has(id)) continue
+        registryPlugins.set(id, {
+          ...p,
+          id,
+          url: normalizedUrl,
+          source: inferPluginPublisherSourceFromUrl(normalizedUrl) || 'swarmforge',
+          catalogSource: registry.catalogSource,
+        })
+      }
     } catch (err: unknown) {
       console.warn('[marketplace] SC Registry failed:', {
-        registryUrl,
+        registryUrl: registry.url,
         error: err instanceof Error ? err.message : String(err),
       })
     }
   }
+
+  allPlugins.push(...registryPlugins.values())
 
   // 2. Fetch ClawHub Skills/Plugins
   try {
@@ -71,11 +94,21 @@ export async function GET(req: Request) {
       author: s.author,
       version: s.version || '1.0.0',
       url: s.url,
-      source: 'clawhub'
+      source: 'clawhub',
+      catalogSource: 'clawhub',
     })))
   } catch (err: unknown) {
     console.warn('[marketplace] ClawHub failed:', err instanceof Error ? err.message : String(err))
   }
+
+  allPlugins.sort((a, b) => {
+    const catalogA = typeof a.catalogSource === 'string' ? a.catalogSource : ''
+    const catalogB = typeof b.catalogSource === 'string' ? b.catalogSource : ''
+    if (catalogA !== catalogB) return catalogA.localeCompare(catalogB)
+    const nameA = typeof a.name === 'string' ? a.name : ''
+    const nameB = typeof b.name === 'string' ? b.name : ''
+    return nameA.localeCompare(nameB)
+  })
 
   // Update cache only for empty queries
   if (!query) {

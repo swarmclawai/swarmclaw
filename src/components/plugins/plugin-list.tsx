@@ -3,13 +3,14 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
+import { getPluginSourceLabel } from '@/lib/plugin-sources'
 import { toast } from 'sonner'
 import type { Agent, MarketplacePlugin, PluginMeta } from '@/types'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 
 type InstalledTab = 'core' | 'extensions'
-type TopTab = InstalledTab | 'swarmforge'
+type TopTab = InstalledTab | 'marketplace'
 
 export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
   const plugins = useAppStore((s) => s.plugins)
@@ -56,7 +57,7 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
   }, [])
 
   useEffect(() => {
-    if (inSidebar || tab !== 'swarmforge') return
+    if (inSidebar || tab !== 'marketplace') return
     const timer = setTimeout(() => { void loadMarketplace() }, 0)
     return () => clearTimeout(timer)
   }, [tab, inSidebar, loadMarketplace])
@@ -120,7 +121,13 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
     const toastId = toast.loading(`Installing ${p.name}...`)
     try {
       const safeFilename = `${p.id.replace(/[^a-zA-Z0-9.-]/g, '_')}.js`
-      await api('POST', '/plugins/install', { url: p.url, filename: safeFilename })
+      await api('POST', '/plugins/install', {
+        url: p.url,
+        filename: safeFilename,
+        installMethod: 'marketplace',
+        sourceLabel: p.source,
+        installSource: p.catalogSource || p.source,
+      })
       await loadPlugins()
       toast.success(`Installed ${p.name}`, { id: toastId })
     } catch (err: unknown) {
@@ -181,8 +188,8 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
         <TabButton active={tab === 'extensions'} onClick={() => setTab('extensions')} count={extensionPlugins.length}>
           Extensions
         </TabButton>
-        <TabButton active={tab === 'swarmforge'} onClick={() => setTab('swarmforge')}>
-          SwarmForge
+        <TabButton active={tab === 'marketplace'} onClick={() => setTab('marketplace')}>
+          Marketplace
         </TabButton>
       </div>
 
@@ -214,17 +221,17 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
           emptyMessage={search ? 'No extensions match your search' : 'No extensions installed'}
           emptyAction={!search ? (
             <button
-              onClick={() => setTab('swarmforge')}
+              onClick={() => setTab('marketplace')}
               className="mt-3 px-4 py-2 rounded-[10px] bg-transparent text-accent-bright text-[12px] font-600 cursor-pointer border border-accent-bright/20 hover:bg-accent-soft transition-all"
               style={{ fontFamily: 'inherit' }}
             >
-              Browse SwarmForge
+              Browse Marketplace
             </button>
           ) : undefined}
         />
       )}
 
-      {tab === 'swarmforge' && (
+      {tab === 'marketplace' && (
         <MarketplaceTab
           marketplace={marketplace}
           loading={mpLoading}
@@ -447,6 +454,12 @@ function PluginCard({ plugin, allowDelete, agents, onEdit, onToggle, onDelete, o
             {badge}
           </span>
         ))}
+        {plugin.sourceLabel && (
+          <SourceChip label={getPluginSourceLabel(plugin.sourceLabel)} tone="publisher" />
+        )}
+        {plugin.installSource && plugin.installSource !== plugin.sourceLabel && (
+          <SourceChip label={`via ${getPluginSourceLabel(plugin.installSource)}`} tone="catalog" />
+        )}
         {plugin.hasDependencyManifest && (
           <span className={`text-[10px] font-700 px-1.5 py-0.5 rounded-full ${
             plugin.dependencyInstallStatus === 'installed'
@@ -550,7 +563,14 @@ function MarketplaceTab({ marketplace, loading, installing, installedFilenames, 
   const q = search.toLowerCase()
   const filtered = marketplace
     .filter((p) => {
-      if (q && !p.name.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q) && !(p.tags ?? []).some((t) => t.toLowerCase().includes(q))) return false
+      const sourceTerms = [getPluginSourceLabel(p.source).toLowerCase(), getPluginSourceLabel(p.catalogSource).toLowerCase()]
+      if (
+        q
+        && !p.name.toLowerCase().includes(q)
+        && !p.description.toLowerCase().includes(q)
+        && !(p.tags ?? []).some((t) => t.toLowerCase().includes(q))
+        && !sourceTerms.some((term) => term.includes(q))
+      ) return false
       if (activeTag && !(p.tags ?? []).includes(activeTag)) return false
       return true
     })
@@ -606,6 +626,12 @@ function MarketplaceTab({ marketplace, loading, installing, installedFilenames, 
                       <span className="text-[10px] font-mono text-text-3/70">v{p.version}</span>
                       {p.openclaw && <span className="text-[9px] font-600 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">OpenClaw</span>}
                     </div>
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      {p.source && <SourceChip label={getPluginSourceLabel(p.source)} tone="publisher" />}
+                      {p.catalogSource && p.catalogSource !== p.source && (
+                        <SourceChip label={`via ${getPluginSourceLabel(p.catalogSource)}`} tone="catalog" />
+                      )}
+                    </div>
                     <div className="text-[11px] text-text-3/60 mt-1 line-clamp-2">{p.description}</div>
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-[10px] text-text-3/70">by {p.author}</span>
@@ -643,5 +669,15 @@ function MarketplaceTab({ marketplace, loading, installing, installedFilenames, 
         </div>
       )}
     </div>
+  )
+}
+
+function SourceChip({ label, tone }: { label: string; tone: 'publisher' | 'catalog' }) {
+  return (
+    <span className={tone === 'publisher'
+      ? 'text-[10px] font-700 px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-300'
+      : 'text-[10px] font-700 px-1.5 py-0.5 rounded-full bg-white/[0.05] text-text-3/75'}>
+      {label}
+    </span>
   )
 }

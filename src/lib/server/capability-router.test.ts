@@ -41,3 +41,14 @@ test('routeTaskIntent treats direct voice-note delivery as outreach', () => {
   assert.equal(decision.intent, 'outreach')
   assert.deepEqual(decision.preferredTools, ['connector_message_tool'])
 })
+
+test('routeTaskIntent treats keep-watching update requests as research even without explicit news keywords', () => {
+  const decision = routeTaskIntent(
+    'Tell me about the Iran war, keep watching for meaningful updates, and avoid duplicate reminders.',
+    ['web_search', 'manage_schedules'],
+    null,
+  )
+
+  assert.equal(decision.intent, 'research')
+  assert.deepEqual(decision.preferredTools, ['web_search', 'web_fetch'])
+})

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { loadSessions, saveSessions } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
+import { normalizeCanvasContent } from '@/lib/canvas-content'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params
@@ -21,7 +22,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ session
   const session = sessions[sessionId]
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
 
-  ;(session as Record<string, unknown>).canvasContent = body.content || null
+  const nextContent = normalizeCanvasContent(body.document ?? body.content)
+  ;(session as Record<string, unknown>).canvasContent = nextContent
   session.lastActiveAt = Date.now()
   sessions[sessionId] = session
   saveSessions(sessions)

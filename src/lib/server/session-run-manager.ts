@@ -219,7 +219,10 @@ export function cancelAllHeartbeatRuns(reason = 'Heartbeat disabled globally'): 
 async function drainExecution(executionKey: string): Promise<void> {
   if (state.runningByExecution.has(executionKey)) return
   const q = queueForExecution(executionKey)
-  const next = q.shift()
+  // Priority: user (non-heartbeat) runs go first. If a heartbeat is queued
+  // behind a user run, the user run takes priority.
+  const userIdx = q.findIndex(e => !isInternalHeartbeatRun(e.run.internal, e.run.source))
+  const next = userIdx >= 0 ? q.splice(userIdx, 1)[0] : q.shift()
   if (!next) return
 
   state.runningByExecution.set(executionKey, next)
@@ -416,6 +419,18 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
     cancelPendingForSession(input.sessionId, 'Cancelled by steer mode')
   }
 
+  // Heartbeat preemption: if a user chat arrives while a heartbeat is running,
+  // abort the heartbeat so the user doesn't wait. The heartbeat will retry
+  // on the next tick.
+  if (!internal && source === 'chat') {
+    const running = state.runningByExecution.get(executionKey)
+    if (running && isInternalHeartbeatRun(running.run.internal, running.run.source)) {
+      log.info('session-run', `Preempting heartbeat ${running.run.id} for user chat on ${input.sessionId}`)
+      abortSessionRuntime(running, 'Preempted by user chat')
+      state.runningByExecution.delete(executionKey)
+    }
+  }
+
   const running = state.runningByExecution.get(executionKey)
   const q = queueForExecution(executionKey)
   if (mode === 'collect' && !input.imagePath && !input.imageUrl && !input.attachedFiles?.length) {
@@ -507,14 +522,47 @@ export function getSessionRunState(sessionId: string): {
   runningRunId?: string
   queueLength: number
 } {
+  const summary = getSessionExecutionState(sessionId)
+  return {
+    runningRunId: summary.runningRunId,
+    queueLength: summary.queueLength,
+  }
+}
+
+export function getSessionExecutionState(sessionId: string): {
+  runningRunId?: string
+  queueLength: number
+  hasRunning: boolean
+  hasQueued: boolean
+  hasRunningHeartbeat: boolean
+  hasQueuedHeartbeat: boolean
+  hasRunningNonHeartbeat: boolean
+  hasQueuedNonHeartbeat: boolean
+} {
   const executionKey = executionKeyForSession(sessionId)
   const running = state.runningByExecution.get(executionKey)
-  const queued = queueForExecution(executionKey).filter((entry) => entry.run.sessionId === sessionId).length
+  const runningMatchesSession = running?.run.sessionId === sessionId
+  const runningHeartbeat = Boolean(
+    runningMatchesSession
+    && isInternalHeartbeatRun(running.run.internal, running.run.source),
+  )
+  const runningNonHeartbeat = Boolean(runningMatchesSession && !runningHeartbeat)
+  const queuedEntries = queueForExecution(executionKey).filter((entry) => entry.run.sessionId === sessionId)
+  const queuedHeartbeat = queuedEntries.filter((entry) =>
+    isInternalHeartbeatRun(entry.run.internal, entry.run.source),
+  ).length
+  const queuedNonHeartbeat = queuedEntries.length - queuedHeartbeat
   return {
-    runningRunId: (running?.run.sessionId === sessionId && running.run.status === 'running')
+    runningRunId: (runningMatchesSession && running?.run.status === 'running')
       ? running.run.id
       : undefined,
-    queueLength: queued,
+    queueLength: queuedEntries.length,
+    hasRunning: Boolean(runningMatchesSession),
+    hasQueued: queuedEntries.length > 0,
+    hasRunningHeartbeat: runningHeartbeat,
+    hasQueuedHeartbeat: queuedHeartbeat > 0,
+    hasRunningNonHeartbeat: runningNonHeartbeat,
+    hasQueuedNonHeartbeat: queuedNonHeartbeat > 0,
   }
 }
 

@@ -10,6 +10,7 @@ import { executeSessionChatTurn, type ExecuteChatTurnResult } from '../chat-exec
 import { WORKSPACE_DIR } from '../data-dir'
 import { getPluginManager } from '../plugins'
 import { sendMailboxEnvelope, listMailbox } from '../session-mailbox'
+import { canonicalizePluginId, expandPluginIds } from '../tool-aliases'
 import { processDueWatchJobs } from '../watch-jobs'
 import {
   deleteApproval,
@@ -34,6 +35,7 @@ import {
 } from '../storage'
 
 export type RegressionApprovalMode = 'manual' | 'auto' | 'off'
+export type RegressionPluginMode = 'scenario' | 'agent'
 
 export interface RegressionAssertion {
   name: string
@@ -46,12 +48,16 @@ export interface AgentRegressionScenarioResult {
   scenarioId: string
   name: string
   approvalMode: RegressionApprovalMode
+  pluginMode: RegressionPluginMode
   status: 'passed' | 'failed'
   score: number
   maxScore: number
   assertions: RegressionAssertion[]
   sessionId: string
   workspaceDir: string
+  requiredPlugins: string[]
+  effectivePlugins: string[]
+  missingPlugins: string[]
   toolNames: string[]
   approvalIds: string[]
   approvals: RegressionApprovalEvidence[]
@@ -82,8 +88,12 @@ interface ScenarioContext {
   agentId: string
   agent: Record<string, unknown>
   approvalMode: RegressionApprovalMode
+  pluginMode: RegressionPluginMode
   sessionId: string
   workspaceDir: string
+  requiredPlugins: string[]
+  effectivePlugins: string[]
+  missingPlugins: string[]
   responseTexts: string[]
   toolEvents: MessageToolEvent[]
   toolNames: Set<string>
@@ -95,6 +105,12 @@ interface AgentRegressionScenarioDefinition {
   name: string
   plugins: string[]
   run: (ctx: ScenarioContext) => Promise<AgentRegressionScenarioResult>
+}
+
+interface RegressionPluginResolution {
+  requiredPlugins: string[]
+  effectivePlugins: string[]
+  missingPlugins: string[]
 }
 
 interface MockMailAccount {
@@ -813,6 +829,48 @@ export function scoreAssertions(assertions: RegressionAssertion[]): { score: num
   }
 }
 
+function normalizePluginList(values: unknown): string[] {
+  if (!Array.isArray(values)) return []
+  const seen = new Set<string>()
+  const normalized: string[] = []
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    normalized.push(trimmed)
+  }
+  return normalized
+}
+
+export function resolveRegressionPlugins(
+  requiredPlugins: string[],
+  agent: Record<string, unknown>,
+  pluginMode: RegressionPluginMode,
+): RegressionPluginResolution {
+  const requiredCanonical = Array.from(new Set(
+    normalizePluginList(requiredPlugins)
+      .map((plugin) => canonicalizePluginId(plugin))
+      .filter(Boolean),
+  ))
+  if (pluginMode === 'scenario') {
+    return {
+      requiredPlugins: requiredCanonical,
+      effectivePlugins: normalizePluginList(requiredPlugins),
+      missingPlugins: [],
+    }
+  }
+
+  const effectivePlugins = normalizePluginList(agent.plugins ?? agent.tools)
+  const expandedAgentPlugins = new Set(expandPluginIds(effectivePlugins))
+  const missingPlugins = requiredCanonical.filter((plugin) => !expandedAgentPlugins.has(plugin))
+  return {
+    requiredPlugins: requiredCanonical,
+    effectivePlugins,
+    missingPlugins,
+  }
+}
+
 function listSessionApprovals(sessionId: string): ApprovalRequest[] {
   return Object.values(loadApprovals() as Record<string, ApprovalRequest>)
     .filter((approval) => approval.sessionId === sessionId)
@@ -838,13 +896,23 @@ function listSessionSecrets(sessionId: string): Array<Record<string, unknown>> {
     .filter((secret) => secret.createdInSessionId === sessionId)
 }
 
-function parseJsonRecord(raw: string | undefined): Record<string, unknown> | null {
+function parseJsonRecord(raw: string | undefined, depth = 0): Record<string, unknown> | null {
   if (!raw || !raw.trim()) return null
   try {
     const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const record = parsed as Record<string, unknown>
+    if (depth < 2) {
+      if (typeof record.input === 'string') {
+        const nested = parseJsonRecord(record.input, depth + 1)
+        if (nested) return nested
+      }
+      if (typeof record.data === 'string' && Object.keys(record).length === 1) {
+        const nested = parseJsonRecord(record.data, depth + 1)
+        if (nested) return nested
+      }
+    }
+    return record
   } catch {
     return null
   }
@@ -935,12 +1003,28 @@ function buildRegressionSession(params: {
 }
 
 async function runTurn(ctx: ScenarioContext, message: string): Promise<ExecuteChatTurnResult> {
-  const result = await executeSessionChatTurn({
-    sessionId: ctx.sessionId,
-    message,
-    internal: true,
-    source: 'eval',
-  })
+  const timeoutMs = 120_000
+  const controller = new AbortController()
+  const abortTimer = setTimeout(() => controller.abort(), timeoutMs)
+  const hardTimeout = setTimeout(() => controller.abort(), timeoutMs + 5_000)
+  let result: ExecuteChatTurnResult
+  try {
+    result = await Promise.race([
+      executeSessionChatTurn({
+        sessionId: ctx.sessionId,
+        message,
+        internal: true,
+        source: 'eval',
+        signal: controller.signal,
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`Eval turn timed out after ${timeoutMs}ms.`)), timeoutMs + 10_000)
+      }),
+    ])
+  } finally {
+    clearTimeout(abortTimer)
+    clearTimeout(hardTimeout)
+  }
   ctx.responseTexts.push(result.text)
   for (const event of result.toolEvents || []) {
     ctx.toolEvents.push(event)
@@ -1042,10 +1126,14 @@ async function runApprovalResumeScenario(ctx: ScenarioContext): Promise<AgentReg
     scenarioId: 'approval-resume',
     name: 'Approval Resume',
     approvalMode: ctx.approvalMode,
+    pluginMode: ctx.pluginMode,
     ...scored,
     assertions,
     sessionId: ctx.sessionId,
     workspaceDir: ctx.workspaceDir,
+    requiredPlugins: [...ctx.requiredPlugins],
+    effectivePlugins: [...ctx.effectivePlugins],
+    missingPlugins: [...ctx.missingPlugins],
     toolNames: Array.from(ctx.toolNames),
     approvalIds: shellApprovals.map((approval) => approval.id),
     approvals: buildApprovalEvidence(ctx.sessionId),
@@ -1102,10 +1190,14 @@ async function runDelegateLiteralScenario(ctx: ScenarioContext): Promise<AgentRe
     scenarioId: 'delegate-literal-artifact',
     name: 'Delegate Literal Artifact',
     approvalMode: ctx.approvalMode,
+    pluginMode: ctx.pluginMode,
     ...scored,
     assertions,
     sessionId: ctx.sessionId,
     workspaceDir: ctx.workspaceDir,
+    requiredPlugins: [...ctx.requiredPlugins],
+    effectivePlugins: [...ctx.effectivePlugins],
+    missingPlugins: [...ctx.missingPlugins],
     toolNames: Array.from(ctx.toolNames),
     approvalIds: [],
     approvals: buildApprovalEvidence(ctx.sessionId),
@@ -1167,10 +1259,14 @@ async function runScheduleScenario(ctx: ScenarioContext): Promise<AgentRegressio
     scenarioId: 'schedule-script',
     name: 'Schedule Script Workflow',
     approvalMode: ctx.approvalMode,
+    pluginMode: ctx.pluginMode,
     ...scored,
     assertions,
     sessionId: ctx.sessionId,
     workspaceDir: ctx.workspaceDir,
+    requiredPlugins: [...ctx.requiredPlugins],
+    effectivePlugins: [...ctx.effectivePlugins],
+    missingPlugins: [...ctx.missingPlugins],
     toolNames: Array.from(ctx.toolNames),
     approvalIds: [],
     approvals: buildApprovalEvidence(ctx.sessionId),
@@ -1237,10 +1333,14 @@ async function runOpenEndedIterationScenario(ctx: ScenarioContext): Promise<Agen
     scenarioId: 'open-ended-iteration',
     name: 'Open-Ended Iteration Pack',
     approvalMode: ctx.approvalMode,
+    pluginMode: ctx.pluginMode,
     ...scored,
     assertions,
     sessionId: ctx.sessionId,
     workspaceDir: ctx.workspaceDir,
+    requiredPlugins: [...ctx.requiredPlugins],
+    effectivePlugins: [...ctx.effectivePlugins],
+    missingPlugins: [...ctx.missingPlugins],
     toolNames: Array.from(ctx.toolNames),
     approvalIds: [],
     approvals: buildApprovalEvidence(ctx.sessionId),
@@ -1354,10 +1454,14 @@ async function runMockSignupSecretEmailScenario(ctx: ScenarioContext): Promise<A
       scenarioId: 'mock-signup-secret-email',
       name: 'Mock Signup Secret Email',
       approvalMode: ctx.approvalMode,
+      pluginMode: ctx.pluginMode,
       ...scored,
       assertions,
       sessionId: ctx.sessionId,
       workspaceDir: ctx.workspaceDir,
+      requiredPlugins: [...ctx.requiredPlugins],
+      effectivePlugins: [...ctx.effectivePlugins],
+      missingPlugins: [...ctx.missingPlugins],
       toolNames: Array.from(ctx.toolNames),
       approvalIds: [],
       approvals: buildApprovalEvidence(ctx.sessionId),
@@ -1475,10 +1579,14 @@ async function runHumanVerifiedSignupScenario(ctx: ScenarioContext): Promise<Age
       scenarioId: 'human-verified-signup',
       name: 'Human Verified Signup',
       approvalMode: ctx.approvalMode,
+      pluginMode: ctx.pluginMode,
       ...scored,
       assertions,
       sessionId: ctx.sessionId,
       workspaceDir: ctx.workspaceDir,
+      requiredPlugins: [...ctx.requiredPlugins],
+      effectivePlugins: [...ctx.effectivePlugins],
+      missingPlugins: [...ctx.missingPlugins],
       toolNames: Array.from(ctx.toolNames),
       approvalIds: [],
       approvals: buildApprovalEvidence(ctx.sessionId),
@@ -1581,10 +1689,14 @@ async function runResearchBuildDeployScenario(ctx: ScenarioContext): Promise<Age
       scenarioId: 'research-build-deploy',
       name: 'Research Build Deploy',
       approvalMode: ctx.approvalMode,
+      pluginMode: ctx.pluginMode,
       ...scored,
       assertions,
       sessionId: ctx.sessionId,
       workspaceDir: ctx.workspaceDir,
+      requiredPlugins: [...ctx.requiredPlugins],
+      effectivePlugins: [...ctx.effectivePlugins],
+      missingPlugins: [...ctx.missingPlugins],
       toolNames: Array.from(ctx.toolNames),
       approvalIds: [],
       approvals: buildApprovalEvidence(ctx.sessionId),
@@ -1595,6 +1707,241 @@ async function runResearchBuildDeployScenario(ctx: ScenarioContext): Promise<Age
     }
   } finally {
     await deployHarness.close()
+  }
+}
+
+/**
+ * Tool-call efficiency scenario: verifies the agent uses minimal tool calls
+ * for simple data-retrieval tasks. Catches regressions like:
+ * - Duplicate tool events from nested tool wrappers
+ * - requiredToolsPending forcing redundant web_search after shell-based curl
+ * - Response duplication from forced continuation loops
+ */
+async function runToolCallEfficiencyScenario(ctx: ScenarioContext): Promise<AgentRegressionScenarioResult> {
+  // Use a well-known API endpoint so no real-time external dependency
+  const prompt = 'Use the GitHub API to get the description of the openclaw/openclaw repository. Just the description text, nothing else.'
+
+  await runTurn(ctx, prompt)
+
+  const totalToolCalls = ctx.toolEvents.filter((e) => e.name).length
+  const responseTexts = ctx.responseTexts
+  const allResponseText = responseTexts.join('\n')
+
+  // Check for response duplication (same content repeated)
+  const hasResponseDuplication = responseTexts.length > 1
+    && responseTexts[0].length > 20
+    && responseTexts.some((text, i) => i > 0 && text.includes(responseTexts[0].slice(0, 40)))
+
+  const assertions: RegressionAssertion[] = [
+    {
+      name: 'used shell or web tool',
+      passed: ctx.toolNames.has('shell') || ctx.toolNames.has('web'),
+    },
+    {
+      name: 'completed in 3 or fewer tool calls',
+      passed: totalToolCalls <= 3,
+      details: `${totalToolCalls} tool calls`,
+      weight: 2,
+    },
+    {
+      name: 'response contains repo description text',
+      passed: allResponseText.length > 10,
+      details: `${allResponseText.length} chars`,
+    },
+    {
+      name: 'no response duplication from forced continuations',
+      passed: !hasResponseDuplication,
+      details: hasResponseDuplication ? `${responseTexts.length} response segments with overlap` : 'clean',
+      weight: 2,
+    },
+  ]
+
+  const scored = scoreAssertions(assertions)
+  return {
+    scenarioId: 'tool-call-efficiency',
+    name: 'Tool Call Efficiency',
+    approvalMode: ctx.approvalMode,
+    pluginMode: ctx.pluginMode,
+    ...scored,
+    assertions,
+    sessionId: ctx.sessionId,
+    workspaceDir: ctx.workspaceDir,
+    requiredPlugins: [...ctx.requiredPlugins],
+    effectivePlugins: [...ctx.effectivePlugins],
+    missingPlugins: [...ctx.missingPlugins],
+    toolNames: Array.from(ctx.toolNames),
+    approvalIds: [],
+    approvals: buildApprovalEvidence(ctx.sessionId),
+    responseTexts: [...ctx.responseTexts],
+    turns: [...ctx.turns],
+    artifacts: buildArtifactEvidence(ctx, []),
+    evidencePaths: writeScenarioEvidenceFiles(ctx),
+  }
+}
+
+/**
+ * File-creation followthrough scenario: verifies the agent creates a file
+ * when asked to save output to a specific path. Catches regressions like:
+ * - looksLikeOpenEndedDeliverableTask not matching file-save requests
+ * - shouldForceDeliverableFollowthrough not triggering for HTML/JSON file tasks
+ * - Agent stopping before writing the file
+ */
+async function runFileCreationFollowthroughScenario(ctx: ScenarioContext): Promise<AgentRegressionScenarioResult> {
+  const targetRelativePath = 'output/planets.json'
+  const targetPath = scenarioFile(ctx, targetRelativePath)
+  const prompt = `Create a JSON file at ${targetRelativePath} containing a list of the 3 largest planets in our solar system with their name and diameter in km.`
+
+  await runTurn(ctx, prompt)
+  // Allow a second turn if the first didn't produce the file
+  if (!fs.existsSync(targetPath)) {
+    await runTurn(ctx, 'Complete the task. The file must exist at the specified path.')
+  }
+
+  const fileContent = readIfExists(targetPath)
+  let validJson = false
+  let hasPlanets = false
+  try {
+    const parsed = JSON.parse(fileContent)
+    validJson = true
+    const items = Array.isArray(parsed) ? parsed : (parsed.planets || parsed.data || [])
+    hasPlanets = Array.isArray(items) && items.length >= 3
+      && items.every((item: Record<string, unknown>) => item.name && item.diameter)
+  } catch {
+    // not valid JSON
+  }
+
+  const assertions: RegressionAssertion[] = [
+    {
+      name: 'file tool or shell used',
+      passed: ctx.toolNames.has('files') || ctx.toolNames.has('shell'),
+    },
+    {
+      name: 'output file exists',
+      passed: fs.existsSync(targetPath),
+      details: targetPath,
+      weight: 2,
+    },
+    {
+      name: 'output is valid JSON',
+      passed: validJson,
+      weight: 2,
+    },
+    {
+      name: 'JSON contains 3+ planets with name and diameter',
+      passed: hasPlanets,
+      details: fileContent.slice(0, 200),
+    },
+    {
+      name: 'completed within 2 turns',
+      passed: ctx.turns.length <= 2,
+      details: `${ctx.turns.length} turns`,
+    },
+  ]
+
+  const scored = scoreAssertions(assertions)
+  return {
+    scenarioId: 'file-creation-followthrough',
+    name: 'File Creation Followthrough',
+    approvalMode: ctx.approvalMode,
+    pluginMode: ctx.pluginMode,
+    ...scored,
+    assertions,
+    sessionId: ctx.sessionId,
+    workspaceDir: ctx.workspaceDir,
+    requiredPlugins: [...ctx.requiredPlugins],
+    effectivePlugins: [...ctx.effectivePlugins],
+    missingPlugins: [...ctx.missingPlugins],
+    toolNames: Array.from(ctx.toolNames),
+    approvalIds: [],
+    approvals: buildApprovalEvidence(ctx.sessionId),
+    responseTexts: [...ctx.responseTexts],
+    turns: [...ctx.turns],
+    artifacts: buildArtifactEvidence(ctx, [targetRelativePath]),
+    evidencePaths: writeScenarioEvidenceFiles(ctx),
+  }
+}
+
+/**
+ * Knowledge-first file creation: validates the agent uses its own knowledge
+ * for commonly known data instead of wasting web searches. Modelled after
+ * OpenClaw's approach where agents rely on knowledge for non-time-sensitive data.
+ */
+async function runKnowledgeFirstFileScenario(ctx: ScenarioContext): Promise<AgentRegressionScenarioResult> {
+  const targetRelativePath = 'output/cities.json'
+  const targetPath = scenarioFile(ctx, targetRelativePath)
+  const prompt = `Create a JSON file at ${targetRelativePath} containing name, population, and country for Tokyo, London, and New York City.`
+
+  await runTurn(ctx, prompt)
+  if (!fs.existsSync(targetPath)) {
+    await runTurn(ctx, 'Complete the task. Write the file now.')
+  }
+
+  const fileContent = readIfExists(targetPath)
+  let validJson = false
+  let hasCities = false
+  try {
+    const parsed = JSON.parse(fileContent)
+    validJson = true
+    const items = Array.isArray(parsed) ? parsed : (parsed.cities || parsed.data || [])
+    hasCities = Array.isArray(items) && items.length >= 3
+      && items.every((item: Record<string, unknown>) => item.name && item.population && item.country)
+  } catch {
+    // not valid JSON
+  }
+
+  // Count web-related tool calls — there should be zero for commonly known data
+  const webToolCalls = ctx.toolEvents.filter(
+    (e) => e.name && ['web', 'web_search', 'web_fetch'].includes(canonicalizePluginId(e.name) || e.name),
+  ).length
+
+  const assertions: RegressionAssertion[] = [
+    {
+      name: 'file tool used',
+      passed: ctx.toolNames.has('files') || ctx.toolNames.has('shell'),
+    },
+    {
+      name: 'output file exists',
+      passed: fs.existsSync(targetPath),
+      weight: 2,
+    },
+    {
+      name: 'output is valid JSON with cities',
+      passed: validJson && hasCities,
+      weight: 2,
+    },
+    {
+      name: 'no web searches for commonly known data (OpenClaw parity)',
+      passed: webToolCalls === 0,
+      details: `${webToolCalls} web tool calls`,
+      weight: 3,
+    },
+    {
+      name: 'completed within 2 turns',
+      passed: ctx.turns.length <= 2,
+      details: `${ctx.turns.length} turns`,
+    },
+  ]
+
+  const scored = scoreAssertions(assertions)
+  return {
+    scenarioId: 'knowledge-first-file',
+    name: 'Knowledge-First File Creation',
+    approvalMode: ctx.approvalMode,
+    pluginMode: ctx.pluginMode,
+    ...scored,
+    assertions,
+    sessionId: ctx.sessionId,
+    workspaceDir: ctx.workspaceDir,
+    requiredPlugins: [...ctx.requiredPlugins],
+    effectivePlugins: [...ctx.effectivePlugins],
+    missingPlugins: [...ctx.missingPlugins],
+    toolNames: Array.from(ctx.toolNames),
+    approvalIds: [],
+    approvals: buildApprovalEvidence(ctx.sessionId),
+    responseTexts: [...ctx.responseTexts],
+    turns: [...ctx.turns],
+    artifacts: buildArtifactEvidence(ctx, [targetRelativePath]),
+    evidencePaths: writeScenarioEvidenceFiles(ctx),
   }
 }
 
@@ -1641,6 +1988,24 @@ export const AGENT_REGRESSION_SCENARIOS: AgentRegressionScenarioDefinition[] = [
     plugins: ['http_request', 'files', 'browser'],
     run: runResearchBuildDeployScenario,
   },
+  {
+    id: 'tool-call-efficiency',
+    name: 'Tool Call Efficiency',
+    plugins: ['shell', 'web'],
+    run: runToolCallEfficiencyScenario,
+  },
+  {
+    id: 'file-creation-followthrough',
+    name: 'File Creation Followthrough',
+    plugins: ['files', 'shell'],
+    run: runFileCreationFollowthroughScenario,
+  },
+  {
+    id: 'knowledge-first-file',
+    name: 'Knowledge-First File Creation',
+    plugins: ['files', 'web'],
+    run: runKnowledgeFirstFileScenario,
+  },
 ]
 
 function resolveScenarioDefinitions(ids?: string[]): AgentRegressionScenarioDefinition[] {
@@ -1653,11 +2018,13 @@ export async function runAgentRegressionSuite(params?: {
   agentId?: string
   approvalModes?: RegressionApprovalMode[]
   scenarioIds?: string[]
+  pluginMode?: RegressionPluginMode
 }): Promise<AgentRegressionSuiteResult> {
   const agentId = params?.agentId || 'default'
   const approvalModes: RegressionApprovalMode[] = params?.approvalModes?.length
     ? [...params.approvalModes]
     : ['manual', 'auto', 'off']
+  const pluginMode: RegressionPluginMode = params?.pluginMode === 'agent' ? 'agent' : 'scenario'
   const agents = loadAgents() as Record<string, Record<string, unknown>>
   const agent = agents[agentId]
   if (!agent) throw new Error(`Unknown agent: ${agentId}`)
@@ -1681,11 +2048,12 @@ export async function runAgentRegressionSuite(params?: {
         const scenarioDir = path.join(suiteDir, approvalMode, definition.id)
         ensureDir(scenarioDir)
         const sessionId = `${suiteId}-${approvalMode}-${definition.id}`
+        const pluginResolution = resolveRegressionPlugins(definition.plugins, agent, pluginMode)
         const session = buildRegressionSession({
           agent,
           sessionId,
           cwd: scenarioDir,
-          plugins: definition.plugins,
+          plugins: pluginResolution.effectivePlugins,
         })
         const sessions = loadSessions()
         sessions[sessionId] = session
@@ -1696,8 +2064,12 @@ export async function runAgentRegressionSuite(params?: {
           agentId,
           agent,
           approvalMode,
+          pluginMode,
           sessionId,
           workspaceDir: scenarioDir,
+          requiredPlugins: pluginResolution.requiredPlugins,
+          effectivePlugins: pluginResolution.effectivePlugins,
+          missingPlugins: pluginResolution.missingPlugins,
           responseTexts: [],
           toolEvents: [],
           toolNames: new Set<string>(),

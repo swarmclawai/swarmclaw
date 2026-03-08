@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { api } from '@/lib/api-client'
+import { getPluginSourceLabel } from '@/lib/plugin-sources'
 import type { PluginMeta, MarketplacePlugin } from '@/types'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -93,9 +94,12 @@ export function PluginManager() {
 
       const safeFilename = `${p.id.replace(/[^a-zA-Z0-9.-]/g, '_')}.js`
 
-      await api('POST', '/plugins/install', { 
-        url: p.url, 
-        filename: safeFilename
+      await api('POST', '/plugins/install', {
+        url: p.url,
+        filename: safeFilename,
+        installMethod: 'marketplace',
+        sourceLabel: p.source,
+        installSource: p.catalogSource || p.source,
       })
 
       await loadPlugins()
@@ -154,6 +158,18 @@ export function PluginManager() {
           )}
         </div>
         <div className="text-[11px] font-mono text-text-3/40 truncate">{p.filename}</div>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          {p.sourceLabel && (
+            <span className="text-[9px] font-700 px-1.5 py-0.5 rounded uppercase tracking-wider bg-sky-500/10 text-sky-300">
+              {getPluginSourceLabel(p.sourceLabel)}
+            </span>
+          )}
+          {p.installSource && p.installSource !== p.sourceLabel && (
+            <span className="text-[9px] font-700 px-1.5 py-0.5 rounded uppercase tracking-wider bg-white/[0.04] text-text-3/65">
+              via {getPluginSourceLabel(p.installSource)}
+            </span>
+          )}
+        </div>
         {p.description && <div className="text-[12px] text-text-3/70 mt-1 line-clamp-1">{p.description}</div>}
         {p.hasDependencyManifest && (
           <div className="mt-1.5 flex items-center gap-2 text-[10px] font-700 uppercase tracking-[0.08em]">
@@ -320,9 +336,16 @@ export function PluginManager() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-3 mb-1.5">
                         <span className="text-[16px] font-700 text-text tracking-tight">{p.name}</span>
-                        <span className={`text-[9px] font-800 uppercase px-2 py-0.5 rounded-[6px] border ${p.source === 'clawhub' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
-                          {p.source || 'swarmclaw'}
-                        </span>
+                        {p.source && (
+                          <span className="text-[9px] font-800 uppercase px-2 py-0.5 rounded-[6px] border bg-sky-500/10 text-sky-300 border-sky-500/20">
+                            {getPluginSourceLabel(p.source)}
+                          </span>
+                        )}
+                        {p.catalogSource && p.catalogSource !== p.source && (
+                          <span className="text-[9px] font-800 uppercase px-2 py-0.5 rounded-[6px] border bg-white/[0.04] text-text-3/70 border-white/[0.08]">
+                            via {getPluginSourceLabel(p.catalogSource)}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[13px] text-text-3/80 leading-relaxed mb-4 line-clamp-2">{p.description}</p>
                       

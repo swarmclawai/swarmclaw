@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Message } from '@/types'
 import {
+  materializeStreamingAssistantArtifacts,
   mergeCompletedAssistantMessage,
   messagesDiffer,
   pruneStreamingAssistantArtifacts,
@@ -24,7 +25,7 @@ describe('chat-streaming-state', () => {
     )
     assert.equal(
       shouldHidePersistedStreamingAssistantMessage(message, { localStreaming: true, displayText: '' }),
-      true,
+      false,
     )
   })
 
@@ -79,6 +80,51 @@ describe('chat-streaming-state', () => {
       { role: 'assistant', text: 'approval card', time: 11, kind: 'system' },
       { role: 'assistant', text: 'latest partial', time: 12, streaming: true },
     ])
+  })
+
+  it('materializes stale streaming artifacts into ordinary assistant messages', () => {
+    const messages: Message[] = [
+      { role: 'user', text: 'hello', time: 1 },
+      {
+        role: 'assistant',
+        text: 'partial result',
+        time: 2,
+        streaming: true,
+        toolEvents: [{ name: 'browser', input: '{"action":"screenshot"}', output: '/api/uploads/wiki.png' }],
+      },
+    ]
+
+    const changed = materializeStreamingAssistantArtifacts(messages)
+
+    assert.equal(changed, true)
+    assert.deepEqual(messages, [
+      { role: 'user', text: 'hello', time: 1 },
+      {
+        role: 'assistant',
+        text: 'partial result',
+        time: 2,
+        streaming: false,
+        toolEvents: [{ name: 'browser', input: '{"action":"screenshot"}', output: '/api/uploads/wiki.png' }],
+      },
+    ])
+  })
+
+  it('summarizes tool-only stale streaming artifacts instead of dropping them', () => {
+    const messages: Message[] = [
+      { role: 'user', text: 'hello', time: 1 },
+      {
+        role: 'assistant',
+        text: '',
+        time: 2,
+        streaming: true,
+        toolEvents: [{ name: 'browser', input: '{"action":"screenshot"}' }],
+      },
+    ]
+
+    materializeStreamingAssistantArtifacts(messages)
+
+    assert.match(messages[1].text, /Started 1 tool call/)
+    assert.equal(messages[1].streaming, false)
   })
 
   it('reuses the previous assistant slot when the server already persisted the same final text', () => {

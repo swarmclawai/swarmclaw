@@ -5,12 +5,15 @@ import { useAppStore } from '@/stores/use-app-store'
 import { createSchedule, updateSchedule, deleteSchedule } from '@/lib/schedules'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AgentPickerList } from '@/components/shared/agent-picker-list'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { inputClass } from '@/components/shared/form-styles'
+import { AgentAvatar } from '@/components/agents/agent-avatar'
 import type { ScheduleType, ScheduleStatus } from '@/types'
 import cronstrue from 'cronstrue'
 import { SectionLabel } from '@/components/shared/section-label'
 import { SCHEDULE_TEMPLATES, type ScheduleTemplate } from '@/lib/schedule-templates'
 import { HintTip } from '@/components/shared/hint-tip'
+import { isUserCreatedSchedule } from '@/lib/schedule-origin'
 import { toast } from 'sonner'
 import {
   Newspaper, BarChart3, HeartPulse, PenLine, Trash2,
@@ -102,6 +105,8 @@ export function ScheduleSheet() {
   const [intervalMs, setIntervalMs] = useState(3600000)
   const [status, setStatus] = useState<ScheduleStatus>('active')
   const [customCron, setCustomCron] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const editing = editingId ? schedules[editingId] : null
   const isCreating = !editing
@@ -163,6 +168,8 @@ export function ScheduleSheet() {
   }, [cron])
 
   const onClose = () => {
+    setConfirmDelete(false)
+    setDeleting(false)
     setOpen(false)
     setEditingId(null)
   }
@@ -195,14 +202,17 @@ export function ScheduleSheet() {
 
   const handleDelete = async () => {
     if (!editing) return
-    if (!confirm(`Delete schedule "${editing.name}"?`)) return
+    setDeleting(true)
     try {
       await deleteSchedule(editing.id)
       toast.success('Schedule deleted')
       await loadSchedules()
+      setConfirmDelete(false)
       onClose()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete schedule')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -211,6 +221,7 @@ export function ScheduleSheet() {
   const step1Valid = scheduleType === 'cron' ? cron.trim().length > 0 : intervalMs > 0
 
   const selectedAgent = agentId ? agents[agentId] : null
+  const creatorAgent = editing?.createdByAgentId ? agents[editing.createdByAgentId] : null
 
   return (
     <BottomSheet open={open} onClose={onClose} wide>
@@ -466,6 +477,26 @@ export function ScheduleSheet() {
               <span className="text-[11px] text-text-3/50 uppercase tracking-wider font-600">Agent</span>
               <div className="text-[14px] text-text font-600 mt-0.5">{selectedAgent?.name || agentId}</div>
             </div>
+            {editing && (
+              <div>
+                <span className="text-[11px] text-text-3/50 uppercase tracking-wider font-600">Created By</span>
+                {creatorAgent ? (
+                  <div className="mt-1 inline-flex items-center gap-2 rounded-[10px] bg-white/[0.04] px-3 py-2 text-[13px] text-text-2">
+                    <AgentAvatar
+                      seed={creatorAgent.avatarSeed}
+                      avatarUrl={creatorAgent.avatarUrl}
+                      name={creatorAgent.name}
+                      size={18}
+                    />
+                    <span>{creatorAgent.name}</span>
+                  </div>
+                ) : (
+                  <div className="text-[13px] text-text-2 mt-0.5">
+                    {isUserCreatedSchedule(editing) ? 'Manual / user-created' : 'Unknown'}
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <span className="text-[11px] text-text-3/50 uppercase tracking-wider font-600">Task</span>
               <div className="text-[13px] text-text-2 mt-0.5 whitespace-pre-wrap">{taskPrompt}</div>
@@ -497,7 +528,7 @@ export function ScheduleSheet() {
       {/* Footer */}
       <div className="flex gap-3 pt-2 border-t border-white/[0.04]">
         {editing && step === 0 && (
-          <button onClick={handleDelete} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
+          <button onClick={() => setConfirmDelete(true)} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
             Delete
           </button>
         )}
@@ -547,6 +578,17 @@ export function ScheduleSheet() {
           </button>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete Schedule?"
+        message={editing ? `Delete "${editing.name}"? This will remove the schedule from the app.` : 'Delete this schedule?'}
+        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        confirmDisabled={deleting}
+        cancelDisabled={deleting}
+        danger
+        onConfirm={() => { void handleDelete() }}
+        onCancel={() => { if (!deleting) setConfirmDelete(false) }}
+      />
     </BottomSheet>
   )
 }

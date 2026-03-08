@@ -56,6 +56,9 @@ describe('ensureAgentThreadSession', () => {
           fallbackCredentialIds: [],
           heartbeatEnabled: true,
           heartbeatIntervalSec: 600,
+          memoryScopeMode: 'agent',
+          memoryTierPreference: 'blended',
+          projectId: 'proj-1',
           createdAt: now,
           updatedAt: now,
           plugins: ['memory', 'web_search'],
@@ -80,6 +83,54 @@ describe('ensureAgentThreadSession', () => {
     assert.equal(output.session.shortcutForAgentId, 'molly')
     assert.equal(output.session.agentId, 'molly')
     assert.equal(output.session.heartbeatEnabled, true)
+    assert.equal(output.session.memoryScopeMode, 'agent')
+    assert.equal(output.session.memoryTierPreference, 'blended')
+    assert.equal(output.session.projectId, 'proj-1')
     assert.deepEqual(output.session.plugins, ['memory', 'web_search'])
+  })
+
+  it('does not create a new shortcut chat when the agent is disabled', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage.ts')
+      const storage = storageMod.default || storageMod['module.exports'] || storageMod
+      const helperMod = await import('./src/lib/server/agent-thread-session.ts')
+      const ensureAgentThreadSession = helperMod.ensureAgentThreadSession
+        || helperMod.default?.ensureAgentThreadSession
+        || helperMod['module.exports']?.ensureAgentThreadSession
+
+      const now = Date.now()
+      storage.saveAgents({
+        molly: {
+          id: 'molly',
+          name: 'Molly',
+          description: 'Temporarily disabled helper',
+          provider: 'openai',
+          model: 'gpt-test',
+          credentialId: null,
+          apiEndpoint: null,
+          fallbackCredentialIds: [],
+          disabled: true,
+          heartbeatEnabled: true,
+          heartbeatIntervalSec: 600,
+          createdAt: now,
+          updatedAt: now,
+          plugins: ['memory'],
+        },
+      })
+
+      const session = ensureAgentThreadSession('molly')
+      const agents = storage.loadAgents()
+      const sessions = storage.loadSessions()
+
+      console.log(JSON.stringify({
+        sessionId: session?.id || null,
+        threadSessionId: agents.molly?.threadSessionId || null,
+        sessionCount: Object.keys(sessions).length,
+      }))
+    `)
+
+    assert.equal(output.sessionId, null)
+    assert.equal(output.threadSessionId, null)
+    assert.equal(output.sessionCount, 0)
   })
 })

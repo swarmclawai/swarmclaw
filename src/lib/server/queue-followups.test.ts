@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { BoardTask, Session } from '@/types'
 import {
   applyTaskResumeStateToSession,
+  collectTaskConnectorFollowupTargets,
   dequeueNextRunnableTask,
   resolveTaskOriginConnectorFollowupTarget,
   resolveTaskResumeContext,
@@ -24,12 +25,19 @@ function makeTask(partial?: Partial<BoardTask> & { createdInSessionId?: string |
 }
 
 type SessionFixtureMap = Record<string, {
+  connectorContext?: {
+    connectorId?: string
+    channelId?: string
+    threadId?: string
+  }
   messages: Array<{
     role: string
     text?: string
+    historyExcluded?: boolean
     source?: {
       connectorId?: string
       channelId?: string
+      threadId?: string
     }
   }>
 }>
@@ -226,6 +234,260 @@ describe('resolveTaskOriginConnectorFollowupTarget', () => {
       connectorId: 'conn-wa',
       channelId: '447700900123@s.whatsapp.net',
     })
+  })
+
+  it('prefers explicit task followup metadata over later thread traffic', () => {
+    const task = makeTask({
+      createdInSessionId: 'session-1',
+      followupConnectorId: 'conn-wa',
+      followupChannelId: '447700900111@s.whatsapp.net',
+      followupThreadId: 'thread-me',
+    })
+    const sessions = {
+      'session-1': {
+        messages: [
+          {
+            role: 'user',
+            text: 'wife said hello',
+            source: {
+              connectorId: 'conn-wa',
+              channelId: '447700900222@s.whatsapp.net',
+              threadId: 'thread-wife',
+            },
+          },
+        ],
+      },
+    }
+    const connectors = {
+      'conn-wa': {
+        id: 'conn-wa',
+        platform: 'whatsapp',
+        agentId: 'agent-a',
+        config: {},
+      },
+    }
+    const running = [
+      {
+        id: 'conn-wa',
+        platform: 'whatsapp',
+        agentId: 'agent-a',
+        supportsSend: true,
+        configuredTargets: [],
+        recentChannelId: '447700900222@s.whatsapp.net',
+      },
+    ]
+
+    const target = resolveTaskOriginConnectorFollowupTarget({
+      task,
+      sessions: sessions as SessionFixtureMap,
+      connectors,
+      running,
+    })
+
+    assert.deepEqual(target, {
+      connectorId: 'conn-wa',
+      channelId: '447700900111@s.whatsapp.net',
+      threadId: 'thread-me',
+    })
+  })
+
+  it('ignores mirrored connector transcript copies when resolving delayed followups', () => {
+    const task = makeTask({ createdInSessionId: 'session-main' })
+    const sessions = {
+      'session-main': {
+        messages: [
+          {
+            role: 'user',
+            text: 'from me over whatsapp',
+            historyExcluded: true,
+            source: {
+              connectorId: 'conn-wa',
+              channelId: '447700900111@s.whatsapp.net',
+            },
+          },
+          {
+            role: 'user',
+            text: 'from wife over whatsapp later',
+            historyExcluded: true,
+            source: {
+              connectorId: 'conn-wa',
+              channelId: '447700900222@s.whatsapp.net',
+            },
+          },
+        ],
+      },
+    }
+    const connectors = {
+      'conn-wa': {
+        id: 'conn-wa',
+        platform: 'whatsapp',
+        agentId: 'agent-a',
+        config: {
+          taskFollowups: 'true',
+        },
+      },
+    }
+    const running = [
+      {
+        id: 'conn-wa',
+        platform: 'whatsapp',
+        agentId: 'agent-a',
+        supportsSend: true,
+        configuredTargets: [],
+        recentChannelId: '447700900222@s.whatsapp.net',
+      },
+    ]
+
+    const target = resolveTaskOriginConnectorFollowupTarget({
+      task,
+      sessions: sessions as SessionFixtureMap,
+      connectors,
+      running,
+    })
+
+    assert.equal(target, null)
+  })
+})
+
+describe('collectTaskConnectorFollowupTargets', () => {
+  it('does not fall back to a connector recent channel when there is no explicit origin target', () => {
+    const task = makeTask({ createdInSessionId: 'session-main' })
+    const sessions = {
+      'session-main': {
+        messages: [
+          {
+            role: 'user',
+            text: 'mirrored from me',
+            historyExcluded: true,
+            source: {
+              connectorId: 'conn-wa',
+              channelId: '447700900111@s.whatsapp.net',
+            },
+          },
+        ],
+      },
+    }
+    const connectors = {
+      'conn-wa': {
+        id: 'conn-wa',
+        platform: 'whatsapp',
+        agentId: 'agent-a',
+        config: {
+          taskFollowups: 'true',
+        },
+      },
+    }
+    const running = [
+      {
+        id: 'conn-wa',
+        platform: 'whatsapp',
+        agentId: 'agent-a',
+        supportsSend: true,
+        configuredTargets: [],
+        recentChannelId: '447700900222@s.whatsapp.net',
+      },
+    ]
+
+    const targets = collectTaskConnectorFollowupTargets({
+      task,
+      sessions: sessions as SessionFixtureMap,
+      connectors,
+      running,
+    })
+
+    assert.deepEqual(targets, [])
+  })
+
+  it('uses only the origin target when both origin and a different recent channel exist', () => {
+    const task = makeTask({
+      createdInSessionId: 'session-origin',
+      followupConnectorId: 'conn-wa',
+      followupChannelId: '447700900111@s.whatsapp.net',
+    })
+    const sessions = {
+      'session-origin': {
+        messages: [],
+      },
+    }
+    const connectors = {
+      'conn-wa': {
+        id: 'conn-wa',
+        platform: 'whatsapp',
+        agentId: 'agent-a',
+        config: {
+          taskFollowups: 'true',
+          outboundJid: '447700900333@s.whatsapp.net',
+        },
+      },
+    }
+    const running = [
+      {
+        id: 'conn-wa',
+        platform: 'whatsapp',
+        agentId: 'agent-a',
+        supportsSend: true,
+        configuredTargets: [],
+        recentChannelId: '447700900222@s.whatsapp.net',
+      },
+    ]
+
+    const targets = collectTaskConnectorFollowupTargets({
+      task,
+      sessions: sessions as SessionFixtureMap,
+      connectors,
+      running,
+    })
+
+    assert.deepEqual(targets, [
+      {
+        connectorId: 'conn-wa',
+        channelId: '447700900111@s.whatsapp.net',
+      },
+    ])
+  })
+
+  it('uses configured outbound targets for generic task followups', () => {
+    const task = makeTask({ createdInSessionId: 'session-main' })
+    const sessions = {
+      'session-main': {
+        messages: [],
+      },
+    }
+    const connectors = {
+      'conn-wa': {
+        id: 'conn-wa',
+        platform: 'whatsapp',
+        agentId: 'agent-a',
+        config: {
+          taskFollowups: 'true',
+          outboundJid: '+44 7700 900333',
+        },
+      },
+    }
+    const running = [
+      {
+        id: 'conn-wa',
+        platform: 'whatsapp',
+        agentId: 'agent-a',
+        supportsSend: true,
+        configuredTargets: [],
+        recentChannelId: '447700900222@s.whatsapp.net',
+      },
+    ]
+
+    const targets = collectTaskConnectorFollowupTargets({
+      task,
+      sessions: sessions as SessionFixtureMap,
+      connectors,
+      running,
+    })
+
+    assert.deepEqual(targets, [
+      {
+        connectorId: 'conn-wa',
+        channelId: '447700900333@s.whatsapp.net',
+      },
+    ])
   })
 })
 

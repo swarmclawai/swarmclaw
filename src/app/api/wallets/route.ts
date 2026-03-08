@@ -1,74 +1,91 @@
 import { NextResponse } from 'next/server'
-import { genId } from '@/lib/id'
-import { loadWallets, upsertWallet, loadAgents, saveAgents } from '@/lib/server/storage'
-import { generateSolanaKeypair } from '@/lib/server/solana'
-import { notify } from '@/lib/server/ws-hub'
-import type { AgentWallet, WalletChain } from '@/types'
+import { loadAgents, loadWallets } from '@/lib/server/storage'
+import { createAgentWallet, getAgentActiveWalletId, getWalletPortfolioSnapshot, stripWalletPrivateKey } from '@/lib/server/wallet-service'
+import { buildEmptyWalletPortfolio } from '@/lib/server/wallet-portfolio'
+import type { AgentWallet, WalletPortfolioSummary } from '@/types'
 export const dynamic = 'force-dynamic'
+const WALLET_LIST_PORTFOLIO_TIMEOUT_MS = 1500
 
-/** Strip encryptedPrivateKey from wallet for safe API responses */
-function stripPrivateKey(wallet: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(wallet).filter(([k]) => k !== 'encryptedPrivateKey'))
+function withPortfolio(
+  wallet: AgentWallet,
+  portfolio: {
+    balanceAtomic: string
+    balanceFormatted: string
+    balanceSymbol: string
+    balanceDisplay: string
+    balanceLamports?: number
+    balanceSol?: number
+    assets: unknown[]
+    summary: WalletPortfolioSummary
+  },
+  isActive: boolean,
+) {
+  return {
+    ...stripWalletPrivateKey(wallet as unknown as Record<string, unknown>),
+    balanceAtomic: portfolio.balanceAtomic,
+    balanceFormatted: portfolio.balanceFormatted,
+    balanceSymbol: portfolio.balanceSymbol,
+    balanceDisplay: portfolio.balanceDisplay,
+    balanceLamports: portfolio.balanceLamports,
+    balanceSol: portfolio.balanceSol,
+    assets: portfolio.assets,
+    portfolioSummary: portfolio.summary,
+    isActive,
+  }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const wallets = loadWallets() as Record<string, AgentWallet>
-  const safe = Object.fromEntries(
-    Object.entries(wallets).map(([id, w]) => [id, stripPrivateKey(w as unknown as Record<string, unknown>)]),
+  const agents = loadAgents()
+  const { searchParams } = new URL(req.url)
+  const agentId = searchParams.get('agentId')?.trim() || ''
+  const walletEntries = Object.entries(wallets)
+    .filter(([, wallet]) => !agentId || wallet.agentId === agentId)
+  const entries = await Promise.all(
+    walletEntries.map(async ([id, wallet]) => {
+      let portfolio = buildEmptyWalletPortfolio(wallet)
+      try {
+        portfolio = await getWalletPortfolioSnapshot(wallet, {
+          timeoutMs: WALLET_LIST_PORTFOLIO_TIMEOUT_MS,
+          allowStale: true,
+        })
+      } catch {
+        // Slow or failed RPC discovery — return empty/stale portfolio for list view
+      }
+      const activeWalletId = getAgentActiveWalletId(agents[wallet.agentId])
+      return [id, withPortfolio(wallet, portfolio, activeWalletId === wallet.id)] as const
+    }),
   )
-  return NextResponse.json(safe)
+  return NextResponse.json(Object.fromEntries(entries))
 }
 
 export async function POST(req: Request) {
   const body = await req.json()
-  const agentId = typeof body.agentId === 'string' ? body.agentId.trim() : ''
-  if (!agentId) {
-    return NextResponse.json({ error: 'agentId is required' }, { status: 400 })
+  try {
+    const wallet = createAgentWallet({
+      agentId: body.agentId,
+      chain: body.chain,
+      provider: body.provider,
+      label: body.label,
+      requireApproval: body.requireApproval,
+      spendingLimitAtomic: body.spendingLimitAtomic ?? body.spendingLimitLamports,
+      dailyLimitAtomic: body.dailyLimitAtomic ?? body.dailyLimitLamports,
+    })
+    return NextResponse.json(stripWalletPrivateKey(wallet as unknown as Record<string, unknown>))
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message === 'agentId is required') {
+      return NextResponse.json({ error: message }, { status: 400 })
+    }
+    if (/^Unsupported wallet chain or provider: /.test(message)) {
+      return NextResponse.json({ error: message }, { status: 400 })
+    }
+    if (message === 'Agent not found') {
+      return NextResponse.json({ error: message }, { status: 404 })
+    }
+    if (/^Agent already has a (solana|ethereum) wallet$/.test(message)) {
+      return NextResponse.json({ error: message }, { status: 409 })
+    }
+    return NextResponse.json({ error: message }, { status: 500 })
   }
-
-  const agents = loadAgents()
-  if (!agents[agentId]) {
-    return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
-  }
-
-  // Check agent doesn't already have a wallet
-  const existing = loadWallets() as Record<string, AgentWallet>
-  const hasWallet = Object.values(existing).some((w) => w.agentId === agentId)
-  if (hasWallet) {
-    return NextResponse.json({ error: 'Agent already has a wallet' }, { status: 409 })
-  }
-
-  const chain: WalletChain = body.chain === 'solana' ? 'solana' : 'solana' // extensible later
-  const { publicKey, encryptedPrivateKey } = generateSolanaKeypair()
-
-  const id = genId()
-  const now = Date.now()
-
-  const wallet: AgentWallet = {
-    id,
-    agentId,
-    chain,
-    publicKey,
-    encryptedPrivateKey,
-    label: typeof body.label === 'string' ? body.label : undefined,
-    spendingLimitLamports: typeof body.spendingLimitLamports === 'number' ? body.spendingLimitLamports : 100_000_000,
-    dailyLimitLamports: typeof body.dailyLimitLamports === 'number' ? body.dailyLimitLamports : 1_000_000_000,
-    requireApproval: body.requireApproval !== false,
-    createdAt: now,
-    updatedAt: now,
-  }
-
-  upsertWallet(id, wallet)
-
-  // Link wallet to agent
-  const agent = agents[agentId]
-  agent.walletId = id
-  agent.updatedAt = now
-  agents[agentId] = agent
-  saveAgents(agents)
-
-  notify('wallets')
-  notify('agents')
-
-  return NextResponse.json(stripPrivateKey(wallet as unknown as Record<string, unknown>))
 }

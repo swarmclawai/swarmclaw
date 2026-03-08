@@ -4,6 +4,7 @@ import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { Agent } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
+import { api } from '@/lib/api-client'
 import { AgentAvatar } from './agent-avatar'
 import { AgentFilesEditor } from './agent-files-editor'
 import { OpenClawSkillsPanel } from './openclaw-skills-panel'
@@ -11,6 +12,7 @@ import { PermissionPresetSelector } from './permission-preset-selector'
 import { ExecConfigPanel } from './exec-config-panel'
 import { SandboxEnvPanel } from './sandbox-env-panel'
 import { CronJobForm } from './cron-job-form'
+import { toast } from 'sonner'
 
 interface Props {
   agent: Agent
@@ -87,6 +89,12 @@ export function InspectorPanel({ agent, onEditAgent, onClearHistory, onDeleteAge
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="font-display text-[16px] font-700 text-text truncate tracking-[-0.02em]">{agent.name}</h3>
+              {agent.disabled === true && (
+                <span className="inline-flex items-center gap-1 rounded-[7px] border border-amber-400/15 bg-amber-400/[0.1] px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-amber-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-300" />
+                  Disabled
+                </span>
+              )}
               {agent.heartbeatEnabled && (
                 <span className="inline-flex items-center gap-1 rounded-[7px] border border-emerald-400/15 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-emerald-300">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -189,12 +197,31 @@ interface OverviewTabProps {
 }
 
 function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDeleteChat, isMainChat }: OverviewTabProps) {
+  const loadAgents = useAppStore((s) => s.loadAgents)
+  const loadSessions = useAppStore((s) => s.loadSessions)
+  const [availabilitySaving, setAvailabilitySaving] = useState(false)
   const summaryStats = [
     { label: 'Provider', value: PROVIDER_LABELS[agent.provider] || agent.provider.replace(/-/g, ' ') },
     { label: 'Model', value: agent.model || 'Default' },
     { label: 'Plugins', value: String(agent.plugins?.length ?? 0) },
     { label: 'Heartbeat', value: agent.heartbeatEnabled ? `Every ${agent.heartbeatIntervalSec ?? DEFAULT_HEARTBEAT_INTERVAL_SEC}s` : 'Off' },
+    { label: 'Status', value: agent.disabled === true ? 'Disabled' : 'Enabled' },
   ]
+
+  const handleToggleAvailability = useCallback(async () => {
+    if (availabilitySaving) return
+    setAvailabilitySaving(true)
+    try {
+      const nextDisabled = agent.disabled !== true
+      await api('PUT', `/agents/${agent.id}`, { disabled: nextDisabled })
+      await Promise.all([loadAgents(), loadSessions()])
+      toast.success(nextDisabled ? `${agent.name} disabled` : `${agent.name} enabled`)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update agent availability')
+    } finally {
+      setAvailabilitySaving(false)
+    }
+  }, [agent.disabled, agent.id, agent.name, availabilitySaving, loadAgents, loadSessions])
 
   return (
     <div className="p-4 flex flex-col gap-4">
@@ -259,6 +286,20 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
                 Edit Agent
               </button>
             )}
+            <button
+              onClick={() => void handleToggleAvailability()}
+              disabled={availabilitySaving}
+              className={`w-full px-3 py-2.5 rounded-[10px] text-[12px] font-700 border cursor-pointer transition-all text-left disabled:opacity-50 ${
+                agent.disabled === true
+                  ? 'text-emerald-300 bg-emerald-400/[0.06] border-emerald-400/[0.12] hover:bg-emerald-400/[0.1]'
+                  : 'text-amber-300 bg-amber-400/[0.06] border-amber-400/[0.12] hover:bg-amber-400/[0.1]'
+              }`}
+              style={{ fontFamily: 'inherit' }}
+            >
+              {availabilitySaving
+                ? (agent.disabled === true ? 'Enabling Agent...' : 'Disabling Agent...')
+                : (agent.disabled === true ? 'Enable Agent' : 'Disable Agent')}
+            </button>
             {(onClearHistory || onDeleteAgent || onDeleteChat) && (
               <>
                 <SectionLabel>Danger Zone</SectionLabel>

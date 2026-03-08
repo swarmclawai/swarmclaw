@@ -3,6 +3,8 @@ export interface MessageToolEvent {
   input: string
   output?: string
   error?: boolean
+  /** Internal correlation token for matching streaming tool calls/results. */
+  toolCallId?: string
 }
 
 export interface Message {
@@ -20,6 +22,8 @@ export interface Message {
   suggestions?: string[]
   replyToId?: string
   source?: MessageSource
+  /** Persist in the UI transcript, but exclude from normal model history. */
+  historyExcluded?: boolean
   /** True while the message is still being streamed — cleared on final persist. */
   streaming?: boolean
 }
@@ -44,6 +48,52 @@ export interface SessionArchiveState {
   messageCount?: number
   exportPath?: string | null
 }
+
+export interface CanvasMetricItem {
+  label: string
+  value: string
+  detail?: string
+  tone?: 'default' | 'positive' | 'negative' | 'warning'
+}
+
+export interface CanvasCardItem {
+  title: string
+  body?: string
+  meta?: string
+  tone?: 'default' | 'positive' | 'negative' | 'warning'
+}
+
+export interface CanvasActionItem {
+  label: string
+  href?: string
+  note?: string
+  intent?: 'primary' | 'secondary' | 'success' | 'danger'
+}
+
+export interface CanvasTableData {
+  columns: string[]
+  rows: Array<Array<string | number | boolean | null>>
+  caption?: string
+}
+
+export type CanvasBlock =
+  | { type: 'markdown'; title?: string; markdown: string }
+  | { type: 'metrics'; title?: string; items: CanvasMetricItem[] }
+  | { type: 'cards'; title?: string; items: CanvasCardItem[] }
+  | { type: 'table'; title?: string; table: CanvasTableData }
+  | { type: 'code'; title?: string; code: string; language?: string }
+  | { type: 'actions'; title?: string; items: CanvasActionItem[] }
+
+export interface CanvasDocument {
+  kind: 'structured'
+  title?: string
+  subtitle?: string
+  theme?: 'slate' | 'sky' | 'emerald' | 'amber' | 'rose'
+  blocks: CanvasBlock[]
+  updatedAt?: number | null
+}
+
+export type CanvasContent = string | CanvasDocument | null
 
 export type ProviderType = 'claude-cli' | 'codex-cli' | 'opencode-cli' | 'openai' | 'ollama' | 'anthropic' | 'openclaw' | 'google' | 'deepseek' | 'groq' | 'together' | 'mistral' | 'xai' | 'fireworks'
 
@@ -106,6 +156,7 @@ export interface Session {
   }
   messages: Message[]
   createdAt: number
+  updatedAt?: number | null
   lastActiveAt: number
   active?: boolean
   sessionType?: SessionType
@@ -117,6 +168,9 @@ export interface Session {
   heartbeatEnabled?: boolean | null
   heartbeatIntervalSec?: number | null
   heartbeatTarget?: 'last' | 'none' | string | null
+  memoryScopeMode?: 'auto' | 'all' | 'global' | 'agent' | 'session' | 'project' | null
+  memoryTierPreference?: 'working' | 'durable' | 'archive' | 'blended' | null
+  projectId?: string | null
   sessionResetMode?: SessionResetMode | null
   sessionIdleTimeoutSec?: number | null
   sessionMaxAgeSec?: number | null
@@ -176,7 +230,7 @@ export interface Session {
   vibe?: string
   theme?: string
   avatar?: string
-  canvasContent?: string | null
+  canvasContent?: CanvasContent
 }
 
 export type Sessions = Record<string, Session>
@@ -204,7 +258,15 @@ export type SessionTool =
 
 // --- Approvals ---
 
-export type ApprovalCategory = 'tool_access' | 'wallet_transfer' | 'plugin_scaffold' | 'plugin_install' | 'task_tool' | 'human_loop'
+export type ApprovalCategory =
+  | 'tool_access'
+  | 'wallet_transfer'
+  | 'wallet_action'
+  | 'plugin_scaffold'
+  | 'plugin_install'
+  | 'task_tool'
+  | 'human_loop'
+  | 'connector_sender'
 
 export interface ApprovalRequest {
   id: string
@@ -285,7 +347,14 @@ export interface PluginHooks {
   onMessage?: (ctx: { session: Session; message: Message }) => Promise<void> | void
 
   // Post-turn hook — fires after a full chat exchange (user message → agent response)
-  afterChatTurn?: (ctx: { session: Session; message: string; response: string; source: string; internal: boolean }) => Promise<void> | void
+  afterChatTurn?: (ctx: {
+    session: Session
+    message: string
+    response: string
+    source: string
+    internal: boolean
+    toolEvents?: MessageToolEvent[]
+  }) => Promise<void> | void
 
   // Orchestration & Swarm Hooks
   onTaskComplete?: (ctx: { taskId: string; result: unknown }) => Promise<void> | void
@@ -303,6 +372,13 @@ export interface PluginHooks {
 
   // Operating guidance — returns operational hints for the agent when this plugin is active
   getOperatingGuidance?: () => string | string[] | null | undefined
+
+  // Approval guidance — returns approval-scoped instructions when this plugin is active
+  getApprovalGuidance?: (ctx: {
+    approval: ApprovalRequest
+    phase: 'request' | 'resume' | 'connector_reminder'
+    approved?: boolean
+  }) => string | string[] | null | undefined
 }
 
 export interface PluginToolPlanning {
@@ -430,7 +506,10 @@ export interface PluginMeta {
   isBuiltin?: boolean
   author?: string
   version?: string
-  source?: 'local' | 'marketplace'
+  source?: 'local' | 'manual' | 'marketplace'
+  sourceLabel?: PluginPublisherSource
+  installSource?: PluginInstallSource
+  sourceUrl?: string
   openclaw?: boolean
   failureCount?: number
   lastFailureAt?: number
@@ -453,6 +532,26 @@ export interface PluginMeta {
   dependencyInstalledAt?: number
 }
 
+export type PluginPublisherSource =
+  | 'builtin'
+  | 'local'
+  | 'manual'
+  | 'swarmclaw'
+  | 'swarmforge'
+  | 'clawhub'
+
+export type PluginCatalogSource =
+  | 'swarmclaw'
+  | 'swarmclaw-site'
+  | 'swarmforge'
+  | 'clawhub'
+
+export type PluginInstallSource =
+  | 'builtin'
+  | 'local'
+  | 'manual'
+  | PluginCatalogSource
+
 export type PluginPackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
 export type PluginDependencyInstallStatus = 'none' | 'ready' | 'installing' | 'installed' | 'error'
 
@@ -463,18 +562,20 @@ export interface MarketplacePlugin {
   author: string
   version: string
   url: string
-  source?: 'swarmclaw' | 'clawhub'
+  source?: PluginPublisherSource
+  catalogSource?: PluginCatalogSource
   tags?: string[]
   openclaw?: boolean
   downloads?: number
 }
 
 export interface SSEEvent {
-  t: 'd' | 'md' | 'r' | 'done' | 'err' | 'tool_call' | 'tool_result' | 'status' | 'thinking' | 'cr_agent_start' | 'cr_agent_done'
+  t: 'd' | 'md' | 'r' | 'done' | 'err' | 'tool_call' | 'tool_result' | 'status' | 'thinking' | 'reset' | 'cr_agent_start' | 'cr_agent_done'
   text?: string
   toolName?: string
   toolInput?: string
   toolOutput?: string
+  toolCallId?: string
   agentId?: string
   agentName?: string
 }
@@ -568,10 +669,16 @@ export interface Agent {
   pinned?: boolean
   lastUsedAt?: number
   totalCost?: number
+  disabled?: boolean
   trashedAt?: number
   openclawSkillMode?: SkillAllowlistMode
   openclawAllowedSkills?: string[]
+  walletIds?: string[]
+  activeWalletId?: string | null
+  /** @deprecated Use walletIds + activeWalletId */
   walletId?: string | null
+  responseStyle?: 'concise' | 'normal' | 'detailed' | null
+  responseMaxChars?: number | null
   monthlyBudget?: number | null
   dailyBudget?: number | null
   hourlyBudget?: number | null
@@ -591,7 +698,7 @@ export interface Agent {
 
 // --- Agent Wallets ---
 
-export type WalletChain = 'solana'
+export type WalletChain = 'solana' | 'ethereum'
 
 export interface AgentWallet {
   id: string
@@ -600,11 +707,39 @@ export interface AgentWallet {
   publicKey: string
   encryptedPrivateKey: string       // AES-256-GCM via encryptKey()
   label?: string
-  spendingLimitLamports?: number    // per-tx cap (default 0.1 SOL = 100_000_000)
-  dailyLimitLamports?: number       // 24h rolling cap (default 1 SOL = 1_000_000_000)
+  spendingLimitAtomic?: string
+  dailyLimitAtomic?: string
+  /** @deprecated Use spendingLimitAtomic */
+  spendingLimitLamports?: number
+  /** @deprecated Use dailyLimitAtomic */
+  dailyLimitLamports?: number
   requireApproval: boolean          // default true
   createdAt: number
   updatedAt: number
+}
+
+export interface WalletAssetBalance {
+  id: string
+  chain: WalletChain
+  networkId: string
+  networkLabel: string
+  symbol: string
+  name?: string
+  decimals: number
+  balanceAtomic: string
+  balanceFormatted?: string
+  balanceDisplay?: string
+  isNative: boolean
+  contractAddress?: string
+  tokenMint?: string
+  explorerUrl?: string
+}
+
+export interface WalletPortfolioSummary {
+  totalAssets: number
+  nonZeroAssets: number
+  tokenAssets: number
+  networkCount: number
 }
 
 export type WalletTransactionType = 'send' | 'receive' | 'swap'
@@ -619,19 +754,25 @@ export interface WalletTransaction {
   signature: string
   fromAddress: string
   toAddress: string
-  amountLamports: number
+  amountAtomic?: string
+  feeAtomic?: string
+  /** @deprecated Use amountAtomic */
+  amountLamports?: number
+  /** @deprecated Use feeAtomic */
   feeLamports?: number
   status: WalletTransactionStatus
   memo?: string                     // agent's reason for tx
   approvedBy?: 'user' | 'auto'
-  tokenMint?: string                // null = native SOL
+  tokenMint?: string                // null = native chain asset
   timestamp: number
 }
 
 export interface WalletBalanceSnapshot {
   id: string
   walletId: string
-  balanceLamports: number
+  balanceAtomic?: string
+  /** @deprecated Use balanceAtomic */
+  balanceLamports?: number
   timestamp: number
 }
 
@@ -668,6 +809,11 @@ export interface Schedule {
   runNumber?: number
   createdByAgentId?: string | null
   createdInSessionId?: string | null
+  followupConnectorId?: string | null
+  followupChannelId?: string | null
+  followupThreadId?: string | null
+  followupSenderId?: string | null
+  followupSenderName?: string | null
   createdAt: number
   updatedAt?: number
 }
@@ -1245,6 +1391,8 @@ export interface OpenClawDeploymentConfig {
   useCase?: OpenClawUseCaseTemplate | null
   exposure?: OpenClawExposurePreset | null
   managedBy?: 'swarmclaw' | 'manual' | null
+  localInstanceId?: string | null
+  localPort?: number | null
   targetHost?: string | null
   sshHost?: string | null
   sshUser?: string | null
@@ -1434,10 +1582,30 @@ export interface Skill {
   description?: string
   sourceUrl?: string
   sourceFormat?: 'openclaw' | 'plain'
+  author?: string
+  tags?: string[]
+  version?: string
+  homepage?: string
+  primaryEnv?: string | null
+  skillKey?: string | null
+  always?: boolean
+  installOptions?: SkillInstallOption[]
+  skillRequirements?: SkillRequirements
+  detectedEnvVars?: string[]
+  security?: SkillSecuritySummary | null
+  frontmatter?: Record<string, unknown> | null
   scope?: 'global' | 'agent'
   agentIds?: string[]
   createdAt: number
   updatedAt: number
+}
+
+export interface SkillSecuritySummary {
+  level: 'low' | 'medium' | 'high'
+  notes: string[]
+  detectedEnvVars?: string[]
+  missingDeclarations?: string[]
+  installCommands?: string[]
 }
 
 // --- Connector Health Events ---
@@ -1454,7 +1622,20 @@ export interface ConnectorHealthEvent {
 
 // --- Connectors (Chat Platform Bridges) ---
 
-export type ConnectorPlatform = 'discord' | 'telegram' | 'slack' | 'whatsapp' | 'openclaw' | 'bluebubbles' | 'signal' | 'teams' | 'googlechat' | 'matrix' | 'email'
+export type ConnectorPlatform =
+  | 'discord'
+  | 'telegram'
+  | 'slack'
+  | 'whatsapp'
+  | 'openclaw'
+  | 'bluebubbles'
+  | 'signal'
+  | 'teams'
+  | 'googlechat'
+  | 'matrix'
+  | 'email'
+  | 'webchat'
+  | 'mockmail'
 export type ConnectorStatus = 'stopped' | 'running' | 'error'
 
 export interface MessageSource {
@@ -1541,6 +1722,11 @@ export interface BoardTask {
   images?: string[]
   createdByAgentId?: string | null
   createdInSessionId?: string | null
+  followupConnectorId?: string | null
+  followupChannelId?: string | null
+  followupThreadId?: string | null
+  followupSenderId?: string | null
+  followupSenderName?: string | null
   delegatedByAgentId?: string | null
   delegatedFromTaskId?: string | null
   delegationDepth?: number | null
@@ -1558,10 +1744,20 @@ export interface BoardTask {
   totalRuns?: number
   totalCompleted?: number
   totalFailed?: number
-  sourceType?: 'schedule' | 'delegation' | 'manual'
+  sourceType?: 'schedule' | 'delegation' | 'manual' | 'import'
   sourceScheduleId?: string | null
   sourceScheduleName?: string | null
   sourceScheduleKey?: string | null
+  externalSource?: {
+    source: string
+    id?: string | null
+    repo?: string | null
+    number?: number | null
+    state?: string | null
+    labels?: string[]
+    assignee?: string | null
+    url?: string | null
+  } | null
   deadLetteredAt?: number | null
   cliResumeId?: string | null
   cliProvider?: string | null

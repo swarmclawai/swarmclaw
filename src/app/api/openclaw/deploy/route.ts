@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import {
   buildOpenClawDeployBundle,
+  getOpenClawLocalDeployCollectionStatus,
+  getOpenClawRemoteDeployCollectionStatus,
   deployOpenClawOverSsh,
   getOpenClawLocalDeployStatus,
   getOpenClawRemoteDeployStatus,
@@ -96,9 +98,15 @@ function parseSsh(value: unknown): Partial<OpenClawSshConfig> | null {
 }
 
 export async function GET() {
+  const locals = getOpenClawLocalDeployCollectionStatus()
+  const remotes = getOpenClawRemoteDeployCollectionStatus()
   return NextResponse.json({
-    local: getOpenClawLocalDeployStatus(),
-    remote: getOpenClawRemoteDeployStatus(),
+    local: getOpenClawLocalDeployStatus(locals.primaryId),
+    locals: locals.items,
+    localPrimaryId: locals.primaryId,
+    remote: remotes.primaryId ? getOpenClawRemoteDeployStatus(remotes.primaryId) : null,
+    remotes: remotes.items,
+    remotePrimaryId: remotes.primaryId,
   })
 }
 
@@ -109,31 +117,44 @@ export async function POST(req: Request) {
   try {
     if (action === 'start-local') {
       const result = await startOpenClawLocalDeploy({
+        localId: typeof body.localId === 'string' ? body.localId : null,
+        name: typeof body.name === 'string' ? body.name : null,
         port: parsePort(body.port),
         token: typeof body.token === 'string' ? body.token : null,
+        makePrimary: body.makePrimary !== false,
       })
       return NextResponse.json({
         ok: true,
         local: result.local,
+        locals: result.locals,
+        localPrimaryId: result.locals.find((item) => item.isPrimary)?.id || result.local.id,
         token: result.token,
       })
     }
 
     if (action === 'stop-local') {
+      const result = stopOpenClawLocalDeploy(typeof body.localId === 'string' ? body.localId : null)
       return NextResponse.json({
         ok: true,
-        local: stopOpenClawLocalDeploy(),
+        local: result.local,
+        locals: result.locals,
+        localPrimaryId: result.locals.find((item) => item.isPrimary)?.id || result.local.id,
       })
     }
 
     if (action === 'restart-local') {
       const result = await restartOpenClawLocalDeploy({
+        localId: typeof body.localId === 'string' ? body.localId : null,
+        name: typeof body.name === 'string' ? body.name : null,
         port: parsePort(body.port),
         token: typeof body.token === 'string' ? body.token : null,
+        makePrimary: body.makePrimary !== false,
       })
       return NextResponse.json({
         ok: true,
         local: result.local,
+        locals: result.locals,
+        localPrimaryId: result.locals.find((item) => item.isPrimary)?.id || result.local.id,
         token: result.token,
       })
     }
@@ -157,6 +178,8 @@ export async function POST(req: Request) {
 
     if (action === 'ssh-deploy') {
       const result = await deployOpenClawOverSsh({
+        remoteId: typeof body.remoteId === 'string' ? body.remoteId : null,
+        name: typeof body.name === 'string' ? body.name : null,
         template: parseTemplate(body.template),
         target: typeof body.target === 'string' ? body.target : null,
         token: typeof body.token === 'string' ? body.token : null,
@@ -166,10 +189,14 @@ export async function POST(req: Request) {
         useCase: parseUseCase(body.useCase),
         exposure: parseExposure(body.exposure),
         ssh: parseSsh(body.ssh),
+        makePrimary: body.makePrimary !== false,
       })
+      const remotes = getOpenClawRemoteDeployCollectionStatus()
       return NextResponse.json({
         ok: result.ok,
-        remote: getOpenClawRemoteDeployStatus(),
+        remote: getOpenClawRemoteDeployStatus(result.remoteId || remotes.primaryId),
+        remotes: remotes.items,
+        remotePrimaryId: remotes.primaryId,
         processId: result.processId || null,
         token: result.token,
         bundle: result.bundle,
@@ -198,14 +225,20 @@ export async function POST(req: Request) {
       } as const
       const lifecycleAction = action as keyof typeof actionMap
       const result = await runOpenClawRemoteLifecycle({
+        remoteId: typeof body.remoteId === 'string' ? body.remoteId : null,
+        name: typeof body.name === 'string' ? body.name : null,
         action: actionMap[lifecycleAction],
         ssh: parseSsh(body.ssh),
         token: typeof body.token === 'string' ? body.token : null,
         backupPath: typeof body.backupPath === 'string' ? body.backupPath : null,
+        makePrimary: body.makePrimary !== false,
       })
+      const remotes = getOpenClawRemoteDeployCollectionStatus()
       return NextResponse.json({
         ok: result.ok,
-        remote: getOpenClawRemoteDeployStatus(),
+        remote: getOpenClawRemoteDeployStatus(result.remoteId || remotes.primaryId),
+        remotes: remotes.items,
+        remotePrimaryId: remotes.primaryId,
         processId: result.processId || null,
         token: result.token,
         summary: result.summary,

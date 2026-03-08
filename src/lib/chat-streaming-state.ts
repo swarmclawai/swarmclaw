@@ -1,4 +1,5 @@
 import type { Message } from '@/types'
+import { buildToolEventAssistantSummary } from '@/lib/tool-event-summary'
 
 interface StreamingArtifactWindow {
   minIndex?: number
@@ -26,6 +27,7 @@ export function shouldHidePersistedStreamingAssistantMessage(
     opts.localStreaming
     && message.role === 'assistant'
     && message.streaming === true
+    && opts.displayText.trim().length > 0
   )
 }
 
@@ -49,6 +51,46 @@ export function upsertStreamingAssistantArtifact(
   }
   pruneStreamingAssistantArtifacts(messages, opts)
   messages.push(assistantMessage)
+  return true
+}
+
+export function materializeStreamingAssistantArtifacts(
+  messages: Message[],
+  opts: StreamingArtifactWindow = {},
+): boolean {
+  let changed = false
+  const nextMessages: Message[] = []
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]
+    if (!isStreamingAssistantMessage(message, index, opts)) {
+      nextMessages.push(message)
+      continue
+    }
+
+    const trimmedText = typeof message.text === 'string' ? message.text.trim() : ''
+    const toolEvents = Array.isArray(message.toolEvents) ? message.toolEvents : []
+    const thinking = typeof message.thinking === 'string' ? message.thinking.trim() : ''
+    const fallbackText = !trimmedText && toolEvents.length > 0
+      ? buildToolEventAssistantSummary(toolEvents, { interrupted: true })
+      : ''
+    const nextText = trimmedText || fallbackText
+
+    if (!nextText && !thinking && toolEvents.length === 0) {
+      changed = true
+      continue
+    }
+
+    nextMessages.push({
+      ...message,
+      text: nextText,
+      streaming: false,
+    })
+    changed = true
+  }
+
+  if (!changed) return false
+  messages.splice(0, messages.length, ...nextMessages)
   return true
 }
 

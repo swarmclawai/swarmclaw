@@ -6,6 +6,7 @@ import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { normalizeCanvasContent, summarizeCanvasContent } from '@/lib/canvas-content'
 
 /**
  * Core Canvas Execution Logic
@@ -14,6 +15,7 @@ async function executeCanvasAction(args: Record<string, unknown>, context: { ses
   const normalized = normalizeToolInputArgs(args)
   const action = normalized.action as string
   const content = normalized.content as string | undefined
+  const document = normalized.document
   try {
     const sessionId = context.sessionId
     if (!sessionId) return 'Error: no active session for canvas.'
@@ -23,13 +25,18 @@ async function executeCanvasAction(args: Record<string, unknown>, context: { ses
     if (!session) return 'Error: session not found.'
 
     if (action === 'present') {
-      if (!content) return 'Error: content is required for present action.'
-      ;(session as Record<string, unknown>).canvasContent = content
+      const nextContent = normalizeCanvasContent(document ?? content)
+      if (!nextContent) return 'Error: content or document is required for present action.'
+      ;(session as Record<string, unknown>).canvasContent = nextContent
       session.lastActiveAt = Date.now()
       sessions[sessionId] = session
       saveSessions(sessions)
       notify(`canvas:${sessionId}`)
-      return JSON.stringify({ ok: true, action: 'present', contentLength: content.length })
+      return JSON.stringify({
+        ok: true,
+        action: 'present',
+        ...summarizeCanvasContent(nextContent),
+      })
     }
 
     if (action === 'hide') {
@@ -42,14 +49,8 @@ async function executeCanvasAction(args: Record<string, unknown>, context: { ses
     }
 
     if (action === 'snapshot') {
-      const current = (session as Record<string, unknown>).canvasContent
-      return JSON.stringify({
-        ok: true,
-        action: 'snapshot',
-        hasContent: !!current,
-        contentLength: typeof current === 'string' ? current.length : 0,
-        preview: typeof current === 'string' ? current.slice(0, 500) : null,
-      })
+      const current = normalizeCanvasContent((session as Record<string, unknown>).canvasContent)
+      return JSON.stringify({ ok: true, action: 'snapshot', ...summarizeCanvasContent(current) })
     }
 
     return `Unknown canvas action "${action}".`
@@ -73,7 +74,8 @@ const CanvasPlugin: Plugin = {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['present', 'hide', 'snapshot'] },
-          content: { type: 'string' }
+          content: { type: 'string' },
+          document: { type: 'object', additionalProperties: true },
         },
         required: ['action']
       },

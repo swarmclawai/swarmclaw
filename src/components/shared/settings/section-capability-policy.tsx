@@ -7,8 +7,10 @@ const APPROVAL_CATEGORY_OPTIONS: Array<{ id: ApprovalCategory; label: string; de
   { id: 'tool_access', label: 'Plugin Access', description: 'Auto-enable requested plugins for a chat.' },
   { id: 'plugin_scaffold', label: 'Plugin Scaffold', description: 'Auto-create plugin files requested by agents.' },
   { id: 'plugin_install', label: 'Plugin Install', description: 'Auto-install plugins from approved URLs.' },
+  { id: 'connector_sender', label: 'Connector Senders', description: 'Auto-approve new connector senders and add them to the allowlist.' },
   { id: 'human_loop', label: 'Human Approval Requests', description: 'Auto-approve ask-human approval prompts.' },
   { id: 'wallet_transfer', label: 'Wallet Transfers', description: 'Auto-approve wallet send requests. High risk.' },
+  { id: 'wallet_action', label: 'Wallet Actions', description: 'Auto-approve wallet signatures and arbitrary transaction requests. Very high risk.' },
   { id: 'task_tool', label: 'Task Tool Calls', description: 'Reserved for task-level approval flows.' },
 ]
 
@@ -93,11 +95,13 @@ export function CapabilityPolicySection({ appSettings, patchSettings, inputClass
                 </p>
               </div>
               <button
-                onClick={() => patchSettings({ approvalsEnabled: !(appSettings.approvalsEnabled ?? true) })}
-                className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${(appSettings.approvalsEnabled ?? true) ? 'bg-accent' : 'bg-white/[0.12]'}`}
+                onClick={() => patchSettings({ approvalsEnabled: !(appSettings.approvalsEnabled ?? false) })}
+                className={`inline-flex h-[22px] w-10 shrink-0 items-center rounded-full border border-white/[0.08] p-[3px] transition-colors duration-200 cursor-pointer ${
+                  (appSettings.approvalsEnabled ?? false) ? 'justify-end bg-accent' : 'justify-start bg-white/[0.16]'
+                }`}
                 aria-label="Toggle platform approvals"
               >
-                <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${(appSettings.approvalsEnabled ?? true) ? 'translate-x-[18px]' : ''}`} />
+                <span className="h-4 w-4 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.35)]" />
               </button>
             </div>
           </div>

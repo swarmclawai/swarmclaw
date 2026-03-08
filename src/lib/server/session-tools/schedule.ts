@@ -20,7 +20,12 @@ async function executeScheduleWake(args: { delayMinutes: number; message: string
 
   if (delayMinutes === 0) {
     enqueueSystemEvent(context.sessionId, `[Scheduled Wake Event / Reminder] ${message}`)
-    requestHeartbeatNow({ sessionId: context.sessionId, reason: 'scheduled_wake' })
+    requestHeartbeatNow({
+      sessionId: context.sessionId,
+      reason: 'scheduled_wake',
+      source: 'schedule_wake',
+      resumeMessage: message,
+    })
     return 'Successfully scheduled an immediate wake event.'
   }
 

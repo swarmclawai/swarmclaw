@@ -13,6 +13,7 @@ import { ChatroomPickerList } from '@/components/shared/chatroom-picker-list'
 import { SheetFooter } from '@/components/shared/sheet-footer'
 import { SectionLabel } from '@/components/shared/section-label'
 import { HintTip } from '@/components/shared/hint-tip'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { ConnectorHealth } from '@/components/connectors/connector-health'
 
@@ -53,6 +54,82 @@ interface ConnectorDoctorResponse {
   policy?: ConnectorDoctorPolicyPreview | null
 }
 
+interface ConnectorConfigOption {
+  value: string
+  label: string
+}
+
+interface ConnectorConfigField {
+  key: string
+  label: string
+  placeholder: string
+  help?: string
+  type?: 'text' | 'select' | 'tags'
+  options?: ConnectorConfigOption[]
+  emptyLabel?: string
+}
+
+const FIELD_HINTS: Record<string, string> = {
+  channelIds: "Find these in your platform's developer settings. Leave empty to allow all channels",
+  chatIds: "Find these in your platform's developer settings. Leave empty to allow all chats",
+  roomIds: 'Leave empty to allow all rooms visible to the bot',
+  spaceIds: 'Leave empty to allow all configured spaces',
+  allowedJids: 'Phone numbers in international format, or WhatsApp JIDs. Leave empty to allow all',
+  allowFrom: 'Only needed for allowlist or pairing DM policy modes',
+  scopes: 'Press Enter after each scope to add it',
+}
+
+const BOOLEAN_SELECT_OPTIONS: ConnectorConfigOption[] = [
+  { value: 'true', label: 'Enabled' },
+  { value: 'false', label: 'Disabled' },
+]
+
+const THINKING_LEVEL_OPTIONS: ConnectorConfigOption[] = [
+  { value: 'minimal', label: 'Minimal' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+]
+
+const DM_POLICY_OPTIONS: ConnectorConfigOption[] = [
+  { value: 'open', label: 'Open' },
+  { value: 'allowlist', label: 'Allowlist' },
+  { value: 'pairing', label: 'Pairing approval' },
+  { value: 'disabled', label: 'Disabled' },
+]
+
+const SESSION_SCOPE_OPTIONS: ConnectorConfigOption[] = [
+  { value: 'main', label: 'Main thread' },
+  { value: 'channel', label: 'Per channel' },
+  { value: 'peer', label: 'Per sender' },
+  { value: 'channel-peer', label: 'Per channel + sender' },
+  { value: 'thread', label: 'Per thread/topic' },
+]
+
+const REPLY_MODE_OPTIONS: ConnectorConfigOption[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'first', label: 'Reply to first inbound' },
+  { value: 'all', label: 'Reply to every inbound' },
+]
+
+const THREAD_BINDING_OPTIONS: ConnectorConfigOption[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'prefer', label: 'Prefer thread context' },
+  { value: 'strict', label: 'Require thread context' },
+]
+
+const GROUP_POLICY_OPTIONS: ConnectorConfigOption[] = [
+  { value: 'open', label: 'Open' },
+  { value: 'mention', label: 'Mention only' },
+  { value: 'reply-or-mention', label: 'Reply or mention' },
+  { value: 'disabled', label: 'Disabled' },
+]
+
+const RESET_MODE_OPTIONS: ConnectorConfigOption[] = [
+  { value: 'idle', label: 'Idle reset' },
+  { value: 'daily', label: 'Daily reset' },
+]
+
 const PLATFORMS: {
   id: ConnectorPlatform
   label: string
@@ -60,7 +137,7 @@ const PLATFORMS: {
   setupSteps: string[]
   tokenLabel: string
   tokenHelp: string
-  configFields: { key: string; label: string; placeholder: string; help?: string }[]
+  configFields: ConnectorConfigField[]
 }[] = [
   {
     id: 'discord',
@@ -77,7 +154,7 @@ const PLATFORMS: {
     tokenLabel: 'Bot Token',
     tokenHelp: 'From Discord Developer Portal > Your App > Bot > Token',
     configFields: [
-      { key: 'channelIds', label: 'Channel IDs', placeholder: '123456789,987654321', help: 'Leave empty to listen in all channels the bot can see' },
+      { key: 'channelIds', label: 'Channel IDs', placeholder: '123456789,987654321', help: 'Leave empty to listen in all channels the bot can see', type: 'tags' },
     ],
   },
   {
@@ -92,7 +169,7 @@ const PLATFORMS: {
     tokenLabel: 'Bot Token',
     tokenHelp: 'From @BotFather after creating your bot',
     configFields: [
-      { key: 'chatIds', label: 'Chat IDs', placeholder: '-100123456789', help: 'Leave empty to respond in all chats. Use negative IDs for groups.' },
+      { key: 'chatIds', label: 'Chat IDs', placeholder: '-100123456789', help: 'Leave empty to respond in all chats. Use negative IDs for groups.', type: 'tags' },
     ],
   },
   {
@@ -111,7 +188,7 @@ const PLATFORMS: {
     tokenHelp: 'From Slack App > OAuth & Permissions > Bot User OAuth Token',
     configFields: [
       { key: 'appToken', label: 'App-Level Token (xapp-...)', placeholder: 'xapp-1-...', help: 'Required for Socket Mode. From Slack App > Basic Information > App-Level Tokens' },
-      { key: 'channelIds', label: 'Channel IDs', placeholder: 'C0123456789', help: 'Leave empty to listen in all channels the bot is in' },
+      { key: 'channelIds', label: 'Channel IDs', placeholder: 'C0123456789', help: 'Leave empty to listen in all channels the bot is in', type: 'tags' },
     ],
   },
   {
@@ -127,7 +204,9 @@ const PLATFORMS: {
     tokenLabel: '',
     tokenHelp: '',
     configFields: [
-      { key: 'allowedJids', label: 'Allowed Numbers/Groups', placeholder: '1234567890,MyGroup', help: 'Leave empty to respond to all messages' },
+      { key: 'dmPolicy', label: 'DM Policy', placeholder: 'open', help: 'How new direct-message senders are handled. Leave unset to use the platform default.', type: 'select', options: DM_POLICY_OPTIONS, emptyLabel: 'Not set (default: open)' },
+      { key: 'allowFrom', label: 'Approved DM Senders', placeholder: '15551234567,447700900123', help: 'Optional allowlist used by allowlist/pairing mode.', type: 'tags' },
+      { key: 'allowedJids', label: 'Allowed Numbers/Groups', placeholder: '1234567890,MyGroup', help: 'Leave empty to respond to all messages', type: 'tags' },
       { key: 'outboundJid', label: 'Default Outbound Recipient', placeholder: '15551234567 or 15551234567@s.whatsapp.net', help: 'Used by connector_message_tool when the agent sends proactive WhatsApp updates without an explicit "to" value' },
     ],
   },
@@ -147,8 +226,8 @@ const PLATFORMS: {
       { key: 'sessionKey', label: 'Chat Key Filter', placeholder: 'main', help: 'Optional. If set, only inbound events for this OpenClaw chat are processed.' },
       { key: 'nodeId', label: 'Client Label', placeholder: 'swarmclaw', help: 'Optional display label shown in OpenClaw presence metadata.' },
       { key: 'role', label: 'Gateway Role', placeholder: 'operator', help: 'Optional role claim for connect handshake. Default is operator.' },
-      { key: 'scopes', label: 'Scopes (CSV)', placeholder: 'operator.read,operator.write', help: 'Optional comma-separated scopes for OpenClaw connect.' },
-      { key: 'tickWatchdog', label: 'Tick Watchdog', placeholder: 'true', help: 'Set false to disable stale-tick reconnect watchdog.' },
+      { key: 'scopes', label: 'Scopes (CSV)', placeholder: 'operator.read,operator.write', help: 'Optional comma-separated scopes for OpenClaw connect.', type: 'tags' },
+      { key: 'tickWatchdog', label: 'Tick Watchdog', placeholder: 'true', help: 'Enable or disable stale-tick reconnect watchdog.', type: 'select', options: BOOLEAN_SELECT_OPTIONS, emptyLabel: 'Not set (default: enabled)' },
       { key: 'tickIntervalMs', label: 'Tick Interval Override (ms)', placeholder: '30000', help: 'Optional watchdog interval override when policy tick is unavailable.' },
     ],
   },
@@ -166,9 +245,9 @@ const PLATFORMS: {
     tokenHelp: 'Server password used for /api/v1/ping and /api/v1/message/text',
     configFields: [
       { key: 'serverUrl', label: 'Server URL', placeholder: 'http://127.0.0.1:1234', help: 'BlueBubbles server URL (no trailing /api path needed)' },
-      { key: 'chatIds', label: 'Allowed Chat IDs', placeholder: 'iMessage;-;+15551234567', help: 'Optional comma-separated chat IDs/guid fragments. Leave empty for all chats.' },
-      { key: 'dmPolicy', label: 'DM Policy', placeholder: 'open | allowlist | pairing | disabled', help: 'Access policy for direct-message senders. Default: open.' },
-      { key: 'allowFrom', label: 'Allowed Sender IDs', placeholder: '+15551234567,test@example.com', help: 'Optional comma-separated sender IDs for allowlist/pairing mode.' },
+      { key: 'chatIds', label: 'Allowed Chat IDs', placeholder: 'iMessage;-;+15551234567', help: 'Optional comma-separated chat IDs/guid fragments. Leave empty for all chats.', type: 'tags' },
+      { key: 'dmPolicy', label: 'DM Policy', placeholder: 'open', help: 'Access policy for direct-message senders. Leave unset to use the platform default.', type: 'select', options: DM_POLICY_OPTIONS, emptyLabel: 'Not set (default: open)' },
+      { key: 'allowFrom', label: 'Allowed Sender IDs', placeholder: '+15551234567,test@example.com', help: 'Optional sender allowlist used by allowlist/pairing mode.', type: 'tags' },
       { key: 'outboundTarget', label: 'Default Outbound Target', placeholder: 'iMessage;-;+15551234567', help: 'Used when proactive sends omit "to".' },
       { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)' },
       { key: 'timeoutMs', label: 'Request Timeout (ms)', placeholder: '10000', help: 'Optional BlueBubbles API timeout in milliseconds.' },
@@ -188,7 +267,7 @@ const PLATFORMS: {
     tokenHelp: 'Matrix access token for the bot user',
     configFields: [
       { key: 'homeserverUrl', label: 'Homeserver URL', placeholder: 'https://matrix.org', help: 'The Matrix homeserver URL' },
-      { key: 'roomIds', label: 'Room IDs', placeholder: '!abc123:matrix.org', help: 'Comma-separated room IDs. Leave empty for all rooms.' },
+      { key: 'roomIds', label: 'Room IDs', placeholder: '!abc123:matrix.org', help: 'Comma-separated room IDs. Leave empty for all rooms.', type: 'tags' },
     ],
   },
   {
@@ -204,7 +283,7 @@ const PLATFORMS: {
     tokenLabel: 'Service Account JSON',
     tokenHelp: 'Paste the full service account JSON key file contents',
     configFields: [
-      { key: 'spaceIds', label: 'Space IDs', placeholder: 'spaces/AAAA123', help: 'Comma-separated Google Chat space IDs' },
+      { key: 'spaceIds', label: 'Space IDs', placeholder: 'spaces/AAAA123', help: 'Comma-separated Google Chat space IDs', type: 'tags' },
       { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)' },
     ],
   },
@@ -241,18 +320,21 @@ const PLATFORMS: {
     configFields: [
       { key: 'phoneNumber', label: 'Phone Number', placeholder: '+1234567890', help: 'Pre-registered Signal phone number' },
       { key: 'signalCliPath', label: 'signal-cli Path', placeholder: 'signal-cli', help: 'Path to signal-cli binary (defaults to signal-cli)' },
-      { key: 'signalCliMode', label: 'Mode', placeholder: 'stdio', help: 'stdio (default) or http' },
+      { key: 'signalCliMode', label: 'Mode', placeholder: 'stdio', help: 'How SwarmClaw talks to signal-cli.', type: 'select', options: [{ value: 'stdio', label: 'stdio' }, { value: 'http', label: 'HTTP API' }], emptyLabel: 'Not set (default: stdio)' },
       { key: 'signalCliHttpUrl', label: 'HTTP API URL', placeholder: 'http://localhost:8080', help: 'Only needed for http mode' },
     ],
   },
 ]
 
-const COMMON_CONFIG_FIELDS: { key: string; label: string; placeholder: string; help?: string }[] = [
+const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
   {
     key: 'thinkingLevel',
     label: 'Thinking Level',
     placeholder: 'minimal | low | medium | high',
     help: 'Default reasoning depth for new/reset direct connector sessions.',
+    type: 'select',
+    options: THINKING_LEVEL_OPTIONS,
+    emptyLabel: 'Not set (agent default)',
   },
   {
     key: 'providerOverride',
@@ -271,24 +353,36 @@ const COMMON_CONFIG_FIELDS: { key: string; label: string; placeholder: string; h
     label: 'Session Scope',
     placeholder: 'main | channel | peer | channel-peer | thread',
     help: 'Conversation identity policy. Defaults to channel-peer for DMs and channel for groups.',
+    type: 'select',
+    options: SESSION_SCOPE_OPTIONS,
+    emptyLabel: 'Not set (platform default)',
   },
   {
     key: 'replyMode',
     label: 'Reply Mode',
     placeholder: 'off | first | all',
     help: 'Whether outbound replies should attach to the triggering inbound message.',
+    type: 'select',
+    options: REPLY_MODE_OPTIONS,
+    emptyLabel: 'Not set (platform default)',
   },
   {
     key: 'threadBinding',
     label: 'Thread Binding',
     placeholder: 'off | prefer | strict',
     help: 'Prefer or require thread/topic-specific sessions when the platform exposes thread IDs.',
+    type: 'select',
+    options: THREAD_BINDING_OPTIONS,
+    emptyLabel: 'Not set (platform default)',
   },
   {
     key: 'groupPolicy',
     label: 'Group Policy',
     placeholder: 'open | mention | reply-or-mention | disabled',
     help: 'Controls whether the agent speaks in group chats without being mentioned or replied to.',
+    type: 'select',
+    options: GROUP_POLICY_OPTIONS,
+    emptyLabel: 'Not set (platform default)',
   },
   {
     key: 'idleTimeoutSec',
@@ -307,6 +401,9 @@ const COMMON_CONFIG_FIELDS: { key: string; label: string; placeholder: string; h
     label: 'Reset Mode',
     placeholder: 'idle | daily',
     help: 'Freshness policy for connector sessions. Daily resets use the fields below.',
+    type: 'select',
+    options: RESET_MODE_OPTIONS,
+    emptyLabel: 'Not set (default: idle)',
   },
   {
     key: 'sessionDailyResetAt',
@@ -331,18 +428,27 @@ const COMMON_CONFIG_FIELDS: { key: string; label: string; placeholder: string; h
     label: 'Status Reactions',
     placeholder: 'true | false',
     help: 'When supported, add lightweight platform-native reactions for processing/sent/silent states.',
+    type: 'select',
+    options: BOOLEAN_SELECT_OPTIONS,
+    emptyLabel: 'Not set (default: enabled)',
   },
   {
     key: 'typingIndicators',
     label: 'Typing Indicators',
     placeholder: 'true | false',
     help: 'When supported, keep a native typing/working indicator alive while the agent is running.',
+    type: 'select',
+    options: BOOLEAN_SELECT_OPTIONS,
+    emptyLabel: 'Not set (default: enabled)',
   },
   {
     key: 'taskFollowups',
     label: 'Task Follow-ups',
     placeholder: 'true | false',
     help: 'Enable automatic connector follow-up messages when this agent completes or fails a task.',
+    type: 'select',
+    options: BOOLEAN_SELECT_OPTIONS,
+    emptyLabel: 'Not set (default: enabled)',
   },
   {
     key: 'taskFollowupTemplate',
@@ -411,6 +517,9 @@ export function ConnectorSheet() {
   const [doctorWarnings, setDoctorWarnings] = useState<string[]>([])
   const [doctorPolicy, setDoctorPolicy] = useState<ConnectorDoctorPolicyPreview | null>(null)
   const [doctorLoading, setDoctorLoading] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmWhatsAppAction, setConfirmWhatsAppAction] = useState<'unlink' | 'repair' | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const editing = editingId ? connectors[editingId] as Connector | undefined : null
 
@@ -503,6 +612,9 @@ export function ConnectorSheet() {
       setDoctorWarnings([])
       setDoctorPolicy(null)
       setDoctorLoading(false)
+      setConfirmDelete(false)
+      setConfirmWhatsAppAction(null)
+      setDeleting(false)
       return
     }
     const timer = window.setTimeout(() => {
@@ -560,11 +672,37 @@ export function ConnectorSheet() {
   }
 
   const handleDelete = async () => {
-    if (!editing || !confirm('Delete this connector?')) return
-    await api('DELETE', `/connectors/${editing.id}`)
-    await loadConnectors()
-    setOpen(false)
-    setEditingId(null)
+    if (!editing) return
+    setDeleting(true)
+    try {
+      await api('DELETE', `/connectors/${editing.id}`)
+      await loadConnectors()
+      setConfirmDelete(false)
+      setOpen(false)
+      setEditingId(null)
+    } catch (err: unknown) {
+      toast.error(`Failed to delete connector: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const handleWhatsAppRepair = async (mode: 'unlink' | 'repair') => {
+    if (!editing) return
+    setActionLoading(true)
+    try {
+      await api('PUT', `/connectors/${editing.id}`, { action: 'repair' })
+      setWaAuthenticated(false)
+      setWaHasCreds(false)
+      setQrDataUrl(null)
+      setWaConnecting(true)
+      setConfirmWhatsAppAction(null)
+      await loadConnectors()
+    } catch (err: unknown) {
+      toast.error(`Failed to ${mode === 'unlink' ? 'unlink' : 're-pair'}: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   const platformConfig = ALL_PLATFORMS.find((p) => p.id === platform) || ALL_PLATFORMS[0]
@@ -572,6 +710,120 @@ export function ConnectorSheet() {
   const credList = Object.values(credentials)
 
   const inputClass = "w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface text-text text-[14px] outline-none transition-all placeholder:text-text-3/50 focus:border-white/[0.15]"
+
+  const updateConfigValue = useCallback((key: string, value: string) => {
+    setConfig((prev) => {
+      const next = { ...prev }
+      if (value.trim() === '') delete next[key]
+      else next[key] = value
+      return next
+    })
+  }, [])
+
+  const renderConfigField = useCallback((field: ConnectorConfigField) => {
+    const isTagField = field.type === 'tags'
+    if (isTagField) {
+      const tags = (config[field.key] || '').split(',').map((s) => s.trim()).filter(Boolean)
+      return (
+        <div key={field.key} className="mb-6">
+          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            {field.label} <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+            {FIELD_HINTS[field.key] && <HintTip text={FIELD_HINTS[field.key]} />}
+          </label>
+          {field.help && <p className="text-[12px] text-text-3/60 mb-2">{field.help}</p>}
+          <div className="flex flex-wrap gap-2 mb-2">
+            {tags.map((tag, i) => (
+              <span key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-accent-soft/50 border border-accent-bright/20 text-[12px] font-mono text-accent-bright">
+                {tag}
+                <button
+                  aria-label={`Remove ${tag}`}
+                  onClick={() => updateConfigValue(field.key, tags.filter((_, j) => j !== i).join(','))}
+                  className="ml-0.5 w-4 h-4 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors cursor-pointer text-accent-bright/50 hover:text-accent-bright"
+                >
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              id={`tag-input-${field.key}`}
+              placeholder={field.placeholder}
+              className={`${inputClass} font-mono text-[13px] flex-1`}
+              style={{ fontFamily: undefined }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ',') {
+                  e.preventDefault()
+                  const input = e.currentTarget
+                  const val = input.value.trim().replace(/,/g, '')
+                  if (val) {
+                    const next = tags.length > 0 ? `${tags.join(',')},${val}` : val
+                    updateConfigValue(field.key, next)
+                    input.value = ''
+                  }
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const input = document.getElementById(`tag-input-${field.key}`) as HTMLInputElement | null
+                const val = input?.value.trim().replace(/,/g, '')
+                if (val) {
+                  const next = tags.length > 0 ? `${tags.join(',')},${val}` : val
+                  updateConfigValue(field.key, next)
+                  if (input) input.value = ''
+                }
+              }}
+              className="px-4 py-2.5 rounded-[10px] bg-accent-soft/50 text-accent-bright text-[12px] font-600 hover:bg-accent-soft transition-colors cursor-pointer border border-accent-bright/20"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    if (field.type === 'select' && field.options?.length) {
+      return (
+        <div key={field.key} className="mb-6">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            {field.label} <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+          </label>
+          {field.help && <p className="text-[12px] text-text-3/60 mb-2">{field.help}</p>}
+          <select
+            value={config[field.key] || ''}
+            onChange={(e) => updateConfigValue(field.key, e.target.value)}
+            className={`${inputClass} appearance-none cursor-pointer`}
+            style={{ fontFamily: 'inherit' }}
+          >
+            <option value="">{field.emptyLabel || 'Not set'}</option>
+            {field.options.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+      )
+    }
+
+    return (
+      <div key={field.key} className="mb-6">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          {field.label} <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+        </label>
+        {field.help && <p className="text-[12px] text-text-3/60 mb-2">{field.help}</p>}
+        <input
+          value={config[field.key] || ''}
+          onChange={(e) => updateConfigValue(field.key, e.target.value)}
+          placeholder={field.placeholder}
+          className={`${inputClass} ${field.key.toLowerCase().includes('token') || field.key.toLowerCase().includes('secret') ? 'font-mono text-[13px]' : ''}`}
+          style={{ fontFamily: field.key.toLowerCase().includes('token') || field.key.toLowerCase().includes('secret') ? undefined : 'inherit' }}
+        />
+      </div>
+    )
+  }, [config, inputClass, updateConfigValue])
 
   return (
     <BottomSheet open={open} onClose={() => { setOpen(false); setEditingId(null) }} wide>
@@ -816,95 +1068,23 @@ export function ConnectorSheet() {
       )}
 
       {/* Platform-specific config */}
-      {[...platformConfig.configFields, ...COMMON_CONFIG_FIELDS].map((field) => {
-        const isTagField = field.key === 'allowedJids' || field.key === 'channelIds' || field.key === 'chatIds' || field.key === 'allowFrom'
-        const fieldHint: Record<string, string> = {
-          channelIds: "Find these in your platform's developer settings. Leave empty to allow all channels",
-          chatIds: "Find these in your platform's developer settings. Leave empty to allow all channels",
-          allowedJids: "Phone numbers in international format (e.g. 447xxx). Leave empty to allow all",
-        }
-        if (isTagField) {
-          const tags = (config[field.key] || '').split(',').map((s) => s.trim()).filter(Boolean)
-          return (
-            <div key={field.key} className="mb-6">
-              <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-                {field.label} <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
-                {fieldHint[field.key] && <HintTip text={fieldHint[field.key]} />}
-              </label>
-              {field.help && <p className="text-[12px] text-text-3/60 mb-2">{field.help}</p>}
-              <div className="flex flex-wrap gap-2 mb-2">
-                {tags.map((tag, i) => (
-                  <span key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-accent-soft/50 border border-accent-bright/20 text-[12px] font-mono text-accent-bright">
-                    {tag}
-                    <button
-                      aria-label={`Remove ${tag}`}
-                      onClick={() => {
-                        const next = tags.filter((_, j) => j !== i).join(',')
-                        setConfig({ ...config, [field.key]: next })
-                      }}
-                      className="ml-0.5 w-4 h-4 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors cursor-pointer text-accent-bright/50 hover:text-accent-bright"
-                    >
-                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  id={`tag-input-${field.key}`}
-                  placeholder={field.placeholder}
-                  className={`${inputClass} font-mono text-[13px] flex-1`}
-                  style={{ fontFamily: undefined }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ',') {
-                      e.preventDefault()
-                      const input = e.currentTarget
-                      const val = input.value.trim().replace(/,/g, '')
-                      if (val) {
-                        const next = tags.length > 0 ? `${tags.join(',')},${val}` : val
-                        setConfig({ ...config, [field.key]: next })
-                        input.value = ''
-                      }
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const input = document.getElementById(`tag-input-${field.key}`) as HTMLInputElement
-                    const val = input?.value.trim().replace(/,/g, '')
-                    if (val) {
-                      const next = tags.length > 0 ? `${tags.join(',')},${val}` : val
-                      setConfig({ ...config, [field.key]: next })
-                      input.value = ''
-                    }
-                  }}
-                  className="px-4 py-2.5 rounded-[10px] bg-accent-soft/50 text-accent-bright text-[12px] font-600 hover:bg-accent-soft transition-colors cursor-pointer border border-accent-bright/20"
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-          )
-        }
-        return (
-          <div key={field.key} className="mb-6">
-            <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-              {field.label} <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
-            </label>
-            {field.help && <p className="text-[12px] text-text-3/60 mb-2">{field.help}</p>}
-            <input
-              value={config[field.key] || ''}
-              onChange={(e) => setConfig({ ...config, [field.key]: e.target.value })}
-              placeholder={field.placeholder}
-              className={`${inputClass} font-mono text-[13px]`}
-              style={{ fontFamily: undefined }}
-            />
-          </div>
-        )
-      })}
+      {platformConfig.configFields.length > 0 && (
+        <div className="mb-2">
+          <SectionLabel>Platform Settings</SectionLabel>
+          <p className="text-[12px] text-text-3/60 mb-4">
+            Settings specific to {platformConfig.label}. Leave optional values unset unless you need to override the defaults.
+          </p>
+          {platformConfig.configFields.map((field) => renderConfigField(field))}
+        </div>
+      )}
+
+      <div className="mb-2">
+        <SectionLabel>Routing &amp; Autonomy</SectionLabel>
+        <p className="text-[12px] text-text-3/60 mb-4">
+          Conversation identity, reply behavior, reset policy, and other connector runtime overrides.
+        </p>
+        {COMMON_CONFIG_FIELDS.map((field) => renderConfigField(field))}
+      </div>
 
       {/* Start/Stop controls for editing */}
       {editing && (() => {
@@ -973,8 +1153,14 @@ export function ConnectorSheet() {
               · Thread: <span className="text-text-2">{doctorPolicy.threadBinding || 'prefer'}</span>
             </div>
             <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
-              Group: <span className="text-text-2">{doctorPolicy.groupPolicy || 'reply-or-mention'}</span>{' '}
+              DMs: <span className="text-text-2">{config.dmPolicy || 'open'}</span>{' '}
+              · Group: <span className="text-text-2">{doctorPolicy.groupPolicy || 'reply-or-mention'}</span>{' '}
               · Debounce: <span className="text-text-2">{doctorPolicy.inboundDebounceMs ?? 700}ms</span>
+            </div>
+            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
+              Allowlist: <span className="text-text-2">{config.allowFrom ? config.allowFrom.split(',').map((entry) => entry.trim()).filter(Boolean).length : 0}</span>{' '}
+              · Reactions: <span className="text-text-2">{doctorPolicy.statusReactions === false ? 'off' : 'on'}</span>{' '}
+              · Typing: <span className="text-text-2">{doctorPolicy.typingIndicators === false ? 'off' : 'on'}</span>
             </div>
             <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
               Reset: <span className="text-text-2">{doctorPolicy.resetMode || 'idle'}</span>{' '}
@@ -1007,12 +1193,6 @@ export function ConnectorSheet() {
         </p>
       </div>
 
-      {editing && (
-        <div className="mb-6 p-4 rounded-[14px] border border-white/[0.06] bg-white/[0.01]">
-          <ConnectorHealth connectorId={editing.id} />
-        </div>
-      )}
-
       {/* WhatsApp QR code */}
       {editing && editing.platform === 'whatsapp' && (editing.status === 'running' || waConnecting) && qrDataUrl && (
         <div className="mb-6 p-5 rounded-[14px] border border-white/[0.06] bg-white/[0.01] text-center"
@@ -1034,22 +1214,7 @@ export function ConnectorSheet() {
           <div className="text-[13px] font-600 text-green-400 mb-1">Connected</div>
           <p className="text-[11px] text-text-3 mb-3">WhatsApp is paired and listening for messages</p>
           <button
-            onClick={async () => {
-              if (!confirm('Unlink this device? You will need to scan a new QR code.')) return
-              setActionLoading(true)
-              try {
-                await api('PUT', `/connectors/${editing.id}`, { action: 'repair' })
-                setWaAuthenticated(false)
-                setWaHasCreds(false)
-                setQrDataUrl(null)
-                setWaConnecting(true)
-                await loadConnectors()
-              } catch (err: unknown) {
-                toast.error(`Failed to unlink: ${err instanceof Error ? err.message : String(err)}`)
-              } finally {
-                setActionLoading(false)
-              }
-            }}
+            onClick={() => setConfirmWhatsAppAction('unlink')}
             disabled={actionLoading}
             className="text-[12px] text-text-3 hover:text-red-400 transition-colors cursor-pointer bg-transparent border-none underline underline-offset-2"
             style={{ fontFamily: 'inherit' }}
@@ -1075,22 +1240,7 @@ export function ConnectorSheet() {
           </p>
           {waHasCreds && (
             <button
-              onClick={async () => {
-                if (!confirm('Force re-pair? This will clear saved credentials and show a new QR code.')) return
-                setActionLoading(true)
-                try {
-                  await api('PUT', `/connectors/${editing.id}`, { action: 'repair' })
-                  setWaAuthenticated(false)
-                  setWaHasCreds(false)
-                  setQrDataUrl(null)
-                  setWaConnecting(true)
-                  await loadConnectors()
-                } catch (err: unknown) {
-                  toast.error(`Failed to re-pair: ${err instanceof Error ? err.message : String(err)}`)
-                } finally {
-                  setActionLoading(false)
-                }
-              }}
+              onClick={() => setConfirmWhatsAppAction('repair')}
               disabled={actionLoading}
               className="mt-3 text-[12px] text-text-3 hover:text-amber-400 transition-colors cursor-pointer bg-transparent border-none underline underline-offset-2"
               style={{ fontFamily: 'inherit' }}
@@ -1123,10 +1273,49 @@ export function ConnectorSheet() {
         saveLabel={saving ? 'Saving...' : editing ? 'Save' : 'Create Connector'}
         saveDisabled={saving || (routeMode === 'agent' ? !agentId : !chatroomId)}
         left={editing && (
-          <button onClick={handleDelete} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
+          <button
+            onClick={() => setConfirmDelete(true)}
+            disabled={deleting}
+            className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ fontFamily: 'inherit' }}
+          >
             Delete
           </button>
         )}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete Connector?"
+        message={editing ? `Delete "${editing.name}"? This will stop the connector and remove its configuration from the app.` : 'Delete this connector?'}
+        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        confirmDisabled={deleting}
+        cancelDisabled={deleting}
+        danger
+        onConfirm={() => { void handleDelete() }}
+        onCancel={() => { if (!deleting) setConfirmDelete(false) }}
+      />
+      <ConfirmDialog
+        open={!!confirmWhatsAppAction}
+        title={confirmWhatsAppAction === 'unlink' ? 'Unlink Device?' : 'Force Re-pair?'}
+        message={
+          confirmWhatsAppAction === 'unlink'
+            ? 'Unlink this device? You will need to scan a new QR code.'
+            : 'Force re-pair? This will clear saved credentials and show a new QR code.'
+        }
+        confirmLabel={
+          actionLoading
+            ? confirmWhatsAppAction === 'unlink'
+              ? 'Unlinking...'
+              : 'Re-pairing...'
+            : confirmWhatsAppAction === 'unlink'
+              ? 'Unlink'
+              : 'Re-pair'
+        }
+        confirmDisabled={actionLoading}
+        cancelDisabled={actionLoading}
+        danger
+        onConfirm={() => { if (confirmWhatsAppAction) void handleWhatsAppRepair(confirmWhatsAppAction) }}
+        onCancel={() => { if (!actionLoading) setConfirmWhatsAppAction(null) }}
       />
     </BottomSheet>
   )

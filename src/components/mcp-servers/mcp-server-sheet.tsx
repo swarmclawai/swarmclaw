@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { api } from '@/lib/api-client'
 import { toast } from 'sonner'
 import type { McpServerConfig, McpTransport } from '@/types'
@@ -25,6 +26,8 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
   )
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; tools?: string[]; error?: string } | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const parseEnv = (text: string): Record<string, string> | undefined => {
     if (!text.trim()) return undefined
@@ -76,14 +79,17 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
 
   const handleDelete = async () => {
     if (!editing) return
-    if (!confirm('Delete this MCP server?')) return
+    setDeleting(true)
     try {
       await api('DELETE', `/mcp-servers/${editing.id}`)
       toast.success('MCP server deleted')
       await loadMcpServers()
+      setConfirmDelete(false)
       onClose()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete server')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -216,7 +222,7 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
 
       <div className="flex gap-3 pt-2 border-t border-white/[0.04]">
         {editing && (
-          <button onClick={handleDelete} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
+          <button onClick={() => setConfirmDelete(true)} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
             Delete
           </button>
         )}
@@ -227,6 +233,17 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
           {editing ? 'Save' : 'Create'}
         </button>
       </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete MCP Server?"
+        message={editing ? `Delete "${editing.name}"? This will remove the MCP server from the app.` : 'Delete this MCP server?'}
+        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        confirmDisabled={deleting}
+        cancelDisabled={deleting}
+        danger
+        onConfirm={() => { void handleDelete() }}
+        onCancel={() => { if (!deleting) setConfirmDelete(false) }}
+      />
     </>
   )
 }

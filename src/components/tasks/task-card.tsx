@@ -8,8 +8,8 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import type { BoardTask } from '@/types'
 
-function timeAgo(ts: number) {
-  const diff = Date.now() - ts
+function timeAgo(ts: number, now: number) {
+  const diff = now - ts
   if (diff < 60_000) return 'just now'
   if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
   if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
@@ -35,13 +35,21 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
   const [dragging, setDragging] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
   const [allowDrag, setAllowDrag] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const isCoarsePointer = typeof window.matchMedia === 'function'
-      ? window.matchMedia('(pointer: coarse)').matches
-      : 'ontouchstart' in window
-    setAllowDrag(!isCoarsePointer)
+    const frame = window.requestAnimationFrame(() => {
+      const isCoarsePointer = typeof window.matchMedia === 'function'
+        ? window.matchMedia('(pointer: coarse)').matches
+        : 'ontouchstart' in window
+      setAllowDrag(!isCoarsePointer)
+    })
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearInterval(timer)
+    }
   }, [])
 
   const tasks = useAppStore((s) => s.tasks)
@@ -49,6 +57,7 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
   const project = task.projectId ? projects[task.projectId] : null
   const creatorAgent = task.createdByAgentId ? agents[task.createdByAgentId] : null
   const delegatorAgent = task.delegatedByAgentId ? agents[task.delegatedByAgentId] : null
+  const githubSource = task.externalSource?.source === 'github' ? task.externalSource : null
 
   const priorityConfig = {
     critical: { label: 'Critical', cls: 'bg-red-500/10 text-red-400' },
@@ -59,7 +68,7 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
   const prio = task.priority && priorityConfig[task.priority]
 
   const isBlocked = Array.isArray(task.blockedBy) && task.blockedBy.length > 0
-  const isOverdue = task.dueAt && task.dueAt < Date.now() && task.status !== 'completed' && task.status !== 'archived'
+  const isOverdue = task.dueAt && task.dueAt < now && task.status !== 'completed' && task.status !== 'archived'
   const borderColor = isBlocked ? 'border-l-rose-500'
     : task.pendingApproval ? 'border-l-amber-500'
     : task.status === 'running' ? 'border-l-emerald-500'
@@ -210,7 +219,7 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
         </div>
       )}
 
-      {(creatorAgent || delegatorAgent || task.sourceType === 'schedule') && (
+      {(creatorAgent || delegatorAgent || task.sourceType === 'schedule' || githubSource) && (
         <div className="flex flex-wrap gap-1.5 mb-3">
           {delegatorAgent && (
             <span className="inline-flex items-center gap-1.5 rounded-[7px] bg-amber-500/10 px-2 py-1 text-[10px] font-600 text-amber-300">
@@ -233,6 +242,26 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
               {task.sourceScheduleName ? `Scheduled via ${task.sourceScheduleName}` : 'Scheduled task'}
             </span>
           )}
+          {githubSource && (
+            githubSource.url ? (
+              <a
+                href={githubSource.url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1.5 rounded-[7px] bg-sky-500/10 px-2 py-1 text-[10px] font-600 text-sky-300 hover:bg-sky-500/15"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className="shrink-0">
+                  <path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.9c.57.1.78-.25.78-.55 0-.27-.01-1.17-.02-2.13-3.2.69-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.27 1.18-3.07-.12-.29-.51-1.45.11-3.02 0 0 .96-.31 3.15 1.17a10.9 10.9 0 0 1 5.73 0c2.18-1.48 3.14-1.17 3.14-1.17.63 1.57.24 2.73.12 3.02.74.8 1.18 1.82 1.18 3.07 0 4.41-2.7 5.38-5.27 5.66.42.36.78 1.06.78 2.14 0 1.55-.01 2.79-.01 3.17 0 .31.2.66.79.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
+                </svg>
+                {githubSource.repo ? `${githubSource.repo}#${githubSource.number}` : `GitHub #${githubSource.number ?? githubSource.id}`}
+              </a>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-[7px] bg-sky-500/10 px-2 py-1 text-[10px] font-600 text-sky-300">
+                GitHub {githubSource.repo ? `${githubSource.repo}#${githubSource.number}` : `#${githubSource.number ?? githubSource.id}`}
+              </span>
+            )
+          )}
         </div>
       )}
 
@@ -248,7 +277,7 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
             {project.name}
           </span>
         )}
-        <span className="text-[11px] text-text-3">{timeAgo(task.updatedAt)}</span>
+        <span className="text-[11px] text-text-3">{timeAgo(task.updatedAt, now)}</span>
         {task.comments && task.comments.length > 0 && (
           <span className="flex items-center gap-1 text-[11px] text-text-3">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-3/60">

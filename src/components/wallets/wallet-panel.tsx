@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { api } from '@/lib/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { useAppStore } from '@/stores/use-app-store'
@@ -8,9 +8,47 @@ import { useWs } from '@/hooks/use-ws'
 import { WalletApprovalDialog } from './wallet-approval-dialog'
 import { AgentPickerList } from '@/components/shared/agent-picker-list'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
-import type { AgentWallet, WalletTransaction, WalletBalanceSnapshot, Agent } from '@/types'
+import type { AgentWallet, WalletTransaction, WalletBalanceSnapshot, WalletAssetBalance, WalletPortfolioSummary, Agent, WalletChain } from '@/types'
+import {
+  SUPPORTED_WALLET_CHAINS,
+  formatWalletAmount,
+  getWalletAssetSymbol,
+  getWalletAtomicAmount,
+  getWalletBalanceAtomic,
+  getWalletChainMeta,
+  getWalletLimitAtomic,
+  parseDisplayAmountToAtomic,
+} from '@/lib/wallet'
+import { type WalletTransactionFilter, filterWalletTransactions, getWalletTransactionStatusGroup } from '@/lib/wallet-transactions'
+import { toast } from 'sonner'
 
-type SafeWallet = Omit<AgentWallet, 'encryptedPrivateKey'> & { balanceLamports?: number; balanceSol?: number }
+type SafeWallet = Omit<AgentWallet, 'encryptedPrivateKey'> & {
+  balanceAtomic?: string
+  balanceLamports?: number
+  balanceFormatted?: string
+  balanceSymbol?: string
+  assets?: WalletAssetBalance[]
+  portfolioSummary?: WalletPortfolioSummary
+  isActive?: boolean
+}
+
+function getAgentWalletIds(agent: Agent | undefined | null): string[] {
+  const ids = Array.isArray(agent?.walletIds)
+    ? agent.walletIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    : []
+  const legacy = typeof agent?.walletId === 'string' && agent.walletId.trim()
+    ? [agent.walletId.trim()]
+    : []
+  return [...new Set([...ids, ...legacy])]
+}
+
+function getAgentActiveWalletId(agent: Agent | undefined | null, fallbackWallets: SafeWallet[] = []): string | null {
+  const walletIds = getAgentWalletIds(agent)
+  if (typeof agent?.activeWalletId === 'string' && walletIds.includes(agent.activeWalletId)) return agent.activeWalletId
+  if (typeof agent?.walletId === 'string' && walletIds.includes(agent.walletId)) return agent.walletId
+  const activeWallet = fallbackWallets.find((wallet) => wallet.isActive)
+  return activeWallet?.id || fallbackWallets[0]?.id || walletIds[0] || null
+}
 
 function SolanaIcon({ size = 12, className = '', shimmer = false }: { size?: number; className?: string; shimmer?: boolean }) {
   return (
@@ -33,6 +71,45 @@ function SolanaIcon({ size = 12, className = '', shimmer = false }: { size?: num
   )
 }
 
+function EthereumIcon({ size = 12, className = '', shimmer = false }: { size?: number; className?: string; shimmer?: boolean }) {
+  return (
+    <div className={`relative flex items-center justify-center ${className}`}>
+      <svg width={size} height={size} viewBox="0 0 256 417" className="relative z-10" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M127.6 0L124.8 9.5V279.1L127.6 281.9L255.2 208.3L127.6 0Z" fill="#8A92B2" />
+        <path d="M127.6 0L0 208.3L127.6 281.9V151.1V0Z" fill="#62688F" />
+        <path d="M127.6 306.1L126 308V416.9L127.6 421.6L255.3 232.6L127.6 306.1Z" fill="#8A92B2" />
+        <path d="M127.6 421.6V306.1L0 232.6L127.6 421.6Z" fill="#62688F" />
+        <path d="M127.6 281.9L255.2 208.3L127.6 151.1V281.9Z" fill="#454A75" />
+        <path d="M0 208.3L127.6 281.9V151.1L0 208.3Z" fill="#8A92B2" />
+      </svg>
+      {shimmer && (
+        <div className="absolute inset-0 bg-sky-400/20 blur-md rounded-full animate-pulse" />
+      )}
+    </div>
+  )
+}
+
+function ChainIcon({ chain, size = 12, className = '', shimmer = false }: { chain: WalletChain; size?: number; className?: string; shimmer?: boolean }) {
+  if (chain === 'ethereum') return <EthereumIcon size={size} className={className} shimmer={shimmer} />
+  return <SolanaIcon size={size} className={className} shimmer={shimmer} />
+}
+
+function walletBalanceLabel(wallet: SafeWallet): string {
+  return wallet.balanceFormatted || formatWalletAmount(wallet.chain, getWalletBalanceAtomic(wallet), { minFractionDigits: 3, maxFractionDigits: 6 })
+}
+
+function walletAssetCountLabel(wallet: SafeWallet): string | null {
+  const count = wallet.portfolioSummary?.nonZeroAssets
+  if (!count) return null
+  return `${count} asset${count === 1 ? '' : 's'}`
+}
+
+function suggestCreateChain(wallets: SafeWallet[], agentId?: string | null): WalletChain {
+  if (!agentId) return 'solana'
+  const connectedChains = new Set(wallets.filter((wallet) => wallet.agentId === agentId).map((wallet) => wallet.chain))
+  return SUPPORTED_WALLET_CHAINS.find((chain) => !connectedChains.has(chain)) || 'solana'
+}
+
 export function WalletPanel() {
   const agents = useAppStore((s) => s.agents)
   const walletPanelAgentId = useAppStore((s) => s.walletPanelAgentId)
@@ -45,7 +122,11 @@ export function WalletPanel() {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([])
   const [balanceHistory, setBalanceHistory] = useState<WalletBalanceSnapshot[]>([])
   const [loading, setLoading] = useState(true)
+  const [transactionsLoading, setTransactionsLoading] = useState(false)
   const [pendingApproval, setPendingApproval] = useState<WalletTransaction | null>(null)
+  const [transactionFilter, setTransactionFilter] = useState<WalletTransactionFilter>('all')
+  const [transactionQuery, setTransactionQuery] = useState('')
+  const detailRequestRef = useRef(0)
 
   // Settings edit state
   const [editingLimits, setEditingLimits] = useState(false)
@@ -55,6 +136,7 @@ export function WalletPanel() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [settingDefault, setSettingDefault] = useState(false)
   const [reassigning, setReassigning] = useState(false)
   const [reassignSaving, setReassignSaving] = useState(false)
   const [reassignError, setReassignError] = useState('')
@@ -62,6 +144,7 @@ export function WalletPanel() {
   // Create wallet state
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [createAgentId, setCreateAgentId] = useState('')
+  const [createChain, setCreateChain] = useState<WalletChain>('solana')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
 
@@ -71,7 +154,8 @@ export function WalletPanel() {
       setWallets(data)
 
       if (!walletPanelAgentId && !selectedWalletId && Object.keys(data).length > 0) {
-        setSelectedWalletId(Object.keys(data)[0])
+        const defaultWallet = Object.values(data).find((wallet) => wallet.isActive) || Object.values(data)[0]
+        if (defaultWallet) setSelectedWalletId(defaultWallet.id)
       }
     } catch { /* ignore */ }
     setLoading(false)
@@ -79,70 +163,116 @@ export function WalletPanel() {
   }, [walletPanelAgentId])
 
   useEffect(() => { loadWallets() }, [loadWallets])
-  useWs('wallets', loadWallets, 15000)
 
+  // Sync wallet selection when agent panel changes
   useEffect(() => {
     if (!walletPanelAgentId) return
-    const match = Object.values(wallets).find((wallet) => wallet.agentId === walletPanelAgentId)
+    const agentWallets = Object.values(wallets).filter((wallet) => wallet.agentId === walletPanelAgentId)
+    const selectedAgentWallet = selectedWalletId
+      ? agentWallets.find((wallet) => wallet.id === selectedWalletId) || null
+      : null
+    if (selectedAgentWallet) {
+      setShowCreateForm(false)
+      setCreateError('')
+      setCreateAgentId(walletPanelAgentId)
+      return
+    }
+    const activeWalletId = getAgentActiveWalletId(agents[walletPanelAgentId] as Agent | undefined, agentWallets)
+    const match = agentWallets.find((wallet) => wallet.id === activeWalletId) || agentWallets[0]
     if (match) {
       setSelectedWalletId(match.id)
       setShowCreateForm(false)
       setCreateError('')
+      setCreateAgentId(walletPanelAgentId)
       return
     }
     if (!agents[walletPanelAgentId]) return
     setSelectedWalletId(null)
     setShowCreateForm(true)
     setCreateAgentId(walletPanelAgentId)
+    setCreateChain(suggestCreateChain(Object.values(wallets), walletPanelAgentId))
     setCreateError('')
-  }, [agents, walletPanelAgentId, wallets])
+  }, [agents, selectedWalletId, walletPanelAgentId, wallets])
 
   // Load detail when wallet selected
   const selectedWallet = selectedWalletId ? wallets[selectedWalletId] : null
 
-  const loadDetail = useCallback(async () => {
-    if (!selectedWalletId) return
-    try {
-      const [detail, txs, history] = await Promise.all([
-        api<SafeWallet>('GET', `/wallets/${selectedWalletId}`),
-        api<WalletTransaction[]>('GET', `/wallets/${selectedWalletId}/transactions`),
-        api<WalletBalanceSnapshot[]>('GET', `/wallets/${selectedWalletId}/balance-history`),
-      ])
-      setWallets((prev) => ({ ...prev, [selectedWalletId]: detail }))
-      setTransactions(txs)
-      setBalanceHistory(history)
+  const loadDetail = useCallback(async (walletId = selectedWalletId) => {
+    if (!walletId) return
+    const requestId = ++detailRequestRef.current
+    setTransactionsLoading(true)
+    const [detailResult, txResult, historyResult] = await Promise.allSettled([
+      api<SafeWallet>('GET', `/wallets/${walletId}`),
+      api<WalletTransaction[]>('GET', `/wallets/${walletId}/transactions`),
+      api<WalletBalanceSnapshot[]>('GET', `/wallets/${walletId}/balance-history`),
+    ])
+    if (detailRequestRef.current !== requestId) return
 
-      // Check for pending approvals
-      const pending = txs.find((tx) => tx.status === 'pending_approval')
-      if (pending) setPendingApproval(pending)
-    } catch { /* ignore */ }
+    if (detailResult.status === 'fulfilled') {
+      setWallets((prev) => ({ ...prev, [walletId]: detailResult.value }))
+    }
+    if (txResult.status === 'fulfilled') {
+      setTransactions(txResult.value)
+      const pending = txResult.value.find((tx) => tx.status === 'pending_approval')
+      setPendingApproval(pending || null)
+    }
+    if (historyResult.status === 'fulfilled') {
+      setBalanceHistory(historyResult.value)
+    }
+    setTransactionsLoading(false)
   }, [selectedWalletId])
 
   useEffect(() => { loadDetail() }, [loadDetail])
 
+  const refreshWalletData = useCallback(async () => {
+    await loadWallets()
+    if (selectedWalletId) {
+      await loadDetail(selectedWalletId)
+    }
+  }, [loadDetail, loadWallets, selectedWalletId])
+
+  useWs('wallets', refreshWalletData, 15000)
+
   // Initialize limits when wallet selected
   useEffect(() => {
     if (selectedWallet) {
-      setPerTxLimit(String((selectedWallet.spendingLimitLamports ?? 100_000_000) / 1e9))
-      setDailyLimit(String((selectedWallet.dailyLimitLamports ?? 1_000_000_000) / 1e9))
+      setPerTxLimit(formatWalletAmount(selectedWallet.chain, getWalletLimitAtomic(selectedWallet, 'perTx'), { maxFractionDigits: 6 }))
+      setDailyLimit(formatWalletAmount(selectedWallet.chain, getWalletLimitAtomic(selectedWallet, 'daily'), { maxFractionDigits: 6 }))
       setRequireApproval(selectedWallet.requireApproval)
     }
   }, [selectedWallet])
 
   const saveLimits = useCallback(async () => {
-    if (!selectedWalletId) return
+    if (!selectedWalletId || !selectedWallet) return
     setSaving(true)
     try {
+      const spendingLimitAtomic = parseDisplayAmountToAtomic(perTxLimit || '0', getWalletChainMeta(selectedWallet.chain).decimals)
+      const dailyLimitAtomic = parseDisplayAmountToAtomic(dailyLimit || '0', getWalletChainMeta(selectedWallet.chain).decimals)
       await api('PATCH', `/wallets/${selectedWalletId}`, {
-        spendingLimitLamports: Math.round(parseFloat(perTxLimit || '0.1') * 1e9),
-        dailyLimitLamports: Math.round(parseFloat(dailyLimit || '1') * 1e9),
+        spendingLimitAtomic,
+        dailyLimitAtomic,
         requireApproval,
       })
       setEditingLimits(false)
       loadDetail()
-    } catch { /* ignore */ }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }
     setSaving(false)
-  }, [selectedWalletId, perTxLimit, dailyLimit, requireApproval, loadDetail])
+  }, [selectedWalletId, selectedWallet, perTxLimit, dailyLimit, requireApproval, loadDetail])
+
+  const setDefaultWallet = useCallback(async () => {
+    if (!selectedWalletId) return
+    setSettingDefault(true)
+    try {
+      await api('PATCH', `/wallets/${selectedWalletId}`, { makeActive: true })
+      toast.success('Default wallet updated')
+      loadWallets()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }
+    setSettingDefault(false)
+  }, [selectedWalletId, loadWallets])
 
   const handleDelete = useCallback(async () => {
     if (!selectedWalletId) return
@@ -165,25 +295,42 @@ export function WalletPanel() {
     setTimeout(() => setCopied(false), 2000)
   }, [selectedWallet])
 
-  const agentsWithoutWallets = useMemo(() => {
-    const walletAgentIds = new Set(Object.values(wallets).map((w) => w.agentId))
-    return Object.values(agents).filter((a) => !walletAgentIds.has(a.id)) as Agent[]
+  const agentsMissingSelectedChain = useMemo(() => {
+    return Object.values(agents).filter((agent) => !Object.values(wallets).some((wallet) => wallet.agentId === agent.id && wallet.chain === createChain)) as Agent[]
+  }, [agents, createChain, wallets])
+
+  const canCreateMoreWallets = useMemo(() => {
+    return Object.values(agents).some((agent) =>
+      SUPPORTED_WALLET_CHAINS.some((chain) => !Object.values(wallets).some((wallet) => wallet.agentId === agent.id && wallet.chain === chain)),
+    )
   }, [agents, wallets])
+
+  useEffect(() => {
+    if (!createAgentId) return
+    if (agentsMissingSelectedChain.some((agent) => agent.id === createAgentId)) return
+    setCreateAgentId('')
+  }, [agentsMissingSelectedChain, createAgentId])
 
   const createWallet = useCallback(async () => {
     if (!createAgentId) return
     setCreating(true)
     setCreateError('')
     try {
-      await api('POST', '/wallets', { agentId: createAgentId })
+      await api('POST', '/wallets', { agentId: createAgentId, chain: createChain })
       setShowCreateForm(false)
       setCreateAgentId('')
+      setCreateChain('solana')
       loadWallets()
     } catch (err: unknown) {
       setCreateError(err instanceof Error ? err.message : String(err))
     }
     setCreating(false)
-  }, [createAgentId, loadWallets])
+  }, [createAgentId, createChain, loadWallets])
+
+  const filteredTransactions = useMemo(
+    () => filterWalletTransactions(transactions, { filter: transactionFilter, query: transactionQuery }),
+    [transactionFilter, transactionQuery, transactions],
+  )
 
   if (loading) {
     return (
@@ -193,7 +340,31 @@ export function WalletPanel() {
     )
   }
 
-  const walletList = Object.values(wallets)
+  const walletList = Object.values(wallets).sort((a, b) => {
+    const aAgent = agents[a.agentId] as Agent | undefined
+    const bAgent = agents[b.agentId] as Agent | undefined
+    const aActive = a.isActive === true || getAgentActiveWalletId(aAgent, [a]) === a.id
+    const bActive = b.isActive === true || getAgentActiveWalletId(bAgent, [b]) === b.id
+    if (a.agentId === b.agentId && aActive !== bActive) return aActive ? -1 : 1
+    const agentCompare = (aAgent?.name || a.agentId).localeCompare(bAgent?.name || b.agentId)
+    if (agentCompare !== 0) return agentCompare
+    return a.chain.localeCompare(b.chain)
+  })
+  const selectedWalletMeta = selectedWallet ? getWalletChainMeta(selectedWallet.chain) : null
+  const selectedWalletSymbol = selectedWallet ? getWalletAssetSymbol(selectedWallet.chain) : null
+  const selectedWalletBalance = selectedWallet ? walletBalanceLabel(selectedWallet) : null
+  const selectedWalletAssets = (selectedWallet?.assets || []).filter((asset) => BigInt(asset.balanceAtomic) > BigInt(0))
+  const selectedAgent = selectedWallet ? agents[selectedWallet.agentId] as Agent | undefined : undefined
+  const selectedAgentWallets = selectedWallet
+    ? walletList.filter((wallet) => wallet.agentId === selectedWallet.agentId)
+    : []
+  const selectedAgentActiveWalletId = getAgentActiveWalletId(selectedAgent, selectedAgentWallets)
+  const reassignCandidates = selectedWallet
+    ? (Object.values(agents).filter((agent) => (
+        agent.id !== selectedWallet.agentId
+        && !walletList.some((wallet) => wallet.agentId === agent.id && wallet.chain === selectedWallet.chain)
+      )) as Agent[])
+    : []
 
   if (walletList.length === 0) {
     return (
@@ -203,14 +374,23 @@ export function WalletPanel() {
             <rect x="2" y="6" width="20" height="14" rx="2" /><path d="M22 10H18a2 2 0 0 0 0 4h4" /><path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
           </svg>
           <h3 className="font-display text-[14px] font-600 text-text-2 mb-2">No wallets yet</h3>
-          {agentsWithoutWallets.length > 0 ? (
+          {agentsMissingSelectedChain.length > 0 ? (
             <div className="mt-4 space-y-3">
               <AgentPickerList
-                agents={agentsWithoutWallets}
+                agents={agentsMissingSelectedChain}
                 selected={createAgentId}
                 onSelect={(id) => setCreateAgentId(id === createAgentId ? '' : id)}
                 maxHeight={180}
               />
+              <select
+                value={createChain}
+                onChange={(e) => setCreateChain(e.target.value as WalletChain)}
+                className="w-full px-3 py-2 rounded-[8px] border border-white/[0.08] bg-surface text-[12px] text-text-1 outline-none focus:border-accent/40"
+                style={{ fontFamily: 'inherit' }}
+              >
+                <option value="solana">Solana</option>
+                <option value="ethereum">Ethereum (EVM)</option>
+              </select>
               <button
                 type="button"
                 onClick={createWallet}
@@ -224,7 +404,7 @@ export function WalletPanel() {
             </div>
           ) : (
             <p className="text-[12px] text-text-3/60">
-              All agents already have wallets.
+              Every agent already has a {getWalletChainMeta(createChain).label} wallet.
             </p>
           )}
         </div>
@@ -240,10 +420,15 @@ export function WalletPanel() {
           <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] flex-1">Wallets</h2>
           <button
             type="button"
-            onClick={() => { setShowCreateForm(!showCreateForm); setCreateAgentId(''); setCreateError('') }}
-            disabled={agentsWithoutWallets.length === 0}
+            onClick={() => {
+              setShowCreateForm(!showCreateForm)
+              setCreateAgentId(walletPanelAgentId || '')
+              setCreateChain(suggestCreateChain(walletList, walletPanelAgentId))
+              setCreateError('')
+            }}
+            disabled={!canCreateMoreWallets}
             className="w-6 h-6 rounded-[6px] flex items-center justify-center text-text-3/50 hover:text-text-2 hover:bg-white/[0.06] transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-default"
-            title={agentsWithoutWallets.length === 0 ? 'All agents have wallets' : 'Create wallet'}
+            title={canCreateMoreWallets ? 'Create wallet' : 'Every agent already has both wallet types'}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -255,11 +440,20 @@ export function WalletPanel() {
             <div className="mx-1 mb-2 p-2.5 rounded-[8px] border border-accent/20 bg-accent-soft/10 space-y-2"
               style={{ animation: 'spring-in 0.4s var(--ease-spring)' }}>
               <AgentPickerList
-                agents={agentsWithoutWallets}
+                agents={agentsMissingSelectedChain}
                 selected={createAgentId}
                 onSelect={(id) => setCreateAgentId(id === createAgentId ? '' : id)}
                 maxHeight={160}
               />
+              <select
+                value={createChain}
+                onChange={(e) => setCreateChain(e.target.value as WalletChain)}
+                className="w-full px-2 py-1.5 rounded-[6px] border border-white/[0.08] bg-surface text-[10px] text-text-1 outline-none focus:border-accent/40"
+                style={{ fontFamily: 'inherit' }}
+              >
+                <option value="solana">Solana</option>
+                <option value="ethereum">Ethereum (EVM)</option>
+              </select>
               <div className="flex gap-1.5">
                 <button
                   type="button"
@@ -284,6 +478,7 @@ export function WalletPanel() {
           )}
           {walletList.map((w, idx) => {
             const a = agents[w.agentId] as Agent | undefined
+            const isActive = w.isActive === true || getAgentActiveWalletId(a, walletList.filter((wallet) => wallet.agentId === w.agentId)) === w.id
             return (
               <button
                 key={w.id}
@@ -298,13 +493,19 @@ export function WalletPanel() {
               >
                 <AgentAvatar seed={a?.avatarSeed || null} avatarUrl={a?.avatarUrl} name={a?.name || '?'} size={28} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-600 truncate">{a?.name || w.agentId}</div>
-                  <div className="text-[10px] text-text-3/50 font-mono truncate mt-0.5 flex items-center gap-1">
-                    {w.chain === 'solana' && <SolanaIcon size={9} className="shrink-0 opacity-50" />}
-                    <span className="truncate">{w.publicKey.slice(0, 8)}...{w.publicKey.slice(-4)}</span>
-                    {typeof w.balanceSol === 'number' && (
-                      <span className="text-text-3/40">{w.balanceSol.toFixed(3)} SOL</span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="text-[12px] font-600 truncate">{a?.name || w.agentId}</div>
+                    {isActive && (
+                      <span className="shrink-0 px-1 py-0.5 rounded-[999px] bg-accent-soft/40 text-accent-bright text-[8px] font-700 uppercase tracking-wide">
+                        Default
+                      </span>
                     )}
+                  </div>
+                  <div className="text-[10px] text-text-3/50 font-mono truncate mt-0.5 flex items-center gap-1">
+                    <ChainIcon chain={w.chain} size={9} className="shrink-0 opacity-50" />
+                    <span className="truncate">{w.publicKey.slice(0, 8)}...{w.publicKey.slice(-4)}</span>
+                    <span className="text-text-3/40">{walletBalanceLabel(w)} {getWalletAssetSymbol(w.chain)}</span>
+                    {walletAssetCountLabel(w) && <span className="text-text-3/35">{walletAssetCountLabel(w)}</span>}
                   </div>
                 </div>
               </button>
@@ -328,6 +529,49 @@ export function WalletPanel() {
             </p>
           </div>
 
+          {selectedAgentWallets.length > 1 && (
+            <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface-2/50"
+              style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.03s both' }}>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600">Combined Wallet Stats</div>
+                  <p className="text-[12px] text-text-3/70 mt-1">
+                    {selectedAgentWallets.length} wallets connected for this agent. Pick a wallet in the sidebar for chain-specific history and controls.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-[18px] font-600 text-text-1">{selectedAgentWallets.length}</div>
+                  <div className="text-[10px] uppercase tracking-wide text-text-3/50">Wallets</div>
+                </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                {selectedAgentWallets.map((wallet) => (
+                  <div key={wallet.id} className="rounded-[10px] border border-white/[0.06] bg-black/10 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-text-3/60 uppercase tracking-wide font-600">
+                        {getWalletChainMeta(wallet.chain).label}
+                      </span>
+                      {(wallet.id === selectedAgentActiveWalletId || wallet.isActive) && (
+                        <span className="px-1.5 py-0.5 rounded-[999px] bg-accent-soft/40 text-accent-bright text-[8px] font-700 uppercase tracking-wide">
+                          Default
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[14px] font-600 text-text-1">
+                      {walletBalanceLabel(wallet)} {getWalletAssetSymbol(wallet.chain)}
+                    </div>
+                    {wallet.portfolioSummary?.nonZeroAssets ? (
+                      <div className="mt-1 text-[10px] text-text-3/55">
+                        {wallet.portfolioSummary.nonZeroAssets} detected asset{wallet.portfolioSummary.nonZeroAssets === 1 ? '' : 's'}
+                      </div>
+                    ) : null}
+                    <div className="mt-1 text-[10px] text-text-3/55 font-mono truncate">{wallet.publicKey}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Agent & Address */}
           <div style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.05s both' }}>
             <div className="flex items-center gap-2 mb-2">
@@ -349,9 +593,14 @@ export function WalletPanel() {
                 )
               })()}
               <span className="inline-flex items-center gap-1 text-[11px] text-text-3/40 uppercase tracking-wide font-600">
-                {selectedWallet.chain === 'solana' && <SolanaIcon size={11} />}
+                <ChainIcon chain={selectedWallet.chain} size={11} />
                 {selectedWallet.chain}
               </span>
+              {(selectedWallet.id === selectedAgentActiveWalletId || selectedWallet.isActive) && (
+                <span className="px-1.5 py-0.5 rounded-[999px] bg-accent-soft/40 text-accent-bright text-[9px] font-700 uppercase tracking-wide">
+                  Default
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => { setReassigning(!reassigning); setReassignError('') }}
@@ -360,27 +609,44 @@ export function WalletPanel() {
               >
                 {reassigning ? 'Cancel' : 'Reassign'}
               </button>
+              {selectedWallet.id !== selectedAgentActiveWalletId && !selectedWallet.isActive && (
+                <button
+                  type="button"
+                  onClick={setDefaultWallet}
+                  disabled={settingDefault}
+                  className="text-[10px] text-accent-bright hover:text-white transition-colors cursor-pointer bg-transparent border border-accent-bright/20 px-1.5 py-0.5 rounded-[5px] hover:bg-accent/20 disabled:opacity-50"
+                  style={{ fontFamily: 'inherit' }}
+                >
+                  {settingDefault ? 'Setting...' : 'Set Default'}
+                </button>
+              )}
             </div>
             {reassigning && (
               <div className="mb-2 space-y-2" style={{ animation: 'spring-in 0.4s var(--ease-spring)' }}>
                 <p className="text-[11px] text-text-3/60">Select a new agent to control this wallet:</p>
-                <AgentPickerList
-                  agents={agentsWithoutWallets}
-                  selected=""
-                  onSelect={async (agentId) => {
-                    setReassignSaving(true)
-                    setReassignError('')
-                    try {
-                      await api('PATCH', `/wallets/${selectedWallet.id}`, { agentId })
-                      setReassigning(false)
-                      loadWallets()
-                    } catch (err: unknown) {
-                      setReassignError(err instanceof Error ? err.message : String(err) || 'Reassign failed')
-                    }
-                    setReassignSaving(false)
-                  }}
-                  maxHeight={160}
-                />
+                {reassignCandidates.length > 0 ? (
+                  <AgentPickerList
+                    agents={reassignCandidates}
+                    selected=""
+                    onSelect={async (agentId) => {
+                      setReassignSaving(true)
+                      setReassignError('')
+                      try {
+                        await api('PATCH', `/wallets/${selectedWallet.id}`, { agentId })
+                        setReassigning(false)
+                        loadWallets()
+                      } catch (err: unknown) {
+                        setReassignError(err instanceof Error ? err.message : String(err) || 'Reassign failed')
+                      }
+                      setReassignSaving(false)
+                    }}
+                    maxHeight={160}
+                  />
+                ) : (
+                  <p className="text-[10px] text-text-3/50">
+                    No other agents can take this {selectedWallet.chain} wallet right now.
+                  </p>
+                )}
                 {reassignSaving && <p className="text-[10px] text-text-3/50">Reassigning...</p>}
                 {reassignError && <p className="text-[10px] text-red-400">{reassignError}</p>}
               </div>
@@ -406,21 +672,61 @@ export function WalletPanel() {
             <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600 mb-2">Balance</div>
             <div className="flex items-baseline gap-3">
               <div className="text-[28px] font-600 text-text-1 tracking-tight">
-                {(selectedWallet.balanceSol ?? 0).toFixed(4)} <span className="text-[14px] text-text-3/60 font-mono">SOL</span>
+                {selectedWalletBalance} <span className="text-[14px] text-text-3/60 font-mono">{selectedWalletSymbol}</span>
               </div>
-              {selectedWallet.chain === 'solana' && (
-                <SolanaIcon size={16} shimmer className="opacity-80" />
-              )}
+              <ChainIcon chain={selectedWallet.chain} size={16} shimmer className="opacity-80" />
             </div>
+            <div className="mt-2 text-[11px] text-text-3/60">
+              {selectedWallet.portfolioSummary?.nonZeroAssets
+                ? `${selectedWallet.portfolioSummary.nonZeroAssets} funded asset${selectedWallet.portfolioSummary.nonZeroAssets === 1 ? '' : 's'} across ${Math.max(selectedWallet.portfolioSummary.networkCount, 1)} network${selectedWallet.portfolioSummary.networkCount === 1 ? '' : 's'}`
+                : 'No funded assets detected yet.'}
+            </div>
+          </div>
+
+          <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface-2/50"
+            style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.13s both' }}>
+            <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600 mb-3">Detected Assets</div>
+            {selectedWalletAssets.length === 0 ? (
+              <p className="text-[12px] text-text-3/55">No funded token or native balances detected yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {selectedWalletAssets.map((asset) => (
+                  <div key={asset.id} className="flex items-center justify-between gap-3 rounded-[10px] border border-white/[0.06] bg-black/10 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[12px] font-600 text-text-1 truncate">{asset.symbol}</span>
+                        <span className="text-[10px] text-text-3/55 uppercase tracking-wide">{asset.networkLabel}</span>
+                        {asset.isNative && (
+                          <span className="px-1.5 py-0.5 rounded-[999px] bg-accent-soft/30 text-accent-bright text-[8px] font-700 uppercase tracking-wide">
+                            Gas
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-text-3/55 truncate">{asset.name || asset.symbol}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[12px] font-600 text-text-1">{asset.balanceDisplay || asset.balanceFormatted || asset.balanceAtomic}</div>
+                      {asset.contractAddress && (
+                        <div className="text-[10px] text-text-3/45 font-mono">{asset.contractAddress.slice(0, 6)}...{asset.contractAddress.slice(-4)}</div>
+                      )}
+                      {asset.tokenMint && (
+                        <div className="text-[10px] text-text-3/45 font-mono">{asset.tokenMint.slice(0, 6)}...{asset.tokenMint.slice(-4)}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Funding help */}
           <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface-2/50"
-            style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.15s both' }}>
+            style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.16s both' }}>
             <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600 mb-2">How to Fund This Wallet</div>
             <div className="space-y-2 text-[12px] text-text-3/70 leading-relaxed">
-              <p>Send SOL to the wallet address above from any Solana wallet (Phantom, Solflare, an exchange, etc.). Copy the address and use it as the recipient.</p>
-              <p>This wallet is on <strong className="text-text-2 font-600">Solana mainnet</strong>. Make sure you&apos;re sending real SOL on the Solana mainnet network.</p>
+              {selectedWalletMeta?.fundingInstructions.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
               <p className="text-text-3/50 text-[11px]">The private key is AES-256 encrypted in your local database (<code className="text-[10px] bg-black/20 px-1 py-0.5 rounded">data/swarmclaw.db</code>). It is never exposed via the API. To export it, query the <code className="text-[10px] bg-black/20 px-1 py-0.5 rounded">wallets</code> table directly and decrypt using your <code className="text-[10px] bg-black/20 px-1 py-0.5 rounded">CREDENTIAL_SECRET</code>.</p>
             </div>
           </div>
@@ -432,13 +738,15 @@ export function WalletPanel() {
               <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600 mb-3">Balance Over Time</div>
               <div className="h-[120px] flex items-end gap-[2px]">
                 {(() => {
-                  const max = Math.max(...balanceHistory.map((s) => s.balanceLamports), 1)
-                  return balanceHistory.slice(-60).map((s, i) => (
+                  const recentHistory = balanceHistory.slice(-60)
+                  const balances = recentHistory.map((snapshot) => Number.parseFloat(formatWalletAmount(selectedWallet.chain, getWalletBalanceAtomic(snapshot), { maxFractionDigits: 6 })) || 0)
+                  const max = Math.max(...balances, 1)
+                  return recentHistory.map((s, i) => (
                     <div
                       key={s.id || i}
                       className="flex-1 bg-accent/40 rounded-t-[2px] min-w-[3px] transition-all hover:bg-accent hover:scale-y-110"
-                      style={{ height: `${Math.max(2, (s.balanceLamports / max) * 100)}%`, transitionDelay: `${i * 10}ms` }}
-                      title={`${(s.balanceLamports / 1e9).toFixed(4)} SOL — ${new Date(s.timestamp).toLocaleString()}`}
+                      style={{ height: `${Math.max(2, ((balances[i] || 0) / max) * 100)}%`, transitionDelay: `${i * 10}ms` }}
+                      title={`${formatWalletAmount(selectedWallet.chain, getWalletBalanceAtomic(s), { minFractionDigits: 4, maxFractionDigits: 6 })} ${selectedWalletSymbol} — ${new Date(s.timestamp).toLocaleString()}`}
                     />
                   ))
                 })()}
@@ -466,7 +774,7 @@ export function WalletPanel() {
             {editingLimits ? (
               <div className="space-y-3" style={{ animation: 'fade-in 0.3s ease' }}>
                 <div>
-                  <label className="block text-[11px] text-text-3/70 mb-1">Per-transaction limit (SOL)</label>
+                  <label className="block text-[11px] text-text-3/70 mb-1">Per-transaction limit ({selectedWalletSymbol})</label>
                   <input
                     type="number"
                     step="0.01"
@@ -477,7 +785,7 @@ export function WalletPanel() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-text-3/70 mb-1">Daily limit (SOL)</label>
+                  <label className="block text-[11px] text-text-3/70 mb-1">Daily limit ({selectedWalletSymbol})</label>
                   <input
                     type="number"
                     step="0.1"
@@ -521,11 +829,11 @@ export function WalletPanel() {
               <div className="space-y-2 text-[12px]">
                 <div className="flex justify-between">
                   <span className="text-text-3/70">Per-transaction</span>
-                  <span className="text-text-2">{((selectedWallet.spendingLimitLamports ?? 100_000_000) / 1e9).toFixed(2)} SOL</span>
+                  <span className="text-text-2">{formatWalletAmount(selectedWallet.chain, getWalletLimitAtomic(selectedWallet, 'perTx'), { maxFractionDigits: 6 })} {selectedWalletSymbol}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-text-3/70">Daily rolling</span>
-                  <span className="text-text-2">{((selectedWallet.dailyLimitLamports ?? 1_000_000_000) / 1e9).toFixed(1)} SOL</span>
+                  <span className="text-text-2">{formatWalletAmount(selectedWallet.chain, getWalletLimitAtomic(selectedWallet, 'daily'), { maxFractionDigits: 6 })} {selectedWalletSymbol}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-text-3/70">Approval</span>
@@ -537,12 +845,45 @@ export function WalletPanel() {
 
           {/* Transaction history */}
           <div style={{ animation: 'fade-up 0.4s var(--ease-spring) 0.3s both' }}>
-            <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600 mb-3">Transactions</div>
-            {transactions.length === 0 ? (
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="text-[11px] text-text-3/60 uppercase tracking-wide font-600">Transactions</div>
+              <div className="text-[10px] text-text-3/45">
+                {filteredTransactions.length}{filteredTransactions.length !== transactions.length ? ` / ${transactions.length}` : ''} shown
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center mb-3">
+              <input
+                type="text"
+                value={transactionQuery}
+                onChange={(e) => setTransactionQuery(e.target.value)}
+                placeholder="Search memo, hash, address..."
+                className="flex-1 px-3 py-2 rounded-[8px] border border-white/[0.08] bg-surface text-[12px] text-text-1 outline-none focus:border-accent/40"
+                style={{ fontFamily: 'inherit' }}
+              />
+              <select
+                value={transactionFilter}
+                onChange={(e) => setTransactionFilter(e.target.value as WalletTransactionFilter)}
+                className="px-3 py-2 rounded-[8px] border border-white/[0.08] bg-surface text-[12px] text-text-1 outline-none focus:border-accent/40"
+                style={{ fontFamily: 'inherit' }}
+              >
+                <option value="all">All</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="pending">Pending</option>
+                <option value="failed">Failed</option>
+                <option value="send">Sends</option>
+                <option value="receive">Receives</option>
+                <option value="swap">Swaps</option>
+              </select>
+            </div>
+            {transactionsLoading && transactions.length === 0 ? (
+              <p className="text-[12px] text-text-3/50">Loading transactions...</p>
+            ) : transactions.length === 0 ? (
               <p className="text-[12px] text-text-3/50">No transactions yet.</p>
+            ) : filteredTransactions.length === 0 ? (
+              <p className="text-[12px] text-text-3/50">No matching transactions.</p>
             ) : (
-              <div className="space-y-2">
-                {transactions.map((tx, idx) => (
+              <div className="max-h-[420px] overflow-y-auto pr-1 space-y-2">
+                {filteredTransactions.map((tx, idx) => (
                   <div key={tx.id} className="flex items-center gap-3 p-3 rounded-[10px] border border-white/[0.06] bg-surface-2/30 transition-all hover:bg-surface-2/50"
                     style={{ animation: 'fade-up 0.4s var(--ease-spring) both', animationDelay: `${0.35 + idx * 0.03}s` }}>
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[12px] ${
@@ -555,22 +896,26 @@ export function WalletPanel() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-[12px] font-600 text-text-1">
-                          {tx.type === 'send' ? '-' : '+'}{(tx.amountLamports / 1e9).toFixed(4)} SOL
+                          {tx.type === 'send' ? '-' : '+'}{formatWalletAmount(tx.chain, getWalletAtomicAmount(tx), { minFractionDigits: 4, maxFractionDigits: 6 })} {getWalletAssetSymbol(tx.chain)}
                         </span>
                         <span className={`px-1.5 py-0.5 rounded-[4px] text-[9px] font-600 uppercase ${
-                          tx.status === 'confirmed' ? 'bg-green-500/15 text-green-400' :
-                          tx.status === 'pending_approval' ? 'bg-amber-500/15 text-amber-400 animate-pulse' :
-                          tx.status === 'failed' ? 'bg-red-500/15 text-red-400' :
-                          tx.status === 'denied' ? 'bg-red-500/15 text-red-400' :
+                          getWalletTransactionStatusGroup(tx.status) === 'confirmed' ? 'bg-green-500/15 text-green-400' :
+                          getWalletTransactionStatusGroup(tx.status) === 'pending' ? 'bg-amber-500/15 text-amber-400 animate-pulse' :
                           'bg-blue-500/15 text-blue-400'
                         }`}>
                           {tx.status.replace('_', ' ')}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-[4px] bg-white/[0.05] text-[9px] font-600 uppercase text-text-3/70">
+                          {tx.type}
                         </span>
                       </div>
                       <div className="text-[10px] text-text-3/50 font-mono truncate mt-0.5">
                         {tx.type === 'send' ? `To: ${tx.toAddress.slice(0, 8)}...${tx.toAddress.slice(-4)}` : `From: ${tx.fromAddress.slice(0, 8)}...${tx.fromAddress.slice(-4)}`}
                       </div>
                       {tx.memo && <div className="text-[10px] text-text-3/60 mt-0.5 truncate">{tx.memo}</div>}
+                      <div className="text-[10px] text-text-3/40 font-mono truncate mt-0.5">
+                        {tx.signature.slice(0, 10)}...{tx.signature.slice(-6)}
+                      </div>
                     </div>
                     <div className="text-[10px] text-text-3/40 shrink-0">
                       {new Date(tx.timestamp).toLocaleDateString()}

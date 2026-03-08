@@ -43,7 +43,7 @@ export function normalizeToolInputArgs(rawArgs: ToolArgsRecord): ToolArgsRecord 
 
     for (const [key, value] of Object.entries(current)) {
       if (value === undefined || value === null) continue
-      normalized[key] = value
+      if (!(key in normalized)) normalized[key] = value
     }
   }
 

@@ -275,6 +275,14 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
               const scopedAgents = skillScope === 'agent'
                 ? skillAgentIds.map((id) => agents[id]).filter(Boolean)
                 : []
+              const securityTone = skill.security?.level === 'high'
+                ? 'bg-red-500/10 text-red-300 border-red-500/20'
+                : skill.security?.level === 'medium'
+                  ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                  : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+              const requirementCount = (skill.skillRequirements?.env?.length || 0)
+                + (skill.skillRequirements?.bins?.length || 0)
+                + (skill.skillRequirements?.config?.length || 0)
               return (
                 <div
                   key={skill.id}
@@ -315,6 +323,23 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
                   {skill.description && (
                     <p className="text-[12px] text-text-3/60 line-clamp-2">{skill.description}</p>
                   )}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {skill.version && (
+                      <span className="rounded-full border border-white/[0.08] px-2 py-1 text-[10px] font-700 text-text-3/70">
+                        v{skill.version}
+                      </span>
+                    )}
+                    {typeof requirementCount === 'number' && requirementCount > 0 && (
+                      <span className="rounded-full border border-white/[0.08] px-2 py-1 text-[10px] font-700 text-text-3/70">
+                        {requirementCount} reqs
+                      </span>
+                    )}
+                    {skill.security && (
+                      <span className={`rounded-full border px-2 py-1 text-[10px] font-700 uppercase tracking-[0.08em] ${securityTone}`}>
+                        {skill.security.level}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 mt-1.5">
                     <span className="text-[11px] text-text-3/70">{skill.content.length} chars</span>
                     <span className="text-[11px] text-text-3/60">·</span>

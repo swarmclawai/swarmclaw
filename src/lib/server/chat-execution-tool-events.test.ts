@@ -6,9 +6,12 @@ import path from 'path'
 import type { MessageToolEvent, SSEEvent } from '@/types'
 import {
   collectToolEvent,
+  deriveTerminalRunError,
   dedupeConsecutiveToolEvents,
+  hasDirectLocalCodingTools,
   isLikelyToolErrorOutput,
   normalizeAssistantArtifactLinks,
+  reconcileConnectorDeliveryText,
   requestedToolNamesFromMessage,
   translateRequestedToolInvocation,
 } from './chat-execution'
@@ -20,6 +23,7 @@ describe('collectToolEvent', () => {
       t: 'tool_call',
       toolName: 'files',
       toolInput: '{"path":"spec.md"}',
+      toolCallId: 'call-1',
     }
 
     collectToolEvent(toolCall, bag)
@@ -29,6 +33,7 @@ describe('collectToolEvent', () => {
       {
         name: 'files',
         input: '{"path":"spec.md"}',
+        toolCallId: 'call-1',
       },
     ])
   })
@@ -39,11 +44,13 @@ describe('collectToolEvent', () => {
       t: 'tool_call',
       toolName: 'files',
       toolInput: '{"path":"spec.md"}',
+      toolCallId: 'call-1',
     }
     const toolResult: SSEEvent = {
       t: 'tool_result',
       toolName: 'files',
       toolOutput: 'Written spec.md (12 bytes)',
+      toolCallId: 'call-1',
     }
 
     collectToolEvent(toolCall, bag)
@@ -56,10 +63,12 @@ describe('collectToolEvent', () => {
         input: '{"path":"spec.md"}',
         output: 'Written spec.md (12 bytes)',
         error: undefined,
+        toolCallId: 'call-1',
       },
       {
         name: 'files',
         input: '{"path":"spec.md"}',
+        toolCallId: 'call-1',
       },
     ])
   })
@@ -70,25 +79,60 @@ describe('collectToolEvent', () => {
       t: 'tool_call',
       toolName: 'shell',
       toolInput: '{"command":"python broken.py"}',
+      toolCallId: 'call-shell',
     }, bag)
     collectToolEvent({
       t: 'tool_result',
       toolName: 'shell',
       toolOutput: 'Error (exit 1): Traceback...',
+      toolCallId: 'call-shell',
     }, bag)
     collectToolEvent({
       t: 'tool_call',
       toolName: 'browser',
       toolInput: '{"command":"click"}',
+      toolCallId: 'call-browser',
     }, bag)
     collectToolEvent({
       t: 'tool_result',
       toolName: 'browser',
       toolOutput: '{"error":"MCP error -32000: invalid_type","issues":[{"code":"invalid_type"}]}',
+      toolCallId: 'call-browser',
     }, bag)
 
     assert.equal(bag[0].error, true)
     assert.equal(bag[1].error, true)
+  })
+
+  it('matches parallel same-tool results by toolCallId instead of swapping outputs', () => {
+    const bag: MessageToolEvent[] = []
+    collectToolEvent({
+      t: 'tool_call',
+      toolName: 'wallet_tool',
+      toolInput: '{"action":"balance","chain":"solana"}',
+      toolCallId: 'call-sol',
+    }, bag)
+    collectToolEvent({
+      t: 'tool_call',
+      toolName: 'wallet_tool',
+      toolInput: '{"action":"balance","chain":"ethereum"}',
+      toolCallId: 'call-eth',
+    }, bag)
+    collectToolEvent({
+      t: 'tool_result',
+      toolName: 'wallet_tool',
+      toolOutput: '{"chain":"solana"}',
+      toolCallId: 'call-sol',
+    }, bag)
+    collectToolEvent({
+      t: 'tool_result',
+      toolName: 'wallet_tool',
+      toolOutput: '{"chain":"ethereum"}',
+      toolCallId: 'call-eth',
+    }, bag)
+
+    assert.equal(bag[0].output, '{"chain":"solana"}')
+    assert.equal(bag[1].output, '{"chain":"ethereum"}')
   })
 })
 
@@ -126,6 +170,57 @@ describe('dedupeConsecutiveToolEvents', () => {
   })
 })
 
+describe('deriveTerminalRunError', () => {
+  it('uses the streamed provider error when no text was produced', () => {
+    assert.equal(
+      deriveTerminalRunError({
+        errorMessage: undefined,
+        fullResponse: '',
+        streamErrors: ['Ollama error (401): invalid api key'],
+        toolEvents: [],
+        internal: false,
+      }),
+      'Ollama error (401): invalid api key',
+    )
+  })
+
+  it('converts empty successful runs into a visible assistant error', () => {
+    assert.equal(
+      deriveTerminalRunError({
+        errorMessage: undefined,
+        fullResponse: '',
+        streamErrors: [],
+        toolEvents: [],
+        internal: false,
+      }),
+      'Run completed without any response text, tool calls, or explicit error details. Check the provider configuration and try again.',
+    )
+  })
+
+  it('does not invent an error when tools ran or when the run was internal', () => {
+    assert.equal(
+      deriveTerminalRunError({
+        errorMessage: undefined,
+        fullResponse: '',
+        streamErrors: [],
+        toolEvents: [{ name: 'files', input: '{"action":"list"}', output: 'spec.md' }],
+        internal: false,
+      }),
+      undefined,
+    )
+    assert.equal(
+      deriveTerminalRunError({
+        errorMessage: undefined,
+        fullResponse: '',
+        streamErrors: [],
+        toolEvents: [],
+        internal: true,
+      }),
+      undefined,
+    )
+  })
+})
+
 describe('requestedToolNamesFromMessage', () => {
   it('does not infer delegate from ordinary delegation prose', () => {
     assert.deepEqual(
@@ -139,6 +234,33 @@ describe('requestedToolNamesFromMessage', () => {
       requestedToolNamesFromMessage('Use the delegate tool if Codex is better suited.'),
       ['delegate'],
     )
+  })
+
+  it('ignores negated web mentions and ordinary browsing prose', () => {
+    assert.deepEqual(
+      requestedToolNamesFromMessage('Do not browse the web for this task.'),
+      [],
+    )
+    assert.deepEqual(
+      requestedToolNamesFromMessage('Avoid using browser for this step.'),
+      [],
+    )
+  })
+
+  it('detects explicit email tool requests', () => {
+    assert.deepEqual(
+      requestedToolNamesFromMessage('Use the email tool to send a welcome email after signup finishes.'),
+      ['email'],
+    )
+  })
+})
+
+describe('hasDirectLocalCodingTools', () => {
+  it('treats shell and file tooling as local coding capability', () => {
+    assert.equal(hasDirectLocalCodingTools({ plugins: ['files'] }), true)
+    assert.equal(hasDirectLocalCodingTools({ plugins: ['shell'] }), true)
+    assert.equal(hasDirectLocalCodingTools({ plugins: ['edit_file'] }), true)
+    assert.equal(hasDirectLocalCodingTools({ plugins: ['delegate'] }), false)
   })
 })
 
@@ -214,6 +336,41 @@ describe('translateRequestedToolInvocation', () => {
         toolName: 'manage_platform',
         args: { resource: 'schedules', action: 'list' },
       },
+    )
+  })
+})
+
+describe('reconcileConnectorDeliveryText', () => {
+  it('overrides false connector success claims when no send succeeded', () => {
+    assert.equal(
+      reconcileConnectorDeliveryText(
+        `I've successfully sent the voice note to your WhatsApp.`,
+        [
+          {
+            name: 'connector_message_tool',
+            input: '{"action":"send_voice_note"}',
+            output: 'Error: {"detail":{"message":"Free users cannot use library voices via the API."}}',
+            error: true,
+          },
+        ],
+      ),
+      `I couldn't send that through the configured connector. Free users cannot use library voices via the API.`,
+    )
+  })
+
+  it('preserves connector success confirmations when a send completed', () => {
+    assert.equal(
+      reconcileConnectorDeliveryText(
+        `I've successfully sent the update to your WhatsApp.`,
+        [
+          {
+            name: 'connector_message_tool',
+            input: '{"action":"send"}',
+            output: '{"status":"sent","to":"447700900444@s.whatsapp.net"}',
+          },
+        ],
+      ),
+      `I've successfully sent the update to your WhatsApp.`,
     )
   })
 })

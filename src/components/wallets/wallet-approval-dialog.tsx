@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { api } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { WalletTransaction } from '@/types'
+import { formatWalletAmount, getWalletAssetSymbol, getWalletAtomicAmount } from '@/lib/wallet'
 
 interface WalletApprovalDialogProps {
   transaction: WalletTransaction
@@ -33,7 +34,8 @@ export function WalletApprovalDialog({ transaction, walletAddress, onClose, onRe
     }
   }, [transaction, onResolved, onClose])
 
-  const amountSol = transaction.amountLamports / 1e9
+  const amountFormatted = formatWalletAmount(transaction.chain, getWalletAtomicAmount(transaction), { minFractionDigits: 4, maxFractionDigits: 6 })
+  const symbol = getWalletAssetSymbol(transaction.chain)
 
   return (
     <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen) onClose() }}>
@@ -57,7 +59,7 @@ export function WalletApprovalDialog({ transaction, walletAddress, onClose, onRe
           <div className="rounded-[14px] border border-white/[0.06] bg-black/20 p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase tracking-wide text-text-3/70">Amount</span>
-              <span className="text-[16px] font-600 text-text-1">{amountSol.toFixed(4)} SOL</span>
+              <span className="text-[16px] font-600 text-text-1">{amountFormatted} {symbol}</span>
             </div>
             <div>
               <span className="mb-1 block text-[11px] uppercase tracking-wide text-text-3/70">From</span>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { api } from '@/lib/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import type { Webhook, WebhookLogEntry } from '@/types'
@@ -61,6 +62,8 @@ export function WebhookSheet() {
   const [tab, setTab] = useState<'config' | 'history'>('config')
   const [history, setHistory] = useState<WebhookLogEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const editing = editingId ? (webhooks[editingId] as Webhook | undefined) : null
   const endpoint = editing ? webhookUrl(editing.id) : ''
@@ -109,6 +112,8 @@ export function WebhookSheet() {
   }, [editing, open])
 
   const handleClose = () => {
+    setConfirmDelete(false)
+    setDeleting(false)
     setOpen(false)
     setEditingId(null)
   }
@@ -164,17 +169,21 @@ export function WebhookSheet() {
   }
 
   const handleDelete = async () => {
-    if (!editing || !confirm('Delete this webhook?')) return
+    if (!editing) return
+    setDeleting(true)
     try {
       const res = await api<DeleteWebhookResponse>('DELETE', `/webhooks/${editing.id}`)
       if ('error' in res && res.error) throw new Error(res.error)
       toast.success('Webhook deleted')
       await loadWebhooks()
+      setConfirmDelete(false)
       handleClose()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete webhook'
       setError(msg)
       toast.error(msg)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -381,7 +390,7 @@ export function WebhookSheet() {
         <div className="flex gap-3 pt-2">
           {editing && (
             <button
-              onClick={handleDelete}
+              onClick={() => setConfirmDelete(true)}
               className="px-5 py-3 rounded-[14px] border border-danger/30 bg-transparent text-danger text-[14px] font-600 cursor-pointer hover:bg-danger/10 transition-colors"
               style={{ fontFamily: 'inherit' }}
             >
@@ -407,6 +416,17 @@ export function WebhookSheet() {
         </div>
         </>}
       </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete Webhook?"
+        message={editing ? `Delete "${editing.name}"? This will remove the endpoint and its saved webhook configuration.` : 'Delete this webhook?'}
+        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        confirmDisabled={deleting}
+        cancelDisabled={deleting}
+        danger
+        onConfirm={() => { void handleDelete() }}
+        onCancel={() => { if (!deleting) setConfirmDelete(false) }}
+      />
     </BottomSheet>
   )
 }

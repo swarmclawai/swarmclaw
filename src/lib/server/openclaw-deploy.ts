@@ -12,6 +12,7 @@ import {
 } from './process-manager'
 import { normalizeOpenClawEndpoint, deriveOpenClawWsUrl } from '@/lib/openclaw-endpoint'
 import { probeOpenClawHealth, type OpenClawHealthResult } from './openclaw-health'
+import { DATA_DIR } from './data-dir'
 
 export type OpenClawRemoteDeployTemplate = 'docker' | 'render' | 'fly' | 'railway'
 export type OpenClawRemoteDeployProvider =
@@ -28,6 +29,9 @@ export type OpenClawUseCaseTemplate = 'local-dev' | 'single-vps' | 'private-tail
 export type OpenClawExposurePreset = 'private-lan' | 'tailscale' | 'caddy' | 'nginx' | 'ssh-tunnel'
 
 export interface OpenClawLocalDeployStatus {
+  id: string
+  name: string
+  isPrimary: boolean
   running: boolean
   processId: string | null
   pid: number | null
@@ -35,20 +39,35 @@ export interface OpenClawLocalDeployStatus {
   endpoint: string
   wsUrl: string
   token: string | null
+  stateDir: string
+  configPath: string
+  workspaceDir: string
   startedAt: number | null
+  createdAt: number
+  updatedAt: number
   tail: string
   lastError: string | null
   launchCommand: string
   installCommand: string
 }
 
+export interface OpenClawLocalDeployCollectionStatus {
+  primaryId: string | null
+  items: OpenClawLocalDeployStatus[]
+}
+
 export interface OpenClawRemoteDeployStatus {
+  id: string
+  name: string
+  isPrimary: boolean
   active: boolean
   processId: string | null
   pid: number | null
   action: string | null
   target: string | null
   startedAt: number | null
+  createdAt: number
+  updatedAt: number
   status: ProcessStatus | 'idle'
   exitCode: number | null
   tail: string
@@ -56,6 +75,11 @@ export interface OpenClawRemoteDeployStatus {
   lastSummary: string | null
   lastCommandPreview: string | null
   lastBackupPath: string | null
+}
+
+export interface OpenClawRemoteDeployCollectionStatus {
+  primaryId: string | null
+  items: OpenClawRemoteDeployStatus[]
 }
 
 export interface OpenClawDeployBundleFile {
@@ -90,6 +114,7 @@ export interface OpenClawSshConfig {
 export interface OpenClawRemoteCommandResult {
   ok: boolean
   started: boolean
+  remoteId?: string | null
   processId?: string | null
   summary: string
   commandPreview: string
@@ -98,20 +123,35 @@ export interface OpenClawRemoteCommandResult {
 }
 
 interface LocalRuntimeState {
+  id: string
+  name: string | null
   processId: string | null
   port: number
   endpoint: string
   wsUrl: string
   token: string | null
   startedAt: number | null
+  createdAt: number
+  updatedAt: number
   lastError: string | null
 }
 
+interface LocalRuntimePaths {
+  rootDir: string
+  stateDir: string
+  configPath: string
+  workspaceDir: string
+}
+
 interface RemoteRuntimeState {
+  id: string
+  name: string | null
   processId: string | null
   action: string | null
   target: string | null
   startedAt: number | null
+  createdAt: number
+  updatedAt: number
   lastError: string | null
   lastSummary: string | null
   lastCommandPreview: string | null
@@ -119,8 +159,10 @@ interface RemoteRuntimeState {
 }
 
 interface DeployRuntimeState {
-  local: LocalRuntimeState
-  remote: RemoteRuntimeState
+  locals: Record<string, LocalRuntimeState>
+  primaryLocalId: string | null
+  remotes: Record<string, RemoteRuntimeState>
+  primaryRemoteId: string | null
 }
 
 interface RemoteProviderMeta {
@@ -293,33 +335,220 @@ const EXPOSURE_META: Record<OpenClawExposurePreset, ExposureMeta> = {
   },
 }
 
-function getRuntimeState(): DeployRuntimeState {
-  const fallback: DeployRuntimeState = {
-    local: {
-      processId: null,
-      port: DEFAULT_LOCAL_PORT,
-      endpoint: normalizeOpenClawEndpoint(`http://127.0.0.1:${DEFAULT_LOCAL_PORT}`),
-      wsUrl: deriveOpenClawWsUrl(`http://127.0.0.1:${DEFAULT_LOCAL_PORT}`),
-      token: null,
-      startedAt: null,
-      lastError: null,
+function createLocalRuntimeState(
+  id: string,
+  patch?: Partial<LocalRuntimeState>,
+): LocalRuntimeState {
+  const port = typeof patch?.port === 'number' && Number.isFinite(patch.port)
+    ? patch.port
+    : DEFAULT_LOCAL_PORT
+  const endpoint = normalizeOpenClawEndpoint(
+    typeof patch?.endpoint === 'string' && patch.endpoint.trim()
+      ? patch.endpoint
+      : `http://127.0.0.1:${port}`,
+  )
+  return {
+    id,
+    name: typeof patch?.name === 'string' && patch.name.trim() ? patch.name.trim() : `Local OpenClaw ${port}`,
+    processId: typeof patch?.processId === 'string' && patch.processId.trim() ? patch.processId.trim() : null,
+    port,
+    endpoint,
+    wsUrl: typeof patch?.wsUrl === 'string' && patch.wsUrl.trim() ? patch.wsUrl.trim() : deriveOpenClawWsUrl(endpoint),
+    token: typeof patch?.token === 'string' && patch.token.trim() ? patch.token.trim() : null,
+    startedAt: typeof patch?.startedAt === 'number' ? patch.startedAt : null,
+    createdAt: typeof patch?.createdAt === 'number' ? patch.createdAt : Date.now(),
+    updatedAt: typeof patch?.updatedAt === 'number' ? patch.updatedAt : Date.now(),
+    lastError: typeof patch?.lastError === 'string' && patch.lastError.trim() ? patch.lastError : null,
+  }
+}
+
+function createRemoteRuntimeState(
+  id: string,
+  patch?: Partial<RemoteRuntimeState>,
+): RemoteRuntimeState {
+  const target = typeof patch?.target === 'string' && patch.target.trim() ? patch.target.trim() : null
+  return {
+    id,
+    name: typeof patch?.name === 'string' && patch.name.trim()
+      ? patch.name.trim()
+      : deriveRemoteDeploymentName(target || ''),
+    processId: typeof patch?.processId === 'string' && patch.processId.trim() ? patch.processId.trim() : null,
+    action: typeof patch?.action === 'string' && patch.action.trim() ? patch.action.trim() : null,
+    target,
+    startedAt: typeof patch?.startedAt === 'number' ? patch.startedAt : null,
+    createdAt: typeof patch?.createdAt === 'number' ? patch.createdAt : Date.now(),
+    updatedAt: typeof patch?.updatedAt === 'number' ? patch.updatedAt : Date.now(),
+    lastError: typeof patch?.lastError === 'string' && patch.lastError.trim() ? patch.lastError : null,
+    lastSummary: typeof patch?.lastSummary === 'string' && patch.lastSummary.trim() ? patch.lastSummary : null,
+    lastCommandPreview: typeof patch?.lastCommandPreview === 'string' && patch.lastCommandPreview.trim()
+      ? patch.lastCommandPreview
+      : null,
+    lastBackupPath: typeof patch?.lastBackupPath === 'string' && patch.lastBackupPath.trim()
+      ? patch.lastBackupPath
+      : null,
+  }
+}
+
+function resolveLocalRuntimePaths(id: string): LocalRuntimePaths {
+  const safeId = id.trim() || 'local-default'
+  const rootDir = path.join(DATA_DIR, 'openclaw-local', safeId)
+  return {
+    rootDir,
+    stateDir: rootDir,
+    configPath: path.join(rootDir, 'openclaw.json'),
+    workspaceDir: path.join(rootDir, 'workspace'),
+  }
+}
+
+function buildManagedLocalConfig(paths: LocalRuntimePaths): Record<string, unknown> {
+  const config: Record<string, unknown> = {
+    gateway: {
+      mode: 'local',
+      bind: 'custom',
+      customBindHost: '127.0.0.1',
+      http: {
+        endpoints: {
+          chatCompletions: {
+            enabled: true,
+          },
+        },
+      },
     },
-    remote: {
-      processId: null,
-      action: null,
-      target: null,
-      startedAt: null,
-      lastError: null,
-      lastSummary: null,
-      lastCommandPreview: null,
-      lastBackupPath: null,
+    agents: {
+      defaults: {
+        workspace: paths.workspaceDir,
+      },
     },
   }
+
+  if (process.env.OLLAMA_API_KEY?.trim()) {
+    ;(config.agents as Record<string, Record<string, unknown>>).defaults.model = {
+      primary: 'ollama/glm-5:cloud',
+    }
+    ;(config.agents as Record<string, Record<string, unknown>>).defaults.models = {
+      'ollama/glm-5:cloud': {
+        alias: 'glm5cloud',
+      },
+    }
+  }
+
+  return config
+}
+
+async function ensureManagedLocalRuntimeFiles(id: string): Promise<LocalRuntimePaths> {
+  const paths = resolveLocalRuntimePaths(id)
+  await fs.mkdir(paths.workspaceDir, { recursive: true })
+  const config = buildManagedLocalConfig(paths)
+  await fs.writeFile(paths.configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
+  return paths
+}
+
+function buildLocalProcessEnv(id: string): Record<string, string> {
+  const paths = resolveLocalRuntimePaths(id)
+  return {
+    OPENCLAW_CONFIG_PATH: paths.configPath,
+    OPENCLAW_STATE_DIR: paths.stateDir,
+  }
+}
+
+function normalizeLocalRuntimeState(raw: unknown, id: string): LocalRuntimeState | null {
+  if (!raw || typeof raw !== 'object') return null
+  return createLocalRuntimeState(id, raw as Partial<LocalRuntimeState>)
+}
+
+function normalizeRemoteRuntimeState(raw: unknown, id: string): RemoteRuntimeState | null {
+  if (!raw || typeof raw !== 'object') return null
+  return createRemoteRuntimeState(id, raw as Partial<RemoteRuntimeState>)
+}
+
+function sortLocalRuntimeStates(items: LocalRuntimeState[]): LocalRuntimeState[] {
+  return [...items].sort((left, right) => {
+    if (left.updatedAt !== right.updatedAt) return right.updatedAt - left.updatedAt
+    if (left.createdAt !== right.createdAt) return right.createdAt - left.createdAt
+    if (left.port !== right.port) return left.port - right.port
+    return left.id.localeCompare(right.id)
+  })
+}
+
+function sortRemoteRuntimeStates(items: RemoteRuntimeState[]): RemoteRuntimeState[] {
+  return [...items].sort((left, right) => {
+    if (left.updatedAt !== right.updatedAt) return right.updatedAt - left.updatedAt
+    if (left.createdAt !== right.createdAt) return right.createdAt - left.createdAt
+    const leftTarget = left.target || ''
+    const rightTarget = right.target || ''
+    if (leftTarget !== rightTarget) return leftTarget.localeCompare(rightTarget)
+    return left.id.localeCompare(right.id)
+  })
+}
+
+function defaultRuntimeState(): DeployRuntimeState {
+  return {
+    locals: {},
+    primaryLocalId: null,
+    remotes: {},
+    primaryRemoteId: null,
+  }
+}
+
+function normalizeRuntimeState(raw: unknown): DeployRuntimeState {
+  const fallback = defaultRuntimeState()
+  if (!raw || typeof raw !== 'object') return fallback
+  const state = raw as Partial<DeployRuntimeState> & { local?: unknown; locals?: Record<string, unknown> }
+
+  const locals: Record<string, LocalRuntimeState> = {}
+  if (state.locals && typeof state.locals === 'object') {
+    for (const [id, value] of Object.entries(state.locals)) {
+      const normalized = normalizeLocalRuntimeState(value, id)
+      if (normalized) locals[id] = normalized
+    }
+  } else if (state.local && typeof state.local === 'object') {
+    const normalized = normalizeLocalRuntimeState(state.local, 'local-default')
+    if (normalized) locals[normalized.id] = normalized
+  }
+
+  const orderedLocals = sortLocalRuntimeStates(Object.values(locals))
+  const primaryLocalId = typeof state.primaryLocalId === 'string' && locals[state.primaryLocalId]
+    ? state.primaryLocalId
+    : orderedLocals[0]?.id || null
+
+  const remotes: Record<string, RemoteRuntimeState> = {}
+  const stateWithRemote = state as Partial<DeployRuntimeState> & {
+    local?: unknown
+    locals?: Record<string, unknown>
+    remote?: unknown
+    remotes?: Record<string, unknown>
+    primaryRemoteId?: unknown
+  }
+  if (stateWithRemote.remotes && typeof stateWithRemote.remotes === 'object') {
+    for (const [id, value] of Object.entries(stateWithRemote.remotes)) {
+      const normalized = normalizeRemoteRuntimeState(value, id)
+      if (normalized) remotes[id] = normalized
+    }
+  } else if (stateWithRemote.remote && typeof stateWithRemote.remote === 'object') {
+    const normalized = normalizeRemoteRuntimeState(stateWithRemote.remote, 'remote-default')
+    if (normalized) remotes[normalized.id] = normalized
+  }
+  const orderedRemotes = sortRemoteRuntimeStates(Object.values(remotes))
+  const primaryRemoteId = typeof stateWithRemote.primaryRemoteId === 'string' && remotes[stateWithRemote.primaryRemoteId]
+    ? stateWithRemote.primaryRemoteId
+    : orderedRemotes[0]?.id || null
+
+  return {
+    locals,
+    primaryLocalId,
+    remotes,
+    primaryRemoteId,
+  }
+}
+
+function getRuntimeState(): DeployRuntimeState {
   const globalState = globalThis as typeof globalThis & { [GLOBAL_KEY]?: DeployRuntimeState }
   if (!globalState[GLOBAL_KEY]) {
-    globalState[GLOBAL_KEY] = fallback
+    globalState[GLOBAL_KEY] = defaultRuntimeState()
+  } else {
+    globalState[GLOBAL_KEY] = normalizeRuntimeState(globalState[GLOBAL_KEY])
   }
-  return globalState[GLOBAL_KEY] || fallback
+  return globalState[GLOBAL_KEY] || defaultRuntimeState()
 }
 
 function shellEscape(value: string): string {
@@ -338,8 +567,11 @@ function resolveBundledOpenClawBinary(): string {
   return 'openclaw'
 }
 
-function buildLocalRunCommand(port: number, token?: string | null): string {
+function buildLocalRunCommand(port: number, token?: string | null, localId = 'local-default'): string {
+  const env = buildLocalProcessEnv(localId)
   const parts = [
+    `OPENCLAW_CONFIG_PATH=${shellEscape(env.OPENCLAW_CONFIG_PATH)}`,
+    `OPENCLAW_STATE_DIR=${shellEscape(env.OPENCLAW_STATE_DIR)}`,
     'npx',
     'openclaw',
     'gateway',
@@ -347,7 +579,7 @@ function buildLocalRunCommand(port: number, token?: string | null): string {
     '--allow-unconfigured',
     '--force',
     '--bind',
-    'loopback',
+    'custom',
     '--port',
     String(port),
   ]
@@ -357,8 +589,11 @@ function buildLocalRunCommand(port: number, token?: string | null): string {
   return parts.join(' ')
 }
 
-function buildLocalInstallCommand(port: number, token?: string | null): string {
+function buildLocalInstallCommand(port: number, token?: string | null, localId = 'local-default'): string {
+  const env = buildLocalProcessEnv(localId)
   const parts = [
+    `OPENCLAW_CONFIG_PATH=${shellEscape(env.OPENCLAW_CONFIG_PATH)}`,
+    `OPENCLAW_STATE_DIR=${shellEscape(env.OPENCLAW_STATE_DIR)}`,
     'npx',
     'openclaw',
     'gateway',
@@ -468,17 +703,39 @@ async function materializeBundleFiles(bundle: OpenClawDeployBundle): Promise<{ d
   return { dir, filePaths }
 }
 
-function updateRemoteRuntimeState(patch: Partial<RemoteRuntimeState>) {
-  Object.assign(getRuntimeState().remote, patch)
-}
-
 async function startRemoteCommand(params: {
+  remoteId?: string | null
+  name?: string | null
   action: string
   target: string
   command: string
   summary: string
   backupPath?: string | null
+  makePrimary?: boolean
 }): Promise<OpenClawRemoteCommandResult> {
+  const state = getRuntimeState()
+  const requestedRemoteId = typeof params.remoteId === 'string' && params.remoteId.trim()
+    ? params.remoteId.trim()
+    : null
+  const existingById = requestedRemoteId ? state.remotes[requestedRemoteId] || null : null
+  const existingByTarget = Object.values(state.remotes).find((item) => (
+    normalizeRemoteTargetKey(item.target) === normalizeRemoteTargetKey(params.target)
+  )) || null
+  const remoteId = existingById?.id || existingByTarget?.id || requestedRemoteId || generateRemoteDeployId()
+  const existing = existingById || existingByTarget || null
+  const current = existing || createRemoteRuntimeState(remoteId, {
+    name: params.name || deriveRemoteDeploymentName(params.target),
+    target: params.target,
+  })
+
+  if (current.processId) {
+    const currentProcess = getManagedProcess(current.processId)
+    if (currentProcess?.status === 'running') {
+      killManagedProcess(current.processId)
+    }
+    removeManagedProcess(current.processId)
+  }
+
   const result = await startManagedProcess({
     command: params.command,
     cwd: process.cwd(),
@@ -487,19 +744,24 @@ async function startRemoteCommand(params: {
   })
 
   if (result.status === 'completed' && (result.exitCode ?? 0) === 0) {
-    updateRemoteRuntimeState({
+    state.remotes[remoteId] = createRemoteRuntimeState(remoteId, {
+      ...current,
+      name: typeof params.name === 'string' && params.name.trim() ? params.name.trim() : current.name,
       processId: null,
       action: params.action,
       target: params.target,
-      startedAt: Date.now(),
+      startedAt: null,
+      updatedAt: Date.now(),
       lastError: null,
       lastSummary: params.summary,
       lastCommandPreview: params.command,
       lastBackupPath: params.backupPath || null,
     })
+    if (params.makePrimary !== false || !state.primaryRemoteId) state.primaryRemoteId = remoteId
     return {
       ok: true,
       started: false,
+      remoteId,
       processId: null,
       summary: params.summary,
       commandPreview: params.command,
@@ -508,38 +770,48 @@ async function startRemoteCommand(params: {
 
   if (result.status !== 'running') {
     const message = result.output || result.tail || params.summary
-    updateRemoteRuntimeState({
+    state.remotes[remoteId] = createRemoteRuntimeState(remoteId, {
+      ...current,
+      name: typeof params.name === 'string' && params.name.trim() ? params.name.trim() : current.name,
       processId: null,
       action: params.action,
       target: params.target,
       startedAt: null,
+      updatedAt: Date.now(),
       lastError: message,
       lastSummary: params.summary,
       lastCommandPreview: params.command,
       lastBackupPath: params.backupPath || null,
     })
+    if (params.makePrimary !== false || !state.primaryRemoteId) state.primaryRemoteId = remoteId
     return {
       ok: false,
       started: false,
+      remoteId,
       processId: null,
       summary: message,
       commandPreview: params.command,
     }
   }
 
-  updateRemoteRuntimeState({
+  state.remotes[remoteId] = createRemoteRuntimeState(remoteId, {
+    ...current,
+    name: typeof params.name === 'string' && params.name.trim() ? params.name.trim() : current.name,
     processId: result.processId,
     action: params.action,
     target: params.target,
     startedAt: Date.now(),
+    updatedAt: Date.now(),
     lastError: null,
     lastSummary: params.summary,
     lastCommandPreview: params.command,
     lastBackupPath: params.backupPath || null,
   })
+  if (params.makePrimary !== false || !state.primaryRemoteId) state.primaryRemoteId = remoteId
   return {
     ok: true,
     started: true,
+    remoteId,
     processId: result.processId,
     summary: params.summary,
     commandPreview: params.command,
@@ -564,90 +836,245 @@ function readTail(text: string, size = 1200): string {
   return text.length <= size ? text : text.slice(text.length - size)
 }
 
-function currentLocalStatus(): OpenClawLocalDeployStatus {
+function currentLocalStatusFromState(localState: LocalRuntimeState, isPrimary: boolean): OpenClawLocalDeployStatus {
   const state = getRuntimeState()
-  const processId = state.local.processId
+  const runtime = state.locals[localState.id] || localState
+  const paths = resolveLocalRuntimePaths(runtime.id)
+  const processId = runtime.processId
   const process = processId ? getManagedProcess(processId) : null
   const running = !!process && process.status === 'running'
 
   if (!running && processId && process && process.status !== 'running') {
-    state.local.lastError = readTail(process.log || '') || state.local.lastError
-    state.local.processId = null
-    state.local.startedAt = null
+    runtime.lastError = readTail(process.log || '') || runtime.lastError
+    runtime.processId = null
+    runtime.startedAt = null
+    runtime.updatedAt = Date.now()
+    state.locals[runtime.id] = runtime
   }
 
-  const endpoint = normalizeOpenClawEndpoint(`http://127.0.0.1:${state.local.port}`)
+  const endpoint = normalizeOpenClawEndpoint(`http://127.0.0.1:${runtime.port}`)
   return {
+    id: runtime.id,
+    name: runtime.name || `Local OpenClaw ${runtime.port}`,
+    isPrimary,
     running,
     processId: running ? processId : null,
     pid: running ? (process?.pid ?? null) : null,
-    port: state.local.port,
+    port: runtime.port,
     endpoint,
     wsUrl: deriveOpenClawWsUrl(endpoint),
-    token: state.local.token || null,
-    startedAt: running ? state.local.startedAt : null,
+    token: runtime.token || null,
+    stateDir: paths.stateDir,
+    configPath: paths.configPath,
+    workspaceDir: paths.workspaceDir,
+    startedAt: running ? runtime.startedAt : null,
+    createdAt: runtime.createdAt,
+    updatedAt: runtime.updatedAt,
     tail: process ? readTail(process.log || '') : '',
-    lastError: running ? null : (state.local.lastError || null),
-    launchCommand: buildLocalRunCommand(state.local.port, state.local.token),
-    installCommand: buildLocalInstallCommand(state.local.port, state.local.token),
+    lastError: running ? null : (runtime.lastError || null),
+    launchCommand: buildLocalRunCommand(runtime.port, runtime.token, runtime.id),
+    installCommand: buildLocalInstallCommand(runtime.port, runtime.token, runtime.id),
   }
 }
 
-export function getOpenClawLocalDeployStatus(): OpenClawLocalDeployStatus {
-  return currentLocalStatus()
+function getPrimaryLocalRuntimeState(state: DeployRuntimeState): LocalRuntimeState | null {
+  if (state.primaryLocalId && state.locals[state.primaryLocalId]) {
+    return state.locals[state.primaryLocalId]
+  }
+  const ordered = sortLocalRuntimeStates(Object.values(state.locals))
+  const next = ordered[0] || null
+  state.primaryLocalId = next?.id || null
+  return next
 }
 
-function currentRemoteStatus(): OpenClawRemoteDeployStatus {
+function findLocalRuntimeState(
+  state: DeployRuntimeState,
+  input?: { localId?: string | null; port?: number | null },
+): LocalRuntimeState | null {
+  const localId = typeof input?.localId === 'string' && input.localId.trim() ? input.localId.trim() : ''
+  if (localId && state.locals[localId]) return state.locals[localId]
+  const port = typeof input?.port === 'number' && Number.isFinite(input.port) ? input.port : null
+  if (port !== null) {
+    return Object.values(state.locals).find((item) => item.port === port) || null
+  }
+  return getPrimaryLocalRuntimeState(state)
+}
+
+function defaultLocalStatus(): OpenClawLocalDeployStatus {
+  const fallback = createLocalRuntimeState('local-default')
+  return currentLocalStatusFromState(fallback, true)
+}
+
+export function getOpenClawLocalDeployStatuses(): OpenClawLocalDeployStatus[] {
   const state = getRuntimeState()
-  const processId = state.remote.processId
+  return sortLocalRuntimeStates(Object.values(state.locals))
+    .map((runtime) => currentLocalStatusFromState(runtime, runtime.id === state.primaryLocalId))
+}
+
+export function getOpenClawLocalDeployCollectionStatus(): OpenClawLocalDeployCollectionStatus {
+  const state = getRuntimeState()
+  const items = getOpenClawLocalDeployStatuses()
+  const primaryId = items.find((item) => item.isPrimary)?.id || null
+  state.primaryLocalId = primaryId
+  return { primaryId, items }
+}
+
+export function getOpenClawLocalDeployStatus(localId?: string | null): OpenClawLocalDeployStatus {
+  const state = getRuntimeState()
+  const runtime = findLocalRuntimeState(state, { localId })
+  return runtime
+    ? currentLocalStatusFromState(runtime, runtime.id === state.primaryLocalId)
+    : defaultLocalStatus()
+}
+
+function currentRemoteStatusFromState(remoteState: RemoteRuntimeState, isPrimary: boolean): OpenClawRemoteDeployStatus {
+  const state = getRuntimeState()
+  const runtime = state.remotes[remoteState.id] || remoteState
+  const processId = runtime.processId
   const process = processId ? getManagedProcess(processId) : null
   const active = !!process && process.status === 'running'
 
   if (!active && processId && process && process.status !== 'running') {
-    state.remote.lastError = readTail(process.log || '') || state.remote.lastError
-    state.remote.processId = null
+    runtime.lastError = readTail(process.log || '') || runtime.lastError
+    runtime.processId = null
+    runtime.startedAt = null
+    runtime.updatedAt = Date.now()
+    state.remotes[runtime.id] = runtime
   }
 
   return {
+    id: runtime.id,
+    name: runtime.name || deriveRemoteDeploymentName(runtime.target || ''),
+    isPrimary,
     active,
     processId: active ? processId : null,
     pid: active ? (process?.pid ?? null) : null,
-    action: state.remote.action || null,
-    target: state.remote.target || null,
-    startedAt: state.remote.startedAt || null,
+    action: runtime.action || null,
+    target: runtime.target || null,
+    startedAt: runtime.startedAt || null,
+    createdAt: runtime.createdAt,
+    updatedAt: runtime.updatedAt,
     status: process?.status || 'idle',
     exitCode: process?.exitCode ?? null,
     tail: process ? readTail(process.log || '') : '',
-    lastError: active ? null : (state.remote.lastError || null),
-    lastSummary: state.remote.lastSummary || null,
-    lastCommandPreview: state.remote.lastCommandPreview || null,
-    lastBackupPath: state.remote.lastBackupPath || null,
+    lastError: active ? null : (runtime.lastError || null),
+    lastSummary: runtime.lastSummary || null,
+    lastCommandPreview: runtime.lastCommandPreview || null,
+    lastBackupPath: runtime.lastBackupPath || null,
   }
 }
 
-export function getOpenClawRemoteDeployStatus(): OpenClawRemoteDeployStatus {
-  return currentRemoteStatus()
+function getPrimaryRemoteRuntimeState(state: DeployRuntimeState): RemoteRuntimeState | null {
+  if (state.primaryRemoteId && state.remotes[state.primaryRemoteId]) {
+    return state.remotes[state.primaryRemoteId]
+  }
+  const ordered = sortRemoteRuntimeStates(Object.values(state.remotes))
+  const next = ordered[0] || null
+  state.primaryRemoteId = next?.id || null
+  return next
+}
+
+function normalizeRemoteTargetKey(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+function findRemoteRuntimeState(
+  state: DeployRuntimeState,
+  input?: { remoteId?: string | null; target?: string | null },
+): RemoteRuntimeState | null {
+  const remoteId = typeof input?.remoteId === 'string' && input.remoteId.trim() ? input.remoteId.trim() : ''
+  if (remoteId && state.remotes[remoteId]) return state.remotes[remoteId]
+  const targetKey = normalizeRemoteTargetKey(input?.target)
+  if (targetKey) {
+    return Object.values(state.remotes).find((item) => normalizeRemoteTargetKey(item.target) === targetKey) || null
+  }
+  return getPrimaryRemoteRuntimeState(state)
+}
+
+function defaultRemoteStatus(): OpenClawRemoteDeployStatus {
+  const fallback = createRemoteRuntimeState('remote-default', { name: 'Remote OpenClaw' })
+  return currentRemoteStatusFromState(fallback, true)
+}
+
+export function getOpenClawRemoteDeployStatuses(): OpenClawRemoteDeployStatus[] {
+  const state = getRuntimeState()
+  return sortRemoteRuntimeStates(Object.values(state.remotes))
+    .map((runtime) => currentRemoteStatusFromState(runtime, runtime.id === state.primaryRemoteId))
+}
+
+export function getOpenClawRemoteDeployCollectionStatus(): OpenClawRemoteDeployCollectionStatus {
+  const state = getRuntimeState()
+  const items = getOpenClawRemoteDeployStatuses()
+  const primaryId = items.find((item) => item.isPrimary)?.id || null
+  state.primaryRemoteId = primaryId
+  return { primaryId, items }
+}
+
+export function getOpenClawRemoteDeployStatus(remoteId?: string | null): OpenClawRemoteDeployStatus {
+  const state = getRuntimeState()
+  const runtime = findRemoteRuntimeState(state, { remoteId })
+  return runtime
+    ? currentRemoteStatusFromState(runtime, runtime.id === state.primaryRemoteId)
+    : defaultRemoteStatus()
 }
 
 export function generateOpenClawGatewayToken(): string {
   return randomBytes(24).toString('base64url')
 }
 
+function generateLocalDeployId(): string {
+  return `local-${randomBytes(8).toString('hex')}`
+}
+
+function generateRemoteDeployId(): string {
+  return `remote-${randomBytes(8).toString('hex')}`
+}
+
 export async function startOpenClawLocalDeploy(input?: {
+  localId?: string | null
+  name?: string | null
   port?: number
   token?: string | null
-}): Promise<{ local: OpenClawLocalDeployStatus; token: string }> {
+  makePrimary?: boolean
+}): Promise<{ local: OpenClawLocalDeployStatus; locals: OpenClawLocalDeployStatus[]; token: string }> {
   const state = getRuntimeState()
-  const current = currentLocalStatus()
-  if (current.running && current.processId) {
-    killManagedProcess(current.processId)
+  const port = sanitizePort(input?.port, DEFAULT_LOCAL_PORT)
+  const requestedLocalId = typeof input?.localId === 'string' && input.localId.trim()
+    ? input.localId.trim()
+    : null
+  const existingById = requestedLocalId ? state.locals[requestedLocalId] || null : null
+  const existingByPort = Object.values(state.locals).find((item) => item.port === port) || null
+  const localId = existingById?.id || existingByPort?.id || requestedLocalId || generateLocalDeployId()
+  const existing = existingById || existingByPort || null
+  const current = existing || createLocalRuntimeState(localId, {
+    port,
+    name: typeof input?.name === 'string' && input.name.trim() ? input.name.trim() : `Local OpenClaw ${port}`,
+  })
+
+  if (existingByPort && existingByPort.id !== localId && existingByPort.processId) {
+    const conflictProcess = getManagedProcess(existingByPort.processId)
+    if (conflictProcess?.status === 'running') {
+      killManagedProcess(existingByPort.processId)
+    }
+    removeManagedProcess(existingByPort.processId)
+    existingByPort.processId = null
+    existingByPort.startedAt = null
+    existingByPort.updatedAt = Date.now()
+    state.locals[existingByPort.id] = existingByPort
+  }
+
+  if (current.processId) {
+    const currentProcess = getManagedProcess(current.processId)
+    if (currentProcess?.status === 'running') {
+      killManagedProcess(current.processId)
+    }
     removeManagedProcess(current.processId)
   }
 
-  const port = sanitizePort(input?.port, DEFAULT_LOCAL_PORT)
   const token = normalizeToken(input?.token) || generateOpenClawGatewayToken()
   const endpoint = normalizeOpenClawEndpoint(`http://127.0.0.1:${port}`)
   const wsUrl = deriveOpenClawWsUrl(endpoint)
+  await ensureManagedLocalRuntimeFiles(localId)
   const binary = resolveBundledOpenClawBinary()
   const args = [
     binary,
@@ -656,7 +1083,7 @@ export async function startOpenClawLocalDeploy(input?: {
     '--allow-unconfigured',
     '--force',
     '--bind',
-    'loopback',
+    'custom',
     '--port',
     String(port),
     '--auth',
@@ -669,45 +1096,62 @@ export async function startOpenClawLocalDeploy(input?: {
   const result = await startManagedProcess({
     command: args.map(shellEscape).join(' '),
     cwd: process.cwd(),
+    env: buildLocalProcessEnv(localId),
     background: true,
     timeoutMs: 24 * 60 * 60_000,
   })
 
   if (result.status !== 'running') {
     const message = result.output || result.tail || 'OpenClaw failed to start.'
-    state.local = {
+    state.locals[localId] = createLocalRuntimeState(localId, {
+      ...current,
+      name: typeof input?.name === 'string' && input.name.trim() ? input.name.trim() : current.name,
       processId: null,
       port,
       endpoint,
       wsUrl,
       token,
       startedAt: null,
+      updatedAt: Date.now(),
       lastError: message,
-    }
+    })
+    if (input?.makePrimary !== false || !state.primaryLocalId) state.primaryLocalId = localId
     throw new Error(message)
   }
 
-  state.local = {
+  state.locals[localId] = createLocalRuntimeState(localId, {
+    ...current,
+    name: typeof input?.name === 'string' && input.name.trim() ? input.name.trim() : current.name,
     processId: result.processId,
     port,
     endpoint,
     wsUrl,
     token,
     startedAt: Date.now(),
+    updatedAt: Date.now(),
     lastError: null,
-  }
+  })
+  if (input?.makePrimary !== false || !state.primaryLocalId) state.primaryLocalId = localId
 
   await waitForLocalRuntime(result.processId)
 
+  const local = getOpenClawLocalDeployStatus(localId)
   return {
-    local: currentLocalStatus(),
+    local,
+    locals: getOpenClawLocalDeployStatuses(),
     token,
   }
 }
 
-export function stopOpenClawLocalDeploy(): OpenClawLocalDeployStatus {
+export function stopOpenClawLocalDeploy(localId?: string | null): { local: OpenClawLocalDeployStatus; locals: OpenClawLocalDeployStatus[] } {
   const state = getRuntimeState()
-  const processId = state.local.processId
+  const runtime = findLocalRuntimeState(state, { localId })
+  if (!runtime) {
+    const local = defaultLocalStatus()
+    return { local, locals: getOpenClawLocalDeployStatuses() }
+  }
+
+  const processId = runtime.processId
   if (processId) {
     const process = getManagedProcess(processId)
     if (process?.status === 'running') {
@@ -715,19 +1159,39 @@ export function stopOpenClawLocalDeploy(): OpenClawLocalDeployStatus {
     }
     removeManagedProcess(processId)
   }
-  state.local.processId = null
-  state.local.startedAt = null
-  return currentLocalStatus()
+  runtime.processId = null
+  runtime.startedAt = null
+  runtime.updatedAt = Date.now()
+  state.locals[runtime.id] = runtime
+  if (state.primaryLocalId === runtime.id) {
+    state.primaryLocalId = sortLocalRuntimeStates(Object.values(state.locals).filter((item) => item.id !== runtime.id && item.processId))
+      [0]?.id
+      || runtime.id
+  }
+  return {
+    local: getOpenClawLocalDeployStatus(runtime.id),
+    locals: getOpenClawLocalDeployStatuses(),
+  }
 }
 
 export async function restartOpenClawLocalDeploy(input?: {
+  localId?: string | null
+  name?: string | null
   port?: number
   token?: string | null
-}): Promise<{ local: OpenClawLocalDeployStatus; token: string }> {
-  const current = currentLocalStatus()
+  makePrimary?: boolean
+}): Promise<{ local: OpenClawLocalDeployStatus; locals: OpenClawLocalDeployStatus[]; token: string }> {
+  const state = getRuntimeState()
+  const current = findLocalRuntimeState(state, {
+    localId: input?.localId ?? null,
+    port: typeof input?.port === 'number' ? input.port : null,
+  })
   return startOpenClawLocalDeploy({
-    port: input?.port ?? current.port,
-    token: input?.token ?? current.token,
+    localId: input?.localId ?? current?.id ?? null,
+    name: input?.name ?? current?.name ?? null,
+    port: input?.port ?? current?.port ?? DEFAULT_LOCAL_PORT,
+    token: input?.token ?? current?.token ?? null,
+    makePrimary: input?.makePrimary,
   })
 }
 
@@ -1276,6 +1740,8 @@ export async function verifyOpenClawDeployment(input?: {
 }
 
 export async function deployOpenClawBundleOverSsh(input?: {
+  remoteId?: string | null
+  name?: string | null
   template?: OpenClawRemoteDeployTemplate
   target?: string | null
   token?: string | null
@@ -1285,6 +1751,7 @@ export async function deployOpenClawBundleOverSsh(input?: {
   useCase?: OpenClawUseCaseTemplate
   exposure?: OpenClawExposurePreset
   ssh?: Partial<OpenClawSshConfig> | null
+  makePrimary?: boolean
 }): Promise<OpenClawRemoteCommandResult> {
   const sshConfig = sanitizeSshConfig(input?.ssh)
   if (!sshConfig) throw new Error('SSH host is required for remote deploy.')
@@ -1309,10 +1776,13 @@ export async function deployOpenClawBundleOverSsh(input?: {
   )
   const command = `${mkdirCommand} && ${scpCommand} && ${bootstrapCommand}`
   const result = await startRemoteCommand({
+    remoteId: input?.remoteId ?? null,
+    name: input?.name ?? bundle.title,
     action: 'ssh-deploy',
     target: sshConfig.host,
     command,
     summary: `Deploying OpenClaw to ${sshConfig.host} over SSH.`,
+    makePrimary: input?.makePrimary,
   })
   return {
     ...result,
@@ -1324,11 +1794,14 @@ export async function deployOpenClawBundleOverSsh(input?: {
 export const deployOpenClawOverSsh = deployOpenClawBundleOverSsh
 
 export async function runOpenClawRemoteLifecycleAction(input?: {
+  remoteId?: string | null
+  name?: string | null
   action: 'start' | 'stop' | 'restart' | 'upgrade' | 'backup' | 'restore' | 'rotate-token'
   ssh?: Partial<OpenClawSshConfig> | null
   image?: string | null
   token?: string | null
   backupPath?: string | null
+  makePrimary?: boolean
 }): Promise<OpenClawRemoteCommandResult> {
   const sshConfig = sanitizeSshConfig(input?.ssh)
   if (!sshConfig) throw new Error('SSH host is required for remote lifecycle actions.')
@@ -1369,11 +1842,14 @@ export async function runOpenClawRemoteLifecycleAction(input?: {
 
   const command = buildSshInvocation(sshConfig, remoteCommand)
   const result = await startRemoteCommand({
+    remoteId: input?.remoteId ?? null,
+    name: input?.name ?? deriveRemoteDeploymentName(sshConfig.host),
     action,
     target: sshConfig.host,
     command,
     summary,
     backupPath,
+    makePrimary: input?.makePrimary,
   })
   return {
     ...result,

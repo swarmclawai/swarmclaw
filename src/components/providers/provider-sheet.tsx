@@ -6,6 +6,7 @@ import { createProviderConfig, updateProviderConfig, deleteProviderConfig } from
 import { api } from '@/lib/api-client'
 import { fetchProviderModelDiscovery } from '@/lib/provider-model-discovery-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { toast } from 'sonner'
 
 export function ProviderSheet() {
@@ -40,6 +41,8 @@ export function ProviderSheet() {
   const [liveLoading, setLiveLoading] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
   const [liveCached, setLiveCached] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // Find editing provider in custom configs OR built-in list
   const editingCustom = editingId ? providerConfigs.find((c) => c.id === editingId) : null
@@ -122,6 +125,8 @@ export function ProviderSheet() {
   }
 
   const onClose = () => {
+    setConfirmDelete(false)
+    setDeleting(false)
     setOpen(false)
     setEditingId(null)
   }
@@ -162,14 +167,17 @@ export function ProviderSheet() {
 
   const handleDelete = async () => {
     if (editingCustom) {
-      if (!confirm(`Delete custom provider "${editingCustom.name}"?`)) return
+      setDeleting(true)
       try {
         await deleteProviderConfig(editingCustom.id)
         toast.success('Provider deleted')
         await loadProviderConfigs()
+        setConfirmDelete(false)
         onClose()
       } catch (err: unknown) {
         toast.error(err instanceof Error ? err.message : 'Failed to delete provider')
+      } finally {
+        setDeleting(false)
       }
     }
   }
@@ -493,7 +501,7 @@ export function ProviderSheet() {
 
       <div className="flex gap-3 pt-2 border-t border-white/[0.04]">
         {editingCustom && (
-          <button onClick={handleDelete} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
+          <button onClick={() => setConfirmDelete(true)} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
             Delete
           </button>
         )}
@@ -520,6 +528,17 @@ export function ProviderSheet() {
           </button>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete Provider?"
+        message={editingCustom ? `Delete custom provider "${editingCustom.name}"?` : 'Delete this provider?'}
+        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        confirmDisabled={deleting}
+        cancelDisabled={deleting}
+        danger
+        onConfirm={() => { void handleDelete() }}
+        onCancel={() => { if (!deleting) setConfirmDelete(false) }}
+      />
     </BottomSheet>
   )
 }

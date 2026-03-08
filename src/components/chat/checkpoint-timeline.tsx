@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api-client'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { useAppStore } from '@/stores/use-app-store'
 import { toast } from 'sonner'
 
@@ -21,6 +22,7 @@ export function CheckpointTimeline({ sessionId }: Props) {
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([])
   const [loading, setLoading] = useState(true)
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [confirmRestore, setConfirmRestore] = useState<Checkpoint | null>(null)
   const loadSessions = useAppStore((s) => s.loadSessions)
 
   const load = async () => {
@@ -40,9 +42,9 @@ export function CheckpointTimeline({ sessionId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
-  const handleRestore = async (checkpoint: Checkpoint) => {
-    if (!confirm('Restore session to this point? This will delete all subsequent history.')) return
-    
+  const handleRestore = async () => {
+    if (!confirmRestore) return
+    const checkpoint = confirmRestore
     setRestoringId(checkpoint.checkpointId)
     try {
       await api('POST', `/chats/${sessionId}/restore`, {
@@ -52,6 +54,7 @@ export function CheckpointTimeline({ sessionId }: Props) {
       toast.success('Session restored successfully')
       await loadSessions()
       await load()
+      setConfirmRestore(null)
     } catch (err) {
       toast.error('Failed to restore session')
       console.error(err)
@@ -74,39 +77,52 @@ export function CheckpointTimeline({ sessionId }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-3 p-5">
-      {checkpoints.map((cp, i) => (
-        <div 
-          key={cp.checkpointId}
-          className="group relative flex flex-col gap-2 p-3 rounded-[12px] border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] transition-all"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col">
-              <span className="text-[11px] font-700 text-accent-bright uppercase tracking-wider">
-                {i === 0 ? 'Current State' : `Point ${checkpoints.length - i}`}
-              </span>
-              <span className="text-[10px] text-text-3 font-mono">
-                {new Date(cp.createdAt).toLocaleString()}
-              </span>
+    <>
+      <div className="flex flex-col gap-3 p-5">
+        {checkpoints.map((cp, i) => (
+          <div 
+            key={cp.checkpointId}
+            className="group relative flex flex-col gap-2 p-3 rounded-[12px] border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] transition-all"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col">
+                <span className="text-[11px] font-700 text-accent-bright uppercase tracking-wider">
+                  {i === 0 ? 'Current State' : `Point ${checkpoints.length - i}`}
+                </span>
+                <span className="text-[10px] text-text-3 font-mono">
+                  {new Date(cp.createdAt).toLocaleString()}
+                </span>
+              </div>
+              {i > 0 && (
+                <button
+                  onClick={() => setConfirmRestore(cp)}
+                  disabled={!!restoringId}
+                  className="px-3 py-1 rounded-[6px] bg-accent-soft text-accent-bright text-[11px] font-600 border-none cursor-pointer hover:brightness-110 disabled:opacity-50"
+                >
+                  {restoringId === cp.checkpointId ? 'Restoring...' : 'Restore here'}
+                </button>
+              )}
             </div>
-            {i > 0 && (
-              <button
-                onClick={() => handleRestore(cp)}
-                disabled={!!restoringId}
-                className="px-3 py-1 rounded-[6px] bg-accent-soft text-accent-bright text-[11px] font-600 border-none cursor-pointer hover:brightness-110 disabled:opacity-50"
-              >
-                {restoringId === cp.checkpointId ? 'Restoring...' : 'Restore here'}
-              </button>
+            
+            {cp.values && Array.isArray(cp.values.messages) && cp.values.messages.length > 0 && (
+              <div className="mt-1 p-2 rounded-[8px] bg-black/20 text-[11px] text-text-3 line-clamp-2 italic">
+                Last message: {String((cp.values.messages[cp.values.messages.length - 1] as Record<string, unknown>)?.content ?? 'Empty state')}
+              </div>
             )}
           </div>
-          
-          {cp.values && Array.isArray(cp.values.messages) && cp.values.messages.length > 0 && (
-            <div className="mt-1 p-2 rounded-[8px] bg-black/20 text-[11px] text-text-3 line-clamp-2 italic">
-              Last message: {String((cp.values.messages[cp.values.messages.length - 1] as Record<string, unknown>)?.content ?? 'Empty state')}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+      <ConfirmDialog
+        open={!!confirmRestore}
+        title="Restore Session?"
+        message="Restore session to this point? This will delete all subsequent history."
+        confirmLabel={restoringId ? 'Restoring...' : 'Restore'}
+        confirmDisabled={!!restoringId}
+        cancelDisabled={!!restoringId}
+        danger
+        onConfirm={() => { void handleRestore() }}
+        onCancel={() => { if (!restoringId) setConfirmRestore(null) }}
+      />
+    </>
   )
 }

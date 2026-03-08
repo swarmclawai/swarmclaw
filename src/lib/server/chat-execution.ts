@@ -25,7 +25,7 @@ import type { StructuredToolInterface } from '@langchain/core/tools'
 import type { Session } from '@/types'
 import { stripMainLoopMetaForPersistence } from './main-agent-loop'
 import { getPluginManager } from './plugins'
-import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import { isLocalOpenClawEndpoint, normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { routeTaskIntent } from './capability-router'
 import { notify } from './ws-hub'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from './agent-runtime-config'
@@ -38,6 +38,7 @@ import {
   setCachedLlmResponse,
   type LlmResponseCacheKeyInput,
 } from './llm-response-cache'
+import { genId } from '@/lib/id'
 import type { Message, MessageToolEvent, SSEEvent, UsageRecord } from '@/types'
 import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from './provider-health'
 import { isHeartbeatSource, isInternalHeartbeatRun } from './heartbeat-source'
@@ -47,14 +48,18 @@ import { syncSessionArchiveMemory } from './session-archive-memory'
 import { evaluateSessionFreshness, resetSessionRuntime, resolveSessionResetPolicy } from './session-reset-policy'
 import { pruneStreamingAssistantArtifacts, upsertStreamingAssistantArtifact } from '@/lib/chat-streaming-state'
 import { resolveActiveProjectContext } from './project-context'
+import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from './assistant-control'
+import { buildToolEventAssistantSummary } from '@/lib/tool-event-summary'
+import { buildAgentDisabledMessage, isAgentDisabled } from './agent-availability'
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
 /** Slice history from the most recent context-clear marker forward */
 function applyContextClearBoundary(messages: Message[]): Message[] {
+  const filterModelHistory = (items: Message[]) => items.filter((message) => message.historyExcluded !== true)
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].kind === 'context-clear') return messages.slice(i + 1)
+    if (messages[i].kind === 'context-clear') return filterModelHistory(messages.slice(i + 1))
   }
-  return messages
+  return filterModelHistory(messages)
 }
 
 interface SessionWithTools {
@@ -120,6 +125,7 @@ export function collectToolEvent(ev: SSEEvent, bag: MessageToolEvent[]) {
       previous
       && previous.name === (ev.toolName || 'unknown')
       && previous.input === (ev.toolInput || '')
+      && previous.toolCallId === (ev.toolCallId || previous.toolCallId)
       && !previous.output
     ) {
       return
@@ -127,11 +133,14 @@ export function collectToolEvent(ev: SSEEvent, bag: MessageToolEvent[]) {
     bag.push({
       name: ev.toolName || 'unknown',
       input: ev.toolInput || '',
+      toolCallId: ev.toolCallId,
     })
     return
   }
   if (ev.t === 'tool_result') {
-    const idx = bag.findLastIndex((e) => e.name === (ev.toolName || 'unknown') && !e.output)
+    const idx = ev.toolCallId
+      ? bag.findLastIndex((e) => e.toolCallId === ev.toolCallId && !e.output)
+      : bag.findLastIndex((e) => e.name === (ev.toolName || 'unknown') && !e.output)
     if (idx === -1) return
     const output = ev.toolOutput || ''
     bag[idx] = {
@@ -140,6 +149,25 @@ export function collectToolEvent(ev: SSEEvent, bag: MessageToolEvent[]) {
       error: isLikelyToolErrorOutput(output) || undefined,
     }
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function hasExplicitToolMention(message: string, toolName: string): boolean {
+  const escaped = escapeRegExp(toolName)
+  const negated = new RegExp(`\\b(?:do not|don't|dont|avoid|skip|without|never)\\s+(?:use\\s+|call\\s+|invoke\\s+)?(?:the\\s+)?\`?${escaped}\`?(?:\\s+tool)?\\b`, 'i')
+  if (negated.test(message)) return false
+  const boundary = new RegExp(`(^|[^a-z0-9_])\`?${escaped}\`?([^a-z0-9_]|$)`, 'i')
+  return boundary.test(message)
+}
+
+function hasExplicitGenericToolRequest(message: string, toolName: string): boolean {
+  const escaped = escapeRegExp(toolName)
+  const negated = new RegExp(`\\b(?:do not|don't|dont|avoid|skip|without|never)\\s+(?:use\\s+|call\\s+|invoke\\s+)?(?:the\\s+)?${escaped}(?:\\s+tool)?\\b`, 'i')
+  if (negated.test(message)) return false
+  return new RegExp(`(^|[\\s(])\`${escaped}\`([\\s).,!?]|$)|\\b${escaped}\\s+tool\\b|\\buse\\s+(?:the\\s+)?${escaped}\\b|\\bcall\\s+(?:the\\s+)?${escaped}\\b|\\binvoke\\s+(?:the\\s+)?${escaped}\\b`, 'i').test(message)
 }
 
 export function dedupeConsecutiveToolEvents(events: MessageToolEvent[]): MessageToolEvent[] {
@@ -176,6 +204,26 @@ export function dedupeConsecutiveToolEvents(events: MessageToolEvent[]): Message
     index += 1
   }
   return deduped
+}
+
+export function deriveTerminalRunError(params: {
+  errorMessage?: string
+  fullResponse: string
+  streamErrors: string[]
+  toolEvents: MessageToolEvent[]
+  internal: boolean
+}): string | undefined {
+  if (params.errorMessage) return params.errorMessage
+
+  if (params.streamErrors.length > 0 && !params.fullResponse.trim()) {
+    return params.streamErrors[params.streamErrors.length - 1]
+  }
+
+  if (!params.internal && !params.fullResponse.trim() && params.toolEvents.length === 0) {
+    return 'Run completed without any response text, tool calls, or explicit error details. Check the provider configuration and try again.'
+  }
+
+  return undefined
 }
 
 function extractDelegateResponse(outputText: string): string | null {
@@ -358,13 +406,32 @@ function shouldReplaceRecentAssistantMessage(params: {
   return prevTools === 0
 }
 
+function hasPersistableAssistantPayload(text: string, thinking: string, toolEvents: MessageToolEvent[]): boolean {
+  return text.trim().length > 0 || thinking.trim().length > 0 || toolEvents.length > 0
+}
+
+function getPersistedAssistantText(text: string, toolEvents: MessageToolEvent[]): string {
+  const trimmed = text.trim()
+  if (trimmed) return trimmed
+  return buildToolEventAssistantSummary(toolEvents)
+}
+
+function getToolEventsSnapshotKey(toolEvents: MessageToolEvent[]): string {
+  return JSON.stringify(toolEvents.map((event) => [
+    event.name,
+    event.input,
+    event.output || '',
+    event.error === true,
+    event.toolCallId || '',
+  ]))
+}
+
 export function pruneSuppressedHeartbeatStreamMessage(messages: Message[]): boolean {
   return pruneStreamingAssistantArtifacts(messages)
 }
 
 export function requestedToolNamesFromMessage(message: string): string[] {
-  const lower = message.toLowerCase()
-  const candidates = [
+  const explicitCandidates = [
     'delegate_to_claude_code',
     'delegate_to_codex_cli',
     'delegate_to_opencode_cli',
@@ -392,33 +459,104 @@ export function requestedToolNamesFromMessage(message: string): string[] {
     'wallet_tool',
     'http_request',
     'send_file',
-    'browser',
-    'web',
-    'shell',
-    'files',
-    'edit_file',
     'sandbox_exec',
     'sandbox_list_runtimes',
-    'git',
-    'canvas',
     'schedule_wake',
     'spawn_subagent',
-    'mailbox',
     'ask_human',
-    'document',
-    'extract',
-    'table',
-    'crawl',
     'context_status',
     'context_summarize',
     'openclaw_nodes',
     'openclaw_workspace',
   ]
-  const requested = candidates.filter((name) => lower.includes(name.toLowerCase()))
-  if (/(^|[\s(])`delegate`([\s).,!?]|$)|\bdelegate tool\b|\buse delegate\b/.test(lower)) {
+  const genericCandidates = [
+    'browser',
+    'web',
+    'shell',
+    'files',
+    'edit_file',
+    'git',
+    'canvas',
+    'mailbox',
+    'document',
+    'extract',
+    'table',
+    'crawl',
+    'email',
+  ]
+  const requested = explicitCandidates.filter((name) => hasExplicitToolMention(message, name))
+  for (const name of genericCandidates) {
+    if (hasExplicitGenericToolRequest(message, name)) requested.push(name)
+  }
+  if (hasExplicitGenericToolRequest(message, 'delegate')) {
     requested.push('delegate')
   }
   return Array.from(new Set(requested))
+}
+
+function parseToolJsonObject(raw: string): Record<string, unknown> | null {
+  const trimmed = raw.trim()
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null
+  try {
+    const parsed = JSON.parse(trimmed)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function summarizeConnectorToolFailure(output: string): string {
+  const trimmed = output.trim()
+  const withoutPrefix = trimmed.replace(/^Error:\s*/i, '')
+  const parsed = parseToolJsonObject(withoutPrefix) || parseToolJsonObject(trimmed)
+  if (parsed) {
+    const detail = parsed.detail
+    if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+      const detailRecord = detail as Record<string, unknown>
+      const message = typeof detailRecord.message === 'string' ? detailRecord.message.trim() : ''
+      if (message) return message
+      const code = typeof detailRecord.code === 'string' ? detailRecord.code.trim() : ''
+      const status = typeof detailRecord.status === 'string' ? detailRecord.status.trim() : ''
+      if (code && status) return `${code}: ${status}`
+      if (code) return code
+      if (status) return status
+    }
+    const message = typeof parsed.message === 'string' ? parsed.message.trim() : ''
+    if (message) return message
+    const error = typeof parsed.error === 'string' ? parsed.error.trim() : ''
+    if (error) return error
+  }
+  return withoutPrefix.replace(/\s+/g, ' ').trim() || 'Connector delivery failed.'
+}
+
+function connectorToolEventSucceeded(event: MessageToolEvent): boolean {
+  if (!event.output) return false
+  const parsed = parseToolJsonObject(event.output)
+  const status = typeof parsed?.status === 'string' ? parsed.status.trim().toLowerCase() : ''
+  return status === 'sent' || status === 'voice_sent' || status === 'scheduled'
+}
+
+const POSITIVE_CONNECTOR_DELIVERY_RE = /\b(?:i(?:'ve| have)?(?: successfully)? sent|i sent|successfully sent|sent to your|voice note (?:has been|was) sent|message (?:has been|was) sent)\b/i
+
+export function reconcileConnectorDeliveryText(text: string, events: MessageToolEvent[]): string {
+  const trimmed = text.trim()
+  if (!trimmed || !POSITIVE_CONNECTOR_DELIVERY_RE.test(trimmed)) return text
+
+  const connectorEvents = dedupeConsecutiveToolEvents(events).filter((event) => event.name === 'connector_message_tool')
+  if (connectorEvents.length === 0) return text
+  if (connectorEvents.some((event) => connectorToolEventSucceeded(event))) return text
+
+  const latestFailure = [...connectorEvents]
+    .reverse()
+    .find((event) => event.error === true && typeof event.output === 'string' && event.output.trim())
+
+  const failureSummary = latestFailure?.output
+    ? summarizeConnectorToolFailure(latestFailure.output)
+    : 'I could not confirm that the connector actually sent anything.'
+
+  return `I couldn't send that through the configured connector. ${failureSummary}`.trim()
 }
 
 function parseKeyValueArgs(raw: string): Record<string, string> {
@@ -563,6 +701,17 @@ function hasToolEnabled(session: SessionWithTools, toolName: string): boolean {
   return pluginIdMatches(session?.plugins || session?.tools || [], toolName)
 }
 
+export function hasDirectLocalCodingTools(session: SessionWithTools): boolean {
+  return [
+    'shell',
+    'execute_command',
+    'files',
+    'edit_file',
+    'openclaw_workspace',
+    'sandbox',
+  ].some((toolName) => hasToolEnabled(session, toolName))
+}
+
 function enabledDelegationTools(session: SessionWithTools): DelegateTool[] {
   const tools: DelegateTool[] = []
   if (hasToolEnabled(session, 'claude_code') || hasToolEnabled(session, 'delegate')) tools.push('delegate_to_claude_code')
@@ -682,6 +831,31 @@ function syncSessionFromAgent(sessionId: string): void {
     }
     if (session.shortcutForAgentId !== agent.id) { session.shortcutForAgentId = agent.id; changed = true }
     if (session.name !== agent.name) { session.name = agent.name; changed = true }
+    const desiredHeartbeatEnabled = agent.heartbeatEnabled ?? false
+    if ((session.heartbeatEnabled ?? false) !== desiredHeartbeatEnabled) {
+      session.heartbeatEnabled = desiredHeartbeatEnabled
+      changed = true
+    }
+    const desiredHeartbeatIntervalSec = agent.heartbeatIntervalSec ?? null
+    if ((session.heartbeatIntervalSec ?? null) !== desiredHeartbeatIntervalSec) {
+      session.heartbeatIntervalSec = desiredHeartbeatIntervalSec
+      changed = true
+    }
+    const desiredMemoryScopeMode = agent.memoryScopeMode ?? null
+    if ((((session as unknown as Record<string, unknown>).memoryScopeMode as string | null | undefined) ?? null) !== desiredMemoryScopeMode) {
+      ;(session as unknown as Record<string, unknown>).memoryScopeMode = desiredMemoryScopeMode
+      changed = true
+    }
+    const desiredMemoryTierPreference = agent.memoryTierPreference ?? null
+    if ((((session as unknown as Record<string, unknown>).memoryTierPreference as string | null | undefined) ?? null) !== desiredMemoryTierPreference) {
+      ;(session as unknown as Record<string, unknown>).memoryTierPreference = desiredMemoryTierPreference
+      changed = true
+    }
+    const desiredProjectId = agent.projectId ?? null
+    if ((session.projectId ?? null) !== desiredProjectId) {
+      session.projectId = desiredProjectId
+      changed = true
+    }
   }
 
   if (changed) {
@@ -735,6 +909,15 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
       const skill = allSkills[skillId]
       if (skill?.content) parts.push(`## Skill: ${skill.name}\n${skill.content}`)
     }
+  }
+
+  // 5b. Workspace context files (HEARTBEAT.md, IDENTITY.md, AGENTS.md, etc.)
+  try {
+    const { buildWorkspaceContext } = require('./workspace-context')
+    const wsCtx = buildWorkspaceContext({ cwd: session.cwd })
+    if (wsCtx.block) parts.push(wsCtx.block)
+  } catch {
+    // Workspace context is non-critical
   }
 
   // 6. Thinking & Output Format (OpenClaw Style)
@@ -843,8 +1026,34 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   const appSettings = loadSettings()
   const agentForSession = session.agentId ? loadAgents()[session.agentId] : null
+  if (isAgentDisabled(agentForSession)) {
+    const disabledError = buildAgentDisabledMessage(agentForSession, 'run chats')
+    onEvent?.({ t: 'err', text: disabledError })
+
+    let persisted = false
+    if (!internal) {
+      session.messages.push({
+        role: 'assistant',
+        text: disabledError,
+        time: Date.now(),
+      })
+      session.lastActiveAt = Date.now()
+      saveSessions(sessions)
+      persisted = true
+    }
+
+    return {
+      runId,
+      sessionId,
+      text: disabledError,
+      persisted,
+      toolEvents: [],
+      error: disabledError,
+    }
+  }
   const toolPolicy = resolveSessionToolPolicy(session.plugins, appSettings)
   const isHeartbeatRun = isInternalHeartbeatRun(internal, source)
+  const isAutonomousInternalRun = internal && source !== 'chat'
   const isAutoRunNoHistory = isHeartbeatRun
   const heartbeatStatusOnly = false
   if (shouldApplySessionFreshnessReset(source)) {
@@ -863,6 +1072,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       sessions[sessionId] = session
       saveSessions(sessions)
     }
+  }
+  if (isAutonomousInternalRun) {
+    try { syncSessionArchiveMemory(session, { agent: agentForSession }) } catch { /* archive sync is best-effort */ }
   }
   const pluginsForRun = heartbeatStatusOnly ? [] : toolPolicy.enabledPlugins
   let sessionForRun = pluginsForRun === session.plugins
@@ -1034,9 +1246,72 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   let thinkingText = ''
   let streamingPartialText = ''
+  let lastPartialSaveAt = 0
+  let lastPartialSnapshotKey = ''
+  let partialSaveTimeout: ReturnType<typeof setTimeout> | null = null
+
+  const persistStreamingAssistantArtifact = () => {
+    partialSaveTimeout = null
+    const persistedToolEvents = toolEvents.length ? dedupeConsecutiveToolEvents([...toolEvents]) : []
+    if (!hasPersistableAssistantPayload(streamingPartialText, thinkingText, persistedToolEvents)) return
+
+    const snapshotKey = JSON.stringify([
+      streamingPartialText,
+      thinkingText,
+      getToolEventsSnapshotKey(persistedToolEvents),
+    ])
+    if (snapshotKey === lastPartialSnapshotKey) return
+
+    lastPartialSnapshotKey = snapshotKey
+    lastPartialSaveAt = Date.now()
+
+    try {
+      const fresh = loadSessions()
+      const current = fresh[sessionId]
+      if (!current) return
+      current.messages = Array.isArray(current.messages) ? current.messages : []
+      const partialMsg: Message = {
+        role: 'assistant',
+        text: streamingPartialText,
+        time: Date.now(),
+        streaming: true,
+        thinking: thinkingText || undefined,
+        toolEvents: persistedToolEvents.length ? persistedToolEvents : undefined,
+      }
+      upsertStreamingAssistantArtifact(current.messages, partialMsg, {
+        minIndex: runMessageStartIndex,
+        minTime: runStartedAt,
+      })
+      fresh[sessionId] = current
+      saveSessions(fresh)
+      notify(`messages:${sessionId}`)
+    } catch { /* partial save is best-effort */ }
+  }
+
+  const queuePartialAssistantPersist = (immediate = false) => {
+    const now = Date.now()
+    const minIntervalMs = 400
+    if (immediate || now - lastPartialSaveAt >= minIntervalMs) {
+      if (partialSaveTimeout) {
+        clearTimeout(partialSaveTimeout)
+        partialSaveTimeout = null
+      }
+      persistStreamingAssistantArtifact()
+      return
+    }
+    if (partialSaveTimeout) return
+    partialSaveTimeout = setTimeout(() => {
+      persistStreamingAssistantArtifact()
+    }, minIntervalMs - (now - lastPartialSaveAt))
+  }
+
   const emit = (ev: SSEEvent) => {
+    let shouldPersistPartial = false
+    let immediatePartialPersist = false
     if (ev.t === 'd' && typeof ev.text === 'string') {
       streamingPartialText += ev.text
+      shouldPersistPartial = true
+      immediatePartialPersist = streamingPartialText.length === ev.text.length
     }
     if (ev.t === 'err' && typeof ev.text === 'string') {
       const trimmed = ev.text.trim()
@@ -1047,6 +1322,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
     if (ev.t === 'thinking' && ev.text) {
       thinkingText += ev.text
+      shouldPersistPartial = true
     }
     if (ev.t === 'md' && ev.text) {
       try {
@@ -1060,36 +1336,18 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       } catch { /* ignore non-JSON md events */ }
     }
     collectToolEvent(ev, toolEvents)
+    if (ev.t === 'tool_call' || ev.t === 'tool_result') {
+      shouldPersistPartial = true
+      immediatePartialPersist = true
+    }
+    if (shouldPersistPartial) queuePartialAssistantPersist(immediatePartialPersist)
     onEvent?.(ev)
   }
 
   // Periodic partial save so a browser refresh doesn't lose the in-flight response.
-  let lastPartialSaveLen = 0
-  const PARTIAL_SAVE_INTERVAL_MS = 5000
+  const PARTIAL_SAVE_INTERVAL_MS = 2000
   const partialSaveTimer = setInterval(() => {
-    if (streamingPartialText.length > lastPartialSaveLen) {
-      lastPartialSaveLen = streamingPartialText.length
-      try {
-        const fresh = loadSessions()
-        const current = fresh[sessionId]
-        if (!current) return
-        current.messages = Array.isArray(current.messages) ? current.messages : []
-        const partialMsg: Message = {
-          role: 'assistant',
-          text: streamingPartialText,
-          time: Date.now(),
-          streaming: true,
-          toolEvents: toolEvents.length ? dedupeConsecutiveToolEvents([...toolEvents]) : undefined,
-        }
-        upsertStreamingAssistantArtifact(current.messages, partialMsg, {
-          minIndex: runMessageStartIndex,
-          minTime: runStartedAt,
-        })
-        fresh[sessionId] = current
-        saveSessions(fresh)
-        notify(`messages:${sessionId}`)
-      } catch { /* partial save is best-effort */ }
-    }
+    persistStreamingAssistantArtifact()
   }, PARTIAL_SAVE_INTERVAL_MS)
 
   const parseAndEmit = (raw: string) => {
@@ -1122,7 +1380,10 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const responseCacheConfig = resolveLlmResponseCacheConfig(appSettings)
   let responseCacheHit = false
   let responseCacheInput: LlmResponseCacheKeyInput | null = null
-  const hasPlugins = !!(sessionForRun.plugins?.length || sessionForRun.tools?.length) && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
+  const useLocalOpenClawNativeRuntime = providerType === 'openclaw' && isLocalOpenClawEndpoint(sessionForRun.apiEndpoint)
+  const hasPlugins = !!(sessionForRun.plugins?.length || sessionForRun.tools?.length)
+    && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
+    && !useLocalOpenClawNativeRuntime
 
   let durationMs = 0
   const startTs = Date.now()
@@ -1134,9 +1395,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       ? getSessionMessages(sessionId).slice(-6)
       : undefined
 
-    console.log(`[chat-execution] provider=${providerType}, hasPlugins=${hasPlugins}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, plugins=${(sessionForRun.plugins || sessionForRun.tools || []).length}`)
+    console.log(`[chat-execution] provider=${providerType}, hasPlugins=${hasPlugins}, localOpenClawNative=${useLocalOpenClawNativeRuntime}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, plugins=${(sessionForRun.plugins || sessionForRun.tools || []).length}`)
     if (hasPlugins) {
-      fullResponse = (await streamAgentChat({
+      const result = await streamAgentChat({
         session: sessionForRun,
         message: effectiveMessage,
         imagePath,
@@ -1146,7 +1407,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         write: (raw) => parseAndEmit(raw),
         history: heartbeatHistory ?? applyContextClearBoundary(getSessionMessages(sessionId)),
         signal: abortController.signal,
-      })).fullText
+      })
+      fullResponse = result.finalResponse || result.fullText
     } else {
       const directHistorySnapshot = isAutoRunNoHistory
         ? getSessionMessages(sessionId).slice(-6)
@@ -1218,6 +1480,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     })
   } finally {
     clearInterval(partialSaveTimer)
+    if (partialSaveTimeout) clearTimeout(partialSaveTimeout)
     active.delete(sessionId)
     if (signal) signal.removeEventListener('abort', abortFromOutside)
   }
@@ -1300,10 +1563,11 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       const selectedTool = directTool || tools.find((t) => t?.name === translated.toolName) as StructuredToolInterface | undefined
       if (!selectedTool?.invoke) return false
       const toolInput = JSON.stringify(translated.args)
-      emit({ t: 'tool_call', toolName, toolInput })
+      const toolCallId = genId()
+      emit({ t: 'tool_call', toolName, toolInput, toolCallId })
       const toolOutput = await selectedTool.invoke(translated.args)
       const outputText = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
-      emit({ t: 'tool_result', toolName, toolOutput: outputText })
+      emit({ t: 'tool_result', toolName, toolOutput: outputText, toolCallId })
       const delegateResponse = (
         toolName === 'delegate'
         || toolName.startsWith('delegate_to_')
@@ -1357,6 +1621,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const shouldAutoDelegateCoding = (!internal && source === 'chat')
     && enabledDelegateTools.length > 0
     && !hasDelegationCall
+    && calledNames.size === 0
+    && !requestedToolNames.length
+    && !hasDirectLocalCodingTools(sessionForRun)
     && routingDecision?.intent === 'coding'
 
   if (shouldAutoDelegateCoding) {
@@ -1445,10 +1712,28 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
   }
 
-  if (!errorMessage && streamErrors.length > 0 && !(fullResponse || '').trim()) {
-    errorMessage = streamErrors[streamErrors.length - 1]
+  const terminalError = deriveTerminalRunError({
+    errorMessage,
+    fullResponse: fullResponse || '',
+    streamErrors,
+    toolEvents,
+    internal,
+  })
+  if (terminalError && terminalError !== errorMessage) {
+    if (!errorMessage) {
+      log.warn('chat-run', `Run ended without a visible response for session ${sessionId}`, {
+        runId,
+        source,
+        internal,
+        provider: providerType,
+        messagePreview: effectiveMessage.slice(0, 200),
+        inferredError: terminalError,
+      })
+    }
+    errorMessage = terminalError
   }
 
+  const persistedToolEvents = dedupeConsecutiveToolEvents(toolEvents)
   let finalText = (fullResponse || '').trim() || (!internal && errorMessage ? `Error: ${errorMessage}` : '')
   if (pluginsForRun.length > 0 && finalText && !isHeartbeatRun) {
     try {
@@ -1459,27 +1744,30 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       )
     } catch { /* outbound transforms are non-critical */ }
   }
+  finalText = reconcileConnectorDeliveryText(finalText, persistedToolEvents)
   finalText = normalizeAssistantArtifactLinks(finalText, session.cwd)
-  const textForPersistence = stripMainLoopMetaForPersistence(finalText)
-  const persistedToolEvents = dedupeConsecutiveToolEvents(toolEvents)
+  const rawTextForPersistence = stripMainLoopMetaForPersistence(finalText)
+  const hiddenControlOnly = shouldSuppressHiddenControlText(rawTextForPersistence)
+  const textForPersistence = stripHiddenControlTokens(rawTextForPersistence)
+  const persistedText = getPersistedAssistantText(textForPersistence, persistedToolEvents)
 
-  if (isHeartbeatRun && finalText) {
-    const heartbeatStatus = extractHeartbeatStatus(finalText)
+  if (isHeartbeatRun && rawTextForPersistence) {
+    const heartbeatStatus = extractHeartbeatStatus(rawTextForPersistence)
     if (heartbeatStatus) emit({ t: 'status', text: JSON.stringify(heartbeatStatus) })
   }
 
   // HEARTBEAT_OK suppression
   const heartbeatConfig = input.heartbeatConfig
   let heartbeatClassification: 'suppress' | 'strip' | 'keep' | null = null
-  if (isHeartbeatRun && textForPersistence.length > 0) {
-    heartbeatClassification = classifyHeartbeatResponse(textForPersistence, heartbeatConfig?.ackMaxChars ?? 300, toolEvents.length > 0)
+  if (isHeartbeatRun && rawTextForPersistence.length > 0) {
+    heartbeatClassification = classifyHeartbeatResponse(rawTextForPersistence, heartbeatConfig?.ackMaxChars ?? 300, toolEvents.length > 0)
 
     // Deduplication logic from OpenClaw (nagging prevention)
     // If the model repeats itself exactly within 24h, suppress the heartbeat alert.
     if (heartbeatClassification !== 'suppress' && !toolEvents.length) {
       const prevText = session.lastHeartbeatText || ''
       const prevSentAt = session.lastHeartbeatSentAt || 0
-      const isDuplicate = prevText.trim() === textForPersistence.trim()
+      const isDuplicate = prevText.trim() === persistedText.trim()
         && (Date.now() - prevSentAt) < 24 * 60 * 60 * 1000
       if (isDuplicate) {
         heartbeatClassification = 'suppress'
@@ -1492,7 +1780,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     notify(`heartbeat:agent:${session.agentId}`)
   }
 
-  const shouldPersistAssistant = textForPersistence.length > 0
+  const shouldPersistAssistant = !hiddenControlOnly
+    && hasPersistableAssistantPayload(persistedText, thinkingText, persistedToolEvents)
     && heartbeatClassification !== 'suppress'
 
   const normalizeResumeId = (value: unknown): string | null =>
@@ -1503,16 +1792,14 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   if (current) {
     current.messages = Array.isArray(current.messages) ? current.messages : []
     const currentAgent = current.agentId ? loadAgents()[current.agentId] : null
-    let changed = false
-    changed = pruneStreamingAssistantArtifacts(current.messages, {
+    pruneStreamingAssistantArtifacts(current.messages, {
       minIndex: runMessageStartIndex,
       minTime: runStartedAt,
-    }) || changed
+    })
     const persistField = (key: string, value: unknown) => {
       const normalized = normalizeResumeId(value)
       if ((current as Record<string, unknown>)[key] !== normalized) {
         ;(current as Record<string, unknown>)[key] = normalized
-        changed = true
       }
     }
 
@@ -1535,15 +1822,11 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       }
       if (JSON.stringify(currentResume) !== JSON.stringify(nextResume)) {
         current.delegateResumeIds = nextResume
-        changed = true
       }
     }
 
     if (shouldPersistAssistant) {
       const persistedKind = isHeartbeatRun ? 'heartbeat' : 'chat'
-      const persistedText = heartbeatClassification === 'strip'
-        ? textForPersistence.replace(/HEARTBEAT_OK/gi, '').trim()
-        : textForPersistence
       const nowTs = Date.now()
       const nextAssistantMessage: Message = {
         role: 'assistant',
@@ -1568,7 +1851,6 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         current.lastHeartbeatText = persistedText
         current.lastHeartbeatSentAt = nowTs
       }
-      changed = true
       try {
         await getPluginManager().runHook('onMessage', { session: current, message: nextAssistantMessage }, { enabledIds: pluginsForRun })
       } catch { /* onMessage hooks are non-critical */ }
@@ -1627,7 +1909,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       }
     }
     if (isHeartbeatRun && heartbeatClassification === 'suppress') {
-      changed = pruneSuppressedHeartbeatStreamMessage(current.messages) || changed
+      pruneSuppressedHeartbeatStreamMessage(current.messages)
     }
 
     // Fire afterChatTurn hook for all enabled plugins (memory auto-save, logging, etc.)
@@ -1638,6 +1920,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         response: textForPersistence,
         source,
         internal,
+        toolEvents: persistedToolEvents,
       }, { enabledIds: pluginsForRun })
     } catch { /* afterChatTurn hooks are non-critical */ }
 
@@ -1647,10 +1930,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
 
     refreshSessionIdentityState(current, currentAgent)
-    changed = true
     try {
-      const archiveSync = syncSessionArchiveMemory(current, { agent: currentAgent })
-      if (archiveSync.stored) changed = true
+      syncSessionArchiveMemory(current, { agent: currentAgent })
     } catch { /* archive sync is best-effort */ }
     fresh[sessionId] = current
     saveSessions(fresh)
@@ -1660,7 +1941,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   return {
     runId,
     sessionId,
-    text: finalText,
+    text: hiddenControlOnly ? '' : textForPersistence,
     persisted: shouldPersistAssistant,
     toolEvents: persistedToolEvents,
     error: errorMessage,

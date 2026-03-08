@@ -2,22 +2,37 @@ import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import os from 'os'
 import path from 'path'
-import { loadSessions, saveSessions, deleteSession, active, loadAgents } from '@/lib/server/storage'
+import { loadSessions, saveSessions, deleteSession, active, loadAgents, upsertStoredItem } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { notify } from '@/lib/server/ws-hub'
 import { getSessionRunState } from '@/lib/server/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
+import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agent-availability'
+import { materializeStreamingAssistantArtifacts } from '@/lib/chat-streaming-state'
+import { ensureDaemonStarted } from '@/lib/server/daemon-state'
 export const dynamic = 'force-dynamic'
 
 
 export async function GET(req: Request) {
+  ensureDaemonStarted('api/chats:get')
   const sessions = loadSessions()
+  const changedSessionIds: string[] = []
   for (const id of Object.keys(sessions)) {
     const run = getSessionRunState(id)
     sessions[id].active = active.has(id) || !!run.runningRunId
     sessions[id].queuedCount = run.queueLength
     sessions[id].currentRunId = run.runningRunId || null
+    if (!sessions[id].active && Array.isArray(sessions[id].messages)) {
+      if (materializeStreamingAssistantArtifacts(sessions[id].messages)) changedSessionIds.push(id)
+    }
+  }
+  for (const id of changedSessionIds) {
+    const persisted = { ...sessions[id] } as Record<string, unknown>
+    delete persisted.active
+    delete persisted.queuedCount
+    delete persisted.currentRunId
+    upsertStoredItem('sessions', id, persisted)
   }
 
   const { searchParams } = new URL(req.url)
@@ -32,6 +47,7 @@ export async function GET(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  ensureDaemonStarted('api/chats:delete')
   const { ids } = await req.json().catch(() => ({ ids: [] })) as { ids: string[] }
   if (!Array.isArray(ids) || !ids.length) {
     return new NextResponse('Missing ids', { status: 400 })
@@ -41,7 +57,7 @@ export async function DELETE(req: Request) {
   for (const id of ids) {
     if (!sessions[id]) continue
     if (active.has(id)) {
-      try { active.get(id).kill() } catch {}
+      try { active.get(id)?.kill() } catch {}
       active.delete(id)
     }
     deleteSession(id)
@@ -52,6 +68,7 @@ export async function DELETE(req: Request) {
 }
 
 export async function POST(req: Request) {
+  ensureDaemonStarted('api/chats:post')
   const body = await req.json().catch(() => ({}))
   let cwd = (body.cwd || '').trim()
   if (cwd.startsWith('~/')) cwd = path.join(os.homedir(), cwd.slice(2))
@@ -61,6 +78,9 @@ export async function POST(req: Request) {
   const id = body.id || genId()
   const sessions = loadSessions()
   const agent = body.agentId ? loadAgents()[body.agentId] : null
+  if (isAgentDisabled(agent)) {
+    return NextResponse.json({ error: buildAgentDisabledMessage(agent, 'start chats') }, { status: 409 })
+  }
   const routePreferredGatewayTags = Array.isArray(body.routePreferredGatewayTags)
     ? body.routePreferredGatewayTags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
     : []

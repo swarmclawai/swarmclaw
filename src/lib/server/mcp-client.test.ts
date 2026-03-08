@@ -183,6 +183,22 @@ describe('jsonSchemaToZod', () => {
     })
     assert.deepEqual(schema.parse({ mystery: 'anything' }), { mystery: 'anything' })
   })
+
+  it('string enums map to a constrained schema', () => {
+    const schema = jsonSchemaToZod({
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['send', 'send_voice_note', 'schedule_followup'],
+        },
+      },
+      required: ['action'],
+    })
+
+    assert.deepEqual(schema.parse({ action: 'send_voice_note' }), { action: 'send_voice_note' })
+    assert.equal(schema.safeParse({ action: 'bogus' }).success, false)
+  })
 })
 
 /* ============================================================

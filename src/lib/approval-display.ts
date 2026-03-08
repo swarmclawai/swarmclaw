@@ -36,6 +36,14 @@ export function getApprovalTitle(approval: ApprovalRequest): string {
     const pluginId = getApprovalPluginId(approval)
     return pluginId ? `Enable Plugin: ${pluginId}` : 'Enable Plugin'
   }
+  if (approval.category === 'connector_sender') {
+    const data = dataObject(approval)
+    const senderName = typeof data.senderName === 'string' ? data.senderName.trim() : ''
+    const senderId = typeof data.senderId === 'string' ? data.senderId.trim() : ''
+    const connectorName = typeof data.connectorName === 'string' ? data.connectorName.trim() : ''
+    const subject = senderName || senderId || 'Unknown sender'
+    return connectorName ? `Approve ${subject} on ${connectorName}` : `Approve ${subject}`
+  }
   return approval.title || 'Approval Request'
 }
 
@@ -55,6 +63,18 @@ export function getApprovalPayload(approval: ApprovalRequest): Record<string, un
       filename,
       codeLength: code.length,
       codePreview: code ? truncate(code, 260) : '',
+    }
+  }
+
+  if (approval.category === 'connector_sender') {
+    return {
+      connectorId: typeof data.connectorId === 'string' ? data.connectorId : null,
+      connectorName: typeof data.connectorName === 'string' ? data.connectorName : null,
+      platform: typeof data.platform === 'string' ? data.platform : null,
+      senderId: typeof data.senderId === 'string' ? data.senderId : null,
+      senderName: typeof data.senderName === 'string' ? data.senderName : null,
+      channelId: typeof data.channelId === 'string' ? data.channelId : null,
+      policy: typeof data.policy === 'string' ? data.policy : null,
     }
   }
 

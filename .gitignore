@@ -37,10 +37,15 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+/AGENTS.md
+/.swarmclaw-install.json
+/.tmp-*
 
 # runtime data is always private (sessions, credentials, wallets, uploads, etc.)
 /data/*
 !/data/.gitkeep
+!/data/skills/
+/.legacy-browser-profiles/
 
 # user config backup
 /data-backup/
@@ -62,3 +67,9 @@ IMPROVEMENTS.md
 
 # local scratch dir accidentally created by tooling
 /~/
+
+# hidden local workbench for private harnesses, comparisons, and scratch artifacts
+/.workbench/
+
+# local-only imported skills and runtime scratch should never ship
+/data/skills/

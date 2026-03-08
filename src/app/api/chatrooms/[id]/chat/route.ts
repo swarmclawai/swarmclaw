@@ -23,6 +23,7 @@ import { evaluateRoutingRules } from '@/lib/server/chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '@/lib/server/provider-health'
 import { applyAgentReactionsFromText } from '@/lib/server/chatroom-orchestration'
 import { resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
+import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/assistant-control'
 import type { Chatroom, ChatroomMessage, Agent } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -228,7 +229,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
               history,
             })
 
-            const responseText = result.finalResponse || result.fullText || fullText
+            const rawResponseText = result.finalResponse || result.fullText || fullText
+            const responseText = stripHiddenControlTokens(rawResponseText)
 
             // Don't persist empty or error-only messages — they pollute chat history
             if (!responseText.trim() && agentError) {
@@ -238,7 +240,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
               return []
             }
 
-            if (responseText.trim()) {
+            if (responseText.trim() && !shouldSuppressHiddenControlText(rawResponseText)) {
               appendSyntheticSessionMessage(syntheticSession.id, 'assistant', responseText)
               const parsedMentions = parseMentions(responseText, agents, freshChatroom.agentIds)
               const chainedHealth = filterHealthyChatroomAgents(parsedMentions, agents)

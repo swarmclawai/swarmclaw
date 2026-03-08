@@ -4,6 +4,8 @@ import type { Schedule } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { cronToHuman } from '@/lib/cron-human'
+import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { isUserCreatedSchedule } from '@/lib/schedule-origin'
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'text-emerald-400 bg-emerald-400/[0.08]',
@@ -55,6 +57,7 @@ export function ScheduleCard({ schedule, inSidebar, index = 0 }: Props) {
   }
 
   const agent = agents[schedule.agentId]
+  const creatorAgent = schedule.createdByAgentId ? agents[schedule.createdByAgentId] : null
   const statusClass = STATUS_COLORS[schedule.status] || STATUS_COLORS.paused
   const canToggle = schedule.status === 'active' || schedule.status === 'paused'
 
@@ -101,7 +104,7 @@ export function ScheduleCard({ schedule, inSidebar, index = 0 }: Props) {
         </div>
       </div>
       <div className="text-[12px] text-text-3/70 mt-1.5 truncate">
-        {agent?.name || 'Unknown agent'} &middot; {schedule.scheduleType}
+        Runs on {agent?.name || 'Unknown agent'} &middot; {schedule.scheduleType}
         {!inSidebar && schedule.scheduleType === 'cron' && schedule.cron && (
           <span className="text-text-3/50 ml-1" title={schedule.cron}>({cronToHuman(schedule.cron)})</span>
         )}
@@ -110,6 +113,27 @@ export function ScheduleCard({ schedule, inSidebar, index = 0 }: Props) {
             (every {schedule.intervalMs >= 3600000
               ? `${Math.round(schedule.intervalMs / 3600000)}h`
               : `${Math.round(schedule.intervalMs / 60000)}m`})
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+        {creatorAgent ? (
+          <span className="inline-flex max-w-full items-center gap-1.5 rounded-[7px] bg-white/[0.05] px-2 py-1 text-[10px] font-600 text-text-2">
+            <AgentAvatar
+              seed={creatorAgent.avatarSeed}
+              avatarUrl={creatorAgent.avatarUrl}
+              name={creatorAgent.name}
+              size={14}
+            />
+            <span className="truncate">Created by {creatorAgent.name}</span>
+          </span>
+        ) : (
+          <span className="inline-flex max-w-full items-center gap-1.5 rounded-[7px] bg-white/[0.04] px-2 py-1 text-[10px] font-600 text-text-3">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 20c1.5-3.5 4.6-5 8-5s6.5 1.5 8 5" />
+            </svg>
+            <span className="truncate">{isUserCreatedSchedule(schedule) ? 'Created manually' : 'Creator unknown'}</span>
           </span>
         )}
       </div>

@@ -7,6 +7,7 @@ import { getScheduleSignatureKey } from '@/lib/schedule-dedupe'
 import { enqueueSystemEvent } from './system-events'
 import { requestHeartbeatNow } from './heartbeat-wake'
 import { processDueWatchJobs } from './watch-jobs'
+import { isAgentDisabled } from './agent-availability'
 
 const TICK_INTERVAL = 60_000 // 60 seconds
 let intervalId: ReturnType<typeof setInterval> | null = null
@@ -32,6 +33,11 @@ interface SchedulerScheduleLike {
   runNumber?: number
   createdInSessionId?: string | null
   createdByAgentId?: string | null
+  followupConnectorId?: string | null
+  followupChannelId?: string | null
+  followupThreadId?: string | null
+  followupSenderId?: string | null
+  followupSenderName?: string | null
 }
 
 export function startScheduler() {
@@ -123,6 +129,16 @@ async function tick() {
       })
       continue
     }
+    if (isAgentDisabled(agent)) {
+      console.warn(`[scheduler] Skipping schedule "${schedule.name}" (${schedule.id}) because agent ${schedule.agentId} is disabled`)
+      advanceSchedule(schedule)
+      saveSchedules(schedules)
+      pushMainLoopEventToMainSessions({
+        type: 'schedule_skipped',
+        text: `Schedule skipped: "${schedule.name}" (${schedule.id}) — agent ${schedule.agentId} is disabled.`,
+      })
+      continue
+    }
 
     console.log(`[scheduler] Firing schedule "${schedule.name}" (${schedule.id})`)
     schedule.lastRunAt = now
@@ -185,6 +201,11 @@ async function tick() {
         sourceScheduleKey: scheduleSignature || null,
         createdInSessionId: schedule.createdInSessionId || null,
         createdByAgentId: schedule.createdByAgentId || null,
+        followupConnectorId: schedule.followupConnectorId || null,
+        followupChannelId: schedule.followupChannelId || null,
+        followupThreadId: schedule.followupThreadId || null,
+        followupSenderId: schedule.followupSenderId || null,
+        followupSenderName: schedule.followupSenderName || null,
         runNumber: schedule.runNumber,
       }
       schedule.linkedTaskId = taskId
@@ -204,6 +225,13 @@ async function tick() {
     if (schedule.createdInSessionId) {
       enqueueSystemEvent(schedule.createdInSessionId, `Schedule triggered: ${schedule.name}`)
     }
-    requestHeartbeatNow({ agentId: schedule.agentId, reason: 'schedule' })
+    requestHeartbeatNow({
+      agentId: schedule.agentId,
+      eventId: `${schedule.id}:${schedule.runNumber}`,
+      reason: 'schedule',
+      source: `schedule:${schedule.id}`,
+      resumeMessage: `Schedule triggered: ${schedule.name}`,
+      detail: `Run #${schedule.runNumber} queued task ${taskId}.`,
+    })
   }
 }

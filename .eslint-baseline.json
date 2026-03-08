@@ -1,9 +1,58 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-06T13:21:55.449Z",
-  "totalIssues": 517,
-  "uniqueIssues": 172,
+  "generatedAt": "2026-03-08T15:07:07.554Z",
+  "totalIssues": 523,
+  "uniqueIssues": 163,
   "issues": [
+    {
+      "filePath": ".tmp-agent-turn.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 9
+    },
+    {
+      "filePath": ".tmp-iran-heartbeat-check.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": ".tmp-molly-approval-smoke.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 25
+    },
+    {
+      "filePath": "scripts/compare-openclaw-swarmclaw.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'OPENCLAW_TOKEN' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "scripts/compare-openclaw-swarmclaw.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'openclawMemorySearch' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "scripts/compare-openclaw-swarmclaw.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'spawn' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "scripts/compare-openclaw-swarmclaw.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'swarmclawGetMessages' is defined but never used.",
+      "count": 1
+    },
     {
       "filePath": "src/app/api/chats/[id]/deploy/route.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
@@ -20,13 +69,6 @@
     },
     {
       "filePath": "src/app/api/claude-skills/route.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_req' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/app/api/connectors/route.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_req' is defined but never used.",
@@ -194,13 +236,6 @@
       "count": 1
     },
     {
-      "filePath": "src/app/api/skills/route.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_req' is defined but never used.",
-      "count": 1
-    },
-    {
       "filePath": "src/app/api/version/route.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -213,6 +248,13 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 3
+    },
+    {
+      "filePath": "src/app/api/webhooks/route.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
     },
     {
       "filePath": "src/app/api/webhooks/route.ts",
@@ -278,48 +320,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/agents/agent-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_ca' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/agents/agent-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_id' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/agents/agent-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_ts' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/agents/agent-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_ua' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/agents/agent-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'err' is defined but never used.",
-      "count": 2
-    },
-    {
-      "filePath": "src/components/agents/agent-sheet.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 6
-    },
-    {
       "filePath": "src/components/agents/inspector-panel.tsx",
       "ruleId": "(eslint)",
       "severity": 1,
@@ -366,41 +366,6 @@
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
       "message": "React Hook useEffect has a missing dependency: 'loadTrashedAgents'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/chat/chat-area.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useCallback has a missing dependency: 'setDevServer'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/chat/chat-area.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useCallback has missing dependencies: 'loadSessions' and 'setMessages'. Either include them or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/chat/chat-area.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useCallback has missing dependencies: 'removeSessionFromStore' and 'setCurrentSession'. Either include them or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/chat/chat-area.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has a missing dependency: 'setMessages'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/chat/chat-list.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
       "count": 1
     },
     {
@@ -523,13 +488,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/providers/provider-list.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
-      "count": 1
-    },
-    {
       "filePath": "src/components/schedules/schedule-list.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
@@ -548,6 +506,13 @@
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
       "message": "React Hook useEffect has a missing dependency: 'loadSecrets'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/shared/agent-switch-dialog.tsx",
+      "ruleId": "(eslint)",
+      "severity": 1,
+      "message": "Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps').",
       "count": 1
     },
     {
@@ -600,24 +565,10 @@
       "count": 1
     },
     {
-      "filePath": "src/components/tasks/task-board.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has missing dependencies: 'loadAgents', 'loadProjects', and 'loadTasks'. Either include them or remove the dependency array.",
-      "count": 1
-    },
-    {
       "filePath": "src/components/tasks/task-card.tsx",
       "ruleId": "@next/next/no-img-element",
       "severity": 1,
       "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/tasks/task-card.tsx",
-      "ruleId": "react-hooks/purity",
-      "severity": 2,
-      "message": "Error: Cannot call impure function during render `Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).",
       "count": 1
     },
     {
@@ -734,9 +685,9 @@
     },
     {
       "filePath": "src/lib/server/chat-execution.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'changed' is assigned a value but never used.",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
       "count": 1
     },
     {
@@ -831,18 +782,18 @@
       "count": 15
     },
     {
-      "filePath": "src/lib/server/connectors/whatsapp.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'Connector' is defined but never used.",
-      "count": 1
+      "filePath": "src/lib/server/connectors/whatsapp.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
     },
     {
       "filePath": "src/lib/server/connectors/whatsapp.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 7
+      "count": 11
     },
     {
       "filePath": "src/lib/server/connectors/whatsapp.ts",
@@ -857,6 +808,13 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 3
+    },
+    {
+      "filePath": "src/lib/server/evm-swap.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'normalizeLowerAddress' is defined but never used.",
+      "count": 1
     },
     {
       "filePath": "src/lib/server/heartbeat-service.ts",
@@ -941,13 +899,6 @@
       "severity": 1,
       "message": "'id' is assigned a value but never used.",
       "count": 1
-    },
-    {
-      "filePath": "src/lib/server/openclaw-health.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 10
     },
     {
       "filePath": "src/lib/server/orchestrator-lg.ts",
@@ -1048,41 +999,6 @@
       "count": 5
     },
     {
-      "filePath": "src/lib/server/session-tools/memory.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'depth' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/memory.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'linkedLimit' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/memory.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'tags' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/memory.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'targetIds' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/memory.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 6
-    },
-    {
       "filePath": "src/lib/server/session-tools/openclaw-nodes.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1108,7 +1024,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 2
+      "count": 1
     },
     {
       "filePath": "src/lib/server/session-tools/sample-ui.ts",
@@ -1154,9 +1070,23 @@
     },
     {
       "filePath": "src/lib/server/session-tools/wallet.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'parseArrayValue' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/wallet.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'summaryParts' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/web.ts",
+      "ruleId": "(eslint)",
+      "severity": 1,
+      "message": "Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').",
       "count": 1
     },
     {
@@ -1164,7 +1094,14 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 9
+      "count": 7
+    },
+    {
+      "filePath": "src/lib/server/skill-prompt-budget.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'MAX_SKILLS_PROMPT_CHARS' is defined but never used.",
+      "count": 1
     },
     {
       "filePath": "src/lib/server/storage-mcp.test.ts",

@@ -7,6 +7,7 @@ import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { shouldHidePersistedStreamingAssistantMessage } from '@/lib/chat-streaming-state'
+import { dedupeMessagesForDisplay } from '@/lib/chat-display'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { MessageBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
@@ -45,6 +46,22 @@ function dateSeparator(ts: number): string {
   if (d.toDateString() === today.toDateString()) return 'Today'
   if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+function getLatestAssistantToolMoment(messages: Message[]): { key: string; name: string; input: string } | null {
+  const last = messages[messages.length - 1]
+  if (!last || last.role !== 'assistant' || !last.toolEvents?.length) return null
+  const events = last.toolEvents
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (isNotableTool(events[i].name)) {
+      return {
+        key: `${last.time}-${events[i].name}-${i}`,
+        name: events[i].name,
+        input: events[i].input || '',
+      }
+    }
+  }
+  return null
 }
 
 interface Props {
@@ -90,7 +107,7 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
   const showGatewayOverlay = isOpenClaw && gatewayStatus === 'disconnected'
 
   // Moment overlay for last assistant message (heartbeat or tool events)
-  type MomentType = { kind: 'heartbeat' } | { kind: 'tool'; name: string; input: string }
+  type MomentType = { kind: 'heartbeat' } | { kind: 'tool'; key: string; name: string; input: string }
   const [currentMoment, setCurrentMoment] = useState<MomentType | null>(null)
 
   const heartbeatTopic = agent?.id ? `heartbeat:agent:${agent.id}` : ''
@@ -98,23 +115,32 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
     setCurrentMoment({ kind: 'heartbeat' })
   })
 
-  // Detect notable tool events on latest assistant message when messages change
   const prevToolKeyRef = useRef<string | null>(null)
+  const seededMomentSessionRef = useRef<string | null>(null)
+
   useEffect(() => {
-    const last = messages[messages.length - 1]
-    if (!last || last.role !== 'assistant' || !last.toolEvents?.length) return
-    const events = last.toolEvents
-    for (let i = events.length - 1; i >= 0; i--) {
-      if (isNotableTool(events[i].name)) {
-        const key = `${last.time}-${events[i].name}-${i}`
-        if (key !== prevToolKeyRef.current) {
-          prevToolKeyRef.current = key
-          setCurrentMoment({ kind: 'tool', name: events[i].name, input: events[i].input || '' })
-        }
-        return
-      }
+    if (!sessionId) {
+      seededMomentSessionRef.current = null
+      prevToolKeyRef.current = null
+      setCurrentMoment(null)
+      return
     }
-  }, [messages])
+
+    if (seededMomentSessionRef.current === sessionId) return
+    seededMomentSessionRef.current = sessionId
+    prevToolKeyRef.current = getLatestAssistantToolMoment(messages)?.key || null
+    setCurrentMoment(null)
+  }, [messages, sessionId])
+
+  // Detect notable tool events on the latest assistant message after the session has been seeded.
+  useEffect(() => {
+    if (!sessionId || seededMomentSessionRef.current !== sessionId) return
+    const moment = getLatestAssistantToolMoment(messages)
+    if (!moment) return
+    if (moment.key === prevToolKeyRef.current) return
+    prevToolKeyRef.current = moment.key
+    setCurrentMoment({ kind: 'tool', key: moment.key, name: moment.name, input: moment.input })
+  }, [messages, sessionId])
 
   // Unread count tracking
   const unreadRef = useRef(0)
@@ -189,13 +215,16 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
     }
   }
 
+  const dedupedDisplayedMessages = dedupeMessagesForDisplay(displayedMessages)
+
   // Apply bookmark + connector filter
   let filteredMessages = bookmarkFilter
-    ? displayedMessages.filter((msg) => msg.bookmarked)
-    : displayedMessages
+    ? dedupedDisplayedMessages.filter((msg) => msg.bookmarked)
+    : dedupedDisplayedMessages
   if (connectorFilter) {
     filteredMessages = filteredMessages.filter((msg) => msg.source?.connectorId === connectorFilter)
   }
+  const hasVisiblePersistedStreamingMessage = filteredMessages.some((msg) => msg.role === 'assistant' && msg.streaming === true)
 
   // Search matches
   const searchMatches = useMemo(() => {
@@ -629,7 +658,7 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
               } else {
                 momentOverlay = (
                   <ActivityMoment
-                    key={`${currentMoment.name}-${Date.now()}`}
+                    key={currentMoment.key}
                     toolName={currentMoment.name}
                     toolInput={currentMoment.input}
                     onDismiss={() => setCurrentMoment(null)}
@@ -676,7 +705,7 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
             )
           })}
           <ApprovalCards agentId={agent?.id} />
-          {streaming && !displayText && <ThinkingIndicator assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentAvatarUrl={agent?.avatarUrl} agentName={agent?.name} />}
+          {streaming && !displayText && !hasVisiblePersistedStreamingMessage && <ThinkingIndicator assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentAvatarUrl={agent?.avatarUrl} agentName={agent?.name} />}
           {streaming && displayText && <StreamingBubble text={displayText} assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentAvatarUrl={agent?.avatarUrl} agentName={agent?.name} />}
           {appSettings.suggestionsEnabled === true && !streaming && filteredMessages.length > 0 && filteredMessages[filteredMessages.length - 1]?.role === 'assistant' && (
             <SuggestionsBar lastMessage={filteredMessages[filteredMessages.length - 1]} onSend={sendMessage} />

@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { loadWallets, loadWalletTransactions, upsertWalletTransaction } from '@/lib/server/storage'
-import { sendSol, isValidSolanaAddress, lamportsToSol } from '@/lib/server/solana'
+import { loadWallets, upsertWalletTransaction } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import type { AgentWallet, WalletTransaction } from '@/types'
+import {
+  normalizeAtomicString,
+} from '@/lib/wallet'
+import { isValidWalletAddress, sendWalletNativeAsset, validateWalletSendLimits } from '@/lib/server/wallet-service'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -14,36 +17,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const body = await req.json()
   const toAddress = typeof body.toAddress === 'string' ? body.toAddress.trim() : ''
-  const amountLamports = typeof body.amountLamports === 'number' ? Math.floor(body.amountLamports) : 0
+  const amountAtomic = normalizeAtomicString(body.amountAtomic ?? body.amountLamports, '0')
   const memo = typeof body.memo === 'string' ? body.memo.slice(0, 500) : undefined
 
-  if (!toAddress || !isValidSolanaAddress(toAddress)) {
+  if (!toAddress || !isValidWalletAddress(wallet.chain, toAddress)) {
     return NextResponse.json({ error: 'Invalid recipient address' }, { status: 400 })
   }
-  if (amountLamports <= 0) {
-    return NextResponse.json({ error: 'Amount must be positive' }, { status: 400 })
-  }
-
-  // Per-tx spending limit
-  const perTxLimit = wallet.spendingLimitLamports ?? 100_000_000
-  if (amountLamports > perTxLimit) {
-    return NextResponse.json({
-      error: `Amount ${lamportsToSol(amountLamports)} SOL exceeds per-transaction limit of ${lamportsToSol(perTxLimit)} SOL`,
-    }, { status: 403 })
-  }
-
-  // 24h rolling daily limit
-  const dailyLimit = wallet.dailyLimitLamports ?? 1_000_000_000
-  const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000
-  const allTxs = loadWalletTransactions() as Record<string, WalletTransaction>
-  const recentSends = Object.values(allTxs).filter(
-    (tx) => tx.walletId === id && tx.type === 'send' && tx.status === 'confirmed' && tx.timestamp > oneDayAgo,
-  )
-  const dailySpent = recentSends.reduce((sum, tx) => sum + tx.amountLamports, 0)
-  if (dailySpent + amountLamports > dailyLimit) {
-    return NextResponse.json({
-      error: `Daily limit exceeded. Spent ${lamportsToSol(dailySpent)} SOL in last 24h, limit is ${lamportsToSol(dailyLimit)} SOL`,
-    }, { status: 403 })
+  const limitError = validateWalletSendLimits({ wallet, amountAtomic })
+  if (limitError) {
+    return NextResponse.json({ error: limitError }, { status: limitError === 'Amount must be positive' ? 400 : 403 })
   }
 
   const txId = genId(8)
@@ -60,7 +42,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       signature: '',
       fromAddress: wallet.publicKey,
       toAddress,
-      amountLamports,
+      amountAtomic,
+      amountLamports: wallet.chain === 'solana' ? Number.parseInt(amountAtomic, 10) : undefined,
       status: 'pending_approval',
       memo,
       timestamp: now,
@@ -72,7 +55,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Auto-approved — sign and submit
   try {
-    const { signature, fee } = await sendSol(wallet.encryptedPrivateKey, toAddress, amountLamports)
+    const { signature, feeAtomic } = await sendWalletNativeAsset(wallet, toAddress, amountAtomic)
     const confirmedTx: WalletTransaction = {
       id: txId,
       walletId: id,
@@ -82,8 +65,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       signature,
       fromAddress: wallet.publicKey,
       toAddress,
-      amountLamports,
-      feeLamports: fee,
+      amountAtomic,
+      amountLamports: wallet.chain === 'solana' ? Number.parseInt(amountAtomic, 10) : undefined,
+      feeAtomic,
+      feeLamports: wallet.chain === 'solana' && feeAtomic ? Number.parseInt(feeAtomic, 10) : undefined,
       status: 'confirmed',
       memo,
       approvedBy: 'auto',
@@ -102,7 +87,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       signature: '',
       fromAddress: wallet.publicKey,
       toAddress,
-      amountLamports,
+      amountAtomic,
+      amountLamports: wallet.chain === 'solana' ? Number.parseInt(amountAtomic, 10) : undefined,
       status: 'failed',
       memo,
       timestamp: now,

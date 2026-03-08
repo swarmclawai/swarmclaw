@@ -32,6 +32,30 @@ function dedupe(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)))
 }
 
+function isMonitoringOrCurrentEventsRequest(text: string): boolean {
+  const normalized = text.toLowerCase()
+  if (!normalized.trim()) return false
+  return containsAny(normalized, [
+    'latest',
+    'news',
+    'headline',
+    'current event',
+    'recent update',
+    'recent updates',
+    'update me',
+    'updates',
+    'breaking',
+    'developments',
+    'keep watching',
+    'watch for',
+    'watching for',
+    'monitor',
+    'track',
+    'follow the situation',
+    'tell me if anything changes',
+  ])
+}
+
 function preferredToolsForCapabilities(enabledPlugins: string[], capabilities: string[], fallback: string[] = []): string[] {
   const preferred = capabilities.flatMap((capability) => getToolsForCapability(enabledPlugins, capability))
   return dedupe(preferred.length > 0 ? preferred : fallback)
@@ -76,6 +100,7 @@ export function routeTaskIntent(
   const wantsChannelDelivery = matchedCapabilities.has(TOOL_CAPABILITY.deliveryMessage)
   const researchLike = matchedCapabilities.has(TOOL_CAPABILITY.researchSearch)
     || matchedCapabilities.has(TOOL_CAPABILITY.researchFetch)
+    || isMonitoringOrCurrentEventsRequest(text)
     || !!url
 
   const coding = containsAny(text, [
@@ -143,7 +168,7 @@ export function routeTaskIntent(
     'recurring',
     'remind',
     'follow up tomorrow',
-  ])
+  ]) && !researchLike
   if (scheduling) {
     return {
       intent: 'scheduling',

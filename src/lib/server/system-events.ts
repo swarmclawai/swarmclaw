@@ -3,7 +3,7 @@
  * Events are accumulated between heartbeat ticks and drained into heartbeat prompts.
  */
 
-interface SystemEvent {
+export interface SystemEvent {
   text: string
   timestamp: number
   contextKey?: string

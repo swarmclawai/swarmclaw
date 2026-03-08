@@ -70,6 +70,7 @@ export function AgentList({ inSidebar }: Props) {
     const ids = new Set<string>()
     const recentThreshold = now - 30 * 60 * 1000
     for (const a of Object.values(agents)) {
+      if (a.disabled === true) continue
       if (a.heartbeatEnabled === true && (a.plugins?.length ?? 0) > 0) { ids.add(a.id); continue }
       // Check if any session for this agent was active in the last 30 minutes
       for (const s of Object.values(sessions)) {

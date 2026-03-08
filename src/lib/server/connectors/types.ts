@@ -24,8 +24,10 @@ export interface InboundMedia {
 export interface InboundMessage {
   platform: string
   channelId: string        // platform-specific channel/chat ID
+  channelIdAlt?: string
   channelName?: string     // human-readable name
   senderId: string         // platform-specific user ID
+  senderIdAlt?: string
   senderName: string       // display name
   text: string
   isGroup?: boolean

@@ -4,8 +4,33 @@ import type { McpServerConfig } from '@/types'
 
 /* ---------- JSON Schema → Zod helpers ---------- */
 
+type JsonSchemaLiteral = string | number | boolean | null
+
+function isJsonSchemaLiteral(value: unknown): value is JsonSchemaLiteral {
+  return value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+}
+
+function jsonSchemaEnumToZod(prop: Record<string, unknown>): z.ZodTypeAny | null {
+  const values: JsonSchemaLiteral[] = []
+  if (Array.isArray(prop?.enum)) {
+    for (const value of prop.enum) {
+      if (!isJsonSchemaLiteral(value) || values.includes(value)) continue
+      values.push(value)
+    }
+  }
+  if (values.length === 0) return null
+  if (values.length === 1) return z.literal(values[0])
+  if (values.every((value) => typeof value === 'string')) {
+    return z.enum(values as [string, ...string[]])
+  }
+  return z.union(values.map((value) => z.literal(value)) as [z.ZodLiteral<JsonSchemaLiteral>, z.ZodLiteral<JsonSchemaLiteral>, ...z.ZodLiteral<JsonSchemaLiteral>[]])
+}
+
 function jsonSchemaTypeToZod(prop: any): z.ZodTypeAny {
   if (!prop || !prop.type) return z.any()
+  const enumSchema = jsonSchemaEnumToZod(prop)
+  if (enumSchema) return enumSchema
+  if (isJsonSchemaLiteral(prop.const)) return z.literal(prop.const)
   switch (prop.type) {
     case 'string':  return z.string()
     case 'number':

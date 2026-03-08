@@ -8,30 +8,321 @@ import {
   getMemoryLookupLimits,
   normalizeMemoryScopeMode,
   storeMemoryImageAsset,
+  type MemoryScopeFilter,
 } from '../memory-db'
 import { loadSettings } from '../storage'
 import { expandQuery } from '../query-expansion'
-import type { MemoryEntry, Plugin, PluginHooks } from '@/types'
+import type { FileReference, MemoryEntry, MemoryImage, MemoryReference, Plugin, PluginHooks, Session } from '@/types'
 import type { ToolBuildContext } from './context'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { partitionMemoriesByTier } from '../memory-tiers'
+import { getMemoryTier, partitionMemoriesByTier, shouldHideFromDurableRecall } from '../memory-tiers'
 import { syncSessionArchiveMemory } from '../session-archive-memory'
+import {
+  buildMemoryDoctorReport,
+  normalizeMemoryCategory,
+  shouldAutoCaptureMemoryTurn,
+  shouldInjectMemoryContext,
+} from '../memory-policy'
 
 /**
  * Advanced Database-Backed Memory logic.
  */
-async function executeMemoryAction(input: any, ctx: any) {
-  const normalized = normalizeToolInputArgs((input ?? {}) as Record<string, unknown>)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const n = normalized as Record<string, any>
+type MemoryActionContext = Partial<Session> & {
+  sessionId?: string | null
+  memoryScopeMode?: string | null
+  projectRoot?: string | null
+}
+
+type MemorySearchSource = 'durable' | 'working' | 'archive' | 'all'
+type CanonicalMemoryCandidate = {
+  entry: MemoryEntry
+  score: number
+  sharedTokens: number
+  overlap: number
+}
+
+const MEMORY_SUBJECT_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'assistant', 'current', 'details', 'fact', 'facts', 'for',
+  'from', 'got', 'have', 'i', 'in', 'is', 'it', 'its', 'ive', 'memory', 'my',
+  'note', 'notes', 'of', 'our', 'project', 'remember', 'stored', 'storing',
+  'that', 'the', 'this', 'to', 'updated', 'updating', 'with', 'you', 'your',
+])
+
+const MEMORY_VOLATILE_STOP_WORDS = new Set([
+  'april', 'august', 'corrected', 'correction', 'date', 'dates', 'december',
+  'earlier', 'error', 'february', 'freeze', 'january', 'july', 'june', 'march',
+  'may', 'new', 'november', 'october', 'old', 'september',
+])
+
+function isSessionContext(ctx: MemoryActionContext | null | undefined): ctx is Session {
+  return !!ctx
+    && typeof ctx.id === 'string'
+    && typeof ctx.name === 'string'
+    && Array.isArray(ctx.messages)
+}
+
+function latestUserFactFromSession(session: Session | null): string {
+  if (!session || !Array.isArray(session.messages)) return ''
+  for (let index = session.messages.length - 1; index >= 0; index--) {
+    const message = session.messages[index]
+    if (message?.role !== 'user') continue
+    const text = typeof message.text === 'string' ? message.text.replace(/\s+/g, ' ').trim() : ''
+    if (text) return text
+  }
+  return ''
+}
+
+function normalizeMemorySearchSources(raw: unknown): Set<MemorySearchSource> {
+  const sources = Array.isArray(raw) ? raw : []
+  const normalized = new Set<MemorySearchSource>()
+  for (const entry of sources) {
+    const value = typeof entry === 'string' ? entry.trim().toLowerCase() : ''
+    if (value === 'all') normalized.add('all')
+    else if (value === 'durable' || value === 'working' || value === 'archive') normalized.add(value)
+  }
+  if (normalized.size === 0) normalized.add('durable')
+  if (normalized.has('all')) return new Set<MemorySearchSource>(['all'])
+  return normalized
+}
+
+function parseStructuredMemoryRecord(raw: unknown): Record<string, unknown> | null {
+  if (!raw) return null
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed.startsWith('{')) return null
+  try {
+    const parsed = JSON.parse(trimmed)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function normalizeStructuredMemoryArgs(raw: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...raw }
+  for (const key of ['value', 'query', 'key', 'input', 'data', 'payload', 'parameters'] as const) {
+    const parsed = parseStructuredMemoryRecord(normalized[key])
+    if (!parsed) continue
+    for (const [nestedKey, nestedValue] of Object.entries(parsed)) {
+      if (normalized[nestedKey] === undefined || normalized[nestedKey] === null || normalized[nestedKey] === '') {
+        normalized[nestedKey] = nestedValue
+      }
+    }
+    if ((normalized.value === undefined || normalized.value === null || normalized.value === '')
+      && typeof parsed.content === 'string') {
+      normalized.value = parsed.content
+    }
+    if ((normalized.title === undefined || normalized.title === null || normalized.title === '')
+      && typeof parsed.name === 'string') {
+      normalized.title = parsed.name
+    }
+  }
+  if (normalized.value === undefined || normalized.value === null || normalized.value === '') {
+    for (const alias of ['content', 'note', 'body', 'text', 'memory'] as const) {
+      if (typeof normalized[alias] === 'string' && normalized[alias].trim()) {
+        normalized.value = normalized[alias]
+        break
+      }
+    }
+  }
+  return normalized
+}
+
+function filterResultsBySources(entries: MemoryEntry[], sources: Set<MemorySearchSource>): MemoryEntry[] {
+  if (sources.has('all')) return entries
+  return entries.filter((entry) => {
+    const tier = getMemoryTier(entry)
+    if (!sources.has(tier)) return false
+    if (tier === 'durable' && shouldHideFromDurableRecall(entry)) return false
+    return true
+  })
+}
+
+function normalizeMemoryText(value: unknown): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\s:/.-]/g, '')
+    .trim()
+}
+
+function stripGeneratedMemoryPrefix(value: string): string {
+  return value.replace(/^\[(?:auto|auto-consolidated)[^\]]*\]\s*/i, '').trim()
+}
+
+function tokenizeMemorySubject(value: string): string[] {
+  const tokens = normalizeMemoryText(value).match(/[a-z0-9][a-z0-9._:/-]*/g) || []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const token of tokens) {
+    if (token.length < 3) continue
+    if (/^\d+$/.test(token)) continue
+    if (MEMORY_SUBJECT_STOP_WORDS.has(token)) continue
+    if (MEMORY_VOLATILE_STOP_WORDS.has(token)) continue
+    if (seen.has(token)) continue
+    seen.add(token)
+    out.push(token)
+  }
+  return out
+}
+
+function isMeaningfulMemoryTitle(title: string): boolean {
+  const normalized = stripGeneratedMemoryPrefix(title).trim()
+  if (!normalized) return false
+  if (normalizeMemoryText(normalized) === 'untitled') return false
+  return tokenizeMemorySubject(normalized).length > 0
+}
+
+function buildMemorySubjectKey(title: string, content: string): string | null {
+  const titleTokens = tokenizeMemorySubject(stripGeneratedMemoryPrefix(title))
+  const contentTokens = tokenizeMemorySubject(content)
+  const preferred = [...titleTokens, ...contentTokens]
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const token of preferred) {
+    if (seen.has(token)) continue
+    seen.add(token)
+    out.push(token)
+    if (out.length >= 4) break
+  }
+  return out.length >= 2 ? out.join('|') : null
+}
+
+function mergeMemoryMetadata(
+  base: Record<string, unknown> | undefined,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...(base || {}), ...patch }
+  if (!next.tier || next.tier === 'durable') delete next.tier
+  if (!next.origin) delete next.origin
+  if (!next.subjectKey) delete next.subjectKey
+  if (!next.supersededBy) delete next.supersededBy
+  if (!next.supersededReason) delete next.supersededReason
+  if (!next.supersededAt) delete next.supersededAt
+  return next
+}
+
+function selectCanonicalMemoryCandidates(args: {
+  memDb: ReturnType<typeof getMemoryDb>
+  agentId: string | null
+  title: string
+  content: string
+  canReadMemory: (entry: MemoryEntry) => boolean
+  canMutateMemory: (entry: MemoryEntry) => boolean
+  scopeFilter: MemoryScopeFilter
+}): CanonicalMemoryCandidate[] {
+  if (!args.agentId) return []
+  const desiredTitle = stripGeneratedMemoryPrefix(args.title)
+  const desiredText = [isMeaningfulMemoryTitle(desiredTitle) ? desiredTitle : '', args.content]
+    .filter(Boolean)
+    .join('\n')
+    .trim()
+  const desiredTokens = tokenizeMemorySubject(desiredText)
+  if (desiredTokens.length < 2) return []
+  const desiredTitleNorm = normalizeMemoryText(desiredTitle)
+  const desiredSubjectKey = buildMemorySubjectKey(desiredTitle, args.content)
+  const candidateQuery = [desiredTitle, args.content].filter(Boolean).join(' ').slice(0, 400)
+  const merged = new Map<string, MemoryEntry>()
+  const sources = [
+    ...(candidateQuery
+      ? args.memDb.search(candidateQuery, args.agentId, { scope: args.scopeFilter, rerankMode: 'balanced' })
+      : []),
+    ...args.memDb.list(args.agentId, 80),
+  ]
+  for (const entry of sources) {
+    if (merged.has(entry.id)) continue
+    if (!args.canReadMemory(entry) || !args.canMutateMemory(entry)) continue
+    if (getMemoryTier(entry) !== 'durable') continue
+    if (shouldHideFromDurableRecall(entry)) continue
+    merged.set(entry.id, entry)
+  }
+
+  const matches: CanonicalMemoryCandidate[] = []
+  for (const entry of merged.values()) {
+    const entryTitle = stripGeneratedMemoryPrefix(entry.title || '')
+    const entryTitleNorm = normalizeMemoryText(entryTitle)
+    const entryTokens = tokenizeMemorySubject([entryTitle, entry.content || ''].join('\n'))
+    if (!entryTokens.length) continue
+    const shared = desiredTokens.filter((token) => entryTokens.includes(token)).length
+    const overlap = shared / Math.max(1, Math.min(desiredTokens.length, entryTokens.length))
+    const entrySubjectKey = typeof entry.metadata?.subjectKey === 'string' && entry.metadata.subjectKey.trim()
+      ? entry.metadata.subjectKey.trim()
+      : buildMemorySubjectKey(entryTitle, entry.content || '')
+    const titleExact = isMeaningfulMemoryTitle(desiredTitle) && desiredTitleNorm === entryTitleNorm
+    const subjectKeyMatch = Boolean(desiredSubjectKey && entrySubjectKey && desiredSubjectKey === entrySubjectKey)
+    const score = overlap
+      + (shared * 0.12)
+      + (titleExact ? 1.5 : 0)
+      + (subjectKeyMatch ? 0.9 : 0)
+      + (entry.category.startsWith('projects/') || entry.category.startsWith('knowledge/') ? 0.08 : 0)
+    const confident = titleExact
+      || subjectKeyMatch
+      || (shared >= 3 && overlap >= 0.5)
+      || (shared >= 2 && overlap >= 0.72)
+    if (!confident) continue
+    matches.push({ entry, score, sharedTokens: shared, overlap })
+  }
+
+  matches.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score
+    return (right.entry.updatedAt || 0) - (left.entry.updatedAt || 0)
+  })
+  return matches
+}
+
+export function shouldAutoCaptureAutonomousTurn(ctx: {
+  source: string
+  response: string
+  toolEvents?: Array<{ name?: string }>
+}): boolean {
+  if (!ctx.source || ctx.source === 'chat' || ctx.source === 'connector') return false
+  const response = (ctx.response || '').trim()
+  if (response.length < 60) return false
+  if (/^(?:HEARTBEAT_OK|NO_MESSAGE)\b/i.test(response)) return false
+  const toolEvents = Array.isArray(ctx.toolEvents) ? ctx.toolEvents : []
+  return toolEvents.some((event) => typeof event?.name === 'string' && event.name.trim().length > 0)
+}
+
+export async function executeMemoryAction(input: unknown, ctx: MemoryActionContext | null | undefined) {
+  const normalized = normalizeStructuredMemoryArgs(
+    normalizeToolInputArgs((input ?? {}) as Record<string, unknown>),
+  )
+  const n = normalized as Record<string, unknown>
   const {
     action, key, value, query, scope, rerank,
     scopeSessionId, projectRoot, filePaths, references, project,
-    linkedMemoryIds, depth, linkedLimit, targetIds,
-    tags, pinned, sharedWith
+    linkedMemoryIds, targetIds,
+    pinned, sharedWith,
   } = n
-  const category = typeof n.category === 'string' ? n.category : 'note'
+  const actionText = typeof action === 'string' ? action.trim() : ''
+  const keyText = typeof key === 'string' ? key.trim() : ''
+  const hasValueText = typeof value === 'string'
+  const valueText = hasValueText ? value : ''
+  const queryText = typeof query === 'string' ? query : ''
+  const requestedCategory = typeof n.category === 'string' && n.category.trim()
+    ? n.category.trim()
+    : undefined
+  const normalizedLinkedMemoryIds = Array.isArray(linkedMemoryIds)
+    ? linkedMemoryIds.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : undefined
+  const resolvedAction = actionText || 'list'
+  const explicitMemoryId = typeof n.id === 'string' && n.id.trim()
+    ? n.id.trim()
+    : ''
+  const memoryId = explicitMemoryId
+    ? explicitMemoryId
+    : keyText
+      ? keyText
+      : ''
+  const memoryTitle = typeof n.title === 'string' && n.title.trim()
+    ? n.title.trim()
+    : keyText
+      ? keyText
+      : 'Untitled'
   const imagePath = typeof n.imagePath === 'string' ? n.imagePath : undefined
   
   const memDb = getMemoryDb()
@@ -41,13 +332,13 @@ async function executeMemoryAction(input: any, ctx: any) {
     : typeof ctx?.id === 'string'
       ? ctx.id
       : null
-  const currentSession = ctx && typeof ctx === 'object' && Array.isArray(ctx.messages) ? ctx : null
+  const currentSession = isSessionContext(ctx) ? ctx : null
   const configuredScope = typeof ctx?.memoryScopeMode === 'string' ? ctx.memoryScopeMode : 'auto'
   const rawScope = typeof scope === 'string' ? scope : configuredScope
   const scopeMode = normalizeMemoryScopeMode(rawScope === 'shared' ? 'global' : rawScope)
   const rerankMode = rerank === 'semantic' || rerank === 'lexical' ? rerank : 'balanced'
   
-  const scopeFilter = {
+  const scopeFilter: MemoryScopeFilter = {
     mode: scopeMode,
     agentId: currentAgentId,
     sessionId: (typeof scopeSessionId === 'string' && scopeSessionId.trim()) ? scopeSessionId.trim() : currentSessionId,
@@ -64,58 +355,130 @@ async function executeMemoryAction(input: any, ctx: any) {
 
   const limits = getMemoryLookupLimits(loadSettings())
   const maxPerLookup = limits.maxPerLookup
+  const searchSources = normalizeMemorySearchSources(n.sources)
+  const inputMetadata = n.metadata && typeof n.metadata === 'object' && !Array.isArray(n.metadata)
+    ? { ...(n.metadata as Record<string, unknown>) }
+    : {}
+  if (scopeMode === 'project' && scopeFilter.projectRoot && !inputMetadata.projectRoot) {
+    inputMetadata.projectRoot = scopeFilter.projectRoot
+  }
 
-  if ((action === 'search' || action === 'list') && currentSession) {
+  const buildCanonicalMetadata = (title: string, content: string, extra?: Record<string, unknown>) => {
+    const subjectKey = buildMemorySubjectKey(title, content)
+    return mergeMemoryMetadata(inputMetadata, {
+      ...extra,
+      subjectKey: subjectKey || undefined,
+      tier: extra?.tier,
+      supersededBy: extra?.supersededBy,
+      supersededReason: extra?.supersededReason,
+      supersededAt: extra?.supersededAt,
+    })
+  }
+
+  const findRelatedCanonicalCandidates = (title: string, content: string) => selectCanonicalMemoryCandidates({
+    memDb,
+    agentId: currentAgentId,
+    title,
+    content,
+    canReadMemory,
+    canMutateMemory,
+    scopeFilter,
+  })
+
+  const supersedeCompetingMemories = (targetId: string, title: string, content: string, related: CanonicalMemoryCandidate[]) => {
+    const subjectKey = buildMemorySubjectKey(title, content)
+    const seen = new Set<string>()
+    for (const candidate of related) {
+      const entry = candidate.entry
+      if (entry.id === targetId || seen.has(entry.id)) continue
+      seen.add(entry.id)
+      const nextMetadata = mergeMemoryMetadata(entry.metadata, {
+        subjectKey: subjectKey || undefined,
+        supersededBy: targetId,
+        supersededReason: 'canonical-upsert',
+        supersededAt: Date.now(),
+        tier: 'working',
+      })
+      memDb.update(entry.id, {
+        metadata: nextMetadata,
+      })
+    }
+  }
+
+  if ((resolvedAction === 'search' || resolvedAction === 'list') && currentSession && (searchSources.has('archive') || searchSources.has('all'))) {
     try { syncSessionArchiveMemory(currentSession) } catch { /* archive sync is best-effort */ }
   }
 
-  const formatEntry = (m: any) => {
+  const formatEntry = (m: MemoryEntry) => {
     let line = `[${m.id}] (${m.agentId ? `agent:${m.agentId}` : 'shared'}) ${m.category}/${m.title}: ${m.content}`
     if (m.reinforcementCount) line += ` (reinforced ×${m.reinforcementCount})`
     if (m.references?.length) {
-      line += `\n  refs: ${m.references.map((r: any) => `${r.type}:${r.path || r.title || r.type}`).join(', ')}`
+      line += `\n  refs: ${m.references.map((r: MemoryReference) => `${r.type}:${r.path || r.title || r.type}`).join(', ')}`
     }
     if (m.imagePath) line += `\n  image: ${m.imagePath}`
     if (m.linkedMemoryIds?.length) line += `\n  linked: ${m.linkedMemoryIds.join(', ')}`
     return line
   }
 
-  if (action === 'store') {
-    let storedImage: any = null
+  if (resolvedAction === 'store') {
+    const fallbackValueText = latestUserFactFromSession(currentSession)
+    const storedValueText = hasValueText && valueText.trim()
+      ? valueText
+      : fallbackValueText
+    if (!storedValueText.trim()) {
+      return 'Memory store requires a non-empty value.'
+    }
+    let storedImage: MemoryImage | null = null
     if (imagePath && fs.existsSync(imagePath)) {
       storedImage = await storeMemoryImageAsset(imagePath, genId(6))
     }
-    const metadata = n.metadata && typeof n.metadata === 'object' && !Array.isArray(n.metadata)
-      ? { ...(n.metadata as Record<string, unknown>) }
-      : {}
-    if (scopeMode === 'project' && scopeFilter.projectRoot && !metadata.projectRoot) {
-      metadata.projectRoot = scopeFilter.projectRoot
+    const normalizedCategory = normalizeMemoryCategory(requestedCategory || 'note', memoryTitle, storedValueText)
+    const related = findRelatedCanonicalCandidates(memoryTitle, storedValueText)
+    const canonicalTarget = related[0]?.entry || null
+    const canonicalMetadata = buildCanonicalMetadata(memoryTitle, storedValueText)
+    if (canonicalTarget) {
+      const updated = memDb.update(canonicalTarget.id, {
+        title: memoryTitle,
+        content: storedValueText,
+        category: normalizedCategory,
+        metadata: mergeMemoryMetadata(canonicalTarget.metadata, canonicalMetadata),
+        references: Array.isArray(references) ? references as MemoryReference[] : canonicalTarget.references,
+        filePaths: Array.isArray(filePaths) ? filePaths as FileReference[] : canonicalTarget.filePaths,
+        imagePath: storedImage?.path || canonicalTarget.imagePath,
+        linkedMemoryIds: normalizedLinkedMemoryIds || canonicalTarget.linkedMemoryIds,
+        pinned: typeof pinned === 'boolean' ? pinned : canonicalTarget.pinned,
+        sharedWith: Array.isArray(sharedWith) ? sharedWith : canonicalTarget.sharedWith,
+      })
+      if (updated) {
+        supersedeCompetingMemories(updated.id, memoryTitle, storedValueText, related)
+        return `Stored memory "${updated.title}" (id: ${updated.id}) in ${normalizedCategory} by updating the canonical entry. No further memory lookup is needed unless the user asked you to verify.`
+      }
     }
     const entry = memDb.add({
       agentId: scopeMode === 'global' ? null : currentAgentId,
       sessionId: ctx?.sessionId || null,
-      category: category || 'note',
-      title: key,
-      content: value || '',
-      metadata,
-      references: Array.isArray(references) ? references : [],
-      filePaths: filePaths as any,
+      category: normalizedCategory,
+      title: memoryTitle,
+      content: storedValueText,
+      metadata: canonicalMetadata,
+      references: Array.isArray(references) ? references as MemoryReference[] : [],
+      filePaths: Array.isArray(filePaths) ? filePaths as FileReference[] : undefined,
       imagePath: storedImage?.path || undefined,
-      linkedMemoryIds,
+      linkedMemoryIds: normalizedLinkedMemoryIds,
       pinned: pinned === true,
       sharedWith: Array.isArray(sharedWith) ? sharedWith : undefined,
     })
-    return `Stored memory "${key}" (id: ${entry.id})`
+    return `Stored memory "${entry.title}" (id: ${entry.id}) in ${normalizedCategory}. No further memory lookup is needed unless the user asked you to verify.`
   }
 
-  if (action === 'get') {
-    const found = memDb.get(key)
-    if (!found || !canReadMemory(found)) return `Memory not found or access denied: ${key}`
+  if (resolvedAction === 'get') {
+    const found = memDb.get(memoryId)
+    if (!found || !canReadMemory(found)) return `Memory not found or access denied: ${memoryId}`
     return formatEntry(found)
   }
 
-  if (action === 'search') {
-    const queries = query ? await expandQuery(query) : [key || '']
+  if (resolvedAction === 'search') {
+    const queries = queryText ? await expandQuery(queryText) : [keyText]
     const allResults: MemoryEntry[] = []
     const seenIds = new Set<string>()
     for (const q of queries) {
@@ -126,23 +489,103 @@ async function executeMemoryAction(input: any, ctx: any) {
         }
       }
     }
-    if (!allResults.length) return 'No memories found.'
-    return allResults.slice(0, maxPerLookup).map(formatEntry).join('\n')
+    const scopedResults = filterResultsBySources(allResults, searchSources)
+    const visibleResults = scopedResults.length ? scopedResults : allResults
+    if (!visibleResults.length) return 'No memories found.'
+    return visibleResults.slice(0, maxPerLookup).map(formatEntry).join('\n')
   }
 
-  if (action === 'list') {
+  if (resolvedAction === 'list') {
     const results = filterScope(memDb.list(undefined, maxPerLookup))
-    return results.length ? results.map(formatEntry).join('\n') : 'No memories stored yet.'
+    const scopedResults = filterResultsBySources(results, searchSources)
+    const visibleResults = scopedResults.length ? scopedResults : results
+    return visibleResults.length ? visibleResults.map(formatEntry).join('\n') : 'No memories stored yet.'
   }
 
-  if (action === 'delete') {
-    const found = memDb.get(key)
+  if (resolvedAction === 'delete') {
+    const found = memDb.get(memoryId)
     if (!found || !canMutateMemory(found)) return 'Memory not found or access denied.'
-    memDb.delete(key)
-    return `Deleted memory "${key}"`
+    memDb.delete(memoryId)
+    return `Deleted memory "${memoryId}"`
   }
 
-  return `Unknown action "${action}".`
+  if (resolvedAction === 'update') {
+    const exact = memoryId ? memDb.get(memoryId) : null
+    const nextTitleSeed = typeof n.title === 'string' && n.title.trim()
+      ? n.title.trim()
+      : keyText
+        ? keyText
+        : exact?.title || memoryTitle
+    const nextContentSeed = hasValueText && valueText.trim()
+      ? valueText
+      : queryText.trim()
+        ? queryText.trim()
+        : exact?.content || ''
+    const related = findRelatedCanonicalCandidates(nextTitleSeed, nextContentSeed)
+    const found = exact && canMutateMemory(exact)
+      ? exact
+      : related[0]?.entry || null
+    if (!found) {
+      if (explicitMemoryId) return 'Memory not found or access denied.'
+      if (!nextContentSeed.trim()) return 'Memory update requires id, key, title, or query.'
+      const normalizedCategory = normalizeMemoryCategory(requestedCategory || 'note', nextTitleSeed, nextContentSeed)
+      const created = memDb.add({
+        agentId: scopeMode === 'global' ? null : currentAgentId,
+        sessionId: ctx?.sessionId || null,
+        category: normalizedCategory,
+        title: nextTitleSeed,
+        content: nextContentSeed,
+        metadata: buildCanonicalMetadata(nextTitleSeed, nextContentSeed),
+        references: Array.isArray(references) ? references as MemoryReference[] : [],
+        filePaths: Array.isArray(filePaths) ? filePaths as FileReference[] : undefined,
+        linkedMemoryIds: normalizedLinkedMemoryIds,
+        pinned: pinned === true,
+        sharedWith: Array.isArray(sharedWith) ? sharedWith : undefined,
+      })
+      return `Updated memory "${created.title}" (id: ${created.id}) by creating a new canonical entry. No further memory lookup is needed unless the user asked you to verify.`
+    }
+    const nextTitle = typeof n.title === 'string' && n.title.trim() ? n.title.trim() : found.title
+    const nextContent = hasValueText && valueText.trim() ? valueText : found.content
+    const updates: Partial<MemoryEntry> = {
+      title: nextTitle,
+      content: nextContent,
+      category: requestedCategory
+        ? normalizeMemoryCategory(requestedCategory, nextTitle, nextContent)
+        : found.category,
+      metadata: mergeMemoryMetadata(found.metadata, buildCanonicalMetadata(nextTitle, nextContent)),
+    }
+    if (normalizedLinkedMemoryIds) updates.linkedMemoryIds = normalizedLinkedMemoryIds
+    if (Array.isArray(sharedWith)) updates.sharedWith = sharedWith
+    if (typeof pinned === 'boolean') updates.pinned = pinned
+    if (Array.isArray(references)) updates.references = references as MemoryReference[]
+    if (Array.isArray(filePaths)) updates.filePaths = filePaths as FileReference[]
+    const updated = memDb.update(found.id, updates)
+    if (!updated) return `Memory not found: ${memoryId}`
+    supersedeCompetingMemories(updated.id, nextTitle, nextContent, related)
+    return `Updated memory "${updated.title}" (id: ${updated.id}). No further memory lookup is needed unless the user asked you to verify.`
+  }
+
+  if (resolvedAction === 'link' || resolvedAction === 'unlink') {
+    if (!memoryId) return `Memory ${resolvedAction} requires id or key.`
+    const found = memDb.get(memoryId)
+    if (!found || !canMutateMemory(found)) return 'Memory not found or access denied.'
+    const ids = Array.isArray(targetIds)
+      ? targetIds.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      : []
+    if (ids.length === 0) return `${resolvedAction} requires targetIds.`
+    const updated = resolvedAction === 'link'
+      ? memDb.link(memoryId, ids, true)
+      : memDb.unlink(memoryId, ids, true)
+    if (!updated) return `Memory not found: ${memoryId}`
+    return `${resolvedAction === 'link' ? 'Linked' : 'Unlinked'} ${ids.length} memories for "${updated.title}" (id: ${updated.id})`
+  }
+
+  if (resolvedAction === 'doctor') {
+    const visible = filterScope(memDb.list(undefined, maxPerLookup))
+    return buildMemoryDoctorReport(visible, currentAgentId)
+  }
+
+  return `Unknown action "${resolvedAction}".`
 }
 
 /**
@@ -155,8 +598,7 @@ const MemoryPlugin: Plugin = {
     getAgentContext: async (ctx) => {
       const agentId = ctx.session.agentId
       if (!agentId) return null
-
-      try { syncSessionArchiveMemory(ctx.session) } catch { /* archive sync is best-effort */ }
+      if (!shouldInjectMemoryContext(ctx.message || '')) return null
 
       const memDb = getMemoryDb()
       const memoryQuerySeed = [
@@ -178,30 +620,37 @@ const MemoryPlugin: Plugin = {
 
       const pinned = memDb.listPinned(agentId, 5)
       const pinnedLines = pinned
-        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
+        .filter((m) => {
+          if (!m?.id || seen.has(m.id)) return false
+          if (shouldHideFromDurableRecall(m)) return false
+          seen.add(m.id)
+          return true
+        })
         .map(formatMemoryLine)
 
       const relevantSlice = Math.max(2, 6 - pinnedLines.length)
       const relevantLookup = memDb.searchWithLinked(memoryQuerySeed, agentId, 1, 10, 14)
-      const relevant = relevantLookup.entries.slice(0, relevantSlice)
       const recent = memDb.list(agentId, 12).slice(0, 6)
-      const relevantByTier = partitionMemoriesByTier(relevant)
+      const relevantByTier = partitionMemoriesByTier(relevantLookup.entries)
       const recentByTier = partitionMemoriesByTier(recent)
 
       const relevantLines = relevantByTier.durable
-        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
-        .map(formatMemoryLine)
-
-      const archiveLines = relevantByTier.archive
-        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
+        .filter((m) => {
+          if (!m?.id || seen.has(m.id)) return false
+          if (shouldHideFromDurableRecall(m)) return false
+          seen.add(m.id)
+          return true
+        })
+        .slice(0, relevantSlice)
         .map(formatMemoryLine)
 
       const recentLines = recentByTier.durable
-        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
-        .map(formatMemoryLine)
-
-      const recentArchiveLines = recentByTier.archive
-        .filter((m) => { if (!m?.id || seen.has(m.id)) return false; seen.add(m.id); return true })
+        .filter((m) => {
+          if (!m?.id || seen.has(m.id)) return false
+          if (shouldHideFromDurableRecall(m)) return false
+          seen.add(m.id)
+          return true
+        })
         .map(formatMemoryLine)
 
       const parts: string[] = []
@@ -211,21 +660,15 @@ const MemoryPlugin: Plugin = {
       if (relevantLines.length) {
         parts.push(['## Relevant Memory Hits', 'These memories were retrieved by relevance for the current objective.', ...relevantLines].join('\n'))
       }
-      if (archiveLines.length) {
-        parts.push(['## Session Archive Hits', 'Past conversation snapshots that may restore context from older chats.', ...archiveLines].join('\n'))
-      }
       if (recentLines.length) {
         parts.push(['## Recent Memory Notes', 'Recent durable notes that may still apply.', ...recentLines].join('\n'))
-      }
-      if (recentArchiveLines.length) {
-        parts.push(['## Recent Session Archives', 'Recently synced conversation archives you can search instead of relying on stale live context.', ...recentArchiveLines].join('\n'))
       }
 
       // Memory Policy
       parts.push([
         '## My Memory',
-        'I have long-term memory that persists across conversations. I use it naturally — I don\'t wait to be asked to remember things.',
-        'Memory tiers: working memory is short-lived, durable memory stores stable facts and decisions, and session archives capture older conversation context for search.',
+        'I have long-term memory that persists across conversations. I use it when the user asks me to remember something or when I need to recall past conversations.',
+        'Memory tiers: working memory is short-lived, durable memory stores stable facts and decisions, and session archives are available separately when explicitly needed.',
         '',
         '**Things worth remembering:**',
         '- What the user likes, dislikes, or has corrected me on',
@@ -243,8 +686,8 @@ const MemoryPlugin: Plugin = {
         '',
         '**Good habits:**',
         '- Give memories clear titles ("User prefers dark mode" not "Note 1")',
-        '- Use categories: preference, fact, learning, project, identity, decision',
-        '- Search session archives before assuming older conversation context is still in the live chat history',
+        '- Use categories: identity/preferences, identity/relationships, projects/decisions, projects/learnings, operations/environment, knowledge/facts',
+        '- Prefer durable memories first; only inspect session archives when transcript history is specifically needed',
         '- Check what I already know before storing something new',
         '- When I learn something that corrects old knowledge, update or remove the old memory',
       ].join('\n'))
@@ -281,15 +724,14 @@ const MemoryPlugin: Plugin = {
       } catch { /* breadcrumbs are best-effort */ }
     },
     afterChatTurn: (ctx) => {
-      if (ctx.internal) return
-      if (ctx.source !== 'chat' && ctx.source !== 'connector') return
       const agentId = ctx.session.agentId
       if (!agentId) return
       const msg = (ctx.message || '').trim()
       const resp = (ctx.response || '').trim()
-      if (msg.length < 20 || resp.length < 40) return
-      if (/^(ok|okay|cool|thanks|thx|got it|nice)[.! ]*$/i.test(msg)) return
-      if (resp === 'HEARTBEAT_OK') return
+      const shouldCapture = ctx.internal
+        ? shouldAutoCaptureAutonomousTurn(ctx)
+        : ((ctx.source === 'chat' || ctx.source === 'connector') && shouldAutoCaptureMemoryTurn(msg, resp))
+      if (!shouldCapture) return
       const now = Date.now()
       const last = typeof ctx.session.lastAutoMemoryAt === 'number' ? ctx.session.lastAutoMemoryAt : 0
       if (last > 0 && now - last < 5 * 60 * 1000) return
@@ -297,30 +739,55 @@ const MemoryPlugin: Plugin = {
         const memDb = getMemoryDb()
         const compactMessage = msg.replace(/\s+/g, ' ').slice(0, 220)
         const compactResponse = resp.replace(/\s+/g, ' ').slice(0, 700)
-        const autoTitle = `[auto] ${compactMessage.slice(0, 90)}`
-        const content = `source: ${ctx.source}\nuser_request: ${compactMessage}\nassistant_outcome: ${compactResponse}`
-        memDb.add({ agentId, sessionId: ctx.session.id, category: 'execution', title: autoTitle, content })
+        const compactToolNames = Array.isArray(ctx.toolEvents)
+          ? ctx.toolEvents
+            .map((event) => String(event?.name || '').trim())
+            .filter(Boolean)
+            .slice(0, 8)
+          : []
+        const autoTitleSeed = compactMessage || compactResponse
+        const autoTitle = `[auto] ${autoTitleSeed.slice(0, 90)}`
+        const content = [
+          `source: ${ctx.source}`,
+          compactToolNames.length > 0 ? `tools: ${compactToolNames.join(', ')}` : '',
+          compactMessage ? `user_request: ${compactMessage}` : '',
+          `assistant_outcome: ${compactResponse}`,
+        ].filter(Boolean).join('\n')
+        memDb.add({
+          agentId,
+          sessionId: ctx.session.id,
+          category: normalizeMemoryCategory('execution', autoTitle, content),
+          title: autoTitle,
+          content,
+        })
         ctx.session.lastAutoMemoryAt = now
       } catch { /* auto-memory is best-effort */ }
     },
     getCapabilityDescription: () => 'I have long-term memory (`memory_tool`) — I can remember things across conversations and recall them when needed.',
     getOperatingGuidance: () => [
-      'Memory: search before major tasks, store concise notes after meaningful steps. Platform preloads context each turn.',
+      'Memory: use memory_tool only when recalling past conversations or when explicitly asked to remember. For info already in the current conversation, respond directly without tool calls.',
+      'When the user directly says to remember, store, or correct a fact, do one memory_tool store/update call immediately. Treat the newest direct user statement as authoritative.',
+      'memory_tool store/update now merges canonical memories and retires superseded variants. After a successful store/update, do not keep re-searching unless the user explicitly asked you to verify.',
+      'By default, memory searches focus on durable memories. Only include archives or working execution notes when you explicitly need transcript or run-history context.',
       'For open goals, form a hypothesis and execute — do not keep re-asking broad questions.',
     ],
   } as PluginHooks,
   tools: [
     {
       name: 'memory_tool',
-      description: 'Advanced long-term memory system. Use to store and recall facts across all conversations.',
+      description: 'Advanced long-term memory system. Store and update canonical durable facts across conversations; store/update will merge matching memories and retire superseded variants. Search defaults to durable memories unless sources explicitly include archive or working.',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['store', 'get', 'search', 'list', 'delete'] },
+          action: { type: 'string', enum: ['store', 'get', 'search', 'list', 'delete', 'update', 'link', 'unlink', 'doctor'] },
+          id: { type: 'string' },
           key: { type: 'string' },
+          title: { type: 'string' },
           value: { type: 'string' },
           category: { type: 'string' },
           query: { type: 'string' },
+          sources: { type: 'array', items: { type: 'string', enum: ['durable', 'working', 'archive', 'all'] } },
+          targetIds: { type: 'array', items: { type: 'string' } },
           scope: { type: 'string', enum: ['auto', 'all', 'global', 'shared', 'agent', 'session', 'project'] },
         },
         required: ['action']

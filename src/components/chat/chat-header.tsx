@@ -10,8 +10,8 @@ import { ChatToolToggles } from './chat-tool-toggles'
 import { api } from '@/lib/api-client'
 import {
   ConnectorPlatformIcon,
-  CONNECTOR_PLATFORM_META,
   getSessionConnector,
+  resolveConnectorPlatformMeta,
 } from '@/components/shared/connector-platform-icon'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ModelCombobox } from '@/components/shared/model-combobox'
@@ -32,6 +32,23 @@ function Tip({ label, children, side = 'bottom' }: { label: string; children: Re
       </TooltipContent>
     </Tooltip>
   )
+}
+
+function getAgentWalletIds(agent: { walletIds?: string[]; walletId?: string | null } | null | undefined): string[] {
+  const ids = Array.isArray(agent?.walletIds)
+    ? agent.walletIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    : []
+  const legacy = typeof agent?.walletId === 'string' && agent.walletId.trim()
+    ? [agent.walletId.trim()]
+    : []
+  return [...new Set([...ids, ...legacy])]
+}
+
+function getAgentActiveWalletId(agent: { activeWalletId?: string | null; walletIds?: string[]; walletId?: string | null } | null | undefined): string | null {
+  const walletIds = getAgentWalletIds(agent)
+  if (typeof agent?.activeWalletId === 'string' && walletIds.includes(agent.activeWalletId)) return agent.activeWalletId
+  if (typeof agent?.walletId === 'string' && walletIds.includes(agent.walletId)) return agent.walletId
+  return walletIds[0] || null
 }
 
 function HeaderChip({
@@ -129,7 +146,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const loadConnectors = useAppStore((s) => s.loadConnectors)
   const agent = session.agentId ? agents[session.agentId] : null
   const connector = getSessionConnector(session, connectors)
-  const connectorMeta = connector ? CONNECTOR_PLATFORM_META[connector.platform] : null
+  const connectorMeta = connector ? resolveConnectorPlatformMeta(connector.platform) : null
   const connectorPresence = connector?.presence
   const providers = useAppStore((s) => s.providers)
   const loadProviders = useAppStore((s) => s.loadProviders)
@@ -152,8 +169,10 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const renameInputRef = useRef<HTMLInputElement>(null)
   const renameContainerRef = useRef<HTMLSpanElement>(null)
   const setWalletPanelAgentId = useAppStore((s) => s.setWalletPanelAgentId)
-  const [walletBalance, setWalletBalance] = useState<number | null>(null)
+  const [walletBalance, setWalletBalance] = useState<{ formatted: string; symbol: string; assets?: number } | null>(null)
   const [headerWidgets, setHeaderWidgets] = useState<Array<{ id: string; label: string; icon?: string }>>([])
+  const agentWalletIds = useMemo(() => getAgentWalletIds(agent), [agent])
+  const activeWalletId = useMemo(() => getAgentActiveWalletId(agent), [agent])
 
   useEffect(() => {
     api<Array<{ id: string; label: string; icon?: string }>>('GET', `/plugins/ui?type=header&sessionId=${session.id}`).then(widgets => {
@@ -162,17 +181,25 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   }, [session.id])
 
   const fetchWalletBalance = useCallback(async () => {
-    if (!agent?.walletId) {
+    if (!activeWalletId) {
       setWalletBalance(null)
       return
     }
     try {
-      const data = await api<{ balanceSol?: number }>('GET', `/wallets/${agent.walletId}`)
-      setWalletBalance(data.balanceSol ?? null)
+      const data = await api<{ balanceFormatted?: string; balanceSymbol?: string; portfolioSummary?: { nonZeroAssets?: number } }>('GET', `/wallets/${activeWalletId}`)
+      if (data.balanceFormatted && data.balanceSymbol) {
+        setWalletBalance({
+          formatted: data.balanceFormatted,
+          symbol: data.balanceSymbol,
+          assets: typeof data.portfolioSummary?.nonZeroAssets === 'number' ? data.portfolioSummary.nonZeroAssets : undefined,
+        })
+      } else {
+        setWalletBalance(null)
+      }
     } catch {
       setWalletBalance(null)
     }
-  }, [agent?.walletId])
+  }, [activeWalletId])
 
   useEffect(() => {
     void fetchWalletBalance()
@@ -237,17 +264,19 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         title: 'Open wallets',
       }
     }
-    if (!agent.walletId) {
+    if (agentWalletIds.length === 0) {
       return {
         label: 'Create wallet',
         title: 'Create wallet',
       }
     }
     return {
-      label: walletBalance !== null ? `${walletBalance.toFixed(3)} SOL` : 'Wallet',
-      title: 'View wallet',
+      label: agentWalletIds.length > 1
+        ? (walletBalance ? `${walletBalance.formatted} ${walletBalance.symbol}${walletBalance.assets && walletBalance.assets > 1 ? ` +${walletBalance.assets - 1}` : ''} / ${agentWalletIds.length}` : `${agentWalletIds.length} wallets`)
+        : (walletBalance ? `${walletBalance.formatted} ${walletBalance.symbol}${walletBalance.assets && walletBalance.assets > 1 ? ` +${walletBalance.assets - 1}` : ''}` : 'Wallet'),
+      title: agentWalletIds.length > 1 ? 'View wallets' : 'View wallet',
     }
-  }, [agent?.id, agent?.walletId, walletBalance])
+  }, [agent?.id, agentWalletIds, walletBalance])
 
   const handleHeaderWidgetClick = (widgetId: string) => {
     if (widgetId === 'wallet-status') {
@@ -389,17 +418,16 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     setHeartbeatSaving(true)
     try {
       if (session.agentId) {
-        // Save to agent with both formats so the cascade resolves correctly
+        // Save the cadence without implicitly toggling heartbeat on.
         await api('PUT', `/agents/${session.agentId}`, {
           heartbeatInterval: formatDuration(sec),
           heartbeatIntervalSec: sec,
-          heartbeatEnabled: true,
         })
         // Clear stale session-level overrides
         await api('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: null, heartbeatEnabled: null })
         await Promise.all([loadAgents(), loadSessions()])
       } else {
-        await api('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: sec, heartbeatEnabled: true })
+        await api('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: sec })
         await loadSessions()
       }
     } finally {
@@ -960,7 +988,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                   </button>
                   {Array.from(connectorSources.entries()).map(([cid, info]) => {
                     const active = connectorFilter === cid
-                    const meta = CONNECTOR_PLATFORM_META[info.platform as keyof typeof CONNECTOR_PLATFORM_META]
+                    const meta = resolveConnectorPlatformMeta(info.platform)
                     return (
                       <button
                         key={cid}
@@ -969,7 +997,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                           active ? 'bg-accent-soft text-accent-bright' : 'text-text-3 hover:bg-white/[0.06]'
                         }`}
                       >
-                        <ConnectorPlatformIcon platform={info.platform as keyof typeof CONNECTOR_PLATFORM_META} size={12} />
+                        <ConnectorPlatformIcon platform={info.platform} size={12} />
                         {info.connectorName || meta?.label || info.platform}
                       </button>
                     )

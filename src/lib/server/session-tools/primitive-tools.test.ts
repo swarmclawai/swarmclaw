@@ -176,6 +176,12 @@ describe('primitive tools', () => {
     watchJobs.triggerMailboxWatchJobs({ sessionId: 'session_1', envelope: replyEnvelope })
     assert.equal(watchJobs.getWatchJob(replyWatch.id)?.status, 'triggered')
 
+    const ackedReply = JSON.parse(String(await humanTool.invoke({
+      action: 'ack_mailbox',
+    })))
+    assert.equal(ackedReply.id, replyEnvelope.id)
+    assert.equal(ackedReply.status, 'ack')
+
     const approval = JSON.parse(String(await humanTool.invoke({
       action: 'request_approval',
       title: 'Need signoff',

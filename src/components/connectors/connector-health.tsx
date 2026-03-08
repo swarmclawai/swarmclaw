@@ -93,7 +93,7 @@ export function ConnectorHealth({ connectorId }: { connectorId: string }) {
         {/* Vertical line */}
         <div className="absolute left-[7px] top-2 bottom-2 w-px bg-white/[0.08]" />
 
-        <div className="space-y-3">
+        <div className="max-h-[320px] overflow-y-auto pr-2 space-y-3 sm:max-h-[38vh]">
           {recentEvents.map((ev) => {
             const cfg = EVENT_CONFIG[ev.event] ?? { color: 'bg-white/30', label: ev.event }
             return (

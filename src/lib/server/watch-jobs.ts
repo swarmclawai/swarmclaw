@@ -77,14 +77,29 @@ function finalizeWatchJob(job: WatchJob, status: WatchJob['status'], result?: Re
 function wakeFromWatch(job: WatchJob, result?: Record<string, unknown> | null) {
   const summary = job.description || `Watch ${job.id}`
   const detail = result ? JSON.stringify(result).slice(0, 1200) : ''
+  const resumeMessage = job.resumeMessage || summary
   if (job.sessionId) {
     enqueueSystemEvent(
       job.sessionId,
       `[Watch Triggered] ${summary}\n${job.resumeMessage}${detail ? `\n\nObserved:\n${detail}` : ''}`,
     )
-    requestHeartbeatNow({ sessionId: job.sessionId, reason: 'watch_job' })
+    requestHeartbeatNow({
+      sessionId: job.sessionId,
+      eventId: `${job.id}:${job.updatedAt || job.createdAt}`,
+      reason: 'watch_job',
+      source: `watch:${job.type}`,
+      resumeMessage,
+      detail,
+    })
   } else if (job.agentId) {
-    requestHeartbeatNow({ agentId: job.agentId, reason: 'watch_job' })
+    requestHeartbeatNow({
+      agentId: job.agentId,
+      eventId: `${job.id}:${job.updatedAt || job.createdAt}`,
+      reason: 'watch_job',
+      source: `watch:${job.type}`,
+      resumeMessage,
+      detail,
+    })
   }
 }
 
