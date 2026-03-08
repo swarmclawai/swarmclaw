@@ -1967,7 +1967,7 @@ export function recoverStalledRunningTasks(): { recovered: number; deadLettered:
       const recoveredAt = Date.now()
       task.status = 'queued'
       task.queuedAt = task.queuedAt || recoveredAt
-      task.retryScheduledAt = null
+      task.retryScheduledAt = Date.now() + 30_000
       task.updatedAt = recoveredAt
       task.error = 'Recovered inconsistent running state (missing startedAt); requeued.'
       if (!task.comments) task.comments = []
@@ -1994,6 +1994,7 @@ export function recoverStalledRunningTasks(): { recovered: number; deadLettered:
     disableSessionHeartbeat(task.sessionId)
     changed = true
     if (state === 'retry') {
+      task.retryScheduledAt = Date.now() + 30_000
       pushQueueUnique(queue, task.id)
       recovered++
       pushMainLoopEventToMainSessions({
@@ -2020,8 +2021,12 @@ export function recoverStalledRunningTasks(): { recovered: number; deadLettered:
   return { recovered, deadLettered }
 }
 
+let _resumeQueueCalled = false
+
 /** Resume any queued tasks on server boot */
 export function resumeQueue() {
+  if (_resumeQueueCalled) return
+  _resumeQueueCalled = true
   // Check for tasks stuck in 'queued' status but not in the queue array
   const tasks = loadTasks()
   const queue = loadQueue()

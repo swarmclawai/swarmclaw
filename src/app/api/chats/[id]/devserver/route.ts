@@ -5,6 +5,13 @@ import { notFound } from '@/lib/server/collection-helpers'
 import { resolveDevServerLaunchDir } from '@/lib/server/devserver-launch'
 import net from 'net'
 
+interface DevServerStartResult {
+  status?: number
+  body: Record<string, unknown>
+}
+
+const inflightDevServerStarts = new Map<string, Promise<DevServerStartResult>>()
+
 function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = net.createServer()
@@ -24,6 +31,67 @@ function buildDevArgs(framework: string, port: number): string[] {
   return ['--', '--host', '0.0.0.0', '--port', String(port)]
 }
 
+async function startDevServer(id: string, session: { cwd: string }): Promise<DevServerStartResult> {
+  const launch = resolveDevServerLaunchDir(session.cwd)
+  const port = await findFreePort()
+  const proc = spawn('npm', ['run', 'dev', ...buildDevArgs(launch.framework, port)], {
+    cwd: launch.launchDir,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, FORCE_COLOR: '0', PORT: String(port) },
+  })
+
+  let output = ''
+  let detectedUrl: string | null = null
+  const urlRe = /https?:\/\/(?:localhost|0\.0\.0\.0|[\d.]+):(\d+)/
+
+  function onData(chunk: Buffer) {
+    output += chunk.toString()
+    if (!detectedUrl) {
+      const match = output.match(urlRe)
+      if (match) {
+        const detectedPort = match[1]
+        detectedUrl = `http://${localIP()}:${detectedPort}`
+        const ds = devServers.get(id)
+        if (ds) ds.url = detectedUrl
+      }
+    }
+  }
+
+  proc.stdout!.on('data', onData)
+  proc.stderr!.on('data', onData)
+  proc.on('close', () => { devServers.delete(id); console.log(`[${id}] dev server stopped`) })
+  proc.on('error', () => devServers.delete(id))
+
+  devServers.set(id, { proc, url: `http://${localIP()}:${port}` })
+  console.log(`[${id}] starting dev server in ${launch.launchDir} (session cwd=${session.cwd})`)
+
+  await new Promise((resolve) => setTimeout(resolve, 4000))
+  const ds = devServers.get(id)
+  if (!ds) {
+    return {
+      status: 502,
+      body: {
+        running: false,
+        error: 'Dev server exited during startup',
+        cwd: launch.launchDir,
+        sessionCwd: session.cwd,
+        framework: launch.framework,
+        output: output.slice(-4000),
+      },
+    }
+  }
+
+  return {
+    body: {
+      running: true,
+      url: ds.url,
+      cwd: launch.launchDir,
+      sessionCwd: session.cwd,
+      framework: launch.framework,
+    },
+  }
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessions = loadSessions()
@@ -38,59 +106,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ running: true, url: ds.url })
     }
 
-    const launch = resolveDevServerLaunchDir(session.cwd)
-    const port = await findFreePort()
-    const proc = spawn('npm', ['run', 'dev', ...buildDevArgs(launch.framework, port)], {
-      cwd: launch.launchDir,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, FORCE_COLOR: '0', PORT: String(port) },
-    })
-
-    let output = ''
-    let detectedUrl: string | null = null
-    const urlRe = /https?:\/\/(?:localhost|0\.0\.0\.0|[\d.]+):(\d+)/
-
-    function onData(chunk: Buffer) {
-      output += chunk.toString()
-      if (!detectedUrl) {
-        const match = output.match(urlRe)
-        if (match) {
-          const port = match[1]
-          detectedUrl = `http://${localIP()}:${port}`
-          const ds = devServers.get(id)
-          if (ds) ds.url = detectedUrl
+    let startPromise = inflightDevServerStarts.get(id)
+    if (!startPromise) {
+      startPromise = startDevServer(id, session).finally(() => {
+        if (inflightDevServerStarts.get(id) === startPromise) {
+          inflightDevServerStarts.delete(id)
         }
-      }
+      })
+      inflightDevServerStarts.set(id, startPromise)
     }
-
-    proc.stdout!.on('data', onData)
-    proc.stderr!.on('data', onData)
-    proc.on('close', () => { devServers.delete(id); console.log(`[${id}] dev server stopped`) })
-    proc.on('error', () => devServers.delete(id))
-
-    devServers.set(id, { proc, url: `http://${localIP()}:${port}` })
-    console.log(`[${id}] starting dev server in ${launch.launchDir} (session cwd=${session.cwd})`)
-
-    // Wait for URL detection
-    await new Promise(resolve => setTimeout(resolve, 4000))
-    const ds = devServers.get(id)
-    if (!ds) {
-      return NextResponse.json({
-        running: false,
-        error: 'Dev server exited during startup',
-        cwd: launch.launchDir,
-        sessionCwd: session.cwd,
-        framework: launch.framework,
-        output: output.slice(-4000),
-      }, { status: 502 })
-    }
-    return NextResponse.json({
-      running: true,
-      url: ds.url,
-      cwd: launch.launchDir,
-      sessionCwd: session.cwd,
-      framework: launch.framework,
-    })
+    const result = await startPromise
+    return NextResponse.json(result.body, result.status ? { status: result.status } : undefined)
 
   } else if (action === 'stop') {
     if (devServers.has(id)) {

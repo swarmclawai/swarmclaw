@@ -7,7 +7,7 @@ import { getStoredAccessKey, clearStoredAccessKey, api } from '@/lib/api-client'
 import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 import { connectWs, disconnectWs } from '@/lib/ws-client'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
-import { isLocalhostBrowser } from '@/lib/local-observability'
+import { isDevelopmentLikeRuntime } from '@/lib/runtime-env'
 import { useWs } from '@/hooks/use-ws'
 import { AccessKeyGate } from '@/components/auth/access-key-gate'
 import { UserPicker } from '@/components/auth/user-picker'
@@ -16,8 +16,8 @@ import { AppLayout } from '@/components/layout/app-layout'
 import { useViewRouter } from '@/hooks/use-view-router'
 import type { Agent } from '@/types'
 
-const AUTH_CHECK_TIMEOUT_MS = 8_000
-const POST_AUTH_BOOTSTRAP_TIMEOUT_MS = 8_000
+const AUTH_CHECK_TIMEOUT_MS = isDevelopmentLikeRuntime() ? 20_000 : 8_000
+const POST_AUTH_BOOTSTRAP_TIMEOUT_MS = isDevelopmentLikeRuntime() ? 20_000 : 8_000
 
 function FullScreenLoader(props: {
   stage?: string | null
@@ -202,17 +202,22 @@ export default function Home() {
   })
 
   const checkAuth = useCallback(async () => {
+    try {
+      const res = await fetchWithTimeout('/api/auth', {}, AUTH_CHECK_TIMEOUT_MS)
+      const data = await res.json().catch(() => ({}))
+      if (data?.authenticated === true) {
+        setAuthenticated(true)
+        setAuthChecked(true)
+        return
+      }
+    } catch {
+      // Fall back to stored-key bootstrap below if the auth probe is unavailable.
+    }
+
     const key = getStoredAccessKey()
     if (!key) {
-      try {
-        const res = await fetchWithTimeout('/api/auth', {}, AUTH_CHECK_TIMEOUT_MS)
-        const data = await res.json().catch(() => ({}))
-        setAuthenticated(data?.authenticated === true)
-      } catch {
-        setAuthenticated(false)
-      } finally {
-        setAuthChecked(true)
-      }
+      setAuthenticated(false)
+      setAuthChecked(true)
       return
     }
 
@@ -260,8 +265,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!authenticated) return
-    const key = getStoredAccessKey()
-    if (key) connectWs(key)
+    connectWs()
     syncUserFromServer()
     loadNetworkInfo()
     loadSettings()
@@ -269,15 +273,7 @@ export default function Home() {
     return () => { disconnectWs() }
   }, [authenticated])
 
-  useWs('sessions', loadSessions, 5000)
-
-  useEffect(() => {
-    if (!authenticated || !isLocalhostBrowser()) return
-    const pollId = setInterval(() => {
-      void loadSessions()
-    }, 5000)
-    return () => clearInterval(pollId)
-  }, [authenticated, loadSessions])
+  useWs('sessions', loadSessions, 15000)
 
   // Auto-select agent's thread on load — resolves a persisted agentId into a session,
   // or falls back to defaultAgentId from settings, then first agent.

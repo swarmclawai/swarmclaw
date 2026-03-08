@@ -379,7 +379,7 @@ const COMMAND_GROUPS = {
     commands: {
       list: { description: 'List chats', method: 'GET', path: '/chats' },
       create: { description: 'Create chat', method: 'POST', path: '/chats' },
-      get: { description: 'Get chat by id (from list)', virtualGet: true, collectionPath: '/chats', params: ['id'] },
+      get: { description: 'Get chat by id', method: 'GET', path: '/chats/:id', params: ['id'] },
       update: { description: 'Update chat fields', method: 'PUT', path: '/chats/:id', params: ['id'] },
       delete: { description: 'Delete one chat', method: 'DELETE', path: '/chats/:id', params: ['id'] },
       'delete-many': { description: 'Delete multiple chats (body: {"ids":[...]})', method: 'DELETE', path: '/chats' },

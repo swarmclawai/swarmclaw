@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
+import { ensureGatewayConnected, getGateway } from '@/lib/server/openclaw-gateway'
 import type { PendingExecApproval, ExecApprovalDecision } from '@/types'
 
 /** GET — fetch pending execution approvals from gateway */
 export async function GET() {
-  const gw = await ensureGatewayConnected()
-  if (!gw) {
+  const gw = getGateway()
+  if (!gw?.connected) {
     return NextResponse.json([], { status: 200 })
   }
 

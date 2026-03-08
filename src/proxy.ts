@@ -6,6 +6,7 @@ import {
   isPluginInstallCorsPath,
   resolvePluginInstallCorsOrigin,
 } from '@/lib/plugin-install-cors'
+import { isProductionRuntime } from '@/lib/runtime-env'
 
 /* ------------------------------------------------------------------ */
 /*  Rate-limit state — HMR-safe via globalThis                        */
@@ -23,6 +24,10 @@ const rateLimitMap = (
 const MAX_ATTEMPTS = 5
 const LOCKOUT_MS = 15 * 60 * 1000 // 15 minutes
 const PRUNE_THRESHOLD = 1000
+
+function isRateLimitEnabled(): boolean {
+  return isProductionRuntime()
+}
 
 /** Prune expired entries when the map grows too large. */
 function pruneRateLimitMap() {
@@ -65,6 +70,7 @@ function withPluginInstallCorsHeaders(pathname: string, origin: string | null, h
  *  After 5 failed attempts from a single IP the client is locked out for 15 minutes.
  */
 export function proxy(request: NextRequest) {
+  const rateLimitEnabled = isRateLimitEnabled()
   const { pathname } = request.nextUrl
   const corsOrigin = resolvePluginInstallCorsOrigin(request.headers.get('origin'))
   const isWebhookTrigger = request.method === 'POST'
@@ -99,13 +105,13 @@ export function proxy(request: NextRequest) {
   }
 
   // --- Rate-limit housekeeping ---
-  pruneRateLimitMap()
+  if (rateLimitEnabled) pruneRateLimitMap()
 
   const clientIp = getClientIp(request)
-  const entry = rateLimitMap.get(clientIp)
+  const entry = rateLimitEnabled ? rateLimitMap.get(clientIp) : undefined
 
   // Check lockout before even validating the key
-  if (entry && entry.lockedUntil > Date.now()) {
+  if (rateLimitEnabled && entry && entry.lockedUntil > Date.now()) {
     const retryAfter = Math.ceil((entry.lockedUntil - Date.now()) / 1000)
     return NextResponse.json(
       { error: 'Too many failed attempts. Try again later.', retryAfter },
@@ -116,23 +122,23 @@ export function proxy(request: NextRequest) {
     )
   }
 
-  const providedKey =
-    request.headers.get('x-access-key')?.trim()
-    || request.cookies.get(AUTH_COOKIE_NAME)?.value?.trim()
-    || ''
+  const cookieKey = request.cookies.get(AUTH_COOKIE_NAME)?.value?.trim() || ''
+  const headerKey = request.headers.get('x-access-key')?.trim() || ''
+  const providedKey = cookieKey || headerKey
 
   if (providedKey !== accessKey) {
-    // Record the failed attempt
-    const current = rateLimitMap.get(clientIp) ?? { count: 0, lockedUntil: 0 }
-    current.count += 1
+    let remaining = MAX_ATTEMPTS
+    if (rateLimitEnabled) {
+      const current = rateLimitMap.get(clientIp) ?? { count: 0, lockedUntil: 0 }
+      current.count += 1
 
-    if (current.count >= MAX_ATTEMPTS) {
-      current.lockedUntil = Date.now() + LOCKOUT_MS
+      if (current.count >= MAX_ATTEMPTS) {
+        current.lockedUntil = Date.now() + LOCKOUT_MS
+      }
+
+      rateLimitMap.set(clientIp, current)
+      remaining = Math.max(0, MAX_ATTEMPTS - current.count)
     }
-
-    rateLimitMap.set(clientIp, current)
-
-    const remaining = Math.max(0, MAX_ATTEMPTS - current.count)
     return NextResponse.json(
       { error: 'Unauthorized' },
       {
@@ -143,7 +149,7 @@ export function proxy(request: NextRequest) {
   }
 
   // Successful auth — clear any prior failed-attempt tracking for this IP
-  if (entry) {
+  if (rateLimitEnabled && entry) {
     rateLimitMap.delete(clientIp)
   }
 

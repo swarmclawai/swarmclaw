@@ -7,6 +7,7 @@ import { useChatStore } from '@/stores/use-chat-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { api } from '@/lib/api-client'
 import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
+import { getSessionLastMessage } from '@/lib/session-summary'
 import { getNotificationActivityAt, getNotificationOccurrenceCount } from '@/lib/notification-utils'
 import type { Agent, Session, ActivityEntry, BoardTask, AppNotification } from '@/types'
 import { HintTip } from '@/components/shared/hint-tip'
@@ -150,7 +151,9 @@ export function HomeView() {
     void loadActivity({ limit: 8 })
     void loadSchedules()
     void loadNotifications()
-    void loadConnectors()
+    const connectorTimer = window.setTimeout(() => {
+      void loadConnectors()
+    }, 1200)
     api<{ records: Array<{ estimatedCost: number }>; timeSeries: Array<{ cost: number; bucket: string }> }>('GET', '/usage?range=7d')
       .then((data) => {
         const series = (data.timeSeries || []).map((pt: { cost: number; bucket?: string }) => ({ cost: pt.cost, bucket: pt.bucket || '' }))
@@ -160,6 +163,7 @@ export function HomeView() {
         setTodayCost(todayPt?.cost || 0)
       })
       .catch(() => {})
+    return () => window.clearTimeout(connectorTimer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -563,7 +567,7 @@ export function HomeView() {
             <div className="flex flex-col gap-1">
               {recentChats.map((session) => {
                 const agent = session.agentId ? agents[session.agentId] : null
-                const lastMsg = session.messages?.[session.messages.length - 1]
+                const lastMsg = getSessionLastMessage(session)
                 const displayName = agent?.name || 'Chat'
                 return (
                   <button

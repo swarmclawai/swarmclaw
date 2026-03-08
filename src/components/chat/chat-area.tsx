@@ -23,6 +23,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { speak } from '@/lib/tts'
 import { api } from '@/lib/api-client'
 import { messagesDiffer } from '@/lib/chat-streaming-state'
+import { getSessionLastMessage } from '@/lib/session-summary'
 
 const DIRECT_PROMPT_SUGGESTIONS = [
   { text: 'What can you help me with?', icon: 'book', gradient: 'from-[#6366F1]/10 to-[#818CF8]/5' },
@@ -47,7 +48,7 @@ export function ChatArea() {
   const currentUser = useAppStore((s) => s.currentUser)
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const removeSessionFromStore = useAppStore((s) => s.removeSession)
-  const loadSessions = useAppStore((s) => s.loadSessions)
+  const refreshSession = useAppStore((s) => s.refreshSession)
   const appSettings = useAppStore((s) => s.appSettings)
   const { messages, setMessages, streaming, streamingSessionId, sendMessage, stopStreaming, devServer: devServerStatus, setDevServer, debugOpen, setDebugOpen, ttsEnabled, previewContent, setPreviewContent } = useChatStore()
   const isDesktop = useMediaQuery('(min-width: 768px)')
@@ -82,13 +83,17 @@ export function ChatArea() {
   const [pluginChatActions, setPluginChatActions] = useState<Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>>([])
   const sessionHasBrowserPlugin = session?.plugins?.includes('browser') === true
 
+  const refreshPluginChatActions = useCallback(() => {
+    api<Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>>('GET', '/plugins/ui?type=chat_actions').then((actions) => {
+      if (Array.isArray(actions)) setPluginChatActions(actions)
+    }).catch(() => {})
+  }, [])
+
   useEffect(() => {
-    if (sessionId) {
-      api<Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>>('GET', '/plugins/ui?type=chat_actions').then(actions => {
-        if (Array.isArray(actions)) setPluginChatActions(actions)
-      }).catch(() => {})
-    }
-  }, [sessionId])
+    void refreshPluginChatActions()
+  }, [refreshPluginChatActions])
+
+  useWs('plugins', refreshPluginChatActions)
 
   // Collect unique connector sources from messages for filter UI
   const { connectorSources, hasDirectMessages } = useMemo(() => {
@@ -131,7 +136,12 @@ export function ChatArea() {
       if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
       console.error('Failed to load messages:', err)
       const fallbackSession = useAppStore.getState().sessions[requestedSessionId]
-      setMessages(fallbackSession?.messages || [])
+      const fallbackLastMessage = fallbackSession ? getSessionLastMessage(fallbackSession) : null
+      setMessages(
+        fallbackSession?.messages?.length
+          ? fallbackSession.messages
+          : (fallbackLastMessage ? [fallbackLastMessage] : []),
+      )
     }).finally(() => {
       if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
       setMessagesLoading(false)
@@ -142,30 +152,41 @@ export function ChatArea() {
       useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamText: '' })
     }
 
-    // Refresh active state from server so returning to a session restores typing indicator.
-    loadSessions().then(() => {
-      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
-      const refreshed = useAppStore.getState().sessions[requestedSessionId]
-      if (refreshed?.active) {
-        useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamText: '' })
-      }
-    }).catch((err) => console.error('Failed to refresh messages:', err))
-
-    devServer(requestedSessionId, 'status').then((r) => {
-      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
-      setDevServer(r.running ? r : null)
-    }).catch(() => {
-      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
-      setDevServer(null)
-    })
-
     return () => {
       cancelled = true
     }
-  }, [loadSessions, sessionId, setDevServer, setMessages])
+  }, [refreshSession, sessionId, setDevServer, setMessages])
 
   useEffect(() => {
-    if (!sessionId) return
+    if (!sessionId || messagesLoading) return
+    let cancelled = false
+    const requestedSessionId = sessionId
+    const timer = window.setTimeout(() => {
+      void refreshSession(requestedSessionId).then(() => {
+        if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+        const refreshed = useAppStore.getState().sessions[requestedSessionId]
+        if (refreshed?.active) {
+          useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamText: '' })
+        }
+      }).catch((err) => console.error('Failed to refresh session:', err))
+
+      void devServer(requestedSessionId, 'status').then((r) => {
+        if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+        setDevServer(r.running ? r : null)
+      }).catch(() => {
+        if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+        setDevServer(null)
+      })
+    }, 200)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [messagesLoading, refreshSession, sessionId, setDevServer])
+
+  useEffect(() => {
+    if (!sessionId || messagesLoading) return
     let cancelled = false
     if (!sessionHasBrowserPlugin) {
       setBrowserActive(false)
@@ -182,7 +203,7 @@ export function ChatArea() {
     return () => {
       cancelled = true
     }
-  }, [sessionHasBrowserPlugin, sessionId])
+  }, [messagesLoading, sessionHasBrowserPlugin, sessionId])
 
   // Auto-poll messages for sessions that are actively running on the server
   const isServerActive = session?.active === true
@@ -214,7 +235,7 @@ export function ChatArea() {
           }
         }
       }
-      if (isServerActiveRef.current) await loadSessions()
+      if (isServerActiveRef.current) await refreshSession(sessionId)
     } catch (err) { console.error('Failed to refresh messages:', err) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
@@ -279,8 +300,8 @@ export function ChatArea() {
     if (!sessionId) return
     await clearMessages(sessionId)
     setMessages([])
-    loadSessions()
-  }, [loadSessions, sessionId, setMessages])
+    await refreshSession(sessionId)
+  }, [refreshSession, sessionId, setMessages])
 
   const handleDelete = useCallback(async () => {
     setConfirmDelete(false)

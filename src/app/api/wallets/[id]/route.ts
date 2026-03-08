@@ -3,7 +3,7 @@ import { loadWallets, upsertWallet, deleteWallet as deleteWalletFromStore, loadA
 import { notify } from '@/lib/server/ws-hub'
 import { getWalletLimitAtomic, normalizeAtomicString } from '@/lib/wallet'
 import type { AgentWallet, WalletAssetBalance, WalletPortfolioSummary } from '@/types'
-import { buildEmptyWalletPortfolio } from '@/lib/server/wallet-portfolio'
+import { buildEmptyWalletPortfolio, getCachedWalletPortfolio } from '@/lib/server/wallet-portfolio'
 import {
   getAgentActiveWalletId,
   getWalletPortfolioSnapshot,
@@ -43,11 +43,27 @@ function withPortfolio(
   }
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const wallets = loadWallets() as Record<string, AgentWallet>
   const wallet = wallets[id]
   if (!wallet) return NextResponse.json({ error: 'Wallet not found' }, { status: 404 })
+
+  const url = new URL(req.url)
+  const cachedOnly = url.searchParams.get('cached') === '1'
+  const agents = loadAgents()
+  const isActive = getAgentActiveWalletId(agents[wallet.agentId]) === wallet.id
+
+  if (cachedOnly) {
+    const cached = getCachedWalletPortfolio(wallet)
+    if (!cached) {
+      return NextResponse.json({
+        ...stripWalletPrivateKey(wallet as unknown as Record<string, unknown>),
+        isActive,
+      })
+    }
+    return NextResponse.json(withPortfolio(wallet, cached, isActive))
+  }
 
   let portfolio = buildEmptyWalletPortfolio(wallet)
   try {
@@ -59,8 +75,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // RPC failure — return 0
   }
 
-  const agents = loadAgents()
-  const isActive = getAgentActiveWalletId(agents[wallet.agentId]) === wallet.id
   return NextResponse.json(withPortfolio(wallet, portfolio, isActive))
 }
 

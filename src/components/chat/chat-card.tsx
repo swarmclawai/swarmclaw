@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import type { Session } from '@/types'
 import { api } from '@/lib/api-client'
+import { getSessionLastAssistantAt, getSessionLastMessage } from '@/lib/session-summary'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -69,9 +70,7 @@ export function ChatCard({ session, active, onClick }: Props) {
     }
   }
 
-  const last = session.messages?.length
-    ? session.messages[session.messages.length - 1]
-    : null
+  const last = getSessionLastMessage(session)
   const preview = last
     ? (last.role === 'user' ? 'You: ' : '') + last.text.slice(0, 70)
     : 'No messages'
@@ -132,12 +131,10 @@ export function ChatCard({ session, active, onClick }: Props) {
         )}
         {(() => {
           const lastRead = lastReadTimestamps[session.id] || 0
-          const unread = (session.messages || []).filter(
-            (m) => m.role === 'assistant' && (m.time || 0) > lastRead,
-          ).length
+          const unread = (getSessionLastAssistantAt(session) || 0) > lastRead ? 1 : 0
           return unread > 0 ? (
             <span className="shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-accent-bright text-white text-[10px] font-600 px-1">
-              {unread > 99 ? '99+' : unread}
+              {unread}
             </span>
           ) : null
         })()}

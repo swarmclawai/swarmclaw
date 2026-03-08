@@ -22,7 +22,7 @@ interface Props {
 export function ChatToolToggles({ session }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const loadSessions = useAppStore((s) => s.loadSessions)
+  const refreshSession = useAppStore((s) => s.refreshSession)
   const agents = useAppStore((s) => s.agents)
   const skills = useAppStore((s) => s.skills)
 
@@ -46,7 +46,7 @@ export function ChatToolToggles({ session }: Props) {
       ? sessionTools.filter((t) => t !== toolId)
       : [...sessionTools, toolId]
     await api('PUT', `/chats/${session.id}`, { plugins: updated })
-    loadSessions()
+    await refreshSession(session.id)
   }
 
   const enabledCount = sessionTools.length

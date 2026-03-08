@@ -55,11 +55,13 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
         setStoredAccessKey(trimmed)
         onAuthenticated()
       } else {
-        setError('Invalid access key')
+        const payload = await res.json().catch(() => null) as { error?: unknown } | null
+        setError(typeof payload?.error === 'string' && payload.error.trim() ? payload.error : 'Invalid access key')
         setKey('')
       }
-    } catch {
-      setError('Connection failed')
+    } catch (err) {
+      const message = err instanceof Error && err.message.trim() ? err.message : 'Connection failed'
+      setError(message)
     } finally {
       setLoading(false)
     }

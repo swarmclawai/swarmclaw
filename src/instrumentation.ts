@@ -1,24 +1,34 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { startScheduler } = await import('./lib/server/scheduler')
-    const { resumeQueue } = await import('./lib/server/queue')
     const { initWsServer, closeWsServer } = await import('./lib/server/ws-hub')
-    const { stopDaemon } = await import('./lib/server/daemon-state')
-    startScheduler()
-    resumeQueue()
+    const { ensureDaemonStarted } = await import('./lib/server/daemon-state')
+    ensureDaemonStarted('instrumentation')
+
     initWsServer()
 
     // Graceful shutdown: stop background services and close WS connections
-    let shuttingDown = false
+    const shutdownState = (
+      (globalThis as Record<string, unknown>).__swarmclaw_shutdown_state__
+      ??= { registered: false, shuttingDown: false }
+    ) as { registered: boolean; shuttingDown: boolean }
+
     const shutdown = async (signal: string) => {
-      if (shuttingDown) return
-      shuttingDown = true
+      if (shutdownState.shuttingDown) return
+      shutdownState.shuttingDown = true
       console.log(`[server] ${signal} received, shutting down gracefully...`)
-      stopDaemon({ source: signal })
+      try {
+        const { stopDaemon } = await import('./lib/server/daemon-state')
+        stopDaemon({ source: signal })
+      } catch (err) {
+        console.error('[instrumentation] Failed to stop daemon during shutdown:', err)
+      }
       await closeWsServer()
       process.exit(0)
     }
-    process.on('SIGTERM', () => shutdown('SIGTERM'))
-    process.on('SIGINT', () => shutdown('SIGINT'))
+    if (!shutdownState.registered) {
+      process.on('SIGTERM', () => { void shutdown('SIGTERM') })
+      process.on('SIGINT', () => { void shutdown('SIGINT') })
+      shutdownState.registered = true
+    }
   }
 }

@@ -490,7 +490,7 @@ const COMMAND_GROUPS = [
     description: 'Manage agent chats and runtime controls',
     commands: [
       cmd('list', 'GET', '/chats', 'List chats'),
-      cmd('get', 'GET', '/chats/:id', 'Get chat by id', { virtual: true, clientGetRoute: '/chats' }),
+      cmd('get', 'GET', '/chats/:id', 'Get chat by id'),
       cmd('create', 'POST', '/chats', 'Create chat', { expectsJsonBody: true }),
       cmd('update', 'PUT', '/chats/:id', 'Update chat', { expectsJsonBody: true }),
       cmd('delete', 'DELETE', '/chats/:id', 'Delete chat'),

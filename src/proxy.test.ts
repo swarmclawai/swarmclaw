@@ -28,4 +28,44 @@ describe('proxy', () => {
     assert.equal(response.headers.get('access-control-allow-origin'), 'https://swarmclaw.ai')
     assert.equal(response.headers.get('vary'), 'Origin')
   })
+
+  it('prefers the auth cookie over a stale access-key header', () => {
+    process.env.ACCESS_KEY = 'top-secret'
+
+    const request = new NextRequest('http://localhost/api/agents', {
+      headers: {
+        cookie: 'sc_auth=top-secret',
+        'x-access-key': 'stale-key',
+      },
+    })
+
+    const response = proxy(request)
+    assert.equal(response.status, 200)
+  })
+
+  it('does not lock out invalid requests in development', () => {
+    process.env.ACCESS_KEY = 'top-secret'
+    const originalNodeEnv = process.env.NODE_ENV
+    process.env.NODE_ENV = 'development'
+
+    try {
+      for (let i = 0; i < 6; i++) {
+        const response = proxy(new NextRequest('http://localhost/api/agents', {
+          headers: {
+            'x-access-key': 'bad-key',
+          },
+        }))
+        assert.equal(response.status, 401)
+      }
+      const finalResponse = proxy(new NextRequest('http://localhost/api/agents', {
+        headers: {
+          'x-access-key': 'bad-key',
+        },
+      }))
+      assert.equal(finalResponse.status, 401)
+    } finally {
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = originalNodeEnv
+    }
+  })
 })

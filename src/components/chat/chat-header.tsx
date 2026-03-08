@@ -138,7 +138,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const setMemoryAgentFilter = useAppStore((s) => s.setMemoryAgentFilter)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const appSettings = useAppStore((s) => s.appSettings)
-  const loadSessions = useAppStore((s) => s.loadSessions)
+  const refreshSession = useAppStore((s) => s.refreshSession)
   const loadAgents = useAppStore((s) => s.loadAgents)
   const inspectorOpen = useAppStore((s) => s.inspectorOpen)
   const setInspectorOpen = useAppStore((s) => s.setInspectorOpen)
@@ -174,11 +174,17 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const agentWalletIds = useMemo(() => getAgentWalletIds(agent), [agent])
   const activeWalletId = useMemo(() => getAgentActiveWalletId(agent), [agent])
 
-  useEffect(() => {
-    api<Array<{ id: string; label: string; icon?: string }>>('GET', `/plugins/ui?type=header&sessionId=${session.id}`).then(widgets => {
+  const refreshHeaderWidgets = useCallback(() => {
+    api<Array<{ id: string; label: string; icon?: string }>>('GET', '/plugins/ui?type=header').then((widgets) => {
       if (Array.isArray(widgets)) setHeaderWidgets(widgets)
     }).catch(() => {})
-  }, [session.id])
+  }, [])
+
+  useEffect(() => {
+    void refreshHeaderWidgets()
+  }, [refreshHeaderWidgets])
+
+  useWs('plugins', refreshHeaderWidgets)
 
   const fetchWalletBalance = useCallback(async () => {
     if (!activeWalletId) {
@@ -186,7 +192,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       return
     }
     try {
-      const data = await api<{ balanceFormatted?: string; balanceSymbol?: string; portfolioSummary?: { nonZeroAssets?: number } }>('GET', `/wallets/${activeWalletId}`)
+      const data = await api<{ balanceFormatted?: string; balanceSymbol?: string; portfolioSummary?: { nonZeroAssets?: number } }>('GET', `/wallets/${activeWalletId}?cached=1`)
       if (data.balanceFormatted && data.balanceSymbol) {
         setWalletBalance({
           formatted: data.balanceFormatted,
@@ -340,7 +346,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         opencodeSessionId: null,
         delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null },
       })
-      await loadSessions()
+      await refreshSession(session.id)
     } catch { /* best-effort */ }
   }
 
@@ -401,10 +407,10 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         await api('PUT', `/agents/${session.agentId}`, { heartbeatEnabled: next })
         // Clear any stale session-level override so the agent value wins
         await api('PUT', `/chats/${session.id}`, { heartbeatEnabled: null })
-        await Promise.all([loadAgents(), loadSessions()])
+        await Promise.all([loadAgents(), refreshSession(session.id)])
       } else {
         await api('PUT', `/chats/${session.id}`, { heartbeatEnabled: next })
-        await loadSessions()
+        await refreshSession(session.id)
       }
       toast.success(`Heartbeat ${next ? 'enabled' : 'disabled'}`)
     } finally {
@@ -425,10 +431,10 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         })
         // Clear stale session-level overrides
         await api('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: null, heartbeatEnabled: null })
-        await Promise.all([loadAgents(), loadSessions()])
+        await Promise.all([loadAgents(), refreshSession(session.id)])
       } else {
         await api('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: sec })
-        await loadSessions()
+        await refreshSession(session.id)
       }
     } finally {
       setHeartbeatSaving(false)
@@ -455,7 +461,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         { sessionKey: openclawSessionKey, epoch: preview.epoch, localSessionId: session.id },
       )
       setSyncResult(result.merged > 0 ? `Synced ${result.merged} message${result.merged !== 1 ? 's' : ''}.` : 'Already up to date.')
-      if (result.merged > 0) await loadSessions()
+      if (result.merged > 0) await refreshSession(session.id)
     } catch (err: unknown) {
       setSyncResult(err instanceof Error ? err.message : 'Sync failed.')
     } finally {
@@ -548,7 +554,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     setModelSwitcherOpen(false)
     try {
       await api('PUT', `/chats/${session.id}`, { provider: nextProvider, model: nextModel })
-      await loadSessions()
+      await refreshSession(session.id)
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to switch model')
     }
@@ -863,7 +869,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 </Tip>
                 {hbDropdownOpen && (
                   <div className="absolute top-full right-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[88px]">
-                    {[...(typeof window !== 'undefined' && window.location.hostname === 'localhost' ? [10, 15, 30, 60] : []), 1800, 3600, 7200, 21600, 43200].map((sec) => (
+                    {[...(typeof window !== 'undefined' && window.location.hostname === 'localhost' ? [60, 300] : []), 1800, 3600, 7200, 21600, 43200].map((sec) => (
                       <button
                         key={sec}
                         onClick={() => handleSelectHeartbeatInterval(sec)}

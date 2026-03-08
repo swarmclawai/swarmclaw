@@ -638,6 +638,17 @@ interface LoadedPlugin {
   isBuiltin?: boolean
 }
 
+function createPluginRequire(): NodeRequire | null {
+  try {
+    return createRequire(path.join(process.cwd(), 'package.json'))
+  } catch (err: unknown) {
+    log.warn('plugins', 'createRequire failed; external plugins disabled', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+}
+
 export interface ExternalPluginToolEntry {
   pluginId: string
   pluginName: string
@@ -1000,15 +1011,7 @@ class PluginManager {
     try {
       this.ensurePluginDirs()
       const files = fs.readdirSync(PLUGINS_DIR).filter(f => f.endsWith('.js') || f.endsWith('.mjs'))
-      
-      let dynamicRequire: NodeRequire | null = null
-      try {
-        dynamicRequire = createRequire(path.join(process.cwd(), 'package.json'))
-      } catch (err: unknown) {
-        log.warn('plugins', 'createRequire failed; external plugins disabled', {
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
+      const dynamicRequire = createPluginRequire()
 
       if (dynamicRequire) {
         for (const file of files) {

@@ -11,6 +11,58 @@ import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
 import type { AppNotification, ExternalAgentRuntime, GatewayProfile, Message } from '@/types'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
+// --- TTL Cache (read-through with write-through invalidation) ---
+
+interface TTLEntry<T> {
+  value: T
+  expiresAt: number
+}
+
+/**
+ * Simple TTL cache for hot-path reads that rarely change.
+ * Stored on globalThis so HMR doesn't reset it.
+ */
+class TTLCache<T> {
+  private entry: TTLEntry<T> | null = null
+  constructor(private readonly ttlMs: number) {}
+
+  get(): T | undefined {
+    if (!this.entry) return undefined
+    if (Date.now() > this.entry.expiresAt) {
+      this.entry = null
+      return undefined
+    }
+    return this.entry.value
+  }
+
+  set(value: T): void {
+    this.entry = { value, expiresAt: Date.now() + this.ttlMs }
+  }
+
+  invalidate(): void {
+    this.entry = null
+  }
+}
+
+const ttlCacheKey = '__swarmclaw_ttl_caches__' as const
+type TTLCacheStore = {
+  settings?: TTLCache<Record<string, unknown>>
+  credentials?: TTLCache<Record<string, unknown>>
+  connectors?: TTLCache<Record<string, unknown>>
+  gatewayProfiles?: TTLCache<Record<string, unknown>>
+  agents?: TTLCache<Record<string, unknown>>
+}
+type TTLGlobals = typeof globalThis & { [ttlCacheKey]?: TTLCacheStore }
+const ttlGlobals = globalThis as TTLGlobals
+const ttlCaches: TTLCacheStore = ttlGlobals[ttlCacheKey] ?? (ttlGlobals[ttlCacheKey] = {})
+
+// Lazily initialize each cache with its TTL
+function getSettingsCache() { return ttlCaches.settings ?? (ttlCaches.settings = new TTLCache(60_000)) }
+function getCredentialsCache() { return ttlCaches.credentials ?? (ttlCaches.credentials = new TTLCache(90_000)) }
+function getConnectorsCache() { return ttlCaches.connectors ?? (ttlCaches.connectors = new TTLCache(30_000)) }
+function getGatewayProfilesCache() { return ttlCaches.gatewayProfiles ?? (ttlCaches.gatewayProfiles = new TTLCache(300_000)) }
+function getAgentsCache() { return ttlCaches.agents ?? (ttlCaches.agents = new TTLCache(15_000)) }
+
 // --- LRU Cache ---
 
 const DEFAULT_LRU_CAPACITY = 5000
@@ -670,11 +722,18 @@ export function disableAllSessionHeartbeats(): number {
 
 // --- Credentials ---
 export function loadCredentials(): Record<string, any> {
-  return loadCollection('credentials')
+  const cache = getCredentialsCache()
+  const cached = cache.get()
+  if (cached) return structuredClone(cached) as Record<string, unknown>
+
+  const result = loadCollection('credentials')
+  cache.set(result)
+  return result
 }
 
 export function saveCredentials(c: Record<string, any>) {
   saveCollection('credentials', c)
+  getCredentialsCache().invalidate()
 }
 
 export function encryptKey(plaintext: string): string {
@@ -716,14 +775,25 @@ function migrateAgentPlugins(agents: Record<string, Record<string, unknown>>): b
 }
 
 export function loadAgents(opts?: { includeTrashed?: boolean }): Record<string, any> {
+  // Cache the full (non-trashed) agent set; includeTrashed bypasses cache
+  if (opts?.includeTrashed) {
+    const all = loadCollection('agents')
+    if (migrateAgentPlugins(all)) saveCollection('agents', all)
+    return all
+  }
+
+  const cache = getAgentsCache()
+  const cached = cache.get()
+  if (cached) return structuredClone(cached) as Record<string, unknown>
+
   const all = loadCollection('agents')
   if (migrateAgentPlugins(all)) saveCollection('agents', all)
-  if (opts?.includeTrashed) return all
   const result: Record<string, any> = {}
   for (const [id, agent] of Object.entries(all)) {
     if (!agent.trashedAt) result[id] = agent
   }
-  return result
+  cache.set(result)
+  return structuredClone(result) as Record<string, unknown>
 }
 
 export function loadTrashedAgents(): Record<string, any> {
@@ -737,6 +807,7 @@ export function loadTrashedAgents(): Record<string, any> {
 
 export function saveAgents(p: Record<string, any>) {
   saveCollection('agents', p)
+  getAgentsCache().invalidate()
 }
 
 // --- Schedules ---
@@ -771,7 +842,7 @@ export function upsertTask(id: string, task: unknown) {
 }
 export function deleteTask(id: string) { deleteCollectionItem('tasks', id) }
 export function deleteSession(id: string) { deleteCollectionItem('sessions', id) }
-export function deleteAgent(id: string) { deleteCollectionItem('agents', id) }
+export function deleteAgent(id: string) { deleteCollectionItem('agents', id); getAgentsCache().invalidate() }
 export function deleteSchedule(id: string) { deleteCollectionItem('schedules', id) }
 export function deleteSkill(id: string) { deleteCollectionItem('skills', id) }
 
@@ -798,7 +869,7 @@ type PersistedSettingsRecord = Record<string, any> & {
 }
 
 function cloneRecord<T extends Record<string, any>>(value: T): T {
-  return JSON.parse(JSON.stringify(value || {})) as T
+  return structuredClone(value || {}) as T
 }
 
 function isPlainRecord(value: unknown): value is Record<string, any> {
@@ -870,17 +941,24 @@ function resolveSettingsSecrets(settings: PersistedSettingsRecord): Record<strin
 }
 
 export function loadSettings(): Record<string, any> {
+  const cache = getSettingsCache()
+  const cached = cache.get()
+  if (cached) return structuredClone(cached) as Record<string, unknown>
+
   const persisted = loadSingleton('settings', {}) as PersistedSettingsRecord
   const normalized = buildPersistedSettings(persisted, persisted)
   if (JSON.stringify(persisted) !== JSON.stringify(normalized)) {
     saveSingleton('settings', normalized)
   }
-  return resolveSettingsSecrets(normalized)
+  const resolved = resolveSettingsSecrets(normalized)
+  cache.set(resolved)
+  return structuredClone(resolved) as Record<string, unknown>
 }
 
 export function saveSettings(s: Record<string, any>) {
   const existing = loadSingleton('settings', {}) as PersistedSettingsRecord
   saveSingleton('settings', buildPersistedSettings(s, existing))
+  getSettingsCache().invalidate()
 }
 
 export function loadPublicSettings(): Record<string, any> {
@@ -966,11 +1044,18 @@ export function saveProviderConfigs(p: Record<string, any>) {
 
 // --- Gateway Profiles ---
 export function loadGatewayProfiles(): Record<string, any> {
-  return loadCollection('gateway_profiles') as Record<string, GatewayProfile>
+  const cache = getGatewayProfilesCache()
+  const cached = cache.get()
+  if (cached) return structuredClone(cached) as Record<string, unknown>
+
+  const result = loadCollection('gateway_profiles') as Record<string, GatewayProfile>
+  cache.set(result)
+  return result
 }
 
 export function saveGatewayProfiles(g: Record<string, GatewayProfile>) {
   saveCollection('gateway_profiles', g)
+  getGatewayProfilesCache().invalidate()
 }
 
 // --- Model Overrides (user-added models for built-in providers) ---
@@ -1044,11 +1129,18 @@ export function appendUsage(sessionId: string, record: unknown) {
 
 // --- Connectors ---
 export function loadConnectors(): Record<string, any> {
-  return loadCollection('connectors')
+  const cache = getConnectorsCache()
+  const cached = cache.get()
+  if (cached) return structuredClone(cached) as Record<string, unknown>
+
+  const result = loadCollection('connectors')
+  cache.set(result)
+  return result
 }
 
 export function saveConnectors(c: Record<string, any>) {
   saveCollection('connectors', c)
+  getConnectorsCache().invalidate()
 }
 
 // --- Chatrooms ---

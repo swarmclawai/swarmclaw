@@ -1362,7 +1362,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   }
 
   // Periodic partial save so a browser refresh doesn't lose the in-flight response.
-  const PARTIAL_SAVE_INTERVAL_MS = 2000
+  const PARTIAL_SAVE_INTERVAL_MS = 3500
   const partialSaveTimer = setInterval(() => {
     persistStreamingAssistantArtifact()
   }, PARTIAL_SAVE_INTERVAL_MS)

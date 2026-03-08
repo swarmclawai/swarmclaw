@@ -155,9 +155,8 @@ export function AppLayout() {
   useEffect(() => {
     loadApprovals()
     void loadExecApprovals()
+    pruneExecApprovals()
     const interval = setInterval(() => {
-      loadApprovals()
-      void loadExecApprovals()
       pruneExecApprovals()
     }, 10000)
     return () => clearInterval(interval)
@@ -256,7 +255,7 @@ export function AppLayout() {
 
   useEffect(() => { refreshPluginState() }, [refreshPluginState])
 
-  useWs('plugins', refreshPluginState)
+  useWs('plugins', refreshPluginState, 30000)
 
   const [railExpanded, setRailExpanded] = useState(() => {
     const stored = safeStorageGet(RAIL_EXPANDED_KEY)

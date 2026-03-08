@@ -8,6 +8,9 @@ export const fetchChats = () => api<Sessions>('GET', '/chats')
 /** @deprecated Use fetchChats */
 export const fetchSessions = fetchChats
 
+export const fetchChat = (id: string) =>
+  api<Session>('GET', `/chats/${id}`)
+
 export const createChat = (
   name: string,
   cwd: string,

@@ -317,6 +317,12 @@ function getLatestCachedPortfolioEntry(walletId: string): WalletPortfolioCacheEn
   return latest
 }
 
+export function getCachedWalletPortfolio(wallet: Pick<AgentWallet, 'id' | 'updatedAt'>): WalletPortfolio | null {
+  return getCurrentCachedPortfolioEntry(wallet)?.portfolio
+    || getLatestCachedPortfolioEntry(wallet.id)?.portfolio
+    || null
+}
+
 async function withWalletPortfolioTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null
   try {

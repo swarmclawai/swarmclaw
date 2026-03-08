@@ -1,8 +1,23 @@
 import { NextResponse } from 'next/server'
-import { loadSessions, saveSessions, deleteSession, active, loadAgents } from '@/lib/server/storage'
+import { loadSessions, saveSessions, deleteSession, active, loadAgents, loadStoredItem } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
+import { getSessionRunState } from '@/lib/server/session-run-manager'
+import type { Session } from '@/types'
+
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const session = loadStoredItem('sessions', id) as Session | null
+  if (!session) return notFound()
+
+  const run = getSessionRunState(id)
+  session.active = active.has(id) || !!run.runningRunId
+  session.queuedCount = run.queueLength
+  session.currentRunId = run.runningRunId || null
+
+  return NextResponse.json(session)
+}
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

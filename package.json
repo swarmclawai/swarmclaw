@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Self-hosted AI agent orchestration dashboard — manage LLM providers, orchestrate agent swarms, schedule tasks, and bridge agents to chat platforms.",
   "license": "MIT",
   "publishConfig": {
@@ -42,7 +42,7 @@
     "quickstart": "node ./scripts/easy-setup.mjs --start",
     "quickstart:prod": "node ./scripts/easy-setup.mjs --prod",
     "update:easy": "node ./scripts/easy-update.mjs",
-    "dev": "next dev --hostname 0.0.0.0 -p 3456",
+    "dev": "next dev --webpack --hostname 0.0.0.0 -p 3456",
     "dev:webpack": "next dev --webpack --hostname 0.0.0.0 -p 3456",
     "dev:clean": "rm -rf .next && next dev --hostname 0.0.0.0 -p 3456",
     "build": "next build",

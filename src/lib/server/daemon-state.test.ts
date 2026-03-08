@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 
 import {
   buildSessionHeartbeatHealthDedupKey,
+  isDaemonBackgroundServicesEnabled,
   shouldSuppressSyntheticAgentHealthAlert,
   shouldSuppressSessionHeartbeatHealthAlert,
 } from './daemon-state'
@@ -46,5 +47,27 @@ describe('daemon heartbeat health alerts', () => {
     assert.equal(shouldSuppressSyntheticAgentHealthAlert('wb-wb-20260308190158-blog-outline'), true)
     assert.equal(shouldSuppressSyntheticAgentHealthAlert('cmp-oc-2026-03-08t19-15-21-755z-agent'), true)
     assert.equal(shouldSuppressSyntheticAgentHealthAlert('agent-real-123'), false)
+  })
+
+  it('respects daemon background service overrides', () => {
+    const previousNodeEnv = process.env.NODE_ENV
+    const previousFlag = process.env.SWARMCLAW_DAEMON_BACKGROUND_SERVICES
+
+    process.env.NODE_ENV = 'development'
+    process.env.SWARMCLAW_DAEMON_BACKGROUND_SERVICES = 'true'
+    assert.equal(isDaemonBackgroundServicesEnabled(), true)
+
+    process.env.SWARMCLAW_DAEMON_BACKGROUND_SERVICES = 'false'
+    assert.equal(isDaemonBackgroundServicesEnabled(), false)
+
+    process.env.NODE_ENV = 'production'
+    process.env.SWARMCLAW_DAEMON_BACKGROUND_SERVICES = 'true'
+    assert.equal(isDaemonBackgroundServicesEnabled(), true)
+
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = previousNodeEnv
+
+    if (previousFlag === undefined) delete process.env.SWARMCLAW_DAEMON_BACKGROUND_SERVICES
+    else process.env.SWARMCLAW_DAEMON_BACKGROUND_SERVICES = previousFlag
   })
 })

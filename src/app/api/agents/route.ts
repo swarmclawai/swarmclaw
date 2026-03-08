@@ -3,15 +3,18 @@ import { genId } from '@/lib/id'
 import { loadAgents, loadSessions, loadUsage, saveAgents, logActivity } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { notify } from '@/lib/server/ws-hub'
-import { ensureDaemonStarted } from '@/lib/server/daemon-state'
 import { getAgentSpendWindows } from '@/lib/server/cost'
 import { AgentCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
 export const dynamic = 'force-dynamic'
 
+async function ensureDaemonIfNeeded(source: string) {
+  const { ensureDaemonStarted } = await import('@/lib/server/daemon-state')
+  ensureDaemonStarted(source)
+}
+
 
 export async function GET(req: Request) {
-  ensureDaemonStarted('api/agents:get')
   const agents = loadAgents()
   const sessions = loadSessions()
   const usage = loadUsage()
@@ -44,7 +47,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  ensureDaemonStarted('api/agents:post')
+  await ensureDaemonIfNeeded('api/agents:post')
   const raw = await req.json()
   const parsed = AgentCreateSchema.safeParse(raw)
   if (!parsed.success) {

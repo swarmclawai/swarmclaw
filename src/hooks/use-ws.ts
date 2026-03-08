@@ -8,18 +8,42 @@ import { usePageActive } from './use-page-active'
  * Subscribe to a WebSocket topic. Calls `handler` on push events.
  * Falls back to polling at `fallbackMs` when WS is disconnected.
  */
-export function useWs(topic: string, handler: () => void, fallbackMs?: number) {
+export function useWs(topic: string, handler: () => void | Promise<void>, fallbackMs?: number) {
   const isActive = usePageActive()
   const handlerRef = useRef(handler)
-  handlerRef.current = handler
   const fallbackMsRef = useRef(fallbackMs)
-  fallbackMsRef.current = fallbackMs
+  const inFlightRef = useRef<Promise<void> | null>(null)
+  const wasActiveRef = useRef(isActive)
+
+  useEffect(() => {
+    handlerRef.current = handler
+    fallbackMsRef.current = fallbackMs
+  }, [handler, fallbackMs])
+
+  const runHandler = () => {
+    if (inFlightRef.current) return
+    try {
+      const result = handlerRef.current()
+      if (result && typeof (result as PromiseLike<void>).then === 'function') {
+        const promise = Promise.resolve(result)
+          .catch(() => {})
+          .finally(() => {
+            if (inFlightRef.current === promise) {
+              inFlightRef.current = null
+            }
+          })
+        inFlightRef.current = promise
+      }
+    } catch {
+      // Individual handlers already own their error reporting
+    }
+  }
 
   // WS subscription — only re-runs when topic changes
   useEffect(() => {
     if (!topic) return
 
-    const cb = () => handlerRef.current()
+    const cb = () => runHandler()
     subscribeWs(topic, cb)
     return () => { unsubscribeWs(topic, cb) }
   }, [topic])
@@ -30,12 +54,15 @@ export function useWs(topic: string, handler: () => void, fallbackMs?: number) {
     if (!topic) return
 
     let fallbackId: ReturnType<typeof setInterval> | null = null
-    const cb = () => handlerRef.current()
+    const cb = () => runHandler()
+
+    const becameActive = !wasActiveRef.current && isActive
+    wasActiveRef.current = isActive
 
     // When page becomes visible again, fire an immediate refresh —
     // but only for topics that use fallback polling (i.e. data-fetch topics).
     // Event-only topics (like heartbeat pulses) should never fire from this effect.
-    if (isActive && fallbackMsRef.current && fallbackMsRef.current > 0) {
+    if (becameActive && fallbackMsRef.current && fallbackMsRef.current > 0 && !isWsConnected()) {
       cb()
     }
 
@@ -75,6 +102,5 @@ export function useWs(topic: string, handler: () => void, fallbackMs?: number) {
       stopFallback()
       clearInterval(checkId)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topic, isActive])
 }

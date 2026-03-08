@@ -156,6 +156,10 @@ export interface Session {
     gemini?: string | null
   }
   messages: Message[]
+  /** Lightweight summary fields used by list/index APIs to avoid shipping full transcripts. */
+  messageCount?: number
+  lastMessageSummary?: Message | null
+  lastAssistantAt?: number | null
   createdAt: number
   updatedAt?: number | null
   lastActiveAt: number

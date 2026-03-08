@@ -84,8 +84,7 @@ function connect() {
   }
 }
 
-export function connectWs(key: string) {
-  void key
+export function connectWs() {
   wsEnabled = true
   reconnectDelay = 1000
   connect()

@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { ChatCard } from './chat-card'
 import { fetchMessages } from '@/lib/chats'
+import { getSessionLastAssistantAt, getSessionLastMessage, getSessionMessageCount } from '@/lib/session-summary'
 import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/shared/skeleton'
@@ -25,7 +26,6 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   const currentUser = useAppStore((s) => s.currentUser)
   const currentSessionId = useAppStore((s) => s.currentSessionId)
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
-  const loadSessions = useAppStore((s) => s.loadSessions)
   const loadConnectors = useAppStore((s) => s.loadConnectors)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const clearSessions = useAppStore((s) => s.clearSessions)
@@ -49,7 +49,10 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   }, [sessions, loaded])
 
   useEffect(() => {
-    void loadConnectors()
+    const timer = window.setTimeout(() => {
+      void loadConnectors()
+    }, 1200)
+    return () => window.clearTimeout(timer)
   }, [loadConnectors])
 
   useEffect(() => {
@@ -65,13 +68,11 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   const filtered = useMemo(() => {
     return allUserSessions
       .filter((s) => {
-        const unreadCount = (s.messages || []).filter(
-          (m) => m.role === 'assistant' && (m.time || 0) > (lastReadTimestamps[s.id] || 0),
-        ).length
+        const unreadCount = (getSessionLastAssistantAt(s) || 0) > (lastReadTimestamps[s.id] || 0) ? 1 : 0
         if (search) {
           const agent = s.agentId ? agents[s.agentId] : null
           const connector = Object.values(connectors).find((item) => item.chatroomId == null && item.agentId === s.agentId && item.isEnabled !== false)
-          const lastMessage = s.messages?.[s.messages.length - 1]
+          const lastMessage = getSessionLastMessage(s)
           const haystack = [
             s.name,
             agent?.name,
@@ -99,7 +100,7 @@ export function ChatList({ inSidebar, onSelect }: Props) {
         if (!a.pinned && b.pinned) return 1
         // Then by sort mode
         if (sortMode === 'name') return a.name.localeCompare(b.name)
-        if (sortMode === 'messages') return (b.messages?.length || 0) - (a.messages?.length || 0)
+        if (sortMode === 'messages') return getSessionMessageCount(b) - getSessionMessageCount(a)
         return (b.lastActiveAt || 0) - (a.lastActiveAt || 0)
       })
   }, [agents, allUserSessions, connectors, lastReadTimestamps, search, sortMode, typeFilter])
@@ -114,9 +115,10 @@ export function ChatList({ inSidebar, onSelect }: Props) {
       const msgs = await fetchMessages(id)
       setMessages(msgs)
     } catch {
-      setMessages(sessions[id]?.messages || [])
+      const fallback = sessions[id]
+      const fallbackLastMessage = fallback ? getSessionLastMessage(fallback) : null
+      setMessages(fallback?.messages?.length ? fallback.messages : (fallbackLastMessage ? [fallbackLastMessage] : []))
     }
-    await loadSessions()
     onSelect?.()
   }
 

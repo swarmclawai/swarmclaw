@@ -431,7 +431,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ streaming: false, streamingSessionId: null, streamText: '', displayText: '', streamPhase: 'thinking' as const, streamToolName: '', thinkingText: '', thinkingStartTime: 0 })
     }
 
-    useAppStore.getState().loadSessions()
+    void useAppStore.getState().refreshSession(sessionId)
 
     // Auto-dequeue: if there are queued messages, send the next one
     const nextQueued = get().shiftQueuedMessage()
@@ -579,7 +579,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     set((s) => ({ messages: [...s.messages, assistantMsg] }))
-    useAppStore.getState().loadSessions()
+    void useAppStore.getState().refreshSession(sessionId)
   },
 
   clearContext: async () => {

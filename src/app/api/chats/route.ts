@@ -10,12 +10,16 @@ import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agent-availability'
 import { materializeStreamingAssistantArtifacts } from '@/lib/chat-streaming-state'
-import { ensureDaemonStarted } from '@/lib/server/daemon-state'
+import { buildSessionListSummary } from '@/lib/session-summary'
 export const dynamic = 'force-dynamic'
+
+async function ensureDaemonIfNeeded(source: string) {
+  const { ensureDaemonStarted } = await import('@/lib/server/daemon-state')
+  ensureDaemonStarted(source)
+}
 
 
 export async function GET(req: Request) {
-  ensureDaemonStarted('api/chats:get')
   const sessions = loadSessions()
   const changedSessionIds: string[] = []
   for (const id of Object.keys(sessions)) {
@@ -35,19 +39,23 @@ export async function GET(req: Request) {
     upsertStoredItem('sessions', id, persisted)
   }
 
+  const summarized = Object.fromEntries(
+    Object.entries(sessions).map(([id, session]) => [id, buildSessionListSummary(session)]),
+  )
+
   const { searchParams } = new URL(req.url)
   const limitParam = searchParams.get('limit')
-  if (!limitParam) return NextResponse.json(sessions)
+  if (!limitParam) return NextResponse.json(summarized)
 
   const limit = Math.max(1, Number(limitParam) || 50)
   const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
-  const all = Object.values(sessions).sort((a, b) => (b.lastActiveAt ?? b.createdAt) - (a.lastActiveAt ?? a.createdAt))
+  const all = Object.values(summarized).sort((a, b) => (b.lastActiveAt ?? b.createdAt) - (a.lastActiveAt ?? a.createdAt))
   const items = all.slice(offset, offset + limit)
   return NextResponse.json({ items, total: all.length, hasMore: offset + limit < all.length })
 }
 
 export async function DELETE(req: Request) {
-  ensureDaemonStarted('api/chats:delete')
+  await ensureDaemonIfNeeded('api/chats:delete')
   const { ids } = await req.json().catch(() => ({ ids: [] })) as { ids: string[] }
   if (!Array.isArray(ids) || !ids.length) {
     return new NextResponse('Missing ids', { status: 400 })
@@ -68,7 +76,7 @@ export async function DELETE(req: Request) {
 }
 
 export async function POST(req: Request) {
-  ensureDaemonStarted('api/chats:post')
+  await ensureDaemonIfNeeded('api/chats:post')
   const body = await req.json().catch(() => ({}))
   let cwd = (body.cwd || '').trim()
   if (cwd.startsWith('~/')) cwd = path.join(os.homedir(), cwd.slice(2))

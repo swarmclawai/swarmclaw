@@ -990,8 +990,10 @@ function resolveDirectSession(params: {
   session.name = sessionKey
   session.agentId = agent.id
   session.plugins = Array.isArray(session.plugins) ? session.plugins : (agent.plugins || agent.tools || [])
-  if (!session.provider) session.provider = defaultProvider
-  if (!session.model) session.model = defaultModel
+  // Always sync provider/model from agent defaults so connector sessions
+  // track agent config changes (e.g. model renamed from glm-5 to glm-5:cloud).
+  session.provider = defaultProvider
+  session.model = defaultModel
   if (session.credentialId === undefined) session.credentialId = agent.credentialId || null
   if (!Array.isArray(session.fallbackCredentialIds) && Array.isArray(agent.fallbackCredentialIds)) {
     session.fallbackCredentialIds = [...agent.fallbackCredentialIds]

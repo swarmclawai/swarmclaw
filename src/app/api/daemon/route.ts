@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
-import { ensureDaemonStarted, getDaemonStatus, startDaemon, stopDaemon } from '@/lib/server/daemon-state'
 import { notify } from '@/lib/server/ws-hub'
 export const dynamic = 'force-dynamic'
 
 
-export async function GET(_req: Request) {
-  ensureDaemonStarted('api/daemon:get')
+export async function GET() {
+  const { getDaemonStatus } = await import('@/lib/server/daemon-state')
   return NextResponse.json(getDaemonStatus())
 }
 
@@ -14,10 +13,12 @@ export async function POST(req: Request) {
   const action = body.action
 
   if (action === 'start') {
+    const { startDaemon } = await import('@/lib/server/daemon-state')
     startDaemon({ source: 'api/daemon:post:start', manualStart: true })
     notify('daemon')
     return NextResponse.json({ ok: true, status: 'running' })
   } else if (action === 'stop') {
+    const { stopDaemon } = await import('@/lib/server/daemon-state')
     stopDaemon({ source: 'api/daemon:post:stop', manualStop: true })
     notify('daemon')
     return NextResponse.json({ ok: true, status: 'stopped' })

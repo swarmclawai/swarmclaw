@@ -16,12 +16,21 @@ import { buildMainLoopHeartbeatPrompt, isMainSession } from './main-agent-loop'
 import { ensureAgentThreadSession } from './agent-thread-session'
 import { isAgentDisabled } from './agent-availability'
 
-const HEARTBEAT_TICK_MS = 5_000
+const HEARTBEAT_TICK_MS = 60_000
+const MAX_CONCURRENT_HEARTBEATS = 5
+const BACKOFF_BASE_MS = 10_000
+const BACKOFF_MAX_MS = 5 * 60_000
+
+interface FailureRecord {
+  count: number
+  lastFailedAt: number
+}
 
 interface HeartbeatState {
   timer: ReturnType<typeof setInterval> | null
   running: boolean
   lastBySession: Map<string, number>
+  failures: Map<string, FailureRecord>
 }
 
 const globalKey = '__swarmclaw_heartbeat_service__' as const
@@ -30,6 +39,7 @@ const state: HeartbeatState = globalScope[globalKey] ?? (globalScope[globalKey] 
   timer: null,
   running: false,
   lastBySession: new Map<string, number>(),
+  failures: new Map<string, FailureRecord>(),
 })
 
 function parseIntBounded(value: unknown, fallback: number, min: number, max: number): number {
@@ -355,6 +365,13 @@ function shouldRunHeartbeats(settings: Record<string, any>): boolean {
   return loopMode === 'ongoing'
 }
 
+function isBackedOff(sessionId: string, now: number): boolean {
+  const record = state.failures.get(sessionId)
+  if (!record || record.count === 0) return false
+  const backoffMs = Math.min(BACKOFF_BASE_MS * Math.pow(2, record.count - 1), BACKOFF_MAX_MS)
+  return now < record.lastFailedAt + backoffMs
+}
+
 async function tickHeartbeats() {
   const settings = loadSettings()
   const globalOngoing = shouldRunHeartbeats(settings)
@@ -366,12 +383,23 @@ async function tickHeartbeats() {
   }
 
   const agents = loadAgents()
-  for (const agent of Object.values(agents) as any[]) {
-    if (!agent?.id || agent.heartbeatEnabled !== true || isAgentDisabled(agent)) continue
+  const hbAgents = (Object.values(agents) as any[]).filter(
+    (a) => a?.id && a.heartbeatEnabled === true && !isAgentDisabled(a),
+  )
+  for (const agent of hbAgents) {
     ensureAgentThreadSession(String(agent.id))
   }
+  const hasScopedAgents = hbAgents.length > 0
+
+  // Short-circuit: if no agents have heartbeat enabled and global loop mode is
+  // bounded, skip the expensive loadSessions() — nothing will be eligible.
+  if (!hasScopedAgents && !globalOngoing) {
+    // Prune any stale tracking entries
+    if (state.lastBySession.size > 0) state.lastBySession.clear()
+    return
+  }
+
   const sessions = loadSessions()
-  const hasScopedAgents = Object.values(agents).some((a: any) => a?.heartbeatEnabled === true && !isAgentDisabled(a))
 
   // Prune tracked sessions that no longer exist or have heartbeat disabled
   for (const trackedId of state.lastBySession.keys()) {
@@ -386,7 +414,11 @@ async function tickHeartbeats() {
     }
   }
 
+  let enqueued = 0
+
   for (const session of Object.values(sessions) as any[]) {
+    if (enqueued >= MAX_CONCURRENT_HEARTBEATS) break
+
     if (!session?.id) continue
     if (session.sessionType && session.sessionType !== 'human') continue
 
@@ -405,6 +437,8 @@ async function tickHeartbeats() {
 
     const cfg = heartbeatConfigForSession(session, settings, agents)
     if (!cfg.enabled) continue
+
+    if (isBackedOff(session.id, now)) continue
 
     // For sessions with explicit opt-in, use a shorter idle threshold (just intervalSec * 2).
     // For inherited/global heartbeats, keep the 180s minimum to avoid noisy auto-fire.
@@ -461,11 +495,20 @@ async function tickHeartbeats() {
       },
     })
 
-    // Set timestamp AFTER successful enqueue so a busy session retries next tick
+    enqueued++
     state.lastBySession.set(session.id, now)
 
-    enqueue.promise.catch((err) => {
-      log.warn('heartbeat', `Heartbeat run failed for session ${session.id}`, err?.message || String(err))
+    const sid = session.id as string
+    enqueue.promise.then(() => {
+      state.failures.delete(sid)
+    }).catch((err: unknown) => {
+      const prev = state.failures.get(sid)
+      state.failures.set(sid, {
+        count: (prev?.count ?? 0) + 1,
+        lastFailedAt: Date.now(),
+      })
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn('heartbeat', `Heartbeat run failed for session ${sid}`, msg)
     })
   }
 }
@@ -475,11 +518,20 @@ async function tickHeartbeats() {
  * doesn't cause every session to fire a heartbeat immediately on the first tick.
  */
 function seedLastActive() {
+  const agents = loadAgents()
+  const hbAgentIds = new Set(
+    (Object.values(agents) as Record<string, unknown>[])
+      .filter((a) => a?.heartbeatEnabled === true && !isAgentDisabled(a))
+      .map((a) => String(a.id)),
+  )
   const sessions = loadSessions()
   for (const session of Object.values(sessions) as any[]) {
     if (!session?.id) continue
+    // Only seed sessions that are actually heartbeat-eligible
+    const eligible = session.heartbeatEnabled === true
+      || (session.agentId && hbAgentIds.has(session.agentId))
+    if (!eligible) continue
     if (typeof session.lastActiveAt === 'number' && session.lastActiveAt > 0) {
-      // Only seed entries we don't already have (preserves HMR state)
       if (!state.lastBySession.has(session.id)) {
         state.lastBySession.set(session.id, session.lastActiveAt)
       }
@@ -515,6 +567,7 @@ export function stopHeartbeatService() {
 export function restartHeartbeatService() {
   stopHeartbeatService()
   state.lastBySession.clear()
+  state.failures.clear()
   startHeartbeatService()
 }
 

@@ -1,6 +1,6 @@
 import { loadQueue, loadSchedules, loadSessions, saveSessions, loadConnectors, saveConnectors, loadWebhookRetryQueue, upsertWebhookRetry, deleteWebhookRetry, loadWebhooks, loadAgents, loadSettings, appendWebhookLog, loadCredentials, decryptKey } from './storage'
 import { notify } from './ws-hub'
-import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue, recoverStalledRunningTasks } from './queue'
+import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue, recoverStalledRunningTasks, resumeQueue } from './queue'
 import { startScheduler, stopScheduler } from './scheduler'
 import { sweepOrphanedBrowsers, getActiveBrowserCount } from './session-tools'
 import {
@@ -24,6 +24,7 @@ import { enqueueSessionRun } from './session-run-manager'
 import { WORKSPACE_DIR } from './data-dir'
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { genId } from '@/lib/id'
+import { isProductionRuntime } from '@/lib/runtime-env'
 import path from 'node:path'
 import type { Session, WebhookRetryEntry } from '@/types'
 import { createNotification } from '@/lib/server/create-notification'
@@ -40,7 +41,7 @@ const QUEUE_CHECK_INTERVAL = 30_000 // 30 seconds
 const BROWSER_SWEEP_INTERVAL = 60_000 // 60 seconds
 const BROWSER_MAX_AGE = 10 * 60 * 1000 // 10 minutes idle = orphaned
 const HEALTH_CHECK_INTERVAL = 120_000 // 2 minutes
-const CONNECTOR_HEALTH_CHECK_INTERVAL = 5_000 // 5 seconds
+const CONNECTOR_HEALTH_CHECK_INTERVAL = 15_000 // 15 seconds
 const MEMORY_CONSOLIDATION_INTERVAL = 6 * 3600_000 // 6 hours
 const MEMORY_CONSOLIDATION_INITIAL_DELAY = 60_000 // 1 minute after daemon start
 const STALE_MULTIPLIER = 4 // session is stale after N × heartbeat interval
@@ -62,7 +63,11 @@ function parseBoolish(value: unknown, fallback: boolean): boolean {
 }
 
 function daemonAutostartEnvEnabled(): boolean {
-  return parseBoolish(process.env.SWARMCLAW_DAEMON_AUTOSTART, true)
+  return parseBoolish(process.env.SWARMCLAW_DAEMON_AUTOSTART, isProductionRuntime())
+}
+
+export function isDaemonBackgroundServicesEnabled(): boolean {
+  return parseBoolish(process.env.SWARMCLAW_DAEMON_BACKGROUND_SERVICES, true)
 }
 
 function parseHeartbeatIntervalSec(value: unknown, fallback = DEFAULT_HEARTBEAT_INTERVAL_SEC): number {
@@ -186,11 +191,9 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     // (for example health monitor) were introduced in newer code.
     startQueueProcessor()
     startBrowserSweep()
-    startHealthMonitor()
-    startConnectorHealthMonitor()
     startHeartbeatService()
     startMemoryConsolidation()
-    startEvalScheduler()
+    syncDaemonBackgroundServices()
     return
   }
   ds.running = true
@@ -201,14 +204,13 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     validateCompletedTasksQueue()
     cleanupFinishedTaskSessions()
     recoverStaleDelegationJobs()
+    resumeQueue()
     startScheduler()
     startQueueProcessor()
     startBrowserSweep()
-    startHealthMonitor()
-    startConnectorHealthMonitor()
     startHeartbeatService()
     startMemoryConsolidation()
-    startEvalScheduler()
+    syncDaemonBackgroundServices()
   } catch (err: unknown) {
     ds.running = false
     notify('daemon')
@@ -216,10 +218,12 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     throw err
   }
 
-  // Auto-start enabled connectors
-  autoStartConnectors().catch((err: unknown) => {
-    console.error('[daemon] Error auto-starting connectors:', err instanceof Error ? err.message : String(err))
-  })
+  if (isDaemonBackgroundServicesEnabled()) {
+    // Auto-start enabled connectors only when the full background stack is enabled.
+    autoStartConnectors().catch((err: unknown) => {
+      console.error('[daemon] Error auto-starting connectors:', err instanceof Error ? err.message : String(err))
+    })
+  }
 }
 
 export function stopDaemon(options?: { source?: string; manualStop?: boolean }) {
@@ -272,6 +276,7 @@ function startQueueProcessor() {
       await processNext()
       ds.lastProcessedAt = Date.now()
     }
+    if (!isDaemonBackgroundServicesEnabled()) return
     // OpenClaw gateway lifecycle: lazy connect when openclaw agents exist, disconnect when none remain
     try {
       if (hasOpenClawAgents()) {
@@ -901,6 +906,18 @@ function stopHealthMonitor() {
   }
 }
 
+function syncDaemonBackgroundServices() {
+  if (isDaemonBackgroundServicesEnabled()) {
+    startHealthMonitor()
+    startConnectorHealthMonitor()
+    startEvalScheduler()
+    return
+  }
+  stopHealthMonitor()
+  stopConnectorHealthMonitor()
+  stopEvalScheduler()
+}
+
 function startConnectorHealthMonitor() {
   if (ds.connectorHealthIntervalId) return
 
@@ -1038,13 +1055,11 @@ function refreshDaemonTimersForHotReload() {
   if (ds.healthIntervalId) {
     clearInterval(ds.healthIntervalId)
     ds.healthIntervalId = null
-    startHealthMonitor()
   }
 
   if (ds.connectorHealthIntervalId) {
     clearInterval(ds.connectorHealthIntervalId)
     ds.connectorHealthIntervalId = null
-    startConnectorHealthMonitor()
   }
 
   if (ds.memoryConsolidationTimeoutId || ds.memoryConsolidationIntervalId) {
@@ -1054,8 +1069,9 @@ function refreshDaemonTimersForHotReload() {
 
   if (ds.evalSchedulerIntervalId) {
     stopEvalScheduler()
-    startEvalScheduler()
   }
+
+  syncDaemonBackgroundServices()
 }
 
 // In dev/HMR, the daemon state survives on globalThis while interval callbacks keep
@@ -1095,6 +1111,8 @@ export function getDaemonStatus() {
     running: ds.running,
     schedulerActive: ds.running,
     autostartEnabled: daemonAutostartEnvEnabled(),
+    backgroundServicesEnabled: isDaemonBackgroundServicesEnabled(),
+    reducedMode: !isDaemonBackgroundServicesEnabled(),
     manualStopRequested: ds.manualStopRequested,
     queueLength: queue.length,
     lastProcessed: ds.lastProcessedAt,

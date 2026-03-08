@@ -2,13 +2,16 @@
 
 import { create } from 'zustand'
 import type { Sessions, Session, NetworkInfo, Directory, ProviderInfo, Credentials, Agent, Schedule, AppView, BoardTask, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, FleetFilter, ActivityEntry, AppNotification, ApprovalRequest, GatewayProfile, ExternalAgentRuntime } from '../types'
-import { fetchChats, fetchDirs, fetchProviders, fetchCredentials } from '../lib/chats'
+import { fetchChat, fetchChats, fetchDirs, fetchProviders, fetchCredentials } from '../lib/chats'
 import { fetchAgents } from '../lib/agents'
 import { fetchSchedules } from '../lib/schedules'
 import { fetchTasks } from '../lib/tasks'
 import { findLatestObservablePlatformSession, isLocalhostBrowser } from '../lib/local-observability'
 import { api } from '../lib/api-client'
 import { safeStorageGet, safeStorageGetJson, safeStorageRemove, safeStorageSet } from '../lib/safe-storage'
+
+const inflightAgentThreadLoads = new Map<string, Promise<void>>()
+const inflightSessionRefreshes = new Map<string, Promise<void>>()
 
 interface AppState {
   currentUser: string | null
@@ -19,6 +22,7 @@ interface AppState {
   sessions: Sessions
   currentSessionId: string | null
   loadSessions: () => Promise<void>
+  refreshSession: (id: string) => Promise<void>
   setCurrentSession: (id: string | null) => void
   removeSession: (id: string) => void
   clearSessions: (ids: string[]) => Promise<void>
@@ -257,6 +261,36 @@ export const useAppStore = create<AppState>((set, get) => ({
       // ignore
     }
   },
+  refreshSession: async (id) => {
+    if (!id) return
+    const existing = inflightSessionRefreshes.get(id)
+    if (existing) {
+      await existing
+      return
+    }
+
+    const refreshPromise = (async () => {
+      try {
+        const session = await fetchChat(id)
+        const currentSessionId = get().currentSessionId
+        set({
+          sessions: { ...get().sessions, [id]: session },
+          currentSessionId: currentSessionId && currentSessionId === id ? id : currentSessionId,
+        })
+      } catch {
+        // ignore
+      }
+    })()
+
+    inflightSessionRefreshes.set(id, refreshPromise)
+    try {
+      await refreshPromise
+    } finally {
+      if (inflightSessionRefreshes.get(id) === refreshPromise) {
+        inflightSessionRefreshes.delete(id)
+      }
+    }
+  },
   setCurrentSession: (id) => set({ currentSessionId: id }),
   removeSession: (id) => {
     const sessions = { ...get().sessions }
@@ -351,37 +385,47 @@ export const useAppStore = create<AppState>((set, get) => ({
       safeStorageRemove('sc_agent')
       return
     }
+    const currentState = get()
+    const currentSession = currentState.currentSessionId ? currentState.sessions[currentState.currentSessionId] : null
+    if (currentState.currentAgentId === id && currentSession?.agentId === id) {
+      return
+    }
     set({ currentAgentId: id })
     safeStorageSet('sc_agent', id)
     if (isLocalhostBrowser()) {
-      let livePlatformSession = findLatestObservablePlatformSession(get().sessions, id)
-      if (!livePlatformSession) {
-        try {
-          const refreshedSessions = await fetchChats()
-          const currentSessionId = get().currentSessionId
-          set({
-            sessions: refreshedSessions,
-            currentSessionId: currentSessionId && refreshedSessions[currentSessionId] ? currentSessionId : null,
-          })
-          livePlatformSession = findLatestObservablePlatformSession(refreshedSessions, id)
-        } catch {
-          // ignore and fall back to the normal thread path below
-        }
-      }
+      const livePlatformSession = findLatestObservablePlatformSession(get().sessions, id)
       if (livePlatformSession?.id) {
         set({ currentSessionId: livePlatformSession.id })
         return
       }
     }
-    try {
-      const user = get().currentUser || 'default'
-      const session = await api<Session>('POST', `/agents/${id}/thread`, { user })
-      if (session?.id) {
-        const sessions = { ...get().sessions, [session.id]: session }
-        set({ sessions, currentSessionId: session.id })
+
+    const existingLoad = inflightAgentThreadLoads.get(id)
+    if (existingLoad) {
+      await existingLoad
+      return
+    }
+
+    const loadPromise = (async () => {
+      try {
+        const user = get().currentUser || 'default'
+        const session = await api<Session>('POST', `/agents/${id}/thread`, { user })
+        if (session?.id) {
+          const sessions = { ...get().sessions, [session.id]: session }
+          set({ sessions, currentSessionId: session.id })
+        }
+      } catch {
+        // ignore — thread creation failed
       }
-    } catch {
-      // ignore — thread creation failed
+    })()
+
+    inflightAgentThreadLoads.set(id, loadPromise)
+    try {
+      await loadPromise
+    } finally {
+      if (inflightAgentThreadLoads.get(id) === loadPromise) {
+        inflightAgentThreadLoads.delete(id)
+      }
     }
   },
 

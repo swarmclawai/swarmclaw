@@ -5,6 +5,7 @@ const ACCESS_KEY_STORAGE = 'sc_access_key'
 const DEFAULT_API_TIMEOUT_MS = 12_000
 const DEFAULT_GET_RETRIES = 2
 const RETRY_DELAY_BASE_MS = 300
+const inflightGetRequests = new Map<string, Promise<unknown>>()
 
 export function getStoredAccessKey(): string {
   return safeStorageGet(ACCESS_KEY_STORAGE) || ''
@@ -27,6 +28,10 @@ function isAbortError(err: unknown): boolean {
   return (err as { name?: string }).name === 'AbortError'
 }
 
+function buildInflightGetKey(path: string, key: string): string {
+  return `${key}::${path}`
+}
+
 export async function api<T = unknown>(
   method: string,
   path: string,
@@ -47,42 +52,60 @@ export async function api<T = unknown>(
   }
   if (body) requestInit.body = JSON.stringify(body)
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const r = await fetchWithTimeout('/api' + path, requestInit, timeoutMs)
+  const runRequest = async (): Promise<T> => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const r = await fetchWithTimeout('/api' + path, requestInit, timeoutMs)
 
-      if (r.status === 401) {
-        // Clear stored key on auth failure, redirect to login
-        clearStoredAccessKey()
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new Event('sc_auth_required'))
+        if (r.status === 401) {
+          // Clear stored key on auth failure, redirect to login
+          clearStoredAccessKey()
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('sc_auth_required'))
+          }
+          throw new Error('Unauthorized — invalid access key')
         }
-        throw new Error('Unauthorized — invalid access key')
-      }
 
-      const ct = r.headers.get('content-type') || ''
+        const ct = r.headers.get('content-type') || ''
 
-      if (!r.ok) {
-        if (ct.includes('json')) {
-          const payload = await r.json().catch(() => null) as { error?: unknown; message?: unknown } | null
-          const msg =
-            (typeof payload?.error === 'string' && payload.error.trim())
-            || (typeof payload?.message === 'string' && payload.message.trim())
-            || `Request failed (${r.status})`
-          throw new Error(msg)
+        if (!r.ok) {
+          if (ct.includes('json')) {
+            const payload = await r.json().catch(() => null) as { error?: unknown; message?: unknown } | null
+            const msg =
+              (typeof payload?.error === 'string' && payload.error.trim())
+              || (typeof payload?.message === 'string' && payload.message.trim())
+              || `Request failed (${r.status})`
+            throw new Error(msg)
+          }
+          const text = (await r.text().catch(() => '')).trim()
+          throw new Error(text || `Request failed (${r.status})`)
         }
-        const text = (await r.text().catch(() => '')).trim()
-        throw new Error(text || `Request failed (${r.status})`)
-      }
 
-      if (ct.includes('json')) return r.json() as Promise<T>
-      return r.text() as unknown as T
-    } catch (err) {
-      const isLastAttempt = attempt >= retries
-      const retryable = isAbortError(err) || (err instanceof TypeError && !String(err.message || '').includes('Unauthorized'))
-      if (isLastAttempt || !retryable) throw err
-      await sleep(RETRY_DELAY_BASE_MS * (attempt + 1))
+        if (ct.includes('json')) return r.json() as Promise<T>
+        return r.text() as unknown as T
+      } catch (err) {
+        const isLastAttempt = attempt >= retries
+        const retryable = isAbortError(err) || (err instanceof TypeError && !String(err.message || '').includes('Unauthorized'))
+        if (isLastAttempt || !retryable) throw err
+        await sleep(RETRY_DELAY_BASE_MS * (attempt + 1))
+      }
     }
+    throw new Error('Request failed')
   }
-  throw new Error('Request failed')
+
+  if (upperMethod !== 'GET') {
+    return runRequest()
+  }
+
+  const inflightKey = buildInflightGetKey(path, key)
+  const existing = inflightGetRequests.get(inflightKey)
+  if (existing) return existing as Promise<T>
+
+  const requestPromise = runRequest().finally(() => {
+    if (inflightGetRequests.get(inflightKey) === requestPromise) {
+      inflightGetRequests.delete(inflightKey)
+    }
+  })
+  inflightGetRequests.set(inflightKey, requestPromise)
+  return requestPromise
 }
