@@ -7,6 +7,7 @@ import {
   buildExternalWalletExecutionBlock,
   buildToolDisciplineLines,
   getExplicitRequiredToolNames,
+  isNarrowDirectMemoryWriteTurn,
   isWalletSimulationResult,
   looksLikeOpenEndedDeliverableTask,
   resolveContinuationAssistantText,
@@ -39,6 +40,8 @@ describe('buildToolDisciplineLines', () => {
     const lines = buildToolDisciplineLines(['files'])
 
     assert.ok(lines.some((line) => line.includes('{"action":"read","filePath":"path/to/file.md"}')))
+    assert.ok(lines.some((line) => line.includes('exactly N bullet points')))
+    assert.ok(lines.some((line) => line.includes('Lower-priority logistics belong in FYI')))
   })
 
   it('adds schedule reuse and stop guidance when schedule tools are enabled', () => {
@@ -137,10 +140,12 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(streamAgentChatSource.includes('call `memory_store` or `memory_update` immediately before any planning, delegation, task creation, or agent management'))
     assert.ok(streamAgentChatSource.includes('Do not inspect skills, browse the workspace, request capabilities, manage tasks, manage agents, or delegate before the direct memory write is complete.'))
     assert.ok(streamAgentChatSource.includes('Do NOT call memory tools, web search, or session-history tools'))
-    assert.ok(streamAgentChatSource.includes('const currentThreadRecallRequest = isCurrentThreadRecallRequest(message)'))
-    assert.ok(streamAgentChatSource.includes('const directMemoryWriteOnlyTurn = isDirectMemoryWriteRequest(message)'))
+    assert.ok(streamAgentChatSource.includes('const currentThreadRecallRequest = !directMemoryWriteOnlyTurn && isCurrentThreadRecallRequest(message)'))
+    assert.ok(streamAgentChatSource.includes('const directMemoryWriteOnlyTurn = isNarrowDirectMemoryWriteTurn(message)'))
     assert.ok(streamAgentChatSource.includes('shouldAllowToolForDirectMemoryWrite(toolName)'))
     assert.ok(streamAgentChatSource.includes('shouldAllowToolForCurrentThreadRecall(toolName)'))
+    assert.ok(streamAgentChatSource.includes('Preserve hard structural constraints from the original request'))
+    assert.ok(streamAgentChatSource.includes('## Exact Structural Constraints'))
   })
 
   it('blocks memory, session-history, web, and context tools during same-thread recall turns', () => {
@@ -162,6 +167,21 @@ describe('buildToolDisciplineLines', () => {
     assert.equal(shouldAllowToolForDirectMemoryWrite('memory_tool'), false)
     assert.equal(shouldAllowToolForDirectMemoryWrite('manage_capabilities'), false)
     assert.equal(shouldAllowToolForDirectMemoryWrite('files'), false)
+  })
+
+  it('treats long remember-and-confirm turns as narrow direct memory writes', () => {
+    assert.equal(
+      isNarrowDirectMemoryWriteTurn('Remember that my favorite programming language is Rust and I prefer functional programming patterns. Then confirm what you just stored.'),
+      true,
+    )
+    assert.equal(
+      isNarrowDirectMemoryWriteTurn('Remember these facts for future conversations: My favorite programming language is Rust. My deploy target is Fly.io. My team size is 7 people. The project is codenamed "Neptune".'),
+      true,
+    )
+    assert.equal(
+      isNarrowDirectMemoryWriteTurn('Remember that my favorite programming language is Rust, then write a file summarizing it and send it to me.'),
+      false,
+    )
   })
 
   it('canonicalizes required tool names when checking completion', () => {

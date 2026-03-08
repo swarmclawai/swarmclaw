@@ -29,6 +29,7 @@ export function isCurrentThreadRecallRequest(message: string): boolean {
   const trimmed = normalizeWhitespace(message)
   if (!trimmed) return false
   if (!CURRENT_THREAD_RECALL_MARKER_RE.test(trimmed)) return false
+  if (DIRECT_MEMORY_WRITE_MARKER_RE.test(trimmed) && DIRECT_MEMORY_WRITE_FOLLOWUP_RE.test(trimmed)) return false
   if (/\b(?:remember|store|save)\b/i.test(trimmed) && !/\?\s*$/.test(trimmed) && !/\b(?:what|which|who|when|where|did|confirm|recap|summarize|repeat|list|tell me|answer|recall)\b/i.test(trimmed)) {
     return false
   }

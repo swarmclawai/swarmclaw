@@ -36,6 +36,10 @@ test('isCurrentThreadRecallRequest detects same-thread recall without matching s
     isCurrentThreadRecallRequest('Remember that my favorite programming language is Rust and I prefer functional programming patterns.'),
     false,
   )
+  assert.equal(
+    isCurrentThreadRecallRequest('Remember that my favorite programming language is Rust and I prefer functional programming patterns. Then confirm what you just stored.'),
+    false,
+  )
 })
 
 test('isDirectMemoryWriteRequest detects remember-and-confirm turns without matching recall questions', () => {
