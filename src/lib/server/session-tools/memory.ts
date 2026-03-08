@@ -788,6 +788,7 @@ const MemoryPlugin: Plugin = {
       'For info already in the current conversation, respond directly without calling any memory tool.',
       'For questions about prior work, decisions, dates, people, preferences, or todos from earlier conversations: start with one durable `memory_search`, then use `memory_get` only if you need a more targeted read. Only use archive/session history when the user explicitly needs transcript-level detail or the durable search is insufficient.',
       'When the user directly says to remember, store, or correct a fact, do one `memory_store` or `memory_update` call immediately. Treat the newest direct user statement as authoritative.',
+      'When one user message contains multiple related facts to remember, prefer one canonical `memory_store` write that captures the full set instead of many near-duplicate store calls.',
       'If someone says "remember this", write it down; do not rely on RAM alone.',
       'Memory writes merge canonical memories and retire superseded variants. After a successful store/update, do not keep re-searching unless the user explicitly asked you to verify.',
       'By default, memory searches focus on durable memories. Only include archives or working execution notes when you explicitly need transcript or run-history context.',
@@ -867,7 +868,7 @@ const MemoryPlugin: Plugin = {
     },
     {
       name: 'memory_store',
-      description: 'Store a durable fact, preference, decision, or correction from the user. Use this immediately when the user says to remember something.',
+      description: 'Store a durable fact, preference, decision, or correction from the user. Use this immediately when the user says to remember something. If several related facts arrive in one request, prefer one canonical write over many near-duplicate calls.',
       parameters: {
         type: 'object',
         properties: {
@@ -884,6 +885,7 @@ const MemoryPlugin: Plugin = {
         capabilities: ['memory.write'],
         disciplineGuidance: [
           'When the user says to remember or store a fact, call `memory_store` immediately. Do not delegate or use platform-management tools first.',
+          'If the user bundled multiple related facts into one remember request, store them together in one canonical write unless they asked for separate memories.',
         ],
       },
       execute: async (args, context) => executeNamedMemoryAction('store', args, context),

@@ -133,6 +133,11 @@ export function buildToolDisciplineLines(enabledPlugins: string[]): string[] {
     lines.push('Use `manage_capabilities` only when a needed tool is actually unavailable. If a direct tool for the job is already enabled in this session, call that tool immediately instead of requesting access or re-running discovery.')
   }
 
+  if (uniqueTools.includes('files') || uniqueTools.includes('edit_file')) {
+    lines.push('When the user specifies exact counts or exact section titles for file content, treat those as hard constraints. If a file must have exactly N bullet points, keep the total bullet count at N and put extra required detail into short prose under titled sections unless the user explicitly asked for more bullets.')
+    lines.push('When summarizing or restructuring a source document into named sections, make sure each top-level source section is represented somewhere in the output. Lower-priority logistics belong in FYI rather than being dropped.')
+  }
+
   if (uniqueTools.includes('delegate') && (uniqueTools.includes('shell') || uniqueTools.includes('files') || uniqueTools.includes('edit_file'))) {
     lines.push('When local workspace tools like `shell`, `files`, or `edit_file` are already enabled, prefer using them directly for straightforward coding and verification. Use `delegate` when you need a specialist backend, a second implementation pass, or parallel work.')
   }
@@ -524,6 +529,7 @@ function buildDeliverableFollowthroughPrompt(params: {
     'Do not stop after one partial batch. Finish every requested deliverable that is still outstanding before concluding.',
     'If a requested artifact cannot be produced, say exactly which artifact is missing, what blocked it, and what you already completed.',
     'Use the existing files, screenshots, and generated outputs first. Inspect them if needed, then complete the remaining work.',
+    'Preserve hard structural constraints from the original request: exact counts stay exact, required titled sections stay present, and source coverage gaps should be filled instead of skipped.',
     'End with a concise grouped completion summary that lists exact file paths, upload URLs, localhost URLs/ports, and screenshots you produced.',
   ]
 
@@ -551,6 +557,18 @@ function buildDeliverableFollowthroughPrompt(params: {
     `Recent tool evidence:\n${renderToolEvidence(params.toolEvents) || '(none)'}`,
   )
   return lines.join('\n')
+}
+
+function buildExactStructureBlock(userMessage: string): string {
+  const exactBulletMatch = userMessage.match(/\bexactly\s+(\d+)\s+bullet points?\b/i)
+  if (!exactBulletMatch) return ''
+  const bulletCount = exactBulletMatch[1]
+  return [
+    '## Exact Structural Constraints',
+    `The user required exactly ${bulletCount} bullet points.`,
+    'Treat that as a hard file-wide constraint unless the user explicitly says later sections get their own separate bullets.',
+    'If the file also needs titled sections such as Owners or Risks, use short prose under those headings instead of adding more bullet lines.',
+  ].join('\n')
 }
 
 /** Detect whether a user message is a broad, high-level goal that benefits from decomposition. */
@@ -654,6 +672,10 @@ function buildAgenticExecutionPolicy(opts: {
   if (opts.userMessage && looksLikeOpenEndedDeliverableTask(opts.userMessage) && opts.enabledPlugins.some((toolId) => toolId === 'files' || toolId === 'edit_file')) {
     parts.push(OPEN_ENDED_REVISION_BLOCK)
   }
+  if (opts.userMessage) {
+    const exactStructureBlock = buildExactStructureBlock(opts.userMessage)
+    if (exactStructureBlock) parts.push(exactStructureBlock)
+  }
   if (opts.userMessage && isCurrentThreadRecallRequest(opts.userMessage)) {
     parts.push(buildCurrentThreadRecallBlock(opts.history || []))
   }
@@ -708,18 +730,22 @@ function buildDirectMemoryWriteBlock(): string {
     '## Direct Memory Write',
     'This turn is a direct request to remember, store, or correct a durable fact.',
     'Call `memory_store` or `memory_update` immediately, then confirm the stored value succinctly.',
+    'If the user bundled several related facts into one remember request, store them together in one canonical memory write unless they explicitly asked for separate entries.',
     'Do not inspect skills, browse the workspace, request capabilities, manage tasks, manage agents, or delegate before the direct memory write is complete.',
   ].join('\n')
 }
 
 const DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE = /\b(?:then|and then|after that)?\s*(?:confirm|recap|repeat|summarize|tell me|say)\b[\s\S]{0,120}\b(?:stored|saved|updated|remembered|wrote|write)\b/i
+const DIRECT_MEMORY_WRITE_EXTRA_ACTION_RE = /\b(?:then|and then|after that|also)\b[\s\S]{0,160}\b(?:write|create|send|email|message|delegate|research|search|browse|open|edit|build|schedule|plan|review|analy[sz]e)\b/i
 
 export function isNarrowDirectMemoryWriteTurn(message: string): boolean {
   const trimmed = String(message || '').trim()
   if (!trimmed || !isDirectMemoryWriteRequest(trimmed)) return false
   if (looksLikeOpenEndedDeliverableTask(trimmed)) return false
-  if (!isBroadGoal(trimmed)) return true
-  return DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE.test(trimmed)
+  if (DIRECT_MEMORY_WRITE_EXTRA_ACTION_RE.test(trimmed) && !DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE.test(trimmed)) {
+    return false
+  }
+  return !isBroadGoal(trimmed) || DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE.test(trimmed) || !/[?]$/.test(trimmed)
 }
 
 const CURRENT_THREAD_RECALL_BLOCKED_TOOL_IDS = new Set([
@@ -847,7 +873,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   const stateModifierParts: string[] = []
   const hasProvidedSystemPrompt = typeof systemPrompt === 'string' && systemPrompt.trim().length > 0
-  const currentThreadRecallRequest = isCurrentThreadRecallRequest(message)
+  const directMemoryWriteOnlyTurn = isNarrowDirectMemoryWriteTurn(message)
+  const currentThreadRecallRequest = !directMemoryWriteOnlyTurn && isCurrentThreadRecallRequest(message)
 
   if (hasProvidedSystemPrompt) {
     stateModifierParts.push(systemPrompt!.trim())
@@ -1061,9 +1088,6 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     projectDescription: activeProjectContext.project?.description || null,
     memoryScopeMode: agentMemoryScopeMode,
   })
-  const directMemoryWriteOnlyTurn = isDirectMemoryWriteRequest(message)
-    && !isBroadGoal(message)
-    && !looksLikeOpenEndedDeliverableTask(message)
   const toolsForTurn = currentThreadRecallRequest
     ? tools.filter((tool) => {
         const toolName = typeof (tool as { name?: unknown }).name === 'string'
@@ -1275,7 +1299,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   const MAX_REQUIRED_TOOL_CONTINUES = 2
   const MAX_EXECUTION_FOLLOWTHROUGHS = 1
   const MAX_DELIVERABLE_FOLLOWTHROUGHS = 2
-  const MAX_TOOL_SUMMARY_RETRIES = 1
+  const MAX_TOOL_SUMMARY_RETRIES = 2
   let autoContinueCount = 0
   let transientRetryCount = 0
   let requiredToolContinueCount = 0

@@ -46,7 +46,7 @@ describe('runtime settings defaults', () => {
     `)
 
     assert.equal(output.settings.loopMode, 'bounded')
-    assert.equal(output.settings.agentLoopRecursionLimit, 60)
+    assert.equal(output.settings.agentLoopRecursionLimit, 120)
     assert.equal(output.settings.orchestratorLoopRecursionLimit, 80)
     assert.equal(output.settings.legacyOrchestratorMaxTurns, 16)
     assert.equal(output.settings.ongoingLoopMaxIterations, 250)
@@ -61,7 +61,7 @@ describe('runtime settings defaults', () => {
     assert.equal(output.settings.heartbeatShowAlerts, true)
     assert.equal(output.settings.heartbeatTarget, null)
     assert.equal(output.settings.heartbeatPrompt, null)
-    assert.equal(output.runtime.agentLoopRecursionLimit, 60)
+    assert.equal(output.runtime.agentLoopRecursionLimit, 120)
     assert.equal(output.runtime.orchestratorLoopRecursionLimit, 80)
     assert.equal(output.runtime.legacyOrchestratorMaxTurns, 16)
   })
