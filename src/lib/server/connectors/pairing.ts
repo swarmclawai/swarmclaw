@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import type { WhatsAppApprovedContact } from '@/types'
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), 'data')
 const STORE_VERSION = 1
@@ -66,6 +67,24 @@ function dedupe(items: string[]): string[] {
     out.push(normalized)
   }
   return out
+}
+
+function normalizeApprovedContactPhone(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeApprovedContactLabel(value: unknown, fallback: string): string {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  return trimmed || fallback
+}
+
+function approvedContactKey(phone: string): string {
+  const normalized = normalizeSenderId(phone)
+  if (!normalized) return ''
+  const digits = normalized.replace(/[^\d]/g, '')
+  if (digits) return digits
+  const jidUser = normalized.split('@')[0]?.split(':')[0]?.trim()
+  return jidUser || normalized
 }
 
 function prunePending(entries: PairingRequest[]): PairingRequest[] {
@@ -149,6 +168,32 @@ export function parsePairingPolicy(value: unknown, fallback: PairingPolicy = 'op
 export function parseAllowFromCsv(value: unknown): string[] {
   if (typeof value !== 'string') return []
   return dedupe(value.split(',').map((item) => item.trim()).filter(Boolean))
+}
+
+export function normalizeWhatsAppApprovedContacts(value: unknown): WhatsAppApprovedContact[] {
+  if (!Array.isArray(value)) return []
+
+  const seen = new Set<string>()
+  const out: WhatsAppApprovedContact[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const record = entry as Record<string, unknown>
+    const phone = normalizeApprovedContactPhone(record.phone)
+    if (!phone) continue
+    const dedupeKey = approvedContactKey(phone)
+    if (!dedupeKey || seen.has(dedupeKey)) continue
+    seen.add(dedupeKey)
+    out.push({
+      id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `wa-contact-${out.length + 1}`,
+      label: normalizeApprovedContactLabel(record.label, phone),
+      phone,
+    })
+  }
+  return out
+}
+
+export function getWhatsAppApprovedSenderIds(value: unknown): string[] {
+  return normalizeWhatsAppApprovedContacts(value).map((entry) => entry.phone)
 }
 
 export function listStoredAllowedSenders(connectorId: string): string[] {

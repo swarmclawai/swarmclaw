@@ -10,49 +10,31 @@ import { SettingsPage } from '@/components/shared/settings/settings-page'
 import { AgentList } from '@/components/agents/agent-list'
 import { AgentChatList } from '@/components/agents/agent-chat-list'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
-import { AgentSheet } from '@/components/agents/agent-sheet'
 import { ScheduleList } from '@/components/schedules/schedule-list'
-import { ScheduleSheet } from '@/components/schedules/schedule-sheet'
 import { MemoryAgentList } from '@/components/memory/memory-agent-list'
-import { MemorySheet } from '@/components/memory/memory-sheet'
 import { MemoryBrowser } from '@/components/memory/memory-browser'
 import { TaskList } from '@/components/tasks/task-list'
-import { TaskSheet } from '@/components/tasks/task-sheet'
 import { TaskBoard } from '@/components/tasks/task-board'
 import { ApprovalsPanel } from '@/components/tasks/approvals-panel'
 import { SecretsList } from '@/components/secrets/secrets-list'
-import { SecretSheet } from '@/components/secrets/secret-sheet'
 import { ProviderList } from '@/components/providers/provider-list'
-import { ProviderSheet } from '@/components/providers/provider-sheet'
-import { GatewaySheet } from '@/components/gateways/gateway-sheet'
 import { SkillList } from '@/components/skills/skill-list'
-import { SkillSheet } from '@/components/skills/skill-sheet'
 import { ConnectorList } from '@/components/connectors/connector-list'
-import { ConnectorSheet } from '@/components/connectors/connector-sheet'
 import { ChatroomList } from '@/components/chatrooms/chatroom-list'
 import { ChatroomView } from '@/components/chatrooms/chatroom-view'
-import { ChatroomSheet } from '@/components/chatrooms/chatroom-sheet'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { WebhookList } from '@/components/webhooks/webhook-list'
-import { WebhookSheet } from '@/components/webhooks/webhook-sheet'
 import { LogList } from '@/components/logs/log-list'
 import { McpServerList } from '@/components/mcp-servers/mcp-server-list'
-import { McpServerSheet } from '@/components/mcp-servers/mcp-server-sheet'
 import { KnowledgeList } from '@/components/knowledge/knowledge-list'
-import { KnowledgeSheet } from '@/components/knowledge/knowledge-sheet'
 import { PluginList } from '@/components/plugins/plugin-list'
-import { PluginSheet } from '@/components/plugins/plugin-sheet'
 import { RunList } from '@/components/runs/run-list'
 import { ActivityFeed } from '@/components/activity/activity-feed'
 import { MetricsDashboard } from '@/components/usage/metrics-dashboard'
 import { WalletPanel } from '@/components/wallets/wallet-panel'
 import { ProjectList } from '@/components/projects/project-list'
 import { ProjectDetail } from '@/components/projects/project-detail'
-import { ProjectSheet } from '@/components/projects/project-sheet'
-import { SearchDialog } from '@/components/shared/search-dialog'
-import { AgentSwitchDialog } from '@/components/shared/agent-switch-dialog'
-import { KeyboardShortcutsDialog } from '@/components/shared/keyboard-shortcuts-dialog'
-import { ProfileSheet } from '@/components/shared/profile-sheet'
+import { SheetLayer } from './sheet-layer'
 import { HomeView } from '@/components/home/home-view'
 import { NetworkBanner } from './network-banner'
 import { UpdateBanner } from './update-banner'
@@ -1106,25 +1088,7 @@ export function AppLayout() {
       </ErrorBoundary>
 
       <CommandPalette />
-      <SearchDialog />
-      <AgentSwitchDialog />
-      <KeyboardShortcutsDialog />
-      <AgentSheet />
-      <ScheduleSheet />
-      <MemorySheet />
-      <TaskSheet />
-      <SecretSheet />
-      <ProviderSheet />
-      <GatewaySheet />
-      <SkillSheet />
-      <ConnectorSheet />
-      <ChatroomSheet />
-      <WebhookSheet />
-      <McpServerSheet />
-      <KnowledgeSheet />
-      <PluginSheet />
-      <ProjectSheet />
-      <ProfileSheet open={profileSheetOpen} onClose={() => setProfileSheetOpen(false)} />
+      <SheetLayer profileSheetOpen={profileSheetOpen} setProfileSheetOpen={setProfileSheetOpen} />
 
     </div>
   )

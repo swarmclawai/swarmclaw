@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { BrowserObservation, BrowserSessionRecord, Session } from '@/types'
 import { BROWSER_PROFILES_DIR } from './data-dir'
+import { resolvePathWithinBaseDir } from './path-utils'
 import {
   deleteBrowserSession,
   loadBrowserSessions,
@@ -22,7 +23,7 @@ export function normalizeBrowserProfileId(value: unknown): string {
 
 export function getBrowserProfileDir(profileId: string): string {
   if (!fs.existsSync(BROWSER_PROFILES_DIR)) fs.mkdirSync(BROWSER_PROFILES_DIR, { recursive: true })
-  const dir = path.join(BROWSER_PROFILES_DIR, sanitizeToken(profileId))
+  const dir = resolvePathWithinBaseDir(BROWSER_PROFILES_DIR, sanitizeToken(profileId))
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
   return dir
 }

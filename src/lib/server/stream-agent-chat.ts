@@ -26,7 +26,52 @@ import {
 } from './tool-planning'
 import { ToolLoopTracker } from './tool-loop-detection'
 import type { LoopDetectionResult } from './tool-loop-detection'
-import { isCurrentThreadRecallRequest, isDirectMemoryWriteRequest } from './memory-policy'
+import { isCurrentThreadRecallRequest } from './memory-policy'
+import {
+  isBroadGoal,
+  looksLikeExternalWalletTask,
+  looksLikeBoundedExternalExecutionTask,
+  looksLikeOpenEndedDeliverableTask,
+  shouldForceExternalExecutionFollowthrough,
+  shouldForceDeliverableFollowthrough,
+  hasStateChangingWalletEvidence,
+  countExternalExecutionResearchSteps,
+  countDistinctExternalResearchHosts,
+  renderToolEvidence,
+  resolveFinalStreamResponseText,
+  resolveContinuationAssistantText,
+  buildContinuationPrompt,
+} from './stream-continuation'
+import type { ContinuationType } from './stream-continuation'
+import {
+  compactThreadRecallText,
+  getExplicitRequiredToolNames,
+  getWalletApprovalBoundaryAction,
+  isNarrowDirectMemoryWriteTurn,
+  isWalletSimulationResult,
+  resolveToolAction,
+  shouldAllowToolForDirectMemoryWrite,
+  shouldAllowToolForCurrentThreadRecall,
+  shouldForceExternalServiceSummary,
+  shouldTerminateOnSuccessfulMemoryMutation,
+  updateStreamedToolEvents,
+} from './chat-streaming-utils'
+
+// Re-export continuation functions so existing consumers don't need to change imports
+export {
+  getExplicitRequiredToolNames,
+  isNarrowDirectMemoryWriteTurn,
+  isWalletSimulationResult,
+  looksLikeOpenEndedDeliverableTask,
+  shouldAllowToolForDirectMemoryWrite,
+  shouldAllowToolForCurrentThreadRecall,
+  shouldForceExternalExecutionFollowthrough,
+  shouldForceDeliverableFollowthrough,
+  shouldForceExternalServiceSummary,
+  shouldTerminateOnSuccessfulMemoryMutation,
+  resolveFinalStreamResponseText,
+  resolveContinuationAssistantText,
+}
 
 /** Extract a breadcrumb title from notable tool completions (task/schedule/agent creation). */
 interface StreamAgentChatOpts {
@@ -145,62 +190,6 @@ export function buildToolDisciplineLines(enabledPlugins: string[]): string[] {
   return lines
 }
 
-export function looksLikeOpenEndedDeliverableTask(text: string): boolean {
-  const normalized = text.toLowerCase()
-  if (!normalized.trim()) return false
-  if (/```|package\.json|tsconfig|\btsx?\b|\bjsx?\b|pytest|vitest|npm run|src\/|components\/|api\//.test(normalized)) return false
-  if (/\b(revise|revision|iterate|iteration|draft|deliverable|deliverables|offer|brief|copy|proposal|landing|outreach|plan|strategy|report|memo|document|docs?)\b/.test(normalized)) return true
-  // Explicit file-save instructions (e.g. "create X and save it to /tmp/foo.html")
-  if (
-    /\b(create|build|generate|make|write|produce)\b/.test(normalized)
-    && /\b(save|write|output|export)\b[^.!?\n]{0,60}\b(to|as|in)\b[^.!?\n]{0,40}(\/|~\/|\.\/|\.[a-z]{2,5}\b)/.test(normalized)
-  ) {
-    return true
-  }
-  if (
-    isBroadGoal(text)
-    && /\b(create|build|generate|make|write|research|capture|take|start|produce)\b/.test(normalized)
-    && /\b(screenshot|screenshots|image|images|markdown|\.md\b|md\b|md files?|pdf|pdf files?|html|html\s+(?:page|file)|dashboard|site|sites|website|web page|webpage|dev server|dev servers|artifact|artifacts|topic|topics)\b/.test(normalized)
-  ) {
-    return true
-  }
-  return isBroadGoal(text) && /(\.md\b|\.txt\b|\.html\b|\.json\b|copy|brief|proposal|plan|report|draft|document|dashboard)/.test(normalized)
-}
-
-/**
- * Returns tool names that the user explicitly referenced by name in their message.
- *
- * Previously this used regex-based capability matching (matchToolCapabilitiesForMessage)
- * to infer required tools from keywords like "send", "search", "screenshot". This caused
- * false positives ("sends an HTTP request" forced connector_message_tool, "create a file"
- * forced delivery tools) and extra continuation loops.
- *
- * OpenClaw's approach: trust the LLM to select the right tools based on prompt engineering
- * (tool discipline lines, skill adherence header, system prompt). No regex-based forced
- * tool requirements. The deliverable/execution followthrough mechanisms handle cases where
- * the agent stops early.
- *
- * We now only force tools when the user explicitly names them (ask_human, email) — these
- * are cases where the LLM has a known tendency to skip the tool and respond in prose.
- */
-export function getExplicitRequiredToolNames(userMessage: string, enabledPlugins: string[]): string[] {
-  const normalized = userMessage.toLowerCase()
-  const required: string[] = []
-
-  // Only force tools that the user explicitly names and the LLM tends to skip
-  if (enabledPlugins.includes('ask_human')
-    && (/\bask_human\b/.test(normalized) || /ask the human/.test(normalized) || /request_input/.test(normalized))) {
-    required.push('ask_human')
-  }
-
-  if (enabledPlugins.includes('email')
-    && (/\bemail\b/.test(normalized) || /send a welcome email/.test(normalized) || /send an email/.test(normalized))) {
-    required.push('email')
-  }
-
-  return required
-}
-
 const OPEN_ENDED_REVISION_BLOCK = [
   '## Revision Loop',
   'For open-ended deliverable work, do a real two-pass loop before declaring success: create the draft artifacts, critique them against the objective, then modify at least one artifact based on that critique.',
@@ -208,18 +197,6 @@ const OPEN_ENDED_REVISION_BLOCK = [
   'When resuming in an existing workspace, inspect the current files first, then update them. Do not assume you lost access to the workspace without an explicit tool attempt.',
   'If `files` is available, use it with explicit actions and paths to inspect and revise the artifacts.',
 ].join('\n')
-
-function looksLikeExternalWalletTask(text: string): boolean {
-  const normalized = text.toLowerCase()
-  if (!normalized.trim()) return false
-  return /\b(wallet|wallet connect|walletconnect|trade|trading|exchange|dex|bridge|swap|deposit|withdraw|onchain|token|gas|hyperliquid|arbitrum|ethereum|solana|base|usdc|eth|sol)\b/.test(normalized)
-}
-
-function looksLikeBoundedExternalExecutionTask(text: string): boolean {
-  const normalized = text.toLowerCase()
-  if (!looksLikeExternalWalletTask(text)) return false
-  return /\b(live|swap|trade|buy|purchase|sell|mint|claim|execute|transact|transaction|approve|broadcast)\b/.test(normalized)
-}
 
 function getEnabledDisplayTool(enabledPlugins: string[], canonicalPluginId: string): string | null {
   return getEnabledToolPlanningView(enabledPlugins).displayToolIds.find((toolId) => toolId === canonicalPluginId) || null
@@ -242,213 +219,6 @@ export function buildExternalWalletExecutionBlock(enabledPlugins: string[]): str
     'Never claim success on a trading or dApp task unless you either completed the reversible step with tool evidence or clearly stated the final missing step.',
   ]
   return lines.join('\n')
-}
-
-export function shouldForceExternalServiceSummary(params: {
-  userMessage: string
-  finalResponse: string
-  hasToolCalls: boolean
-  toolEventCount: number
-}): boolean {
-  if (!looksLikeExternalWalletTask(params.userMessage)) return false
-  if (!params.hasToolCalls || params.toolEventCount === 0) return false
-  const trimmed = params.finalResponse.trim()
-  if (!trimmed) return true
-  if (/\b(blocker|blocked|cannot|can't|requires|need|missing|last reversible step|next step)\b/i.test(trimmed)) return false
-  if (trimmed.length >= 240 && !/(let me|i'll|i will|checking|verify|promising|look into|explore|access their interface)/i.test(trimmed)) return false
-  return /:$/.test(trimmed) || /(let me|i'll|i will|checking|verify|promising|look into|explore|access their interface)/i.test(trimmed) || trimmed.length < 240
-}
-
-function resolveToolAction(input: unknown): string {
-  if (input && typeof input === 'object' && !Array.isArray(input)) {
-    const action = (input as Record<string, unknown>).action
-    return typeof action === 'string' ? action.trim().toLowerCase() : ''
-  }
-  if (typeof input !== 'string') return ''
-  const trimmed = input.trim()
-  if (!trimmed.startsWith('{')) return ''
-  try {
-    const parsed = JSON.parse(trimmed) as Record<string, unknown>
-    return typeof parsed.action === 'string' ? parsed.action.trim().toLowerCase() : ''
-  } catch {
-    return ''
-  }
-}
-
-export function shouldTerminateOnSuccessfulMemoryMutation(params: {
-  toolName: string
-  toolInput: unknown
-  toolOutput: string
-}): boolean {
-  const canonicalToolName = canonicalizePluginId(params.toolName) || params.toolName
-  if (canonicalToolName !== 'memory') return false
-  const exactToolName = String(params.toolName || '').trim().toLowerCase()
-  const action = exactToolName === 'memory_store'
-    ? 'store'
-    : exactToolName === 'memory_update'
-      ? 'update'
-      : resolveToolAction(params.toolInput)
-  if (action !== 'store' && action !== 'update') return false
-  const output = extractSuggestions(params.toolOutput || '').clean.trim()
-  if (!output || /^error[:\s]/i.test(output)) return false
-  if (!/^(stored|updated) memory\b/i.test(output)) return false
-  return /no further memory lookup is needed unless the user asked you to verify/i.test(output)
-}
-
-function hasStateChangingWalletEvidence(toolEvents: MessageToolEvent[]): boolean {
-  return toolEvents.some((event) => {
-    const input = `${event.input || ''}\n${event.output || ''}`
-    return event.name === 'wallet_tool' && (
-      /"action":"send_transaction"/.test(input)
-      || /"action":"send"/.test(input)
-      || /"action":"sign_transaction"/.test(input)
-      || /"type":"plugin_wallet_action_request"/.test(input)
-      || /"type":"plugin_wallet_transfer_request"/.test(input)
-      || /"status":"broadcast"/.test(input)
-    )
-  })
-}
-
-function countExternalExecutionResearchSteps(toolEvents: MessageToolEvent[]): number {
-  return toolEvents.filter((event) => {
-    if (['http_request', 'web', 'web_search', 'web_fetch', 'browser'].includes(event.name)) return true
-    if (event.name !== 'wallet_tool') return false
-    return /"action":"(balance|address|transactions|call_contract|encode_contract_call)"/.test(event.input || '')
-  }).length
-}
-
-function countDistinctExternalResearchHosts(toolEvents: MessageToolEvent[]): number {
-  const hosts = new Set<string>()
-  for (const event of toolEvents) {
-    const candidates = [event.input || '', event.output || '']
-    for (const candidate of candidates) {
-      const matches = candidate.match(/https?:\/\/[^"'\\\s)]+/g) || []
-      for (const match of matches) {
-        try {
-          hosts.add(new URL(match).host.toLowerCase())
-        } catch {
-          // Ignore malformed URLs in model/tool text.
-        }
-      }
-    }
-  }
-  return hosts.size
-}
-
-function getWalletApprovalBoundaryAction(output: string): string | null {
-  if (!output.includes('plugin_wallet_')) return null
-  if (/"type":"plugin_wallet_transfer_request"/.test(output)) return 'send'
-  const actionMatch = output.match(/"action":"([^"]+)"/)
-  const action = actionMatch?.[1] || ''
-  if (!action) return null
-  const readOnlyActions = new Set([
-    'balance',
-    'address',
-    'transactions',
-    'encode_contract_call',
-    'simulate_transaction',
-  ])
-  return readOnlyActions.has(action) ? null : action
-}
-
-export function isWalletSimulationResult(toolName: string, output: string): boolean {
-  return toolName === 'wallet_tool' && /"status":"simulated"/.test(output)
-}
-
-export function shouldForceExternalExecutionFollowthrough(params: {
-  userMessage: string
-  finalResponse: string
-  hasToolCalls: boolean
-  toolEvents: MessageToolEvent[]
-}): boolean {
-  if (!looksLikeBoundedExternalExecutionTask(params.userMessage)) return false
-  if (!params.hasToolCalls || params.toolEvents.length < 4) return false
-  if (hasStateChangingWalletEvidence(params.toolEvents)) return false
-  const distinctHosts = countDistinctExternalResearchHosts(params.toolEvents)
-  const trimmed = params.finalResponse.trim()
-  if (!trimmed) return countExternalExecutionResearchSteps(params.toolEvents) >= 4 || distinctHosts >= 3
-  if (/\b(last reversible step|exact blocker|safest next action|blocked|cannot|can't|missing capability|no-key route unavailable)\b/i.test(trimmed)) {
-    return false
-  }
-  if (countExternalExecutionResearchSteps(params.toolEvents) < 4 && distinctHosts < 3) return false
-  return /(let me|i'll|i will|trying|research|query|check|look|promising|now let me|good -|good,)/i.test(trimmed) || trimmed.length < 500
-}
-
-function looksLikeIncompleteDeliverableResponse(text: string): boolean {
-  const trimmed = text.trim()
-  if (!trimmed) return true
-  if (trimmed.endsWith(':') || trimmed.endsWith('...') || trimmed.endsWith('…')) return true
-  const lastChunk = trimmed.slice(-400).toLowerCase()
-  return /\b(?:next|now|then|after that|moving on to|proceeding to)\b[^.!?\n]{0,120}\b(?:i(?:'ll| will)|create|build|write|capture|take|start|finish|generate)\b/.test(lastChunk)
-    || /\b(?:i(?:'ll| will)|let me)\s+(?:now|next)?\s*(?:create|build|write|capture|take|start|finish|generate|continue)\b/.test(lastChunk)
-}
-
-export function shouldForceDeliverableFollowthrough(params: {
-  userMessage: string
-  finalResponse: string
-  hasToolCalls: boolean
-  toolEvents: MessageToolEvent[]
-}): boolean {
-  if (!looksLikeOpenEndedDeliverableTask(params.userMessage)) return false
-  if (!params.hasToolCalls || params.toolEvents.length === 0) return false
-  const trimmed = params.finalResponse.trim()
-  if (!trimmed) return params.toolEvents.length >= 2
-  if (
-    /\b(task complete|completed|finished|done|delivered|shared|sent|uploaded|attached)\b/i.test(trimmed)
-    && /(?:\/api\/uploads\/|https?:\/\/|`[^`\n]+\.(?:md|pdf|png|jpe?g|webp|gif|html|txt|zip)`)/i.test(trimmed)
-  ) {
-    return false
-  }
-  // If the user asked for file output but no file-write tool was used, force continuation
-  const userNormalized = params.userMessage.toLowerCase()
-  if (/\b(save|write|output)\b[^.!?\n]{0,60}\b(to|as)\b[^.!?\n]{0,40}(\/|~\/|\.[a-z]{2,5}\b)/.test(userNormalized)) {
-    // Check if a file-writing tool was actually used (not just file-reading).
-    // The `files` tool with action: 'read' or 'list' doesn't count as writing.
-    const usedFileWriteTools = params.toolEvents.some((e) => {
-      if (!e.name) return false
-      if (['write_file', 'edit_file'].includes(e.name)) return true
-      if (e.name === 'shell' || e.name === 'execute_command') return true
-      if (e.name === 'files') {
-        // Only count as a write if the tool input specifies action: "write"
-        const input = e.input || ''
-        return /"action"\s*:\s*"write"/i.test(input)
-      }
-      return false
-    })
-    if (!usedFileWriteTools) return true
-  }
-  if (looksLikeIncompleteDeliverableResponse(trimmed)) return true
-  return trimmed.length < 120 && params.toolEvents.length >= 3
-}
-
-function updateStreamedToolEvents(events: MessageToolEvent[], event: { type: 'call' | 'result'; name: string; input?: string; output?: string; toolCallId?: string }) {
-  if (event.type === 'call') {
-    events.push({
-      name: event.name,
-      input: event.input || '',
-      toolCallId: event.toolCallId,
-    })
-    return
-  }
-  const index = event.toolCallId
-    ? events.findLastIndex((entry) => entry.toolCallId === event.toolCallId && !entry.output)
-    : events.findLastIndex((entry) => entry.name === event.name && !entry.output)
-  if (index === -1) return
-  events[index] = {
-    ...events[index],
-    output: event.output || '',
-  }
-}
-
-function renderToolEvidence(events: MessageToolEvent[]): string {
-  return events
-    .slice(-10)
-    .map((event, index) => [
-      `Tool ${index + 1}: ${event.name}`,
-      event.input ? `Input: ${event.input}` : '',
-      event.output ? `Output: ${event.output.slice(0, 1200)}` : '',
-    ].filter(Boolean).join('\n'))
-    .join('\n\n')
 }
 
 async function buildForcedExternalServiceSummary(params: {
@@ -491,73 +261,6 @@ async function buildForcedExternalServiceSummary(params: {
   }
 }
 
-function buildExternalExecutionFollowthroughPrompt(params: {
-  userMessage: string
-  fullText: string
-  toolEvents: MessageToolEvent[]
-}): string {
-  return [
-    'You are in a bounded external execution task and have already done enough research.',
-    'Do not restart broad discovery. Do not ask the user for another prompt.',
-    'Do not spend this continuation on more venue shopping. Use the already confirmed route unless one last fetch is strictly required to prepare execution.',
-    'If several venue or aggregator APIs already failed, stop searching for more venues. Either use a direct onchain read path with the available wallet tools, or state the blocker.',
-    'A prose approval request does not count as completion. If the next step is a sign/send/approve action, call the real wallet tool action so the runtime can create the approval request.',
-    'Do not mutate already confirmed token addresses, router addresses, spender addresses, or network identifiers unless newer tool evidence proves the earlier value was wrong.',
-    'Within this continuation, do exactly one of the following:',
-    '1. Take the next concrete execution step now using the existing tools and stop at the first approval boundary for a state-changing action.',
-    '2. If no safe executable step exists with the current tools, state the exact blocker with evidence.',
-    'A successful continuation ends with one of these outcomes only: an approval request, a broadcast transaction, or a final blocker summary.',
-    'Prefer the route sources and facts already confirmed in the tool evidence below. Do not keep shopping for new venues unless the current options are clearly unusable.',
-    'If the tool evidence already includes enough information to prepare a contract call, approval, quote read, or transaction simulation, do that now instead of making another search or HTTP request.',
-    '',
-    `Objective:\n${params.userMessage}`,
-    '',
-    `Current partial response:\n${params.fullText || '(none)'}`,
-    '',
-    `Recent tool evidence:\n${renderToolEvidence(params.toolEvents) || '(none)'}`,
-  ].join('\n')
-}
-
-function buildDeliverableFollowthroughPrompt(params: {
-  userMessage: string
-  fullText: string
-  toolEvents: MessageToolEvent[]
-}): string {
-  const lines = [
-    'You are in the middle of a multi-step deliverable and stopped after only a partial batch of work.',
-    'Continue from the existing workspace and artifacts. Do not restart from scratch and do not ask the user to restate the request.',
-    'Do not stop after one partial batch. Finish every requested deliverable that is still outstanding before concluding.',
-    'If a requested artifact cannot be produced, say exactly which artifact is missing, what blocked it, and what you already completed.',
-    'Use the existing files, screenshots, and generated outputs first. Inspect them if needed, then complete the remaining work.',
-    'Preserve hard structural constraints from the original request: exact counts stay exact, required titled sections stay present, and source coverage gaps should be filled instead of skipped.',
-    'End with a concise grouped completion summary that lists exact file paths, upload URLs, localhost URLs/ports, and screenshots you produced.',
-  ]
-
-  // If the user explicitly asked for file output, remind the model to use file tools
-  const userNormalized = params.userMessage.toLowerCase()
-  const fileOutputMatch = userNormalized.match(/\b(?:save|write|output|export)\b[^.!?\n]{0,80}\b(?:to|as|at|in)\b[^.!?\n]{0,60}(\/[^\s,'"]+|~\/[^\s,'"]+|\.\/[^\s,'"]+)/i)
-  if (fileOutputMatch) {
-    const fileToolNames = ['write_file', 'edit_file', 'files', 'shell', 'execute_command']
-    const usedFileTools = params.toolEvents.some((e) => e.name && fileToolNames.includes(e.name))
-    if (!usedFileTools) {
-      lines.push(
-        '',
-        `CRITICAL: The user asked you to save output to a file path (${fileOutputMatch[1] || 'see objective'}). You have NOT used any file-writing tool yet.`,
-        'You MUST use the `files` or `write_file` tool to write the content to the requested path. Do not just include the content in your text response — actually write the file.',
-      )
-    }
-  }
-
-  lines.push(
-    '',
-    `Objective:\n${params.userMessage}`,
-    '',
-    `Current partial response:\n${params.fullText || '(none)'}`,
-    '',
-    `Recent tool evidence:\n${renderToolEvidence(params.toolEvents) || '(none)'}`,
-  )
-  return lines.join('\n')
-}
 
 function buildExactStructureBlock(userMessage: string): string {
   const exactBulletMatch = userMessage.match(/\bexactly\s+(\d+)\s+bullet points?\b/i)
@@ -569,18 +272,6 @@ function buildExactStructureBlock(userMessage: string): string {
     'Treat that as a hard file-wide constraint unless the user explicitly says later sections get their own separate bullets.',
     'If the file also needs titled sections such as Owners or Risks, use short prose under those headings instead of adding more bullet lines.',
   ].join('\n')
-}
-
-/** Detect whether a user message is a broad, high-level goal that benefits from decomposition. */
-function isBroadGoal(text: string): boolean {
-  if (text.length < 50) return false
-  // Messages with code fences, file paths, or numbered steps are already structured
-  if (/```/.test(text)) return false
-  if (/\/(src|lib|app|pages|components|api)\//.test(text)) return false
-  if (/^\s*\d+[.)]\s/m.test(text)) return false
-  // Short direct questions aren't broad goals
-  if (text.length < 80 && text.endsWith('?')) return false
-  return true
 }
 
 const GOAL_DECOMPOSITION_BLOCK = [
@@ -683,12 +374,6 @@ function buildAgenticExecutionPolicy(opts: {
   return parts.filter(Boolean).join('\n')
 }
 
-function compactThreadRecallText(text: string, maxChars = 180): string {
-  const compact = extractSuggestions(text || '').clean.replace(/\s+/g, ' ').trim()
-  if (!compact) return ''
-  return compact.length > maxChars ? `${compact.slice(0, maxChars - 3)}...` : compact
-}
-
 function buildCurrentThreadRecallBlock(history: Message[]): string {
   const recentUserFacts = history
     .filter((entry) => entry.role === 'user' && typeof entry.text === 'string' && entry.text.trim())
@@ -735,93 +420,12 @@ function buildDirectMemoryWriteBlock(): string {
   ].join('\n')
 }
 
-const DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE = /\b(?:then|and then|after that)?\s*(?:confirm|recap|repeat|summarize|tell me|say)\b[\s\S]{0,120}\b(?:stored|saved|updated|remembered|wrote|write)\b/i
-const DIRECT_MEMORY_WRITE_EXTRA_ACTION_RE = /\b(?:then|and then|after that|also)\b[\s\S]{0,160}\b(?:write|create|send|email|message|delegate|research|search|browse|open|edit|build|schedule|plan|review|analy[sz]e)\b/i
-
-export function isNarrowDirectMemoryWriteTurn(message: string): boolean {
-  const trimmed = String(message || '').trim()
-  if (!trimmed || !isDirectMemoryWriteRequest(trimmed)) return false
-  if (looksLikeOpenEndedDeliverableTask(trimmed)) return false
-  if (DIRECT_MEMORY_WRITE_EXTRA_ACTION_RE.test(trimmed) && !DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE.test(trimmed)) {
-    return false
-  }
-  return !isBroadGoal(trimmed) || DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE.test(trimmed) || !/[?]$/.test(trimmed)
-}
-
-const CURRENT_THREAD_RECALL_BLOCKED_TOOL_IDS = new Set([
-  'memory',
-  'manage_sessions',
-  'web',
-  'context_mgmt',
-])
-
-export function shouldAllowToolForCurrentThreadRecall(toolName: string): boolean {
-  const canonicalToolName = canonicalizePluginId(toolName) || toolName.trim().toLowerCase()
-  return !CURRENT_THREAD_RECALL_BLOCKED_TOOL_IDS.has(canonicalToolName)
-}
-
-const DIRECT_MEMORY_WRITE_ALLOWED_TOOL_IDS = new Set([
-  'memory_store',
-  'memory_update',
-])
-
-export function shouldAllowToolForDirectMemoryWrite(toolName: string): boolean {
-  const rawToolName = toolName.trim().toLowerCase()
-  return DIRECT_MEMORY_WRITE_ALLOWED_TOOL_IDS.has(rawToolName)
-}
-
 export interface StreamAgentChatResult {
   /** All text accumulated across every LLM turn (for SSE / web UI history). */
   fullText: string
   /** Text from only the final LLM turn — after the last tool call completed.
    *  Use this for connector delivery so intermediate planning text isn't sent. */
   finalResponse: string
-}
-
-function resolveToolOnlyFinalResponse(toolEvents: MessageToolEvent[] | undefined): string {
-  const events = Array.isArray(toolEvents) ? toolEvents : []
-  for (let index = events.length - 1; index >= 0; index--) {
-    const event = events[index]
-    const output = typeof event?.output === 'string'
-      ? extractSuggestions(event.output).clean.trim()
-      : ''
-    if (!output) continue
-    if (/^error[:\s]/i.test(output)) continue
-    if (output.startsWith('{') || output.startsWith('[')) continue
-    return output
-  }
-  return ''
-}
-
-export function resolveFinalStreamResponseText(params: {
-  fullText: string
-  lastSegment: string
-  lastSettledSegment: string
-  hasToolCalls: boolean
-  toolEvents?: MessageToolEvent[]
-}): string {
-  const fullText = params.fullText || ''
-  if (!params.hasToolCalls) return fullText
-
-  const candidates = [
-    extractSuggestions(params.lastSegment || '').clean.trim(),
-    extractSuggestions(params.lastSettledSegment || '').clean.trim(),
-    extractSuggestions(fullText).clean.trim(),
-    resolveToolOnlyFinalResponse(params.toolEvents),
-  ]
-
-  return candidates.find((candidate) => candidate.length > 0) || ''
-}
-
-export function resolveContinuationAssistantText(params: {
-  iterationText: string
-  lastSegment: string
-}): string {
-  const candidates = [
-    extractSuggestions(params.iterationText || '').clean.trim(),
-    extractSuggestions(params.lastSegment || '').clean.trim(),
-  ]
-  return candidates.find((candidate) => candidate.length > 0) || ''
 }
 
 export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<StreamAgentChatResult> {
@@ -1315,7 +919,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   try {
   const maxIterations = MAX_AUTO_CONTINUES + MAX_TRANSIENT_RETRIES + MAX_REQUIRED_TOOL_CONTINUES + MAX_EXECUTION_FOLLOWTHROUGHS + MAX_DELIVERABLE_FOLLOWTHROUGHS + MAX_TOOL_SUMMARY_RETRIES
     for (let iteration = 0; iteration <= maxIterations; iteration++) {
-      let shouldContinue: 'recursion' | 'transient' | 'required_tool' | 'execution_followthrough' | 'deliverable_followthrough' | 'tool_summary' | false = false
+      let shouldContinue: ContinuationType = false
       let requiredToolReminderNames: string[] = []
       let waitingForToolResult = false
       let idleTimedOut = false
@@ -1817,78 +1421,21 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         lastSegment,
       })
 
-      if (shouldContinue === 'recursion') {
-        // Continue with only the newly produced assistant text from this
-        // iteration, not the cumulative full transcript, or the model tends to
-        // restart from earlier paragraphs on later followthrough turns.
+      const continuationPrompt = buildContinuationPrompt({
+        type: shouldContinue,
+        message,
+        fullText,
+        toolEvents: streamedToolEvents,
+        requiredToolReminderNames,
+      })
+
+      if (continuationPrompt) {
         if (continuationAssistantText) {
           langchainMessages.push(new AIMessage({ content: continuationAssistantText }))
         }
         const settledSegment = extractSuggestions(lastSegment).clean.trim()
         if (settledSegment) lastSettledSegment = settledSegment
-        langchainMessages.push(new HumanMessage({ content: 'Continue where you left off. Complete the remaining steps of the objective.' }))
-        lastSegment = ''
-      } else if (shouldContinue === 'required_tool') {
-        if (continuationAssistantText) {
-          langchainMessages.push(new AIMessage({ content: continuationAssistantText }))
-        }
-        const settledSegment = extractSuggestions(lastSegment).clean.trim()
-        if (settledSegment) lastSettledSegment = settledSegment
-        langchainMessages.push(new HumanMessage({
-          content: `You have not yet completed the required explicit tool step(s): ${requiredToolReminderNames.join(', ')}. Use those enabled tools now before declaring success. Do not replace ask_human with a plain-text request, do not replace outbound delivery tools with prose, and do not replace screenshot requests with text-only summaries.`,
-        }))
-        lastSegment = ''
-      } else if (shouldContinue === 'execution_followthrough') {
-        if (continuationAssistantText) {
-          langchainMessages.push(new AIMessage({ content: continuationAssistantText }))
-        }
-        const settledSegment = extractSuggestions(lastSegment).clean.trim()
-        if (settledSegment) lastSettledSegment = settledSegment
-        langchainMessages.push(new HumanMessage({
-          content: buildExternalExecutionFollowthroughPrompt({
-            userMessage: message,
-            fullText,
-            toolEvents: streamedToolEvents,
-          }),
-        }))
-        lastSegment = ''
-      } else if (shouldContinue === 'deliverable_followthrough') {
-        if (continuationAssistantText) {
-          langchainMessages.push(new AIMessage({ content: continuationAssistantText }))
-        }
-        const settledSegment = extractSuggestions(lastSegment).clean.trim()
-        if (settledSegment) lastSettledSegment = settledSegment
-        langchainMessages.push(new HumanMessage({
-          content: buildDeliverableFollowthroughPrompt({
-            userMessage: message,
-            fullText,
-            toolEvents: streamedToolEvents,
-          }),
-        }))
-        lastSegment = ''
-      } else if (shouldContinue === 'tool_summary') {
-        // Model called tools but produced no/trivial text — prompt it to synthesize results.
-        if (continuationAssistantText) {
-          langchainMessages.push(new AIMessage({ content: continuationAssistantText }))
-        }
-        const toolSummaryLines = streamedToolEvents
-          .filter((e) => e.output)
-          .map((e) => `[${e.name}]: ${(e.output || '').slice(0, 500)}`)
-          .slice(0, 6)
-        const preambleNote = fullText.trim()
-          ? `You started with "${fullText.trim().slice(0, 100)}..." but did not follow through with actual results.`
-          : 'Your tool calls completed but you did not provide a response.'
-        langchainMessages.push(new HumanMessage({
-          content: [
-            preambleNote,
-            'Here are the tool results:',
-            ...toolSummaryLines,
-            '',
-            `Original request: ${message.slice(0, 500)}`,
-            '',
-            'Now answer the original request using these tool results. Be concise and direct. Present the findings clearly.',
-          ].join('\n'),
-        }))
+        langchainMessages.push(new HumanMessage({ content: continuationPrompt }))
         lastSegment = ''
       } else if (shouldContinue === 'transient') {
         // Short delay before retrying transient errors (API timeout, rate limit, etc.)

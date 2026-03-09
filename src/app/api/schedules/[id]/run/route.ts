@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { notFound } from '@/lib/server/collection-helpers'
-import { loadSchedules, saveSchedules, loadAgents, loadTasks, saveTasks } from '@/lib/server/storage'
+import { loadSchedule, loadAgents, loadTasks, upsertSchedule, upsertTask } from '@/lib/server/storage'
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agent-availability'
 import { enqueueTask } from '@/lib/server/queue'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
@@ -14,8 +14,7 @@ type InFlightTask = {
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const schedules = loadSchedules()
-  const schedule = schedules[id]
+  const schedule = loadSchedule(id)
   if (!schedule) return notFound()
 
   const agents = loadAgents()
@@ -98,7 +97,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     schedule.linkedTaskId = taskId
   }
 
-  saveTasks(tasks)
+  upsertTask(taskId, tasks[taskId])
   enqueueTask(taskId)
   pushMainLoopEventToMainSessions({
     type: 'schedule_fired',
@@ -106,7 +105,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   })
 
   schedule.lastRunAt = now
-  saveSchedules(schedules)
+  upsertSchedule(schedule.id, schedule)
 
   return NextResponse.json({ ok: true, queued: true, taskId, runNumber: schedule.runNumber })
 }

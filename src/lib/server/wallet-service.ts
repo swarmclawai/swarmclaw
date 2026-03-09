@@ -9,7 +9,7 @@ import {
   normalizeAtomicString,
 } from '@/lib/wallet'
 import type { Agent, AgentWallet, WalletChain, WalletTransaction } from '@/types'
-import { loadAgents, loadWalletTransactions, loadWallets, saveAgents, upsertWallet } from './storage'
+import { loadAgent, loadAgents, loadWalletTransactions, loadWallets, upsertAgent, upsertWallet } from './storage'
 import { generateEthereumWallet, isValidEthereumAddress, sendEth } from './ethereum'
 import { generateSolanaKeypair, isValidSolanaAddress, sendSol } from './solana'
 import { notify } from './ws-hub'
@@ -102,8 +102,8 @@ export function createAgentWallet(input: {
   const agentId = String(input.agentId || '').trim()
   if (!agentId) throw new Error('agentId is required')
 
-  const agents = loadAgents()
-  if (!agents[agentId]) throw new Error('Agent not found')
+  const agent = loadAgent(agentId)
+  if (!agent) throw new Error('Agent not found')
 
   const chain = getWalletChainOrDefault(input.chain ?? input.provider, 'solana')
   const existing = getWalletByAgentId(agentId, chain)
@@ -128,11 +128,9 @@ export function createAgentWallet(input: {
   upsertWallet(id, wallet)
   clearWalletPortfolioCache(id)
 
-  const agent = agents[agentId]
-  linkWalletToAgent(agent, id, getAgentActiveWalletId(agent) == null)
+  linkWalletToAgent(agent as any, id, getAgentActiveWalletId(agent as any) == null)
   agent.updatedAt = now
-  agents[agentId] = agent
-  saveAgents(agents)
+  upsertAgent(agentId, agent)
 
   notify('wallets')
   notify('agents')

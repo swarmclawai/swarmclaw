@@ -1,10 +1,18 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const isWorkerOnly = process.env.SWARMCLAW_WORKER_ONLY === '1'
     const { initWsServer, closeWsServer } = await import('./lib/server/ws-hub')
     const { ensureDaemonStarted } = await import('./lib/server/daemon-state')
-    ensureDaemonStarted('instrumentation')
-
-    initWsServer()
+    
+    // In worker-only mode, we FORCE the daemon to start, but skip the WebSocket listener
+    if (isWorkerOnly) {
+      console.log('[instrumentation] Booting in WORKER ONLY mode')
+      ensureDaemonStarted('worker-boot')
+    } else {
+      // In normal mode, we start the WS server, and conditionally start the daemon if autostart allows
+      initWsServer()
+      ensureDaemonStarted('instrumentation')
+    }
 
     // Graceful shutdown: stop background services and close WS connections
     const shutdownState = (
@@ -22,7 +30,9 @@ export async function register() {
       } catch (err) {
         console.error('[instrumentation] Failed to stop daemon during shutdown:', err)
       }
-      await closeWsServer()
+      if (!isWorkerOnly) {
+        await closeWsServer()
+      }
       process.exit(0)
     }
     if (!shutdownState.registered) {

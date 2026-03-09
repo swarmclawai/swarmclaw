@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
-import openclaw from './openclaw.ts'
+import openclaw from './openclaw'
 
 type WsFrame = Record<string, unknown>
 

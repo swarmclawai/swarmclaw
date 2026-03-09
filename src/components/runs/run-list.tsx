@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api-client'
+import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import type { SessionRunRecord, SessionRunStatus } from '@/types'
@@ -16,23 +17,26 @@ const STATUS_COLORS: Record<SessionRunStatus, { bg: string; text: string }> = {
 
 const ALL_STATUSES: SessionRunStatus[] = ['queued', 'running', 'completed', 'failed', 'cancelled']
 
-function relativeTime(ts: number): string {
-  const diff = Date.now() - ts
+function relativeTime(ts: number, now: number | null): string {
+  if (!now) return 'recently'
+  const diff = now - ts
   if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
   return `${Math.floor(diff / 86_400_000)}d ago`
 }
 
-function formatDuration(start?: number, end?: number): string {
+function formatDuration(start: number | undefined, end: number | undefined, now: number | null): string {
   if (!start) return '-'
-  const elapsed = (end || Date.now()) - start
+  if (!end && !now) return '-'
+  const elapsed = (end || now || start) - start
   if (elapsed < 1000) return `${elapsed}ms`
   if (elapsed < 60_000) return `${(elapsed / 1000).toFixed(1)}s`
   return `${Math.floor(elapsed / 60_000)}m ${Math.floor((elapsed % 60_000) / 1000)}s`
 }
 
 export function RunList() {
+  const now = useNow({ intervalMs: 1000 })
   const [runs, setRuns] = useState<SessionRunRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [autoRefresh, setAutoRefresh] = useState(false)
@@ -131,12 +135,12 @@ export function RunList() {
                     {run.status}
                   </span>
                   <span className="text-[11px] text-text-3/60 font-mono">{run.source}</span>
-                  <span className="text-[10px] text-text-3/40 ml-auto">{relativeTime(run.queuedAt)}</span>
+                  <span className="text-[10px] text-text-3/40 ml-auto">{relativeTime(run.queuedAt, now)}</span>
                 </div>
                 <div className="text-[12px] text-text-2 truncate">{run.messagePreview || run.id}</div>
                 {run.startedAt && (
                   <div className="text-[10px] text-text-3/50 mt-1">
-                    Duration: {formatDuration(run.startedAt, run.endedAt)}
+                    Duration: {formatDuration(run.startedAt, run.endedAt, now)}
                   </div>
                 )}
               </button>
@@ -184,7 +188,7 @@ export function RunList() {
                 )}
                 <div className="p-2.5 rounded-[10px] bg-white/[0.02] border border-white/[0.04]">
                   <div className="text-[10px] text-text-3/60 mb-0.5">Duration</div>
-                  <div className="text-[12px] text-text font-mono">{formatDuration(selected.startedAt, selected.endedAt)}</div>
+                  <div className="text-[12px] text-text font-mono">{formatDuration(selected.startedAt, selected.endedAt, now)}</div>
                 </div>
               </div>
             </div>

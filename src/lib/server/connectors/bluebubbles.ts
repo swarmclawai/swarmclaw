@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundMedia } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import { isNoMessage } from './manager'
 
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -260,7 +261,10 @@ const bluebubbles: PlatformConnector = {
         if (!allowed) return {}
       }
 
-      const response = await onMessage(inbound)
+      const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+      if (routeResult.managerHandled || routeResult.delivery === 'silent') return {}
+
+      const response = routeResult.visibleText
       if (!response || isNoMessage(response)) return {}
 
       await sendBlueBubblesText({

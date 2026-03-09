@@ -1,4 +1,5 @@
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import { isNoMessage } from './manager'
 
 const teams: PlatformConnector = {
@@ -45,7 +46,9 @@ const teams: PlatformConnector = {
         }
 
         try {
-          const response = await onMessage(inbound)
+          const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+          if (routeResult.managerHandled || routeResult.delivery === 'silent') return
+          const response = routeResult.visibleText
           if (isNoMessage(response)) return
           await context.sendActivity(response)
         } catch (err: any) {

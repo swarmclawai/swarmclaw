@@ -50,7 +50,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   }
 
   clearProjectId(loadAgents, saveAgents, 'agents')
-  clearProjectId(loadTasks, saveTasks, 'tasks')
+  clearProjectId(loadTasks, saveTasks as any, 'tasks')
   clearProjectId(loadSchedules, saveSchedules, 'schedules')
   clearProjectId(loadSkills, saveSkills, 'skills')
   clearProjectId(loadSecrets, saveSecrets, 'secrets')

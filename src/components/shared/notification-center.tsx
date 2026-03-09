@@ -4,12 +4,14 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
 import { getNotificationActivityAt, getNotificationOccurrenceCount } from '@/lib/notification-utils'
 import type { AppNotification } from '@/types'
 
-function timeAgo(ts: number): string {
-  const diff = Date.now() - ts
+function timeAgo(ts: number, now: number | null): string {
+  if (!now) return 'recently'
+  const diff = now - ts
   if (diff < 60_000) return 'just now'
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
@@ -59,6 +61,7 @@ export function NotificationCenter({
   align?: 'left' | 'right'
   direction?: 'up' | 'down'
 }) {
+  const now = useNow()
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -213,7 +216,7 @@ export function NotificationCenter({
                         x{getNotificationOccurrenceCount(n)}
                       </span>
                     )}
-                    <span className="text-[10px] text-text-3/50 shrink-0">{timeAgo(getNotificationActivityAt(n))}</span>
+                    <span className="text-[10px] text-text-3/50 shrink-0">{timeAgo(getNotificationActivityAt(n), now)}</span>
                   </div>
                   {n.message && (
                     <p className="text-[11px] text-text-3 mt-0.5 leading-relaxed line-clamp-2 m-0">

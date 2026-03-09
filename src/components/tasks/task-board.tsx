@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/shared/skeleton'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { inputClass } from '@/components/shared/form-styles'
+import { useNow } from '@/hooks/use-now'
 import type { BoardTask, BoardTaskStatus } from '@/types'
 import { toast } from 'sonner'
 
@@ -18,8 +19,8 @@ type BoardViewMode = 'board' | 'list'
 type AttentionFilter = 'all' | 'needs-attention' | 'approval' | 'blocked' | 'overdue' | 'failed'
 type TaskScopeFilter = 'user-facing' | 'all' | 'agent'
 
-function isTaskOverdue(task: BoardTask): boolean {
-  return !!task.dueAt && task.dueAt < Date.now() && task.status !== 'completed' && task.status !== 'archived'
+function isTaskOverdue(task: BoardTask, now: number | null): boolean {
+  return !!now && !!task.dueAt && task.dueAt < now && task.status !== 'completed' && task.status !== 'archived'
 }
 
 function isInternalAgentTask(task: BoardTask): boolean {
@@ -33,10 +34,10 @@ function isTaskRelevantToAgent(task: BoardTask, agentId: string): boolean {
     || task.delegatedByAgentId === agentId
 }
 
-function matchesAttentionFilter(task: BoardTask, filter: AttentionFilter): boolean {
+function matchesAttentionFilter(task: BoardTask, filter: AttentionFilter, now: number | null): boolean {
   const blocked = !!task.blockedBy?.length
   const pendingApproval = !!task.pendingApproval
-  const overdue = isTaskOverdue(task)
+  const overdue = isTaskOverdue(task, now)
   const failed = task.status === 'failed'
   if (filter === 'all') return true
   if (filter === 'approval') return pendingApproval
@@ -46,17 +47,18 @@ function matchesAttentionFilter(task: BoardTask, filter: AttentionFilter): boole
   return blocked || pendingApproval || overdue || failed
 }
 
-function attentionRank(task: BoardTask): number {
+function attentionRank(task: BoardTask, now: number | null): number {
   if (task.pendingApproval) return 0
   if (task.status === 'failed') return 1
   if (task.blockedBy?.length) return 2
-  if (isTaskOverdue(task)) return 3
+  if (isTaskOverdue(task, now)) return 3
   if (task.status === 'running') return 4
   if (task.status === 'queued') return 5
   return 6
 }
 
 export function TaskBoard() {
+  const now = useNow()
   const tasks = useAppStore((s) => s.tasks)
   const loadTasks = useAppStore((s) => s.loadTasks)
   const loadAgents = useAppStore((s) => s.loadAgents)
@@ -145,21 +147,10 @@ export function TaskBoard() {
   const bulkStatusRef = useRef<HTMLDivElement>(null)
 
   // URL-based filter state
-  const [filterAgentId, setFilterAgentId] = useState<string>(() => {
-    if (typeof window === 'undefined') return ''
-    return new URLSearchParams(window.location.search).get('agent') || ''
-  })
-  const [filterTag, setFilterTag] = useState<string>(() => {
-    if (typeof window === 'undefined') return ''
-    return new URLSearchParams(window.location.search).get('tag') || ''
-  })
-  const [taskScopeFilter, setTaskScopeFilter] = useState<TaskScopeFilter>(() => {
-    if (typeof window === 'undefined') return 'user-facing'
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('agent')) return 'agent'
-    const raw = params.get('taskView')
-    return raw === 'all' ? 'all' : 'user-facing'
-  })
+  const [filterAgentId, setFilterAgentId] = useState<string>('')
+  const [filterTag, setFilterTag] = useState<string>('')
+  const [taskScopeFilter, setTaskScopeFilter] = useState<TaskScopeFilter>('user-facing')
+  const [filtersHydrated, setFiltersHydrated] = useState(false)
   const [viewMode, setViewMode] = useState<BoardViewMode>('board')
   const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all')
   const [githubImportOpen, setGitHubImportOpen] = useState(false)
@@ -172,19 +163,25 @@ export function TaskBoard() {
   const [githubImportError, setGitHubImportError] = useState<string | null>(null)
   const [githubImportResult, setGitHubImportResult] = useState<GitHubIssueImportResult | null>(null)
 
-  // Seed activeProjectFilter from URL on mount
+  // Seed URL-backed filters after hydration so the initial tree stays deterministic.
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const urlProject = new URLSearchParams(window.location.search).get('project')
-    if (urlProject && !activeProjectFilter) {
-      setActiveProjectFilter(urlProject)
-    }
+    const params = new URLSearchParams(window.location.search)
+    const urlAgent = params.get('agent') || ''
+    const urlTag = params.get('tag') || ''
+    const urlProject = params.get('project')
+    const rawTaskView = params.get('taskView')
+
+    setFilterAgentId(urlAgent)
+    setFilterTag(urlTag)
+    setTaskScopeFilter(urlAgent ? 'agent' : rawTaskView === 'all' ? 'all' : 'user-facing')
+    if (urlProject && !activeProjectFilter) setActiveProjectFilter(urlProject)
+    setFiltersHydrated(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Sync filters to URL
   useEffect(() => {
-    if (typeof window === 'undefined') return
+    if (!filtersHydrated) return
     const params = new URLSearchParams()
     if (taskScopeFilter === 'agent' && filterAgentId) params.set('agent', filterAgentId)
     else if (taskScopeFilter === 'all') params.set('taskView', 'all')
@@ -193,7 +190,7 @@ export function TaskBoard() {
     const qs = params.toString()
     const newUrl = `${window.location.pathname}${qs ? `?${qs}` : ''}`
     window.history.replaceState(null, '', newUrl)
-  }, [filterAgentId, filterTag, activeProjectFilter, taskScopeFilter])
+  }, [activeProjectFilter, filterAgentId, filterTag, filtersHydrated, taskScopeFilter])
 
   const [loaded, setLoaded] = useState(Object.keys(tasks).length > 0)
   useEffect(() => {
@@ -217,9 +214,9 @@ export function TaskBoard() {
 
   const matchesBaseFilters = useCallback((task: BoardTask) => {
     if (!matchesScopeFilters(task)) return false
-    if (!matchesAttentionFilter(task, attentionFilter)) return false
+    if (!matchesAttentionFilter(task, attentionFilter, now)) return false
     return true
-  }, [attentionFilter, matchesScopeFilters])
+  }, [attentionFilter, matchesScopeFilters, now])
 
   const scopedTasks = useMemo(
     () => Object.values(tasks).filter(matchesScopeFilters),
@@ -230,13 +227,13 @@ export function TaskBoard() {
     scopedTasks
       .filter(matchesBaseFilters)
       .sort((a, b) => {
-        const rankDiff = attentionRank(a) - attentionRank(b)
+        const rankDiff = attentionRank(a, now) - attentionRank(b, now)
         if (rankDiff !== 0) return rankDiff
         const dueDiff = (a.dueAt || Number.MAX_SAFE_INTEGER) - (b.dueAt || Number.MAX_SAFE_INTEGER)
         if (dueDiff !== 0) return dueDiff
         return b.updatedAt - a.updatedAt
       })
-  ), [scopedTasks, matchesBaseFilters])
+  ), [scopedTasks, matchesBaseFilters, now])
 
   const tasksByStatus = useCallback((status: BoardTaskStatus) =>
     filteredTasks
@@ -334,12 +331,12 @@ export function TaskBoard() {
       running: all.filter((t) => t.status === 'running').length,
       completed: all.filter((t) => t.status === 'completed').length,
       failed: all.filter((t) => t.status === 'failed').length,
-      overdue: all.filter((t) => isTaskOverdue(t)).length,
+      overdue: all.filter((t) => isTaskOverdue(t, now)).length,
       blocked: all.filter((t) => (t.blockedBy?.length || 0) > 0).length,
       approvals: all.filter((t) => !!t.pendingApproval).length,
-      attention: all.filter((t) => matchesAttentionFilter(t, 'needs-attention')).length,
+      attention: all.filter((t) => matchesAttentionFilter(t, 'needs-attention', now)).length,
     }
-  }, [scopedTasks])
+  }, [now, scopedTasks])
 
   const activeScopeLabel = useMemo(() => {
     if (taskScopeFilter === 'all') return 'All tasks'

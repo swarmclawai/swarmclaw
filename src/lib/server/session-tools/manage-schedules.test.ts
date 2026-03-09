@@ -37,8 +37,8 @@ describe('manage_schedules tool', () => {
     const output = runWithTempDataDir(`
       import fs from 'node:fs'
       import path from 'node:path'
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
       const storage = storageMod.default || storageMod
       const crud = crudMod.default || crudMod
 
@@ -93,8 +93,8 @@ describe('manage_schedules tool', () => {
 
   it('stores the current connector recipient on new schedules created from a connector session', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
       const storage = storageMod.default || storageMod
       const crud = crudMod.default || crudMod
 
@@ -170,8 +170,8 @@ describe('manage_schedules tool', () => {
 
   it('rejects schedules whose referenced script path does not exist', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
       const storage = storageMod.default || storageMod
       const crud = crudMod.default || crudMod
 
@@ -214,8 +214,8 @@ describe('manage_schedules tool', () => {
 
   it('reuses a same-session recurring reminder instead of creating a near-duplicate', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
       const storage = storageMod.default || storageMod
       const crud = crudMod.default || crudMod
 
@@ -274,8 +274,8 @@ describe('manage_schedules tool', () => {
 
   it('pauses matching duplicate schedules together when an agent stops a reminder', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
       const storage = storageMod.default || storageMod
       const crud = crudMod.default || crudMod
 
@@ -348,8 +348,8 @@ describe('manage_schedules tool', () => {
 
   it('deletes matching duplicate schedules together when an agent removes a reminder cluster', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
       const storage = storageMod.default || storageMod
       const crud = crudMod.default || crudMod
 

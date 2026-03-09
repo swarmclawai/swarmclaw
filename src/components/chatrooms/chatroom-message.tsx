@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { useNow } from '@/hooks/use-now'
 import { CodeBlock } from '@/components/chat/code-block'
 import { ReactionPicker } from './reaction-picker'
 import { ReplyQuote } from '@/components/shared/reply-quote'
@@ -40,8 +41,8 @@ interface Props {
   momentOverlay?: React.ReactNode
 }
 
-function formatRelativeTime(ts: number): string {
-  const now = Date.now()
+function formatRelativeTime(ts: number, now: number | null): string {
+  if (!now) return 'recently'
   const diffSec = Math.floor((now - ts) / 1000)
   if (diffSec < 60) return 'just now'
   const diffMin = Math.floor(diffSec / 60)
@@ -62,11 +63,11 @@ function getMemberRoleFromChatroom(chatroom: Chatroom | undefined, agentId: stri
   return member?.role || 'member'
 }
 
-function isAgentMutedInChatroom(chatroom: Chatroom | undefined, agentId: string): boolean {
+function isAgentMutedInChatroom(chatroom: Chatroom | undefined, agentId: string, now: number | null): boolean {
   if (!chatroom?.members?.length) return false
   const member = chatroom.members.find((m) => m.agentId === agentId)
   if (!member?.mutedUntil) return false
-  return new Date(member.mutedUntil).getTime() > Date.now()
+  return !!now && new Date(member.mutedUntil).getTime() > now
 }
 
 function roleBadgeStyle(role: string): { label: string; className: string } | null {
@@ -136,6 +137,7 @@ function renderChatroomAttachments(message: ChatroomMessage) {
 }
 
 export function ChatroomMessageBubble({ message, agents, onToggleReaction, onReply, onTogglePin, onTransfer, onDeleteMessage, onMuteAgent, onUnmuteAgent, onSetRole, chatroom, pinnedMessageIds, streamingAgentIds, messages, grouped: isGrouped, momentOverlay }: Props) {
+  const now = useNow({ enabled: false })
   const [showPicker, setShowPicker] = useState(false)
   const [showTransferPicker, setShowTransferPicker] = useState(false)
   const [showModMenu, setShowModMenu] = useState(false)
@@ -213,7 +215,7 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
         {!isGrouped && (() => {
           const role = !isUser ? getMemberRoleFromChatroom(chatroom, message.senderId) : 'member'
           const badge = !isUser ? roleBadgeStyle(role) : null
-          const muted = !isUser ? isAgentMutedInChatroom(chatroom, message.senderId) : false
+          const muted = !isUser ? isAgentMutedInChatroom(chatroom, message.senderId, now) : false
           return (
             <div className="flex items-baseline gap-2 mb-0.5">
               {!isUser && agent ? (
@@ -241,7 +243,7 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
                   Muted
                 </span>
               )}
-              <span className="label-mono" title={new Date(message.time).toLocaleString()}>{formatRelativeTime(message.time)}</span>
+              <span className="label-mono" title={new Date(message.time).toISOString()}>{formatRelativeTime(message.time, now)}</span>
             </div>
           )
         })()}
@@ -352,6 +354,7 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
                 }
                 return (
                   <a href={src} download target="_blank" rel="noopener noreferrer" className="block my-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={src} alt={alt || 'Image'} loading="lazy" className="max-w-full max-h-[400px] rounded-[8px] border border-white/[0.06]" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                   </a>
                 )
@@ -476,7 +479,7 @@ export function ChatroomMessageBubble({ message, agents, onToggleReaction, onRep
               </button>
             )}
             {onMuteAgent && onUnmuteAgent && (() => {
-              const muted = isAgentMutedInChatroom(chatroom, message.senderId)
+              const muted = isAgentMutedInChatroom(chatroom, message.senderId, now)
               return muted ? (
                 <button
                   onClick={() => {

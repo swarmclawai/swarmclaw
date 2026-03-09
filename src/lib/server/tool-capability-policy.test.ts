@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import {
   resolveConcreteToolPolicyBlock,
   resolveSessionToolPolicy,
-} from './tool-capability-policy.ts'
+} from './tool-capability-policy'
 
 test('capability policy permissive mode allows non-blocked tools', () => {
   const decision = resolveSessionToolPolicy(['shell', 'web_search'], { capabilityPolicyMode: 'permissive' })
@@ -76,7 +76,7 @@ test('task and project management can be disabled from app settings', () => {
     true,
   )
   assert.match(
-    resolveConcreteToolPolicyBlock('manage_tasks', decision, { taskManagementEnabled: false }),
+    resolveConcreteToolPolicyBlock('manage_tasks', decision as "allow" | "deny" | "review", { taskManagementEnabled: false }),
     /task management is disabled/i,
   )
 })

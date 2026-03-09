@@ -7,7 +7,7 @@ import {
   mcpToolsToLangChain,
   disconnectMcpServer,
   connectMcpServer,
-} from './mcp-client.ts'
+} from './mcp-client'
 
 /* ============================================================
  * 1. sanitizeName

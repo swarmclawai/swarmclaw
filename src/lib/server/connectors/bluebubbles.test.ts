@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import bluebubbles from './bluebubbles.ts'
+import bluebubbles from './bluebubbles'
 import type { Connector } from '@/types'
 import type { InboundMessage } from './types'
 

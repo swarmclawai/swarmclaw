@@ -3,7 +3,7 @@ import { tool } from '@langchain/core/tools'
 import { StateGraph, MessagesAnnotation, START, END } from '@langchain/langgraph'
 import { ToolNode } from '@langchain/langgraph/prebuilt'
 import { AIMessage } from '@langchain/core/messages'
-import { loadSessions, saveSessions, loadAgents, loadCredentials, loadSettings, loadSecrets, loadTasks, saveTasks, decryptKey, loadSkills } from './storage'
+import { loadSessions, saveSessions, loadAgents, loadCredentials, loadSettings, loadSecrets, loadTasks, patchTask, upsertTask, decryptKey, loadSkills } from './storage'
 import { WORKSPACE_DIR } from './data-dir'
 import { loadRuntimeSettings, getOrchestratorLoopRecursionLimit } from './runtime-settings'
 import { getMemoryDb } from './memory-db'
@@ -280,20 +280,21 @@ export async function executeLangGraphOrchestrator(
   // Task board tools
   const commentOnTaskTool = tool(
     async ({ taskId, comment }) => {
-      const tasks = loadTasks()
-      const t = tasks[taskId]
+      const t = patchTask(taskId, (current) => {
+        if (!current) return current
+        if (!current.comments) current.comments = []
+        const c: TaskComment = {
+          id: genId(),
+          author: orchestrator.name,
+          agentId: orchestrator.id,
+          text: comment,
+          createdAt: Date.now(),
+        }
+        current.comments.push(c)
+        current.updatedAt = Date.now()
+        return current
+      })
       if (!t) return `Task "${taskId}" not found.`
-      if (!t.comments) t.comments = []
-      const c: TaskComment = {
-        id: genId(),
-        author: orchestrator.name,
-        agentId: orchestrator.id,
-        text: comment,
-        createdAt: Date.now(),
-      }
-      t.comments.push(c)
-      t.updatedAt = Date.now()
-      saveTasks(tasks)
       console.log(`[orchestrator-lg] Commented on task "${t.title}": ${comment.slice(0, 80)}`)
       return `Comment added to task "${t.title}".`
     },
@@ -309,9 +310,8 @@ export async function executeLangGraphOrchestrator(
 
   const createTaskTool = tool(
     async ({ title, description: desc }) => {
-      const tasks = loadTasks()
       const id = genId()
-      tasks[id] = {
+      upsertTask(id, {
         id,
         title,
         description: desc,
@@ -326,8 +326,7 @@ export async function executeLangGraphOrchestrator(
         queuedAt: null,
         startedAt: null,
         completedAt: null,
-      }
-      saveTasks(tasks)
+      })
       console.log(`[orchestrator-lg] Created backlog task: "${title}" (${id})`)
       return `Task "${title}" created in backlog (id: ${id}). The user can review and queue it.`
     },
@@ -574,25 +573,26 @@ export async function executeLangGraphOrchestrator(
             // OpenClaw approval bridge not available — fall through
           }
 
-          const tasks = loadTasks()
-          const t = tasks[taskId]
-          if (t) {
-            t.pendingApproval = {
+          const t = patchTask(taskId, (current) => {
+            if (!current) return current
+            current.pendingApproval = {
               toolName: pendingCall.name || pendingCall.function?.name || 'unknown',
               args: pendingCall.args || (pendingCall.function?.arguments ? JSON.parse(pendingCall.function.arguments) : {}),
               threadId,
             }
-            t.updatedAt = Date.now()
-            saveTasks(tasks)
+            current.updatedAt = Date.now()
+            return current
+          })
+          if (t) {
             notify('tasks')
-            const approvalMsg = `[Awaiting approval] Tool: ${t.pendingApproval.toolName}\nArgs: ${JSON.stringify(t.pendingApproval.args).slice(0, 300)}\n\nApprove or reject in the task board.`
+            const approvalMsg = `[Awaiting approval] Tool: ${t.pendingApproval?.toolName}\nArgs: ${JSON.stringify(t.pendingApproval?.args).slice(0, 300)}\n\nApprove or reject in the task board.`
             saveMessage(sessionId, 'assistant', approvalMsg)
             notify(`messages:${sessionId}`)
             pushMainLoopEventToMainSessions({
               type: 'pending_approval',
-              text: `Task "${t.title}" needs approval: ${t.pendingApproval.toolName}(${JSON.stringify(t.pendingApproval.args).slice(0, 100)})`,
+              text: `Task "${t.title}" needs approval: ${t.pendingApproval?.toolName}(${JSON.stringify(t.pendingApproval?.args).slice(0, 100)})`,
             })
-            console.log(`[orchestrator-lg] Interrupt: waiting for approval of tool "${t.pendingApproval.toolName}" on task ${taskId}`)
+            console.log(`[orchestrator-lg] Interrupt: waiting for approval of tool "${t.pendingApproval?.toolName}" on task ${taskId}`)
             return approvalMsg
           }
         }
@@ -712,19 +712,20 @@ export async function resumeLangGraphOrchestrator(
 
   const commentOnTaskTool = tool(
     async ({ taskId, comment }) => {
-      const tasks = loadTasks()
-      const t = tasks[taskId]
-      if (!t) return `Task "${taskId}" not found.`
-      if (!t.comments) t.comments = []
-      t.comments.push({
-        id: genId(),
-        author: orchestrator.name,
-        agentId: orchestrator.id,
-        text: comment,
-        createdAt: Date.now(),
+      const t = patchTask(taskId, (current) => {
+        if (!current) return current
+        if (!current.comments) current.comments = []
+        current.comments.push({
+          id: genId(),
+          author: orchestrator.name,
+          agentId: orchestrator.id,
+          text: comment,
+          createdAt: Date.now(),
+        })
+        current.updatedAt = Date.now()
+        return current
       })
-      t.updatedAt = Date.now()
-      saveTasks(tasks)
+      if (!t) return `Task "${taskId}" not found.`
       return `Comment added to task "${t.title}".`
     },
     {
@@ -736,15 +737,13 @@ export async function resumeLangGraphOrchestrator(
 
   const createTaskTool = tool(
     async ({ title, description: desc }) => {
-      const tasks = loadTasks()
       const id = genId()
-      tasks[id] = {
+      upsertTask(id, {
         id, title, description: desc, status: 'backlog',
         agentId: orchestrator.id, sessionId: null, result: null, error: null,
         comments: [], createdAt: Date.now(), updatedAt: Date.now(),
         queuedAt: null, startedAt: null, completedAt: null,
-      }
-      saveTasks(tasks)
+      })
       return `Task "${title}" created in backlog (id: ${id}).`
     },
     {
@@ -838,15 +837,19 @@ export async function resumeLangGraphOrchestrator(
         const tasks = loadTasks()
         for (const t of Object.values(tasks)) {
           if (t.pendingApproval?.threadId === threadId || t.id === threadId) {
-            t.pendingApproval = {
-              toolName: pendingCall.name || pendingCall.function?.name || 'unknown',
-              args: pendingCall.args || {},
-              threadId,
-            }
-            t.updatedAt = Date.now()
-            saveTasks(tasks)
+            const updated = patchTask(t.id, (current) => {
+              if (!current) return current
+              current.pendingApproval = {
+                toolName: pendingCall.name || pendingCall.function?.name || 'unknown',
+                args: pendingCall.args || {},
+                threadId,
+              }
+              current.updatedAt = Date.now()
+              return current
+            })
+            if (!updated) continue
             notify('tasks')
-            return `Waiting for approval: ${t.pendingApproval.toolName}`
+            return `Waiting for approval: ${updated.pendingApproval?.toolName}`
           }
         }
       }

@@ -88,12 +88,13 @@ test('handleWebhookPost creates a session, records success history, and triggers
     webhookId,
     {
       enqueueRun(input) {
-        calls.runs.push(input as Record<string, unknown>)
+        calls.runs.push(input as any)
         return {
           runId: 'run-success-smoke',
           position: 0,
           promise: Promise.resolve({} as never),
           abort: () => {},
+          unsubscribe: () => {},
         }
       },
       enqueueEvent(sessionId, text) {
@@ -166,6 +167,7 @@ test('handleWebhookPost ignores filtered events without dispatching or logging d
           position: 0,
           promise: Promise.resolve({} as never),
           abort: () => {},
+          unsubscribe: () => {},
         }
       },
       enqueueEvent() {},

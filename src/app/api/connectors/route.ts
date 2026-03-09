@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { loadConnectors, saveConnectors } from '@/lib/server/storage'
+import { loadConnectors, upsertStoredItem } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { ensureDaemonStarted } from '@/lib/server/daemon-state'
 import { ConnectorCreateSchema, formatZodError } from '@/lib/validation/schemas'
@@ -50,7 +50,6 @@ export async function POST(req: Request) {
     return NextResponse.json(formatZodError(parsed.error as z.ZodError), { status: 400 })
   }
   const body = parsed.data
-  const connectors = loadConnectors()
   const id = genId()
 
   const connector: Connector = {
@@ -68,8 +67,7 @@ export async function POST(req: Request) {
     updatedAt: Date.now(),
   }
 
-  connectors[id] = connector
-  saveConnectors(connectors)
+  upsertStoredItem('connectors', id, connector)
   notify('connectors')
 
   // Auto-start if connector has credentials (or is WhatsApp which uses QR)

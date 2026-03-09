@@ -35,8 +35,8 @@ function runWithTempDataDir(script: string) {
 describe('manage_connectors tool', () => {
   it('drops transient outbound-send args on create', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
       const storage = storageMod.default || storageMod
       const crud = crudMod.default || crudMod
 
@@ -84,8 +84,8 @@ describe('manage_connectors tool', () => {
 
   it('ignores send-like update payloads instead of mutating connector routing state', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
       const storage = storageMod.default || storageMod
       const crud = crudMod.default || crudMod
 

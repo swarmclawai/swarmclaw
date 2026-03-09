@@ -230,13 +230,13 @@ describe('Knowledge API contract', () => {
   // --- Route file structure -----------------------------------------------
   describe('route file exports', () => {
     it('knowledge/route.ts exports GET and POST', () => {
-      const src = readRoute('knowledge', 'route.ts')
+      const src = readRoute('knowledge', 'route')
       assert.match(src, /export\s+async\s+function\s+GET/)
       assert.match(src, /export\s+async\s+function\s+POST/)
     })
 
     it('knowledge/[id]/route.ts exports GET, PUT, DELETE', () => {
-      const src = readRoute('knowledge', '[id]', 'route.ts')
+      const src = readRoute('knowledge', '[id]', 'route')
       assert.match(src, /export\s+async\s+function\s+GET/)
       assert.match(src, /export\s+async\s+function\s+PUT/)
       assert.match(src, /export\s+async\s+function\s+DELETE/)
@@ -334,25 +334,25 @@ describe('MCP Server API contract', () => {
   // --- Route file structure -----------------------------------------------
   describe('route file exports', () => {
     it('mcp-servers/route.ts exports GET and POST', () => {
-      const src = readRoute('mcp-servers', 'route.ts')
+      const src = readRoute('mcp-servers', 'route')
       assert.match(src, /export\s+async\s+function\s+GET/)
       assert.match(src, /export\s+async\s+function\s+POST/)
     })
 
     it('mcp-servers/[id]/route.ts exports GET, PUT, DELETE', () => {
-      const src = readRoute('mcp-servers', '[id]', 'route.ts')
+      const src = readRoute('mcp-servers', '[id]', 'route')
       assert.match(src, /export\s+async\s+function\s+GET/)
       assert.match(src, /export\s+async\s+function\s+PUT/)
       assert.match(src, /export\s+async\s+function\s+DELETE/)
     })
 
     it('MCP POST route assigns an id via genId helper', () => {
-      const src = readRoute('mcp-servers', 'route.ts')
+      const src = readRoute('mcp-servers', 'route')
       assert.match(src, /const\s+id\s*=\s*genId\(/)
     })
 
     it('MCP PUT route preserves id and sets updatedAt via mutateItem', () => {
-      const src = readRoute('mcp-servers', '[id]', 'route.ts')
+      const src = readRoute('mcp-servers', '[id]', 'route')
       assert.match(src, /mutateItem\(/)
       assert.match(src, /updatedAt:\s*Date\.now\(\)/)
       assert.match(src, /\.\.\.server,\s*\.\.\.body,\s*id,/)

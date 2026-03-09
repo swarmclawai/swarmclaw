@@ -107,7 +107,7 @@ describe('memory tool knowledge actions (source verification)', () => {
   it('action enum in memory.ts includes the declared base actions', async () => {
     const fs = await import('fs')
     const src = fs.readFileSync(
-      new URL('./memory.ts', import.meta.url).pathname,
+      new URL('./memory', import.meta.url).pathname,
       'utf-8',
     )
 
@@ -127,7 +127,7 @@ describe('memory tool knowledge actions (source verification)', () => {
   it('action enum does not advertise removed knowledge actions', async () => {
     const fs = await import('fs')
     const src = fs.readFileSync(
-      new URL('./memory.ts', import.meta.url).pathname,
+      new URL('./memory', import.meta.url).pathname,
       'utf-8',
     )
 
@@ -142,7 +142,7 @@ describe('memory tool knowledge actions (source verification)', () => {
   it('declares the narrow OpenClaw-style memory tool names', async () => {
     const fs = await import('fs')
     const src = fs.readFileSync(
-      new URL('./memory.ts', import.meta.url).pathname,
+      new URL('./memory', import.meta.url).pathname,
       'utf-8',
     )
 
@@ -176,7 +176,7 @@ describe('MCP tool block type wiring', () => {
   it('index.ts source has MCP tool block gated on mcpServerIds', async () => {
     const fs = await import('fs')
     const src = fs.readFileSync(
-      new URL('./index.ts', import.meta.url).pathname,
+      new URL('./index', import.meta.url).pathname,
       'utf-8',
     )
     assert.ok(src.includes('mcpServerIds'), 'index.ts should reference mcpServerIds')
@@ -199,8 +199,8 @@ describe('context utility functions', () => {
 
   it('safePath allows valid paths', async () => {
     const { safePath } = await import('./context')
-    const result = safePath('/home/user/project', 'src/index.ts')
-    assert.equal(result, '/home/user/project/src/index.ts')
+    const result = safePath('/home/user/project', 'src/index')
+    assert.equal(result, '/home/user/project/src/index')
   })
 
   it('truncate respects max length', async () => {

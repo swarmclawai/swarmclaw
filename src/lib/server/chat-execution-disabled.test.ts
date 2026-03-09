@@ -35,13 +35,13 @@ function runWithTempDataDir(script: string) {
 
 test('executeSessionChatTurn persists a visible error for disabled agents', () => {
   const output = runWithTempDataDir(`
-    const storageMod = await import('./src/lib/server/storage.ts')
+    const storageMod = await import('./src/lib/server/storage')
     const storage = storageMod.default || storageMod['module.exports'] || storageMod
-    const threadMod = await import('./src/lib/server/agent-thread-session.ts')
+    const threadMod = await import('./src/lib/server/agent-thread-session')
     const ensureAgentThreadSession = threadMod.ensureAgentThreadSession
       || threadMod.default?.ensureAgentThreadSession
       || threadMod['module.exports']?.ensureAgentThreadSession
-    const execMod = await import('./src/lib/server/chat-execution.ts')
+    const execMod = await import('./src/lib/server/chat-execution')
     const executeSessionChatTurn = execMod.executeSessionChatTurn
       || execMod.default?.executeSessionChatTurn
       || execMod['module.exports']?.executeSessionChatTurn

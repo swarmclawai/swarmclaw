@@ -35,9 +35,9 @@ function runWithTempDataDir(script: string) {
 describe('chatroom synthetic session persistence', () => {
   it('reuses stored synthetic sessions and preserves delegate resume state', () => {
     const output = runWithTempDataDir(`
-      const helpersMod = await import('./src/lib/server/chatroom-helpers.ts')
+      const helpersMod = await import('./src/lib/server/chatroom-helpers')
       const helpers = helpersMod.default || helpersMod
-      const storageMod = await import('./src/lib/server/storage.ts')
+      const storageMod = await import('./src/lib/server/storage')
       const storage = storageMod.default || storageMod
       const now = Date.now()
       const agent = {

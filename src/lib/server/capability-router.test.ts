@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { routeTaskIntent } from './capability-router.ts'
+import { routeTaskIntent } from './capability-router'
 
 test('routeTaskIntent keeps recall-style prompts as general intent', () => {
   const decision = routeTaskIntent(

@@ -13,12 +13,14 @@ import os from 'os'
 import { spawnSync } from 'child_process'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import { saveInboundMediaBuffer, mimeFromPath, isImageMime, isAudioMime } from './media'
 import { isNoMessage, recordConnectorOutboundDelivery } from './manager'
 import { formatTextForWhatsApp } from './whatsapp-text'
+import { getWhatsAppApprovedSenderIds } from './pairing'
 
 import { DATA_DIR } from '../data-dir'
-import { loadConnectors } from '../storage'
+import { loadConnectors, loadSettings } from '../storage'
 
 const AUTH_DIR = path.join(DATA_DIR, 'whatsapp-auth')
 const INBOUND_DEDUPE_TTL_MS = 2 * 60 * 1000
@@ -29,11 +31,40 @@ const WHATSAPP_VOICE_NOTE_EXTS = new Set(['.ogg', '.opus'])
 
 let cachedFfmpegBinary: string | null | undefined
 
+type WhatsAppSocketState = {
+  ws?: {
+    isOpen?: boolean
+    isClosed?: boolean
+    isClosing?: boolean
+    isConnecting?: boolean
+  } | null
+} | null
+
 export function buildWhatsAppTextPayloads(text: string): Array<{ text: string; linkPreview: null }> {
   const chunks = text.length <= WHATSAPP_SINGLE_MESSAGE_MAX
     ? [text]
     : (text.match(new RegExp(`[\\s\\S]{1,${WHATSAPP_TEXT_CHUNK_MAX}}`, 'g')) || [text])
   return chunks.map((chunk) => ({ text: chunk, linkPreview: null }))
+}
+
+export function isWhatsAppSocketAlive(params: {
+  stopped: boolean
+  socket: WhatsAppSocketState
+  connectionState?: string | null
+}): boolean {
+  if (params.stopped) return false
+  if (!params.socket) return false
+
+  const ws = params.socket.ws
+  if (!ws) return false
+  if (params.connectionState === 'close') return false
+  if (ws.isClosed || ws.isClosing) return false
+  if (ws.isOpen || ws.isConnecting) return true
+  if (params.connectionState === 'open' || params.connectionState === 'connecting') return true
+
+  // Treat an existing socket with no explicit close signal as live while QR/auth
+  // negotiation is still in progress.
+  return params.connectionState == null
 }
 
 function normalizeMimeType(mimeType?: string): string {
@@ -169,6 +200,19 @@ function parseAllowedIdentifiers(raw: unknown): string[] | null {
   return out.length ? out : null
 }
 
+export function resolveWhatsAppAllowedIdentifiers(params: {
+  configuredAllowedJids?: unknown
+  settingsContacts?: unknown
+}): string[] | null {
+  const configured = parseAllowedIdentifiers(params.configuredAllowedJids)
+  if (!configured?.length) return null
+  const settings = getWhatsAppApprovedSenderIds(params.settingsContacts)
+    .map((entry) => normalizeWhatsAppIdentifier(entry))
+    .filter(Boolean)
+  const merged = Array.from(new Set([...configured, ...settings]))
+  return merged.length ? merged : null
+}
+
 function messageContextInfo(content: any): any {
   return content?.extendedTextMessage?.contextInfo
     || content?.imageMessage?.contextInfo
@@ -292,7 +336,26 @@ const whatsapp: PlatformConnector = {
     let sock: ReturnType<typeof makeWASocket> | null = null
     let stopped = false
     let socketGen = 0 // Track socket generation to ignore stale events
+    let connectionState: string | null = 'connecting'
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     const seenInboundMessageIds = new Map<string, number>()
+
+    const clearReconnectTimer = () => {
+      if (!reconnectTimer) return
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+
+    const scheduleReconnect = (delayMs: number) => {
+      if (stopped) return
+      clearReconnectTimer()
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        if (stopped) return
+        startSocket()
+      }, delayMs)
+      reconnectTimer.unref?.()
+    }
 
     const instance: ConnectorInstance = {
       connector,
@@ -300,13 +363,11 @@ const whatsapp: PlatformConnector = {
       authenticated: false,
       hasCredentials: hasStoredCreds(authDir),
       isAlive() {
-        if (stopped || !sock) return false
-        // Check the underlying WebSocket connection state
-        const ws = sock.ws
-        if (!ws) return false
-        // If authenticated, the connection is alive
-        // If we have a socket but not yet authenticated (QR phase), still considered alive
-        return !stopped
+        return isWhatsAppSocketAlive({
+          stopped,
+          socket: sock,
+          connectionState,
+        })
       },
       async sendMessage(channelId, text, options) {
         if (!sock) throw new Error('WhatsApp connector is not connected')
@@ -378,6 +439,8 @@ const whatsapp: PlatformConnector = {
       },
       async stop() {
         stopped = true
+        connectionState = 'close'
+        clearReconnectTimer()
         try { sock?.end(undefined) } catch { /* ignore */ }
         sock = null
         console.log(`[whatsapp] Stopped connector: ${connector.name}`)
@@ -388,6 +451,9 @@ const whatsapp: PlatformConnector = {
     const sentMessageIds = new Set<string>()
 
     const startSocket = () => {
+      if (stopped) return
+      clearReconnectTimer()
+
       // Close previous socket to prevent stale event handlers
       if (sock) {
         try { sock.ev.removeAllListeners('connection.update') } catch { /* ignore */ }
@@ -398,6 +464,7 @@ const whatsapp: PlatformConnector = {
       }
 
       const gen = ++socketGen // Capture generation for stale detection
+      connectionState = 'connecting'
       console.log(`[whatsapp] Starting socket gen=${gen} for ${connector.name} (hasCreds=${instance.hasCredentials})`)
 
       sock = makeWASocket({
@@ -416,6 +483,7 @@ const whatsapp: PlatformConnector = {
         if (gen !== socketGen) return // Ignore events from stale sockets
 
         const { connection, lastDisconnect, qr } = update
+        if (typeof connection === 'string' && connection) connectionState = connection
         console.log(`[whatsapp] Connection update gen=${gen}: connection=${connection}, hasQR=${!!qr}`)
 
         if (qr) {
@@ -444,16 +512,17 @@ const whatsapp: PlatformConnector = {
             if (!stopped) {
               // Recreate auth dir and state for fresh start
               fs.mkdirSync(authDir, { recursive: true })
-              setTimeout(startSocket, 1000)
+              scheduleReconnect(1000)
             }
           } else if (reason === 440) {
             // Conflict — another session replaced this one. Do NOT reconnect
             // (reconnecting would create a ping-pong loop with the other session)
             console.log(`[whatsapp] Session conflict (replaced by another connection) — stopping`)
             instance.authenticated = false
+            instance.onCrash?.('Session conflict — replaced by another connection')
           } else if (!stopped) {
             console.log(`[whatsapp] Reconnecting in 3s...`)
-            setTimeout(startSocket, 3000)
+            scheduleReconnect(3000)
           } else {
             console.log(`[whatsapp] Disconnected permanently`)
           }
@@ -518,7 +587,10 @@ const whatsapp: PlatformConnector = {
 
           const jid = msg.key.remoteJid || ''
           const latestConnector = (loadConnectors()[connector.id] as Connector | undefined) || connector
-          const allowedJids = parseAllowedIdentifiers(latestConnector.config?.allowedJids)
+          const allowedJids = resolveWhatsAppAllowedIdentifiers({
+            configuredAllowedJids: latestConnector.config?.allowedJids,
+            settingsContacts: loadSettings().whatsappApprovedContacts,
+          })
 
           // Match allowed JIDs using normalized numbers
           // Self-chat always passes the filter (it's the bot's own account)
@@ -580,18 +652,21 @@ const whatsapp: PlatformConnector = {
 
           try {
             await sock!.sendPresenceUpdate('composing', jid)
-            const response = await onMessage(inbound)
+            const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
             await sock!.sendPresenceUpdate('paused', jid)
 
-            if (!isNoMessage(response)) {
-              const sent = await instance.sendMessage?.(jid, response)
-              await recordConnectorOutboundDelivery({
-                connectorId: connector.id,
-                inbound,
-                messageId: sent?.messageId,
-                state: 'sent',
-              })
-            }
+            if (routeResult.managerHandled || routeResult.delivery === 'silent') continue
+
+            const response = routeResult.visibleText
+            if (isNoMessage(response)) continue
+
+            const sent = await instance.sendMessage?.(jid, response)
+            await recordConnectorOutboundDelivery({
+              connectorId: connector.id,
+              inbound,
+              messageId: sent?.messageId,
+              state: 'sent',
+            })
           } catch (err: any) {
             console.error(`[whatsapp] Error handling message:`, err.message)
             try {

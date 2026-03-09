@@ -3,7 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { DATA_DIR } from './data-dir'
 import { normalizeOpenClawAgentId } from '@/lib/openclaw-agent-id'
-import { loadSettings, loadAgents, saveAgents, loadSchedules, saveSchedules, loadCredentials, decryptKey, encryptKey } from './storage'
+import { loadSettings, loadAgents, upsertAgent, loadSchedules, upsertSchedules, loadCredentials, decryptKey, encryptKey } from './storage'
 import { getMemoryDb } from './memory-db'
 import type { AppSettings, MemoryEntry, Schedule } from '@/types'
 
@@ -239,8 +239,7 @@ export function pullAgentFromOpenClaw(agentId: string): { updated: string[] } {
 
   if (updated.length > 0) {
     agent.updatedAt = Date.now()
-    agents[agentId] = agent
-    saveAgents(agents)
+    upsertAgent(agentId, agent)
   }
 
   return { updated }
@@ -281,6 +280,7 @@ export function pullSchedulesFromOpenClaw(): { imported: number } {
   const schedules = loadSchedules() as Record<string, Schedule>
   const existingNames = new Set(Object.values(schedules).map((s) => `${s.name}|${s.cron}`))
   let imported = 0
+  const importedEntries: Array<[string, Schedule]> = []
 
   for (const job of raw) {
     if (!job.name || !job.cron) continue
@@ -288,7 +288,7 @@ export function pullSchedulesFromOpenClaw(): { imported: number } {
     if (existingNames.has(key)) continue
 
     const id = crypto.randomUUID()
-    schedules[id] = {
+    const schedule = {
       id,
       name: job.name,
       agentId: job.agentId || '',
@@ -298,11 +298,13 @@ export function pullSchedulesFromOpenClaw(): { imported: number } {
       status: 'active',
       createdAt: Date.now(),
     }
+    schedules[id] = schedule as any
+    importedEntries.push([id, schedule as any])
     existingNames.add(key)
     imported++
   }
 
-  if (imported > 0) saveSchedules(schedules)
+  if (importedEntries.length > 0) upsertSchedules(importedEntries)
   return { imported }
 }
 

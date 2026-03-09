@@ -5,7 +5,7 @@ import {
   isLocalOpenClawEndpoint,
   normalizeOpenClawEndpoint,
   normalizeProviderEndpoint,
-} from './openclaw-endpoint.ts'
+} from './openclaw-endpoint'
 
 test('normalizeOpenClawEndpoint handles ws/http/path variants', () => {
   assert.equal(

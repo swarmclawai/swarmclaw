@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { normalizeOpenClawEndpoint } from '@/lib/openclaw-endpoint'
-import { loadAgents, loadGatewayProfiles, saveAgents, saveGatewayProfiles } from '@/lib/server/storage'
+import { loadAgents, loadGatewayProfiles, saveGatewayProfiles, upsertAgent } from '@/lib/server/storage'
 import { mutateItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
 import type { Agent, AgentRoutingTarget, GatewayProfile, OpenClawDeploymentConfig, OpenClawGatewayStats } from '@/types'
 
@@ -109,11 +109,12 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   saveGatewayProfiles(gateways)
 
   const agents = loadAgents({ includeTrashed: true })
-  let agentChanged = false
+  const changedAgents: Agent[] = []
   for (const agent of Object.values(agents) as Agent[]) {
+    let changed = false
     if (agent.gatewayProfileId === id) {
       agent.gatewayProfileId = null
-      agentChanged = true
+      changed = true
     }
     if (Array.isArray(agent.routingTargets)) {
       const nextTargets = agent.routingTargets.map((target: AgentRoutingTarget) => (
@@ -123,11 +124,12 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
       ))
       if (JSON.stringify(nextTargets) !== JSON.stringify(agent.routingTargets)) {
         agent.routingTargets = nextTargets
-        agentChanged = true
+        changed = true
       }
     }
+    if (changed) changedAgents.push(agent)
   }
-  if (agentChanged) saveAgents(agents)
+  for (const agent of changedAgents) upsertAgent(agent.id, agent)
 
   return NextResponse.json({ ok: true })
 }

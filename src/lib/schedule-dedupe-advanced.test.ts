@@ -5,11 +5,11 @@ import {
   findEquivalentSchedules,
   getScheduleSignatureKey,
   type ScheduleLike,
-} from './schedule-dedupe.ts'
+} from './schedule-dedupe'
 import {
   isAgentCreatedSchedule,
   shouldAutoDeleteScheduleAfterTerminalRun,
-} from './schedule-origin.ts'
+} from './schedule-origin'
 import type { Schedule } from '@/types'
 
 function makeSchedule(partial?: Partial<ScheduleLike>): ScheduleLike {

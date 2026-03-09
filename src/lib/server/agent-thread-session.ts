@@ -3,7 +3,7 @@ import type { Agent, Session } from '@/types'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from './agent-runtime-config'
 import { isAgentDisabled } from './agent-availability'
 import { WORKSPACE_DIR } from './data-dir'
-import { loadAgents, loadSessions, saveAgents, saveSessions } from './storage'
+import { loadAgents, loadSessions, upsertStoredItem } from './storage'
 
 function buildEmptyDelegateResumeIds(): NonNullable<Session['delegateResumeIds']> {
   return {
@@ -105,8 +105,7 @@ export function ensureAgentThreadSession(agentId: string, user = 'default'): Ses
   const existingId = typeof agent.threadSessionId === 'string' ? agent.threadSessionId : ''
   if (existingId && sessions[existingId]) {
     const session = buildThreadSession(agent, existingId, user, now, sessions[existingId] as Session)
-    sessions[existingId] = session
-    saveSessions(sessions)
+    upsertStoredItem('sessions', existingId, session)
     return session
   }
 
@@ -118,10 +117,9 @@ export function ensureAgentThreadSession(agentId: string, user = 'default'): Ses
   if (legacySession) {
     agent.threadSessionId = legacySession.id
     agent.updatedAt = now
-    saveAgents(agents)
+    upsertStoredItem('agents', agentId, agent)
     const session = buildThreadSession(agent, legacySession.id, user, now, legacySession)
-    sessions[legacySession.id] = session
-    saveSessions(sessions)
+    upsertStoredItem('sessions', legacySession.id, session)
     return session
   }
 
@@ -129,11 +127,10 @@ export function ensureAgentThreadSession(agentId: string, user = 'default'): Ses
 
   const sessionId = `agent-chat-${agentId}-${genId()}`
   const session = buildThreadSession(agent, sessionId, user, now)
-  sessions[sessionId] = session
-  saveSessions(sessions)
+  upsertStoredItem('sessions', sessionId, session)
 
   agent.threadSessionId = sessionId
   agent.updatedAt = now
-  saveAgents(agents)
+  upsertStoredItem('agents', agentId, agent)
   return session
 }

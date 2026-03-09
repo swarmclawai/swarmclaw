@@ -110,9 +110,13 @@ async function main() {
   const argv = process.argv.slice(2)
   const top = argv[0]
 
-  // Route 'server' and 'update' subcommands to CJS scripts (no TS dependency).
+  // Route 'server', 'worker', and 'update' subcommands to CJS scripts (no TS dependency).
   if (top === 'server') {
     require('./server-cmd.js').main()
+    return
+  }
+  if (top === 'worker') {
+    require('./worker-cmd.js').main()
     return
   }
   if (top === 'update') {

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { DATA_DIR } from '../data-dir'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import {
   createGatewayRequestFrame,
   parseGatewayFrame,
@@ -960,7 +961,9 @@ const openclaw: PlatformConnector = {
       markRecentInbound(inbound, now)
 
       try {
-        const response = await onMessage(inbound)
+        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
+        const response = routeResult.visibleText
         if (!isNoMessage(response)) await sendChat(inbound.channelId, response)
       } catch (err: unknown) {
         const message = getErrorMessage(err)

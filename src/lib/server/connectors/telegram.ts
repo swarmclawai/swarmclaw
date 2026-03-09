@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundMediaType } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import { downloadInboundMediaToUpload, inferInboundMediaType, mimeFromPath, isImageMime, isAudioMime } from './media'
 import { getConnectorReplySendOptions, isNoMessage, recordConnectorOutboundDelivery } from './manager'
 
@@ -152,9 +153,9 @@ const telegram: PlatformConnector = {
 
       try {
         await ctx.api.sendChatAction(ctx.chat.id, 'typing')
-        const response = await onMessage(inbound)
-
-        if (isNoMessage(response)) return
+        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
+        const response = routeResult.visibleText
 
         const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
         const baseOptions: Record<string, unknown> = {}
@@ -195,19 +196,7 @@ const telegram: PlatformConnector = {
     // Track whether the bot is actively polling
     let botRunning = true
 
-    // Start polling — not awaited (runs in background)
-    bot.start({
-      allowed_updates: ['message', 'edited_message'],
-      onStart: (botInfo) => {
-        botUsername = botInfo.username || ''
-        console.log(`[telegram] Bot started as @${botInfo.username} — polling for updates`)
-      },
-    }).catch((err) => {
-      botRunning = false
-      console.error(`[telegram] Polling stopped with error:`, err.message || err)
-    })
-
-    return {
+    const instance: ConnectorInstance = {
       connector,
       isAlive() {
         return botRunning
@@ -293,6 +282,22 @@ const telegram: PlatformConnector = {
         console.log(`[telegram] Bot stopped`)
       },
     }
+
+    // Start polling — not awaited (runs in background)
+    bot.start({
+      allowed_updates: ['message', 'edited_message'],
+      onStart: (botInfo) => {
+        botUsername = botInfo.username || ''
+        console.log(`[telegram] Bot started as @${botInfo.username} — polling for updates`)
+      },
+    }).catch((err: unknown) => {
+      botRunning = false
+      const errMsg = err instanceof Error ? err.message : String(err)
+      console.error(`[telegram] Polling stopped with error:`, errMsg)
+      instance.onCrash?.(`Polling stopped: ${errMsg}`)
+    })
+
+    return instance
   },
 }
 

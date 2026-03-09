@@ -35,8 +35,8 @@ function runWithTempDataDir(script: string) {
 describe('runtime settings defaults', () => {
   it('backfills explicit runtime defaults for clean installs', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const runtimeMod = await import('./src/lib/server/runtime-settings.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const runtimeMod = await import('./src/lib/server/runtime-settings')
       const storage = storageMod.default || storageMod
       const runtime = runtimeMod.default || runtimeMod
       console.log(JSON.stringify({
@@ -68,8 +68,8 @@ describe('runtime settings defaults', () => {
 
   it('clamps invalid persisted runtime settings into the supported range', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const runtimeMod = await import('./src/lib/server/runtime-settings.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const runtimeMod = await import('./src/lib/server/runtime-settings')
       const storage = storageMod.default || storageMod
       const runtime = runtimeMod.default || runtimeMod
 

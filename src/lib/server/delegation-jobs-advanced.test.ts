@@ -275,7 +275,7 @@ describe('delegation-jobs-advanced', () => {
     // Kept: file-6..file-9 (4) + all batch2 (10) + all batch3 (10) = 24
     const first = afterBatch3.artifacts[0]
     assert.equal(first.type, 'file')
-    assert.equal(first.value, '/output/file-6.ts')
+    assert.equal(first.value, '/output/file-6')
 
     const last = afterBatch3.artifacts[23]
     assert.equal(last.type, 'image')

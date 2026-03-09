@@ -37,8 +37,8 @@ describe('manage_tasks tool', () => {
     const output = runWithTempDataDir(`
       import fs from 'node:fs'
       import path from 'node:path'
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
       const storage = storageMod.default || storageMod
       const crud = crudMod.default || crudMod
 

@@ -64,10 +64,10 @@ describe('local observability', () => {
   })
 
   it('detects localhost browser hosts', () => {
-    globalThis.window = { location: { hostname: 'localhost' } } as Window
+    globalThis.window = { location: { hostname: "localhost" } } as any
     assert.equal(isLocalhostBrowser(), true)
 
-    globalThis.window = { location: { hostname: 'swarmclaw.ai' } } as Window
+    globalThis.window = { location: { hostname: "swarmclaw.ai" } } as any
     assert.equal(isLocalhostBrowser(), false)
   })
 })

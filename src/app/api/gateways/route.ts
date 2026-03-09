@@ -79,7 +79,7 @@ export async function POST(req: Request) {
   const isDefault = body.isDefault === true
 
   if (isDefault) {
-    for (const gateway of Object.values(gateways) as Array<Record<string, unknown>>) {
+    for (const gateway of Object.values(gateways) as any[]) {
       gateway.isDefault = false
     }
   }

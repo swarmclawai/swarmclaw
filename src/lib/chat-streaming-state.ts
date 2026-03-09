@@ -21,13 +21,13 @@ function isStreamingAssistantMessage(
 
 export function shouldHidePersistedStreamingAssistantMessage(
   message: Message,
-  opts: { localStreaming: boolean; displayText: string },
+  opts: { localStreaming: boolean; hasLiveArtifacts: boolean },
 ): boolean {
   return (
     opts.localStreaming
     && message.role === 'assistant'
     && message.streaming === true
-    && opts.displayText.trim().length > 0
+    && opts.hasLiveArtifacts
   )
 }
 

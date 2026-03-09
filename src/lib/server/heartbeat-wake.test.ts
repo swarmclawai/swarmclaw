@@ -4,6 +4,7 @@ import { afterEach, describe, it } from 'node:test'
 import {
   buildHeartbeatWakePrompt,
   buildWakeTriggerContext,
+  deriveHeartbeatWakeDeliveryMode,
   hasPendingHeartbeatWake,
   mergeHeartbeatWakeRequest,
   requestHeartbeatNow,
@@ -108,5 +109,23 @@ describe('heartbeat-wake helpers', () => {
       [...wakes[0].events.map((event) => event.reason)].sort(),
       ['connector-message', 'watch_job'],
     )
+  })
+
+  it('forces connector-triggered wakes into tool-only delivery mode', () => {
+    const connectorWake = mergeHeartbeatWakeRequest(undefined, {
+      sessionId: 'sess-3',
+      reason: 'connector-message',
+      source: 'connector:whatsapp',
+      requestedAt: 1,
+    })
+    const scheduleWake = mergeHeartbeatWakeRequest(undefined, {
+      sessionId: 'sess-4',
+      reason: 'schedule',
+      source: 'schedule:daily',
+      requestedAt: 1,
+    })
+
+    assert.equal(deriveHeartbeatWakeDeliveryMode(connectorWake.events), 'tool_only')
+    assert.equal(deriveHeartbeatWakeDeliveryMode(scheduleWake.events), 'default')
   })
 })

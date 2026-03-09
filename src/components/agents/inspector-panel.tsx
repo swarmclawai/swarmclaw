@@ -65,7 +65,7 @@ export function InspectorPanel({ agent, onEditAgent, onClearHistory, onDeleteAge
     if (!visibleTabs.find((t) => t.id === inspectorTab)) {
       setInspectorTab('overview')
     }
-  }, [isOpenClaw]) // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpenClaw])  
 
   // Close on Escape
   useEffect(() => {

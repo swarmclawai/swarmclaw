@@ -53,7 +53,7 @@ describe('plugin install helpers', () => {
     assert.equal(sanitizePluginFilename('plugin.js'), 'plugin.js')
     assert.equal(sanitizePluginFilename('plugin.mjs'), 'plugin.mjs')
     assert.throws(() => sanitizePluginFilename('../plugin.js'), /Invalid filename/)
-    assert.throws(() => sanitizePluginFilename('plugin.ts'), /Filename must end/)
+    assert.throws(() => sanitizePluginFilename('plugin'), /Filename must end/)
   })
 })
 

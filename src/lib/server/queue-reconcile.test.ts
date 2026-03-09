@@ -36,8 +36,8 @@ function runWithTempDataDir(script: string) {
 describe('reconcileFinishedRunningTasks', () => {
   it('finalizes a completed one-off scheduled task from its finished session and deletes the schedule', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const queueMod = await import('./src/lib/server/queue.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const queueMod = await import('./src/lib/server/queue')
       const storage = storageMod.default || storageMod
       const queue = queueMod.default || queueMod
 

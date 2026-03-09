@@ -14,9 +14,8 @@ type DeleteWebhookResponse = { ok: boolean } | { error: string }
 
 const inputClass = 'w-full px-4 py-3 rounded-[14px] bg-bg border border-white/[0.06] text-text text-[14px] outline-none focus:border-accent-bright/40 transition-colors placeholder:text-text-3/70'
 
-function webhookUrl(id: string): string {
-  if (typeof window === 'undefined') return `/api/webhooks/${id}`
-  return `${window.location.origin}/api/webhooks/${id}`
+function webhookPath(id: string): string {
+  return `/api/webhooks/${id}`
 }
 
 function parseEvents(input: string): string[] {
@@ -66,7 +65,7 @@ export function WebhookSheet() {
   const [deleting, setDeleting] = useState(false)
 
   const editing = editingId ? (webhooks[editingId] as Webhook | undefined) : null
-  const endpoint = editing ? webhookUrl(editing.id) : ''
+  const endpoint = editing ? webhookPath(editing.id) : ''
   const eligibleAgents = useMemo(
     () => Object.values(agents),
     [agents]
@@ -264,7 +263,7 @@ export function WebhookSheet() {
                 className={`${inputClass} font-mono text-[12px]`}
               />
               <button
-                onClick={() => copyText('endpoint', endpoint)}
+                onClick={() => copyText('endpoint', `${window.location.origin}${endpoint}`)}
                 className="px-3.5 py-2 rounded-[10px] border border-accent-bright/20 bg-accent-soft/40 text-accent-bright text-[12px] font-600 cursor-pointer hover:bg-accent-soft transition-colors"
                 style={{ fontFamily: 'inherit' }}
               >

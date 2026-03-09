@@ -122,7 +122,7 @@ describe('wallet tool generic execution', () => {
     assert.equal(result.action, 'sign_message')
 
     const approvals = storage.loadApprovals()
-    const pending = Object.values(approvals).find((approval) => approval.category === 'wallet_action')
+    const pending: any = Object.values(approvals).find((approval: any) => approval.category === 'wallet_action')
     assert.ok(pending)
     assert.equal(pending?.status, 'pending')
   })
@@ -147,7 +147,7 @@ describe('wallet tool generic execution', () => {
     assert.equal(approvalRequest.type, 'plugin_wallet_action_request')
 
     const approvals = storage.loadApprovals()
-    const pending = approvalRequest.approvalId ? approvals[approvalRequest.approvalId] : undefined
+    const pending: any = approvalRequest.approvalId ? approvals[approvalRequest.approvalId] : undefined
     assert.ok(pending)
     storage.upsertApproval(pending!.id, {
       ...pending,
@@ -243,7 +243,7 @@ describe('wallet tool generic execution', () => {
     assert.equal(approvalRequest.action, 'swap')
 
     const approvals = storage.loadApprovals()
-    const pending = approvalRequest.approvalId ? approvals[approvalRequest.approvalId] : undefined
+    const pending: any = approvalRequest.approvalId ? approvals[approvalRequest.approvalId] : undefined
     assert.ok(pending)
     assert.equal(pending?.status, 'pending')
     assert.equal(String(pending?.data.amountAtomic), '1000000')

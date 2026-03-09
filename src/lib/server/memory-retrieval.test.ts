@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { MemoryEntry } from '@/types'
-import { filterMemoriesByScope, normalizeMemoryScopeMode } from './memory-db.ts'
+import { filterMemoriesByScope, normalizeMemoryScopeMode } from './memory-db'
 
 function makeEntry(id: string, patch: Partial<MemoryEntry> = {}): MemoryEntry {
   return {

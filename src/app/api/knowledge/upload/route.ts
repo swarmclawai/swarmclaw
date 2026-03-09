@@ -7,7 +7,7 @@ import { UPLOAD_DIR } from '@/lib/server/storage'
 const TEXT_EXTS = new Set([
   '.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.jsonl',
   '.html', '.htm', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg',
-  '.js', '.ts', '.tsx', '.jsx', '.py', '.go', '.rs', '.java', '.c', '.cpp', '.h',
+  '.js', '', '.tsx', '.jsx', '.py', '.go', '.rs', '.java', '.c', '.cpp', '.h',
   '.rb', '.php', '.sh', '.bash', '.zsh', '.sql', '.r', '.swift', '.kt',
   '.env', '.log', '.conf', '.properties', '.gitignore', '.dockerignore',
 ])

@@ -5,7 +5,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { describe, it } from 'node:test'
 
-import { stripMainLoopMetaForPersistence } from './main-agent-loop.ts'
+import { stripMainLoopMetaForPersistence } from './main-agent-loop'
 
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..')
 
@@ -43,9 +43,9 @@ function runWithTempDataDir(script: string) {
 /** Shared setup script that creates one agent and one heartbeat-enabled main session */
 function sessionSetupScript(sessionOverrides?: string, extraSessions?: string): string {
   return `
-    const storageMod = await import('./src/lib/server/storage.ts')
+    const storageMod = await import('./src/lib/server/storage')
     const storage = storageMod.default || storageMod['module.exports'] || storageMod
-    const mainLoopMod = await import('./src/lib/server/main-agent-loop.ts')
+    const mainLoopMod = await import('./src/lib/server/main-agent-loop')
     const mainLoop = mainLoopMod.default || mainLoopMod['module.exports'] || mainLoopMod
 
     storage.saveAgents({

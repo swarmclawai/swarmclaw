@@ -14,9 +14,9 @@ function withDerivedStatus(record: ExternalAgentRuntime): ExternalAgentRuntime {
   if (!lastSeenAt) return { ...record, status: record.status || 'offline' }
   if (record.status === 'offline') return record
   const gateways = loadGatewayProfiles()
-  const gateway = record.gatewayProfileId ? gateways[record.gatewayProfileId] as Record<string, unknown> | undefined : undefined
+  const gateway = record.gatewayProfileId ? gateways[record.gatewayProfileId] as any : undefined
   const gatewayTags = Array.isArray(gateway?.tags)
-    ? gateway?.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+    ? (gateway as any)?.tags?.filter((tag: any): tag is string => typeof tag === 'string' && tag.trim().length > 0)
     : []
   const gatewayUseCase = gateway?.deployment && typeof gateway.deployment === 'object' && typeof (gateway.deployment as Record<string, unknown>).useCase === 'string'
     ? (gateway.deployment as Record<string, unknown>).useCase as string

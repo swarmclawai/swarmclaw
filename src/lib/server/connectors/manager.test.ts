@@ -67,9 +67,9 @@ describe('sanitizeConnectorOutboundContent', () => {
 
   it('mirrors direct WhatsApp inbound and assistant replies into the session transcript', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const managerMod = await import('./src/lib/server/connectors/manager.ts')
-      const providersMod = await import('./src/lib/providers/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const providers = providersMod.default || providersMod
@@ -169,11 +169,114 @@ describe('sanitizeConnectorOutboundContent', () => {
     assert.equal(output.mainSession.messages[1].historyExcluded, true)
   })
 
+  it('queues connector heartbeat wakes on the agent thread session and records the system event there', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
+      const heartbeatMod = await import('./src/lib/server/heartbeat-wake')
+      const systemEventsMod = await import('./src/lib/server/system-events')
+      const storage = storageMod.default || storageMod
+      const manager = managerMod.default || managerMod
+      const providers = providersMod.default || providersMod
+      const heartbeat = heartbeatMod.default || heartbeatMod
+      const systemEvents = systemEventsMod.default || systemEventsMod
+
+      const now = Date.now()
+      heartbeat.resetHeartbeatWakeStateForTests()
+      providers.PROVIDERS['test-provider'] = {
+        id: 'test-provider',
+        name: 'Test Provider',
+        models: ['test-model'],
+        requiresApiKey: false,
+        requiresEndpoint: false,
+        handler: {
+          streamChat: async (opts) => {
+            opts.write('data: ' + JSON.stringify({ t: 'r', text: 'Heartbeat target check' }) + '\\n')
+            return ''
+          },
+        },
+      }
+
+      storage.saveSettings({})
+      storage.saveAgents({
+        agent_1: {
+          id: 'agent_1',
+          name: 'Molly',
+          provider: 'test-provider',
+          model: 'test-model',
+          plugins: [],
+          threadSessionId: 'agent_thread',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveConnectors({
+        conn_1: {
+          id: 'conn_1',
+          name: 'WhatsApp',
+          platform: 'whatsapp',
+          agentId: 'agent_1',
+          credentialId: null,
+          config: { inboundDebounceMs: 0 },
+          isEnabled: true,
+          status: 'running',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveSessions({
+        agent_thread: {
+          id: 'agent_thread',
+          name: 'Molly',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'default',
+          provider: 'test-provider',
+          model: 'test-model',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'agent_1',
+          plugins: [],
+        },
+      })
+
+      const connector = storage.loadConnectors().conn_1
+      await manager.routeConnectorMessageForTest(connector, {
+        platform: 'whatsapp',
+        channelId: '15550001111@s.whatsapp.net',
+        senderId: '15550001111@s.whatsapp.net',
+        senderName: 'Alice',
+        text: 'Did you get this?',
+        messageId: 'in-thread-target',
+        isGroup: false,
+      })
+
+      const sessions = storage.loadSessions()
+      const directSession = Object.values(sessions).find((entry) => entry.id !== 'agent_thread')
+      console.log(JSON.stringify({
+        wake: heartbeat.snapshotPendingHeartbeatWakesForTests()[0] || null,
+        threadEvents: systemEvents.peekSystemEvents('agent_thread'),
+        directEvents: directSession ? systemEvents.peekSystemEvents(directSession.id) : [],
+        directSessionId: directSession?.id || null,
+      }))
+    `)
+
+    assert.equal(output.wake.sessionId, 'agent_thread')
+    assert.equal(output.wake.agentId, 'agent_1')
+    assert.equal(output.threadEvents.length, 1)
+    assert.match(output.threadEvents[0].text, /Inbound message from whatsapp: Did you get this\?/i)
+    assert.equal(output.directEvents.length, 0)
+    assert.ok(output.directSessionId)
+  })
+
   it('mirrors same-channel connector_message_tool sends when the agent suppresses visible text', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const managerMod = await import('./src/lib/server/connectors/manager.ts')
-      const providersMod = await import('./src/lib/providers/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const providers = providersMod.default || providersMod
@@ -276,14 +379,14 @@ describe('sanitizeConnectorOutboundContent', () => {
     assert.equal(output.directSession.messages[1].source.messageId, 'wa-out-1')
     assert.equal(output.directSession.connectorContext.lastOutboundMessageId, 'wa-out-1')
     assert.equal(output.mainSession.messages.length, 2)
-    assert.equal(output.mainSession.messages.every((entry) => entry.historyExcluded === true), true)
+    assert.equal(output.mainSession.messages.every((entry: any) => entry.historyExcluded === true), true)
   })
 
   it('accepts WhatsApp allowlist matches through senderIdAlt when the primary sender id is a lid', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const managerMod = await import('./src/lib/server/connectors/manager.ts')
-      const providersMod = await import('./src/lib/providers/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const providers = providersMod.default || providersMod
@@ -357,14 +460,114 @@ describe('sanitizeConnectorOutboundContent', () => {
     assert.equal(output.session.messages[0].source.messageId, 'in-3')
   })
 
+  it('reuses the same direct WhatsApp session when a contact flips from lid to phone jid', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
+      const storage = storageMod.default || storageMod
+      const manager = managerMod.default || managerMod
+      const providers = providersMod.default || providersMod
+
+      const now = Date.now()
+      providers.PROVIDERS['test-provider'] = {
+        id: 'test-provider',
+        name: 'Test Provider',
+        models: ['test-model'],
+        requiresApiKey: false,
+        requiresEndpoint: false,
+        handler: {
+          streamChat: async (opts) => {
+            opts.write('data: ' + JSON.stringify({ t: 'r', text: 'Reply: ' + String(opts.message || '').slice(0, 32) }) + '\\n')
+            return ''
+          },
+        },
+      }
+
+      storage.saveSettings({})
+      storage.saveAgents({
+        agent_1: {
+          id: 'agent_1',
+          name: 'Molly',
+          provider: 'test-provider',
+          model: 'test-model',
+          plugins: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveConnectors({
+        conn_1: {
+          id: 'conn_1',
+          name: 'WhatsApp',
+          platform: 'whatsapp',
+          agentId: 'agent_1',
+          credentialId: null,
+          config: { inboundDebounceMs: 0 },
+          isEnabled: true,
+          status: 'running',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveSessions({})
+
+      const connector = storage.loadConnectors().conn_1
+      await manager.routeConnectorMessageForTest(connector, {
+        platform: 'whatsapp',
+        channelId: '199900000001@lid',
+        channelIdAlt: '15550001111@s.whatsapp.net',
+        senderId: '199900000001@lid',
+        senderIdAlt: '15550001111@s.whatsapp.net',
+        senderName: 'Alice',
+        text: 'First lid message',
+        messageId: 'in-lid',
+        isGroup: false,
+      })
+      await manager.routeConnectorMessageForTest(connector, {
+        platform: 'whatsapp',
+        channelId: '15550001111@s.whatsapp.net',
+        senderId: '15550001111@s.whatsapp.net',
+        senderName: 'Alice',
+        text: 'Second phone-jid message',
+        messageId: 'in-phone',
+        isGroup: false,
+      })
+
+      const directSessions = Object.values(storage.loadSessions())
+        .filter((entry) => String(entry.name || '').startsWith('connector:'))
+        .map((entry) => ({
+          id: entry.id,
+          name: entry.name,
+          connectorContext: entry.connectorContext,
+          messages: entry.messages.map((message) => ({
+            role: message.role,
+            text: message.text,
+            source: message.source || null,
+          })),
+        }))
+      console.log(JSON.stringify({ directSessions }))
+    `)
+
+    assert.equal(output.directSessions.length, 1)
+    assert.equal(output.directSessions[0].messages.length, 4)
+    assert.equal(output.directSessions[0].connectorContext.channelId, '15550001111@s.whatsapp.net')
+    assert.equal(output.directSessions[0].connectorContext.channelIdAlt, '15550001111@s.whatsapp.net')
+    assert.equal(output.directSessions[0].connectorContext.senderIdAlt, '15550001111@s.whatsapp.net')
+    assert.deepEqual(
+      output.directSessions[0].messages.filter((message: { role: string }) => message.role === 'user').map((message: { source: { channelId?: string | null } | null }) => message.source?.channelId),
+      ['199900000001@lid', '15550001111@s.whatsapp.net'],
+    )
+  })
+
   it('routes send_voice_note to the current connector conversation when an audio file already exists', () => {
     const output = runWithTempDataDir(`
       const fs = await import('node:fs')
       const path = await import('node:path')
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const managerMod = await import('./src/lib/server/connectors/manager.ts')
-      const pluginsMod = await import('./src/lib/server/plugins.ts')
-      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const pluginsMod = await import('./src/lib/server/plugins')
+      const toolsMod = await import('./src/lib/server/session-tools/index')
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const plugins = pluginsMod.default || pluginsMod
@@ -483,9 +686,9 @@ describe('sanitizeConnectorOutboundContent', () => {
 
   it('restarts a stale connector automatically when an outbound send fails with connection closed', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const managerMod = await import('./src/lib/server/connectors/manager.ts')
-      const pluginsMod = await import('./src/lib/server/plugins.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const pluginsMod = await import('./src/lib/server/plugins')
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const plugins = pluginsMod.default || pluginsMod
@@ -551,10 +754,10 @@ describe('sanitizeConnectorOutboundContent', () => {
     const output = runWithTempDataDir(`
       const fs = await import('node:fs')
       const path = await import('node:path')
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const managerMod = await import('./src/lib/server/connectors/manager.ts')
-      const pluginsMod = await import('./src/lib/server/plugins.ts')
-      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const pluginsMod = await import('./src/lib/server/plugins')
+      const toolsMod = await import('./src/lib/server/session-tools/index')
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const plugins = pluginsMod.default || pluginsMod
@@ -675,9 +878,9 @@ describe('sanitizeConnectorOutboundContent', () => {
 
   it('keeps direct connector sessions isolated across four inbound senders for the same agent and mirrors their metadata into the main thread', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const managerMod = await import('./src/lib/server/connectors/manager.ts')
-      const providersMod = await import('./src/lib/providers/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const providers = providersMod.default || providersMod
@@ -777,17 +980,17 @@ describe('sanitizeConnectorOutboundContent', () => {
     `)
 
     assert.equal(output.directSessions.length, 4)
-    assert.deepEqual(output.directSessions.map((entry) => entry.senderName), ['Alice', 'Bob', 'Gran', 'Wayde'])
-    assert.equal(output.directSessions.every((entry) => entry.texts.length === 2), true)
-    assert.equal(output.directSessions.every((entry) => entry.texts[0].source?.senderName === entry.senderName), true)
-    assert.equal(output.directSessions.every((entry) => entry.texts[1].text === `Replying to ${entry.senderName}`), true)
+    assert.deepEqual(output.directSessions.map((entry: any) => entry.senderName), ['Alice', 'Bob', 'Gran', 'Wayde'])
+    assert.equal(output.directSessions.every((entry: any) => entry.texts.length === 2), true)
+    assert.equal(output.directSessions.every((entry: any) => entry.texts[0].source?.senderName === entry.senderName), true)
+    assert.equal(output.directSessions.every((entry: any) => entry.texts[1].text === `Replying to ${entry.senderName}`), true)
     assert.equal(output.threadMessages.length, 8)
     assert.deepEqual(
-      output.threadMessages.filter((msg) => msg.role === 'user').map((msg) => msg.source?.senderName),
+      output.threadMessages.filter((msg: any) => msg.role === 'user').map((msg: any) => msg.source?.senderName),
       ['Alice', 'Bob', 'Gran', 'Wayde'],
     )
     assert.deepEqual(
-      output.threadMessages.filter((msg) => msg.role === 'assistant').map((msg) => ({
+      output.threadMessages.filter((msg: any) => msg.role === 'assistant').map((msg: any) => ({
         text: msg.text,
         senderName: msg.source?.senderName,
         connectorId: msg.source?.connectorId,
@@ -799,15 +1002,15 @@ describe('sanitizeConnectorOutboundContent', () => {
         { text: 'Replying to Wayde', senderName: 'Wayde', connectorId: 'conn_1' },
       ],
     )
-    assert.equal(output.threadMessages.every((msg) => msg.historyExcluded === true), true)
+    assert.equal(output.threadMessages.every((msg: any) => msg.historyExcluded === true), true)
   })
 
   it('excludes mirrored connector transcript entries from direct agent-thread history', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const managerMod = await import('./src/lib/server/connectors/manager.ts')
-      const chatExecMod = await import('./src/lib/server/chat-execution.ts')
-      const providersMod = await import('./src/lib/providers/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const chatExecMod = await import('./src/lib/server/chat-execution')
+      const providersMod = await import('./src/lib/providers/index')
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const chatExec = chatExecMod.default || chatExecMod
@@ -911,18 +1114,18 @@ describe('sanitizeConnectorOutboundContent', () => {
 
     assert.equal(output.reply.senderNames.includes('Alice'), false)
     assert.equal(output.reply.senderNames.includes('Gran'), false)
-    assert.equal(output.reply.texts.some((entry) => /Alice|Gran/.test(String(entry))), false)
+    assert.equal(output.reply.texts.some((entry: any) => /Alice|Gran/.test(String(entry))), false)
     assert.equal(output.reply.historyCount >= 1, true)
-    assert.equal(output.threadMessages.some((msg) => msg.historyExcluded === true && msg.source?.connectorId === 'conn_1'), true)
+    assert.equal(output.threadMessages.some((msg: any) => msg.historyExcluded === true && msg.source?.connectorId === 'conn_1'), true)
   })
 
   it('creates one reusable connector-sender approval for unknown allowlist senders and allows them after approval', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const managerMod = await import('./src/lib/server/connectors/manager.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
-      const pairingMod = await import('./src/lib/server/connectors/pairing.ts')
-      const providersMod = await import('./src/lib/providers/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const approvalsMod = await import('./src/lib/server/approvals')
+      const pairingMod = await import('./src/lib/server/connectors/pairing')
+      const providersMod = await import('./src/lib/providers/index')
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const approvals = approvalsMod.default || approvalsMod
@@ -1041,14 +1244,116 @@ describe('sanitizeConnectorOutboundContent', () => {
     assert.equal(output.third, 'Approved hello to Bob')
     assert.equal(output.approvalsAfter.length, 1)
     assert.equal(output.approvalsAfter[0].status, 'approved')
-    assert.equal(output.threadMessages.some((msg) => msg.source?.senderName === 'Bob' && msg.historyExcluded === true), true)
+    assert.equal(output.threadMessages.some((msg: any) => msg.source?.senderName === 'Bob' && msg.historyExcluded === true), true)
+  })
+
+  it('allows WhatsApp senders listed in global settings without creating connector approvals', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
+      const storage = storageMod.default || storageMod
+      const manager = managerMod.default || managerMod
+      const providers = providersMod.default || providersMod
+
+      const now = Date.now()
+      providers.PROVIDERS['test-provider'] = {
+        id: 'test-provider',
+        name: 'Test Provider',
+        models: ['test-model'],
+        requiresApiKey: false,
+        requiresEndpoint: false,
+        handler: {
+          streamChat: async (opts) => {
+            opts.write('data: ' + JSON.stringify({ t: 'r', text: 'Approved hello to Bob' }) + '\\n')
+            return ''
+          },
+        },
+      }
+
+      storage.saveSettings({
+        approvalsEnabled: true,
+        whatsappApprovedContacts: [
+          { id: 'family', label: 'Family', phone: '+16660002222' },
+        ],
+      })
+      storage.saveAgents({
+        agent_1: {
+          id: 'agent_1',
+          name: 'Molly',
+          provider: 'test-provider',
+          model: 'test-model',
+          plugins: [],
+          threadSessionId: 'agent_thread',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveConnectors({
+        conn_1: {
+          id: 'conn_1',
+          name: 'WhatsApp',
+          platform: 'whatsapp',
+          agentId: 'agent_1',
+          credentialId: null,
+          config: {
+            inboundDebounceMs: 0,
+            dmPolicy: 'allowlist',
+            allowFrom: '15550001111',
+          },
+          isEnabled: true,
+          status: 'running',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveSessions({
+        agent_thread: {
+          id: 'agent_thread',
+          name: 'Molly',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'default',
+          provider: 'test-provider',
+          model: 'test-model',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'agent_1',
+          plugins: [],
+        },
+      })
+
+      const connector = storage.loadConnectors().conn_1
+      const reply = await manager.routeConnectorMessageForTest(connector, {
+        platform: 'whatsapp',
+        channelId: '16660002222@s.whatsapp.net',
+        senderId: '16660002222@s.whatsapp.net',
+        senderName: 'Bob',
+        text: 'Hello from approved settings contact',
+        messageId: 'in-b-settings',
+        isGroup: false,
+      })
+      const approvals = Object.values(storage.loadApprovals())
+      const thread = storage.loadSessions().agent_thread
+      console.log(JSON.stringify({
+        reply,
+        approvals,
+        threadMessages: thread.messages,
+      }))
+    `)
+
+    assert.equal(output.reply, 'Approved hello to Bob')
+    assert.equal(output.approvals.length, 0)
+    assert.equal(output.threadMessages.some((msg: any) => msg.source?.senderName === 'Bob' && msg.historyExcluded === true), true)
   })
 
   it('returns a friendly retry message instead of blank no-response when connector chat aborts', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const managerMod = await import('./src/lib/server/connectors/manager.ts')
-      const providersMod = await import('./src/lib/providers/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const providers = providersMod.default || providersMod

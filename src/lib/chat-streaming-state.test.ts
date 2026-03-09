@@ -20,11 +20,11 @@ describe('chat-streaming-state', () => {
     }
 
     assert.equal(
-      shouldHidePersistedStreamingAssistantMessage(message, { localStreaming: true, displayText: 'live text' }),
+      shouldHidePersistedStreamingAssistantMessage(message, { localStreaming: true, hasLiveArtifacts: true }),
       true,
     )
     assert.equal(
-      shouldHidePersistedStreamingAssistantMessage(message, { localStreaming: true, displayText: '' }),
+      shouldHidePersistedStreamingAssistantMessage(message, { localStreaming: true, hasLiveArtifacts: false }),
       false,
     )
   })

@@ -34,9 +34,9 @@ function runWithTempDataDir(script: string) {
 
 test('GET and POST /api/approvals smoke the pending approval flow end-to-end', () => {
   const output = runWithTempDataDir(`
-    const storageMod = await import('./src/lib/server/storage.ts')
-    const approvalsMod = await import('./src/lib/server/approvals.ts')
-    const routeMod = await import('./src/app/api/approvals/route.ts')
+    const storageMod = await import('./src/lib/server/storage')
+    const approvalsMod = await import('./src/lib/server/approvals')
+    const routeMod = await import('./src/app/api/approvals/route')
     const storage = storageMod.default || storageMod
     const approvals = approvalsMod.default || approvalsMod
     const route = routeMod.default || routeMod
@@ -88,9 +88,9 @@ test('GET and POST /api/approvals smoke the pending approval flow end-to-end', (
 
 test('POST /api/approvals rejects invalid payloads and remains idempotent for repeated decisions', () => {
   const output = runWithTempDataDir(`
-    const storageMod = await import('./src/lib/server/storage.ts')
-    const approvalsMod = await import('./src/lib/server/approvals.ts')
-    const routeMod = await import('./src/app/api/approvals/route.ts')
+    const storageMod = await import('./src/lib/server/storage')
+    const approvalsMod = await import('./src/lib/server/approvals')
+    const routeMod = await import('./src/app/api/approvals/route')
     const storage = storageMod.default || storageMod
     const approvals = approvalsMod.default || approvalsMod
     const route = routeMod.default || routeMod

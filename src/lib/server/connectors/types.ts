@@ -68,6 +68,34 @@ export interface OutboundTypingOptions {
   threadId?: string
 }
 
+export interface ConnectorRouteResult {
+  managerHandled: boolean
+  visibleText: string
+  delivery: 'sent' | 'silent'
+  messageId?: string
+}
+
+export type ConnectorIngressResult = string | ConnectorRouteResult
+
+export function isConnectorRouteResult(value: unknown): value is ConnectorRouteResult {
+  return !!value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof (value as ConnectorRouteResult).managerHandled === 'boolean'
+    && typeof (value as ConnectorRouteResult).visibleText === 'string'
+}
+
+export function normalizeConnectorIngressResult(value: ConnectorIngressResult): ConnectorRouteResult {
+  if (isConnectorRouteResult(value)) return value
+  const visibleText = typeof value === 'string' ? value : ''
+  const normalized = visibleText.trim().toUpperCase()
+  return {
+    managerHandled: false,
+    visibleText,
+    delivery: normalized && normalized !== 'NO_MESSAGE' ? 'sent' : 'silent',
+  }
+}
+
 /** A running connector instance */
 export interface ConnectorInstance {
   connector: Connector
@@ -96,6 +124,8 @@ export interface ConnectorInstance {
   sendTyping?: (channelId: string, options?: OutboundTypingOptions) => Promise<void>
   /** Health check: returns true if the underlying connection is alive */
   isAlive?: () => boolean
+  /** Called by the platform when the connection dies terminally (no internal retry) */
+  onCrash?: (error: string) => void
 }
 
 /** Platform-specific connector implementation */
@@ -103,6 +133,6 @@ export interface PlatformConnector {
   start(
     connector: Connector,
     botToken: string,
-    onMessage: (msg: InboundMessage) => Promise<string>,
+    onMessage: (msg: InboundMessage) => Promise<ConnectorIngressResult>,
   ): Promise<ConnectorInstance>
 }

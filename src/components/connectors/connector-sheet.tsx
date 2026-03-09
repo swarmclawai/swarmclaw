@@ -489,6 +489,7 @@ export function ConnectorSheet() {
   const connectors = useAppStore((s) => s.connectors)
   const loadConnectors = useAppStore((s) => s.loadConnectors)
   const agents = useAppStore((s) => s.agents)
+  const appSettings = useAppStore((s) => s.appSettings)
   const credentials = useAppStore((s) => s.credentials)
   const loadAgents = useAppStore((s) => s.loadAgents)
   const loadCredentials = useAppStore((s) => s.loadCredentials)
@@ -520,6 +521,10 @@ export function ConnectorSheet() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmWhatsAppAction, setConfirmWhatsAppAction] = useState<'unlink' | 'repair' | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const localAllowlistCount = config.allowFrom ? config.allowFrom.split(',').map((entry) => entry.trim()).filter(Boolean).length : 0
+  const globalWhatsAppAllowlistCount = platform === 'whatsapp' && Array.isArray(appSettings.whatsappApprovedContacts)
+    ? appSettings.whatsappApprovedContacts.length
+    : 0
 
   const editing = editingId ? connectors[editingId] as Connector | undefined : null
 
@@ -1158,7 +1163,7 @@ export function ConnectorSheet() {
               · Debounce: <span className="text-text-2">{doctorPolicy.inboundDebounceMs ?? 700}ms</span>
             </div>
             <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
-              Allowlist: <span className="text-text-2">{config.allowFrom ? config.allowFrom.split(',').map((entry) => entry.trim()).filter(Boolean).length : 0}</span>{' '}
+              Allowlist: <span className="text-text-2">{localAllowlistCount + globalWhatsAppAllowlistCount}</span>{' '}
               · Reactions: <span className="text-text-2">{doctorPolicy.statusReactions === false ? 'off' : 'on'}</span>{' '}
               · Typing: <span className="text-text-2">{doctorPolicy.typingIndicators === false ? 'off' : 'on'}</span>
             </div>

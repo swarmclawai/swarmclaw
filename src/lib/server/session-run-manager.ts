@@ -1,6 +1,6 @@
 import { genId } from '@/lib/id'
 import type { SSEEvent } from '@/types'
-import { active, loadSessions } from './storage'
+import { active, loadSession } from './storage'
 import { executeSessionChatTurn, type ExecuteChatTurnResult } from './chat-execution'
 import { loadRuntimeSettings } from './runtime-settings'
 import { log } from './logger'
@@ -39,7 +39,13 @@ interface QueueEntry {
   signalController: AbortController
   maxRuntimeMs?: number
   modelOverride?: string
-  heartbeatConfig?: { ackMaxChars: number; showOk: boolean; showAlerts: boolean; target: string | null }
+  heartbeatConfig?: {
+    ackMaxChars: number
+    showOk: boolean
+    showAlerts: boolean
+    target: string | null
+    deliveryMode?: 'default' | 'tool_only'
+  }
   replyToId?: string
   resolve: (value: ExecuteChatTurnResult) => void
   reject: (error: Error) => void
@@ -57,7 +63,8 @@ interface RuntimeState {
 const MAX_RECENT_RUNS = 500
 const COLLECT_COALESCE_WINDOW_MS = 1500
 const globalKey = '__swarmclaw_session_run_manager__' as const
-const state: RuntimeState = (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = {
+const globalScope = globalThis as typeof globalThis & { [globalKey]?: RuntimeState }
+const state: RuntimeState = globalScope[globalKey] ?? (globalScope[globalKey] = {
   runningByExecution: new Map<string, QueueEntry>(),
   queueByExecution: new Map<string, QueueEntry[]>(),
   runs: new Map<string, SessionRunRecord>(),
@@ -311,11 +318,11 @@ async function drainExecution(executionKey: string): Promise<void> {
       }, Math.max(0, followup.delayMs || 0))
     }
     next.resolve(result)
-  } catch (err: any) {
+  } catch (err: unknown) {
     const aborted = next.signalController.signal.aborted
     next.run.status = aborted ? 'cancelled' : 'failed'
     next.run.endedAt = now()
-    next.run.error = err?.message || String(err)
+    next.run.error = err instanceof Error ? err.message : String(err)
     emitRunMeta(next, next.run.status, { error: next.run.error })
     log.error('session-run', `Run failed ${next.run.id}`, {
       sessionId: next.run.sessionId,
@@ -353,7 +360,13 @@ export interface EnqueueSessionRunInput {
   dedupeKey?: string
   maxRuntimeMs?: number
   modelOverride?: string
-  heartbeatConfig?: { ackMaxChars: number; showOk: boolean; showAlerts: boolean; target: string | null }
+  heartbeatConfig?: {
+    ackMaxChars: number
+    showOk: boolean
+    showAlerts: boolean
+    target: string | null
+    deliveryMode?: 'default' | 'tool_only'
+  }
   replyToId?: string
   /** External abort signal (e.g. from the HTTP request) — chained to the run's internal AbortController */
   callerSignal?: AbortSignal
@@ -367,9 +380,15 @@ export interface EnqueueSessionRunResult {
   promise: Promise<ExecuteChatTurnResult>
   /** Abort the run's internal AbortController (cancels the LLM stream). */
   abort: () => void
+  /** Remove this caller's onEvent listener from the run (call on client disconnect). */
+  unsubscribe: () => void
 }
 
 const LONG_TOOL_NAMES: ReadonlySet<string> = new Set(['claude_code', 'codex_cli', 'opencode_cli'])
+type SessionToolConfig = {
+  plugins?: string[] | null
+  tools?: string[] | null
+}
 
 function computeEffectiveRunTimeoutMs(
   baseTimeoutMs: number,
@@ -389,9 +408,12 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
   const executionKey = executionKeyForSession(input.sessionId)
   const runtime = loadRuntimeSettings()
   const defaultMaxRuntimeMs = runtime.ongoingLoopMaxRuntimeMs ?? (10 * 60_000)
-  const sessions = loadSessions()
-  const sessionData = sessions[input.sessionId]
-  const sessionTools: string[] = sessionData?.tools || []
+  const sessionData = loadSession(input.sessionId) as SessionToolConfig | null
+  const sessionTools = Array.isArray(sessionData?.plugins)
+    ? sessionData.plugins
+    : Array.isArray(sessionData?.tools)
+      ? sessionData.tools
+      : []
   const adjustedDefaultMs = computeEffectiveRunTimeoutMs(defaultMaxRuntimeMs, sessionTools, runtime)
   const effectiveMaxRuntimeMs = typeof input.maxRuntimeMs === 'number'
     ? input.maxRuntimeMs
@@ -399,7 +421,8 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
 
   const dedupe = findDedupeMatch(input.sessionId, input.dedupeKey)
   if (dedupe) {
-    if (input.onEvent) dedupe.onEvents.push(input.onEvent)
+    const cb = input.onEvent
+    if (cb) dedupe.onEvents.push(cb)
     if (input.callerSignal) chainCallerSignal(input.callerSignal, dedupe.signalController)
     return {
       runId: dedupe.run.id,
@@ -407,6 +430,11 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
       deduped: true,
       promise: dedupe.promise,
       abort: () => dedupe.signalController.abort(),
+      unsubscribe: () => {
+        if (!cb) return
+        const idx = dedupe.onEvents.indexOf(cb)
+        if (idx >= 0) dedupe.onEvents.splice(idx, 1)
+      },
     }
   }
 
@@ -455,7 +483,8 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
         candidate.run.messagePreview = messagePreview(candidate.message)
         candidate.run.queuedAt = nowMs
       }
-      if (input.onEvent) candidate.onEvents.push(input.onEvent)
+      const coalesceCb = input.onEvent
+      if (coalesceCb) candidate.onEvents.push(coalesceCb)
       if (input.callerSignal) chainCallerSignal(input.callerSignal, candidate.signalController)
       emitRunMeta(candidate, 'queued', { position: 0, coalesced: true, mergedIntoRunId: candidate.run.id })
       return {
@@ -464,6 +493,11 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
         coalesced: true,
         promise: candidate.promise,
         abort: () => candidate.signalController.abort(),
+        unsubscribe: () => {
+          if (!coalesceCb) return
+          const idx = candidate.onEvents.indexOf(coalesceCb)
+          if (idx >= 0) candidate.onEvents.splice(idx, 1)
+        },
       }
     }
   }
@@ -515,7 +549,18 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
   emitRunMeta(entry, 'queued', { position })
   void drainExecution(executionKey)
 
-  return { runId, position, promise, abort: () => entry.signalController.abort() }
+  const entryCb = input.onEvent
+  return {
+    runId,
+    position,
+    promise,
+    abort: () => entry.signalController.abort(),
+    unsubscribe: () => {
+      if (!entryCb) return
+      const idx = entry.onEvents.indexOf(entryCb)
+      if (idx >= 0) entry.onEvents.splice(idx, 1)
+    },
+  }
 }
 
 export function getSessionRunState(sessionId: string): {

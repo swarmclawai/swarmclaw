@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { Session } from '@/types'
-import { loadApprovals, loadSettings, loadSessions, saveSessions, loadMcpServers } from '../storage'
+import { loadApprovals, loadSettings, loadSession, loadMcpServers, patchSession } from '../storage'
 import { loadRuntimeSettings } from '../runtime-settings'
 import { log } from '../logger'
 import { resolveSessionToolPolicy } from '../tool-capability-policy'
@@ -85,18 +85,15 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       ...grantedToolIds,
     ]))
     if (ctx?.sessionId && grantedToolIds.length > 0) {
-      const sessions = loadSessions()
-      const currentSession = sessions[ctx.sessionId]
-      if (currentSession) {
+      patchSession(ctx.sessionId, (currentSession) => {
+        if (!currentSession) return currentSession
         const currentPlugins = Array.isArray(currentSession.plugins) ? currentSession.plugins : []
         const mergedPlugins = Array.from(new Set([...currentPlugins, ...grantedToolIds]))
-        if (mergedPlugins.length !== currentPlugins.length) {
-          currentSession.plugins = mergedPlugins
-          currentSession.updatedAt = Date.now()
-          sessions[ctx.sessionId] = currentSession
-          saveSessions(sessions)
-        }
-      }
+        if (mergedPlugins.length === currentPlugins.length) return currentSession
+        currentSession.plugins = mergedPlugins
+        currentSession.updatedAt = Date.now()
+        return currentSession
+      })
     }
     const toolPolicy = resolveSessionToolPolicy(effectiveEnabledPlugins, appSettings)
     const expandedEnabled = expandPluginIds(toolPolicy.enabledPlugins)
@@ -124,8 +121,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
 
     const resolveCurrentSession = (): Session | null => {
       if (!ctx?.sessionId) return null
-      const sessions = loadSessions()
-      return sessions[ctx.sessionId] || null
+      return loadSession(ctx.sessionId)
     }
 
     const readStoredDelegateResumeId = (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini'): string | null => {
@@ -138,19 +134,18 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
     const persistDelegateResumeId = (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini', resumeId: string | null | undefined): void => {
       const normalized = typeof resumeId === 'string' ? resumeId.trim() : ''
       if (!normalized || !ctx?.sessionId) return
-      const sessions = loadSessions()
-      const target = sessions[ctx.sessionId]
-      if (!target) return
-      const current = (target.delegateResumeIds && typeof target.delegateResumeIds === 'object')
-        ? target.delegateResumeIds
-        : {}
-      target.delegateResumeIds = {
-        ...current,
-        [key]: normalized,
-      }
-      target.updatedAt = Date.now()
-      sessions[ctx.sessionId] = target
-      saveSessions(sessions)
+      patchSession(ctx.sessionId, (target) => {
+        if (!target) return target
+        const current = (target.delegateResumeIds && typeof target.delegateResumeIds === 'object')
+          ? target.delegateResumeIds
+          : {}
+        target.delegateResumeIds = {
+          ...current,
+          [key]: normalized,
+        }
+        target.updatedAt = Date.now()
+        return target
+      })
     }
 
     const bctx: ToolBuildContext = {

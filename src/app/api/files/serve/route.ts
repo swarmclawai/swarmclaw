@@ -16,7 +16,7 @@ const MIME_MAP: Record<string, string> = {
   '.webp': 'image/webp',
   '.txt': 'text/plain',
   '.md': 'text/markdown',
-  '.ts': 'text/plain',
+  '': 'text/plain',
   '.tsx': 'text/plain',
   '.jsx': 'text/plain',
   '.py': 'text/plain',

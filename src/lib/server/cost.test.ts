@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Agent } from '@/types'
-import { checkAgentBudgetLimits, getAgentSpendWindows } from './cost.ts'
+import { checkAgentBudgetLimits, getAgentSpendWindows } from './cost'
 
 function buildNowTs(): number {
   const d = new Date()

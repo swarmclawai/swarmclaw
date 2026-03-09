@@ -19,7 +19,7 @@ export interface DevServerLaunchResolution {
 const NEXT_CONFIG_FILES = [
   'next.config.js',
   'next.config.mjs',
-  'next.config.ts',
+  'next.config',
 ]
 
 function readPackageJson(dir: string): PackageJsonLike | null {

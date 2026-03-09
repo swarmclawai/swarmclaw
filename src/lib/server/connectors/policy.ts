@@ -2,8 +2,8 @@ import type { Connector, Session, SessionResetMode, SessionResetType } from '@/t
 import { getProvider } from '@/lib/providers'
 import type { InboundMessage } from './types'
 import { evaluateSessionFreshness, inferSessionResetType, resetSessionRuntime, resolveSessionResetPolicy } from '../session-reset-policy'
-import { listStoredAllowedSenders, parseAllowFromCsv, parsePairingPolicy } from './pairing'
-import { loadAgents, loadChatrooms, loadCredentials } from '../storage'
+import { getWhatsAppApprovedSenderIds, listStoredAllowedSenders, parseAllowFromCsv, parsePairingPolicy } from './pairing'
+import { loadAgents, loadChatrooms, loadCredentials, loadSettings } from '../storage'
 
 export type ConnectorSessionScope = 'main' | 'channel' | 'peer' | 'channel-peer' | 'thread'
 export type ConnectorReplyMode = 'off' | 'first' | 'all'
@@ -377,7 +377,13 @@ export function buildConnectorDoctorWarnings(params: {
     }
   }
   const dmPolicy = parsePairingPolicy(connector.config?.dmPolicy, 'open')
-  const configuredAllowFrom = parseAllowFromCsv(connector.config?.allowFrom)
+  const globalWhatsAppAllowFrom = connector.platform === 'whatsapp'
+    ? getWhatsAppApprovedSenderIds(loadSettings().whatsappApprovedContacts)
+    : []
+  const configuredAllowFrom = parseAllowFromCsv([
+    connector.config?.allowFrom,
+    ...globalWhatsAppAllowFrom,
+  ].filter(Boolean).join(','))
   const storedAllowFrom = listStoredAllowedSenders(connector.id)
   if (parseBool(connector.config?.statusReactions, true) && connector.platform === 'telegram') {
     warnings.push('Status reactions are enabled, but Telegram support is partial and may no-op depending on bot permissions.')

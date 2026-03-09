@@ -16,10 +16,12 @@ import {
 } from './memory-graph'
 import { isWorkingMemoryCategory } from './memory-tiers'
 
-import { DATA_DIR } from './data-dir'
+import { DATA_DIR, WORKSPACE_DIR } from './data-dir'
+import { tryResolvePathWithinBaseDir } from './path-utils'
 
 const DB_PATH = path.join(DATA_DIR, 'memory.db')
 const IMAGES_DIR = path.join(DATA_DIR, 'memory-images')
+const APP_STATE_ROOT_DIR = path.dirname(DATA_DIR)
 
 const MAX_IMAGE_INPUT_BYTES = 10 * 1024 * 1024 // 10MB
 const IMAGE_EXT_WHITELIST = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'])
@@ -354,9 +356,15 @@ export function buildFtsQuery(input: string): string {
 
 function resolveExists(pathValue: string | undefined): boolean | undefined {
   if (!pathValue) return undefined
-  const absolute = path.isAbsolute(pathValue) ? pathValue : path.resolve(process.cwd(), pathValue)
+  const candidates = path.isAbsolute(pathValue)
+    ? [pathValue]
+    : [
+      tryResolvePathWithinBaseDir(APP_STATE_ROOT_DIR, pathValue),
+      tryResolvePathWithinBaseDir(WORKSPACE_DIR, pathValue),
+    ].filter((candidate): candidate is string => !!candidate)
+  if (candidates.length === 0) return undefined
   try {
-    return fs.existsSync(absolute)
+    return candidates.some((candidate) => fs.existsSync(candidate))
   } catch {
     return undefined
   }
@@ -888,8 +896,21 @@ function initDb() {
       const row = stmts.getById.get(id) as Record<string, unknown> | undefined
       const entry = row ? rowToEntry(row) : null
       if (entry?.image?.path || entry?.imagePath) {
-        const imgPath = path.join(process.cwd(), entry.image?.path || entry.imagePath || '')
-        try { fs.unlinkSync(imgPath) } catch { /* file may not exist */ }
+        const imagePath = entry.image?.path || entry.imagePath || ''
+        const candidatePaths = path.isAbsolute(imagePath)
+          ? [imagePath]
+          : [
+            tryResolvePathWithinBaseDir(APP_STATE_ROOT_DIR, imagePath),
+            tryResolvePathWithinBaseDir(WORKSPACE_DIR, imagePath),
+          ].filter((candidate): candidate is string => !!candidate)
+        for (const imgPath of candidatePaths) {
+          try {
+            fs.unlinkSync(imgPath)
+            break
+          } catch {
+            // file may not exist
+          }
+        }
       }
       stmts.delete.run(id)
       // Remove this ID from any other memory's linkedMemoryIds

@@ -5,8 +5,8 @@ import {
   normalizeMemoryLookupLimits,
   resolveLookupRequest,
   traverseLinkedMemoryGraph,
-} from './memory-graph.ts'
-import type { MemoryLookupLimits, LinkedMemoryNode } from './memory-graph.ts'
+} from './memory-graph'
+import type { MemoryLookupLimits, LinkedMemoryNode } from './memory-graph'
 
 describe('normalizeLinkedMemoryIds', () => {
   it('filters empty strings and self-references', () => {

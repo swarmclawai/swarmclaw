@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { loadAgents, loadSessions, loadUsage, saveAgents, logActivity } from '@/lib/server/storage'
+import { loadAgents, loadSessions, loadUsage, logActivity, upsertStoredItem } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { notify } from '@/lib/server/ws-hub'
 import { getAgentSpendWindows } from '@/lib/server/cost'
@@ -56,9 +56,8 @@ export async function POST(req: Request) {
   const body = parsed.data
   const id = genId()
   const now = Date.now()
-  const agents = loadAgents()
   const platformAssignScope = body.platformAssignScope
-  agents[id] = {
+  const agent = {
     id,
     name: body.name,
     description: body.description,
@@ -113,8 +112,8 @@ export async function POST(req: Request) {
     createdAt: now,
     updatedAt: now,
   }
-  saveAgents(agents)
-  logActivity({ entityType: 'agent', entityId: id, action: 'created', actor: 'user', summary: `Agent created: "${agents[id].name}"` })
+  upsertStoredItem('agents', id, agent)
+  logActivity({ entityType: 'agent', entityId: id, action: 'created', actor: 'user', summary: `Agent created: "${agent.name}"` })
   notify('agents')
-  return NextResponse.json(agents[id])
+  return NextResponse.json(agent)
 }

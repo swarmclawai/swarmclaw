@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/api-client'
+import { useNow } from '@/hooks/use-now'
 import type { ConnectorHealthEvent, ConnectorHealthEventType } from '@/types'
 
 interface HealthResponse {
@@ -17,10 +18,10 @@ const EVENT_CONFIG: Record<ConnectorHealthEventType, { color: string; label: str
   disconnected: { color: 'bg-amber-400', label: 'Disconnected' },
 }
 
-function formatTimestamp(ts: string): string {
+function formatTimestamp(ts: string, now: number | null): string {
   const d = new Date(ts)
-  const now = new Date()
-  const diffMs = now.getTime() - d.getTime()
+  if (!now) return 'recently'
+  const diffMs = now - d.getTime()
   const diffMin = Math.floor(diffMs / 60_000)
   const diffHr = Math.floor(diffMs / 3_600_000)
   const diffDay = Math.floor(diffMs / 86_400_000)
@@ -39,6 +40,7 @@ function uptimeBadgeColor(pct: number): string {
 }
 
 export function ConnectorHealth({ connectorId }: { connectorId: string }) {
+  const now = useNow()
   const [data, setData] = useState<HealthResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -104,7 +106,7 @@ export function ConnectorHealth({ connectorId }: { connectorId: string }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] font-600 text-text-2">{cfg.label}</span>
-                    <span className="text-[11px] text-text-3">{formatTimestamp(ev.timestamp)}</span>
+                    <span className="text-[11px] text-text-3">{formatTimestamp(ev.timestamp, now)}</span>
                   </div>
                   {ev.message && (
                     <p className="text-[12px] text-text-3/70 mt-0.5 leading-[1.4] break-words">{ev.message}</p>

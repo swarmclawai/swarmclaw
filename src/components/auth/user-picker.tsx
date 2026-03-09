@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { api } from '@/lib/api-client'
@@ -9,7 +9,8 @@ export function UserPicker() {
   const setUser = useAppStore((s) => s.setUser)
   const loadSettings = useAppStore((s) => s.loadSettings)
   const [name, setName] = useState('')
-  const [avatarSeed, setAvatarSeed] = useState(() => Math.random().toString(36).slice(2, 10))
+  const defaultAvatarSeed = useId().replace(/:/g, '')
+  const [avatarSeed, setAvatarSeed] = useState(defaultAvatarSeed)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

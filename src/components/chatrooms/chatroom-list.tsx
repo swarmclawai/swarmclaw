@@ -3,12 +3,14 @@
 import { useEffect, useCallback, useMemo, useState } from 'react'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
 import type { Chatroom } from '@/types'
 import { EmptyState } from '@/components/shared/empty-state'
 
-function formatRoomTime(ts: number): string {
-  const diff = Date.now() - ts
+function formatRoomTime(ts: number, now: number | null): string {
+  if (!now) return 'recently'
+  const diff = now - ts
   if (diff < 60_000) return 'Now'
   if (diff < 3_600_000) return `${Math.max(1, Math.floor(diff / 60_000))}m`
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`
@@ -16,6 +18,7 @@ function formatRoomTime(ts: number): string {
 }
 
 export function ChatroomList() {
+  const now = useNow()
   const chatrooms = useChatroomStore((s) => s.chatrooms)
   const currentChatroomId = useChatroomStore((s) => s.currentChatroomId)
   const loadChatrooms = useChatroomStore((s) => s.loadChatrooms)
@@ -72,15 +75,15 @@ export function ChatroomList() {
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
-    const now = Date.now()
     return enriched.filter((item) => {
       if (query && !item.searchText.includes(query)) return false
+      if (!now) return filter === 'unread' ? item.unreadCount > 0 : true
       if (filter === 'active') return now - item.chatroom.updatedAt < 3_600_000
       if (filter === 'recent') return now - item.chatroom.updatedAt < 86_400_000
       if (filter === 'unread') return item.unreadCount > 0
       return true
     })
-  }, [enriched, filter, search])
+  }, [enriched, filter, now, search])
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -170,7 +173,7 @@ export function ChatroomList() {
                             </span>
                           )}
                           <span className="ml-auto shrink-0 text-[10px] font-mono text-text-3/55">
-                            {formatRoomTime(lastMsg?.time || chatroom.updatedAt)}
+                            {formatRoomTime(lastMsg?.time || chatroom.updatedAt, now)}
                           </span>
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-text-3">

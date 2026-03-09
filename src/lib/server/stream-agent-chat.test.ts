@@ -20,7 +20,7 @@ import {
   shouldForceExternalServiceSummary,
 } from './stream-agent-chat'
 
-const streamAgentChatSource = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'stream-agent-chat.ts'), 'utf-8')
+const streamAgentChatSource = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'stream-agent-chat'), 'utf-8')
 
 describe('buildToolDisciplineLines', () => {
   it('tells the agent to use direct platform tools when manage_platform is absent', () => {

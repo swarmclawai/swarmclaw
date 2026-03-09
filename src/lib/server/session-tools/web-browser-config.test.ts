@@ -25,6 +25,7 @@ describe('browser tool connection config', () => {
 
   it('strips host Playwright MCP env overrides before applying the local browser config', () => {
     const env = sanitizePlaywrightMcpEnv({
+      NODE_ENV: 'test',
       PLAYWRIGHT_MCP_CONFIG: '/tmp/evil-config.json',
       PLAYWRIGHT_MCP_SHARED_BROWSER_CONTEXT: '1',
       PLAYWRIGHT_MCP_TIMEOUT_ACTION: '999999',

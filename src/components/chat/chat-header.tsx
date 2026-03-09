@@ -5,6 +5,7 @@ import { useEffect, useState, useMemo, useRef, useCallback, type ReactNode } fro
 import type { Session } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
+import { useNow } from '@/hooks/use-now'
 import { IconButton } from '@/components/shared/icon-button'
 import { ChatToolToggles } from './chat-tool-toggles'
 import { api } from '@/lib/api-client'
@@ -127,6 +128,7 @@ interface Props {
 }
 
 export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, mobile, browserActive, onStopBrowser, onVoiceToggle, voiceActive, voiceSupported, heartbeatHistoryOpen, onToggleHeartbeatHistory, connectorSources, connectorFilter, onConnectorFilterChange, hasMultipleSources }: Props) {
+  const now = useNow()
   const ttsEnabled = useChatStore((s) => s.ttsEnabled)
   const toggleTts = useChatStore((s) => s.toggleTts)
   const soundEnabled = useChatStore((s) => s.soundEnabled)
@@ -171,8 +173,13 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const setWalletPanelAgentId = useAppStore((s) => s.setWalletPanelAgentId)
   const [walletBalance, setWalletBalance] = useState<{ formatted: string; symbol: string; assets?: number } | null>(null)
   const [headerWidgets, setHeaderWidgets] = useState<Array<{ id: string; label: string; icon?: string }>>([])
+  const [localhostBrowser, setLocalhostBrowser] = useState(false)
   const agentWalletIds = useMemo(() => getAgentWalletIds(agent), [agent])
   const activeWalletId = useMemo(() => getAgentActiveWalletId(agent), [agent])
+
+  useEffect(() => {
+    setLocalhostBrowser(window.location.hostname === 'localhost')
+  }, [])
 
   const refreshHeaderWidgets = useCallback(() => {
     api<Array<{ id: string; label: string; icon?: string }>>('GET', '/plugins/ui?type=header').then((widgets) => {
@@ -231,7 +238,14 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
         textClass: 'text-text-3/45',
       }
     }
-    const ago = Date.now() - lastAt
+    if (!now) {
+      return {
+        label: 'Idle',
+        dotClass: 'bg-text-3/30',
+        textClass: 'text-text-3/45',
+      }
+    }
+    const ago = now - lastAt
     if (ago < 5 * 60_000) {
       return {
         label: 'Active',
@@ -251,7 +265,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       dotClass: 'bg-text-3/30',
       textClass: 'text-text-3/45',
     }
-  }, [connector, connectorPresence?.lastMessageAt])
+  }, [connector, connectorPresence?.lastMessageAt, now])
 
   const visibleHeaderWidgets = useMemo(() => {
     const seen = new Set<string>()
@@ -262,6 +276,11 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       return true
     })
   }, [headerWidgets])
+
+  const heartbeatIntervalOptions = useMemo(
+    () => [...(localhostBrowser ? [60, 300] : []), 1800, 3600, 7200, 21600, 43200],
+    [localhostBrowser],
+  )
 
   const walletHeaderMeta = useMemo(() => {
     if (!agent?.id) {
@@ -869,7 +888,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 </Tip>
                 {hbDropdownOpen && (
                   <div className="absolute top-full right-0 mt-1 py-1 rounded-[10px] border border-white/[0.06] bg-bg/95 backdrop-blur-md shadow-lg z-50 min-w-[88px]">
-                    {[...(typeof window !== 'undefined' && window.location.hostname === 'localhost' ? [60, 300] : []), 1800, 3600, 7200, 21600, 43200].map((sec) => (
+                    {heartbeatIntervalOptions.map((sec) => (
                       <button
                         key={sec}
                         onClick={() => handleSelectHeartbeatInterval(sec)}

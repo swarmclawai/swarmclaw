@@ -82,7 +82,7 @@ describe('resolveTaskOriginConnectorFollowupTarget', () => {
     const target = resolveTaskOriginConnectorFollowupTarget({
       task,
       sessions: sessions as SessionFixtureMap,
-      connectors,
+      connectors: connectors as any,
       running,
     })
 
@@ -129,7 +129,7 @@ describe('resolveTaskOriginConnectorFollowupTarget', () => {
     const target = resolveTaskOriginConnectorFollowupTarget({
       task,
       sessions: sessions as SessionFixtureMap,
-      connectors,
+      connectors: connectors as any,
       running,
     })
 
@@ -177,7 +177,7 @@ describe('resolveTaskOriginConnectorFollowupTarget', () => {
     const target = resolveTaskOriginConnectorFollowupTarget({
       task,
       sessions: sessions as SessionFixtureMap,
-      connectors,
+      connectors: connectors as any,
       running,
     })
 
@@ -226,7 +226,7 @@ describe('resolveTaskOriginConnectorFollowupTarget', () => {
     const target = resolveTaskOriginConnectorFollowupTarget({
       task,
       sessions: sessions as SessionFixtureMap,
-      connectors,
+      connectors: connectors as any,
       running,
     })
 
@@ -280,7 +280,7 @@ describe('resolveTaskOriginConnectorFollowupTarget', () => {
     const target = resolveTaskOriginConnectorFollowupTarget({
       task,
       sessions: sessions as SessionFixtureMap,
-      connectors,
+      connectors: connectors as any,
       running,
     })
 
@@ -341,7 +341,7 @@ describe('resolveTaskOriginConnectorFollowupTarget', () => {
     const target = resolveTaskOriginConnectorFollowupTarget({
       task,
       sessions: sessions as SessionFixtureMap,
-      connectors,
+      connectors: connectors as any,
       running,
     })
 
@@ -391,7 +391,7 @@ describe('collectTaskConnectorFollowupTargets', () => {
     const targets = collectTaskConnectorFollowupTargets({
       task,
       sessions: sessions as SessionFixtureMap,
-      connectors,
+      connectors: connectors as any,
       running,
     })
 
@@ -434,7 +434,7 @@ describe('collectTaskConnectorFollowupTargets', () => {
     const targets = collectTaskConnectorFollowupTargets({
       task,
       sessions: sessions as SessionFixtureMap,
-      connectors,
+      connectors: connectors as any,
       running,
     })
 
@@ -478,7 +478,7 @@ describe('collectTaskConnectorFollowupTargets', () => {
     const targets = collectTaskConnectorFollowupTargets({
       task,
       sessions: sessions as SessionFixtureMap,
-      connectors,
+      connectors: connectors as any,
       running,
     })
 

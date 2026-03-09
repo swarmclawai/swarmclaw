@@ -117,17 +117,17 @@ function addRawMemory(data: {
 }): MemoryEntry {
   const id = crypto.randomBytes(6).toString('hex')
   const now = Date.now()
-  stmts.insert.run(
-    id,
-    data.agentId || null,
-    data.sessionId || null,
-    data.category,
-    data.title,
-    data.content,
-    data.metadata ? JSON.stringify(data.metadata) : null,
-    now,
-    now,
-  )
+  stmts.insert.run({
+    id: data.id || 'mem-1',
+    agentId: data.agentId || null,
+    sessionId: data.sessionId || null,
+    taskId: data.taskId || null,
+    url: data.url || null,
+    category: data.category,
+    textContent: data.textContent || null,
+    createdAt: now,
+    updatedAt: now
+  })
   return {
     id,
     agentId: data.agentId || null,
@@ -392,7 +392,7 @@ describe('isolation between knowledge and agent memory', () => {
   })
 
   it('knowledge entries do not appear in agent-scoped memory list', () => {
-    const agentMemories = (stmts.listByAgent.all('agent-xyz', 500) as Record<string, unknown>[]).map(rowToEntry)
+    const agentMemories = (stmts.listByAgent.all('agent-xyz') as Record<string, unknown>[]).map(rowToEntry)
     for (const e of agentMemories) {
       assert.notEqual(e.category, 'knowledge')
       assert.equal(e.agentId, 'agent-xyz')
@@ -402,7 +402,7 @@ describe('isolation between knowledge and agent memory', () => {
   it('knowledge entries do not appear in agent-scoped search', () => {
     const ftsQuery = buildFtsQuery('quantum entanglement')
     if (!ftsQuery) return
-    const agentResults = (stmts.searchByAgent.all(ftsQuery, 'agent-xyz') as Record<string, unknown>[]).map(rowToEntry)
+    const agentResults = (stmts.searchByAgent.all(ftsQuery) as Record<string, unknown>[]).map(rowToEntry)
     for (const e of agentResults) {
       assert.equal(e.agentId, 'agent-xyz')
     }

@@ -72,6 +72,8 @@ const TABS: Tab[] = [
   },
 ]
 
+const VALID_TAB_IDS = TABS.map((t) => t.id)
+
 export function SettingsPage() {
   const loadProviders = useAppStore((s) => s.loadProviders)
   const loadCredentials = useAppStore((s) => s.loadCredentials)
@@ -81,13 +83,7 @@ export function SettingsPage() {
   const loadSecrets = useAppStore((s) => s.loadSecrets)
   const loadAgents = useAppStore((s) => s.loadAgents)
   const credentials = useAppStore((s) => s.credentials)
-  const validTabIds = TABS.map((t) => t.id)
-  const [activeTab, setActiveTabRaw] = useState(() => {
-    if (typeof window === 'undefined') return 'general'
-    const params = new URLSearchParams(window.location.search)
-    const tab = params.get('tab')
-    return tab && validTabIds.includes(tab) ? tab : 'general'
-  })
+  const [activeTab, setActiveTabRaw] = useState('general')
   const contentRef = useRef<HTMLDivElement>(null)
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const [pendingSectionId, setPendingSectionId] = useState<string | null>(null)
@@ -109,6 +105,14 @@ export function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tab = params.get('tab')
+    if (tab && VALID_TAB_IDS.includes(tab)) {
+      setActiveTabRaw(tab)
+    }
+  }, [])
+
   // Scroll to top when switching tabs
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -124,8 +128,8 @@ export function SettingsPage() {
       id: 'user-preferences',
       tabId: 'general',
       title: 'Profile & Default Chat',
-      description: 'User identity, language, and which agent your sidebar shortcut opens.',
-      keywords: ['profile', 'default chat', 'default agent', 'shortcut', 'user', 'language', 'main chat'],
+      description: 'User identity, language, default-chat behavior, and global WhatsApp approvals.',
+      keywords: ['profile', 'default chat', 'default agent', 'shortcut', 'user', 'language', 'main chat', 'whatsapp', 'contacts', 'approved users'],
       render: () => <UserPreferencesSection {...sectionProps} />,
     },
     {

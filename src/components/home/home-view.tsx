@@ -5,6 +5,7 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { useNow } from '@/hooks/use-now'
 import { api } from '@/lib/api-client'
 import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
 import { getSessionLastMessage } from '@/lib/session-summary'
@@ -12,8 +13,9 @@ import { getNotificationActivityAt, getNotificationOccurrenceCount } from '@/lib
 import type { Agent, Session, ActivityEntry, BoardTask, AppNotification } from '@/types'
 import { HintTip } from '@/components/shared/hint-tip'
 
-function timeAgo(ts: number): string {
-  const diff = Date.now() - ts
+function timeAgo(ts: number, now: number | null): string {
+  if (!now) return 'recently'
+  const diff = now - ts
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'just now'
   if (mins < 60) return `${mins}m ago`
@@ -23,8 +25,9 @@ function timeAgo(ts: number): string {
   return `${days}d ago`
 }
 
-function timeUntil(ts: number): string {
-  const diff = ts - Date.now()
+function timeUntil(ts: number, now: number | null): string {
+  if (!now) return 'soon'
+  const diff = ts - now
   if (diff <= 0) return 'now'
   const mins = Math.floor(diff / 60000)
   if (mins < 60) return `in ${mins}m`
@@ -69,6 +72,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 }
 
 export function HomeView() {
+  const now = useNow()
   const agents = useAppStore((s) => s.agents)
   const sessions = useAppStore((s) => s.sessions)
   const currentUser = useAppStore((s) => s.currentUser)
@@ -92,6 +96,11 @@ export function HomeView() {
   const setMessages = useChatStore((s) => s.setMessages)
   const [todayCost, setTodayCost] = useState(0)
   const [costTrend, setCostTrend] = useState<{ cost: number; bucket: string }[]>([])
+  const [localhostBrowser, setLocalhostBrowser] = useState(false)
+
+  useEffect(() => {
+    setLocalhostBrowser(isLocalhostBrowser())
+  }, [])
 
   const allAgents = Object.values(agents).filter((a) => !a.trashedAt)
   const pinnedAgents = allAgents.filter((a) => a.pinned)
@@ -99,10 +108,10 @@ export function HomeView() {
   const recentChats = useMemo(
     () =>
       Object.values(sessions)
-        .filter((session) => isVisibleSessionForViewer(session, currentUser, { localhost: isLocalhostBrowser() }))
+        .filter((session) => isVisibleSessionForViewer(session, currentUser, { localhost: localhostBrowser }))
         .sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0))
         .slice(0, 5),
-    [currentUser, sessions],
+    [currentUser, localhostBrowser, sessions],
   )
 
   // Quick stats
@@ -130,12 +139,12 @@ export function HomeView() {
 
   // Upcoming schedules
   const upcomingSchedules = useMemo(() => {
-    const now = Date.now()
+    const currentNow = now ?? 0
     return Object.values(schedules)
-      .filter((s) => s.status === 'active' && s.nextRunAt && s.nextRunAt > now)
+      .filter((s) => s.status === 'active' && s.nextRunAt && s.nextRunAt > currentNow)
       .sort((a, b) => (a.nextRunAt || 0) - (b.nextRunAt || 0))
       .slice(0, 5)
-  }, [schedules])
+  }, [now, schedules])
 
   // Unread notifications
   const unreadNotifications = useMemo(
@@ -225,7 +234,7 @@ export function HomeView() {
             </div>
 
             {(() => {
-              const now = Date.now()
+              const currentNow = now ?? 0
               const items = [
                 ...allTasks
                   .filter((task) => task.pendingApproval)
@@ -244,7 +253,7 @@ export function HomeView() {
                     id: `failed:${task.id}`,
                     tone: 'danger' as const,
                     label: task.title,
-                    meta: `Failed ${timeAgo(task.updatedAt || task.createdAt)}`,
+                    meta: `Failed ${timeAgo(task.updatedAt || task.createdAt, now)}`,
                     onClick: () => handleTaskClick(task),
                   })),
                 ...allConnectors
@@ -258,7 +267,7 @@ export function HomeView() {
                     onClick: () => setActiveView('connectors'),
                   })),
                 ...Object.values(schedules)
-                  .filter((schedule) => schedule.status === 'active' && schedule.nextRunAt && schedule.nextRunAt < now)
+                  .filter((schedule) => schedule.status === 'active' && schedule.nextRunAt && schedule.nextRunAt < currentNow)
                   .slice(0, 2)
                   .map((schedule) => ({
                     id: `schedule:${schedule.id}`,
@@ -396,7 +405,7 @@ export function HomeView() {
                           x{getNotificationOccurrenceCount(n)}
                         </span>
                       )}
-                      <span className="text-[10px] text-text-3/40">{timeAgo(getNotificationActivityAt(n))}</span>
+                      <span className="text-[10px] text-text-3/40">{timeAgo(getNotificationActivityAt(n), now)}</span>
                     </div>
                   </button>
                 ))}
@@ -452,7 +461,7 @@ export function HomeView() {
                       <div className="flex-1 min-w-0">
                         <span className="text-[13px] font-500 text-text truncate block">{task.title}</span>
                         <span className="text-[11px] text-text-3/50">
-                          {agent?.name || 'Unassigned'} · {task.status === 'running' ? 'running' : 'queued'}{task.startedAt ? ` · ${timeAgo(task.startedAt)}` : ''}
+                          {agent?.name || 'Unassigned'} · {task.status === 'running' ? 'running' : 'queued'}{task.startedAt ? ` · ${timeAgo(task.startedAt, now)}` : ''}
                         </span>
                       </div>
                     </button>
@@ -482,7 +491,7 @@ export function HomeView() {
                       <div className="flex-1 min-w-0">
                         <span className="text-[13px] font-500 text-text truncate block">{sched.name}</span>
                         <span className="text-[11px] text-text-3/50">
-                          {agent?.name || 'No agent'} · {sched.nextRunAt ? timeUntil(sched.nextRunAt) : '—'}
+                          {agent?.name || 'No agent'} · {sched.nextRunAt ? timeUntil(sched.nextRunAt, now) : '—'}
                         </span>
                       </div>
                     </div>
@@ -503,7 +512,7 @@ export function HomeView() {
               {pinnedAgents.map((agent) => {
                 const threadSession = agent.threadSessionId ? sessions[agent.threadSessionId] as Session | undefined : undefined
                 const heartbeatOn = agent.heartbeatEnabled === true && (agent.plugins?.length ?? 0) > 0
-                const recentlyActive = (threadSession?.lastActiveAt ?? 0) > Date.now() - 30 * 60 * 1000
+                const recentlyActive = !!now && (threadSession?.lastActiveAt ?? 0) > now - 30 * 60 * 1000
                 const isOnline = runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive
                 const isTyping = streamingSessionId === agent.threadSessionId
                 const lastActive = threadSession?.lastActiveAt || agent.lastUsedAt || agent.updatedAt
@@ -539,7 +548,7 @@ export function HomeView() {
                       </span>
                     ) : (
                       <span className={`text-[10px] ${isOnline ? 'text-emerald-400/80' : 'text-text-3/50'}`}>
-                        {isOnline ? 'Online' : lastActive ? timeAgo(lastActive) : 'Idle'}
+                        {isOnline ? 'Online' : lastActive ? timeAgo(lastActive, now) : 'Idle'}
                       </span>
                     )}
                     {modelLabel && (
@@ -589,7 +598,7 @@ export function HomeView() {
                           {displayName}
                         </span>
                         <span className="text-[11px] text-text-3/50 shrink-0">
-                          {timeAgo(session.lastActiveAt || session.createdAt)}
+                          {timeAgo(session.lastActiveAt || session.createdAt, now)}
                         </span>
                       </div>
                       {lastMsg && (
@@ -619,7 +628,7 @@ export function HomeView() {
                     <path d={ACTIVITY_ICONS[entry.action] || ACTIVITY_ICONS.updated} />
                   </svg>
                   <span className="text-[12px] text-text-3/80 flex-1 truncate">{entry.summary}</span>
-                  <span className="text-[10px] text-text-3/40 shrink-0">{timeAgo(entry.timestamp)}</span>
+                  <span className="text-[10px] text-text-3/40 shrink-0">{timeAgo(entry.timestamp, now)}</span>
                 </div>
               ))}
             </div>

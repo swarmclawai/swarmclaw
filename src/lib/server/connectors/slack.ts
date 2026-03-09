@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundThreadHistoryEntry } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import { downloadInboundMediaToUpload, inferInboundMediaType, mimeFromPath, isImageMime } from './media'
 import { getConnectorReplySendOptions, isNoMessage, recordConnectorOutboundDelivery } from './manager'
 
@@ -242,9 +243,9 @@ const slack: PlatformConnector = {
       await hydrateSlackThreadContext({ client, inbound, currentTs: msg.ts || undefined, botUserId })
 
       try {
-        const response = await onMessage(inbound)
-
-        if (isNoMessage(response)) return
+        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
+        const response = routeResult.visibleText
 
         const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
         const threadTs = replyOptions.threadId || replyOptions.replyToMessageId
@@ -316,8 +317,9 @@ const slack: PlatformConnector = {
       })
 
       try {
-        const response = await onMessage(inbound)
-        if (isNoMessage(response)) return
+        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
+        const response = routeResult.visibleText
         const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
         const sent = await client.chat.postMessage({
           channel: event.channel,
@@ -340,7 +342,7 @@ const slack: PlatformConnector = {
 
     let appStopped = false
 
-    return {
+    const instance: ConnectorInstance = {
       connector,
       isAlive() {
         return !appStopped && !!app.client
@@ -437,6 +439,17 @@ const slack: PlatformConnector = {
         console.log(`[slack] Bot disconnected`)
       },
     }
+
+    // Bolt emits 'error' on unrecoverable failures (auth revoked, socket closed permanently)
+    app.error(async (error) => {
+      const errMsg = error.original?.message || error.message || String(error)
+      console.error(`[slack] App error:`, errMsg)
+      if (appStopped) return
+      appStopped = true
+      instance.onCrash?.(`Slack error: ${errMsg}`)
+    })
+
+    return instance
   },
 }
 

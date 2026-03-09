@@ -67,7 +67,7 @@ function extractDocumentText(filePath: string): { text: string; method: string }
     return { text: out.stdout || '', method: 'pdftotext' }
   }
 
-  if (['.txt', '.md', '.markdown', '.json', '.csv', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.rs', '.java', '.yaml', '.yml'].includes(ext)) {
+  if (['.txt', '.md', '.markdown', '.json', '.csv', '', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.rs', '.java', '.yaml', '.yml'].includes(ext)) {
     return { text: readUtf8Text(), method: 'utf8' }
   }
 
@@ -1082,10 +1082,10 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   if (changed) save(items)
                 }
                 clearProjectId(loadAgents, saveAgents)
-                clearProjectId(loadTasks, saveTasks)
-                clearProjectId(loadSchedules, saveSchedules)
-                clearProjectId(loadSkills, saveSkills)
-                clearProjectId(loadSecrets, saveSecrets)
+                clearProjectId(loadTasks, saveTasks as any)
+                clearProjectId(loadSchedules, saveSchedules as any)
+                clearProjectId(loadSkills, saveSkills as any)
+                clearProjectId(loadSecrets, saveSecrets as any)
               }
               return JSON.stringify({
                 deleted: effectiveId,

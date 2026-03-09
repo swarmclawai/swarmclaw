@@ -35,8 +35,8 @@ function runWithTempDataDir(script: string) {
 describe('approval auto-approve', () => {
   it('defaults new installs to approvals auto-run', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
 
@@ -86,9 +86,9 @@ describe('approval auto-approve', () => {
 
   it('auto-approves tool access and plugin scaffolds when configured', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
-      const dataDirMod = await import('./src/lib/server/data-dir.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
+      const dataDirMod = await import('./src/lib/server/data-dir')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
       const dataDir = dataDirMod.DATA_DIR || dataDirMod.default?.DATA_DIR || dataDirMod['module.exports']?.DATA_DIR
@@ -164,9 +164,9 @@ describe('approval auto-approve', () => {
 
   it('can disable approvals platform-wide for fully autonomous execution', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
-      const sessionRunsMod = await import('./src/lib/server/session-run-manager.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
+      const sessionRunsMod = await import('./src/lib/server/session-run-manager')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
       const sessionRuns = sessionRunsMod.default || sessionRunsMod
@@ -225,8 +225,8 @@ describe('approval auto-approve', () => {
 
   it('adds a pending approval request message to the chat session when approvals are enabled', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
 
@@ -288,9 +288,9 @@ describe('approval auto-approve', () => {
   it('injects approval guidance only from enabled plugins', () => {
     const output = runWithTempDataDir(`
       process.on('unhandledRejection', () => {})
-      await import('./src/lib/server/session-tools/wallet.ts')
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      await import('./src/lib/server/session-tools/wallet')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
 
@@ -424,9 +424,9 @@ describe('approval auto-approve', () => {
   it('derives tool-access approval guidance from the requested plugin metadata', () => {
     const output = runWithTempDataDir(`
       process.on('unhandledRejection', () => {})
-      await import('./src/lib/server/session-tools/http.ts')
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      await import('./src/lib/server/session-tools/http')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
 
@@ -478,9 +478,9 @@ describe('approval auto-approve', () => {
   it('injects plugin-owned scaffold guidance for plugin creator approvals', () => {
     const output = runWithTempDataDir(`
       process.on('unhandledRejection', () => {})
-      await import('./src/lib/server/session-tools/plugin-creator.ts')
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      await import('./src/lib/server/session-tools/plugin-creator')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
 
@@ -549,8 +549,8 @@ describe('approval auto-approve', () => {
   it('applies tool access after a manual approval decision', () => {
     const output = runWithTempDataDir(`
       process.on('unhandledRejection', () => {})
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
 
@@ -609,9 +609,9 @@ describe('approval auto-approve', () => {
   it('wakes the blocked session after a manual approval decision', () => {
     const output = runWithTempDataDir(`
       process.on('unhandledRejection', () => {})
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
-      const sessionRunsMod = await import('./src/lib/server/session-run-manager.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
+      const sessionRunsMod = await import('./src/lib/server/session-run-manager')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
       const sessionRuns = sessionRunsMod.default || sessionRunsMod
@@ -672,14 +672,14 @@ describe('approval auto-approve', () => {
 
     assert.equal(output.finalStatus, 'approved')
     assert.equal(output.runCount >= 1, true)
-    assert.equal(output.runSources.filter((source) => source === 'approval-decision').length, 1)
+    assert.equal(output.runSources.filter((source: any) => source === "approval-decision").length, 1)
   })
 
   it('reuses equivalent wallet approvals instead of creating duplicates', () => {
     const output = runWithTempDataDir(`
       process.on('unhandledRejection', () => {})
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
 
@@ -754,8 +754,8 @@ describe('approval auto-approve', () => {
 
   it('reuses approved tool-access decisions across sessions for the same agent', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
 

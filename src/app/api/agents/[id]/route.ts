@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { loadAgents, saveAgents, loadSessions, saveSessions, logActivity } from '@/lib/server/storage'
+import { loadAgents, saveAgents, loadSessions, logActivity, upsertStoredItem, upsertStoredItems } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { mutateItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ops: CollectionOps<any> = { load: () => loadAgents({ includeTrashed: true }), save: saveAgents, topic: 'agents' }
+const ops: CollectionOps<any> = { load: () => loadAgents({ includeTrashed: true }), save: saveAgents, topic: 'agents', table: 'agents' }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -77,7 +77,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         shortcut.shortcutForAgentId = id
         changed = true
       }
-      if (changed) saveSessions(sessions)
+      if (changed) upsertStoredItem('sessions', shortcut.id, shortcut)
     }
   }
 
@@ -97,15 +97,16 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
   // Detach sessions from the trashed agent
   const sessions = loadSessions()
-  let detachedSessions = 0
+  const detached: Array<[string, unknown]> = []
   for (const session of Object.values(sessions) as Array<Record<string, unknown>>) {
     if (!session || session.agentId !== id) continue
     session.agentId = null
-    detachedSessions += 1
+    detached.push([session.id as string, session])
   }
-  if (detachedSessions > 0) {
-    saveSessions(sessions)
+  if (detached.length > 0) {
+    upsertStoredItems('sessions', detached)
   }
+  const detachedSessions = detached.length
 
   return NextResponse.json({ ok: true, detachedSessions })
 }

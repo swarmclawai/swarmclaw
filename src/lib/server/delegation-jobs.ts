@@ -1,6 +1,6 @@
 import { genId } from '@/lib/id'
 import type { DelegationJobArtifact, DelegationJobCheckpoint, DelegationJobRecord, DelegationJobStatus } from '@/types'
-import { loadDelegationJobs, upsertDelegationJob } from './storage'
+import { loadDelegationJobs, upsertDelegationJob, patchDelegationJob } from './storage'
 import { notify } from './ws-hub'
 
 interface DelegationRuntimeHandle {
@@ -13,12 +13,15 @@ const runtimeScope = globalThis as typeof globalThis & {
 }
 const runtimeHandles = runtimeScope[runtimeKey] ?? (runtimeScope[runtimeKey] = new Map())
 
-function now() {
-  return Date.now()
-}
-
 function isTerminalStatus(status: DelegationJobStatus | null | undefined): boolean {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
+}
+
+function appendCheckpoint(
+  existing: DelegationJobCheckpoint[] | undefined,
+  checkpoint: DelegationJobCheckpoint,
+): DelegationJobCheckpoint[] {
+  return [...(existing || []), checkpoint].slice(-24)
 }
 
 function notifyDelegationJobsChanged() {
@@ -37,7 +40,7 @@ export interface CreateDelegationJobInput {
 }
 
 export function createDelegationJob(input: CreateDelegationJobInput): DelegationJobRecord {
-  const createdAt = now()
+  const createdAt = Date.now()
   const job: DelegationJobRecord = {
     id: genId(10),
     kind: input.kind,
@@ -92,16 +95,16 @@ export function updateDelegationJob(
   id: string,
   patch: Partial<DelegationJobRecord>,
 ): DelegationJobRecord | null {
-  const current = getDelegationJob(id)
-  if (!current) return null
-  const next: DelegationJobRecord = {
-    ...current,
-    ...patch,
-    updatedAt: now(),
-  }
-  upsertDelegationJob(id, next)
-  notifyDelegationJobsChanged()
-  return next
+  const result = patchDelegationJob(id, (current) => {
+    if (!current) return null
+    return {
+      ...current,
+      ...patch,
+      updatedAt: Date.now(),
+    }
+  })
+  if (result) notifyDelegationJobsChanged()
+  return result as any
 }
 
 export function appendDelegationCheckpoint(
@@ -114,10 +117,9 @@ export function appendDelegationCheckpoint(
   if (isTerminalStatus(current.status) && status && status !== current.status) {
     return current
   }
-  const checkpoints = [...(current.checkpoints || []), { at: now(), note, status }]
   return updateDelegationJob(id, {
     status: isTerminalStatus(current.status) ? current.status : (status ?? current.status),
-    checkpoints: checkpoints.slice(-24),
+    checkpoints: appendCheckpoint(current.checkpoints, { at: Date.now(), note, status }),
   })
 }
 
@@ -128,7 +130,7 @@ export function startDelegationJob(id: string, patch?: Partial<DelegationJobReco
   return updateDelegationJob(id, {
     ...patch,
     status: 'running',
-    startedAt: now(),
+    startedAt: Date.now(),
   })
 }
 
@@ -147,7 +149,7 @@ export function completeDelegationJob(
     result,
     resultPreview: result.slice(0, 1000),
     error: null,
-    completedAt: now(),
+    completedAt: Date.now(),
   })
 }
 
@@ -160,7 +162,7 @@ export function failDelegationJob(id: string, error: string, patch?: Partial<Del
     ...patch,
     status: 'failed',
     error,
-    completedAt: now(),
+    completedAt: Date.now(),
   })
 }
 
@@ -174,21 +176,20 @@ export function cancelDelegationJob(id: string): DelegationJobRecord | null {
   } catch {
     // best-effort cancel
   }
-  runtimeHandles.delete(id)
-  const checkpoint: DelegationJobCheckpoint = {
-    at: now(),
-    note: 'Job cancelled',
+  // Commit state before deleting handle — if the update fails, the handle
+  // stays intact for a future retry rather than being orphaned.
+  const result = updateDelegationJob(id, {
     status: 'cancelled',
-  }
-  return updateDelegationJob(id, {
-    status: 'cancelled',
-    completedAt: now(),
+    completedAt: Date.now(),
     error: null,
-    checkpoints: [
-      ...(current.checkpoints || []),
-      checkpoint,
-    ].slice(-24),
+    checkpoints: appendCheckpoint(current.checkpoints, {
+      at: Date.now(),
+      note: 'Job cancelled',
+      status: 'cancelled',
+    }),
   })
+  runtimeHandles.delete(id)
+  return result as any
 }
 
 export function cancelDelegationJobsForParentSession(
@@ -206,16 +207,12 @@ export function cancelDelegationJobsForParentSession(
     const checkpoints = Array.isArray(next.checkpoints) ? next.checkpoints : []
     const last = checkpoints[checkpoints.length - 1]
     if (!last || last.note !== note) {
-      const checkpoint: DelegationJobCheckpoint = {
-        at: now(),
-        note,
-        status: 'cancelled',
-      }
       updateDelegationJob(job.id, {
-        checkpoints: [
-          ...checkpoints,
-          checkpoint,
-        ].slice(-24),
+        checkpoints: appendCheckpoint(next.checkpoints, {
+          at: Date.now(),
+          note,
+          status: 'cancelled',
+        }),
       })
     }
   }
@@ -235,7 +232,7 @@ export function appendDelegationArtifacts(id: string, artifacts: DelegationJobAr
 }
 
 export function recoverStaleDelegationJobs(maxAgeMs = 15 * 60_000): number {
-  const threshold = now() - maxAgeMs
+  const threshold = Date.now() - maxAgeMs
   const stale = listDelegationJobs().filter((job) =>
     (job.status === 'queued' || job.status === 'running')
     && !runtimeHandles.has(job.id)

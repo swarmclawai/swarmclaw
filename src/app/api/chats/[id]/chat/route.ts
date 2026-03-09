@@ -26,6 +26,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const encoder = new TextEncoder()
   let abortRun: (() => void) | null = null
+  let unsubscribeRun: (() => void) | null = null
   const stream = new ReadableStream({
     start(controller) {
       let closed = false
@@ -54,6 +55,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         callerSignal: internal ? req.signal : undefined,
       })
       abortRun = run.abort
+      unsubscribeRun = run.unsubscribe
 
       log.info('chat', `Enqueued session run ${run.runId}`, {
         sessionId: id,
@@ -91,9 +93,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         })
     },
     cancel() {
-      // Client disconnected. User-facing runs continue in the background so
-      // they can persist results even when the transport drops. Explicit stop
-      // controls still cancel the run through the session run manager.
+      // Client disconnected — always remove this subscriber's listener to
+      // prevent writes to a closed stream (and free the closure).
+      unsubscribeRun?.()
+      // User-facing runs continue in the background so they can persist
+      // results even when the transport drops. Internal runs are aborted.
       if (internal) abortRun?.()
     },
   })

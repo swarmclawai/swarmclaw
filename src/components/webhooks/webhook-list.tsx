@@ -4,9 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { copyTextToClipboard } from '@/lib/clipboard'
 
-function webhookUrl(id: string): string {
-  if (typeof window === 'undefined') return `/api/webhooks/${id}`
-  return `${window.location.origin}/api/webhooks/${id}`
+function webhookPath(id: string): string {
+  return `/api/webhooks/${id}`
 }
 
 function formatEvents(events: string[] | undefined): string {
@@ -74,7 +73,7 @@ export function WebhookList({ inSidebar }: { inSidebar?: boolean }) {
     <div className={`flex-1 overflow-y-auto ${inSidebar ? 'pb-10' : 'pb-20'}`}>
       {list.map((hook, idx) => {
         const agentName = hook.agentId ? agents[hook.agentId]?.name : null
-        const endpoint = webhookUrl(hook.id)
+        const endpoint = webhookPath(hook.id)
         const copiedEndpoint = copied === `endpoint:${hook.id}`
         const copiedSecret = copied === `secret:${hook.id}`
         const hasSecret = typeof hook.secret === 'string' && hook.secret.trim().length > 0
@@ -121,7 +120,7 @@ export function WebhookList({ inSidebar }: { inSidebar?: boolean }) {
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                copyText(`endpoint:${hook.id}`, endpoint)
+                copyText(`endpoint:${hook.id}`, `${window.location.origin}${endpoint}`)
               }}
               title={copiedEndpoint ? 'Copied endpoint' : 'Copy endpoint URL'}
               className={`shrink-0 w-8 h-8 rounded-[8px] flex items-center justify-center transition-all cursor-pointer border-none ${

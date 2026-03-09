@@ -6,7 +6,7 @@ import {
   getOpenClawLocalDeployStatus,
   getOpenClawRemoteDeployCollectionStatus,
   getOpenClawRemoteDeployStatus,
-} from './openclaw-deploy.ts'
+} from './openclaw-deploy'
 
 const GLOBAL_KEY = '__swarmclaw_openclaw_deploy__' as const
 const originalRuntimeState = (globalThis as typeof globalThis & { [GLOBAL_KEY]?: unknown })[GLOBAL_KEY]

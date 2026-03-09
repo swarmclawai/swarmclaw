@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { DATA_DIR } from '../data-dir'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import { isNoMessage } from './manager'
 
 const matrix: PlatformConnector = {
@@ -48,7 +49,9 @@ const matrix: PlatformConnector = {
       }
 
       try {
-        const response = await onMessage(inbound)
+        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
+        const response = routeResult.visibleText
         if (isNoMessage(response)) return
         await client.sendText(roomId, response)
       } catch (err: any) {

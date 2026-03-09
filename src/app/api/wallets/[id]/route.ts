@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadWallets, upsertWallet, deleteWallet as deleteWalletFromStore, loadAgents, saveAgents } from '@/lib/server/storage'
+import { loadWallets, upsertWallet, deleteWallet as deleteWalletFromStore, loadAgent, loadAgents, upsertAgent } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { getWalletLimitAtomic, normalizeAtomicString } from '@/lib/wallet'
 import type { AgentWallet, WalletAssetBalance, WalletPortfolioSummary } from '@/types'
@@ -89,8 +89,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   // Reassign wallet to a different agent
   if (typeof body.agentId === 'string' && body.agentId !== wallet.agentId) {
-    const agents = loadAgents()
-    const newAgent = agents[body.agentId]
+    const newAgent = loadAgent(body.agentId)
     if (!newAgent) return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
 
     // Only one wallet per chain per agent.
@@ -98,28 +97,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const conflict = Object.values(allWallets).find((w) => w.agentId === body.agentId && w.id !== id && w.chain === wallet.chain)
     if (conflict) return NextResponse.json({ error: `Target agent already has a ${wallet.chain} wallet` }, { status: 409 })
 
-    const oldAgent = agents[wallet.agentId]
+    const oldAgent = loadAgent(wallet.agentId)
     if (oldAgent) {
-      unlinkWalletFromAgent(oldAgent, id)
+      unlinkWalletFromAgent(oldAgent as any, id)
       oldAgent.updatedAt = Date.now()
-      agents[wallet.agentId] = oldAgent
+      upsertAgent(wallet.agentId, oldAgent)
     }
 
-    linkWalletToAgent(newAgent, id, shouldMakeActive || getAgentActiveWalletId(newAgent) == null)
+    linkWalletToAgent(newAgent as any, id, shouldMakeActive || getAgentActiveWalletId(newAgent as any) == null)
     newAgent.updatedAt = Date.now()
-    agents[body.agentId] = newAgent
-    saveAgents(agents)
+    upsertAgent(body.agentId, newAgent)
     notify('agents')
 
     wallet.agentId = body.agentId
   } else if (shouldMakeActive) {
-    const agents = loadAgents()
-    const agent = agents[wallet.agentId]
+    const agent = loadAgent(wallet.agentId)
     if (agent) {
-      setAgentActiveWallet(agent, id)
+      setAgentActiveWallet(agent as any, id)
       agent.updatedAt = Date.now()
-      agents[wallet.agentId] = agent
-      saveAgents(agents)
+      upsertAgent(wallet.agentId, agent)
       notify('agents')
     }
   }
@@ -156,13 +152,11 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   } catch { /* ignore */ }
 
   // Unlink from agent
-  const agents = loadAgents()
-  const agent = agents[wallet.agentId]
+  const agent = loadAgent(wallet.agentId)
   if (agent) {
-    unlinkWalletFromAgent(agent, id)
+    unlinkWalletFromAgent(agent as any, id)
     agent.updatedAt = Date.now()
-    agents[wallet.agentId] = agent
-    saveAgents(agents)
+    upsertAgent(wallet.agentId, agent)
     notify('agents')
   }
 

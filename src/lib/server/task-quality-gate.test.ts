@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { normalizeTaskQualityGate } from './task-quality-gate.ts'
+import { normalizeTaskQualityGate } from './task-quality-gate'
 
 test('normalizeTaskQualityGate uses defaults when unset', () => {
   const gate = normalizeTaskQualityGate(undefined, undefined)

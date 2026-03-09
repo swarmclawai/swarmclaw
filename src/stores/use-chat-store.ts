@@ -243,7 +243,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const shouldIgnoreTransientError = (msg: string) =>
       /cancelled by steer mode|stopped by user/i.test(msg || '')
 
-    await streamChat(sessionId, text, imagePath, imageUrl, (event: SSEEvent) => {
+    try { await streamChat(sessionId, text, imagePath, imageUrl, (event: SSEEvent) => {
       // Forward events to voice conversation handler if active
       get().onStreamEvent?.(event)
       if (event.t === 'd') {
@@ -437,6 +437,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const nextQueued = get().shiftQueuedMessage()
     if (nextQueued) {
       setTimeout(() => get().sendMessage(nextQueued), 100)
+    }
+    } finally {
+      // Guarantee cadence interval is cleared even if streamChat throws
+      clearCadence()
+      if (get().streaming) {
+        set({ streaming: false, streamingSessionId: null, streamText: '', displayText: '', streamPhase: 'thinking' as const, streamToolName: '', thinkingText: '', thinkingStartTime: 0 })
+      }
     }
   },
 

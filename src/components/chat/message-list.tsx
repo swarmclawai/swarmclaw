@@ -1,7 +1,7 @@
 'use client'
 
 import { DEFAULT_HEARTBEAT_SHOW_ALERTS, DEFAULT_HEARTBEAT_SHOW_OK } from '@/lib/heartbeat-defaults'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
@@ -71,12 +71,62 @@ interface Props {
   loading?: boolean
 }
 
+interface LiveStreamLaneProps {
+  streaming: boolean
+  hasVisiblePersistedStreamingMessage: boolean
+  assistantName?: string
+  agentAvatarSeed?: string
+  agentAvatarUrl?: string | null
+  agentName?: string
+}
+
+const LiveStreamLane = memo(function LiveStreamLane({
+  streaming,
+  hasVisiblePersistedStreamingMessage,
+  assistantName,
+  agentAvatarSeed,
+  agentAvatarUrl,
+  agentName,
+}: LiveStreamLaneProps) {
+  const displayText = useChatStore((s) => s.displayText)
+  const hasToolEvents = useChatStore((s) => s.toolEvents.length > 0)
+
+  if (!streaming) return null
+
+  if (!displayText && !hasToolEvents) {
+    if (hasVisiblePersistedStreamingMessage) return null
+    return (
+      <ThinkingIndicator
+        assistantName={assistantName}
+        agentAvatarSeed={agentAvatarSeed}
+        agentAvatarUrl={agentAvatarUrl}
+        agentName={agentName}
+      />
+    )
+  }
+
+  return (
+    <StreamingBubble
+      text={displayText}
+      assistantName={assistantName}
+      agentAvatarSeed={agentAvatarSeed}
+      agentAvatarUrl={agentAvatarUrl}
+      agentName={agentName}
+    />
+  )
+})
+
 export function MessageList({ messages, streaming, connectorFilter = null, loading = false }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const snapUntilRef = useRef(0)
   const prevSessionIdRef = useRef<string | null>(null)
-  const displayText = useChatStore((s) => s.displayText)
+  const hasLiveText = useChatStore((s) => s.displayText.trim().length > 0)
+  const hasLiveArtifacts = useChatStore((s) => (
+    s.displayText.trim().length > 0
+    || s.toolEvents.length > 0
+    || s.thinkingText.trim().length > 0
+  ))
   const setMessages = useChatStore((s) => s.setMessages)
   const retryLastMessage = useChatStore((s) => s.retryLastMessage)
   const editAndResend = useChatStore((s) => s.editAndResend)
@@ -195,36 +245,43 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
   const isHeartbeatOk = (msg: Message) =>
     msg.suppressed === true || (msg.kind === 'heartbeat' && (/^\s*HEARTBEAT_OK\b/i.test(msg.text || '') || /^\s*NO_MESSAGE\b/i.test(msg.text || '')))
 
-  const displayedMessages: Message[] = []
-  for (const msg of messages) {
-    if (shouldHidePersistedStreamingAssistantMessage(msg, { localStreaming: streaming, displayText })) continue
-    const isHeartbeat = isHeartbeatMessage(msg)
+  const dedupedDisplayedMessages = useMemo(() => {
+    const displayedMessages: Message[] = []
+    for (const msg of messages) {
+      if (shouldHidePersistedStreamingAssistantMessage(msg, { localStreaming: streaming, hasLiveArtifacts })) continue
+      const isHeartbeat = isHeartbeatMessage(msg)
 
-    // Visibility filtering based on settings
-    if (isHeartbeat) {
-      if (!showAlerts) continue // Hide all heartbeat messages
-      if (!showOk && isHeartbeatOk(msg)) continue // Hide OK messages
+      if (isHeartbeat) {
+        if (!showAlerts) continue
+        if (!showOk && isHeartbeatOk(msg)) continue
+      }
+
+      const last = displayedMessages[displayedMessages.length - 1]
+      const lastIsHeartbeat = !!last && isHeartbeatMessage(last)
+      if (isHeartbeat && lastIsHeartbeat) {
+        displayedMessages[displayedMessages.length - 1] = msg
+      } else {
+        displayedMessages.push(msg)
+      }
     }
 
-    const last = displayedMessages[displayedMessages.length - 1]
-    const lastIsHeartbeat = !!last && isHeartbeatMessage(last)
-    if (isHeartbeat && lastIsHeartbeat) {
-      displayedMessages[displayedMessages.length - 1] = msg
-    } else {
-      displayedMessages.push(msg)
+    return dedupeMessagesForDisplay(displayedMessages)
+  }, [hasLiveArtifacts, messages, showAlerts, showOk, streaming])
+
+  const filteredMessages = useMemo(() => {
+    let nextMessages = bookmarkFilter
+      ? dedupedDisplayedMessages.filter((msg) => msg.bookmarked)
+      : dedupedDisplayedMessages
+    if (connectorFilter) {
+      nextMessages = nextMessages.filter((msg) => msg.source?.connectorId === connectorFilter)
     }
-  }
+    return nextMessages
+  }, [bookmarkFilter, connectorFilter, dedupedDisplayedMessages])
 
-  const dedupedDisplayedMessages = dedupeMessagesForDisplay(displayedMessages)
-
-  // Apply bookmark + connector filter
-  let filteredMessages = bookmarkFilter
-    ? dedupedDisplayedMessages.filter((msg) => msg.bookmarked)
-    : dedupedDisplayedMessages
-  if (connectorFilter) {
-    filteredMessages = filteredMessages.filter((msg) => msg.source?.connectorId === connectorFilter)
-  }
-  const hasVisiblePersistedStreamingMessage = filteredMessages.some((msg) => msg.role === 'assistant' && msg.streaming === true)
+  const hasVisiblePersistedStreamingMessage = useMemo(
+    () => filteredMessages.some((msg) => msg.role === 'assistant' && msg.streaming === true),
+    [filteredMessages],
+  )
 
   // Search matches
   const searchMatches = useMemo(() => {
@@ -234,6 +291,146 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
       .map((msg, i) => ({ msg, i }))
       .filter(({ msg }) => msg.text.toLowerCase().includes(normalizedQuery))
   }, [filteredMessages, searchQuery])
+  const searchMatchSet = useMemo(() => new Set(searchMatches.map((match) => match.i)), [searchMatches])
+  const currentSearchMatchIndex = searchQuery ? (searchMatches[searchIdx]?.i ?? null) : null
+  const originalIndexMap = useMemo(() => {
+    const indexMap = new Map<Message, number>()
+    messages.forEach((msg, index) => {
+      indexMap.set(msg, index)
+    })
+    return indexMap
+  }, [messages])
+
+  const handleDeleteMessage = useCallback(async (messageIndex: number) => {
+    if (!sessionId || messageIndex < 0) return
+    try {
+      await api('DELETE', `/chats/${sessionId}/messages`, { messageIndex })
+      setMessages(messages.filter((_: Message, idx: number) => idx !== messageIndex))
+    } catch {
+      // best-effort
+    }
+  }, [messages, sessionId, setMessages])
+
+  const transcriptNodes = useMemo(() => {
+    let lastAssistantIndex = -1
+    if (!streaming) {
+      for (let i = filteredMessages.length - 1; i >= 0; i--) {
+        if (filteredMessages[i].role === 'assistant') {
+          lastAssistantIndex = i
+          break
+        }
+      }
+    }
+
+    return filteredMessages.map((msg, i) => {
+      if (msg.kind === 'context-clear') {
+        const originalIndex = originalIndexMap.get(msg) ?? -1
+        return (
+          <div key={`ctx-clear-${msg.time}-${i}`} className="group/ctx flex items-center gap-4 py-3">
+            <div className="flex-1 h-px bg-amber-400/20" />
+            <span className="flex items-center gap-1.5 text-[10px] font-600 text-amber-400/60 uppercase tracking-[0.1em]">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <polyline points="8 8 4 12 8 16" />
+                <polyline points="16 8 20 12 16 16" />
+              </svg>
+              New context
+              {msg.time ? ` · ${new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+            </span>
+            {sessionId && originalIndex >= 0 && (
+              <button
+                type="button"
+                onClick={() => void handleDeleteMessage(originalIndex)}
+                className="opacity-0 group-hover/ctx:opacity-100 text-[10px] font-600 text-amber-400/60 hover:text-amber-400 bg-transparent border-none cursor-pointer transition-all px-1.5 py-0.5 rounded-[4px] hover:bg-amber-400/10"
+                title="Undo — restore full context"
+              >
+                Undo
+              </button>
+            )}
+            <div className="flex-1 h-px bg-amber-400/20" />
+          </div>
+        )
+      }
+
+      const originalIndex = originalIndexMap.get(msg) ?? -1
+      const isLastAssistant = i === lastAssistantIndex
+      const isSearchMatch = !!searchQuery && searchMatchSet.has(i)
+      const isCurrentMatch = currentSearchMatchIndex === i
+      const prevMsg = i > 0 ? filteredMessages[i - 1] : null
+      const showDateSep = msg.time && (!prevMsg?.time || new Date(msg.time).toDateString() !== new Date(prevMsg.time).toDateString())
+
+      let momentOverlay: React.ReactNode = null
+      if (isLastAssistant && currentMoment && !streaming) {
+        if (currentMoment.kind === 'heartbeat') {
+          momentOverlay = <HeartbeatMoment onDismiss={() => setCurrentMoment(null)} />
+        } else {
+          momentOverlay = (
+            <ActivityMoment
+              key={currentMoment.key}
+              toolName={currentMoment.name}
+              toolInput={currentMoment.input}
+              onDismiss={() => setCurrentMoment(null)}
+            />
+          )
+        }
+      }
+
+      return (
+        <div
+          key={`${sessionId}-${msg.role}-${originalIndex >= 0 ? originalIndex : i}`}
+          data-message-index={i}
+          style={{
+            animation: `${msg.role === 'user' ? 'msg-in-right' : 'msg-in-left'} 0.4s var(--ease-spring) both`,
+            animationDelay: `${Math.min(i * 0.05, 0.4)}s`
+          }}
+        >
+          {showDateSep && (
+            <div className="flex items-center gap-4 py-2 mb-2">
+              <div className="flex-1 h-px bg-white/[0.06]" />
+              <span className="text-[10px] font-600 text-text-3/50 uppercase tracking-[0.1em]">
+                {dateSeparator(msg.time)}
+              </span>
+              <div className="flex-1 h-px bg-white/[0.06]" />
+            </div>
+          )}
+          <div className={isCurrentMatch ? 'ring-1 ring-amber-400/50 rounded-[16px] bg-amber-400/[0.04]' : isSearchMatch ? 'bg-white/[0.02] rounded-[16px]' : ''}>
+            <MessageBubble
+              message={msg}
+              assistantName={assistantName}
+              agentAvatarSeed={agent?.avatarSeed}
+              agentAvatarUrl={agent?.avatarUrl}
+              agentName={agent?.name}
+              isLast={isLastAssistant}
+              onRetry={isLastAssistant ? retryLastMessage : undefined}
+              messageIndex={originalIndex >= 0 ? originalIndex : undefined}
+              onToggleBookmark={toggleBookmark}
+              onEditResend={handleEditResend}
+              onFork={handleFork}
+              momentOverlay={momentOverlay}
+            />
+          </div>
+        </div>
+      )
+    })
+  }, [
+    agent?.avatarSeed,
+    agent?.avatarUrl,
+    agent?.name,
+    assistantName,
+    currentMoment,
+    currentSearchMatchIndex,
+    filteredMessages,
+    handleDeleteMessage,
+    handleEditResend,
+    handleFork,
+    originalIndexMap,
+    retryLastMessage,
+    searchMatchSet,
+    searchQuery,
+    sessionId,
+    streaming,
+    toggleBookmark,
+  ])
 
   // Track whether user is at/near bottom so we know whether to auto-scroll on new content
   const wasAtBottomRef = useRef(true)
@@ -290,14 +487,14 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
       el.scrollTop = el.scrollHeight
       wasAtBottomRef.current = true
     }
-  }, [messages.length, displayText])
+  }, [hasLiveText, messages.length])
 
   // Update scroll-related UI state after render (separate from layoutEffect to avoid cascading)
   useEffect(() => {
     const el = scrollRef.current
     if (!el || messages.length === 0) return
     updateScrollState()
-  }, [messages.length, displayText, updateScrollState])
+  }, [hasLiveText, messages.length, updateScrollState])
 
   // Re-snap when content resizes during snap window (lazy images increasing scrollHeight)
   useEffect(() => {
@@ -603,110 +800,16 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
               </div>
             )
           )}
-          {filteredMessages.map((msg, i) => {
-            // Context-clear divider — render a visual separator instead of a bubble
-            if (msg.kind === 'context-clear') {
-              const originalIndex = messages.indexOf(msg)
-              return (
-                <div key={`ctx-clear-${msg.time}-${i}`} className="group/ctx flex items-center gap-4 py-3">
-                  <div className="flex-1 h-px bg-amber-400/20" />
-                  <span className="flex items-center gap-1.5 text-[10px] font-600 text-amber-400/60 uppercase tracking-[0.1em]">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
-                      <line x1="2" y1="12" x2="22" y2="12" />
-                      <polyline points="8 8 4 12 8 16" />
-                      <polyline points="16 8 20 12 16 16" />
-                    </svg>
-                    New context
-                    {msg.time ? ` · ${new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-                  </span>
-                  {sessionId && originalIndex >= 0 && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await api('DELETE', `/chats/${sessionId}/messages`, { messageIndex: originalIndex })
-                          setMessages(messages.filter((_: Message, idx: number) => idx !== originalIndex))
-                        } catch { /* best-effort */ }
-                      }}
-                      className="opacity-0 group-hover/ctx:opacity-100 text-[10px] font-600 text-amber-400/60 hover:text-amber-400 bg-transparent border-none cursor-pointer transition-all px-1.5 py-0.5 rounded-[4px] hover:bg-amber-400/10"
-                      title="Undo — restore full context"
-                    >
-                      Undo
-                    </button>
-                  )}
-                  <div className="flex-1 h-px bg-amber-400/20" />
-                </div>
-              )
-            }
-
-            // Find original index in the full messages array for API calls
-            const originalIndex = messages.indexOf(msg)
-            const isLastAssistant = msg.role === 'assistant' && !streaming
-              && filteredMessages.slice(i + 1).every((m) => m.role !== 'assistant')
-            const isSearchMatch = searchQuery && searchMatches.some((m) => m.i === i)
-            const isCurrentMatch = searchQuery && searchMatches[searchIdx]?.i === i
-
-            // Date separator
-            const prevMsg = i > 0 ? filteredMessages[i - 1] : null
-            const showDateSep = msg.time && (!prevMsg?.time || new Date(msg.time).toDateString() !== new Date(prevMsg.time).toDateString())
-
-            // Moment overlay — only on the last assistant message
-            let momentOverlay: React.ReactNode = null
-            if (isLastAssistant && currentMoment && !streaming) {
-              if (currentMoment.kind === 'heartbeat') {
-                momentOverlay = <HeartbeatMoment onDismiss={() => setCurrentMoment(null)} />
-              } else {
-                momentOverlay = (
-                  <ActivityMoment
-                    key={currentMoment.key}
-                    toolName={currentMoment.name}
-                    toolInput={currentMoment.input}
-                    onDismiss={() => setCurrentMoment(null)}
-                  />
-                )
-              }
-            }
-
-            return (
-              <div
-                key={`${sessionId}-${msg.role}-${originalIndex >= 0 ? originalIndex : i}`}
-                data-message-index={i}
-                style={{
-                  animation: `${msg.role === 'user' ? 'msg-in-right' : 'msg-in-left'} 0.4s var(--ease-spring) both`,
-                  animationDelay: `${Math.min(i * 0.05, 0.4)}s`
-                }}
-              >
-                {showDateSep && (
-                  <div className="flex items-center gap-4 py-2 mb-2">
-                    <div className="flex-1 h-px bg-white/[0.06]" />
-                    <span className="text-[10px] font-600 text-text-3/50 uppercase tracking-[0.1em]">
-                      {dateSeparator(msg.time)}
-                    </span>
-                    <div className="flex-1 h-px bg-white/[0.06]" />
-                  </div>
-                )}
-                <div className={isCurrentMatch ? 'ring-1 ring-amber-400/50 rounded-[16px] bg-amber-400/[0.04]' : isSearchMatch ? 'bg-white/[0.02] rounded-[16px]' : ''}>
-                  <MessageBubble
-                    message={msg}
-                    assistantName={assistantName}
-                    agentAvatarSeed={agent?.avatarSeed}
-                    agentAvatarUrl={agent?.avatarUrl}
-                    agentName={agent?.name}
-                    isLast={isLastAssistant}
-                    onRetry={isLastAssistant ? retryLastMessage : undefined}
-                    messageIndex={originalIndex >= 0 ? originalIndex : undefined}
-                    onToggleBookmark={toggleBookmark}
-                    onEditResend={handleEditResend}
-                    onFork={handleFork}
-                    momentOverlay={momentOverlay}
-                  />
-                </div>
-              </div>
-            )
-          })}
+          {transcriptNodes}
           <ApprovalCards agentId={agent?.id} />
-          {streaming && !displayText && !hasVisiblePersistedStreamingMessage && <ThinkingIndicator assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentAvatarUrl={agent?.avatarUrl} agentName={agent?.name} />}
-          {streaming && displayText && <StreamingBubble text={displayText} assistantName={assistantName} agentAvatarSeed={agent?.avatarSeed} agentAvatarUrl={agent?.avatarUrl} agentName={agent?.name} />}
+          <LiveStreamLane
+            streaming={streaming}
+            hasVisiblePersistedStreamingMessage={hasVisiblePersistedStreamingMessage}
+            assistantName={assistantName}
+            agentAvatarSeed={agent?.avatarSeed}
+            agentAvatarUrl={agent?.avatarUrl}
+            agentName={agent?.name}
+          />
           {appSettings.suggestionsEnabled === true && !streaming && filteredMessages.length > 0 && filteredMessages[filteredMessages.length - 1]?.role === 'assistant' && (
             <SuggestionsBar lastMessage={filteredMessages[filteredMessages.length - 1]} onSend={sendMessage} />
           )}

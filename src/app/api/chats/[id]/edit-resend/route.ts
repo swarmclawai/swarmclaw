@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
-import { loadSessions, saveSessions } from '@/lib/server/storage'
+import { loadSession, upsertSession } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json().catch(() => ({})) as { messageIndex: number; newText: string }
-  const sessions = loadSessions()
-  const session = sessions[id]
+  const session = loadSession(id)
   if (!session) return notFound()
 
   const { messageIndex, newText } = body
@@ -16,7 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Truncate messages to messageIndex (discard that msg + everything after)
   session.messages = session.messages.slice(0, messageIndex)
-  saveSessions(sessions)
+  upsertSession(id, session)
 
   return NextResponse.json({ message: newText })
 }

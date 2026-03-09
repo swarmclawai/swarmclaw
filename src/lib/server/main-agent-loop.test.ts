@@ -35,9 +35,9 @@ function runWithTempDataDir(script: string) {
 describe('main-agent-loop', () => {
   it('fans out events to durable main sessions and shapes heartbeat prompts', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
+      const storageMod = await import('./src/lib/server/storage')
       const storage = storageMod.default || storageMod['module.exports'] || storageMod
-      const mainLoopMod = await import('./src/lib/server/main-agent-loop.ts')
+      const mainLoopMod = await import('./src/lib/server/main-agent-loop')
       const mainLoop = mainLoopMod.default || mainLoopMod['module.exports'] || mainLoopMod
 
       storage.saveAgents({
@@ -113,9 +113,9 @@ describe('main-agent-loop', () => {
 
   it('updates state from heartbeat metadata and returns a bounded follow-up', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
+      const storageMod = await import('./src/lib/server/storage')
       const storage = storageMod.default || storageMod['module.exports'] || storageMod
-      const mainLoopMod = await import('./src/lib/server/main-agent-loop.ts')
+      const mainLoopMod = await import('./src/lib/server/main-agent-loop')
       const mainLoop = mainLoopMod.default || mainLoopMod['module.exports'] || mainLoopMod
 
       storage.saveAgents({
@@ -195,9 +195,9 @@ describe('main-agent-loop', () => {
 
   it('does not keep chaining when the heartbeat explicitly reports ok', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
+      const storageMod = await import('./src/lib/server/storage')
       const storage = storageMod.default || storageMod['module.exports'] || storageMod
-      const mainLoopMod = await import('./src/lib/server/main-agent-loop.ts')
+      const mainLoopMod = await import('./src/lib/server/main-agent-loop')
       const mainLoop = mainLoopMod.default || mainLoopMod['module.exports'] || mainLoopMod
 
       storage.saveAgents({

@@ -8,12 +8,14 @@ import {
   approvePairingCode,
   clearConnectorPairingState,
   createOrTouchPairingRequest,
+  getWhatsAppApprovedSenderIds,
   isSenderAllowed,
   listPendingPairingRequests,
   listStoredAllowedSenders,
+  normalizeWhatsAppApprovedContacts,
   parseAllowFromCsv,
   parsePairingPolicy,
-} from './pairing.ts'
+} from './pairing'
 
 function withTempDataDir<T>(fn: (dir: string) => T): T {
   const original = process.env.DATA_DIR
@@ -96,4 +98,19 @@ test('addAllowedSender deduplicates and normalizes sender ids', () => {
 
     assert.deepEqual(listStoredAllowedSenders(connectorId), ['test@example.com'])
   })
+})
+
+test('normalizeWhatsAppApprovedContacts trims entries and deduplicates equivalent phone identifiers', () => {
+  const contacts = normalizeWhatsAppApprovedContacts([
+    { id: 'one', label: ' Alice ', phone: ' +1 (555) 000-1111 ' },
+    { id: 'two', label: 'Alice JID', phone: '15550001111@s.whatsapp.net' },
+    { id: '', label: '', phone: '16660002222@s.whatsapp.net' },
+    { id: 'empty', label: 'Ignored', phone: '   ' },
+  ])
+
+  assert.deepEqual(contacts, [
+    { id: 'one', label: 'Alice', phone: '+1 (555) 000-1111' },
+    { id: 'wa-contact-2', label: '16660002222@s.whatsapp.net', phone: '16660002222@s.whatsapp.net' },
+  ])
+  assert.deepEqual(getWhatsAppApprovedSenderIds(contacts), ['+1 (555) 000-1111', '16660002222@s.whatsapp.net'])
 })

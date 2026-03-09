@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadTasks, saveTasks, loadAgents } from '@/lib/server/storage'
+import { loadTask, patchTask, loadAgents } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { notify } from '@/lib/server/ws-hub'
 import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
@@ -9,8 +9,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const body = await req.json()
   const approved = body.approved === true
 
-  const tasks = loadTasks()
-  const task = tasks[id]
+  const task = loadTask(id)
   if (!task) return notFound()
   if (!task.pendingApproval) {
     return NextResponse.json({ error: 'No pending approval on this task' }, { status: 400 })
@@ -20,11 +19,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   if (!approved) {
     // Reject: clear approval, delete checkpoint, fail the task
-    task.pendingApproval = null
-    task.status = 'failed'
-    task.error = 'Tool execution rejected by user'
-    task.updatedAt = Date.now()
-    saveTasks(tasks)
+    patchTask(id, (current) => {
+      if (!current) return current
+      current.pendingApproval = null
+      current.status = 'failed'
+      current.error = 'Tool execution rejected by user'
+      current.updatedAt = Date.now()
+      return current
+    })
     await getCheckpointSaver().deleteThread(threadId)
     notify('tasks')
     return NextResponse.json({ status: 'rejected' })
@@ -37,37 +39,37 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'Agent not found' }, { status: 400 })
   }
 
-  task.pendingApproval = null
-  task.updatedAt = Date.now()
-  saveTasks(tasks)
+  const approvedTask = patchTask(id, (current) => {
+    if (!current) return current
+    current.pendingApproval = null
+    current.updatedAt = Date.now()
+    return current
+  })
   notify('tasks')
 
   // Resume in the background
-  const sessionId = task.sessionId || ''
+  const sessionId = approvedTask?.sessionId || task.sessionId || ''
   setImmediate(async () => {
     try {
       const { resumeLangGraphOrchestrator } = await import('@/lib/server/orchestrator-lg')
       const result = await resumeLangGraphOrchestrator(agent, sessionId, threadId)
-      const t2 = loadTasks()
-      if (t2[id] && !t2[id].pendingApproval) {
-        // Only mark completed if not paused again
-        if (t2[id].status === 'running') {
-          t2[id].result = result
-        }
-        t2[id].updatedAt = Date.now()
-        saveTasks(t2)
-        notify('tasks')
-      }
+      const updated = patchTask(id, (current) => {
+        if (!current || current.pendingApproval) return current
+        if (current.status === 'running') current.result = result
+        current.updatedAt = Date.now()
+        return current
+      })
+      if (updated) notify('tasks')
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err)
       console.error(`[approve] Resume failed for task ${id}:`, errMsg)
-      const t2 = loadTasks()
-      if (t2[id]) {
-        t2[id].error = errMsg
-        t2[id].updatedAt = Date.now()
-        saveTasks(t2)
-        notify('tasks')
-      }
+      const updated = patchTask(id, (current) => {
+        if (!current) return current
+        current.error = errMsg
+        current.updatedAt = Date.now()
+        return current
+      })
+      if (updated) notify('tasks')
     }
   })
 

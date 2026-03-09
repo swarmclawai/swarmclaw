@@ -36,9 +36,9 @@ function runWithTempDataDir(script: string) {
 describe('ensureAgentThreadSession', () => {
   it('creates and reuses an agent shortcut chat for heartbeat-enabled agents', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
+      const storageMod = await import('./src/lib/server/storage')
       const storage = storageMod.default || storageMod['module.exports'] || storageMod
-      const helperMod = await import('./src/lib/server/agent-thread-session.ts')
+      const helperMod = await import('./src/lib/server/agent-thread-session')
       const ensureAgentThreadSession = helperMod.ensureAgentThreadSession
         || helperMod.default?.ensureAgentThreadSession
         || helperMod['module.exports']?.ensureAgentThreadSession
@@ -91,9 +91,9 @@ describe('ensureAgentThreadSession', () => {
 
   it('does not create a new shortcut chat when the agent is disabled', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
+      const storageMod = await import('./src/lib/server/storage')
       const storage = storageMod.default || storageMod['module.exports'] || storageMod
-      const helperMod = await import('./src/lib/server/agent-thread-session.ts')
+      const helperMod = await import('./src/lib/server/agent-thread-session')
       const ensureAgentThreadSession = helperMod.ensureAgentThreadSession
         || helperMod.default?.ensureAgentThreadSession
         || helperMod['module.exports']?.ensureAgentThreadSession
@@ -136,9 +136,9 @@ describe('ensureAgentThreadSession', () => {
 
   it('propagates explicit OpenClaw gateway agent ids into the shortcut session', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
+      const storageMod = await import('./src/lib/server/storage')
       const storage = storageMod.default || storageMod['module.exports'] || storageMod
-      const helperMod = await import('./src/lib/server/agent-thread-session.ts')
+      const helperMod = await import('./src/lib/server/agent-thread-session')
       const ensureAgentThreadSession = helperMod.ensureAgentThreadSession
         || helperMod.default?.ensureAgentThreadSession
         || helperMod['module.exports']?.ensureAgentThreadSession

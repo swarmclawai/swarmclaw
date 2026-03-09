@@ -63,7 +63,7 @@ exit 2
 describe('delegate fallback', () => {
   it('falls back to another backend when Claude Code is unavailable', () => {
     const output = runWithFakeDelegates(`
-      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const mod = await import('./src/lib/server/session-tools/delegate')
       const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
 
       const tools = buildDelegateTools({
@@ -93,7 +93,7 @@ describe('delegate fallback', () => {
 
   it('accepts wrapped function-call payloads with tool_name aliases', () => {
     const output = runWithFakeDelegates(`
-      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const mod = await import('./src/lib/server/session-tools/delegate')
       const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
 
       const tools = buildDelegateTools({
@@ -133,7 +133,7 @@ describe('delegate fallback', () => {
 
   it('rejects delegating a locally available tool call', () => {
     const output = runWithFakeDelegates(`
-      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const mod = await import('./src/lib/server/session-tools/delegate')
       const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
 
       const tools = buildDelegateTools({
@@ -169,7 +169,7 @@ describe('delegate fallback', () => {
 
   it('synthesizes a delegated task from write-style payloads', () => {
     const output = runWithFakeDelegates(`
-      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const mod = await import('./src/lib/server/session-tools/delegate')
       const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
 
       const tools = buildDelegateTools({
@@ -205,7 +205,7 @@ describe('delegate fallback', () => {
 
   it('synthesizes a delegated task for action=start payloads that only provide files', () => {
     const output = runWithFakeDelegates(`
-      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const mod = await import('./src/lib/server/session-tools/delegate')
       const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
 
       const tools = buildDelegateTools({
@@ -244,7 +244,7 @@ describe('delegate fallback', () => {
 
   it('uses nested data.task payloads from recent tool-call wrappers', () => {
     const output = runWithFakeDelegates(`
-      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const mod = await import('./src/lib/server/session-tools/delegate')
       const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
 
       const tools = buildDelegateTools({
@@ -280,7 +280,7 @@ describe('delegate fallback', () => {
 
   it('falls back to reason text when malformed delegate wrappers omit task', () => {
     const output = runWithFakeDelegates(`
-      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const mod = await import('./src/lib/server/session-tools/delegate')
       const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
 
       const tools = buildDelegateTools({
@@ -319,7 +319,7 @@ describe('delegate fallback', () => {
 
   it('accepts legacy id fields for lifecycle delegate actions', () => {
     const output = runWithFakeDelegates(`
-      const mod = await import('./src/lib/server/session-tools/delegate.ts')
+      const mod = await import('./src/lib/server/session-tools/delegate')
       const { buildDelegateTools } = mod.default || mod['module.exports'] || mod
 
       const tools = buildDelegateTools({
@@ -347,7 +347,7 @@ describe('delegate fallback', () => {
 
   it('ranks authenticated delegate backends ahead of unauthenticated ones', () => {
     const output = runWithFakeDelegates(`
-      const mod = await import('./src/lib/server/provider-health.ts')
+      const mod = await import('./src/lib/server/provider-health')
       const { rankDelegatesByHealth } = mod.default || mod['module.exports'] || mod
       const ranked = rankDelegatesByHealth(['delegate_to_claude_code', 'delegate_to_codex_cli'])
       console.log(JSON.stringify(ranked))

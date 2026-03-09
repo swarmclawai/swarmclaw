@@ -9,8 +9,8 @@
  */
 
 import fs from 'fs'
-import path from 'path'
 import { WORKSPACE_DIR } from './data-dir'
+import { resolvePathWithinBaseDir } from './path-utils'
 
 /**
  * Workspace files to inject, in priority order.
@@ -87,7 +87,7 @@ export function buildWorkspaceContext(opts: WorkspaceContextOptions = {}): Works
   for (const spec of WORKSPACE_FILES) {
     if (totalChars >= maxTotal) break
 
-    const filePath = path.join(workspaceDir, spec.name)
+    const filePath = resolvePathWithinBaseDir(workspaceDir, spec.name)
     const content = readFileSafe(filePath)
     if (!content || isEffectivelyEmpty(content)) continue
 

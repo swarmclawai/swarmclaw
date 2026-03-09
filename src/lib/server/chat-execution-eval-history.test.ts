@@ -35,10 +35,10 @@ function runWithTempDataDir(script: string) {
 
 test('executeSessionChatTurn persists internal eval user turns for same-thread recall', () => {
   const output = runWithTempDataDir(`
-    const storageMod = await import('./src/lib/server/storage.ts')
+    const storageMod = await import('./src/lib/server/storage')
     const storage = storageMod.default || storageMod['module.exports'] || storageMod
-    const providersMod = await import('./src/lib/providers/index.ts')
-    const execMod = await import('./src/lib/server/chat-execution.ts')
+    const providersMod = await import('./src/lib/providers/index')
+    const execMod = await import('./src/lib/server/chat-execution')
     const executeSessionChatTurn = execMod.executeSessionChatTurn
       || execMod.default?.executeSessionChatTurn
       || execMod['module.exports']?.executeSessionChatTurn

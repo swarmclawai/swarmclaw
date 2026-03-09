@@ -6,7 +6,7 @@ import { findBinaryOnPath } from './session-tools/context'
 
 const TEXT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.json', '.jsonl', '.csv', '.tsv',
-  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.rs',
+  '', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.rs',
   '.java', '.yaml', '.yml', '.sql', '.xml', '.css', '.scss', '.html', '.htm',
 ])
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff'])

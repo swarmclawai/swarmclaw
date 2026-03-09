@@ -35,8 +35,8 @@ function runWithTempDataDir(script: string) {
 
 /** Helper: seed agents + return manage_tasks / manage_projects tool invocation boilerplate. */
 const AGENT_SETUP = `
-  const storageMod = await import('./src/lib/server/storage.ts')
-  const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+  const storageMod = await import('./src/lib/server/storage')
+  const crudMod = await import('./src/lib/server/session-tools/crud')
   const storage = storageMod.default || storageMod
   const crud = crudMod.default || crudMod
 
@@ -76,7 +76,7 @@ const AGENT_SETUP = `
 
 /** Helper to import dequeueNextRunnableTask (CJS-compatible). */
 const QUEUE_IMPORT = `
-  const _queueMod = await import('./src/lib/server/queue.ts')
+  const _queueMod = await import('./src/lib/server/queue')
   const _queue = _queueMod.default || _queueMod
   const dequeueNextRunnableTask = _queue.dequeueNextRunnableTask
 `
@@ -782,8 +782,8 @@ describe('manage_tasks: fingerprint dedup', () => {
 
   it('29. different agents → not duplicates', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const crudMod = await import('./src/lib/server/session-tools/crud.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
       const storage = storageMod.default || storageMod
       const crud = crudMod.default || crudMod
 

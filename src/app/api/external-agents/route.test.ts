@@ -42,7 +42,7 @@ test('external agent register + heartbeat derives gateway metadata in listing', 
     discoveredPort: 19999,
     deployment: {
       method: 'imported',
-      managedBy: 'external',
+      managedBy: "external" as any,
       useCase: 'single-vps',
       exposure: 'private-lan',
       targetHost: '127.0.0.1',

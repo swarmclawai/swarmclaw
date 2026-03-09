@@ -235,6 +235,14 @@ export function buildWakeTriggerContext(events: WakeEvent[], nowIso?: string): s
   return lines.join('\n')
 }
 
+export function deriveHeartbeatWakeDeliveryMode(
+  events: WakeEvent[],
+): 'default' | 'tool_only' {
+  return events.some((event) => event.reason.toLowerCase() === 'connector-message')
+    ? 'tool_only'
+    : 'default'
+}
+
 export function buildHeartbeatWakePrompt(input: {
   wake: WakeRequest
   basePrompt?: string
@@ -347,6 +355,7 @@ function flushWakes(): void {
           showOk: cfg.showOk,
           showAlerts: cfg.showAlerts,
           target: cfg.target,
+          deliveryMode: deriveHeartbeatWakeDeliveryMode(wake.events),
         },
       })
 

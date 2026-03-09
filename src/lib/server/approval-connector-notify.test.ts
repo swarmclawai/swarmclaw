@@ -35,8 +35,8 @@ function runWithTempDataDir(script: string) {
 describe('approval connector reminders', () => {
   it('resolves a due approval to the session connector target and records one-shot delivery state', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
 
@@ -148,8 +148,8 @@ describe('approval connector reminders', () => {
 
   it('falls back to a running owned connector and respects retry cooldowns after failed sends', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const approvals = approvalsMod.default || approvalsMod
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { findDuplicateSchedule, findEquivalentSchedules, getScheduleSignatureKey, type ScheduleLike } from './schedule-dedupe.ts'
+import { findDuplicateSchedule, findEquivalentSchedules, getScheduleSignatureKey, type ScheduleLike } from './schedule-dedupe'
 
 test('findDuplicateSchedule matches active interval schedules with normalized prompts', () => {
   const schedules: Record<string, ScheduleLike> = {

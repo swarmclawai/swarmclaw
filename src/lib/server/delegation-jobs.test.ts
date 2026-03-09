@@ -99,6 +99,92 @@ describe('delegation-jobs', () => {
     assert.match(String(latest?.error || ''), /interrupted/i)
   })
 
+  // ---------------------------------------------------------------------------
+  // Reliability fix #4: atomic updateDelegationJob preserves fields
+  // ---------------------------------------------------------------------------
+
+  it('atomic update preserves all original fields', () => {
+    const job = delegationJobs.createDelegationJob({
+      kind: 'subagent',
+      task: 'Atomic update test',
+      agentId: 'ag-atomic',
+      agentName: 'Atomic Agent',
+      parentSessionId: 'parent-atomic',
+    })
+
+    // Partial update should not lose unrelated fields
+    const updated = delegationJobs.updateDelegationJob(job.id, { status: 'running' })
+    assert.ok(updated)
+    assert.equal(updated!.status, 'running')
+    assert.equal(updated!.task, 'Atomic update test')
+    assert.equal(updated!.agentId, 'ag-atomic')
+    assert.equal(updated!.agentName, 'Atomic Agent')
+    assert.equal(updated!.parentSessionId, 'parent-atomic')
+    assert.equal(updated!.kind, 'subagent')
+  })
+
+  it('sequential updates preserve intermediate state', () => {
+    const job = delegationJobs.createDelegationJob({
+      kind: 'subagent',
+      task: 'Sequential updates',
+    })
+
+    delegationJobs.updateDelegationJob(job.id, { status: 'running', startedAt: Date.now() })
+    delegationJobs.updateDelegationJob(job.id, { result: 'partial result' })
+
+    const final = delegationJobs.getDelegationJob(job.id)
+    assert.ok(final)
+    assert.equal(final!.status, 'running')
+    assert.equal(final!.result, 'partial result')
+    assert.ok(final!.startedAt! > 0)
+  })
+
+  it('updateDelegationJob returns null for non-existent job', () => {
+    const result = delegationJobs.updateDelegationJob('nonexistent-abc', { status: 'running' })
+    assert.equal(result, null)
+  })
+
+  // ---------------------------------------------------------------------------
+  // Reliability fix (bonus): cancel ordering — state committed before handle delete
+  // ---------------------------------------------------------------------------
+
+  it('cancel records checkpoint and timestamp atomically', () => {
+    const job = delegationJobs.createDelegationJob({
+      kind: 'subagent',
+      task: 'Cancel ordering test',
+    })
+
+    const cancelled = delegationJobs.cancelDelegationJob(job.id)
+    assert.ok(cancelled)
+    assert.equal(cancelled!.status, 'cancelled')
+    assert.ok(cancelled!.completedAt! > 0)
+    const lastCp = cancelled!.checkpoints[cancelled!.checkpoints.length - 1]
+    assert.equal(lastCp.status, 'cancelled')
+    assert.equal(lastCp.note, 'Job cancelled')
+  })
+
+  it('cancel is idempotent — repeated cancel returns unchanged job', () => {
+    const job = delegationJobs.createDelegationJob({
+      kind: 'subagent',
+      task: 'Idempotent cancel',
+    })
+
+    const first = delegationJobs.cancelDelegationJob(job.id)!
+    const second = delegationJobs.cancelDelegationJob(job.id)!
+    assert.equal(second.status, 'cancelled')
+    assert.equal(second.checkpoints.length, first.checkpoints.length)
+  })
+
+  it('does not cancel completed jobs', () => {
+    const job = delegationJobs.createDelegationJob({
+      kind: 'subagent',
+      task: 'Completed job cancel',
+    })
+    delegationJobs.completeDelegationJob(job.id, 'All done')
+    const afterCancel = delegationJobs.cancelDelegationJob(job.id)
+    assert.equal(afterCancel!.status, 'completed')
+  })
+
   it('cancels all running jobs for a parent session', () => {
     const jobA = delegationJobs.createDelegationJob({
       kind: 'delegate',

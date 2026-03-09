@@ -55,7 +55,7 @@ export function AgentSwitchDialog() {
     }
     setOpen(false)
     void setCurrentAgent(agentId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [agents, setCurrentAgent])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

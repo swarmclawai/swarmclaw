@@ -1,7 +1,7 @@
 import { genId } from '@/lib/id'
 import fs from 'node:fs'
 import path from 'node:path'
-import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSchedules, saveSchedules, loadSessions, saveSessions, loadSettings, loadConnectors, UPLOAD_DIR } from './storage'
+import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSchedules, saveSchedules, loadSessions, saveSessions, loadSettings } from './storage'
 import { notify } from './ws-hub'
 import { WORKSPACE_DIR } from './data-dir'
 import { createOrchestratorSession } from './orchestrator'
@@ -10,70 +10,30 @@ import { ensureTaskCompletionReport } from './task-reports'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { executeSessionChatTurn } from './chat-execution'
 import { extractTaskResult, formatResultBody } from './task-result'
+import {
+  collectTaskConnectorFollowupTargets as collectTaskConnectorFollowupTargetsImpl,
+  extractLikelyOutputFiles,
+  isSendableAttachment,
+  maybeResolveUploadMediaPathFromUrl,
+  notifyConnectorTaskFollowups,
+  resolveExistingOutputFilePath,
+  resolveTaskOriginConnectorFollowupTarget as resolveTaskOriginConnectorFollowupTargetImpl,
+  type ScheduleTaskMeta,
+  type SessionLike,
+  type SessionMessageLike,
+} from './task-followups'
 import { getCheckpointSaver } from './langgraph-checkpoint'
 import { cascadeUnblock } from './dag-validation'
 import { performGuardianRollback } from './guardian'
 import { shouldAutoDeleteScheduleAfterTerminalRun } from '@/lib/schedule-origin'
-import type { Agent, BoardTask, Connector, Message, Session } from '@/types'
+import type { Agent, BoardTask, Message, Session } from '@/types'
 import { buildAgentDisabledMessage, isAgentDisabled } from './agent-availability'
+
+export const collectTaskConnectorFollowupTargets = collectTaskConnectorFollowupTargetsImpl
+export const resolveTaskOriginConnectorFollowupTarget = resolveTaskOriginConnectorFollowupTargetImpl
 
 // HMR-safe: pin processing flag to globalThis so hot reloads don't reset it
 const _queueState = ((globalThis as Record<string, unknown>).__swarmclaw_queue__ ??= { processing: false, pendingKick: false }) as { processing: boolean; pendingKick: boolean }
-
-interface SessionMessageLike {
-  role?: string
-  text?: string
-  time?: number
-  kind?: string
-  historyExcluded?: boolean
-  source?: {
-    connectorId?: string
-    channelId?: string
-    threadId?: string
-  }
-  toolEvents?: Array<{ name?: string; output?: string }>
-  streaming?: boolean
-  imageUrl?: string
-}
-
-interface SessionLike {
-  name?: string
-  user?: string
-  cwd?: string
-  messages?: SessionMessageLike[]
-  connectorContext?: {
-    connectorId?: string | null
-    channelId?: string | null
-    threadId?: string | null
-    senderId?: string | null
-    senderName?: string | null
-  }
-  lastActiveAt?: number
-  heartbeatEnabled?: boolean | null
-  active?: boolean
-  currentRunId?: string | null
-}
-
-interface ScheduleTaskMeta extends BoardTask {
-  user?: string | null
-  createdInSessionId?: string | null
-  createdByAgentId?: string | null
-}
-
-interface RunningConnectorLike {
-  id: string
-  platform: string
-  agentId: string | null
-  supportsSend: boolean
-  configuredTargets: string[]
-  recentChannelId: string | null
-}
-
-interface ConnectorTaskFollowupTarget {
-  connectorId: string
-  channelId: string
-  threadId?: string | null
-}
 
 const DISABLED_AGENT_RETRY_MS = 60_000
 
@@ -561,267 +521,6 @@ function latestAssistantText(session: SessionLike | null | undefined): string {
   return ''
 }
 
-function isEnabledFlag(value: unknown): boolean {
-  if (typeof value === 'boolean') return value
-  if (typeof value !== 'string') return false
-  const normalized = value.trim().toLowerCase()
-  return normalized === '1'
-    || normalized === 'true'
-    || normalized === 'yes'
-    || normalized === 'on'
-    || normalized === 'enabled'
-}
-
-function normalizeWhatsappTarget(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) return trimmed
-  if (trimmed.includes('@')) return trimmed
-  let cleaned = trimmed.replace(/[^\d+]/g, '')
-  if (cleaned.startsWith('+')) cleaned = cleaned.slice(1)
-  if (cleaned.startsWith('0') && cleaned.length >= 10) {
-    cleaned = `44${cleaned.slice(1)}`
-  }
-  cleaned = cleaned.replace(/[^\d]/g, '')
-  return cleaned ? `${cleaned}@s.whatsapp.net` : trimmed
-}
-
-function fillTaskFollowupTemplate(template: string, data: {
-  status: string
-  title: string
-  summary: string
-  taskId: string
-}): string {
-  return template
-    .replaceAll('{status}', data.status)
-    .replaceAll('{title}', data.title)
-    .replaceAll('{summary}', data.summary)
-    .replaceAll('{taskId}', data.taskId)
-}
-
-function maybeResolveUploadMediaPathFromUrl(url: string | undefined): string | undefined {
-  if (!url || !url.startsWith('/api/uploads/')) return undefined
-  const rawName = url.slice('/api/uploads/'.length).split(/[?#]/)[0] || ''
-  let decoded: string
-  try { decoded = decodeURIComponent(rawName) } catch { decoded = rawName }
-  const safeName = decoded.replace(/[^a-zA-Z0-9._-]/g, '')
-  if (!safeName) return undefined
-  const fullPath = path.join(UPLOAD_DIR, safeName)
-  return fs.existsSync(fullPath) ? fullPath : undefined
-}
-
-const OUTPUT_FILE_BACKTICK_RE = /`([^`\n]+\.(?:txt|md|json|csv|pdf|png|jpe?g|webp|gif|svg|mp4|webm|mov|zip|tar|gz|log|yml|yaml|xml|html|css|js|ts|tsx|jsx|py|go|rs|java|swift|kt|sql))`/gi
-const OUTPUT_FILE_PATH_RE = /\b((?:\.{1,2}\/|~\/|\/)?[\w./-]+\.(?:txt|md|json|csv|pdf|png|jpe?g|webp|gif|svg|mp4|webm|mov|zip|tar|gz|log|yml|yaml|xml|html|css|js|ts|tsx|jsx|py|go|rs|java|swift|kt|sql))\b/gi
-const MAX_CONNECTOR_ATTACHMENT_BYTES = 25 * 1024 * 1024
-
-function extractLikelyOutputFiles(text: string): string[] {
-  const out: string[] = []
-  const seen = new Set<string>()
-  const push = (raw: string) => {
-    const value = raw.trim().replace(/^['"]|['"]$/g, '')
-    if (!value || /^https?:\/\//i.test(value)) return
-    if (value.startsWith('/api/uploads/')) return
-    const key = value.toLowerCase()
-    if (seen.has(key)) return
-    seen.add(key)
-    out.push(value)
-  }
-
-  for (const match of text.matchAll(OUTPUT_FILE_BACKTICK_RE)) {
-    push(match[1] || '')
-    if (out.length >= 8) return out
-  }
-  for (const match of text.matchAll(OUTPUT_FILE_PATH_RE)) {
-    push(match[1] || '')
-    if (out.length >= 8) return out
-  }
-
-  return out
-}
-
-function resolveExistingOutputFilePath(fileRef: string, cwd: string): string | null {
-  const ref = (fileRef || '').trim()
-  if (!ref) return null
-  if (ref.startsWith('/api/uploads/')) {
-    return maybeResolveUploadMediaPathFromUrl(ref) || null
-  }
-  const withoutFileScheme = ref.replace(/^file:\/\//i, '')
-  const candidates = path.isAbsolute(withoutFileScheme)
-    ? [withoutFileScheme]
-    : [
-        cwd ? path.resolve(cwd, withoutFileScheme) : '',
-        path.resolve(WORKSPACE_DIR, withoutFileScheme),
-      ].filter(Boolean)
-
-  for (const candidate of candidates) {
-    try {
-      const stat = fs.statSync(candidate)
-      if (stat.isFile()) return candidate
-    } catch {
-      // ignore missing candidate
-    }
-  }
-  return null
-}
-
-function isSendableAttachment(filePath: string): boolean {
-  try {
-    const stat = fs.statSync(filePath)
-    return stat.isFile() && stat.size <= MAX_CONNECTOR_ATTACHMENT_BYTES
-  } catch {
-    return false
-  }
-}
-
-export function resolveTaskOriginConnectorFollowupTarget(params: {
-  task: BoardTask
-  sessions: Record<string, SessionLike>
-  connectors: Record<string, Connector>
-  running: RunningConnectorLike[]
-}): ConnectorTaskFollowupTarget | null {
-  const { task, sessions, connectors, running } = params
-  const metaTask = task as ScheduleTaskMeta
-  const delegatedByAgentId = typeof metaTask.delegatedByAgentId === 'string'
-    ? metaTask.delegatedByAgentId.trim()
-    : ''
-  const allowedOwners = new Set([task.agentId, delegatedByAgentId].filter(Boolean))
-  const sourceSessionId = typeof metaTask.createdInSessionId === 'string'
-    ? metaTask.createdInSessionId.trim()
-    : ''
-
-  const runningById = new Map<string, RunningConnectorLike>()
-  for (const entry of running) {
-    if (!entry?.id) continue
-    runningById.set(entry.id, entry)
-  }
-
-  const normalizeTarget = (raw: {
-    connectorId?: string | null
-    channelId?: string | null
-    threadId?: string | null
-  }): ConnectorTaskFollowupTarget | null => {
-    const connectorId = typeof raw.connectorId === 'string' ? raw.connectorId.trim() : ''
-    if (!connectorId) return null
-    const connector = connectors[connectorId]
-    if (!connector) return null
-    const ownerId = typeof connector.agentId === 'string' ? connector.agentId.trim() : ''
-    if (ownerId && !allowedOwners.has(ownerId)) return null
-
-    const runtime = runningById.get(connectorId)
-    if (runtime && !runtime.supportsSend) return null
-
-    const channelId = typeof raw.channelId === 'string' ? raw.channelId.trim() : ''
-    if (!channelId) return null
-    const normalizedChannelId = connector.platform === 'whatsapp'
-      ? normalizeWhatsappTarget(channelId)
-      : channelId
-    const threadId = typeof raw.threadId === 'string' ? raw.threadId.trim() : ''
-    return {
-      connectorId,
-      channelId: normalizedChannelId,
-      ...(threadId ? { threadId } : {}),
-    }
-  }
-
-  const explicitTarget = normalizeTarget({
-    connectorId: typeof metaTask.followupConnectorId === 'string' ? metaTask.followupConnectorId : null,
-    channelId: typeof metaTask.followupChannelId === 'string' ? metaTask.followupChannelId : null,
-    threadId: typeof metaTask.followupThreadId === 'string' ? metaTask.followupThreadId : null,
-  })
-  if (explicitTarget) return explicitTarget
-
-  if (!sourceSessionId) return null
-  const sourceSession = sessions[sourceSessionId]
-  if (!sourceSession) return null
-
-  const sessionContextTarget = normalizeTarget({
-    connectorId: typeof sourceSession.connectorContext?.connectorId === 'string'
-      ? sourceSession.connectorContext.connectorId
-      : null,
-    channelId: typeof sourceSession.connectorContext?.channelId === 'string'
-      ? sourceSession.connectorContext.channelId
-      : null,
-    threadId: typeof sourceSession.connectorContext?.threadId === 'string'
-      ? sourceSession.connectorContext.threadId
-      : null,
-  })
-  if (sessionContextTarget) return sessionContextTarget
-
-  if (!Array.isArray(sourceSession.messages)) return null
-
-  for (let i = sourceSession.messages.length - 1; i >= 0; i--) {
-    const message = sourceSession.messages[i]
-    if (!message || message.role !== 'user') continue
-    if (message.historyExcluded === true) continue
-
-    const connectorId = typeof message.source?.connectorId === 'string'
-      ? message.source.connectorId.trim()
-      : ''
-    if (!connectorId) continue
-
-    const connector = connectors[connectorId]
-    if (!connector) continue
-    const runtime = runningById.get(connectorId)
-    const sourceChannel = typeof message.source?.channelId === 'string'
-      ? message.source.channelId.trim()
-      : ''
-    const fallbackChannel = runtime?.recentChannelId
-      || runtime?.configuredTargets?.[0]
-      || connector.config?.outboundJid
-      || connector.config?.outboundTarget
-      || ''
-    const target = normalizeTarget({
-      connectorId,
-      channelId: sourceChannel || fallbackChannel,
-      threadId: typeof message.source?.threadId === 'string' ? message.source.threadId : null,
-    })
-    if (target) return target
-  }
-
-  return null
-}
-
-export function collectTaskConnectorFollowupTargets(params: {
-  task: BoardTask
-  sessions: Record<string, SessionLike>
-  connectors: Record<string, Connector>
-  running: RunningConnectorLike[]
-}): ConnectorTaskFollowupTarget[] {
-  const { task, sessions, connectors, running } = params
-  const originTarget = resolveTaskOriginConnectorFollowupTarget({ task, sessions, connectors, running })
-  if (originTarget) return [originTarget]
-
-  const targets: ConnectorTaskFollowupTarget[] = []
-  const seen = new Set<string>()
-  const pushTarget = (target: ConnectorTaskFollowupTarget | null | undefined) => {
-    if (!target?.connectorId || !target?.channelId) return
-    const key = `${target.connectorId}|${target.channelId}|${target.threadId || ''}`
-    if (seen.has(key)) return
-    seen.add(key)
-    targets.push(target)
-  }
-
-  for (const entry of running) {
-    if (!entry.supportsSend || !entry.id) continue
-    const connector = connectors[entry.id]
-    if (!connector) continue
-    if (connector.agentId !== task.agentId) continue
-    if (!isEnabledFlag(connector.config?.taskFollowups)) continue
-    const channelTargetRaw = entry.configuredTargets[0]
-      || connector.config?.outboundJid
-      || connector.config?.outboundTarget
-      || ''
-    if (!channelTargetRaw) continue
-    pushTarget({
-      connectorId: entry.id,
-      channelId: connector.platform === 'whatsapp'
-        ? normalizeWhatsappTarget(channelTargetRaw)
-        : channelTargetRaw,
-    })
-  }
-
-  return targets
-}
-
 // Task result extraction now uses Zod-validated structured data
 // from ./task-result.ts (extractTaskResult, formatResultBody)
 
@@ -1057,7 +756,7 @@ function notifyMainChatScheduleResult(task: BoardTask): void {
     const agents = loadAgents()
     const agent = agents[task.agentId]
     if (agent?.threadSessionId && sessions[agent.threadSessionId]) {
-      const thread = sessions[agent.threadSessionId] as SessionLike
+      const thread = sessions[(agent as any).threadSessionId] as SessionLike
       const threadLast = Array.isArray(thread.messages) ? thread.messages.at(-1) : null
       if (!(threadLast?.role === 'assistant' && threadLast?.text === body && typeof threadLast?.time === 'number' && now - threadLast.time < 30_000)) {
         if (!Array.isArray(thread.messages)) thread.messages = []
@@ -1080,89 +779,11 @@ function cleanupTerminalOneOffSchedule(task: BoardTask): void {
 
   const schedules = loadSchedules()
   const schedule = schedules[scheduleId]
-  if (!shouldAutoDeleteScheduleAfterTerminalRun(schedule)) return
+  if (!shouldAutoDeleteScheduleAfterTerminalRun(schedule as any)) return
 
   delete schedules[scheduleId]
   saveSchedules(schedules)
   notify('schedules')
-}
-
-async function notifyConnectorTaskFollowups(params: {
-  task: BoardTask
-  statusLabel: string
-  summaryText: string
-  imageUrl?: string
-  mediaPath?: string
-  mediaFileName?: string
-}) {
-  const { task, statusLabel, summaryText, imageUrl, mediaPath, mediaFileName } = params
-
-  const connectors = loadConnectors()
-  const running = (await import('./connectors/manager')).listRunningConnectors()
-  const manager = await import('./connectors/manager')
-  const sessions = loadSessions()
-  const targets = collectTaskConnectorFollowupTargets({
-    task,
-    sessions: sessions as Record<string, SessionLike>,
-    connectors,
-    running: running as RunningConnectorLike[],
-  })
-  if (!targets.length) return
-  const originTarget = resolveTaskOriginConnectorFollowupTarget({
-    task,
-    sessions: sessions as Record<string, SessionLike>,
-    connectors,
-    running: running as RunningConnectorLike[],
-  })
-  const preferredTargetKey = originTarget
-    ? `${originTarget.connectorId}|${originTarget.channelId}|${originTarget.threadId || ''}`
-    : ''
-
-  const summary = summaryText.trim().slice(0, 1400)
-  for (const target of targets) {
-    const connector = connectors[target.connectorId]
-    if (!connector) continue
-
-    const template = typeof connector.config?.taskFollowupTemplate === 'string'
-      ? connector.config.taskFollowupTemplate.trim()
-      : ''
-    const message = template
-      ? fillTaskFollowupTemplate(template, {
-          status: statusLabel,
-          title: task.title || task.id,
-          summary,
-          taskId: task.id,
-        })
-      : [
-          `Task ${statusLabel}: ${task.title}`,
-          summary || 'No summary provided.',
-        ].join('\n\n')
-    const targetKey = `${target.connectorId}|${target.channelId}|${target.threadId || ''}`
-    const preferredChannelNote = !template && preferredTargetKey && targetKey === preferredTargetKey
-      ? '\n\n(Update sent in the same channel that requested this task.)'
-      : ''
-    const outboundMessage = `${message}${preferredChannelNote}`
-
-    const resolvedMediaPath = mediaPath || maybeResolveUploadMediaPathFromUrl(imageUrl)
-    try {
-      await manager.sendConnectorMessage({
-        connectorId: target.connectorId,
-        channelId: target.channelId,
-        threadId: target.threadId || undefined,
-        text: outboundMessage,
-        ...(resolvedMediaPath
-          ? {
-              mediaPath: resolvedMediaPath,
-              fileName: mediaFileName || path.basename(resolvedMediaPath),
-              caption: outboundMessage,
-            }
-          : {}),
-      })
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      console.warn(`[queue] Failed task follow-up send on connector ${target.connectorId}: ${errMsg}`)
-    }
-  }
 }
 
 /**
@@ -1213,9 +834,9 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
   // Get working directory from execution session
   const execCwd = runSession?.cwd || ''
   const existingOutputPaths = outputFileRefs
-    .map((fileRef) => resolveExistingOutputFilePath(fileRef, execCwd))
-    .filter((candidate): candidate is string => Boolean(candidate))
-  const firstLocalOutputPath = existingOutputPaths.find((candidate) => isSendableAttachment(candidate))
+    .map((fileRef: string) => resolveExistingOutputFilePath(fileRef, execCwd))
+    .filter((candidate: any): candidate is string => Boolean(candidate))
+  const firstLocalOutputPath = existingOutputPaths.find((candidate: string) => isSendableAttachment(candidate))
   const followupMediaPath = firstArtifactMediaPath || firstLocalOutputPath || undefined
 
   const buildMsg = (text: string): Message => {
@@ -1228,7 +849,7 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
     const parts = [prefix]
     if (execCwd) parts.push(`Working directory: \`${execCwd}\``)
     if (outputFileRefs.length > 0) {
-      parts.push(`Output files:\n${outputFileRefs.slice(0, 8).map((fileRef) => `- \`${fileRef}\``).join('\n')}`)
+      parts.push(`Output files:\n${outputFileRefs.slice(0, 8).map((fileRef: string) => `- \`${fileRef}\``).join('\n')}`)
     }
     if (task.completionReportPath) parts.push(`Task report: \`${task.completionReportPath}\``)
     if (resumeLines.length > 0) parts.push(resumeLines.join(' | '))
@@ -1238,7 +859,7 @@ function notifyAgentThreadTaskResult(task: BoardTask): void {
 
   // 1. Push to executing agent's thread
   if (agent?.threadSessionId && sessions[agent.threadSessionId]) {
-    const thread = sessions[agent.threadSessionId]
+    const thread = sessions[(agent as any).threadSessionId]
     if (!Array.isArray(thread.messages)) thread.messages = []
     const body = buildResultBlock(`Task ${statusLabel}: **${taskLink}**`)
     thread.messages.push(buildMsg(body))

@@ -9,7 +9,7 @@ import {
   DEFAULT_AGENTS,
   STARTER_AGENT_TOOLS,
   type SetupProvider,
-} from '../lib/setup-defaults.ts'
+} from '../lib/setup-defaults'
 
 interface CliContext {
   baseUrl: string

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { memo, useMemo, useState } from 'react'
 import type { ToolEvent } from '@/stores/use-chat-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
@@ -19,6 +19,7 @@ const TOOL_COLORS: Record<string, string> = {
   create_spreadsheet: '#10B981',
   web_search: '#3B82F6',
   web_fetch: '#3B82F6',
+  spawn_subagent: '#8B5CF6',
   delegate_to_agent: '#6366F1',
   check_delegation_status: '#6366F1',
   delegate_to_claude_code: '#6366F1',
@@ -72,6 +73,7 @@ export const TOOL_LABELS: Record<string, string> = {
   claude_code: 'Claude Code',
   codex_cli: 'Codex CLI',
   opencode_cli: 'OpenCode CLI',
+  spawn_subagent: 'Subagent',
   delegate_to_agent: 'Agent Delegation',
   check_delegation_status: 'Check Delegation',
   delegate_to_claude_code: 'Claude Code',
@@ -110,6 +112,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   claude_code: 'Enable delegation to Claude Code CLI',
   codex_cli: 'Enable delegation to OpenAI Codex CLI',
   opencode_cli: 'Enable delegation to OpenCode CLI',
+  spawn_subagent: 'Spawn native subagents with lineage tracking and batch support',
   delegate_to_agent: 'Delegate a task to another agent',
   check_delegation_status: 'Check the status of a delegated task',
   delegate_to_claude_code: 'Delegate complex coding tasks to Claude Code',
@@ -210,7 +213,7 @@ function formatToolOutput(toolName: string, raw: string): string {
 }
 
 /** Extract a human-readable preview from tool input */
-function getInputPreview(name: string, input: string): string {
+export function getInputPreview(name: string, input: string): string {
   try {
     let parsed = JSON.parse(input)
     // Unwrap LangChain's { input: ... } wrapper
@@ -260,6 +263,25 @@ function getInputPreview(name: string, input: string): string {
   } catch {
     return input.slice(0, 80)
   }
+}
+
+export function getToolLabel(name: string, input: string): string {
+  if (name === 'browser') {
+    try {
+      let parsed = JSON.parse(input)
+      if (parsed?.input && Object.keys(parsed).length === 1) {
+        const inner = typeof parsed.input === 'string' ? JSON.parse(parsed.input) : parsed.input
+        if (typeof inner === 'object' && inner !== null) parsed = inner
+      }
+      const action = parsed?.action || ''
+      const sub = BROWSER_ACTION_LABELS[action]
+      return sub ? `Browser · ${sub}` : 'Browser'
+    } catch {
+      return 'Browser'
+    }
+  }
+
+  return TOOL_LABELS[name] || name.replace(/_/g, ' ')
 }
 
 /** Extract embedded images, videos, PDFs, and file links from tool output */
@@ -364,29 +386,14 @@ function TimeoutQuickFix({ event }: { event: ToolEvent }) {
   )
 }
 
-export function ToolCallBubble({ event }: { event: ToolEvent }) {
+export const ToolCallBubble = memo(function ToolCallBubble({ event }: { event: ToolEvent }) {
   const [imgExpanded, setImgExpanded] = useState(false)
   const isError = event.status === 'error'
   const color = isError ? '#F43F5E' : (TOOL_COLORS[event.name] || '#6366F1')
   const isRunning = event.status === 'running'
+  const statusLabel = isRunning ? 'Running' : (isError ? 'Failed' : 'Done')
 
-  // For browser tool, extract the action to show a more specific label
-  const label = useMemo(() => {
-    if (event.name === 'browser') {
-      try {
-        let parsed = JSON.parse(event.input)
-        // Unwrap LangChain {input: "..."} wrapper — inner value is a stringified JSON
-        if (parsed?.input && Object.keys(parsed).length === 1) {
-          const inner = typeof parsed.input === 'string' ? JSON.parse(parsed.input) : parsed.input
-          if (typeof inner === 'object' && inner !== null) parsed = inner
-        }
-        const action = parsed?.action || ''
-        const sub = BROWSER_ACTION_LABELS[action]
-        return sub ? `Browser · ${sub}` : 'Browser'
-      } catch { return 'Browser' }
-    }
-    return TOOL_LABELS[event.name] || event.name.replace(/_/g, ' ')
-  }, [event.name, event.input])
+  const label = useMemo(() => getToolLabel(event.name, event.input), [event.input, event.name])
 
   const inputPreview = useMemo(() => getInputPreview(event.name, event.input), [event.name, event.input])
   const formattedInput = useMemo(() => formatJson(event.input), [event.input])
@@ -423,7 +430,7 @@ export function ToolCallBubble({ event }: { event: ToolEvent }) {
 
   return (
     <div className="w-full text-left">
-      <details open={isError || isRunning || undefined} className="group/tool">
+      <details open={isError || isRunning} className="group/tool">
         <summary
           className="w-full text-left rounded-[12px] border bg-surface/80 backdrop-blur-sm transition-all duration-200 hover:bg-surface-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden"
           style={{ borderLeft: `3px solid ${color}`, borderColor: `${color}33` }}
@@ -462,6 +469,17 @@ export function ToolCallBubble({ event }: { event: ToolEvent }) {
                 {inputPreview}
               </span>
             )}
+            <span
+              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-600 uppercase tracking-[0.08em] ${
+                isRunning
+                  ? 'border-current/20 bg-white/[0.05] text-text-3'
+                  : isError
+                    ? 'border-rose-500/25 bg-rose-500/10 text-rose-300'
+                    : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
+              }`}
+            >
+              {statusLabel}
+            </span>
             {hasMedia && (
               <span className="text-[10px] text-text-3/50 font-500 shrink-0 group-open/tool:hidden">
                 {media.images.length > 0 && `${media.images.length} image${media.images.length > 1 ? 's' : ''}`}
@@ -504,6 +522,7 @@ export function ToolCallBubble({ event }: { event: ToolEvent }) {
         <div className="mt-2 flex flex-col gap-2">
           {media.images.map((src, i) => (
             <div key={i} className="relative group/img">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={src}
                 alt={`Screenshot ${i + 1}`}
@@ -605,4 +624,4 @@ export function ToolCallBubble({ event }: { event: ToolEvent }) {
       )}
     </div>
   )
-}
+})

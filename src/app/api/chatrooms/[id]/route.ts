@@ -103,12 +103,13 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   // Cascade: null out chatroomId on any connectors that reference this chatroom
   const connectors = loadConnectors()
   let connectorsDirty = false
-  for (const connector of Object.values(connectors)) {
-    if (connector.chatroomId === id) {
-      connector.chatroomId = null
-      connector.updatedAt = Date.now()
-      connectorsDirty = true
-    }
+  for (const rawConnector of Object.values(connectors)) {
+    if (!rawConnector || typeof rawConnector !== 'object') continue
+    const connector = rawConnector as { chatroomId?: string | null; updatedAt?: number }
+    if (connector.chatroomId !== id) continue
+    connector.chatroomId = null
+    connector.updatedAt = Date.now()
+    connectorsDirty = true
   }
   if (connectorsDirty) {
     saveConnectors(connectors)

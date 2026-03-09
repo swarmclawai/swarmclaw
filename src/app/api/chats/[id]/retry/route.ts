@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
-import { loadSessions, saveSessions } from '@/lib/server/storage'
+import { loadSession, upsertSession } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const sessions = loadSessions()
-  const session = sessions[id]
+  const session = loadSession(id)
   if (!session) return notFound()
 
   const msgs = session.messages
@@ -23,7 +22,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   // Remove the last user message too — it will be re-sent by the client
   msgs.pop()
-  saveSessions(sessions)
+  upsertSession(id, session)
 
   return NextResponse.json({ message, imagePath })
 }

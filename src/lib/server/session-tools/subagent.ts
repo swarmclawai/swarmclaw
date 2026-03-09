@@ -1,45 +1,32 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
-import { genId } from '@/lib/id'
-import { DEFAULT_DELEGATION_MAX_DEPTH } from '@/lib/runtime-loop'
-import { loadAgents, loadSessions, saveSessions } from '../storage'
-import { enqueueSessionRun } from '../session-run-manager'
-import { loadRuntimeSettings } from '../runtime-settings'
 import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { applyResolvedRoute, resolvePrimaryAgentRoute } from '../agent-runtime-config'
 import {
-  appendDelegationCheckpoint,
   cancelDelegationJob,
-  completeDelegationJob,
-  createDelegationJob,
-  failDelegationJob,
   getDelegationJob,
   listDelegationJobs,
   recoverStaleDelegationJobs,
-  registerDelegationRuntime,
-  startDelegationJob,
 } from '../delegation-jobs'
-
-function getSessionDepth(sessionId: string | undefined, maxDepth: number): number {
-  if (!sessionId) return 0
-  const sessions = loadSessions()
-  let depth = 0
-  let current = sessionId
-  while (current && depth < maxDepth + 1) {
-    const session = sessions[current]
-    if (!session?.parentSessionId) break
-    current = session.parentSessionId as string
-    depth++
-  }
-  return depth
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+import {
+  spawnSubagent,
+  getHandle,
+  getLineageNodeBySession,
+  getAncestors,
+  getChildren,
+  buildLineageTree,
+  cancelSubagentBySession,
+} from '../subagent-runtime'
+import {
+  spawnSwarm,
+  getSwarm,
+  getSwarmSnapshot,
+  listSwarms,
+  aggregateResults,
+  waitForAll,
+} from '../subagent-swarm'
 
 export function resolveSubagentBrowserProfileId(
   parentSession: Record<string, unknown> | null | undefined,
@@ -55,166 +42,294 @@ export function resolveSubagentBrowserProfileId(
   return inherited || childSessionId
 }
 
-async function startSubagentJob(jobId: string, args: {
-  agentId: string
-  message: string
-  cwd?: string
-  shareBrowserProfile?: boolean
-}, context: { sessionId?: string; cwd: string }) {
-  const runtime = loadRuntimeSettings()
-  const maxDepth = runtime.delegationMaxDepth || DEFAULT_DELEGATION_MAX_DEPTH
-  const agents = loadAgents()
-  const agent = agents[args.agentId]
-  if (!agent) throw new Error(`Agent "${args.agentId}" not found.`)
+// ---------------------------------------------------------------------------
+// Action context & helpers
+// ---------------------------------------------------------------------------
 
-  const depth = getSessionDepth(context.sessionId, maxDepth)
-  if (depth >= maxDepth) throw new Error('Max subagent depth reached.')
-
-  const sid = genId()
-  const now = Date.now()
-  const sessions = loadSessions()
-  const parent = context.sessionId ? sessions[context.sessionId] : null
-  const browserProfileId = resolveSubagentBrowserProfileId(parent, sid, args.shareBrowserProfile === true)
-  const nextSession = {
-    id: sid,
-    name: `subagent-${agent.name}`,
-    cwd: args.cwd || context.cwd,
-    user: 'agent',
-    provider: agent.provider,
-    model: agent.model,
-    credentialId: agent.credentialId || null,
-    messages: [],
-    createdAt: now,
-    lastActiveAt: now,
-    sessionType: 'orchestrated',
-    agentId: agent.id,
-    parentSessionId: context.sessionId || null,
-    plugins: agent.plugins || agent.tools || [],
-    browserProfileId,
-  }
-  sessions[sid] = applyResolvedRoute(nextSession, resolvePrimaryAgentRoute(agent))
-  saveSessions(sessions)
-
-  startDelegationJob(jobId, {
-    childSessionId: sid,
-    agentId: agent.id,
-    agentName: agent.name,
-    cwd: args.cwd || context.cwd,
-  })
-  appendDelegationCheckpoint(jobId, `Created child session ${sid}`, 'running')
-
-  const run = enqueueSessionRun({
-    sessionId: sid,
-    message: args.message,
-    internal: true,
-    source: 'subagent',
-    mode: 'followup',
-  })
-
-  registerDelegationRuntime(jobId, {
-    cancel: () => run.abort(),
-  })
-
-  run.promise
-    .then((result) => {
-      const latest = getDelegationJob(jobId)
-      if (latest?.status === 'cancelled') return
-      appendDelegationCheckpoint(jobId, 'Child session completed', 'completed')
-      completeDelegationJob(jobId, result.text.slice(0, 32_000), { childSessionId: sid })
-    })
-    .catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err)
-      const latest = getDelegationJob(jobId)
-      if (latest?.status === 'cancelled') return
-      appendDelegationCheckpoint(jobId, `Child session failed: ${message}`, 'failed')
-      failDelegationJob(jobId, message, { childSessionId: sid })
-    })
-
-  return { run, sid, agent }
+interface ActionContext {
+  sessionId?: string
+  cwd: string
 }
 
-async function waitForSubagentJob(jobId: string, timeoutSec = 30): Promise<string> {
-  const timeoutAt = Date.now() + Math.max(1, timeoutSec) * 1000
+function requireString(args: Record<string, unknown>, key: string): string {
+  const val = typeof args[key] === 'string' ? (args[key] as string).trim() : ''
+  if (!val) throw new Error(`${key} is required.`)
+  return val
+}
+
+// ---------------------------------------------------------------------------
+// Promise-based wait (no polling when handle exists)
+// ---------------------------------------------------------------------------
+
+async function waitForJob(jobId: string, timeoutSec = 30): Promise<string> {
+  const timeoutMs = Math.max(1, timeoutSec) * 1000
+
+  // Try handle-based wait first (instant if already resolved)
+  const handle = getHandle(jobId)
+  if (handle) {
+    const result = await Promise.race([
+      handle.promise,
+      new Promise<null>((r) => setTimeout(() => r(null), timeoutMs)),
+    ])
+    if (result) return JSON.stringify(result)
+    // Timed out — return current job state with explicit timeout indicator
+    const job = getDelegationJob(jobId)
+    if (job) return JSON.stringify({ ...job, _timedOut: true })
+    return `Error: delegation job "${jobId}" not found.`
+  }
+
+  // Legacy fallback: poll delegation job store
+  const timeoutAt = Date.now() + timeoutMs
   while (Date.now() < timeoutAt) {
     const job = getDelegationJob(jobId)
     if (!job) return `Error: delegation job "${jobId}" not found.`
     if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
       return JSON.stringify(job)
     }
-    await sleep(1000)
+    await new Promise((resolve) => setTimeout(resolve, 1000))
   }
   const latest = getDelegationJob(jobId)
   return latest ? JSON.stringify(latest) : `Error: delegation job "${jobId}" not found.`
 }
 
+// ---------------------------------------------------------------------------
+// Action handlers (dispatch map)
+// ---------------------------------------------------------------------------
+
+async function handleStatus(args: Record<string, unknown>): Promise<string> {
+  const jobId = requireString(args, 'jobId')
+  const job = getDelegationJob(jobId)
+  if (!job) return `Error: delegation job "${jobId}" not found.`
+  const lineage = job.childSessionId ? getLineageNodeBySession(job.childSessionId) : null
+  return JSON.stringify({
+    ...job,
+    lineage: lineage ? {
+      id: lineage.id,
+      depth: lineage.depth,
+      status: lineage.status,
+      parentSessionId: lineage.parentSessionId,
+      childCount: getChildren(lineage.id).length,
+      ancestors: getAncestors(lineage.id).map((a) => ({ id: a.id, agentName: a.agentName, depth: a.depth })),
+    } : null,
+  })
+}
+
+function handleList(_args: Record<string, unknown>, ctx: ActionContext): string {
+  return JSON.stringify(listDelegationJobs({ parentSessionId: ctx.sessionId || null }))
+}
+
+function handleCancel(args: Record<string, unknown>): string {
+  const jobId = requireString(args, 'jobId')
+  const job = getDelegationJob(jobId)
+  if (!job) return `Error: delegation job "${jobId}" not found.`
+  if (job.childSessionId) cancelSubagentBySession(job.childSessionId)
+  const cancelled = cancelDelegationJob(jobId)
+  return cancelled ? JSON.stringify(cancelled) : `Error: delegation job "${jobId}" not found.`
+}
+
+async function handleWait(args: Record<string, unknown>): Promise<string> {
+  const jobId = requireString(args, 'jobId')
+  const timeoutSec = typeof args.timeoutSec === 'number' ? args.timeoutSec : 30
+  return waitForJob(jobId, timeoutSec)
+}
+
+function handleLineage(args: Record<string, unknown>, ctx: ActionContext): string {
+  const targetSessionId = (args.sessionId as string) || ctx.sessionId
+  if (!targetSessionId) return 'Error: sessionId is required for lineage query.'
+  const node = getLineageNodeBySession(targetSessionId)
+  if (!node) return JSON.stringify({ lineage: null })
+  const tree = buildLineageTree(node.id)
+  return JSON.stringify({ lineage: tree })
+}
+
+async function handleBatch(args: Record<string, unknown>, ctx: ActionContext): Promise<string> {
+  const tasks = args.tasks as Array<{ agentId: string; message: string; cwd?: string; shareBrowserProfile?: boolean }> | undefined
+  if (!Array.isArray(tasks) || tasks.length === 0) return 'Error: tasks array is required for batch action.'
+  for (const t of tasks) {
+    if (!t.agentId || !t.message) return 'Error: each task requires agentId and message.'
+  }
+  const waitForCompletion = args.waitForCompletion !== false && args.background !== true
+
+  // Use spawnSwarm internally — batch is a simplified interface
+  const swarm = spawnSwarm({ tasks }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
+  const jobIds = swarm.members
+    .filter((m) => !m.spawnError && m.handle)
+    .map((m) => m.handle.jobId)
+
+  if (!waitForCompletion) {
+    return JSON.stringify({
+      action: 'batch',
+      status: 'running',
+      jobIds,
+      taskCount: tasks.length,
+    })
+  }
+  const aggregate = await swarm.allSettled
+  return JSON.stringify({
+    action: 'batch',
+    status: 'completed',
+    jobIds,
+    completed: aggregate.totalCompleted,
+    failed: aggregate.totalFailed + aggregate.totalSpawnErrors,
+    cancelled: aggregate.totalCancelled,
+    timedOut: 0,
+    totalDurationMs: aggregate.durationMs,
+    results: aggregate.results.map((r) => ({
+      jobId: r.jobId,
+      agentName: r.agentName,
+      status: r.status === 'spawn_error' ? 'failed' : r.status,
+      response: r.response?.slice(0, 2000) || null,
+      error: r.error,
+    })),
+  })
+}
+
+async function handleAggregate(args: Record<string, unknown>): Promise<string> {
+  const jobIds = args.jobIds as string[] | undefined
+  if (!Array.isArray(jobIds) || jobIds.length === 0) return 'Error: jobIds array is required for aggregate action.'
+  return JSON.stringify(aggregateResults(jobIds))
+}
+
+async function handleWaitAll(args: Record<string, unknown>): Promise<string> {
+  const jobIds = args.jobIds as string[] | undefined
+  if (!Array.isArray(jobIds) || jobIds.length === 0) return 'Error: jobIds array is required for wait_all action.'
+  const timeoutSec = typeof args.timeoutSec === 'number' ? args.timeoutSec : 300
+  const agg = await waitForAll(jobIds, timeoutSec)
+  return JSON.stringify(agg)
+}
+
+async function handleSwarm(args: Record<string, unknown>, ctx: ActionContext): Promise<string> {
+  const tasks = args.tasks as Array<{ agentId: string; message: string; cwd?: string; shareBrowserProfile?: boolean }> | undefined
+  if (!Array.isArray(tasks) || tasks.length === 0) return 'Error: tasks array is required for swarm action.'
+  for (const t of tasks) {
+    if (!t.agentId || !t.message) return 'Error: each task requires agentId and message.'
+  }
+  const waitForCompletion = args.waitForCompletion !== false && args.background !== true
+
+  const swarm = spawnSwarm({ tasks }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
+  if (!waitForCompletion) {
+    const snapshot = getSwarmSnapshot(swarm.swarmId)
+    return JSON.stringify({
+      action: 'swarm',
+      status: 'running',
+      swarmId: swarm.swarmId,
+      memberCount: swarm.members.length,
+      snapshot,
+    })
+  }
+  const aggregate = await swarm.allSettled
+  const snapshot = getSwarmSnapshot(swarm.swarmId)
+  return JSON.stringify({
+    action: 'swarm',
+    ...aggregate,
+    status: swarm.status,
+    snapshot,
+  })
+}
+
+function handleSwarmStatus(args: Record<string, unknown>): string {
+  const swarmId = requireString(args, 'swarmId')
+  const snapshot = getSwarmSnapshot(swarmId)
+  if (!snapshot) return `Error: swarm "${swarmId}" not found.`
+  return JSON.stringify(snapshot)
+}
+
+function handleSwarmList(_args: Record<string, unknown>, ctx: ActionContext): string {
+  const swarms = listSwarms(ctx.sessionId)
+  return JSON.stringify(swarms.map((s) => ({
+    swarmId: s.swarmId,
+    status: s.status,
+    memberCount: s.members.length,
+    createdAt: s.createdAt,
+    completedAt: s.completedAt,
+  })))
+}
+
+function handleSwarmCancel(args: Record<string, unknown>): string {
+  const swarmId = requireString(args, 'swarmId')
+  const swarm = getSwarm(swarmId)
+  if (!swarm) return `Error: swarm "${swarmId}" not found.`
+  swarm.cancelAll()
+  const snapshot = getSwarmSnapshot(swarmId)
+  return JSON.stringify({ cancelled: true, snapshot })
+}
+
+async function handleStart(args: Record<string, unknown>, ctx: ActionContext): Promise<string> {
+  const agentId = (args.agentId ?? args.agent_id) as string | undefined
+  const message = args.message as string | undefined
+  if (!agentId) return 'Error: agentId is required.'
+  if (!message) return 'Error: message is required.'
+
+  const cwd = args.cwd as string | undefined
+  const shareBrowserProfile = args.shareBrowserProfile === true || args.share_browser_profile === true
+  const waitForCompletion = args.waitForCompletion !== false && args.background !== true
+
+  const handle = spawnSubagent(
+    { agentId, message, cwd, shareBrowserProfile, waitForCompletion },
+    { sessionId: ctx.sessionId, cwd: ctx.cwd },
+  )
+
+  if (!waitForCompletion) {
+    return JSON.stringify({
+      jobId: handle.jobId,
+      status: 'running',
+      agentId: handle.agentId,
+      agentName: handle.agentName,
+      sessionId: handle.sessionId,
+      lineageId: handle.lineageId,
+    })
+  }
+
+  const result = await handle.promise
+  return JSON.stringify({
+    jobId: result.jobId,
+    status: result.status,
+    agentId: result.agentId,
+    agentName: result.agentName,
+    sessionId: result.sessionId,
+    lineageId: result.lineageId,
+    response: result.response,
+    depth: result.depth,
+    childCount: result.childCount,
+    durationMs: result.durationMs,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch map
+// ---------------------------------------------------------------------------
+
+type ActionHandler = (args: Record<string, unknown>, ctx: ActionContext) => Promise<string> | string
+const ACTIONS: Record<string, ActionHandler> = {
+  status: handleStatus,
+  list: handleList,
+  cancel: handleCancel,
+  wait: handleWait,
+  lineage: handleLineage,
+  batch: handleBatch,
+  aggregate: handleAggregate,
+  wait_all: handleWaitAll,
+  swarm: handleSwarm,
+  swarm_status: handleSwarmStatus,
+  swarm_list: handleSwarmList,
+  swarm_cancel: handleSwarmCancel,
+}
+
 /**
- * Core Subagent Execution Logic
+ * Core Subagent Execution Logic — powered by native subagent runtime.
+ * Uses dispatch map instead of if-else chain for maintainability.
  */
-async function executeSubagentAction(args: any, context: { sessionId?: string; cwd: string }) {
+async function executeSubagentAction(args: unknown, context: ActionContext) {
   const normalized = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
-  const action = String(normalized.action || '').trim().toLowerCase()
-  const agentId = (normalized.agentId ?? normalized.agent_id) as string | undefined
-  const message = normalized.message as string | undefined
-  const cwd = normalized.cwd as string | undefined
-  const shareBrowserProfile = normalized.shareBrowserProfile === true || normalized.share_browser_profile === true
-  const jobId = typeof normalized.jobId === 'string' ? normalized.jobId.trim() : ''
-  const waitForCompletion = normalized.waitForCompletion !== false && normalized.background !== true
+  const action = String(normalized.action || 'start').trim().toLowerCase()
 
   recoverStaleDelegationJobs()
 
   try {
-    if (action === 'status') {
-      if (!jobId) return 'Error: jobId is required.'
-      const job = getDelegationJob(jobId)
-      return job ? JSON.stringify(job) : `Error: delegation job "${jobId}" not found.`
-    }
-    if (action === 'list') {
-      return JSON.stringify(listDelegationJobs({ parentSessionId: context.sessionId || null }))
-    }
-    if (action === 'cancel') {
-      if (!jobId) return 'Error: jobId is required.'
-      const job = cancelDelegationJob(jobId)
-      return job ? JSON.stringify(job) : `Error: delegation job "${jobId}" not found.`
-    }
-    if (action === 'wait') {
-      if (!jobId) return 'Error: jobId is required.'
-      const timeoutSec = typeof normalized.timeoutSec === 'number' ? normalized.timeoutSec : 30
-      return waitForSubagentJob(jobId, timeoutSec)
-    }
-
-    if (!agentId) return 'Error: agentId is required.'
-    if (!message) return 'Error: message is required.'
-
-    const job = createDelegationJob({
-      kind: 'subagent',
-      parentSessionId: context.sessionId || null,
-      agentId,
-      task: message,
-      cwd: cwd || context.cwd,
-    })
-    appendDelegationCheckpoint(job.id, `Starting subagent ${agentId}`, 'queued')
-    const started = await startSubagentJob(job.id, { agentId, message, cwd, shareBrowserProfile }, context)
-
-    if (!waitForCompletion) {
-      return JSON.stringify({
-        jobId: job.id,
-        status: 'running',
-        agentId,
-        agentName: started.agent.name,
-        sessionId: started.sid,
-      })
-    }
-
-    const result = await started.run.promise
-    const completed = getDelegationJob(job.id)
-    return JSON.stringify({
-      jobId: job.id,
-      status: completed?.status || 'completed',
-      agentId,
-      agentName: started.agent.name,
-      sessionId: started.sid,
-      response: result.text.slice(0, 32_000),
-    })
+    const handler = ACTIONS[action]
+    if (handler) return handler(normalized, context)
+    // Default: single agent spawn
+    return handleStart(normalized, context)
   } catch (err: unknown) {
     return `Error: ${err instanceof Error ? err.message : String(err)}`
   }
@@ -230,11 +345,11 @@ const SubagentPlugin: Plugin = {
   tools: [
     {
       name: 'spawn_subagent',
-      description: 'Delegate a task to another agent. Supports background jobs with action=status|list|wait|cancel and waitForCompletion=false.',
+      description: 'Delegate tasks to other agents with native execution and lineage tracking. Actions: start (single), batch (simple parallel), swarm (event-driven parallel with callbacks), swarm_status, swarm_list, swarm_cancel, status, list, wait, wait_all, cancel, lineage, aggregate.',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['start', 'status', 'list', 'wait', 'cancel'] },
+          action: { type: 'string', enum: ['start', 'status', 'list', 'wait', 'wait_all', 'cancel', 'lineage', 'batch', 'aggregate', 'swarm', 'swarm_status', 'swarm_list', 'swarm_cancel'] },
           agentId: { type: 'string' },
           message: { type: 'string' },
           cwd: { type: 'string' },
@@ -243,6 +358,26 @@ const SubagentPlugin: Plugin = {
             description: 'When true, inherit the parent session browser profile. Defaults to false so subagents get isolated browser state.',
           },
           jobId: { type: 'string' },
+          swarmId: { type: 'string', description: 'Swarm ID for swarm_status/swarm_cancel actions.' },
+          jobIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Array of job IDs for aggregate/wait_all actions.',
+          },
+          tasks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                agentId: { type: 'string' },
+                message: { type: 'string' },
+                cwd: { type: 'string' },
+                shareBrowserProfile: { type: 'boolean' },
+              },
+              required: ['agentId', 'message'],
+            },
+            description: 'Array of tasks for batch/swarm action.',
+          },
           waitForCompletion: { type: 'boolean' },
           background: { type: 'boolean' },
           timeoutSec: { type: 'number' },

@@ -1,6 +1,5 @@
 import fs from 'fs'
 import os from 'os'
-import path from 'path'
 import {
   loadSessions,
   saveSessions,
@@ -10,8 +9,8 @@ import {
   loadAgents,
   loadSkills,
   loadSettings,
-  loadUsage,
   appendUsage,
+  loadUsage,
   active,
 } from './storage'
 import { getProvider } from '@/lib/providers'
@@ -33,6 +32,21 @@ import { resolveConcreteToolPolicyBlock, resolveSessionToolPolicy } from './tool
 import { pluginIdMatches } from './tool-aliases'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import {
+  applyContextClearBoundary,
+  shouldApplySessionFreshnessReset,
+  shouldAutoRouteHeartbeatAlerts,
+  shouldPersistInboundUserMessage,
+  translateRequestedToolInvocation,
+  normalizeAssistantArtifactLinks,
+  extractHeartbeatStatus,
+  shouldReplaceRecentAssistantMessage,
+  hasPersistableAssistantPayload,
+  getPersistedAssistantText,
+  getToolEventsSnapshotKey,
+  requestedToolNamesFromMessage,
+  hasDirectLocalCodingTools,
+} from './chat-execution-utils'
+import {
   getCachedLlmResponse,
   resolveLlmResponseCacheConfig,
   setCachedLlmResponse,
@@ -49,18 +63,18 @@ import { evaluateSessionFreshness, resetSessionRuntime, resolveSessionResetPolic
 import { pruneStreamingAssistantArtifacts, upsertStreamingAssistantArtifact } from '@/lib/chat-streaming-state'
 import { resolveActiveProjectContext } from './project-context'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from './assistant-control'
-import { buildToolEventAssistantSummary } from '@/lib/tool-event-summary'
 import { buildAgentDisabledMessage, isAgentDisabled } from './agent-availability'
-type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
-/** Slice history from the most recent context-clear marker forward */
-function applyContextClearBoundary(messages: Message[]): Message[] {
-  const filterModelHistory = (items: Message[]) => items.filter((message) => message.historyExcluded !== true)
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].kind === 'context-clear') return filterModelHistory(messages.slice(i + 1))
-  }
-  return filterModelHistory(messages)
+export {
+  shouldApplySessionFreshnessReset,
+  shouldAutoRouteHeartbeatAlerts,
+  translateRequestedToolInvocation,
+  normalizeAssistantArtifactLinks,
+  requestedToolNamesFromMessage,
+  hasDirectLocalCodingTools,
 }
+
+type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
 interface SessionWithTools {
   plugins?: string[] | null
@@ -75,6 +89,66 @@ interface SessionWithCredentials {
 interface ProviderApiKeyConfig {
   requiresApiKey?: boolean
   optionalApiKey?: boolean
+}
+
+function parseUsdLimit(value: unknown): number | null {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number.parseFloat(value)
+      : Number.NaN
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return Math.max(0.01, Math.min(1_000_000, parsed))
+}
+
+function getTodaySpendUsd(): number {
+  const usage = loadUsage()
+  const dayStart = new Date()
+  dayStart.setHours(0, 0, 0, 0)
+  const minTs = dayStart.getTime()
+  let total = 0
+  for (const records of Object.values(usage)) {
+    for (const record of records || []) {
+      const rec = record as Record<string, unknown>
+      const ts = typeof rec?.timestamp === 'number' ? rec.timestamp : 0
+      if (ts < minTs) continue
+      const cost = typeof rec?.estimatedCost === 'number' ? rec.estimatedCost : 0
+      if (Number.isFinite(cost) && cost > 0) total += cost
+    }
+  }
+  return total
+}
+
+function stripMarkupForHeartbeat(text: string): string {
+  return text
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/^[*`~_]+/, '')
+    .replace(/[*`~_]+$/, '')
+    .trim()
+}
+
+const HEARTBEAT_OK_RE = /HEARTBEAT_OK[^\w]{0,4}$/
+const NO_MESSAGE_RE = /NO_MESSAGE[^\w]{0,4}$/
+
+function classifyHeartbeatResponse(text: string, ackMaxChars: number, hadToolCalls: boolean): 'suppress' | 'strip' | 'keep' {
+  const cleaned = stripMarkupForHeartbeat(text)
+  if (cleaned === 'HEARTBEAT_OK' || cleaned === 'NO_MESSAGE') return 'suppress'
+  if (HEARTBEAT_OK_RE.test(cleaned) || NO_MESSAGE_RE.test(cleaned)) return 'suppress'
+  const stripped = cleaned.replace(/HEARTBEAT_OK/gi, '').replace(/NO_MESSAGE/gi, '').trim()
+  if (!stripped) return 'suppress'
+  if (!hadToolCalls && stripped.length <= ackMaxChars) return 'suppress'
+  return stripped.length < cleaned.length ? 'strip' : 'keep'
+}
+
+function estimateConversationTone(text: string): string {
+  const t = text || ''
+  if (/```/.test(t) || /\b(function|const|let|var|import|export|class|interface|async|await|return)\b/.test(t)) return 'technical'
+  if (/\b(error|bug|debug|stack trace|exception|null|undefined|TypeError)\b/i.test(t)) return 'technical'
+  if (/\b(understand|feel|sorry|empathize|appreciate|grateful|tough|difficult|challenging)\b/i.test(t)) return 'empathetic'
+  if (/\b(furthermore|regarding|consequently|therefore|henceforth|pursuant|accordingly|notwithstanding)\b/i.test(t)) return 'formal'
+  if (/\b(gonna|wanna|gotta|yeah|hey|awesome|cool|lol|btw|tbh)\b/i.test(t) || /!{2,}/.test(t)) return 'casual'
+  return 'neutral'
 }
 
 export interface ExecuteChatTurnInput {
@@ -103,15 +177,6 @@ export interface ExecuteChatTurnResult {
   inputTokens?: number
   outputTokens?: number
   estimatedCost?: number
-}
-
-export function shouldApplySessionFreshnessReset(source: string): boolean {
-  return source !== 'eval'
-}
-
-function shouldPersistInboundUserMessage(internal: boolean, source: string): boolean {
-  if (!internal) return true
-  return source === 'eval'
 }
 
 function extractEventJson(line: string): SSEEvent | null {
@@ -154,25 +219,6 @@ export function collectToolEvent(ev: SSEEvent, bag: MessageToolEvent[]) {
       error: isLikelyToolErrorOutput(output) || undefined,
     }
   }
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function hasExplicitToolMention(message: string, toolName: string): boolean {
-  const escaped = escapeRegExp(toolName)
-  const negated = new RegExp(`\\b(?:do not|don't|dont|avoid|skip|without|never)\\s+(?:use\\s+|call\\s+|invoke\\s+)?(?:the\\s+)?\`?${escaped}\`?(?:\\s+tool)?\\b`, 'i')
-  if (negated.test(message)) return false
-  const boundary = new RegExp(`(^|[^a-z0-9_])\`?${escaped}\`?([^a-z0-9_]|$)`, 'i')
-  return boundary.test(message)
-}
-
-function hasExplicitGenericToolRequest(message: string, toolName: string): boolean {
-  const escaped = escapeRegExp(toolName)
-  const negated = new RegExp(`\\b(?:do not|don't|dont|avoid|skip|without|never)\\s+(?:use\\s+|call\\s+|invoke\\s+)?(?:the\\s+)?${escaped}(?:\\s+tool)?\\b`, 'i')
-  if (negated.test(message)) return false
-  return new RegExp(`(^|[\\s(])\`${escaped}\`([\\s).,!?]|$)|\\b${escaped}\\s+tool\\b|\\buse\\s+(?:the\\s+)?${escaped}\\b|\\bcall\\s+(?:the\\s+)?${escaped}\\b|\\binvoke\\s+(?:the\\s+)?${escaped}\\b`, 'i').test(message)
 }
 
 export function dedupeConsecutiveToolEvents(events: MessageToolEvent[]): MessageToolEvent[] {
@@ -242,100 +288,6 @@ function extractDelegateResponse(outputText: string): string | null {
   }
 }
 
-const MANAGE_PLATFORM_RESOURCE_TO_TOOL: Record<string, string> = {
-  agent: 'manage_agents',
-  agents: 'manage_agents',
-  project: 'manage_projects',
-  projects: 'manage_projects',
-  task: 'manage_tasks',
-  tasks: 'manage_tasks',
-  schedule: 'manage_schedules',
-  schedules: 'manage_schedules',
-  skill: 'manage_skills',
-  skills: 'manage_skills',
-  document: 'manage_documents',
-  documents: 'manage_documents',
-  secret: 'manage_secrets',
-  secrets: 'manage_secrets',
-  connector: 'manage_connectors',
-  connectors: 'manage_connectors',
-  session: 'manage_sessions',
-  sessions: 'manage_sessions',
-}
-
-export function translateRequestedToolInvocation(
-  requestedName: string,
-  rawArgs: Record<string, unknown>,
-  messageFallback: string,
-  availableToolNames?: Iterable<string>,
-): { toolName: string; args: Record<string, unknown> } {
-  const available = new Set(availableToolNames || [])
-
-  if (requestedName === 'web_search') {
-    return {
-      toolName: 'web',
-      args: {
-        action: 'search',
-        query: typeof rawArgs.query === 'string' ? rawArgs.query : messageFallback.trim(),
-        maxResults: typeof rawArgs.maxResults === 'number' ? rawArgs.maxResults : 5,
-      },
-    }
-  }
-  if (requestedName === 'web_fetch') {
-    return {
-      toolName: 'web',
-      args: {
-        action: 'fetch',
-        url: rawArgs.url,
-      },
-    }
-  }
-  if (requestedName === 'delegate_to_claude_code') {
-    return { toolName: 'delegate', args: { ...rawArgs, backend: 'claude' } }
-  }
-  if (requestedName === 'delegate_to_codex_cli') {
-    return { toolName: 'delegate', args: { ...rawArgs, backend: 'codex' } }
-  }
-  if (requestedName === 'delegate_to_opencode_cli') {
-    return { toolName: 'delegate', args: { ...rawArgs, backend: 'opencode' } }
-  }
-  if (requestedName === 'delegate_to_gemini_cli') {
-    return { toolName: 'delegate', args: { ...rawArgs, backend: 'gemini' } }
-  }
-
-  const managePrefix = 'manage_'
-  if (requestedName === 'manage_platform') {
-    const resource = typeof rawArgs.resource === 'string'
-      ? rawArgs.resource.trim().toLowerCase()
-      : ''
-    const specificTool = MANAGE_PLATFORM_RESOURCE_TO_TOOL[resource]
-    if (specificTool && available.has(specificTool) && !available.has('manage_platform')) {
-      return { toolName: specificTool, args: rawArgs }
-    }
-    return { toolName: requestedName, args: rawArgs }
-  }
-
-  if (requestedName.startsWith(managePrefix) && requestedName !== 'manage_platform') {
-    if (!available.has(requestedName) && available.has('manage_platform')) {
-      const resource = requestedName.slice(managePrefix.length)
-      if (resource) {
-        const { action, id, data, ...rest } = rawArgs
-        const nextArgs: Record<string, unknown> = { resource, ...rest }
-        if (action !== undefined) nextArgs.action = action
-        if (id !== undefined) nextArgs.id = id
-        if (data !== undefined) nextArgs.data = data
-        return {
-          toolName: 'manage_platform',
-          args: nextArgs,
-        }
-      }
-    }
-    return { toolName: requestedName, args: rawArgs }
-  }
-
-  return { toolName: requestedName, args: rawArgs }
-}
-
 export function isLikelyToolErrorOutput(output: string): boolean {
   const trimmed = String(output || '').trim()
   if (!trimmed) return false
@@ -353,154 +305,8 @@ export function isLikelyToolErrorOutput(output: string): boolean {
   return false
 }
 
-function normalizeWorkspaceSandboxLinks(text: string, cwd: string): string {
-  return text.replace(/\[([^\]]+)\]\(sandbox:\/workspace\/([^)]+)\)/g, (raw, label: string, relativePath: string) => {
-    const normalized = String(relativePath || '').replace(/^\/+/, '')
-    if (!normalized) return raw
-    const resolvedCwd = path.resolve(cwd)
-    const resolved = path.resolve(resolvedCwd, normalized)
-    if (!resolved.startsWith(resolvedCwd)) return raw
-    if (!fs.existsSync(resolved)) return raw
-    return `[${label}](/api/files/serve?path=${encodeURIComponent(resolved)})`
-  })
-}
-
-function normalizeAbsoluteFileMarkdownLinks(text: string): string {
-  return text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (raw, label: string, target: string) => {
-    if (!path.isAbsolute(target)) return raw
-    const resolved = path.resolve(target)
-    if (!fs.existsSync(resolved)) return raw
-    return `[${label}](/api/files/serve?path=${encodeURIComponent(resolved)})`
-  })
-}
-
-export function normalizeAssistantArtifactLinks(text: string, cwd: string): string {
-  const uploadsNormalized = text.replace(/sandbox:\/api\/uploads\//g, '/api/uploads/')
-  const workspaceNormalized = normalizeWorkspaceSandboxLinks(uploadsNormalized, cwd)
-  return normalizeAbsoluteFileMarkdownLinks(workspaceNormalized)
-}
-
-function extractHeartbeatStatus(text: string): { goal?: string; status?: string; summary?: string; nextAction?: string } | null {
-  const match = text.match(/\[AGENT_HEARTBEAT_META\]\s*(\{[^\n]*\})/i)
-  if (!match) return null
-  try {
-    const meta = JSON.parse(match[1]) as Record<string, unknown>
-    const payload: { goal?: string; status?: string; summary?: string; nextAction?: string } = {}
-    if (typeof meta.goal === 'string' && meta.goal.trim()) payload.goal = meta.goal.trim()
-    if (typeof meta.status === 'string' && meta.status.trim()) payload.status = meta.status.trim()
-    if (typeof meta.summary === 'string' && meta.summary.trim()) payload.summary = meta.summary.trim()
-    if (typeof meta.next_action === 'string' && meta.next_action.trim()) payload.nextAction = meta.next_action.trim()
-    return Object.keys(payload).length > 0 ? payload : null
-  } catch {
-    return null
-  }
-}
-
-function shouldReplaceRecentAssistantMessage(params: {
-  previous: Message | null | undefined
-  nextToolEvents: MessageToolEvent[]
-  nextKind: Message['kind']
-  now: number
-}): boolean {
-  const { previous, nextToolEvents, nextKind, now } = params
-  if (!previous || previous.role !== 'assistant') return false
-  if (nextToolEvents.length === 0) return false
-  if (previous.kind && nextKind && previous.kind !== nextKind) return false
-  if (typeof previous.time === 'number' && now - previous.time > 45_000) return false
-  const prevTools = Array.isArray(previous.toolEvents) ? previous.toolEvents.length : 0
-  return prevTools === 0
-}
-
-function hasPersistableAssistantPayload(text: string, thinking: string, toolEvents: MessageToolEvent[]): boolean {
-  return text.trim().length > 0 || thinking.trim().length > 0 || toolEvents.length > 0
-}
-
-function getPersistedAssistantText(text: string, toolEvents: MessageToolEvent[]): string {
-  const trimmed = text.trim()
-  if (trimmed) return trimmed
-  return buildToolEventAssistantSummary(toolEvents)
-}
-
-function getToolEventsSnapshotKey(toolEvents: MessageToolEvent[]): string {
-  return JSON.stringify(toolEvents.map((event) => [
-    event.name,
-    event.input,
-    event.output || '',
-    event.error === true,
-    event.toolCallId || '',
-  ]))
-}
-
 export function pruneSuppressedHeartbeatStreamMessage(messages: Message[]): boolean {
   return pruneStreamingAssistantArtifacts(messages)
-}
-
-export function requestedToolNamesFromMessage(message: string): string[] {
-  const explicitCandidates = [
-    'delegate_to_claude_code',
-    'delegate_to_codex_cli',
-    'delegate_to_opencode_cli',
-    'delegate_to_gemini_cli',
-    'connector_message_tool',
-    'sessions_tool',
-    'whoami_tool',
-    'search_history_tool',
-    'manage_agents',
-    'manage_tasks',
-    'manage_schedules',
-    'manage_documents',
-    'manage_webhooks',
-    'manage_skills',
-    'manage_connectors',
-    'manage_sessions',
-    'manage_secrets',
-    'manage_capabilities',
-    'manage_platform',
-    'manage_chatrooms',
-    'search_marketplace',
-    'monitor_tool',
-    'plugin_creator_tool',
-    'memory_tool',
-    'memory_search',
-    'memory_get',
-    'memory_store',
-    'memory_update',
-    'wallet_tool',
-    'http_request',
-    'send_file',
-    'sandbox_exec',
-    'sandbox_list_runtimes',
-    'schedule_wake',
-    'spawn_subagent',
-    'ask_human',
-    'context_status',
-    'context_summarize',
-    'openclaw_nodes',
-    'openclaw_workspace',
-  ]
-  const genericCandidates = [
-    'browser',
-    'web',
-    'shell',
-    'files',
-    'edit_file',
-    'git',
-    'canvas',
-    'mailbox',
-    'document',
-    'extract',
-    'table',
-    'crawl',
-    'email',
-  ]
-  const requested = explicitCandidates.filter((name) => hasExplicitToolMention(message, name))
-  for (const name of genericCandidates) {
-    if (hasExplicitGenericToolRequest(message, name)) requested.push(name)
-  }
-  if (hasExplicitGenericToolRequest(message, 'delegate')) {
-    requested.push('delegate')
-  }
-  return Array.from(new Set(requested))
 }
 
 function parseToolJsonObject(raw: string): Record<string, unknown> | null {
@@ -710,17 +516,6 @@ function hasToolEnabled(session: SessionWithTools, toolName: string): boolean {
   return pluginIdMatches(session?.plugins || session?.tools || [], toolName)
 }
 
-export function hasDirectLocalCodingTools(session: SessionWithTools): boolean {
-  return [
-    'shell',
-    'execute_command',
-    'files',
-    'edit_file',
-    'openclaw_workspace',
-    'sandbox',
-  ].some((toolName) => hasToolEnabled(session, toolName))
-}
-
 function enabledDelegationTools(session: SessionWithTools): DelegateTool[] {
   const tools: DelegateTool[] = []
   if (hasToolEnabled(session, 'claude_code') || hasToolEnabled(session, 'delegate')) tools.push('delegate_to_claude_code')
@@ -728,34 +523,6 @@ function enabledDelegationTools(session: SessionWithTools): DelegateTool[] {
   if (hasToolEnabled(session, 'opencode_cli')) tools.push('delegate_to_opencode_cli')
   if (hasToolEnabled(session, 'gemini_cli')) tools.push('delegate_to_gemini_cli')
   return tools
-}
-
-function parseUsdLimit(value: unknown): number | null {
-  const parsed = typeof value === 'number'
-    ? value
-    : typeof value === 'string'
-      ? Number.parseFloat(value)
-      : Number.NaN
-  if (!Number.isFinite(parsed) || parsed <= 0) return null
-  return Math.max(0.01, Math.min(1_000_000, parsed))
-}
-
-function getTodaySpendUsd(): number {
-  const usage = loadUsage()
-  const dayStart = new Date()
-  dayStart.setHours(0, 0, 0, 0)
-  const minTs = dayStart.getTime()
-  let total = 0
-  for (const records of Object.values(usage)) {
-    for (const record of records || []) {
-      const rec = record as Record<string, unknown>
-      const ts = typeof rec?.timestamp === 'number' ? rec.timestamp : 0
-      if (ts < minTs) continue
-      const cost = typeof rec?.estimatedCost === 'number' ? rec.estimatedCost : 0
-      if (Number.isFinite(cost) && cost > 0) total += cost
-    }
-  }
-  return total
 }
 
 function findFirstUrl(text: string): string | null {
@@ -976,42 +743,6 @@ function resolveApiKeyForSession(session: SessionWithCredentials, provider: Prov
     }
   }
   return null
-}
-
-function stripMarkupForHeartbeat(text: string): string {
-  return text
-    .replace(/<[^>]*>/g, ' ')       // strip HTML tags
-    .replace(/&nbsp;/gi, ' ')       // decode nbsp
-    .replace(/^[*`~_]+/, '')        // strip leading markdown
-    .replace(/[*`~_]+$/, '')        // strip trailing markdown
-    .trim()
-}
-
-const HEARTBEAT_OK_RE = /HEARTBEAT_OK[^\w]{0,4}$/
-const NO_MESSAGE_RE = /NO_MESSAGE[^\w]{0,4}$/
-
-function classifyHeartbeatResponse(text: string, ackMaxChars: number, hadToolCalls: boolean): 'suppress' | 'strip' | 'keep' {
-  const cleaned = stripMarkupForHeartbeat(text)
-  if (cleaned === 'HEARTBEAT_OK' || cleaned === 'NO_MESSAGE') return 'suppress'
-  if (HEARTBEAT_OK_RE.test(cleaned) || NO_MESSAGE_RE.test(cleaned)) return 'suppress'
-  const stripped = cleaned.replace(/HEARTBEAT_OK/gi, '').replace(/NO_MESSAGE/gi, '').trim()
-  if (!stripped) return 'suppress'
-  if (!hadToolCalls && stripped.length <= ackMaxChars) return 'suppress'
-  return stripped.length < cleaned.length ? 'strip' : 'keep'
-}
-
-function estimateConversationTone(text: string): string {
-  const t = text || ''
-  // Technical: code blocks, function signatures, technical terms
-  if (/```/.test(t) || /\b(function|const|let|var|import|export|class|interface|async|await|return)\b/.test(t)) return 'technical'
-  if (/\b(error|bug|debug|stack trace|exception|null|undefined|TypeError)\b/i.test(t)) return 'technical'
-  // Empathetic: emotional/supportive language
-  if (/\b(understand|feel|sorry|empathize|appreciate|grateful|tough|difficult|challenging)\b/i.test(t)) return 'empathetic'
-  // Formal: academic/business language
-  if (/\b(furthermore|regarding|consequently|therefore|henceforth|pursuant|accordingly|notwithstanding)\b/i.test(t)) return 'formal'
-  // Casual: contractions, exclamations, informal language
-  if (/\b(gonna|wanna|gotta|yeah|hey|awesome|cool|lol|btw|tbh)\b/i.test(t) || /!{2,}/.test(t)) return 'casual'
-  return 'neutral'
 }
 
 
@@ -1398,7 +1129,10 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   let responseCacheHit = false
   let responseCacheInput: LlmResponseCacheKeyInput | null = null
   const useLocalOpenClawNativeRuntime = providerType === 'openclaw' && isLocalOpenClawEndpoint(sessionForRun.apiEndpoint)
-  const hasPlugins = !!(sessionForRun.plugins?.length || sessionForRun.tools?.length)
+  const enabledSessionPlugins = Array.isArray(sessionForRun.plugins)
+    ? sessionForRun.plugins
+    : (Array.isArray(sessionForRun.tools) ? sessionForRun.tools : [])
+  const hasPlugins = enabledSessionPlugins.length > 0
     && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
     && !useLocalOpenClawNativeRuntime
 
@@ -1412,7 +1146,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       ? getSessionMessages(sessionId).slice(-6)
       : undefined
 
-    console.log(`[chat-execution] provider=${providerType}, hasPlugins=${hasPlugins}, localOpenClawNative=${useLocalOpenClawNativeRuntime}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, plugins=${(sessionForRun.plugins || sessionForRun.tools || []).length}`)
+    console.log(`[chat-execution] provider=${providerType}, hasPlugins=${hasPlugins}, localOpenClawNative=${useLocalOpenClawNativeRuntime}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, plugins=${enabledSessionPlugins.length}`)
     if (hasPlugins) {
       const result = await streamAgentChat({
         session: sessionForRun,
@@ -1559,7 +1293,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
     const agent = session.agentId ? loadAgents()[session.agentId] : null
     const activeProjectContext = resolveActiveProjectContext(session)
-    const { tools, cleanup } = await buildSessionTools(session.cwd, sessionForRun.plugins || sessionForRun.tools || [], {
+    const { tools, cleanup } = await buildSessionTools(session.cwd, enabledSessionPlugins, {
       agentId: session.agentId || null,
       sessionId,
       platformAssignScope: agent?.platformAssignScope || 'self',

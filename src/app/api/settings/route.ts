@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { normalizeHeartbeatSettingFields } from '@/lib/heartbeat-defaults'
+import { normalizeWhatsAppApprovedContacts } from '@/lib/server/connectors/pairing'
 import { loadPublicSettings, loadSettings, saveSettings } from '@/lib/server/storage'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
 export const dynamic = 'force-dynamic'
@@ -130,6 +131,7 @@ export async function PUT(req: Request) {
   settings.projectManagementEnabled = parseBoolSetting(settings.projectManagementEnabled, true)
   settings.integrityMonitorEnabled = parseBoolSetting(settings.integrityMonitorEnabled, true)
   settings.sessionResetMode = settings.sessionResetMode === 'daily' ? 'daily' : settings.sessionResetMode === 'idle' ? 'idle' : null
+  settings.whatsappApprovedContacts = normalizeWhatsAppApprovedContacts(settings.whatsappApprovedContacts)
   settings.sessionIdleTimeoutSec = parseIntSetting(
     settings.sessionIdleTimeoutSec,
     12 * 60 * 60,

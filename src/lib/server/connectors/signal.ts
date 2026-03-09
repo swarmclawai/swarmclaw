@@ -1,7 +1,8 @@
 import { spawn, execSync } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import type { Connector } from '@/types'
-import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
+import type { PlatformConnector, ConnectorInstance, InboundMessage, ConnectorIngressResult } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import { isNoMessage } from './manager'
 
 const signal: PlatformConnector = {
@@ -129,7 +130,7 @@ const signal: PlatformConnector = {
 export async function handleSignalEvent(
   event: any,
   connector: Connector,
-  onMessage: (msg: InboundMessage) => Promise<string>,
+  onMessage: (msg: InboundMessage) => Promise<ConnectorIngressResult>,
 ) {
   // signal-cli JSON output structure varies; handle the common envelope format
   const envelope = event.envelope || event
@@ -151,7 +152,9 @@ export async function handleSignalEvent(
   }
 
   try {
-    const response = await onMessage(inbound)
+    const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+    if (routeResult.managerHandled || routeResult.delivery === 'silent') return
+    const response = routeResult.visibleText
     if (isNoMessage(response)) return
 
     // Send reply back

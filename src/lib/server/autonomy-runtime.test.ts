@@ -35,8 +35,8 @@ function runWithTempDataDir(script: string) {
 describe('browser session persistence', () => {
   it('isolates browser profiles by default and stores observations', () => {
     const output = runWithTempDataDir(`
-      const storage = (await import('./src/lib/server/storage.ts')).default
-      const browserState = (await import('./src/lib/server/browser-state.ts')).default
+      const storage = (await import('./src/lib/server/storage')).default
+      const browserState = (await import('./src/lib/server/browser-state')).default
 
       const now = Date.now()
       storage.saveSessions({
@@ -99,7 +99,7 @@ describe('browser session persistence', () => {
 
   it('isolates subagent browser profiles by default unless sharing is explicitly requested', () => {
     const output = runWithTempDataDir(`
-      const mod = await import('./src/lib/server/session-tools/subagent.ts')
+      const mod = await import('./src/lib/server/session-tools/subagent')
       const { resolveSubagentBrowserProfileId } = mod.default || mod['module.exports'] || mod
 
       const parent = {
@@ -123,8 +123,8 @@ describe('durable watch jobs', () => {
     const output = runWithTempDataDir(`
       import fs from 'node:fs'
       import path from 'node:path'
-      const storage = (await import('./src/lib/server/storage.ts')).default
-      const watchJobs = (await import('./src/lib/server/watch-jobs.ts')).default
+      const storage = (await import('./src/lib/server/storage')).default
+      const watchJobs = (await import('./src/lib/server/watch-jobs')).default
 
       const watchFile = path.join(process.env.DATA_DIR, 'watch.txt')
       fs.writeFileSync(watchFile, 'build succeeded')
@@ -204,10 +204,10 @@ describe('durable watch jobs', () => {
 
   it('triggers mailbox and approval waits from human-loop events', () => {
     const output = runWithTempDataDir(`
-      const storage = (await import('./src/lib/server/storage.ts')).default
-      const watchJobs = (await import('./src/lib/server/watch-jobs.ts')).default
-      const mailboxMod = await import('./src/lib/server/session-mailbox.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storage = (await import('./src/lib/server/storage')).default
+      const watchJobs = (await import('./src/lib/server/watch-jobs')).default
+      const mailboxMod = await import('./src/lib/server/session-mailbox')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const mailbox = mailboxMod.default || mailboxMod
       const approvals = approvalsMod.default || approvalsMod
 
@@ -282,8 +282,8 @@ describe('durable watch jobs', () => {
 describe('delegation jobs', () => {
   it('preserves cancellation and recovers stale jobs', () => {
     const output = runWithTempDataDir(`
-      const delegationJobs = (await import('./src/lib/server/delegation-jobs.ts')).default
-      const storage = (await import('./src/lib/server/storage.ts')).default
+      const delegationJobs = (await import('./src/lib/server/delegation-jobs')).default
+      const storage = (await import('./src/lib/server/storage')).default
 
       let cancelledCalls = 0
       const cancelledJob = delegationJobs.createDelegationJob({

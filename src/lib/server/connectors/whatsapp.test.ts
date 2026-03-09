@@ -3,9 +3,11 @@ import test from 'node:test'
 import {
   buildWhatsAppTextPayloads,
   buildWhatsAppInboundMessage,
+  isWhatsAppSocketAlive,
   isWhatsAppInboundAllowed,
   normalizeWhatsAppAudioForSend,
   normalizeWhatsAppIdentifier,
+  resolveWhatsAppAllowedIdentifiers,
 } from './whatsapp'
 
 test('buildWhatsAppTextPayloads disables link previews for text sends', () => {
@@ -45,6 +47,28 @@ test('isWhatsAppInboundAllowed matches allow-list entries against alt phone JIDs
   assert.equal(isWhatsAppInboundAllowed({ allowedJids: ['15559990000'], msg }), false)
 })
 
+test('resolveWhatsAppAllowedIdentifiers merges connector and settings approvals', () => {
+  const allowed = resolveWhatsAppAllowedIdentifiers({
+    configuredAllowedJids: '15550001111',
+    settingsContacts: [
+      { id: 'family', label: 'Family', phone: '+1 (666) 000-2222' },
+      { id: 'dup', label: 'Family JID', phone: '16660002222@s.whatsapp.net' },
+    ],
+  })
+
+  assert.deepEqual(allowed, ['15550001111', '16660002222'])
+})
+
+test('resolveWhatsAppAllowedIdentifiers keeps the connector open when no allowedJids are configured', () => {
+  const allowed = resolveWhatsAppAllowedIdentifiers({
+    settingsContacts: [
+      { id: 'family', label: 'Family', phone: '+1 (666) 000-2222' },
+    ],
+  })
+
+  assert.equal(allowed, null)
+})
+
 test('buildWhatsAppInboundMessage includes modern WhatsApp metadata', () => {
   const inbound = buildWhatsAppInboundMessage({
     msg: {
@@ -77,6 +101,34 @@ test('buildWhatsAppInboundMessage includes modern WhatsApp metadata', () => {
   assert.equal(inbound?.mentionsBot, true)
   assert.equal(inbound?.isGroup, false)
   assert.equal(inbound?.text, 'Hey there')
+})
+
+test('isWhatsAppSocketAlive reports disconnected sockets as dead so daemon restarts can run', () => {
+  assert.equal(isWhatsAppSocketAlive({
+    stopped: false,
+    socket: { ws: { isClosed: true } },
+    connectionState: 'close',
+  }), false)
+
+  assert.equal(isWhatsAppSocketAlive({
+    stopped: false,
+    socket: { ws: { isClosing: true } },
+    connectionState: 'connecting',
+  }), false)
+})
+
+test('isWhatsAppSocketAlive keeps QR and active sessions marked live', () => {
+  assert.equal(isWhatsAppSocketAlive({
+    stopped: false,
+    socket: { ws: { isConnecting: true } },
+    connectionState: 'connecting',
+  }), true)
+
+  assert.equal(isWhatsAppSocketAlive({
+    stopped: false,
+    socket: { ws: { isOpen: true } },
+    connectionState: 'open',
+  }), true)
 })
 
 test('normalizeWhatsAppAudioForSend transcodes mp3 voice notes to Android-safe opus/ogg', () => {

@@ -4,7 +4,7 @@ import {
   createGatewayRequestFrame,
   parseGatewayFrame,
   serializeGatewayFrame,
-} from './protocol.ts'
+} from './protocol'
 
 test('gateway protocol parses request/response/event frames', () => {
   const req = parseGatewayFrame('{"type":"req","id":"1","method":"connect","params":{"foo":"bar"}}')

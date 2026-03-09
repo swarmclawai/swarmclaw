@@ -5,6 +5,7 @@ import fs from 'fs'
 import path from 'path'
 import { localIP } from '@/lib/server/storage'
 import { resolveDevServerLaunchDir } from '@/lib/server/devserver-launch'
+import { resolvePathWithinBaseDir } from '@/lib/server/path-utils'
 
 // ---------------------------------------------------------------------------
 // MIME types for static server
@@ -134,11 +135,11 @@ function createStaticServer(dir: string): http.Server {
 
     let reqPath = decodeURIComponent((req.url || '/').split('?')[0])
     if (reqPath === '/') reqPath = '/index.html'
-
-    const filePath = path.join(dir, reqPath)
-    const normalizedFile = path.resolve(filePath)
-
-    if (!normalizedFile.startsWith(dir)) {
+    const relativeReqPath = reqPath.replace(/^\/+/, '')
+    let normalizedFile = ''
+    try {
+      normalizedFile = resolvePathWithinBaseDir(dir, relativeReqPath)
+    } catch {
       res.writeHead(403)
       res.end('Forbidden')
       return
@@ -147,7 +148,7 @@ function createStaticServer(dir: string): http.Server {
     const candidates = [
       normalizedFile,
       normalizedFile + '.html',
-      path.join(normalizedFile, 'index.html'),
+      resolvePathWithinBaseDir(dir, `${relativeReqPath.replace(/\/+$/, '')}/index.html`),
     ]
 
     for (const candidate of candidates) {

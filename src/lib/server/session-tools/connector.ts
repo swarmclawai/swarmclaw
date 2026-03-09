@@ -10,6 +10,7 @@ import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { tryResolvePathWithinBaseDir } from '../path-utils'
 
 const CONNECTOR_ACTION_DEDUPE_TTL_MS = 30_000
 const CONNECTOR_TURN_SEND_TTL_MS = 180_000
@@ -487,9 +488,9 @@ export function resolveConnectorMediaInput(params: {
     const candidatePaths = [
       path.resolve(params.cwd, resolvedMediaPath),
       path.resolve(params.cwd, 'uploads', resolvedMediaPath),
-      path.join(UPLOAD_DIR, resolvedMediaPath),
-      path.join(UPLOAD_DIR, path.basename(resolvedMediaPath)),
-    ]
+      tryResolvePathWithinBaseDir(UPLOAD_DIR, resolvedMediaPath),
+      tryResolvePathWithinBaseDir(UPLOAD_DIR, path.basename(resolvedMediaPath)),
+    ].filter((candidate): candidate is string => !!candidate)
     const found = candidatePaths.find((p) => fs.existsSync(p))
     if (found) {
       resolvedMediaPath = found
@@ -605,9 +606,9 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
       if (!connectorId) {
         const allConnectors = loadConnectors()
         const stopped = Object.values(allConnectors)
-          .filter((c) => !platform || c.platform === platform)
-          .filter((c) => !running.find((r) => r.id === c.id))
-          .map((c) => ({ id: c.id, name: c.name, platform: c.platform }))
+          .filter((c: any) => !platform || c.platform === platform)
+          .filter((c: any) => !running.find((r) => r.id === c.id))
+          .map((c: any) => ({ id: c.id, name: c.name, platform: c.platform }))
         if (!stopped.length) return 'All connectors are already running.'
         return `Error: connectorId is required. Stopped connectors available to start: ${JSON.stringify(stopped)}`
       }
@@ -627,8 +628,8 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
       if (!running.length) {
         const allConnectors = loadConnectors()
         const configured = Object.values(allConnectors)
-          .filter((c) => !platform || c.platform === platform)
-          .map((c) => ({ id: c.id, name: c.name, platform: c.platform, agentId: c.agentId || null }))
+          .filter((c: any) => !platform || c.platform === platform)
+          .map((c: any) => ({ id: c.id, name: c.name, platform: c.platform, agentId: c.agentId || null }))
         if (configured.length) {
           return {
             error: `Error: no running connectors found. Ask user to start one. Configured: ${JSON.stringify(configured)}`,

@@ -7,7 +7,7 @@ import {
   getCachedLlmResponse,
   resolveLlmResponseCacheConfig,
   setCachedLlmResponse,
-} from './llm-response-cache.ts'
+} from './llm-response-cache'
 
 const HISTORY: Message[] = [
   { role: 'user', text: 'Plan a release.', time: 1 },

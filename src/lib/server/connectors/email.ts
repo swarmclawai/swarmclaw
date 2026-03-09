@@ -3,6 +3,7 @@ import { createTransport, type Transporter } from 'nodemailer'
 import { simpleParser } from 'mailparser'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import { isNoMessage } from './manager'
 
 interface EmailConfig {
@@ -191,7 +192,9 @@ const email: PlatformConnector = {
       }
 
       try {
-        const response = await onMessage(inbound)
+        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
+        const response = routeResult.visibleText
         if (isNoMessage(response)) return
 
         // Reply via SMTP

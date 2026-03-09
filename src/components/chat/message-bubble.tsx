@@ -17,6 +17,8 @@ import { isStructuredMarkdown } from './markdown-utils'
 import { FilePathChip, FILE_PATH_RE, DIR_PATH_RE } from './file-path-chip'
 import { TransferAgentPicker } from './transfer-agent-picker'
 import { DelegationBanner, DelegationSourceBanner, TaskCompletionCard, parseTaskCompletion } from './delegation-banner'
+import { SwarmPanel, parseSwarmOutput, parseSwarmStatusOutput } from './swarm-panel'
+import { SwarmStatusCard, SwarmStatusStyles } from './swarm-status-card'
 import { ConnectorPlatformIcon, getConnectorPlatformLabel } from '@/components/shared/connector-platform-icon'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { formatMessageTimestamp } from '@/lib/chat-display'
@@ -317,7 +319,20 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
           )}
           <div className={`${toolEventsExpanded ? 'max-h-[320px] overflow-y-auto pr-1 flex flex-col gap-2' : 'flex flex-col gap-2'}`}>
             {visibleToolEvents.map((event, i) => {
-              const key = `${message.time}-tool-${toolEventsExpanded ? `all-${i}` : `latest-${nonSendFileEvents.length - 1}`}`
+              const eventKey = event.toolCallId || `${message.time}-${event.name}-${event.input}`
+              const key = `${message.time}-tool-${toolEventsExpanded ? `all-${eventKey}` : `latest-${eventKey}`}`
+
+              if (event.name === 'spawn_subagent' && event.output) {
+                // Prefer rich SwarmStatusCard when snapshot data is available
+                const statusData = parseSwarmStatusOutput(event.name, event.output)
+                if (statusData) {
+                  return <div key={key}><SwarmStatusStyles /><SwarmStatusCard data={statusData} /></div>
+                }
+                const swarmData = parseSwarmOutput(event.name, event.output)
+                if (swarmData) {
+                  return <SwarmPanel key={key} data={swarmData} />
+                }
+              }
 
               if (event.name === 'delegate_to_agent') {
                 const inp = tryParseJson(event.input || '{}')
@@ -356,11 +371,12 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                 <ToolCallBubble
                   key={key}
                   event={{
-                    id: `${message.time}-${toolEventsExpanded ? i : toolEvents.length - 1}`,
+                    id: event.toolCallId || `${message.time}-${toolEventsExpanded ? i : toolEvents.length - 1}`,
                     name: event.name,
                     input: event.input,
                     output: event.output,
                     status: event.error ? 'error' : 'done',
+                    
                   }}
                 />
               )

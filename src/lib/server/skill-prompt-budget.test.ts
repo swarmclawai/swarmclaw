@@ -4,7 +4,7 @@ import { budgetSkillsForPrompt, buildSkillPromptText, MAX_SKILLS_IN_PROMPT, MAX_
 import type { Skill } from '@/types'
 
 function makeSkill(id: string, overrides: Partial<Skill> = {}): Skill {
-  return {
+  return { id: "test-skill-1",
     name: id,
     filename: `${id}.md`,
     content: overrides.content ?? `Instructions for ${id} skill.`,

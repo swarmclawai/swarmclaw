@@ -1,4 +1,5 @@
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import { isNoMessage } from './manager'
 
 const googlechat: PlatformConnector = {
@@ -70,7 +71,10 @@ const googlechat: PlatformConnector = {
         text,
       }
 
-      const response = await onMessage(inbound)
+      const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+      if (routeResult.managerHandled || routeResult.delivery === 'silent') return {}
+
+      const response = routeResult.visibleText
       if (!response || isNoMessage(response)) return {}
       return { text: response }
     }

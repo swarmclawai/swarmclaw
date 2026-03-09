@@ -195,7 +195,9 @@ export interface Session {
     connectorId?: string | null
     platform?: ConnectorPlatform | null
     channelId?: string | null
+    channelIdAlt?: string | null
     senderId?: string | null
+    senderIdAlt?: string | null
     senderName?: string | null
     sessionKey?: string | null
     peerKey?: string | null
@@ -1274,6 +1276,8 @@ export interface AppSettings {
   memoryMaxPerLookup?: number
   // Chat UX
   suggestionsEnabled?: boolean
+  // Globally approved WhatsApp contacts for connector DMs
+  whatsappApprovedContacts?: WhatsAppApprovedContact[]
   // Voice conversation
   voiceAutoSendDelaySec?: number
   // Default agent for main chat on startup
@@ -1308,6 +1312,12 @@ export interface AppSettings {
   integrityMonitorEnabled?: boolean
   // Per-plugin settings (keyed by pluginId)
   pluginSettings?: Record<string, Record<string, unknown>>
+}
+
+export interface WhatsAppApprovedContact {
+  id: string
+  label: string
+  phone: string
 }
 
 // --- Agent Secrets ---

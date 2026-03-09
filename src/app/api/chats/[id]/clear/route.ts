@@ -1,20 +1,20 @@
 import { NextResponse } from 'next/server'
-import { loadSessions, saveSessions } from '@/lib/server/storage'
+import { loadSession, upsertSession } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const sessions = loadSessions()
-  if (!sessions[id]) return notFound()
-  sessions[id].messages = []
-  sessions[id].claudeSessionId = null
-  sessions[id].codexThreadId = null
-  sessions[id].opencodeSessionId = null
-  sessions[id].delegateResumeIds = {
+  const session = loadSession(id)
+  if (!session) return notFound()
+  session.messages = []
+  session.claudeSessionId = null
+  session.codexThreadId = null
+  session.opencodeSessionId = null
+  session.delegateResumeIds = {
     claudeCode: null,
     codex: null,
     opencode: null,
   }
-  saveSessions(sessions)
+  upsertSession(id, session)
   return new NextResponse('OK')
 }

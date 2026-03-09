@@ -1,5 +1,5 @@
 import { genId } from '@/lib/id'
-import { loadSchedules, saveSchedules, loadAgents, loadTasks, saveTasks } from './storage'
+import { loadSchedules, loadAgents, loadTasks, upsertSchedule, upsertSchedules, upsertTask } from './storage'
 import { enqueueTask } from './queue'
 import { CronExpressionParser } from 'cron-parser'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
@@ -60,22 +60,22 @@ export function stopScheduler() {
 
 function computeNextRuns() {
   const schedules = loadSchedules()
-  let changed = false
+  const changedEntries: Array<[string, SchedulerScheduleLike]> = []
   for (const schedule of Object.values(schedules) as SchedulerScheduleLike[]) {
     if (schedule.status !== 'active') continue
     if (schedule.scheduleType === 'cron' && schedule.cron && !schedule.nextRunAt) {
       try {
         const interval = CronExpressionParser.parse(schedule.cron)
         schedule.nextRunAt = interval.next().getTime()
-        changed = true
+        changedEntries.push([schedule.id, schedule])
       } catch (err) {
         console.error(`[scheduler] Invalid cron for ${schedule.id}:`, err)
         schedule.status = 'failed'
-        changed = true
+        changedEntries.push([schedule.id, schedule])
       }
     }
   }
-  if (changed) saveSchedules(schedules)
+  if (changedEntries.length > 0) upsertSchedules(changedEntries)
 }
 
 async function tick() {
@@ -114,7 +114,7 @@ async function tick() {
     const scheduleSignature = getScheduleSignatureKey(schedule)
     if (scheduleSignature && inFlightScheduleKeys.has(scheduleSignature)) {
       advanceSchedule(schedule)
-      saveSchedules(schedules)
+      upsertSchedule(schedule.id, schedule)
       continue
     }
 
@@ -122,7 +122,7 @@ async function tick() {
     if (!agent) {
       console.error(`[scheduler] Agent ${schedule.agentId} not found for schedule ${schedule.id}`)
       schedule.status = 'failed'
-      saveSchedules(schedules)
+      upsertSchedule(schedule.id, schedule)
       pushMainLoopEventToMainSessions({
         type: 'schedule_failed',
         text: `Schedule failed: "${schedule.name}" (${schedule.id}) — agent ${schedule.agentId} not found.`,
@@ -132,7 +132,7 @@ async function tick() {
     if (isAgentDisabled(agent)) {
       console.warn(`[scheduler] Skipping schedule "${schedule.name}" (${schedule.id}) because agent ${schedule.agentId} is disabled`)
       advanceSchedule(schedule)
-      saveSchedules(schedules)
+      upsertSchedule(schedule.id, schedule)
       pushMainLoopEventToMainSessions({
         type: 'schedule_skipped',
         text: `Schedule skipped: "${schedule.name}" (${schedule.id}) — agent ${schedule.agentId} is disabled.`,
@@ -211,8 +211,8 @@ async function tick() {
       schedule.linkedTaskId = taskId
     }
 
-    saveTasks(tasks)
-    saveSchedules(schedules)
+    upsertTask(taskId, tasks[taskId])
+    upsertSchedule(schedule.id, schedule)
 
     enqueueTask(taskId)
     if (scheduleSignature) inFlightScheduleKeys.add(scheduleSignature)

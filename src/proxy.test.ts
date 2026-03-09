@@ -45,8 +45,8 @@ describe('proxy', () => {
 
   it('does not lock out invalid requests in development', () => {
     process.env.ACCESS_KEY = 'top-secret'
-    const originalNodeEnv = process.env.NODE_ENV
-    process.env.NODE_ENV = 'development'
+    const originalNodeEnv = process.env.NODE_ENV;
+    (process.env as any).NODE_ENV = 'development'
 
     try {
       for (let i = 0; i < 6; i++) {
@@ -64,8 +64,8 @@ describe('proxy', () => {
       }))
       assert.equal(finalResponse.status, 401)
     } finally {
-      if (originalNodeEnv === undefined) delete process.env.NODE_ENV
-      else process.env.NODE_ENV = originalNodeEnv
+      if (originalNodeEnv === undefined) delete (process.env as any).NODE_ENV
+      else (process.env as any).NODE_ENV = originalNodeEnv
     }
   })
 })

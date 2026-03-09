@@ -8,7 +8,7 @@ import Database from 'better-sqlite3'
 import { DATA_DIR, IS_BUILD_BOOTSTRAP, WORKSPACE_DIR } from './data-dir'
 import { normalizeHeartbeatSettingFields } from '@/lib/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
-import type { AppNotification, ExternalAgentRuntime, GatewayProfile, Message } from '@/types'
+import type { AppNotification, BoardTask, ExternalAgentRuntime, GatewayProfile, Message, Session } from '@/types'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
 // --- TTL Cache (read-through with write-through invalidation) ---
@@ -47,20 +47,13 @@ class TTLCache<T> {
 const ttlCacheKey = '__swarmclaw_ttl_caches__' as const
 type TTLCacheStore = {
   settings?: TTLCache<Record<string, unknown>>
-  credentials?: TTLCache<Record<string, unknown>>
-  connectors?: TTLCache<Record<string, unknown>>
-  gatewayProfiles?: TTLCache<Record<string, unknown>>
   agents?: TTLCache<Record<string, unknown>>
 }
 type TTLGlobals = typeof globalThis & { [ttlCacheKey]?: TTLCacheStore }
 const ttlGlobals = globalThis as TTLGlobals
 const ttlCaches: TTLCacheStore = ttlGlobals[ttlCacheKey] ?? (ttlGlobals[ttlCacheKey] = {})
 
-// Lazily initialize each cache with its TTL
 function getSettingsCache() { return ttlCaches.settings ?? (ttlCaches.settings = new TTLCache(60_000)) }
-function getCredentialsCache() { return ttlCaches.credentials ?? (ttlCaches.credentials = new TTLCache(90_000)) }
-function getConnectorsCache() { return ttlCaches.connectors ?? (ttlCaches.connectors = new TTLCache(30_000)) }
-function getGatewayProfilesCache() { return ttlCaches.gatewayProfiles ?? (ttlCaches.gatewayProfiles = new TTLCache(300_000)) }
 function getAgentsCache() { return ttlCaches.agents ?? (ttlCaches.agents = new TTLCache(15_000)) }
 
 // --- LRU Cache ---
@@ -214,6 +207,7 @@ const COLLECTIONS = [
   'wallet_balance_history',
   'moderation_logs',
   'connector_health',
+  'connector_outbox',
   'souls',
   'benchmarks',
   'approvals',
@@ -234,6 +228,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id =
 db.exec(`CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)`)
 db.exec(`CREATE TABLE IF NOT EXISTS usage (session_id TEXT NOT NULL, data TEXT NOT NULL)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_session ON usage(session_id)`)
+db.exec(`CREATE TABLE IF NOT EXISTS runtime_locks (
+  name TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`)
 
 function readCollectionRaw(table: string): LRUMap<string, string> {
   const rows = db.prepare(`SELECT id, data FROM ${table}`).all() as { id: string; data: string }[]
@@ -269,6 +269,9 @@ function normalizeStoredRecord(table: string, value: unknown): unknown {
     && (!session.shortcutForAgentId || session.shortcutForAgentId !== session.agentId)
   ) {
     session.shortcutForAgentId = session.agentId
+  }
+  if (Array.isArray(session.tools) && !Array.isArray(session.plugins)) {
+    session.plugins = [...session.tools]
   }
   if ('mainLoopState' in session) delete session.mainLoopState
   return session
@@ -395,6 +398,104 @@ export function upsertStoredItems(table: StorageCollection, entries: Array<[stri
   upsertCollectionItems(table, entries)
 }
 
+export function patchStoredItem<T>(
+  table: StorageCollection,
+  id: string,
+  updater: (current: T | null) => T | null,
+): T | null {
+  let nextValue: T | null = null
+  const transaction = db.transaction(() => {
+    const current = loadCollectionItem(table, id) as T | null
+    nextValue = updater(current)
+    if (nextValue === null) {
+      deleteCollectionItem(table, id)
+      return
+    }
+    upsertCollectionItem(table, id, nextValue)
+  })
+  transaction()
+  return nextValue
+}
+
+export function deleteStoredItem(table: StorageCollection, id: string): void {
+  db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id)
+  const cached = collectionCache.get(table)
+  if (cached) cached.delete(id)
+}
+
+// --- Collection Store Factory ---
+// Generates typed CRUD operations for any collection table, with optional TTL caching.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- backward-compatible default; typed stores override with concrete types
+interface CollectionStore<T = any> {
+  load(): Record<string, T>
+  save(data: Record<string, T>): void
+  loadItem(id: string): T | null
+  upsert(id: string, value: unknown): void
+  upsertMany(entries: Array<[string, unknown]>): void
+  patch(id: string, updater: (current: T | null) => T | null): T | null
+  deleteItem(id: string): void
+}
+
+const factoryCacheKey = '__swarmclaw_factory_ttl__' as const
+type FactoryCacheGlobals = typeof globalThis & { [factoryCacheKey]?: Map<string, TTLCache<Record<string, unknown>>> }
+const factoryCacheScope = globalThis as FactoryCacheGlobals
+const factoryTtlCaches = factoryCacheScope[factoryCacheKey] ?? (factoryCacheScope[factoryCacheKey] = new Map())
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see CollectionStore
+function createCollectionStore<T = any>(
+  table: StorageCollection,
+  opts?: { ttlMs?: number },
+): CollectionStore<T> {
+  let ttlCache: TTLCache<Record<string, unknown>> | null = null
+  if (opts?.ttlMs) {
+    ttlCache = factoryTtlCaches.get(table) ?? null
+    if (!ttlCache) {
+      ttlCache = new TTLCache(opts.ttlMs)
+      factoryTtlCaches.set(table, ttlCache)
+    }
+  }
+
+  return {
+    load(): Record<string, T> {
+      if (ttlCache) {
+        const cached = ttlCache.get()
+        if (cached) return structuredClone(cached) as Record<string, T>
+      }
+      const result = loadCollection(table)
+      if (ttlCache) {
+        ttlCache.set(result)
+        return structuredClone(result) as Record<string, T>
+      }
+      return result as Record<string, T>
+    },
+    save(data: Record<string, T>): void {
+      saveCollection(table, data as Record<string, unknown>)
+      ttlCache?.invalidate()
+    },
+    loadItem(id: string): T | null {
+      return loadCollectionItem(table, id) as T | null
+    },
+    upsert(id: string, value: unknown): void {
+      upsertCollectionItem(table, id, value)
+      ttlCache?.invalidate()
+    },
+    upsertMany(entries: Array<[string, unknown]>): void {
+      upsertCollectionItems(table, entries)
+      ttlCache?.invalidate()
+    },
+    patch(id: string, updater: (current: T | null) => T | null): T | null {
+      const result = patchStoredItem<T>(table, id, updater)
+      ttlCache?.invalidate()
+      return result
+    },
+    deleteItem(id: string): void {
+      deleteCollectionItem(table, id)
+      ttlCache?.invalidate()
+    },
+  }
+}
+
 function loadSingleton<T>(table: string, fallback: T): T {
   const row = db.prepare(`SELECT data FROM ${table} WHERE id = 1`).get() as { data: string } | undefined
   return row ? JSON.parse(row.data) as T : fallback
@@ -402,6 +503,58 @@ function loadSingleton<T>(table: string, fallback: T): T {
 
 function saveSingleton(table: string, data: unknown) {
   db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (1, ?)`).run(JSON.stringify(data))
+}
+
+function normalizeLockTtlMs(ttlMs: number): number {
+  if (!Number.isFinite(ttlMs)) return 1_000
+  return Math.max(1_000, Math.trunc(ttlMs))
+}
+
+export function patchQueue<T>(updater: (queue: string[]) => T): T {
+  let result!: T
+  const transaction = db.transaction(() => {
+    const current = loadSingleton('queue', [])
+    const queue = Array.isArray(current) ? [...current] : []
+    result = updater(queue)
+    saveSingleton('queue', queue)
+  })
+  transaction()
+  return result
+}
+
+export function tryAcquireRuntimeLock(name: string, owner: string, ttlMs: number): boolean {
+  let acquired = false
+  const now = Date.now()
+  const expiresAt = now + normalizeLockTtlMs(ttlMs)
+  const transaction = db.transaction(() => {
+    const row = db.prepare('SELECT owner, expires_at FROM runtime_locks WHERE name = ?').get(name) as
+      | { owner: string; expires_at: number }
+      | undefined
+    if (!row || row.owner === owner || row.expires_at <= now) {
+      db.prepare(`
+        INSERT OR REPLACE INTO runtime_locks (name, owner, expires_at, updated_at)
+        VALUES (?, ?, ?, ?)
+      `).run(name, owner, expiresAt, now)
+      acquired = true
+    }
+  })
+  transaction()
+  return acquired
+}
+
+export function renewRuntimeLock(name: string, owner: string, ttlMs: number): boolean {
+  const now = Date.now()
+  const expiresAt = now + normalizeLockTtlMs(ttlMs)
+  const result = db.prepare(`
+    UPDATE runtime_locks
+    SET expires_at = ?, updated_at = ?
+    WHERE name = ? AND owner = ?
+  `).run(expiresAt, now, name, owner)
+  return result.changes > 0
+}
+
+export function releaseRuntimeLock(name: string, owner: string): void {
+  db.prepare('DELETE FROM runtime_locks WHERE name = ? AND owner = ?').run(name, owner)
 }
 
 // --- JSON Migration ---
@@ -691,6 +844,18 @@ export function saveSessions(s: Record<string, any>) {
   if (entries.length > 0) upsertCollectionItems('sessions', entries)
 }
 
+export function loadSession(id: string): Session | null {
+  return loadCollectionItem('sessions', id) as Session | null
+}
+
+export function upsertSession(id: string, session: Session | Record<string, unknown>) {
+  upsertCollectionItem('sessions', id, session)
+}
+
+export function patchSession(id: string, updater: (current: Session | null) => Session | null): Session | null {
+  return patchStoredItem<Session>('sessions', id, updater)
+}
+
 export function disableAllSessionHeartbeats(): number {
   const rows = db.prepare('SELECT id, data FROM sessions').all() as Array<{ id: string; data: string }>
   if (!rows.length) return 0
@@ -721,23 +886,18 @@ export function disableAllSessionHeartbeats(): number {
 }
 
 // --- Credentials ---
-export function loadCredentials(): Record<string, any> {
-  const cache = getCredentialsCache()
-  const cached = cache.get()
-  if (cached) return structuredClone(cached) as Record<string, unknown>
+const credentialsStore = createCollectionStore('credentials', { ttlMs: 90_000 })
+export const loadCredentials = credentialsStore.load
+export const saveCredentials = credentialsStore.save
 
-  const result = loadCollection('credentials')
-  cache.set(result)
-  return result
-}
-
-export function saveCredentials(c: Record<string, any>) {
-  saveCollection('credentials', c)
-  getCredentialsCache().invalidate()
+function requireCredentialSecret(): Buffer {
+  const secret = process.env.CREDENTIAL_SECRET
+  if (!secret) throw new Error('CREDENTIAL_SECRET environment variable is not set. Cannot encrypt/decrypt credentials.')
+  return Buffer.from(secret, 'hex')
 }
 
 export function encryptKey(plaintext: string): string {
-  const key = Buffer.from(process.env.CREDENTIAL_SECRET!, 'hex')
+  const key = requireCredentialSecret()
   const iv = crypto.randomBytes(12)
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
   let encrypted = cipher.update(plaintext, 'utf8', 'hex')
@@ -747,7 +907,7 @@ export function encryptKey(plaintext: string): string {
 }
 
 export function decryptKey(encrypted: string): string {
-  const key = Buffer.from(process.env.CREDENTIAL_SECRET!, 'hex')
+  const key = requireCredentialSecret()
   const [ivHex, tagHex, data] = encrypted.split(':')
   const iv = Buffer.from(ivHex, 'hex')
   const tag = Buffer.from(tagHex, 'hex')
@@ -810,41 +970,60 @@ export function saveAgents(p: Record<string, any>) {
   getAgentsCache().invalidate()
 }
 
-// --- Schedules ---
-export function loadSchedules(): Record<string, any> {
-  return loadCollection('schedules')
+export function loadAgent(id: string, opts?: { includeTrashed?: boolean }): Record<string, any> | null {
+  const agent = loadCollectionItem('agents', id) as Record<string, any> | null
+  if (!agent) return null
+  if (!opts?.includeTrashed && agent.trashedAt) return null
+  return agent
 }
 
-export function saveSchedules(s: Record<string, any>) {
-  saveCollection('schedules', s)
+export function upsertAgent(id: string, agent: unknown) {
+  upsertCollectionItem('agents', id, agent)
+  getAgentsCache().invalidate()
 }
+
+export function patchAgent(
+  id: string,
+  updater: (current: Record<string, any> | null) => Record<string, any> | null,
+): Record<string, any> | null {
+  const next = patchStoredItem<Record<string, any>>('agents', id, updater)
+  getAgentsCache().invalidate()
+  return next
+}
+
+// --- Schedules ---
+const schedulesStore = createCollectionStore('schedules')
+export const loadSchedules = schedulesStore.load
+export const saveSchedules = schedulesStore.save
+export const loadSchedule = schedulesStore.loadItem
+export const upsertSchedule = schedulesStore.upsert
+export const upsertSchedules = schedulesStore.upsertMany
 
 // --- Souls ---
-export const loadSouls = () => loadCollection('souls')
-export const saveSouls = (s: Parameters<typeof saveCollection>[1]) => saveCollection('souls', s)
-export const deleteSoul = (id: string) => deleteCollectionItem('souls', id)
+const soulsStore = createCollectionStore('souls')
+export const loadSouls = soulsStore.load
+export const saveSouls = soulsStore.save
+export const deleteSoul = soulsStore.deleteItem
 
 // --- Benchmarks ---
-export const loadBenchmarks = () => loadCollection('benchmarks')
-export const saveBenchmarks = (b: Parameters<typeof saveCollection>[1]) => saveCollection('benchmarks', b)
-export const deleteBenchmark = (id: string) => deleteCollectionItem('benchmarks', id)
+const benchmarksStore = createCollectionStore('benchmarks')
+export const loadBenchmarks = benchmarksStore.load
+export const saveBenchmarks = benchmarksStore.save
+export const deleteBenchmark = benchmarksStore.deleteItem
 
 // --- Tasks ---
-export function loadTasks(): Record<string, any> {
-  return loadCollection('tasks')
-}
-
-export function saveTasks(t: Record<string, any>) {
-  saveCollection('tasks', t)
-}
-export function upsertTask(id: string, task: unknown) {
-  upsertCollectionItem('tasks', id, task)
-}
-export function deleteTask(id: string) { deleteCollectionItem('tasks', id) }
+const tasksStore = createCollectionStore('tasks')
+export const loadTasks = tasksStore.load
+export const saveTasks = tasksStore.save
+export const loadTask = tasksStore.loadItem as (id: string) => BoardTask | null
+export const upsertTask = tasksStore.upsert
+export const upsertTasks = tasksStore.upsertMany
+export const patchTask = tasksStore.patch as (id: string, updater: (current: BoardTask | null) => BoardTask | null) => BoardTask | null
+export const deleteTask = tasksStore.deleteItem
 export function deleteSession(id: string) { deleteCollectionItem('sessions', id) }
 export function deleteAgent(id: string) { deleteCollectionItem('agents', id); getAgentsCache().invalidate() }
-export function deleteSchedule(id: string) { deleteCollectionItem('schedules', id) }
-export function deleteSkill(id: string) { deleteCollectionItem('skills', id) }
+export const deleteSchedule = schedulesStore.deleteItem
+export function deleteSkill(id: string) { skillsStore.deleteItem(id) }
 
 // --- Queue ---
 export function loadQueue(): string[] {
@@ -971,13 +1150,9 @@ export function loadPublicSettings(): Record<string, any> {
 }
 
 // --- Secrets (service keys for orchestrators) ---
-export function loadSecrets(): Record<string, any> {
-  return loadCollection('secrets')
-}
-
-export function saveSecrets(s: Record<string, any>) {
-  saveCollection('secrets', s)
-}
+const secretsStore = createCollectionStore('secrets')
+export const loadSecrets = secretsStore.load
+export const saveSecrets = secretsStore.save
 
 export async function getSecret(key: string): Promise<{
   id: string
@@ -1034,67 +1209,35 @@ export async function getSecret(key: string): Promise<{
 }
 
 // --- Provider Configs (custom providers) ---
-export function loadProviderConfigs(): Record<string, any> {
-  return loadCollection('provider_configs')
-}
-
-export function saveProviderConfigs(p: Record<string, any>) {
-  saveCollection('provider_configs', p)
-}
+const providerConfigsStore = createCollectionStore('provider_configs')
+export const loadProviderConfigs = providerConfigsStore.load
+export const saveProviderConfigs = providerConfigsStore.save
 
 // --- Gateway Profiles ---
-export function loadGatewayProfiles(): Record<string, any> {
-  const cache = getGatewayProfilesCache()
-  const cached = cache.get()
-  if (cached) return structuredClone(cached) as Record<string, unknown>
-
-  const result = loadCollection('gateway_profiles') as Record<string, GatewayProfile>
-  cache.set(result)
-  return result
-}
-
-export function saveGatewayProfiles(g: Record<string, GatewayProfile>) {
-  saveCollection('gateway_profiles', g)
-  getGatewayProfilesCache().invalidate()
-}
+const gatewayProfilesStore = createCollectionStore('gateway_profiles', { ttlMs: 300_000 })
+export const loadGatewayProfiles = gatewayProfilesStore.load
+export const saveGatewayProfiles = gatewayProfilesStore.save as (g: Record<string, GatewayProfile>) => void
 
 // --- Model Overrides (user-added models for built-in providers) ---
-export function loadModelOverrides(): Record<string, string[]> {
-  return loadCollection('model_overrides') as Record<string, string[]>
-}
-
-export function saveModelOverrides(m: Record<string, string[]>) {
-  saveCollection('model_overrides', m)
-}
+const modelOverridesStore = createCollectionStore('model_overrides')
+export const loadModelOverrides = modelOverridesStore.load as () => Record<string, string[]>
+export const saveModelOverrides = modelOverridesStore.save as (m: Record<string, string[]>) => void
 
 // --- Projects ---
-export function loadProjects(): Record<string, any> {
-  return loadCollection('projects')
-}
-
-export function saveProjects(s: Record<string, any>) {
-  saveCollection('projects', s)
-}
-
-export function deleteProject(id: string) { deleteCollectionItem('projects', id) }
+const projectsStore = createCollectionStore('projects')
+export const loadProjects = projectsStore.load
+export const saveProjects = projectsStore.save
+export const deleteProject = projectsStore.deleteItem
 
 // --- Skills ---
-export function loadSkills(): Record<string, any> {
-  return loadCollection('skills')
-}
-
-export function saveSkills(s: Record<string, any>) {
-  saveCollection('skills', s)
-}
+const skillsStore = createCollectionStore('skills')
+export const loadSkills = skillsStore.load
+export const saveSkills = skillsStore.save
 
 // --- External Agent Runtimes ---
-export function loadExternalAgents(): Record<string, ExternalAgentRuntime> {
-  return loadCollection('external_agents') as Record<string, ExternalAgentRuntime>
-}
-
-export function saveExternalAgents(items: Record<string, ExternalAgentRuntime>) {
-  saveCollection('external_agents', items)
-}
+const externalAgentsStore = createCollectionStore('external_agents')
+export const loadExternalAgents = externalAgentsStore.load as () => Record<string, ExternalAgentRuntime>
+export const saveExternalAgents = externalAgentsStore.save as (items: Record<string, ExternalAgentRuntime>) => void
 
 // --- Usage ---
 export function loadUsage(): Record<string, any[]> {
@@ -1106,6 +1249,31 @@ export function loadUsage(): Record<string, any[]> {
     result[row.session_id].push(JSON.parse(row.data))
   }
   return result
+}
+
+export function getUsageSpendSince(minTimestamp: number): number {
+  try {
+    const row = db.prepare(`
+      SELECT COALESCE(SUM(CAST(json_extract(data, '$.estimatedCost') AS REAL)), 0) AS total
+      FROM usage
+      WHERE CAST(COALESCE(json_extract(data, '$.timestamp'), 0) AS INTEGER) >= ?
+    `).get(minTimestamp) as { total?: number | null } | undefined
+    const total = Number(row?.total ?? 0)
+    return Number.isFinite(total) ? total : 0
+  } catch {
+    let total = 0
+    const usage = loadUsage()
+    for (const records of Object.values(usage)) {
+      for (const record of records || []) {
+        const rec = record as Record<string, unknown>
+        const ts = typeof rec?.timestamp === 'number' ? rec.timestamp : 0
+        if (ts < minTimestamp) continue
+        const cost = typeof rec?.estimatedCost === 'number' ? rec.estimatedCost : 0
+        if (Number.isFinite(cost) && cost > 0) total += cost
+      }
+    }
+    return total
+  }
 }
 
 export function saveUsage(u: Record<string, any[]>) {
@@ -1128,47 +1296,24 @@ export function appendUsage(sessionId: string, record: unknown) {
 }
 
 // --- Connectors ---
-export function loadConnectors(): Record<string, any> {
-  const cache = getConnectorsCache()
-  const cached = cache.get()
-  if (cached) return structuredClone(cached) as Record<string, unknown>
-
-  const result = loadCollection('connectors')
-  cache.set(result)
-  return result
-}
-
-export function saveConnectors(c: Record<string, any>) {
-  saveCollection('connectors', c)
-  getConnectorsCache().invalidate()
-}
+const connectorsStore = createCollectionStore('connectors', { ttlMs: 30_000 })
+export const loadConnectors = connectorsStore.load
+export const saveConnectors = connectorsStore.save
 
 // --- Chatrooms ---
-export function loadChatrooms(): Record<string, any> {
-  return loadCollection('chatrooms')
-}
-
-export function saveChatrooms(c: Record<string, any>) {
-  saveCollection('chatrooms', c)
-}
+const chatroomsStore = createCollectionStore('chatrooms')
+export const loadChatrooms = chatroomsStore.load
+export const saveChatrooms = chatroomsStore.save
 
 // --- Documents ---
-export function loadDocuments(): Record<string, any> {
-  return loadCollection('documents')
-}
-
-export function saveDocuments(d: Record<string, any>) {
-  saveCollection('documents', d)
-}
+const documentsStore = createCollectionStore('documents')
+export const loadDocuments = documentsStore.load
+export const saveDocuments = documentsStore.save
 
 // --- Webhooks ---
-export function loadWebhooks(): Record<string, any> {
-  return loadCollection('webhooks')
-}
-
-export function saveWebhooks(w: Record<string, any>) {
-  saveCollection('webhooks', w)
-}
+const webhooksStore = createCollectionStore('webhooks')
+export const loadWebhooks = webhooksStore.load
+export const saveWebhooks = webhooksStore.save
 
 // --- Active processes ---
 export const active = new Map<string, ActiveProcess>()
@@ -1186,42 +1331,25 @@ export function localIP(): string {
 }
 
 // --- MCP Servers ---
-export function loadMcpServers(): Record<string, any> {
-  return loadCollection('mcp_servers')
-}
-
-export function saveMcpServers(m: Record<string, any>) {
-  saveCollection('mcp_servers', m)
-}
-
-export function deleteMcpServer(id: string) { deleteCollectionItem('mcp_servers', id) }
+const mcpServersStore = createCollectionStore('mcp_servers')
+export const loadMcpServers = mcpServersStore.load
+export const saveMcpServers = mcpServersStore.save
+export const deleteMcpServer = mcpServersStore.deleteItem
 
 // --- Integrity Monitor Baselines ---
-export function loadIntegrityBaselines(): Record<string, any> {
-  return loadCollection('integrity_baselines')
-}
-
-export function saveIntegrityBaselines(entries: Record<string, any>) {
-  saveCollection('integrity_baselines', entries)
-}
+const integrityBaselinesStore = createCollectionStore('integrity_baselines')
+export const loadIntegrityBaselines = integrityBaselinesStore.load
+export const saveIntegrityBaselines = integrityBaselinesStore.save
 
 // --- Webhook Logs ---
-export function loadWebhookLogs(): Record<string, unknown> {
-  return loadCollection('webhook_logs')
-}
-
-export function saveWebhookLogs(entries: Record<string, unknown>) {
-  saveCollection('webhook_logs', entries)
-}
-
-export function appendWebhookLog(id: string, entry: unknown) {
-  upsertCollectionItem('webhook_logs', id, entry)
-}
+const webhookLogsStore = createCollectionStore('webhook_logs')
+export const loadWebhookLogs = webhookLogsStore.load
+export const saveWebhookLogs = webhookLogsStore.save
+export const appendWebhookLog = webhookLogsStore.upsert
 
 // --- Activity / Audit Trail ---
-export function loadActivity(): Record<string, unknown> {
-  return loadCollection('activity')
-}
+const activityStore = createCollectionStore('activity')
+export const loadActivity = activityStore.load
 
 export function logActivity(entry: {
   entityType: string
@@ -1234,38 +1362,21 @@ export function logActivity(entry: {
 }) {
   const id = crypto.randomBytes(8).toString('hex')
   const record = { id, ...entry, timestamp: Date.now() }
-  upsertCollectionItem('activity', id, record)
+  activityStore.upsert(id, record)
 }
 
 // --- Webhook Retry Queue ---
-export function loadWebhookRetryQueue(): Record<string, unknown> {
-  return loadCollection('webhook_retry_queue')
-}
-
-export function saveWebhookRetryQueue(entries: Record<string, unknown>) {
-  saveCollection('webhook_retry_queue', entries)
-}
-
-export function upsertWebhookRetry(id: string, entry: unknown) {
-  upsertCollectionItem('webhook_retry_queue', id, entry)
-}
-
-export function deleteWebhookRetry(id: string) {
-  deleteCollectionItem('webhook_retry_queue', id)
-}
+const webhookRetryQueueStore = createCollectionStore('webhook_retry_queue')
+export const loadWebhookRetryQueue = webhookRetryQueueStore.load
+export const saveWebhookRetryQueue = webhookRetryQueueStore.save
+export const upsertWebhookRetry = webhookRetryQueueStore.upsert
+export const deleteWebhookRetry = webhookRetryQueueStore.deleteItem
 
 // --- Notifications ---
-export function loadNotifications(): Record<string, unknown> {
-  return loadCollection('notifications')
-}
-
-export function saveNotification(id: string, data: unknown) {
-  upsertCollectionItem('notifications', id, data)
-}
-
-export function deleteNotification(id: string) {
-  deleteCollectionItem('notifications', id)
-}
+const notificationsStore = createCollectionStore('notifications')
+export const loadNotifications = notificationsStore.load
+export const saveNotification = notificationsStore.upsert
+export const deleteNotification = notificationsStore.deleteItem
 
 export function findNotificationByDedupKey(dedupKey: string): AppNotification | null {
   const raw = getCollectionRawCache('notifications')
@@ -1305,118 +1416,65 @@ export function markNotificationRead(id: string) {
 }
 
 // --- Wallets ---
-export function loadWallets(): Record<string, unknown> {
-  return loadCollection('wallets')
-}
-
-export function upsertWallet(id: string, wallet: unknown) {
-  upsertCollectionItem('wallets', id, wallet)
-}
-
-export function deleteWallet(id: string) {
-  deleteCollectionItem('wallets', id)
-}
+const walletsStore = createCollectionStore('wallets')
+export const loadWallets = walletsStore.load
+export const upsertWallet = walletsStore.upsert
+export const deleteWallet = walletsStore.deleteItem
 
 // --- Wallet Transactions ---
-export function loadWalletTransactions(): Record<string, unknown> {
-  return loadCollection('wallet_transactions')
-}
-
-export function upsertWalletTransaction(id: string, tx: unknown) {
-  upsertCollectionItem('wallet_transactions', id, tx)
-}
-
-export function deleteWalletTransaction(id: string) {
-  deleteCollectionItem('wallet_transactions', id)
-}
+const walletTransactionsStore = createCollectionStore('wallet_transactions')
+export const loadWalletTransactions = walletTransactionsStore.load
+export const upsertWalletTransaction = walletTransactionsStore.upsert
+export const deleteWalletTransaction = walletTransactionsStore.deleteItem
 
 // --- Wallet Balance History ---
-export function loadWalletBalanceHistory(): Record<string, unknown> {
-  return loadCollection('wallet_balance_history')
-}
-
-export function upsertWalletBalanceSnapshot(id: string, snapshot: unknown) {
-  upsertCollectionItem('wallet_balance_history', id, snapshot)
-}
+const walletBalanceHistoryStore = createCollectionStore('wallet_balance_history')
+export const loadWalletBalanceHistory = walletBalanceHistoryStore.load
+export const upsertWalletBalanceSnapshot = walletBalanceHistoryStore.upsert
 
 // --- Moderation Logs ---
-export function loadModerationLogs(): Record<string, unknown> {
-  return loadCollection('moderation_logs')
-}
-
-export function appendModerationLog(id: string, entry: unknown) {
-  upsertCollectionItem('moderation_logs', id, entry)
-}
+const moderationLogsStore = createCollectionStore('moderation_logs')
+export const loadModerationLogs = moderationLogsStore.load
+export const appendModerationLog = moderationLogsStore.upsert
 
 // --- Connector Health ---
-export function loadConnectorHealth(): Record<string, unknown> {
-  return loadCollection('connector_health')
-}
+const connectorHealthStore = createCollectionStore('connector_health')
+export const loadConnectorHealth = connectorHealthStore.load
+export const upsertConnectorHealthEvent = connectorHealthStore.upsert
 
-export function upsertConnectorHealthEvent(id: string, event: unknown) {
-  upsertCollectionItem('connector_health', id, event)
-}
+// --- Connector Outbox ---
+const connectorOutboxStore = createCollectionStore('connector_outbox')
+export const loadConnectorOutbox = connectorOutboxStore.load
+export const upsertConnectorOutboxItem = connectorOutboxStore.upsert
+export const deleteConnectorOutboxItem = connectorOutboxStore.deleteItem
 
 // --- Approvals ---
-export function loadApprovals(): Record<string, unknown> {
-  return loadCollection('approvals')
-}
+const approvalsStore = createCollectionStore('approvals')
+export const loadApprovals = approvalsStore.load
+export const upsertApproval = approvalsStore.upsert
+export const deleteApproval = approvalsStore.deleteItem
 
 // --- Browser Sessions ---
-export function loadBrowserSessions(): Record<string, unknown> {
-  return loadCollection('browser_sessions')
-}
-
-export function upsertBrowserSession(id: string, data: unknown) {
-  upsertCollectionItem('browser_sessions', id, data)
-}
-
-export function deleteBrowserSession(id: string) {
-  deleteCollectionItem('browser_sessions', id)
-}
+const browserSessionsStore = createCollectionStore('browser_sessions')
+export const loadBrowserSessions = browserSessionsStore.load
+export const upsertBrowserSession = browserSessionsStore.upsert
+export const deleteBrowserSession = browserSessionsStore.deleteItem
 
 // --- Watch Jobs ---
-export function loadWatchJobs(): Record<string, unknown> {
-  return loadCollection('watch_jobs')
-}
-
-export function upsertWatchJob(id: string, data: unknown) {
-  upsertCollectionItem('watch_jobs', id, data)
-}
-
-export function upsertWatchJobs(entries: Array<[string, unknown]>) {
-  upsertCollectionItems('watch_jobs', entries)
-}
-
-export function deleteWatchJob(id: string) {
-  deleteCollectionItem('watch_jobs', id)
-}
+const watchJobsStore = createCollectionStore('watch_jobs')
+export const loadWatchJobs = watchJobsStore.load
+export const upsertWatchJob = watchJobsStore.upsert
+export const upsertWatchJobs = watchJobsStore.upsertMany
+export const deleteWatchJob = watchJobsStore.deleteItem
 
 // --- Delegation Jobs ---
-export function loadDelegationJobs(): Record<string, unknown> {
-  return loadCollection('delegation_jobs')
-}
-
-export function upsertDelegationJob(id: string, data: unknown) {
-  upsertCollectionItem('delegation_jobs', id, data)
-}
-
-export function deleteDelegationJob(id: string) {
-  deleteCollectionItem('delegation_jobs', id)
-}
-
-export function upsertApproval(id: string, approval: unknown) {
-  upsertCollectionItem('approvals', id, approval)
-}
-
-export function deleteApproval(id: string) {
-  deleteCollectionItem('approvals', id)
-}
+const delegationJobsStore = createCollectionStore('delegation_jobs')
+export const loadDelegationJobs = delegationJobsStore.load
+export const upsertDelegationJob = delegationJobsStore.upsert
+export const { patch: patchDelegationJob } = delegationJobsStore
+export const deleteDelegationJob = delegationJobsStore.deleteItem
 
 export function getSessionMessages(sessionId: string): Message[] {
-  const stmt = db.prepare('SELECT data FROM sessions WHERE id = ?')
-  const row = stmt.get(sessionId) as { data: string } | undefined
-  if (!row) return []
-  const session = JSON.parse(row.data)
-  return session?.messages || []
+  const session = loadSession(sessionId)
+  return Array.isArray(session?.messages) ? session.messages : []
 }

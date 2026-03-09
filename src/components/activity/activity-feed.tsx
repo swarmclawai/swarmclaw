@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
 import type { ActivityEntry } from '@/types'
 
@@ -22,8 +23,9 @@ const ACTION_COLORS: Record<string, string> = {
   rejected: 'bg-red-500/15 text-red-400',
 }
 
-function timeAgo(ts: number) {
-  const diff = Date.now() - ts
+function timeAgo(ts: number, now: number | null) {
+  if (!now) return 'recently'
+  const diff = now - ts
   if (diff < 60_000) return 'just now'
   if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
   if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
@@ -33,11 +35,12 @@ function timeAgo(ts: number) {
 const ENTITY_TYPES = ['', 'agent', 'task', 'connector', 'session', 'webhook', 'schedule'] as const
 
 export function ActivityFeed() {
+  const now = useNow()
   const entries = useAppStore((s) => s.activityEntries)
   const loadActivity = useAppStore((s) => s.loadActivity)
   const [filterType, setFilterType] = useState('')
 
-  useEffect(() => { loadActivity({ entityType: filterType || undefined, limit: 100 }) }, [filterType])
+  useEffect(() => { loadActivity({ entityType: filterType || undefined, limit: 100 }) }, [filterType, loadActivity])
   useWs('activity', () => loadActivity({ entityType: filterType || undefined, limit: 100 }), 10_000)
 
   return (
@@ -87,7 +90,7 @@ export function ActivityFeed() {
                   </div>
                   <p className="text-[13px] text-text-2 leading-[1.4] truncate">{entry.summary}</p>
                 </div>
-                <span className="text-[11px] text-text-3/50 shrink-0 pt-1">{timeAgo(entry.timestamp)}</span>
+                <span className="text-[11px] text-text-3/50 shrink-0 pt-1">{timeAgo(entry.timestamp, now)}</span>
               </div>
             ))}
           </div>

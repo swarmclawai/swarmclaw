@@ -35,8 +35,8 @@ function runWithTempDataDir(script: string) {
 describe('discovery approval flows', () => {
   it('request_tool_access creates a real approval and grants the tool when auto-approved', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const toolsMod = await import('./src/lib/server/session-tools/index')
       const storage = storageMod.default || storageMod
       const toolsApi = toolsMod.default || toolsMod
 
@@ -84,8 +84,8 @@ describe('discovery approval flows', () => {
 
   it('manage_capabilities request_access accepts query aliases for pluginId', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const toolsMod = await import('./src/lib/server/session-tools/index')
       const storage = storageMod.default || storageMod
       const toolsApi = toolsMod.default || toolsMod
 
@@ -130,8 +130,8 @@ describe('discovery approval flows', () => {
 
   it('manage_capabilities request_access tells the agent to call already-available alias tools directly', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const toolsMod = await import('./src/lib/server/session-tools/index')
       const storage = storageMod.default || storageMod
       const toolsApi = toolsMod.default || toolsMod
 
@@ -170,8 +170,8 @@ describe('discovery approval flows', () => {
 
   it('granting manage_schedules does not surface the manage_platform umbrella tool', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const toolsMod = await import('./src/lib/server/session-tools/index')
       const storage = storageMod.default || storageMod
       const toolsApi = toolsMod.default || toolsMod
 
@@ -210,8 +210,8 @@ describe('discovery approval flows', () => {
 
   it('session-granted builtins disabled by default still appear in the next turn tool list', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const toolsMod = await import('./src/lib/server/session-tools/index')
       const storage = storageMod.default || storageMod
       const toolsApi = toolsMod.default || toolsMod
 
@@ -249,8 +249,8 @@ describe('discovery approval flows', () => {
 
   it('discover reports session-granted builtin tools as available now', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const toolsMod = await import('./src/lib/server/session-tools/index')
       const storage = storageMod.default || storageMod
       const toolsApi = toolsMod.default || toolsMod
 
@@ -293,9 +293,9 @@ describe('discovery approval flows', () => {
 
   it('hydrates agent-approved tools into stale connector sessions on the next turn', () => {
     const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage.ts')
-      const toolsMod = await import('./src/lib/server/session-tools/index.ts')
-      const approvalsMod = await import('./src/lib/server/approvals.ts')
+      const storageMod = await import('./src/lib/server/storage')
+      const toolsMod = await import('./src/lib/server/session-tools/index')
+      const approvalsMod = await import('./src/lib/server/approvals')
       const storage = storageMod.default || storageMod
       const toolsApi = toolsMod.default || toolsMod
       const approvals = approvalsMod.default || approvalsMod

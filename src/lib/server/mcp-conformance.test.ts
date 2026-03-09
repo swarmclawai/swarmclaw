@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { runMcpConformanceCheck } from './mcp-conformance.ts'
+import { runMcpConformanceCheck } from './mcp-conformance'
 
 test('runMcpConformanceCheck reports connect/list failure for unsupported transport', async () => {
   const result = await runMcpConformanceCheck({

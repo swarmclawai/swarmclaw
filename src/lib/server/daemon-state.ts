@@ -1,4 +1,4 @@
-import { loadQueue, loadSchedules, loadSessions, saveSessions, loadConnectors, saveConnectors, loadWebhookRetryQueue, upsertWebhookRetry, deleteWebhookRetry, loadWebhooks, loadAgents, loadSettings, appendWebhookLog, loadCredentials, decryptKey } from './storage'
+import { loadQueue, loadSchedules, loadSessions, loadConnectors, saveConnectors, loadWebhookRetryQueue, upsertWebhookRetry, deleteWebhookRetry, loadWebhooks, loadAgents, loadSettings, appendWebhookLog, loadCredentials, decryptKey } from './storage'
 import { notify } from './ws-hub'
 import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue, recoverStalledRunningTasks, resumeQueue } from './queue'
 import { startScheduler, stopScheduler } from './scheduler'
@@ -18,13 +18,13 @@ import {
   getReconnectState,
   setReconnectState,
 } from './connectors/manager'
+import { startConnectorOutboxWorker, stopConnectorOutboxWorker } from './connectors/outbox'
 import { startHeartbeatService, stopHeartbeatService, getHeartbeatServiceStatus } from './heartbeat-service'
 import { hasOpenClawAgents, ensureGatewayConnected, disconnectGateway, getGateway } from './openclaw-gateway'
 import { enqueueSessionRun } from './session-run-manager'
 import { WORKSPACE_DIR } from './data-dir'
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { genId } from '@/lib/id'
-import { isProductionRuntime } from '@/lib/runtime-env'
 import path from 'node:path'
 import type { Session, WebhookRetryEntry } from '@/types'
 import { createNotification } from '@/lib/server/create-notification'
@@ -36,6 +36,16 @@ import {
   markApprovalConnectorNotificationAttempt,
   markApprovalConnectorNotificationSent,
 } from './approvals'
+import {
+  buildSessionHeartbeatHealthDedupKey,
+  daemonAutostartEnvEnabled,
+  isDaemonBackgroundServicesEnabled,
+  parseCronToMs,
+  parseHeartbeatIntervalSec,
+  shouldNotifyProviderReachabilityIssue,
+  shouldSuppressSessionHeartbeatHealthAlert,
+  shouldSuppressSyntheticAgentHealthAlert,
+} from './daemon-policy'
 
 const QUEUE_CHECK_INTERVAL = 30_000 // 30 seconds
 const BROWSER_SWEEP_INTERVAL = 60_000 // 60 seconds
@@ -52,69 +62,12 @@ const CONNECTOR_RESTART_BASE_MS = 30_000
 const CONNECTOR_RESTART_MAX_MS = 15 * 60 * 1000
 const MAX_WAKE_ATTEMPTS = 3
 
-function parseBoolish(value: unknown, fallback: boolean): boolean {
-  if (typeof value === 'boolean') return value
-  if (typeof value !== 'string') return fallback
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return fallback
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
-  if (['0', 'false', 'no', 'off'].includes(normalized)) return false
-  return fallback
-}
-
-function daemonAutostartEnvEnabled(): boolean {
-  return parseBoolish(process.env.SWARMCLAW_DAEMON_AUTOSTART, isProductionRuntime())
-}
-
-export function isDaemonBackgroundServicesEnabled(): boolean {
-  return parseBoolish(process.env.SWARMCLAW_DAEMON_BACKGROUND_SERVICES, true)
-}
-
-function parseHeartbeatIntervalSec(value: unknown, fallback = DEFAULT_HEARTBEAT_INTERVAL_SEC): number {
-  const parsed = typeof value === 'number'
-    ? value
-    : typeof value === 'string'
-      ? Number.parseInt(value, 10)
-      : Number.NaN
-  if (!Number.isFinite(parsed)) return fallback
-  return Math.max(0, Math.min(3600, Math.trunc(parsed)))
-}
-
-export function shouldNotifyProviderReachabilityIssue(provider: string): boolean {
-  return provider !== 'openclaw'
-}
-
-const SYNTHETIC_HEALTH_SESSION_USERS = new Set(['workbench', 'comparison-bench'])
-const SYNTHETIC_HEALTH_SESSION_PREFIXES = ['wb-', 'cmp-']
-
-function hasSyntheticHealthPrefix(value: unknown): boolean {
-  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  return SYNTHETIC_HEALTH_SESSION_PREFIXES.some((prefix) => normalized.startsWith(prefix))
-}
-
-export function shouldSuppressSessionHeartbeatHealthAlert(
-  session: Pick<Session, 'id' | 'name' | 'user' | 'shortcutForAgentId'>,
-): boolean {
-  const user = typeof session.user === 'string' ? session.user.trim().toLowerCase() : ''
-  if (SYNTHETIC_HEALTH_SESSION_USERS.has(user)) return true
-  if (hasSyntheticHealthPrefix(session.id)) return true
-  if (hasSyntheticHealthPrefix(session.shortcutForAgentId)) return true
-
-  const name = typeof session.name === 'string' ? session.name.trim().toLowerCase() : ''
-  return name.startsWith('workbench ')
-    || name.startsWith('assistant benchmark ')
-    || name.startsWith('comparison ')
-}
-
-export function shouldSuppressSyntheticAgentHealthAlert(agentId: string): boolean {
-  return hasSyntheticHealthPrefix(agentId)
-}
-
-export function buildSessionHeartbeatHealthDedupKey(
-  sessionId: string,
-  state: 'stale' | 'auto-disabled',
-): string {
-  return `health-alert:session-heartbeat:${state}:${sessionId}`
+export {
+  buildSessionHeartbeatHealthDedupKey,
+  isDaemonBackgroundServicesEnabled,
+  shouldNotifyProviderReachabilityIssue,
+  shouldSuppressSessionHeartbeatHealthAlert,
+  shouldSuppressSyntheticAgentHealthAlert,
 }
 
 // Store daemon state on globalThis to survive HMR reloads
@@ -193,7 +146,7 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     startBrowserSweep()
     startHeartbeatService()
     startMemoryConsolidation()
-    syncDaemonBackgroundServices()
+    syncDaemonBackgroundServices({ runConnectorHealthCheckImmediately: false })
     return
   }
   ds.running = true
@@ -210,7 +163,7 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     startBrowserSweep()
     startHeartbeatService()
     startMemoryConsolidation()
-    syncDaemonBackgroundServices()
+    syncDaemonBackgroundServices({ runConnectorHealthCheckImmediately: false })
   } catch (err: unknown) {
     ds.running = false
     notify('daemon')
@@ -239,10 +192,11 @@ export function stopDaemon(options?: { source?: string; manualStop?: boolean }) 
   stopBrowserSweep()
   stopHealthMonitor()
   stopConnectorHealthMonitor()
+  stopConnectorOutboxWorker()
   stopHeartbeatService()
   stopMemoryConsolidation()
   stopEvalScheduler()
-  stopAllConnectors().catch(() => {})
+  stopAllConnectors({ disable: false }).catch(() => {})
 }
 
 function startBrowserSweep() {
@@ -474,9 +428,8 @@ async function processWebhookRetries() {
         heartbeatEnabled: (agent.heartbeatEnabled as boolean | undefined) ?? false,
         heartbeatIntervalSec: (agent.heartbeatIntervalSec as number | null | undefined) ?? null,
       }
-      sessions[session.id as string] = session
-      const { saveSessions: save } = await import('./storage')
-      save(sessions)
+      const { upsertSession: upsert } = await import('./storage')
+      upsert(session.id as string, session)
     }
 
     const payloadPreview = (entry.payload || '').slice(0, 12_000)
@@ -774,7 +727,7 @@ async function runHealthChecks() {
   const sessions = loadSessions()
   const now = Date.now()
   const currentlyStale = new Set<string>()
-  let sessionsDirty = false
+  const dirtySessionIds: string[] = []
 
   for (const session of Object.values(sessions) as Record<string, unknown>[]) {
     if (!session?.id || typeof session.id !== 'string') continue
@@ -799,7 +752,7 @@ async function runHealthChecks() {
       if (staleForMs > autoDisableAfter) {
         session.heartbeatEnabled = false
         session.lastActiveAt = now
-        sessionsDirty = true
+        dirtySessionIds.push(sessionId)
         ds.staleSessionIds.delete(sessionId)
         await sendHealthAlert({
           text: `Auto-disabled heartbeat for stale session "${sessionLabel}" after ${Math.round(staleForMs / 60_000)}m of inactivity.`,
@@ -831,7 +784,13 @@ async function runHealthChecks() {
     }
   }
 
-  if (sessionsDirty) saveSessions(sessions)
+  for (const sid of dirtySessionIds) {
+    const s = sessions[sid]
+    if (s) {
+      const { upsertSession: upsert } = await import('./storage')
+      upsert(sid, s)
+    }
+  }
 
   // Provider reachability checks
   try {
@@ -906,19 +865,23 @@ function stopHealthMonitor() {
   }
 }
 
-function syncDaemonBackgroundServices() {
+function syncDaemonBackgroundServices(options?: { runConnectorHealthCheckImmediately?: boolean }) {
   if (isDaemonBackgroundServicesEnabled()) {
     startHealthMonitor()
-    startConnectorHealthMonitor()
+    startConnectorHealthMonitor({
+      runImmediately: options?.runConnectorHealthCheckImmediately !== false,
+    })
+    startConnectorOutboxWorker()
     startEvalScheduler()
     return
   }
   stopHealthMonitor()
   stopConnectorHealthMonitor()
+  stopConnectorOutboxWorker()
   stopEvalScheduler()
 }
 
-function startConnectorHealthMonitor() {
+function startConnectorHealthMonitor(options?: { runImmediately?: boolean }) {
   if (ds.connectorHealthIntervalId) return
 
   const tick = () => {
@@ -927,7 +890,7 @@ function startConnectorHealthMonitor() {
     })
   }
 
-  tick()
+  if (options?.runImmediately !== false) tick()
   ds.connectorHealthIntervalId = setInterval(tick, CONNECTOR_HEALTH_CHECK_INTERVAL)
 }
 
@@ -978,14 +941,6 @@ function stopMemoryConsolidation() {
 
 const EVAL_DEFAULT_INTERVAL_MS = 24 * 3600_000 // 24 hours
 
-function parseCronToMs(cron: string | null | undefined): number | null {
-  if (!cron || typeof cron !== 'string') return null
-  // Simple heuristic: extract hours from common cron patterns like "0 */6 * * *"
-  const hourMatch = cron.match(/\*\/(\d+)/)
-  if (hourMatch) return parseInt(hourMatch[1], 10) * 3600_000
-  return EVAL_DEFAULT_INTERVAL_MS
-}
-
 async function runEvalSchedulerTick() {
   try {
     const settings = loadSettings()
@@ -1022,7 +977,7 @@ function startEvalScheduler() {
   try {
     const settings = loadSettings()
     if (!settings.autonomyEvalEnabled) return
-    const intervalMs = parseCronToMs(settings.autonomyEvalCron) || EVAL_DEFAULT_INTERVAL_MS
+    const intervalMs = parseCronToMs(settings.autonomyEvalCron, EVAL_DEFAULT_INTERVAL_MS) || EVAL_DEFAULT_INTERVAL_MS
     ds.evalSchedulerIntervalId = setInterval(runEvalSchedulerTick, intervalMs)
     console.log(`[daemon:eval] Eval scheduler started (interval=${Math.round(intervalMs / 3600_000)}h)`)
   } catch {
@@ -1084,6 +1039,10 @@ export async function runDaemonHealthCheckNow() {
     runHealthChecks(),
     runConnectorHealthChecks(Date.now()),
   ])
+}
+
+export async function runConnectorHealthCheckNowForTest(now = Date.now()) {
+  await runConnectorHealthChecks(now)
 }
 
 export function getDaemonStatus() {

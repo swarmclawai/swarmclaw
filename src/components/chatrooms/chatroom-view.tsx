@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import type { StreamingAgent } from '@/stores/use-chatroom-store'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
 import { ChatroomMessageBubble } from './chatroom-message'
 import { ChatroomInput } from './chatroom-input'
@@ -35,10 +36,10 @@ function getMemberRole(chatroom: Chatroom, agentId: string): string {
   return member?.role || 'member'
 }
 
-function isAgentMuted(chatroom: Chatroom, agentId: string): boolean {
+function isAgentMuted(chatroom: Chatroom, agentId: string, now: number | null): boolean {
   const member = getMemberFromChatroom(chatroom, agentId)
   if (!member?.mutedUntil) return false
-  return new Date(member.mutedUntil).getTime() > Date.now()
+  return !!now && new Date(member.mutedUntil).getTime() > now
 }
 
 type MomentType = { kind: 'heartbeat' } | { kind: 'tool'; name: string; input: string }
@@ -69,10 +70,11 @@ function AgentHeartbeatListeners({ agentIds, onPulse }: { agentIds: string[]; on
 
 const GROUP_THRESHOLD_MS = 2 * 60 * 1000
 
-function dayLabel(ts: number): string {
+function dayLabel(ts: number, now: number | null): string {
   const d = new Date(ts)
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (!now) return d.toISOString().slice(0, 10)
+  const nowDate = new Date(now)
+  const today = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate())
   const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
   const diff = today.getTime() - msgDay.getTime()
   if (diff === 0) return 'Today'
@@ -81,6 +83,7 @@ function dayLabel(ts: number): string {
 }
 
 export function ChatroomView() {
+  const now = useNow()
   const currentChatroomId = useChatroomStore((s) => s.currentChatroomId)
   const chatrooms = useChatroomStore((s) => s.chatrooms)
   const streamingAgents = useChatroomStore((s) => s.streamingAgents)
@@ -165,7 +168,7 @@ export function ChatroomView() {
       : []
   ), [chatroom, pinnedIds])
   const memberAgentIds = chatroom?.agentIds || []
-  const mutedCount = chatroom ? chatroom.agentIds.filter((agentId) => isAgentMuted(chatroom, agentId)).length : 0
+  const mutedCount = chatroom ? chatroom.agentIds.filter((agentId) => isAgentMuted(chatroom, agentId, now)).length : 0
   const adminCount = chatroom ? chatroom.agentIds.filter((agentId) => getMemberRole(chatroom, agentId) === 'admin').length : 0
   const lastReadAt = chatroom ? (lastReadTimestamps[chatroom.id] || 0) : 0
   const unreadCount = useMemo(() => (
@@ -277,7 +280,7 @@ export function ChatroomView() {
             {memberAgents.slice(0, 5).map((agent) => {
               const role = getMemberRole(chatroom, agent.id)
               const badge = getRoleBadge(role)
-              const muted = isAgentMuted(chatroom, agent.id)
+              const muted = isAgentMuted(chatroom, agent.id, Date.now())
               return (
                 <Tooltip key={agent.id}>
                   <TooltipTrigger asChild>
@@ -411,7 +414,7 @@ export function ChatroomView() {
                     {showDaySep && (
                       <div className="flex items-center gap-3 px-4 py-3">
                         <div className="flex-1 h-px bg-white/[0.06]" />
-                        <span className="text-[10px] font-600 text-text-3 uppercase tracking-wider">{dayLabel(msg.time)}</span>
+                        <span className="text-[10px] font-600 text-text-3 uppercase tracking-wider">{dayLabel(msg.time, now)}</span>
                         <div className="flex-1 h-px bg-white/[0.06]" />
                       </div>
                     )}
@@ -540,7 +543,7 @@ function RoomDetailsPanel({
           <div className="space-y-2">
             {memberAgents.map((agent) => {
               const role = getMemberRole(chatroom, agent.id)
-              const muted = isAgentMuted(chatroom, agent.id)
+              const muted = isAgentMuted(chatroom, agent.id, Date.now())
               return (
                 <button
                   key={agent.id}

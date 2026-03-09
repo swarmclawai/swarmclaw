@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'node:crypto'
-import { loadSessions, saveSessions } from '@/lib/server/storage'
+import { loadSession, upsertSession } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json().catch(() => ({})) as { messageIndex: number }
-  const sessions = loadSessions()
-  const source = sessions[id]
+  const source = loadSession(id)
   if (!source) return notFound()
 
   const { messageIndex } = body
@@ -37,8 +36,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     conversationTone: source.conversationTone,
   }
 
-  sessions[newId] = forked
-  saveSessions(sessions)
+  upsertSession(newId, forked)
 
   return NextResponse.json(forked)
 }

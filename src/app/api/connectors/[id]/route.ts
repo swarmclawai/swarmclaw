@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadConnectors, saveConnectors, logActivity } from '@/lib/server/storage'
+import { loadConnectors, logActivity, upsertStoredItem, deleteStoredItem } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { notFound } from '@/lib/server/collection-helpers'
 import { ensureDaemonStarted } from '@/lib/server/daemon-state'
@@ -82,11 +82,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (body.chatroomId !== undefined) connector.chatroomId = body.chatroomId
   if (body.credentialId !== undefined) connector.credentialId = body.credentialId
   if (body.config !== undefined) connector.config = body.config
-  if (body.isEnabled !== undefined) connector.isEnabled = body.isEnabled
-  connector.updatedAt = Date.now()
+  if (body.isEnabled !== undefined) (connector as any).isEnabled = body.isEnabled
+  (connector as any).updatedAt = Date.now()
 
-  connectors[id] = connector
-  saveConnectors(connectors)
+  upsertStoredItem('connectors', id, connector)
 
   try {
     const manager = await import('@/lib/server/connectors/manager')
@@ -133,8 +132,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     clearConnectorPairingState(id)
   } catch { /* ignore */ }
 
-  delete connectors[id]
-  saveConnectors(connectors)
+  deleteStoredItem('connectors', id)
   notify('connectors')
   return NextResponse.json({ ok: true })
 }

@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { cronToHuman } from '@/lib/cron-human'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { useNow } from '@/hooks/use-now'
 import { isUserCreatedSchedule } from '@/lib/schedule-origin'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -14,10 +15,10 @@ const STATUS_COLORS: Record<string, string> = {
   failed: 'text-red-400 bg-red-400/[0.08]',
 }
 
-function formatNext(ts?: number): string {
+function formatNext(ts: number | undefined, now: number | null): string {
   if (!ts) return 'Not scheduled'
+  if (!now) return 'Scheduled'
   const d = new Date(ts)
-  const now = Date.now()
   const diff = ts - now
   if (diff < 0) return 'Overdue'
   if (diff < 60000) return 'In < 1m'
@@ -33,6 +34,7 @@ interface Props {
 }
 
 export function ScheduleCard({ schedule, inSidebar, index = 0 }: Props) {
+  const now = useNow({ enabled: false })
   const setEditingScheduleId = useAppStore((s) => s.setEditingScheduleId)
   const setScheduleSheetOpen = useAppStore((s) => s.setScheduleSheetOpen)
   const loadSchedules = useAppStore((s) => s.loadSchedules)
@@ -138,7 +140,7 @@ export function ScheduleCard({ schedule, inSidebar, index = 0 }: Props) {
         )}
       </div>
       <div className="text-[11px] text-text-3/60 mt-1">
-        Next: {formatNext(schedule.nextRunAt)}
+        Next: {formatNext(schedule.nextRunAt, now)}
       </div>
     </div>
   )

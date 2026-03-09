@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundThreadHistoryEntry } from './types'
+import { normalizeConnectorIngressResult } from './types'
 import { downloadInboundMediaToUpload, inferInboundMediaType } from './media'
 import { getConnectorReplySendOptions, isNoMessage, recordConnectorOutboundDelivery } from './manager'
 
@@ -188,9 +189,9 @@ const discord: PlatformConnector = {
       try {
         // Show typing indicator
         await message.channel.sendTyping()
-        const response = await onMessage(inbound)
-
-        if (isNoMessage(response)) return
+        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
+        const response = routeResult.visibleText
 
         const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
         const targetChannelId = replyOptions.threadId || inbound.channelId
@@ -238,7 +239,7 @@ const discord: PlatformConnector = {
     await client.login(botToken)
     console.log(`[discord] Bot logged in as ${client.user?.tag}`)
 
-    return {
+    const instance: ConnectorInstance = {
       connector,
       isAlive() {
         return client.isReady()
@@ -300,6 +301,16 @@ const discord: PlatformConnector = {
         console.log(`[discord] Bot disconnected`)
       },
     }
+
+    // Terminal disconnect — discord.js won't auto-reconnect for these
+    client.once('invalidated', () => {
+      instance.onCrash?.('Discord session invalidated')
+    })
+    client.on('shardError', (error) => {
+      console.error(`[discord] Shard error:`, error.message)
+    })
+
+    return instance
   },
 }
 

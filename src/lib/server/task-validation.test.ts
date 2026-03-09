@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { validateTaskCompletion } from './task-validation.ts'
+import { validateTaskCompletion } from './task-validation'
 import type { BoardTask } from '@/types'
 
 test('validateTaskCompletion fails screenshot delivery tasks without artifact evidence', () => {

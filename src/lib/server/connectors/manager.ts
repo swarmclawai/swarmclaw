@@ -38,10 +38,8 @@ import {
   addAllowedSender,
   approvePairingCode,
   createOrTouchPairingRequest,
-  isSenderAllowed,
   listPendingPairingRequests,
   listStoredAllowedSenders,
-  parseAllowFromCsv,
   parsePairingPolicy,
   type PairingPolicy,
 } from './pairing'
@@ -61,7 +59,17 @@ import {
 } from './policy'
 import { buildConnectorThreadContextBlock, resolveThreadPersonaLabel } from './thread-context'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '../assistant-control'
-import { requestApprovalMaybeAutoApprove } from '../approvals'
+import {
+  buildInboundApprovalSubject as buildInboundApprovalSubjectHelper,
+  enforceInboundAccessPolicy as enforceInboundAccessPolicyHelper,
+  resolveInboundApprovalSenderId as resolveInboundApprovalSenderIdHelper,
+  resolvePairingAccess as resolvePairingAccessHelper,
+} from './access'
+import {
+  findDirectSessionForInbound as findDirectSessionForInboundHelper,
+  pushSessionMessage as pushSessionMessageHelper,
+  resolveDirectSession as resolveDirectSessionHelper,
+} from './session'
 
 let streamAgentChatImpl = streamAgentChat
 
@@ -470,23 +478,7 @@ function rememberRecentInbound(key: string, now = Date.now(), ttlMs = 120_000): 
 }
 
 function findDirectSessionForInbound(connector: Connector, msg: InboundMessage): ConnectorSession | null {
-  if (connector.chatroomId) return null
-  const effectiveAgentId = msg.agentIdOverride || connector.agentId
-  const channelIds = new Set([msg.channelId, msg.channelIdAlt].filter(Boolean))
-  const senderIds = new Set([msg.senderId, msg.senderIdAlt].filter(Boolean))
-  const sessions = Object.values(loadSessions() as Record<string, ConnectorSession>)
-  const candidates = sessions.filter((session) =>
-    session?.agentId === effectiveAgentId
-      && session?.connectorContext?.connectorId === connector.id
-      && channelIds.has(session?.connectorContext?.channelId || ''),
-  )
-  if (msg.threadId) {
-    const threadExact = candidates.find((session) => session?.connectorContext?.threadId === msg.threadId)
-    if (threadExact) return threadExact
-  }
-  const senderExact = candidates.find((session) => senderIds.has(session?.connectorContext?.senderId || ''))
-  if (senderExact) return senderExact
-  return candidates[0] || null
+  return findDirectSessionForInboundHelper(connector, msg)
 }
 
 async function maybeSendStatusReaction(
@@ -1076,12 +1068,7 @@ function pushSessionMessage(
   text: string,
   extra: Record<string, unknown> = {},
 ): void {
-  if (!text.trim()) return
-  if (!Array.isArray(session.messages)) session.messages = []
-  const message = { role, text: text.trim(), time: Date.now(), ...extra }
-  session.messages.push(message)
-  session.lastActiveAt = Date.now()
-  mirrorConnectorMessageToAgentThread(session, message)
+  pushSessionMessageHelper(session, role, text, extra)
 }
 
 function modelHistoryTail(
@@ -1132,25 +1119,7 @@ function resolvePairingAccess(connector: Connector, msg: InboundMessage): {
   isAllowed: boolean
   hasAnyApprover: boolean
 } {
-  const policy = parsePairingPolicy(connector.config?.dmPolicy, 'open')
-  const configAllowFrom = parseAllowFromCsv(connector.config?.allowFrom)
-  const stored = listStoredAllowedSenders(connector.id)
-  const isAllowed = [
-    msg.senderId,
-    msg.senderIdAlt,
-  ]
-    .filter((senderId): senderId is string => typeof senderId === 'string' && !!senderId.trim())
-    .some((senderId) => isSenderAllowed({
-      connectorId: connector.id,
-      senderId,
-      configAllowFrom,
-    }))
-  return {
-    policy,
-    configAllowFrom,
-    isAllowed,
-    hasAnyApprover: (configAllowFrom.length + stored.length) > 0,
-  }
+  return resolvePairingAccessHelper(connector, msg)
 }
 
 async function handlePairCommand(params: {
@@ -1229,16 +1198,11 @@ async function handlePairCommand(params: {
 }
 
 function resolveInboundApprovalSenderId(msg: InboundMessage): string {
-  const alt = typeof msg.senderIdAlt === 'string' ? msg.senderIdAlt.trim() : ''
-  if (alt) return alt
-  return typeof msg.senderId === 'string' ? msg.senderId.trim() : ''
+  return resolveInboundApprovalSenderIdHelper(msg)
 }
 
 function buildInboundApprovalSubject(msg: InboundMessage): string {
-  const senderName = typeof msg.senderName === 'string' ? msg.senderName.trim() : ''
-  const senderId = resolveInboundApprovalSenderId(msg)
-  if (senderName && senderId && senderName !== senderId) return `${senderName} (${senderId})`
-  return senderName || senderId || 'this sender'
+  return buildInboundApprovalSubjectHelper(msg)
 }
 
 async function enforceInboundAccessPolicy(params: {
@@ -1247,60 +1211,10 @@ async function enforceInboundAccessPolicy(params: {
   session: ConnectorSession
   agent: ConnectorAgent
 }): Promise<string | null> {
-  const { connector, msg, session, agent } = params
-  if (msg.isGroup) return null
-  const { policy, isAllowed } = resolvePairingAccess(connector, msg)
-  if (policy === 'open') return null
-
-  if (policy === 'disabled') return NO_MESSAGE_SENTINEL
-  if (isAllowed) return null
-
-  const senderId = resolveInboundApprovalSenderId(msg)
-  const senderSubject = buildInboundApprovalSubject(msg)
-  const approval = await requestApprovalMaybeAutoApprove({
-    category: 'connector_sender',
-    title: `Approve ${senderSubject} on ${connector.name}`,
-    description: `Allow ${senderSubject} to message ${agent.name} via ${connector.platform}/${connector.name}.`,
-    data: {
-      connectorId: connector.id,
-      connectorName: connector.name,
-      platform: connector.platform,
-      senderId,
-      senderIdRaw: typeof msg.senderId === 'string' ? msg.senderId.trim() : '',
-      senderName: typeof msg.senderName === 'string' ? msg.senderName.trim() : '',
-      channelId: typeof msg.channelId === 'string' ? msg.channelId.trim() : '',
-      policy,
-    },
-    agentId: agent.id,
-    sessionId: session.id,
+  return enforceInboundAccessPolicyHelper({
+    ...params,
+    noMessageSentinel: NO_MESSAGE_SENTINEL,
   })
-
-  if (approval.status === 'approved') return null
-
-  if (policy === 'allowlist') {
-    return [
-      `${senderSubject} is pending approval for this connector.`,
-      'A SwarmClaw approval request has been created for this sender.',
-      'An approved operator can allow this sender in the app or via /pair allow <senderId>.',
-    ].join('\n')
-  }
-
-  if (policy === 'pairing') {
-    const request = createOrTouchPairingRequest({
-      connectorId: connector.id,
-      senderId,
-      senderName: msg.senderName,
-      channelId: msg.channelId,
-    })
-    return [
-      `${senderSubject} is pending approval for this connector.`,
-      'A SwarmClaw approval request has been created for this sender.',
-      `Pairing code: ${request.code}`,
-      'Approve in the app, or ask an approved sender to run /pair approve <code>.',
-    ].join('\n')
-  }
-
-  return 'This sender is not authorized for this connector.'
 }
 
 async function handleConnectorCommand(params: {
@@ -1761,7 +1675,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     preferredCredentialId: agent.credentialId || null,
   })
 
-  const { session, sessionKey, wasCreated, staleReason, clearedMessages } = resolveDirectSession({
+  const { session, sessionKey, wasCreated, staleReason, clearedMessages } = resolveDirectSessionHelper({
     connector,
     msg,
     agent,
@@ -1885,14 +1799,19 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   const stopTyping = startConnectorTypingLoop(connector, msg)
   try {
     // Enqueue system event + heartbeat wake for the agent only after access/gating checks pass.
+    const threadSession = agent.threadSessionId
+      ? (loadSessions()[agent.threadSessionId] as ConnectorSession | undefined) || ensureAgentThreadSession(agent.id)
+      : ensureAgentThreadSession(agent.id)
+    const wakeSessionId = threadSession?.id || session.id
     const preview = (msg.text || '').slice(0, 80)
     enqueueSystemEvent(
-      sessionKey,
+      wakeSessionId,
       `Inbound message from ${msg.platform}: ${preview}`,
       'connector-message',
     )
     requestHeartbeatNow({
       agentId: effectiveAgentId,
+      sessionId: wakeSessionId,
       eventId: `${connector.id}:${msg.messageId || msg.replyToMessageId || Date.now()}`,
       reason: 'connector-message',
       source: `connector:${msg.platform}`,
@@ -2381,7 +2300,11 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
 }
 
 /** Stop a connector */
-export async function stopConnector(connectorId: string): Promise<void> {
+export async function stopConnector(
+  connectorId: string,
+  options?: { disable?: boolean },
+): Promise<void> {
+  const disable = options?.disable !== false
   const instance = running.get(connectorId)
   if (instance) {
     await instance.stop()
@@ -2410,7 +2333,7 @@ export async function stopConnector(connectorId: string): Promise<void> {
   const connector = connectors[connectorId]
   if (connector) {
     connector.status = 'stopped'
-    connector.isEnabled = false
+    connector.isEnabled = disable ? false : connector.isEnabled === true
     connector.lastError = null
     connector.updatedAt = Date.now()
     connectors[connectorId] = connector
@@ -2466,9 +2389,9 @@ export async function repairConnector(connectorId: string): Promise<void> {
 }
 
 /** Stop all running connectors (for cleanup) */
-export async function stopAllConnectors(): Promise<void> {
+export async function stopAllConnectors(options?: { disable?: boolean }): Promise<void> {
   for (const [id] of running) {
-    await stopConnector(id)
+    await stopConnector(id, options)
   }
 }
 

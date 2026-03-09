@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
+import { useNow } from '@/hooks/use-now'
 import { fetchMessages } from '@/lib/chats'
 import { api } from '@/lib/api-client'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export function AgentChatList({ inSidebar, onSelect }: Props) {
+  const now = useNow()
   const agents = useAppStore((s) => s.agents)
   const sessions = useAppStore((s) => s.sessions)
   const loadAgents = useAppStore((s) => s.loadAgents)
@@ -98,7 +100,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
   // Compute agents active in chatrooms (message in last 30min or currently streaming)
   const chatroomActiveAgentIds = useMemo(() => {
     const set = new Set<string>()
-    const cutoff = Date.now() - 30 * 60 * 1000
+    const cutoff = now ? now - 30 * 60 * 1000 : Number.POSITIVE_INFINITY
     for (const chatroom of Object.values(chatrooms)) {
       for (let i = chatroom.messages.length - 1; i >= 0; i--) {
         const msg = chatroom.messages[i]
@@ -108,7 +110,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
     }
     for (const agentId of chatroomStreaming.keys()) set.add(agentId)
     return set
-  }, [chatrooms, chatroomStreaming])
+  }, [chatrooms, chatroomStreaming, now])
 
   // Compute running tasks per agent
   const runningAgentIds = useMemo(() => {
@@ -122,7 +124,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
   // Apply chatFilter
   const filteredAgents = useMemo(() => {
     if (chatFilter === 'all') return sortedAgents
-    const now = Date.now()
+    if (!now) return sortedAgents
     return sortedAgents.filter((a) => {
       const threadSession = a.threadSessionId ? sessions[a.threadSessionId] as Session | undefined : undefined
       const isRunning = runningAgentIds.has(a.id) || (threadSession?.active ?? false)
@@ -133,7 +135,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
       const lastActive = threadSession?.lastActiveAt || a.updatedAt
       return now - lastActive < 86_400_000
     })
-  }, [sortedAgents, chatFilter, sessions, runningAgentIds, streamingSessionId, chatroomActiveAgentIds])
+  }, [sortedAgents, chatFilter, sessions, runningAgentIds, streamingSessionId, chatroomActiveAgentIds, now])
 
   const defaultAgent = useMemo(() => {
     const id = appSettings.defaultAgentId
@@ -277,7 +279,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
           const threadSession = defaultAgent.threadSessionId ? sessions[defaultAgent.threadSessionId] as Session | undefined : undefined
           const lastMsg = threadSession?.messages?.at(-1)
           const heartbeatOn = defaultAgent.heartbeatEnabled === true && (defaultAgent.plugins?.length ?? 0) > 0
-          const recentlyActive = (threadSession?.lastActiveAt ?? 0) > Date.now() - 30 * 60 * 1000
+          const recentlyActive = !!now && (threadSession?.lastActiveAt ?? 0) > now - 30 * 60 * 1000
           const isDisabled = defaultAgent.disabled === true
           const isWorking = !isDisabled && (runningAgentIds.has(defaultAgent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(defaultAgent.id))
           const isTyping = streamingSessionId === defaultAgent.threadSessionId
@@ -368,7 +370,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
           const lastMsg = threadSession?.messages?.at(-1)
           const isActive = currentAgentId === agent.id
           const heartbeatOn = agent.heartbeatEnabled === true && (agent.plugins?.length ?? 0) > 0
-          const recentlyActive = (threadSession?.lastActiveAt ?? 0) > Date.now() - 30 * 60 * 1000
+          const recentlyActive = !!now && (threadSession?.lastActiveAt ?? 0) > now - 30 * 60 * 1000
           const isDisabled = agent.disabled === true
           const isWorking = !isDisabled && (runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(agent.id))
           const isTyping = streamingSessionId === agent.threadSessionId
