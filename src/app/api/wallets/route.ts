@@ -3,6 +3,7 @@ import { loadAgents, loadWallets } from '@/lib/server/storage'
 import { createAgentWallet, getAgentActiveWalletId, getWalletPortfolioSnapshot, stripWalletPrivateKey } from '@/lib/server/wallet-service'
 import { buildEmptyWalletPortfolio } from '@/lib/server/wallet-portfolio'
 import type { AgentWallet, WalletPortfolioSummary } from '@/types'
+import { errorMessage } from '@/lib/shared-utils'
 export const dynamic = 'force-dynamic'
 const WALLET_LIST_PORTFOLIO_TIMEOUT_MS = 1500
 
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
     })
     return NextResponse.json(stripWalletPrivateKey(wallet as unknown as Record<string, unknown>))
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     if (message === 'agentId is required') {
       return NextResponse.json({ error: message }, { status: 400 })
     }

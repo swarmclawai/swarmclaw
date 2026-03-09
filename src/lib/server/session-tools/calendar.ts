@@ -4,6 +4,7 @@ import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import type { ToolBuildContext } from './context'
+import { errorMessage } from '@/lib/shared-utils'
 
 type CalendarProvider = 'google' | 'outlook'
 
@@ -249,7 +250,7 @@ async function executeCalendar(args: Record<string, unknown>): Promise<string> {
         return `Error: Unknown action "${action}". Use: list, create, update, delete, status.`
     }
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

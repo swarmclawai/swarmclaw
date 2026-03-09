@@ -6,9 +6,8 @@ import {
   upsertConnectorHealthEvent,
 } from '../storage'
 import type { ConnectorHealthEventType } from '@/types'
+import { dedup, errorMessage, sleep } from '@/lib/shared-utils'
 import { WORKSPACE_DIR } from '../data-dir'
-import { UPLOAD_DIR } from '../storage'
-import fs from 'fs'
 import path from 'path'
 import { streamAgentChat } from '../stream-agent-chat'
 import { notify } from '../ws-hub'
@@ -33,7 +32,7 @@ import { buildIdentityContinuityContext } from '../identity-continuity'
 import { ensureAgentThreadSession } from '../agent-thread-session'
 import { getProvider } from '@/lib/providers'
 import type { Agent, Connector, MessageSource, Chatroom, ChatroomMessage, Session } from '@/types'
-import type { ConnectorInstance, InboundMessage, InboundMedia } from './types'
+import type { ConnectorInstance, InboundMessage } from './types'
 import {
   addAllowedSender,
   approvePairingCode,
@@ -70,6 +69,54 @@ import {
   pushSessionMessage as pushSessionMessageHelper,
   resolveDirectSession as resolveDirectSessionHelper,
 } from './session'
+import { NO_MESSAGE_SENTINEL, isNoMessage } from './message-sentinel'
+import {
+  buildInboundAttachmentPaths,
+  connectorSupportsBinaryMedia,
+  extractEmbeddedMedia,
+  formatInboundUserText,
+  formatMediaLine,
+  normalizeWhatsappTarget,
+  parseConnectorToolInput,
+  parseConnectorToolResult,
+  parseSseDataEvents,
+  selectOutboundMediaFiles,
+  uploadApiUrlFromPath,
+  visibleConnectorToolText,
+} from './response-media'
+import {
+  getConnectorReplySendOptions,
+  maybeSendStatusReaction,
+  recordConnectorOutboundDelivery,
+} from './delivery'
+import {
+  advanceConnectorReconnectState,
+  clearReconnectState,
+  connectorReconnectStateStore,
+  createConnectorReconnectState,
+  getAllReconnectStates,
+  getReconnectState,
+  setReconnectState,
+  type ConnectorReconnectState,
+} from './reconnect-state'
+import { connectorRuntimeState, runningConnectors } from './runtime-state'
+
+export {
+  advanceConnectorReconnectState,
+  clearReconnectState,
+  createConnectorReconnectState,
+  extractEmbeddedMedia,
+  formatInboundUserText,
+  formatMediaLine,
+  getAllReconnectStates,
+  getConnectorReplySendOptions,
+  getReconnectState,
+  isNoMessage,
+  recordConnectorOutboundDelivery,
+  selectOutboundMediaFiles,
+  setReconnectState,
+}
+export type { ConnectorReconnectState }
 
 let streamAgentChatImpl = streamAgentChat
 
@@ -79,363 +126,21 @@ export function setStreamAgentChatForTest(
   streamAgentChatImpl = handler || streamAgentChat
 }
 
-function resolveUploadPathFromUrl(rawUrl: string): string | null {
-  if (!rawUrl) return null
-  const normalized = rawUrl.trim()
-  const match = normalized.match(/\/api\/uploads\/([^?#)\s]+)/)
-  if (!match) return null
-  let decoded: string
-  try { decoded = decodeURIComponent(match[1]) } catch { decoded = match[1] }
-  const safeName = decoded.replace(/[^a-zA-Z0-9._-]/g, '')
-  if (!safeName) return null
-  const filePath = path.join(UPLOAD_DIR, safeName)
-  return fs.existsSync(filePath) ? filePath : null
-}
-
-function uploadApiUrlFromPath(filePath: string): string | null {
-  const rel = path.relative(UPLOAD_DIR, filePath)
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null
-  const fileName = path.basename(rel)
-  return `/api/uploads/${encodeURIComponent(fileName)}`
-}
-
-function parseSseDataEvents(raw: string): Array<Record<string, unknown>> {
-  if (!raw) return []
-  const events: Array<Record<string, unknown>> = []
-  const lines = raw.split('\n')
-  for (const line of lines) {
-    if (!line.startsWith('data: ')) continue
-    try {
-      const parsed = JSON.parse(line.slice(6).trim())
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        events.push(parsed as Record<string, unknown>)
-      }
-    } catch { /* ignore malformed event lines */ }
-  }
-  return events
-}
-
-function parseConnectorToolResult(toolOutput: string): { status?: string; to?: string; followUpId?: string; messageId?: string } | null {
-  const raw = toolOutput.trim()
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-    const record = parsed as Record<string, unknown>
-    const status = typeof record.status === 'string' ? String(record.status) : undefined
-    const to = typeof record.to === 'string' ? String(record.to) : undefined
-    const followUpId = typeof record.followUpId === 'string' ? String(record.followUpId) : undefined
-    const messageId = typeof record.messageId === 'string' ? String(record.messageId) : undefined
-    return { status, to, followUpId, messageId }
-  } catch {
-    return null
-  }
-}
-
-function parseConnectorToolInput(toolInput: string): Record<string, unknown> | null {
-  const raw = toolInput.trim()
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null
-  } catch {
-    return null
-  }
-}
-
-function visibleConnectorToolText(input: Record<string, unknown> | null): string {
-  if (!input) return ''
-  const voiceText = typeof input.voiceText === 'string' ? input.voiceText.trim() : ''
-  if (voiceText) return voiceText
-  const message = typeof input.message === 'string' ? input.message.trim() : ''
-  if (message) return message
-  const caption = typeof input.caption === 'string' ? input.caption.trim() : ''
-  if (caption) return caption
-  const text = typeof input.text === 'string' ? input.text.trim() : ''
-  if (text) return text
-  return ''
-}
-
-function canonicalUploadMediaKey(filePath: string): string {
-  const base = path.basename(filePath)
-  const ext = path.extname(base).toLowerCase()
-  const normalized = base
-    .replace(/^\d{10,16}-/, '')
-    .replace(/^(?:browser|screenshot)-\d{10,16}(?:-\d+)?\./, `playwright-capture.`)
-    .toLowerCase()
-  return normalized || `unknown${ext}`
-}
-
-function shouldAllowMultipleMediaSends(userText: string): boolean {
-  const text = (userText || '').toLowerCase()
-  return /\b(all|both|multiple|several|many|every|each|two|three|4|four|screenshots|images|photos|files|documents)\b/.test(text)
-}
-
-function preferSingleBestMediaFile(files: Array<{ path: string; alt: string }>): Array<{ path: string; alt: string }> {
-  if (files.length <= 1) return files
-  const ranked = [...files].sort((a, b) => {
-    const score = (entry: { path: string }) => {
-      const base = path.basename(entry.path).toLowerCase()
-      let value = 0
-      if (/^\d{10,16}-/.test(base)) value += 20
-      if (!base.startsWith('browser-') && !base.startsWith('screenshot-')) value += 10
-      if (base.endsWith('.pdf')) value += 8
-      if (base.endsWith('.png') || base.endsWith('.jpg') || base.endsWith('.jpeg') || base.endsWith('.webp')) value += 6
-      try {
-        const stat = fs.statSync(entry.path)
-        value += Math.min(5, Math.round((stat.mtimeMs % 10_000) / 2_000))
-      } catch { /* ignore stat errors */ }
-      return value
-    }
-    return score(b) - score(a)
-  })
-  return [ranked[0]]
-}
-
-export function selectOutboundMediaFiles(
-  files: Array<{ path: string; alt: string }>,
-  userText: string,
-): Array<{ path: string; alt: string }> {
-  if (files.length === 0) return []
-  const mergedFiles: Array<{ path: string; alt: string }> = []
-  const seenMediaKeys = new Set<string>()
-  for (const candidate of files) {
-    const mediaKey = canonicalUploadMediaKey(candidate.path)
-    if (seenMediaKeys.has(mediaKey)) continue
-    seenMediaKeys.add(mediaKey)
-    mergedFiles.push(candidate)
-  }
-  return shouldAllowMultipleMediaSends(userText || '')
-    ? mergedFiles
-    : preferSingleBestMediaFile(mergedFiles)
-}
-
-/**
- * Extract embedded media references from agent response text.
- * Supports markdown images/links and bare upload URLs.
- */
-export function extractEmbeddedMedia(text: string): { cleanText: string; files: Array<{ path: string; alt: string }> } {
-  const files: Array<{ path: string; alt: string }> = []
-  const seen = new Set<string>()
-  let cleanText = text
-
-  const pushFile = (filePath: string, alt: string) => {
-    if (!filePath || seen.has(filePath)) return
-    seen.add(filePath)
-    files.push({ path: filePath, alt: alt.trim() })
-  }
-
-  const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g
-  cleanText = cleanText.replace(imageRegex, (full, altRaw, urlRaw) => {
-    const filePath = resolveUploadPathFromUrl(String(urlRaw || ''))
-    if (!filePath) return full
-    pushFile(filePath, String(altRaw || ''))
-    return ''
-  })
-
-  const linkRegex = /(?<!!)\[([^\]]*)\]\(([^)]+)\)/g
-  cleanText = cleanText.replace(linkRegex, (full, altRaw, urlRaw) => {
-    const filePath = resolveUploadPathFromUrl(String(urlRaw || ''))
-    if (!filePath) return full
-    pushFile(filePath, String(altRaw || ''))
-    return ''
-  })
-
-  const bareUploadUrlRegex = /(?:https?:\/\/[^\s)]+)?\/api\/uploads\/[^\s)\]]+/g
-  cleanText = cleanText.replace(bareUploadUrlRegex, (full) => {
-    const filePath = resolveUploadPathFromUrl(full)
-    if (!filePath) return full
-    pushFile(filePath, '')
-    return ''
-  })
-
-  if (files.length === 0) return { cleanText: text, files }
-  cleanText = cleanText.replace(/\n{3,}/g, '\n\n').trim()
-  return { cleanText, files }
-}
-
-function buildInboundAttachmentPaths(msg: InboundMessage): string[] {
-  if (!Array.isArray(msg.media) || msg.media.length === 0) return []
-  const paths: string[] = []
-  const seen = new Set<string>()
-  for (const media of msg.media) {
-    const localPath = typeof media.localPath === 'string' ? media.localPath.trim() : ''
-    if (!localPath || seen.has(localPath)) continue
-    if (!fs.existsSync(localPath)) continue
-    seen.add(localPath)
-    paths.push(localPath)
-  }
-  return paths
-}
-
-function normalizeWhatsappTarget(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) return trimmed
-  if (trimmed.includes('@')) return trimmed
-  let cleaned = trimmed.replace(/[^\d+]/g, '')
-  if (cleaned.startsWith('+')) cleaned = cleaned.slice(1)
-  if (cleaned.startsWith('0') && cleaned.length >= 10) {
-    cleaned = `44${cleaned.slice(1)}`
-  }
-  cleaned = cleaned.replace(/[^\d]/g, '')
-  return cleaned ? `${cleaned}@s.whatsapp.net` : trimmed
-}
-
-function connectorSupportsBinaryMedia(platform: string): boolean {
-  return platform === 'whatsapp'
-    || platform === 'telegram'
-    || platform === 'slack'
-    || platform === 'discord'
-    || platform === 'openclaw'
-}
-
-/** Sentinel value agents return when no outbound reply should be sent */
-export const NO_MESSAGE_SENTINEL = 'NO_MESSAGE'
-
-/** Check if an agent response is the NO_MESSAGE sentinel (case-insensitive, trimmed) */
-export function isNoMessage(text: string): boolean {
-  return text.trim().toUpperCase() === NO_MESSAGE_SENTINEL
-}
-
-/** Map of running connector instances by connector ID.
- *  Stored on globalThis to survive HMR reloads in dev mode —
- *  prevents duplicate sockets fighting for the same WhatsApp session. */
-const globalKey = '__swarmclaw_running_connectors__' as const
-const g = globalThis as typeof globalThis & Record<string, unknown>
-
-function getOrInitGlobalValue<T>(key: string, factory: () => T): T {
-  const existing = g[key]
-  if (existing !== undefined) return existing as T
-  const created = factory()
-  g[key] = created
-  return created
-}
-
 type ConnectorSession = Session
 type ConnectorAgent = Agent
 
-const running: Map<string, ConnectorInstance> =
-  getOrInitGlobalValue(globalKey, () => new Map<string, ConnectorInstance>())
-
-/** Most recent inbound channel per connector (used for proactive replies/default outbound target) */
-const lastInboundKey = '__swarmclaw_connector_last_inbound__' as const
-const lastInboundChannelByConnector: Map<string, string> =
-  getOrInitGlobalValue(lastInboundKey, () => new Map<string, string>())
-
-/** Last inbound message timestamp per connector (for presence indicators) */
-const lastInboundTimeKey = '__swarmclaw_connector_last_inbound_time__' as const
-const lastInboundTimeByConnector: Map<string, number> =
-  getOrInitGlobalValue(lastInboundTimeKey, () => new Map<string, number>())
-
-/** Per-connector lock to prevent concurrent start/stop operations */
-const lockKey = '__swarmclaw_connector_locks__' as const
-const locks: Map<string, Promise<void>> =
-  getOrInitGlobalValue(lockKey, () => new Map<string, Promise<void>>())
-
-/** Generation counter per connector — used to detect stale lifecycle events after restart */
-const genCounterKey = '__swarmclaw_connector_gen__' as const
-const generationCounter: Map<string, number> =
-  getOrInitGlobalValue(genCounterKey, () => new Map<string, number>())
-
-type ScheduledConnectorFollowup = {
-  id: string
-  connectorId?: string
-  platform?: string
-  channelId: string
-  sendAt: number
-  timer: ReturnType<typeof setTimeout>
-}
-
-const followupKey = '__swarmclaw_connector_followups__' as const
-const scheduledFollowups: Map<string, ScheduledConnectorFollowup> =
-  getOrInitGlobalValue(followupKey, () => new Map<string, ScheduledConnectorFollowup>())
-
-const inboundDedupeKey = '__swarmclaw_connector_inbound_dedupe__' as const
-const recentInboundByKey: Map<string, number> =
-  getOrInitGlobalValue(inboundDedupeKey, () => new Map<string, number>())
-
-type DebouncedInboundEntry = {
-  connector: Connector
-  messages: InboundMessage[]
-  timer: ReturnType<typeof setTimeout>
-}
-
-const inboundDebounceKey = '__swarmclaw_connector_inbound_debounce__' as const
-const pendingInboundDebounce: Map<string, DebouncedInboundEntry> =
-  getOrInitGlobalValue(inboundDebounceKey, () => new Map<string, DebouncedInboundEntry>())
-
-const followupDedupeKey = '__swarmclaw_connector_followup_dedupe__' as const
-const scheduledFollowupByDedupe: Map<string, { id: string; sendAt: number }> =
-  getOrInitGlobalValue(followupDedupeKey, () => new Map<string, { id: string; sendAt: number }>())
-
-/** Reconnect state per connector — tracks backoff and retry attempts for crash recovery */
-export interface ConnectorReconnectState {
-  attempts: number
-  lastAttemptAt: number
-  nextRetryAt: number
-  backoffMs: number
-  error: string
-  exhausted: boolean
-}
-
-const reconnectStateKey = '__swarmclaw_connector_reconnect_state__' as const
-const reconnectState: Map<string, ConnectorReconnectState> =
-  getOrInitGlobalValue(reconnectStateKey, () => new Map<string, ConnectorReconnectState>())
-
-const RECONNECT_INITIAL_BACKOFF_MS = 1_000
-const RECONNECT_MAX_BACKOFF_MS = 5 * 60 * 1_000
-const RECONNECT_MAX_ATTEMPTS = 10
-
-interface ConnectorReconnectPolicy {
-  initialBackoffMs?: number
-  maxBackoffMs?: number
-  maxAttempts?: number
-}
-
-export function createConnectorReconnectState(
-  init: Partial<ConnectorReconnectState> = {},
-  policy: ConnectorReconnectPolicy = {},
-): ConnectorReconnectState {
-  return {
-    attempts: init.attempts ?? 0,
-    lastAttemptAt: init.lastAttemptAt ?? 0,
-    nextRetryAt: init.nextRetryAt ?? 0,
-    backoffMs: init.backoffMs ?? policy.initialBackoffMs ?? RECONNECT_INITIAL_BACKOFF_MS,
-    error: init.error ?? '',
-    exhausted: init.exhausted ?? false,
-  }
-}
-
-export function advanceConnectorReconnectState(
-  previous: ConnectorReconnectState,
-  error: string,
-  now = Date.now(),
-  policy: ConnectorReconnectPolicy = {},
-): ConnectorReconnectState {
-  const initialBackoffMs = policy.initialBackoffMs ?? RECONNECT_INITIAL_BACKOFF_MS
-  const maxBackoffMs = policy.maxBackoffMs ?? RECONNECT_MAX_BACKOFF_MS
-  const maxAttempts = policy.maxAttempts ?? RECONNECT_MAX_ATTEMPTS
-  const attempts = previous.attempts + 1
-  const backoffMs = Math.min(maxBackoffMs, initialBackoffMs * (2 ** Math.max(0, attempts - 1)))
-  return {
-    attempts,
-    lastAttemptAt: now,
-    nextRetryAt: now + backoffMs,
-    backoffMs,
-    error,
-    exhausted: attempts >= maxAttempts,
-  }
-}
-
-export function clearReconnectState(connectorId: string): void {
-  reconnectState.delete(connectorId)
-}
-
-export function setReconnectState(connectorId: string, state: ConnectorReconnectState): void {
-  reconnectState.set(connectorId, state)
-}
+const running = runningConnectors
+const {
+  lastInboundChannelByConnector,
+  lastInboundTimeByConnector,
+  locks,
+  generationCounter,
+  scheduledFollowups,
+  recentInboundByKey,
+  pendingInboundDebounce,
+  scheduledFollowupByDedupe,
+  routeMessageHandlerRef,
+} = connectorRuntimeState
 
 /** Record a health event for a connector (persisted to connector_health collection) */
 function recordHealthEvent(connectorId: string, event: ConnectorHealthEventType, message?: string): void {
@@ -447,17 +152,6 @@ function recordHealthEvent(connectorId: string, event: ConnectorHealthEventType,
     message: message || undefined,
     timestamp: new Date().toISOString(),
   })
-}
-
-function statusReactionForPlatform(platform: string, state: 'processing' | 'sent' | 'silent'): string {
-  if (platform === 'slack') {
-    if (state === 'processing') return 'eyes'
-    if (state === 'sent') return 'white_check_mark'
-    return 'zipper_mouth_face'
-  }
-  if (state === 'processing') return '👀'
-  if (state === 'sent') return '✅'
-  return '🤐'
 }
 
 function pruneTransientConnectorState(now = Date.now()): void {
@@ -481,24 +175,6 @@ function findDirectSessionForInbound(connector: Connector, msg: InboundMessage):
   return findDirectSessionForInboundHelper(connector, msg)
 }
 
-async function maybeSendStatusReaction(
-  connector: Connector,
-  msg: InboundMessage,
-  state: 'processing' | 'sent' | 'silent',
-): Promise<void> {
-  if (!msg.messageId) return
-  const session = findDirectSessionForInbound(connector, msg)
-  const policy = resolveConnectorSessionPolicy(connector, msg, session)
-  if (!policy.statusReactions) return
-  const instance = running.get(connector.id)
-  if (!instance?.sendReaction) return
-  try {
-    await instance.sendReaction(msg.channelId, msg.messageId, statusReactionForPlatform(connector.platform, state))
-  } catch {
-    // Ignore reaction failures — connectors vary widely here.
-  }
-}
-
 function startConnectorTypingLoop(connector: Connector, msg: InboundMessage): (() => void) | null {
   const session = findDirectSessionForInbound(connector, msg)
   const policy = resolveConnectorSessionPolicy(connector, msg, session)
@@ -518,11 +194,6 @@ function startConnectorTypingLoop(connector: Connector, msg: InboundMessage): ((
   timer.unref?.()
   return () => clearInterval(timer)
 }
-
-type RouteMessageHandler = (connector: Connector, msg: InboundMessage) => Promise<string>
-const routeHandlerKey = '__swarmclaw_connector_route_handler__' as const
-const routeMessageHandlerRef: { current: RouteMessageHandler } =
-  getOrInitGlobalValue(routeHandlerKey, () => ({ current: async () => '[Error] Connector router unavailable.' }))
 
 async function flushDebouncedInbound(key: string): Promise<void> {
   const entry = pendingInboundDebounce.get(key)
@@ -565,14 +236,14 @@ async function routeOrDebounceInbound(connector: Connector, msg: InboundMessage)
     clearTimeout(pending.timer)
     pending.timer = setTimeout(() => {
       void flushDebouncedInbound(debounceKey).catch((err: unknown) => {
-        console.warn(`[connector] Debounced inbound flush failed: ${err instanceof Error ? err.message : String(err)}`)
+        console.warn(`[connector] Debounced inbound flush failed: ${errorMessage(err)}`)
       })
     }, policy.inboundDebounceMs)
     pending.timer.unref?.()
   } else {
     const timer = setTimeout(() => {
       void flushDebouncedInbound(debounceKey).catch((err: unknown) => {
-        console.warn(`[connector] Debounced inbound flush failed: ${err instanceof Error ? err.message : String(err)}`)
+        console.warn(`[connector] Debounced inbound flush failed: ${errorMessage(err)}`)
       })
     }, policy.inboundDebounceMs)
     timer.unref?.()
@@ -643,37 +314,10 @@ export async function getPlatform(platform: string) {
       }
     }
   } catch (err: unknown) {
-    console.warn(`[connector] Failed to check plugins for platform "${platform}":`, err instanceof Error ? err.message : String(err))
+    console.warn(`[connector] Failed to check plugins for platform "${platform}":`, errorMessage(err))
   }
 
   throw new Error(`Unknown platform: ${platform}`)
-}
-
-export function formatMediaLine(media: InboundMedia): string {
-  const typeLabel = media.type.toUpperCase()
-  const name = media.fileName || media.mimeType || 'attachment'
-  const size = media.sizeBytes ? ` (${Math.max(1, Math.round(media.sizeBytes / 1024))} KB)` : ''
-  if (media.url) return `- ${typeLabel}: ${name}${size} -> ${media.url}`
-  return `- ${typeLabel}: ${name}${size}`
-}
-
-export function formatInboundUserText(msg: InboundMessage): string {
-  const baseText = (msg.text || '').trim()
-  const lines: string[] = []
-  if (baseText) lines.push(`[${msg.senderName}] ${baseText}`)
-  else lines.push(`[${msg.senderName}]`)
-
-  if (Array.isArray(msg.media) && msg.media.length > 0) {
-    lines.push('')
-    lines.push('Media received:')
-    const preview = msg.media.slice(0, 6)
-    for (const media of preview) lines.push(formatMediaLine(media))
-    if (msg.media.length > preview.length) {
-      lines.push(`- ...and ${msg.media.length - preview.length} more attachment(s)`)
-    }
-  }
-
-  return lines.join('\n').trim()
 }
 
 type ConnectorCommandName =
@@ -1089,7 +733,7 @@ function persistSession(session: ConnectorSession): void {
 }
 
 function isRecoverableConnectorSendError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err)
+  const message = errorMessage(err)
   return /connection closed|not connected|socket closed|connection terminated|stream errored|connector .* is not running/i.test(message)
 }
 
@@ -1398,7 +1042,7 @@ async function handleConnectorCommand(params: {
         persistSession(session)
         return text
       } catch (err: unknown) {
-        return err instanceof Error ? err.message : String(err)
+        return errorMessage(err)
       }
     }
     return 'Usage: /session, /session show, /session set <key> <value>, /session reset'
@@ -1609,7 +1253,7 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
         markProviderSuccess(agent.provider)
       }
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err)
+      const errMsg = errorMessage(err)
       markProviderFailure(agent.provider, errMsg)
       console.error(`[connector] Chatroom agent ${agent.name} error:`, errMsg)
     }
@@ -1641,7 +1285,7 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
           })
           console.log(`[connector] Sent chatroom media to ${msg.platform}: ${path.basename(file.path)}`)
         } catch (err: unknown) {
-          console.error(`[connector] Failed to send chatroom media ${path.basename(file.path)}:`, err instanceof Error ? err.message : String(err))
+          console.error(`[connector] Failed to send chatroom media ${path.basename(file.path)}:`, errorMessage(err))
         }
       }
     }
@@ -2005,7 +1649,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
       mediaExtractionText = [result.fullText || '', ...toolMediaOutputs].filter(Boolean).join('\n\n')
       console.log(`[connector] streamAgentChat returned ${result.fullText.length} chars total, ${fullText.length} chars final`)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       console.error(`[connector] streamAgentChat error:`, message)
       return `[Error] ${message}`
     }
@@ -2153,7 +1797,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
             },
           })
         } catch (err: unknown) {
-          console.error(`[connector] Failed to send media ${path.basename(file.path)}:`, err instanceof Error ? err.message : String(err))
+          console.error(`[connector] Failed to send media ${path.basename(file.path)}:`, errorMessage(err))
           logExecution(session.id, 'error', 'Connector media send failed', {
             agentId: agent.id,
             detail: {
@@ -2161,7 +1805,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
               channelId: msg.channelId,
               filePath: file.path,
               fileName: path.basename(file.path),
-              error: err instanceof Error ? err.message : String(err),
+              error: errorMessage(err),
             },
           })
         }
@@ -2197,7 +1841,7 @@ export async function startConnector(connectorId: string): Promise<void> {
   // Wait for any pending operation on this connector to finish (with timeout)
   const pending = locks.get(connectorId)
   if (pending) {
-    await Promise.race([pending, new Promise(r => setTimeout(r, 15_000))]).catch(() => {})
+    await Promise.race([pending, sleep(15_000)]).catch(() => {})
     locks.delete(connectorId)
   }
 
@@ -2286,7 +1930,7 @@ async function _startConnectorImpl(connectorId: string): Promise<void> {
     console.log(`[connector] Started ${connector.platform} connector: ${connector.name}`)
     recordHealthEvent(connectorId, 'started', `${connector.platform} connector "${connector.name}" started`)
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err)
+    const errMsg = errorMessage(err)
     connector.status = 'error'
     connector.isEnabled = true
     connector.lastError = errMsg
@@ -2453,7 +2097,7 @@ export function listRunningConnectors(platform?: string): Array<{
       platform: connector.platform,
       agentId: connector.agentId || null,
       supportsSend: typeof instance.sendMessage === 'function',
-      configuredTargets: Array.from(new Set(configuredTargets)),
+      configuredTargets: dedup(configuredTargets),
       recentChannelId: lastInboundChannelByConnector.get(id) || null,
     })
   }
@@ -2477,69 +2121,6 @@ export function getConnectorPresence(connectorId: string): { lastMessageAt: numb
 /** Get a running connector instance (internal use for rich messaging). */
 export function getRunningInstance(connectorId: string): ConnectorInstance | undefined {
   return running.get(connectorId)
-}
-
-export function getConnectorReplySendOptions(params: {
-  connectorId: string
-  inbound: InboundMessage
-}): { replyToMessageId?: string; threadId?: string } {
-  const connectors = loadConnectors()
-  const connector = connectors[params.connectorId] as Connector | undefined
-  if (!connector) return {}
-  const session = findDirectSessionForInbound(connector, params.inbound)
-  const policy = resolveConnectorSessionPolicy(connector, params.inbound, session)
-  return shouldReplyToInboundMessage({
-    msg: params.inbound,
-    session,
-    policy,
-  })
-}
-
-export async function recordConnectorOutboundDelivery(params: {
-  connectorId: string
-  inbound: InboundMessage
-  messageId?: string
-  state?: 'sent' | 'silent'
-}): Promise<void> {
-  const connectors = loadConnectors()
-  const connector = connectors[params.connectorId] as Connector | undefined
-  if (!connector) return
-  const session = findDirectSessionForInbound(connector, params.inbound)
-  if (session) {
-    session.connectorContext = {
-      ...(session.connectorContext || {}),
-      lastOutboundAt: Date.now(),
-      lastOutboundMessageId: params.messageId || session.connectorContext?.lastOutboundMessageId || null,
-      threadId: params.inbound.threadId || session.connectorContext?.threadId || null,
-    }
-    const history = Array.isArray(session.messages) ? session.messages : []
-    for (let i = history.length - 1; i >= 0; i -= 1) {
-      const entry = history[i]
-      if (entry?.role !== 'assistant') continue
-      const source: Partial<MessageSource> = entry?.source || {}
-      if (source.connectorId !== connector.id) continue
-      if (source.channelId !== params.inbound.channelId) continue
-      if (!source.messageId && params.messageId) {
-        entry.source = {
-          platform: source.platform || connector.platform,
-          connectorId: source.connectorId || connector.id,
-          connectorName: source.connectorName || connector.name,
-          channelId: source.channelId || params.inbound.channelId,
-          senderId: source.senderId,
-          senderName: source.senderName,
-          messageId: params.messageId,
-          replyToMessageId: source.replyToMessageId || params.inbound.messageId,
-          threadId: source.threadId || params.inbound.threadId,
-        }
-      }
-      break
-    }
-    persistSessionRecord(session)
-    notify(`messages:${session.id}`)
-  }
-  if (params.state) {
-    await maybeSendStatusReaction(connector, params.inbound, params.state)
-  }
 }
 
 export async function performConnectorMessageAction(params: {
@@ -2746,7 +2327,7 @@ export async function sendConnectorMessage(params: {
     result = await sendThroughCurrentInstance()
   } catch (err: unknown) {
     if (!isRecoverableConnectorSendError(err)) throw err
-    const errMsg = err instanceof Error ? err.message : String(err)
+    const errMsg = errorMessage(err)
     console.warn(`[connector] Outbound send failed for ${connectorId}; attempting automatic restart`, { error: errMsg })
     recordHealthEvent(connectorId, 'disconnected', `Outbound send failed: ${errMsg}`)
     await startConnector(connectorId)
@@ -2856,7 +2437,7 @@ export function scheduleConnectorFollowUp(params: {
       threadId: params.threadId,
       ptt: params.ptt,
     }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       console.warn(`[connector] Scheduled follow-up ${followUpId} failed: ${msg}`)
     }).finally(() => {
       scheduledFollowups.delete(followUpId)
@@ -2865,6 +2446,7 @@ export function scheduleConnectorFollowUp(params: {
       }
     })
   }, delayMs)
+  timer.unref?.()
 
   scheduledFollowups.set(followUpId, {
     id: followUpId,
@@ -2894,7 +2476,7 @@ export async function checkConnectorHealth(): Promise<void> {
 
     if (instance.isAlive()) {
       // Connector is healthy — clear any reconnect state
-      if (reconnectState.has(id)) {
+      if (connectorReconnectStateStore.has(id)) {
         console.log(`[connector-health] Connector "${instance.connector.name}" recovered`)
         clearReconnectState(id)
       }
@@ -2923,7 +2505,7 @@ export async function checkConnectorHealth(): Promise<void> {
     connector.updatedAt = Date.now()
     connectors[id] = connector
     connectorsDirty = true
-    if (!reconnectState.has(id)) {
+    if (!connectorReconnectStateStore.has(id)) {
       setReconnectState(id, createConnectorReconnectState({
         error: connector.lastError || 'Connection lost',
       }))
@@ -2936,21 +2518,7 @@ export async function checkConnectorHealth(): Promise<void> {
   }
 
   // Purge reconnect state for connectors that no longer exist
-  for (const id of reconnectState.keys()) {
+  for (const id of connectorReconnectStateStore.keys()) {
     if (!connectors[id] || connectors[id]?.isEnabled !== true || running.has(id)) clearReconnectState(id)
   }
-}
-
-/** Get the reconnect state for a specific connector (null if not in reconnect cycle) */
-export function getReconnectState(connectorId: string): ConnectorReconnectState | null {
-  return reconnectState.get(connectorId) ?? null
-}
-
-/** Get all reconnect states (for dashboard/API) */
-export function getAllReconnectStates(): Record<string, ConnectorReconnectState> {
-  const result: Record<string, ConnectorReconnectState> = {}
-  for (const [id, state] of reconnectState.entries()) {
-    result[id] = { ...state }
-  }
-  return result
 }

@@ -3,6 +3,7 @@
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { useEffect, useState, useMemo, useRef, useCallback, type ReactNode } from 'react'
 import type { Session } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useNow } from '@/hooks/use-now'
@@ -42,7 +43,7 @@ function getAgentWalletIds(agent: { walletIds?: string[]; walletId?: string | nu
   const legacy = typeof agent?.walletId === 'string' && agent.walletId.trim()
     ? [agent.walletId.trim()]
     : []
-  return [...new Set([...ids, ...legacy])]
+  return dedup([...ids, ...legacy])
 }
 
 function getAgentActiveWalletId(agent: { activeWalletId?: string | null; walletIds?: string[]; walletId?: string | null } | null | undefined): string | null {

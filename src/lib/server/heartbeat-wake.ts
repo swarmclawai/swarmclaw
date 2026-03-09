@@ -16,6 +16,7 @@ import { loadSessions, loadAgents, loadSettings } from './storage'
 import { enqueueSessionRun, getSessionExecutionState } from './session-run-manager'
 import { log } from './logger'
 import { isAgentDisabled } from './agent-availability'
+import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 
 export interface WakeRequestInput {
   eventId?: string
@@ -56,21 +57,12 @@ const MAX_RESUME_CHARS = 280
 const MAX_DETAIL_CHARS = 800
 type WakeTimerKind = 'normal' | 'retry'
 
-const globalKey = '__swarmclaw_heartbeat_wake__' as const
-const globalScope = globalThis as typeof globalThis & {
-  [globalKey]?: {
-    pending: Map<string, WakeRequest>
-    timer: ReturnType<typeof setTimeout> | null
-    timerDueAt: number | null
-    timerKind: WakeTimerKind | null
-  }
-}
-const state = globalScope[globalKey] ?? (globalScope[globalKey] = {
-  pending: new Map(),
-  timer: null,
-  timerDueAt: null,
-  timerKind: null,
-})
+const state = hmrSingleton('__swarmclaw_heartbeat_wake__', () => ({
+  pending: new Map<string, WakeRequest>(),
+  timer: null as ReturnType<typeof setTimeout> | null,
+  timerDueAt: null as number | null,
+  timerKind: null as WakeTimerKind | null,
+}))
 
 function trimText(value: unknown, maxChars: number): string | undefined {
   if (typeof value !== 'string') return undefined
@@ -369,7 +361,7 @@ function flushWakes(): void {
         retryCount: wake.retryCount + 1,
       })
       delayedForRetry = true
-      log.warn('heartbeat-wake', `Wake failed: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn('heartbeat-wake', `Wake failed: ${errorMessage(err)}`)
     }
   }
 

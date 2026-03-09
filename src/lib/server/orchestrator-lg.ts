@@ -13,6 +13,7 @@ import { notify } from './ws-hub'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import { getPluginManager } from './plugins'
+import { buildBoardTask } from './task-lifecycle'
 import './builtin-plugins'
 import { genId } from '@/lib/id'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
@@ -145,38 +146,20 @@ async function executeSubTaskViaCli(agent: Agent, task: string, parentSessionId:
   return result
 }
 
-export async function executeLangGraphOrchestrator(
-  orchestrator: Agent,
-  task: string,
-  sessionId: string,
-  taskId?: string,
-): Promise<string> {
-  const allAgents = loadAgents()
-
-  // Build available agents list
-  const agentIds = orchestrator.subAgentIds || []
-  const agents = agentIds.map((id) => allAgents[id]).filter(Boolean) as Agent[]
-  const agentListContext = agents.length
-    ? '\n\nAvailable agents:\n' + agents.map((a) => {
-        const plugins = (a.plugins || a.tools)?.length ? ` [plugins: ${(a.plugins || a.tools)!.join(', ')}]` : ''
-        const skills = a.skills?.length ? ` [skills: ${a.skills.join(', ')}]` : ''
-        return `- ${a.name}: ${a.description}${plugins}${skills}`
-      }).join('\n')
-    : '\n\n(No agents available for delegation.)'
-
-  // Load relevant memories
+function createOrchestratorTools(params: {
+  orchestrator: Agent
+  agents: Agent[]
+  sessionId: string
+  availableSecrets: Array<{ name: string; service: string; value: string }>
+}) {
+  const { orchestrator, agents, sessionId, availableSecrets } = params
   const db = getMemoryDb()
-  const memories = db.getByAgent(orchestrator.id)
-  const memoryContext = memories.length
-    ? '\n\nRelevant memories:\n' + memories.slice(0, 10).map((m) => `[${m.category}] ${m.title}: ${m.content.slice(0, 200)}`).join('\n')
-    : ''
 
-  // Define tools
   const delegateTool = tool(
     async ({ agentName, task: agentTask }) => {
-      const agent = agents.find((a) => a.name.toLowerCase() === agentName.toLowerCase())
+      const agent = agents.find((candidate) => candidate.name.toLowerCase() === agentName.toLowerCase())
       if (!agent) {
-        return `Agent "${agentName}" not found. Available: ${agents.map((a) => a.name).join(', ')}`
+        return `Agent "${agentName}" not found. Available: ${agents.map((candidate) => candidate.name).join(', ')}`
       }
       console.log(`[orchestrator-lg] Delegating to ${agent.name}: ${agentTask.slice(0, 80)}`)
       getPluginManager().runHook(
@@ -229,7 +212,7 @@ export async function executeLangGraphOrchestrator(
     async ({ query }) => {
       const results = db.search(query, orchestrator.id)
       if (!results.length) return 'No matching memories found.'
-      return results.map((m) => `[${m.category}] ${m.title}: ${m.content.slice(0, 300)}`).join('\n')
+      return results.map((memory) => `[${memory.category}] ${memory.title}: ${memory.content.slice(0, 300)}`).join('\n')
     },
     {
       name: 'search_memory',
@@ -254,16 +237,13 @@ export async function executeLangGraphOrchestrator(
     },
   )
 
-  // Secrets
-  const availableSecrets = getSecretsForOrchestrator(orchestrator.id)
-
   const getSecretTool = tool(
     async ({ serviceName }) => {
       const match = availableSecrets.find(
-        (s) => s.service.toLowerCase() === serviceName.toLowerCase() || s.name.toLowerCase() === serviceName.toLowerCase(),
+        (secret) => secret.service.toLowerCase() === serviceName.toLowerCase() || secret.name.toLowerCase() === serviceName.toLowerCase(),
       )
       if (!match) {
-        return `No secret found for "${serviceName}". Available services: ${availableSecrets.map((s) => s.service).join(', ') || 'none'}`
+        return `No secret found for "${serviceName}". Available services: ${availableSecrets.map((secret) => secret.service).join(', ') || 'none'}`
       }
       console.log(`[orchestrator-lg] Retrieved secret for service: ${match.service}`)
       return JSON.stringify({ name: match.name, service: match.service, value: match.value })
@@ -277,20 +257,19 @@ export async function executeLangGraphOrchestrator(
     },
   )
 
-  // Task board tools
   const commentOnTaskTool = tool(
     async ({ taskId, comment }) => {
       const t = patchTask(taskId, (current) => {
         if (!current) return current
         if (!current.comments) current.comments = []
-        const c: TaskComment = {
+        const nextComment: TaskComment = {
           id: genId(),
           author: orchestrator.name,
           agentId: orchestrator.id,
           text: comment,
           createdAt: Date.now(),
         }
-        current.comments.push(c)
+        current.comments.push(nextComment)
         current.updatedAt = Date.now()
         return current
       })
@@ -310,25 +289,19 @@ export async function executeLangGraphOrchestrator(
 
   const createTaskTool = tool(
     async ({ title, description: desc }) => {
-      const id = genId()
-      upsertTask(id, {
-        id,
+      const now = Date.now()
+      const taskRecord = buildBoardTask({
         title,
         description: desc,
-        status: 'backlog',
         agentId: orchestrator.id,
-        sessionId: null,
-        result: null,
-        error: null,
-        comments: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        queuedAt: null,
-        startedAt: null,
-        completedAt: null,
+        now,
+        seed: {
+          comments: [],
+        },
       })
-      console.log(`[orchestrator-lg] Created backlog task: "${title}" (${id})`)
-      return `Task "${title}" created in backlog (id: ${id}). The user can review and queue it.`
+      upsertTask(taskRecord.id, taskRecord)
+      console.log(`[orchestrator-lg] Created backlog task: "${title}" (${taskRecord.id})`)
+      return `Task "${title}" created in backlog (id: ${taskRecord.id}). The user can review and queue it.`
     },
     {
       name: 'create_task',
@@ -339,6 +312,126 @@ export async function executeLangGraphOrchestrator(
       }),
     },
   )
+
+  return [delegateTool, storeMemoryTool, searchMemoryTool, getSecretTool, commentOnTaskTool, createTaskTool, markCompleteTool]
+}
+
+function compileOrchestratorGraph(params: {
+  llmWithTools: any
+  allTools: ReturnType<typeof createOrchestratorTools>
+  checkpointSaver: any
+  approvalInterruptsEnabled: boolean
+  systemMessage?: string
+  enableDelegateFallback?: boolean
+}) {
+  const { llmWithTools, allTools, checkpointSaver, approvalInterruptsEnabled, systemMessage, enableDelegateFallback = false } = params
+  const toolNode = new ToolNode(allTools)
+  let fallbackAttempts = 0
+  const maxFallbackAttempts = 2
+
+  async function agentNode(state: typeof MessagesAnnotation.State) {
+    const promptMessages = systemMessage
+      ? [{ role: 'system' as const, content: systemMessage }, ...state.messages]
+      : state.messages
+    const response = await llmWithTools.invoke(promptMessages)
+    return { messages: [response] }
+  }
+
+  function routerNode(state: typeof MessagesAnnotation.State) {
+    if (!enableDelegateFallback) return { messages: [] }
+    const messages = state.messages
+    const lastMsg = messages[messages.length - 1]
+    if (lastMsg && typeof (lastMsg as any).content === 'string') {
+      const content = (lastMsg as any).content as string
+      const isError = content.startsWith('Error:') || content.startsWith('Agent "') && content.includes('not found')
+      if (isError && fallbackAttempts < maxFallbackAttempts) {
+        fallbackAttempts++
+        const failedToolCall = [...messages].reverse().find(
+          (message) => (message as any).tool_calls?.some((toolCall: any) => toolCall.name === 'delegate_to_agent'),
+        )
+        if (failedToolCall) {
+          const toolCall = (failedToolCall as any).tool_calls?.find((entry: any) => entry.name === 'delegate_to_agent')
+          const failedAgentName = toolCall?.args?.agentName || 'unknown'
+          const fallbackHint = `The agent "${failedAgentName}" failed. Try delegating to a different agent with matching capabilities, or re-plan your approach. Fallback attempt ${fallbackAttempts}/${maxFallbackAttempts}.`
+          return { messages: [new AIMessage({ content: fallbackHint })] }
+        }
+      }
+    }
+    return { messages: [] }
+  }
+
+  function shouldContinue(state: typeof MessagesAnnotation.State) {
+    const lastMsg = state.messages[state.messages.length - 1]
+    const toolCalls = (lastMsg as any)?.tool_calls
+    return toolCalls && toolCalls.length > 0 ? 'tools' : END
+  }
+
+  function afterRouter() {
+    return 'agent'
+  }
+
+  const graph = new StateGraph(MessagesAnnotation)
+    .addNode('agent', agentNode)
+    .addNode('tools', toolNode)
+    .addNode('router', routerNode)
+    .addEdge(START, 'agent')
+    .addConditionalEdges('agent', shouldContinue, { tools: 'tools', [END]: END })
+    .addEdge('tools', 'router')
+    .addConditionalEdges('router', afterRouter, { agent: 'agent' })
+
+  const compiledGraph = graph.compile({
+    checkpointer: checkpointSaver,
+    ...(approvalInterruptsEnabled ? { interruptBefore: ['tools'] } : {}),
+  })
+
+  ;(compiledGraph as any).__graphStructure = {
+    nodes: ['agent', 'tools', 'router'],
+    edges: [
+      { from: START, to: 'agent' },
+      { from: 'agent', to: 'tools', condition: 'has_tool_calls' },
+      { from: 'agent', to: END, condition: 'no_tool_calls' },
+      { from: 'tools', to: 'router' },
+      { from: 'router', to: 'agent', condition: enableDelegateFallback ? 'fallback_or_continue' : 'continue' },
+    ],
+  }
+
+  return compiledGraph
+}
+
+export async function executeLangGraphOrchestrator(
+  orchestrator: Agent,
+  task: string,
+  sessionId: string,
+  taskId?: string,
+): Promise<string> {
+  const allAgents = loadAgents()
+
+  // Build available agents list
+  const agentIds = orchestrator.subAgentIds || []
+  const agents = agentIds.map((id) => allAgents[id]).filter(Boolean) as Agent[]
+  const agentListContext = agents.length
+    ? '\n\nAvailable agents:\n' + agents.map((a) => {
+        const plugins = (a.plugins || a.tools)?.length ? ` [plugins: ${(a.plugins || a.tools)!.join(', ')}]` : ''
+        const skills = a.skills?.length ? ` [skills: ${a.skills.join(', ')}]` : ''
+        return `- ${a.name}: ${a.description}${plugins}${skills}`
+      }).join('\n')
+    : '\n\n(No agents available for delegation.)'
+
+  // Load relevant memories
+  const db = getMemoryDb()
+  const memories = db.getByAgent(orchestrator.id)
+  const memoryContext = memories.length
+    ? '\n\nRelevant memories:\n' + memories.slice(0, 10).map((m) => `[${m.category}] ${m.title}: ${m.content.slice(0, 200)}`).join('\n')
+    : ''
+
+  // Secrets
+  const availableSecrets = getSecretsForOrchestrator(orchestrator.id)
+  const allTools = createOrchestratorTools({
+    orchestrator,
+    agents,
+    sessionId,
+    availableSecrets,
+  })
 
   // Build secrets context for the system prompt
   const secretsContext = availableSecrets.length
@@ -399,99 +492,15 @@ export async function executeLangGraphOrchestrator(
   const checkpointSaver = getCheckpointSaver()
   const isStrictMode = settings.capabilityPolicyMode === 'strict'
   const approvalInterruptsEnabled = isStrictMode && settings.approvalsEnabled === true
-  const allTools = [delegateTool, storeMemoryTool, searchMemoryTool, getSecretTool, commentOnTaskTool, createTaskTool, markCompleteTool]
   const llmWithTools = llm.bindTools(allTools)
-  const toolNode = new ToolNode(allTools)
-
-  // Track fallback attempts for delegate_to_agent failures
-  let fallbackAttempts = 0
-  const MAX_FALLBACK_ATTEMPTS = 2
-
-  // Agent node: calls LLM with tools
-  async function agentNode(state: typeof MessagesAnnotation.State) {
-    const response = await llmWithTools.invoke([
-      { role: 'system' as const, content: systemMessage },
-      ...state.messages,
-    ])
-    return { messages: [response] }
-  }
-
-  // Router node: inspects tool results, decides next step
-  function routerNode(state: typeof MessagesAnnotation.State) {
-    const messages = state.messages
-    const lastMsg = messages[messages.length - 1]
-
-    // Check if the last tool message contains an error from delegate_to_agent
-    if (lastMsg && typeof (lastMsg as any).content === 'string') {
-      const content = (lastMsg as any).content as string
-      const isError = content.startsWith('Error:') || content.startsWith('Agent "') && content.includes('not found')
-
-      if (isError && fallbackAttempts < MAX_FALLBACK_ATTEMPTS) {
-        fallbackAttempts++
-        // Look for a delegate tool call in recent messages and try to find alternative agent
-        const failedToolCall = [...messages].reverse().find(
-          (m) => (m as any).tool_calls?.some((tc: any) => tc.name === 'delegate_to_agent')
-        )
-        if (failedToolCall) {
-          const tc = (failedToolCall as any).tool_calls?.find((tc: any) => tc.name === 'delegate_to_agent')
-          const failedAgentName = tc?.args?.agentName || 'unknown'
-          const fallbackHint = `The agent "${failedAgentName}" failed. Try delegating to a different agent with matching capabilities, or re-plan your approach. Fallback attempt ${fallbackAttempts}/${MAX_FALLBACK_ATTEMPTS}.`
-          return { messages: [new AIMessage({ content: fallbackHint })] }
-        }
-      }
-    }
-
-    // No fallback needed — pass through
-    return { messages: [] }
-  }
-
-  // Routing function: after agent node, check if there are tool calls
-  function shouldContinue(state: typeof MessagesAnnotation.State) {
-    const lastMsg = state.messages[state.messages.length - 1]
-    const toolCalls = (lastMsg as any)?.tool_calls
-    if (toolCalls && toolCalls.length > 0) {
-      return 'tools'
-    }
-    return END
-  }
-
-  // After router, decide whether to go back to agent or end
-  function afterRouter(state: typeof MessagesAnnotation.State) {
-    const messages = state.messages
-    // If router added a fallback hint, route back to agent
-    const lastMsg = messages[messages.length - 1]
-    if (lastMsg && typeof (lastMsg as any).content === 'string' && (lastMsg as any).content.includes('Fallback attempt')) {
-      return 'agent'
-    }
-    return 'agent'
-  }
-
-  // Build the StateGraph
-  const graph = new StateGraph(MessagesAnnotation)
-    .addNode('agent', agentNode)
-    .addNode('tools', toolNode)
-    .addNode('router', routerNode)
-    .addEdge(START, 'agent')
-    .addConditionalEdges('agent', shouldContinue, { tools: 'tools', [END]: END })
-    .addEdge('tools', 'router')
-    .addConditionalEdges('router', afterRouter, { agent: 'agent' })
-
-  const compiledGraph = graph.compile({
-    checkpointer: checkpointSaver,
-    ...(approvalInterruptsEnabled ? { interruptBefore: ['tools'] } : {}),
+  const compiledGraph = compileOrchestratorGraph({
+    llmWithTools,
+    allTools,
+    checkpointSaver,
+    approvalInterruptsEnabled,
+    systemMessage,
+    enableDelegateFallback: true,
   })
-
-  // Export graph structure for introspection
-  ;(compiledGraph as any).__graphStructure = {
-    nodes: ['agent', 'tools', 'router'],
-    edges: [
-      { from: START, to: 'agent' },
-      { from: 'agent', to: 'tools', condition: 'has_tool_calls' },
-      { from: 'agent', to: END, condition: 'no_tool_calls' },
-      { from: 'tools', to: 'router' },
-      { from: 'router', to: 'agent', condition: 'fallback_or_continue' },
-    ],
-  }
 
   // Save initial user message
   saveMessage(sessionId, 'user', task)
@@ -628,130 +637,13 @@ export async function resumeLangGraphOrchestrator(
   const allAgents = loadAgents()
   const agentIds = orchestrator.subAgentIds || []
   const agents = agentIds.map((id) => allAgents[id]).filter(Boolean) as Agent[]
-
-  // Recreate the same tools
-  const delegateTool = tool(
-    async ({ agentName, task: agentTask }) => {
-      const agent = agents.find((a) => a.name.toLowerCase() === agentName.toLowerCase())
-      if (!agent) return `Agent "${agentName}" not found. Available: ${agents.map((a) => a.name).join(', ')}`
-      getPluginManager().runHook(
-        'onAgentDelegation',
-        { sourceAgentId: orchestrator.id, targetAgentId: agent.id, task: agentTask },
-        { enabledIds: orchestrator.plugins || [] },
-      )
-      const result = await executeSubTaskViaCli(agent, agentTask, sessionId)
-      saveMessage(sessionId, 'assistant', `Delegated to ${agent.name}: ${agentTask.slice(0, 100)}`, [{
-        name: 'delegate_to_agent',
-        input: JSON.stringify({ agentName: agent.name, agentId: agent.id, task: agentTask }),
-        output: result.slice(0, 2000),
-      }])
-      return result
-    },
-    {
-      name: 'delegate_to_agent',
-      description: 'Delegate a task to one of the available agents.',
-      schema: z.object({
-        agentName: z.string().describe('Name of the agent to delegate to'),
-        task: z.string().describe('The task description for the agent'),
-      }),
-    },
-  )
-
-  const db = getMemoryDb()
-  const storeMemoryTool = tool(
-    async ({ category, title, content }) => {
-      db.add({ agentId: orchestrator.id, sessionId, category, title, content })
-      return 'Memory stored successfully.'
-    },
-    {
-      name: 'store_memory',
-      description: 'Store information in long-term memory.',
-      schema: z.object({
-        category: z.string(), title: z.string(), content: z.string(),
-      }),
-    },
-  )
-
-  const searchMemoryTool = tool(
-    async ({ query }) => {
-      const results = db.search(query, orchestrator.id)
-      if (!results.length) return 'No matching memories found.'
-      return results.map((m) => `[${m.category}] ${m.title}: ${m.content.slice(0, 300)}`).join('\n')
-    },
-    {
-      name: 'search_memory',
-      description: 'Search long-term memory.',
-      schema: z.object({ query: z.string() }),
-    },
-  )
-
-  const markCompleteTool = tool(
-    async ({ summary }) => `ORCHESTRATION_COMPLETE: ${summary}`,
-    {
-      name: 'mark_complete',
-      description: 'Signal orchestration is done.',
-      schema: z.object({ summary: z.string() }),
-    },
-  )
-
   const availableSecrets = getSecretsForOrchestrator(orchestrator.id)
-  const getSecretTool = tool(
-    async ({ serviceName }) => {
-      const match = availableSecrets.find(
-        (s) => s.service.toLowerCase() === serviceName.toLowerCase() || s.name.toLowerCase() === serviceName.toLowerCase(),
-      )
-      if (!match) return `No secret found for "${serviceName}".`
-      return JSON.stringify({ name: match.name, service: match.service, value: match.value })
-    },
-    {
-      name: 'get_secret',
-      description: 'Retrieve a stored credential/secret by service name.',
-      schema: z.object({ serviceName: z.string() }),
-    },
-  )
-
-  const commentOnTaskTool = tool(
-    async ({ taskId, comment }) => {
-      const t = patchTask(taskId, (current) => {
-        if (!current) return current
-        if (!current.comments) current.comments = []
-        current.comments.push({
-          id: genId(),
-          author: orchestrator.name,
-          agentId: orchestrator.id,
-          text: comment,
-          createdAt: Date.now(),
-        })
-        current.updatedAt = Date.now()
-        return current
-      })
-      if (!t) return `Task "${taskId}" not found.`
-      return `Comment added to task "${t.title}".`
-    },
-    {
-      name: 'comment_on_task',
-      description: 'Add a comment to a task.',
-      schema: z.object({ taskId: z.string(), comment: z.string() }),
-    },
-  )
-
-  const createTaskTool = tool(
-    async ({ title, description: desc }) => {
-      const id = genId()
-      upsertTask(id, {
-        id, title, description: desc, status: 'backlog',
-        agentId: orchestrator.id, sessionId: null, result: null, error: null,
-        comments: [], createdAt: Date.now(), updatedAt: Date.now(),
-        queuedAt: null, startedAt: null, completedAt: null,
-      })
-      return `Task "${title}" created in backlog (id: ${id}).`
-    },
-    {
-      name: 'create_task',
-      description: 'Create a new task in the backlog.',
-      schema: z.object({ title: z.string(), description: z.string() }),
-    },
-  )
+  const allTools = createOrchestratorTools({
+    orchestrator,
+    agents,
+    sessionId,
+    availableSecrets,
+  })
 
   const engine = getOrchestrationEngineConfig(orchestrator)
   const llm = buildChatModel({
@@ -764,36 +656,13 @@ export async function resumeLangGraphOrchestrator(
   const isStrictMode = settings.capabilityPolicyMode === 'strict'
   const approvalInterruptsEnabled = isStrictMode && settings.approvalsEnabled === true
 
-  const allTools = [delegateTool, storeMemoryTool, searchMemoryTool, getSecretTool, commentOnTaskTool, createTaskTool, markCompleteTool]
   const llmWithTools = llm.bindTools(allTools)
-  const toolNode = new ToolNode(allTools)
-
-  async function agentNode(state: typeof MessagesAnnotation.State) {
-    const response = await llmWithTools.invoke(state.messages)
-    return { messages: [response] }
-  }
-  function routerNode(state: typeof MessagesAnnotation.State) {
-    return { messages: [] }
-  }
-  function shouldContinue(state: typeof MessagesAnnotation.State) {
-    const lastMsg = state.messages[state.messages.length - 1]
-    const toolCalls = (lastMsg as any)?.tool_calls
-    if (toolCalls && toolCalls.length > 0) return 'tools'
-    return END
-  }
-
-  const graphAgent = new StateGraph(MessagesAnnotation)
-    .addNode('agent', agentNode)
-    .addNode('tools', toolNode)
-    .addNode('router', routerNode)
-    .addEdge(START, 'agent')
-    .addConditionalEdges('agent', shouldContinue, { tools: 'tools', [END]: END })
-    .addEdge('tools', 'router')
-    .addEdge('router', 'agent')
-    .compile({
-      checkpointer: checkpointSaver,
-      ...(approvalInterruptsEnabled ? { interruptBefore: ['tools'] } : {}),
-    })
+  const graphAgent = compileOrchestratorGraph({
+    llmWithTools,
+    allTools,
+    checkpointSaver,
+    approvalInterruptsEnabled,
+  })
 
   let finalResult = ''
   const runtime = loadRuntimeSettings()

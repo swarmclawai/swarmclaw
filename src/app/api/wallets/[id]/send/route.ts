@@ -7,6 +7,7 @@ import {
   normalizeAtomicString,
 } from '@/lib/wallet'
 import { isValidWalletAddress, sendWalletNativeAsset, validateWalletSendLimits } from '@/lib/server/wallet-service'
+import { errorMessage } from '@/lib/shared-utils'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -96,7 +97,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     upsertWalletTransaction(txId, failedTx)
     notify('wallets')
     return NextResponse.json({
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
       transactionId: txId,
       status: 'failed',
     }, { status: 500 })

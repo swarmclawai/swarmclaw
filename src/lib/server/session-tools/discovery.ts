@@ -8,6 +8,7 @@ import { normalizeToolInputArgs } from './normalize-tool-args'
 import { pluginIdMatches } from '../tool-aliases'
 import { loadSessions } from '../storage'
 import { inferPluginPublisherSourceFromUrl } from '@/lib/plugin-sources'
+import { errorMessage } from '@/lib/shared-utils'
 
 function trimString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -91,7 +92,7 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
             })))
           }
         } catch (err: unknown) {
-          console.error('[discovery] ClawHub search failed:', err instanceof Error ? err.message : String(err))
+          console.error('[discovery] ClawHub search failed:', errorMessage(err))
         }
 
         try {
@@ -123,7 +124,7 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
           }
           results.push(...registryResults.values())
         } catch (err: unknown) {
-          console.error('[discovery] SC Registry search failed:', err instanceof Error ? err.message : String(err))
+          console.error('[discovery] SC Registry search failed:', errorMessage(err))
         }
 
         if (results.length === 0) {
@@ -214,7 +215,7 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
         return `Error: Unknown action "${action}"`
     }
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errorMessage(err)
     console.error('[discovery] executeDiscoveryAction failed:', msg)
     return `Error: ${msg}`
   }

@@ -8,6 +8,7 @@ import { getPluginManager } from '../plugins'
 import { runStructuredExtraction } from '../structured-extract'
 import type { ToolBuildContext } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 
 interface CrawledPage {
   url: string
@@ -93,7 +94,7 @@ async function fetchCrawlPage(url: string, depth: number): Promise<CrawledPage> 
     depth,
     textPreview,
     headings,
-    links: Array.from(new Set(links)),
+    links: dedup(links),
     hash: pageHash(`${title || ''}\n${textPreview}`),
   }
 }
@@ -194,7 +195,7 @@ async function fetchSitemapUrls(sitemapUrl: string): Promise<string[]> {
   })
   const xml = await res.text()
   const matches = Array.from(xml.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi))
-  return Array.from(new Set(matches.map((match) => match[1]?.trim()).filter((value): value is string => !!value)))
+  return dedup(matches.map((match) => match[1]?.trim()).filter((value): value is string => !!value))
 }
 
 function normalizeSelectorMap(value: unknown): Record<string, string> {
@@ -369,7 +370,7 @@ async function executeCrawlAction(args: Record<string, unknown>, bctx: ToolBuild
 
     return `Error: Unknown action "${action}".`
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

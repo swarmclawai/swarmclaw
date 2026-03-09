@@ -4,6 +4,7 @@ import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { errorMessage, sleep } from '@/lib/shared-utils'
 import {
   cancelDelegationJob,
   getDelegationJob,
@@ -69,7 +70,7 @@ async function waitForJob(jobId: string, timeoutSec = 30): Promise<string> {
   if (handle) {
     const result = await Promise.race([
       handle.promise,
-      new Promise<null>((r) => setTimeout(() => r(null), timeoutMs)),
+      sleep(timeoutMs).then(() => null),
     ])
     if (result) return JSON.stringify(result)
     // Timed out — return current job state with explicit timeout indicator
@@ -86,7 +87,7 @@ async function waitForJob(jobId: string, timeoutSec = 30): Promise<string> {
     if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
       return JSON.stringify(job)
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    await sleep(1000)
   }
   const latest = getDelegationJob(jobId)
   return latest ? JSON.stringify(latest) : `Error: delegation job "${jobId}" not found.`
@@ -331,7 +332,7 @@ async function executeSubagentAction(args: unknown, context: ActionContext) {
     // Default: single agent spawn
     return handleStart(normalized, context)
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

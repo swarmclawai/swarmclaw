@@ -10,6 +10,7 @@ import { safePath, truncate, listDirRecursive, MAX_FILE } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 
 function pickNonEmptyString(...values: unknown[]): string | undefined {
   for (const value of values) {
@@ -269,7 +270,7 @@ export async function executeFileAction(args: Record<string, unknown>, bctx: { c
         return `Error: Unknown action "${action}"`
     }
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 
@@ -382,7 +383,7 @@ export function findRecentSendFileFallbackPaths(cwd: string, maxAgeMs = 10 * 60 
   const resolvedRoot = path.resolve(cwd)
   const candidates: string[] = []
   collectRecentFiles(resolvedRoot, resolvedRoot, maxAgeMs, candidates, 0)
-  return [...new Set(candidates)]
+  return dedup(candidates)
 }
 
 export function resolveSendFileSourcePath(cwd: string, rawPath: string): string {
@@ -445,7 +446,7 @@ async function executeSendFile(args: Record<string, unknown>, bctx: { cwd: strin
     if (errors.length === 0) return links.join('\n')
     return `${links.join('\n')}\n\nSkipped: ${errors.join('; ')}`
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

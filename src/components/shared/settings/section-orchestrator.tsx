@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { ModelCombobox } from '@/components/shared/model-combobox'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 import type { SettingsSectionProps } from './types'
+import { errorMessage } from '@/lib/shared-utils'
 
 export function OrchestratorSection({ appSettings, patchSettings, inputClass }: SettingsSectionProps) {
   const providers = useAppStore((s) => s.providers)
@@ -122,7 +123,7 @@ export function OrchestratorSection({ appSettings, patchSettings, inputClass }: 
                     setAddingKey(false)
                     setNewKeyName('')
                     setNewKeyValue('')
-                  } catch (err: unknown) { toast.error(`Failed to save: ${err instanceof Error ? err.message : String(err)}`) }
+                  } catch (err: unknown) { toast.error(`Failed to save: ${errorMessage(err)}`) }
                   finally { setSavingKey(false) }
                 }} className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40" style={{ fontFamily: 'inherit' }}>
                   {savingKey ? 'Saving...' : 'Save Key'}

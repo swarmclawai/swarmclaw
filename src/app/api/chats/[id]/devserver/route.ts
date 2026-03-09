@@ -3,6 +3,7 @@ import { spawn } from 'child_process'
 import { loadSessions, devServers, localIP } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { resolveDevServerLaunchDir } from '@/lib/server/devserver-launch'
+import { sleep } from '@/lib/shared-utils'
 import net from 'net'
 
 interface DevServerStartResult {
@@ -65,7 +66,7 @@ async function startDevServer(id: string, session: { cwd: string }): Promise<Dev
   devServers.set(id, { proc, url: `http://${localIP()}:${port}` })
   console.log(`[${id}] starting dev server in ${launch.launchDir} (session cwd=${session.cwd})`)
 
-  await new Promise((resolve) => setTimeout(resolve, 4000))
+  await sleep(4000)
   const ds = devServers.get(id)
   if (!ds) {
     return {

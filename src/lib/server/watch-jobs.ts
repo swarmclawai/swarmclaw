@@ -8,6 +8,7 @@ import { enqueueSystemEvent } from './system-events'
 import { loadApprovals, loadTasks, loadWatchJobs, upsertWatchJob, upsertWatchJobs } from './storage'
 import { notify } from './ws-hub'
 import { fetchMailboxMessages, getMailboxHighwaterUid } from './mailbox-utils'
+import { errorMessage } from '@/lib/shared-utils'
 
 export interface CreateWatchJobInput {
   type: WatchJob['type']
@@ -408,7 +409,7 @@ export async function processDueWatchJobs(timestamp = now()): Promise<{ checked:
       updates.push([job.id, scheduleNextCheck({
         ...job,
         lastCheckedAt: timestamp,
-        lastError: err instanceof Error ? err.message : String(err),
+        lastError: errorMessage(err),
       }, timestamp)])
     }
   }

@@ -12,6 +12,7 @@ import {
 import type { ToolBuildContext } from './context'
 import { safePath } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 
 interface TableCondition {
   column: string
@@ -278,14 +279,14 @@ function groupTable(table: StructuredTable, by: string[], metrics: GroupMetric[]
           next[name] = numeric.length ? Math.max(...numeric) : null
           break
         case 'values':
-          next[name] = Array.from(new Set(values.map((value) => scalarToString(value)).filter(Boolean)))
+          next[name] = dedup(values.map((value) => scalarToString(value)).filter(Boolean))
           break
       }
     }
     return next
   })
 
-  const headers = Array.from(new Set([...by, ...metrics.map((metric) => metric.as || (metric.column ? `${metric.op}_${metric.column}` : metric.op))]))
+  const headers = dedup([...by, ...metrics.map((metric) => metric.as || (metric.column ? `${metric.op}_${metric.column}` : metric.op))])
   return {
     name: `${table.name || 'table'}_grouped`,
     headers,
@@ -342,7 +343,7 @@ function joinTables(
 
   return {
     name: `${left.name || 'left'}_joined_${right.name || 'right'}`,
-    headers: Array.from(new Set([...left.headers, ...rightHeaders])),
+    headers: dedup([...left.headers, ...rightHeaders]),
     rows,
     rowCount: rows.length,
   }
@@ -355,7 +356,7 @@ function pivotTable(
   valueField: string,
   aggregate: 'count' | 'sum' | 'first',
 ): StructuredTable {
-  const columnValues = Array.from(new Set(table.rows.map((row) => scalarToString(row[columnField])).filter(Boolean)))
+  const columnValues = dedup(table.rows.map((row) => scalarToString(row[columnField])).filter(Boolean))
   const grouped = new Map<string, Record<string, unknown>[]>()
   for (const row of table.rows) {
     const key = JSON.stringify(indexColumns.map((column) => row[column] ?? null))
@@ -506,7 +507,7 @@ async function executeTableAction(args: Record<string, unknown>, bctx: { cwd: st
     const persisted = await maybePersistOutput(normalized, bctx.cwd, table)
     return JSON.stringify({ action, ...previewTable(table), output: persisted })
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

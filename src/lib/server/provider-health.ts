@@ -1,4 +1,5 @@
 import { spawnSync } from 'child_process'
+import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
@@ -10,9 +11,8 @@ interface ProviderHealthState {
   cooldownUntil?: number
 }
 
-const gk = '__swarmclaw_provider_health__' as const
 const states: Map<string, ProviderHealthState> =
-  (globalThis as any)[gk] ?? ((globalThis as any)[gk] = new Map<string, ProviderHealthState>())
+  hmrSingleton('__swarmclaw_provider_health__', () => new Map<string, ProviderHealthState>())
 
 const cliCheckCache = new Map<string, { at: number; ok: boolean }>()
 const delegateReadyCache = new Map<string, { at: number; ok: boolean }>()
@@ -264,7 +264,7 @@ export async function pingProvider(
   } catch (err: unknown) {
     const msg = err instanceof Error && err.name === 'TimeoutError'
       ? 'Connection timed out.'
-      : (err instanceof Error ? err.message : String(err))
+      : errorMessage(err)
     return { ok: false, message: msg }
   }
 }

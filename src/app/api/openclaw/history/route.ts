@@ -4,6 +4,7 @@ import { mergeHistoryMessages, isValidSessionKey } from '@/lib/server/openclaw-h
 import { loadSessions, saveSessions } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import type { GatewaySessionPreview } from '@/types'
+import { errorMessage } from '@/lib/shared-utils'
 
 /**
  * Extract a single session preview from the gateway response.
@@ -58,7 +59,7 @@ export async function GET(req: Request) {
     const preview = extractPreview(raw, sessionKey)
     return NextResponse.json(preview ?? { sessionKey, epoch: 0, messages: [] })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }
@@ -103,7 +104,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, merged: newCount })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

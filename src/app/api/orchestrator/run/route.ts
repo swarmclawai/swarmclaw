@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { loadAgents, upsertTask } from '@/lib/server/storage'
 import { enqueueTask } from '@/lib/server/queue'
+import { buildBoardTask } from '@/lib/server/task-lifecycle'
 
 export async function POST(req: Request) {
   const { agentId, task } = await req.json().catch(() => ({}))
@@ -18,21 +19,13 @@ export async function POST(req: Request) {
   // Create a board task and enqueue it
   const taskId = genId()
   const now = Date.now()
-  upsertTask(taskId, {
+  upsertTask(taskId, buildBoardTask({
     id: taskId,
     title: task.slice(0, 80),
     description: task,
-    status: 'backlog',
     agentId,
-    sessionId: null,
-    result: null,
-    error: null,
-    createdAt: now,
-    updatedAt: now,
-    queuedAt: null,
-    startedAt: null,
-    completedAt: null,
-  })
+    now,
+  }))
 
   // Enqueue — this sets status to queued and kicks the worker
   enqueueTask(taskId)

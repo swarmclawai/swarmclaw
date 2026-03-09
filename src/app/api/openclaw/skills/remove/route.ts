@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
+import { errorMessage } from '@/lib/shared-utils'
 
 /** POST { skillKey, source } — remove a skill via gateway */
 export async function POST(req: Request) {
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
     await gw.rpc('skills.remove', { skillKey, source })
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

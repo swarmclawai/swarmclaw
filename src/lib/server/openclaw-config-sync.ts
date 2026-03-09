@@ -1,4 +1,5 @@
 import { ensureGatewayConnected } from './openclaw-gateway'
+import { errorMessage } from '@/lib/shared-utils'
 
 export interface ConfigIssue {
   id: string
@@ -98,7 +99,7 @@ export async function repairConfigIssue(issueId: string): Promise<{ ok: boolean;
           return { ok: false, error: `Unknown issue: ${issueId}` }
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       if (msg.includes('conflict') && attempt < MAX_RETRIES - 1) continue
       return { ok: false, error: msg }
     }

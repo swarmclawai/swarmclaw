@@ -16,11 +16,12 @@ import {
 } from './memory-graph'
 import { isWorkingMemoryCategory } from './memory-tiers'
 
-import { DATA_DIR, WORKSPACE_DIR } from './data-dir'
+import { DATA_DIR, MEMORY_IMAGES_DIR, WORKSPACE_DIR } from './data-dir'
+import { safeJsonParse } from './json-utils'
 import { tryResolvePathWithinBaseDir } from './path-utils'
 
 const DB_PATH = path.join(DATA_DIR, 'memory.db')
-const IMAGES_DIR = path.join(DATA_DIR, 'memory-images')
+const IMAGES_DIR = MEMORY_IMAGES_DIR
 const APP_STATE_ROOT_DIR = path.dirname(DATA_DIR)
 
 const MAX_IMAGE_INPUT_BYTES = 10 * 1024 * 1024 // 10MB
@@ -305,15 +306,6 @@ export function getMemoryLookupLimits(settingsOverride?: Record<string, unknown>
   return normalizeMemoryLookupLimits(settings)
 }
 
-function parseJsonSafe<T>(value: unknown, fallback: T): T {
-  if (typeof value !== 'string' || !value.trim()) return fallback
-  try {
-    return JSON.parse(value) as T
-  } catch {
-    return fallback
-  }
-}
-
 function normalizeReferencePath(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined
   const value = raw.trim()
@@ -585,10 +577,10 @@ function initDb() {
   const migrateLegacyRows = db.transaction(() => {
     let migrated = 0
     for (const row of rowsForMigration) {
-      const legacyFilePaths = parseJsonSafe<FileReference[]>(row.filePaths, [])
-      const refs = normalizeReferences(parseJsonSafe<MemoryReference[]>(row.refs, []), legacyFilePaths)
-      const image = normalizeImage(parseJsonSafe<MemoryImage | null>(row.image, null), row.imagePath)
-      const linkedIds = normalizeLinkedMemoryIds(parseJsonSafe<string[]>(row.linkedMemoryIds, []), row.id)
+      const legacyFilePaths = safeJsonParse<FileReference[]>(row.filePaths, [])
+      const refs = normalizeReferences(safeJsonParse<MemoryReference[]>(row.refs, []), legacyFilePaths)
+      const image = normalizeImage(safeJsonParse<MemoryImage | null>(row.image, null), row.imagePath)
+      const linkedIds = normalizeLinkedMemoryIds(safeJsonParse<string[]>(row.linkedMemoryIds, []), row.id)
 
       const nextRefs = refs?.length ? JSON.stringify(refs) : null
       const nextImage = image ? JSON.stringify(image) : null
@@ -707,11 +699,11 @@ function initDb() {
   }
 
   function rowToEntry(row: Record<string, unknown>): MemoryEntry {
-    const legacyFilePaths = parseJsonSafe<FileReference[]>(row.filePaths, [])
-    const references = normalizeReferences(parseJsonSafe<MemoryReference[]>(row.references, []), legacyFilePaths)
-    const image = normalizeImage(parseJsonSafe<MemoryImage | null>(row.image, null), typeof row.imagePath === 'string' ? row.imagePath : null)
+    const legacyFilePaths = safeJsonParse<FileReference[]>(row.filePaths, [])
+    const references = normalizeReferences(safeJsonParse<MemoryReference[]>(row.references, []), legacyFilePaths)
+    const image = normalizeImage(safeJsonParse<MemoryImage | null>(row.image, null), typeof row.imagePath === 'string' ? row.imagePath : null)
     const filePaths = referencesToLegacyFilePaths(references)
-    const linkedMemoryIds = normalizeLinkedMemoryIds(parseJsonSafe<string[]>(row.linkedMemoryIds, []), typeof row.id === 'string' ? row.id : undefined)
+    const linkedMemoryIds = normalizeLinkedMemoryIds(safeJsonParse<string[]>(row.linkedMemoryIds, []), typeof row.id === 'string' ? row.id : undefined)
 
     return {
       id: String(row.id || ''),
@@ -720,14 +712,14 @@ function initDb() {
       category: typeof row.category === 'string' ? row.category : 'note',
       title: typeof row.title === 'string' ? row.title : 'Untitled',
       content: typeof row.content === 'string' ? row.content : '',
-      metadata: parseJsonSafe<Record<string, unknown> | undefined>(row.metadata, undefined),
+      metadata: safeJsonParse<Record<string, unknown> | undefined>(row.metadata, undefined),
       references,
       filePaths,
       image,
       imagePath: image?.path || undefined,
       linkedMemoryIds: linkedMemoryIds.length ? linkedMemoryIds : undefined,
       pinned: row.pinned === 1,
-      sharedWith: parseJsonSafe<string[]>(row.sharedWith, []).length ? parseJsonSafe<string[]>(row.sharedWith, []) : undefined,
+      sharedWith: safeJsonParse<string[]>(row.sharedWith, []).length ? safeJsonParse<string[]>(row.sharedWith, []) : undefined,
       accessCount: typeof row.accessCount === 'number' ? row.accessCount : 0,
       lastAccessedAt: typeof row.lastAccessedAt === 'number' ? row.lastAccessedAt : 0,
       contentHash: typeof row.contentHash === 'string' ? row.contentHash : undefined,
@@ -916,7 +908,7 @@ function initDb() {
       // Remove this ID from any other memory's linkedMemoryIds
       const linking = stmts.findMemoriesLinkingTo.all(`%"${id}"%`) as any[]
       for (const row of linking) {
-        const ids = normalizeLinkedMemoryIds(parseJsonSafe<string[]>(row.linkedMemoryIds, []), row.id)
+        const ids = normalizeLinkedMemoryIds(safeJsonParse<string[]>(row.linkedMemoryIds, []), row.id)
         const filtered = ids.filter((lid: string) => lid !== id)
         stmts.updateLinks.run(filtered.length ? JSON.stringify(filtered) : null, Date.now(), row.id)
       }

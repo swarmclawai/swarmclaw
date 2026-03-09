@@ -4,6 +4,7 @@ import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import type { ToolBuildContext } from './context'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface SmtpConfig {
   host: string
@@ -186,7 +187,7 @@ async function executeEmail(args: Record<string, unknown>): Promise<string> {
       const result = await sendSmtpEmail(cfg, recipients, subject, body, html)
       return `${result}\nTo: ${recipients.join(', ')}\nSubject: ${subject}`
     } catch (err: unknown) {
-      return `Error sending email: ${err instanceof Error ? err.message : String(err)}`
+      return `Error sending email: ${errorMessage(err)}`
     }
   }
 

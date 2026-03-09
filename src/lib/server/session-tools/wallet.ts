@@ -49,6 +49,7 @@ import {
   getWalletsByAgentId,
   isValidWalletAddress,
 } from '../wallet-service'
+import { errorMessage } from '@/lib/shared-utils'
 
 const WALLET_TOOL_ACTIONS = [
   'setup',
@@ -81,7 +82,7 @@ function parseJsonValue<T>(value: unknown, label: string): T | undefined {
     try {
       return JSON.parse(trimmed) as T
     } catch (err: unknown) {
-      throw new Error(`${label} must be valid JSON: ${err instanceof Error ? err.message : String(err)}`)
+      throw new Error(`${label} must be valid JSON: ${errorMessage(err)}`)
     }
   }
   return value as T
@@ -423,7 +424,7 @@ async function executeWalletAction(args: unknown, context: { agentId?: string | 
   try {
     requestedChain = getWalletChainOrDefault(normalized.chain ?? normalized.provider, 'solana')
   } catch (err: unknown) {
-    return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
+    return JSON.stringify({ error: errorMessage(err) })
   }
 
   const wallets = getWalletsByAgentId(agentId)
@@ -446,7 +447,7 @@ async function executeWalletAction(args: unknown, context: { agentId?: string | 
           ],
         })
       } catch (err: unknown) {
-        return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
+        return JSON.stringify({ error: errorMessage(err) })
       }
     }
 
@@ -476,7 +477,7 @@ async function executeWalletAction(args: unknown, context: { agentId?: string | 
         ],
       })
     } catch (err: unknown) {
-      return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
+      return JSON.stringify({ error: errorMessage(err) })
     }
   }
 
@@ -548,7 +549,7 @@ async function executeWalletAction(args: unknown, context: { agentId?: string | 
           if (BigInt(amountAtomic) <= BigInt(0)) return JSON.stringify({ error: 'amount must be positive' })
           formattedAmount = formatWalletAmount(wallet.chain, amountAtomic, { minFractionDigits: 4, maxFractionDigits: 6 })
         } catch (err: unknown) {
-          return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
+          return JSON.stringify({ error: errorMessage(err) })
         }
 
         const perTxLimitAtomic = getWalletLimitAtomic(wallet, 'perTx')
@@ -1167,7 +1168,7 @@ async function executeWalletAction(args: unknown, context: { agentId?: string | 
         return JSON.stringify({ error: `Unknown action: ${action}` })
     }
   } catch (err: unknown) {
-    return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
+    return JSON.stringify({ error: errorMessage(err) })
   }
 }
 

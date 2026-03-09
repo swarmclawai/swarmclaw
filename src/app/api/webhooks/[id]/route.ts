@@ -9,6 +9,7 @@ import { requestHeartbeatNow } from '@/lib/server/heartbeat-wake'
 import { mutateItem, deleteItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
 import type { WebhookRetryEntry } from '@/types'
 import { triggerWebhookWatchJobs } from '@/lib/server/watch-jobs'
+import { errorMessage } from '@/lib/shared-utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ops: CollectionOps<any> = { load: loadWebhooks, save: saveWebhooks }
@@ -250,7 +251,7 @@ export async function handleWebhookPost(
       runId: run.runId,
     })
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err)
+    const errorMsg = errorMessage(err)
 
     // Enqueue for retry with exponential backoff
     const retryId = genId()

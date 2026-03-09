@@ -6,9 +6,11 @@ import type { ChildProcess } from 'node:child_process'
 import Database from 'better-sqlite3'
 
 import { DATA_DIR, IS_BUILD_BOOTSTRAP, WORKSPACE_DIR } from './data-dir'
+import { safeJsonParseObject } from './json-utils'
 import { normalizeHeartbeatSettingFields } from '@/lib/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
 import type { AppNotification, BoardTask, ExternalAgentRuntime, GatewayProfile, Message, Session } from '@/types'
+import { dedup, hmrSingleton } from '@/lib/shared-utils'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
 // --- TTL Cache (read-through with write-through invalidation) ---
@@ -44,14 +46,11 @@ class TTLCache<T> {
   }
 }
 
-const ttlCacheKey = '__swarmclaw_ttl_caches__' as const
 type TTLCacheStore = {
   settings?: TTLCache<Record<string, unknown>>
   agents?: TTLCache<Record<string, unknown>>
 }
-type TTLGlobals = typeof globalThis & { [ttlCacheKey]?: TTLCacheStore }
-const ttlGlobals = globalThis as TTLGlobals
-const ttlCaches: TTLCacheStore = ttlGlobals[ttlCacheKey] ?? (ttlGlobals[ttlCacheKey] = {})
+const ttlCaches: TTLCacheStore = hmrSingleton<TTLCacheStore>('__swarmclaw_ttl_caches__', () => ({}))
 
 function getSettingsCache() { return ttlCaches.settings ?? (ttlCaches.settings = new TTLCache(60_000)) }
 function getAgentsCache() { return ttlCaches.agents ?? (ttlCaches.agents = new TTLCache(15_000)) }
@@ -64,17 +63,13 @@ const DEFAULT_LRU_CAPACITY = 5000
 function parseCacheLimits(): Record<string, number> {
   const raw = process.env.COLLECTION_CACHE_LIMITS
   if (!raw) return {}
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    const result: Record<string, number> = {}
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      if (typeof v === 'number' && v > 0) result[k] = v
-    }
-    return result
-  } catch {
-    return {}
+  const parsed = safeJsonParseObject(raw)
+  if (!parsed) return {}
+  const result: Record<string, number> = {}
+  for (const [k, v] of Object.entries(parsed)) {
+    if (typeof v === 'number' && v > 0) result[k] = v
   }
+  return result
 }
 
 const cacheLimits = parseCacheLimits()
@@ -164,20 +159,14 @@ if (!IS_BUILD_BOOTSTRAP) {
 }
 db.pragma('foreign_keys = ON')
 
-const collectionCacheKey = '__swarmclaw_storage_collection_cache__' as const
 type StoredObject = Record<string, unknown>
 type ActiveProcess = ChildProcess | {
   runId?: string | null
   source?: string
   kill: (signal?: NodeJS.Signals | number) => boolean | void
 }
-type StorageGlobals = typeof globalThis & {
-  [collectionCacheKey]?: Map<string, LRUMap<string, string>>
-}
-const storageGlobals = globalThis as StorageGlobals
 const collectionCache: Map<string, LRUMap<string, string>> =
-  storageGlobals[collectionCacheKey]
-  ?? (storageGlobals[collectionCacheKey] = new Map<string, LRUMap<string, string>>())
+  hmrSingleton('__swarmclaw_storage_collection_cache__', () => new Map<string, LRUMap<string, string>>())
 
 // Collection tables (id → JSON blob)
 const COLLECTIONS = [
@@ -437,10 +426,7 @@ interface CollectionStore<T = any> {
   deleteItem(id: string): void
 }
 
-const factoryCacheKey = '__swarmclaw_factory_ttl__' as const
-type FactoryCacheGlobals = typeof globalThis & { [factoryCacheKey]?: Map<string, TTLCache<Record<string, unknown>>> }
-const factoryCacheScope = globalThis as FactoryCacheGlobals
-const factoryTtlCaches = factoryCacheScope[factoryCacheKey] ?? (factoryCacheScope[factoryCacheKey] = new Map())
+const factoryTtlCaches = hmrSingleton('__swarmclaw_factory_ttl__', () => new Map<string, TTLCache<Record<string, unknown>>>())
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see CollectionStore
 function createCollectionStore<T = any>(
@@ -725,7 +711,7 @@ Be concise but not curt. Warmth doesn't require verbosity. When someone asks "ho
       try {
         const existing = JSON.parse(row.data) as Record<string, unknown>
         const existingPlugins = Array.isArray(existing.plugins) ? existing.plugins : Array.isArray(existing.tools) ? existing.tools : []
-        const mergedPlugins = Array.from(new Set([...existingPlugins, ...defaultStarterTools])).filter((t) => t !== 'delete_file')
+        const mergedPlugins = dedup([...existingPlugins, ...defaultStarterTools]).filter((t) => t !== 'delete_file')
         if (JSON.stringify(existingPlugins) !== JSON.stringify(mergedPlugins)) {
           existing.plugins = mergedPlugins
           delete existing.tools

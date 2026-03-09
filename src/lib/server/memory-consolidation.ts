@@ -1,5 +1,6 @@
 import { getMemoryDb } from './memory-db'
 import { HumanMessage } from '@langchain/core/messages'
+import { errorMessage } from '@/lib/shared-utils'
 
 /**
  * Produce daily digests per agent and prune stale entries.
@@ -89,7 +90,7 @@ export async function runDailyConsolidation(): Promise<{
 
       digestsCreated++
     } catch (err: unknown) {
-      errors.push(`Agent ${agentId}: ${err instanceof Error ? err.message : String(err)}`)
+      errors.push(`Agent ${agentId}: ${errorMessage(err)}`)
     }
   }
 

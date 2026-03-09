@@ -1,6 +1,7 @@
 import { genId } from '@/lib/id'
 import { loadApprovals, upsertApproval, loadSessions, saveSessions, loadSettings, loadAgents } from './storage'
 import type { ApprovalRequest, ApprovalCategory, Message } from '@/types'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 import { notify } from './ws-hub'
 import { log } from './logger'
 import { requestHeartbeatNow } from './heartbeat-wake'
@@ -67,7 +68,7 @@ function getEnabledPluginsForApproval(request: ApprovalRequest): string[] {
   const sessionPlugins = request.sessionId ? normalizePluginList(sessions[request.sessionId]?.plugins) : []
   const agentPlugins = request.agentId ? normalizePluginList(agents[request.agentId]?.plugins) : []
   const targetPlugins = getApprovalTargetPlugins(request)
-  return Array.from(new Set([...sessionPlugins, ...agentPlugins, ...targetPlugins]))
+  return dedup([...sessionPlugins, ...agentPlugins, ...targetPlugins])
 }
 
 function getApprovalGuidance(
@@ -533,7 +534,7 @@ async function applyApprovedSideEffects(request: ApprovalRequest): Promise<void>
       } catch (err: unknown) {
         log.error('approvals', 'Plugin scaffold dependency setup failed', {
           filename,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         })
         await manager.savePluginSource(filename, code, {
           meta: createdByAgentId ? { createdByAgentId } : undefined,
@@ -573,7 +574,7 @@ async function applyApprovedSideEffects(request: ApprovalRequest): Promise<void>
       } catch (err: unknown) {
         log.error('approvals', 'Plugin install failed after approval', {
           url,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         })
       }
     } else if (filename) {
@@ -596,7 +597,7 @@ async function applyApprovedSideEffects(request: ApprovalRequest): Promise<void>
       } catch (err: unknown) {
         log.error('approvals', 'Plugin dependency install failed after approval', {
           filename,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         })
       }
     }

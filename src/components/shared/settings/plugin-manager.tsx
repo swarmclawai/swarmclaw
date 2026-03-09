@@ -6,6 +6,7 @@ import { getPluginSourceLabel } from '@/lib/plugin-sources'
 import type { PluginMeta, MarketplacePlugin } from '@/types'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { errorMessage } from '@/lib/shared-utils'
 
 export function PluginManager() {
   const [tab, setTab] = useState<'installed' | 'marketplace' | 'url'>('installed')
@@ -67,7 +68,7 @@ export function PluginManager() {
       toast.success('Plugin updated')
       await loadPlugins()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(errorMessage(err))
     } finally {
       setUpdating(null)
     }
@@ -80,7 +81,7 @@ export function PluginManager() {
       toast.success('All plugins updated')
       await loadPlugins()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(errorMessage(err))
     } finally {
       setUpdatingAll(false)
     }

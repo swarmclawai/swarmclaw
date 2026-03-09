@@ -7,6 +7,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/api-client'
 import type { Credential, GatewayProfile } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 interface OpenClawDeployDraft {
   endpoint: string
@@ -115,12 +116,12 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
       }
 
       const existing = gatewayProfiles.find((gateway) => gateway.endpoint === deployDraft.endpoint) || null
-      const nextTags = Array.from(new Set([
+      const nextTags = dedup([
         ...(existing?.tags || []),
         'managed-deploy',
         ...(deployDraft.deployment?.useCase ? [deployDraft.deployment.useCase] : []),
         ...(deployDraft.deployment?.exposure ? [deployDraft.deployment.exposure] : []),
-      ]))
+      ])
       const verify = await api<{
         ok: boolean
         verify?: {

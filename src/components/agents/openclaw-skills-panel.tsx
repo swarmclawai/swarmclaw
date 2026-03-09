@@ -5,6 +5,7 @@ import type { OpenClawSkillEntry, SkillAllowlistMode } from '@/types'
 import { api } from '@/lib/api-client'
 import { SkillInstallDialog } from './skill-install-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface Props {
   agentId: string
@@ -32,7 +33,7 @@ export function OpenClawSkillsPanel({ agentId, initialMode = 'all', initialAllow
       const result = await api<OpenClawSkillEntry[]>('GET', `/openclaw/skills?agentId=${agentId}`)
       setSkills(Array.isArray(result) ? result : [])
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }

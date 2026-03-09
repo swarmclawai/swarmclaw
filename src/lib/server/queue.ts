@@ -1,12 +1,12 @@
 import { genId } from '@/lib/id'
+import { dedup, hmrSingleton } from '@/lib/shared-utils'
 import fs from 'node:fs'
 import path from 'node:path'
 import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSchedules, saveSchedules, loadSessions, saveSessions, loadSettings } from './storage'
 import { notify } from './ws-hub'
 import { WORKSPACE_DIR } from './data-dir'
 import { createOrchestratorSession } from './orchestrator'
-import { formatValidationFailure, validateTaskCompletion } from './task-validation'
-import { ensureTaskCompletionReport } from './task-reports'
+import { formatValidationFailure } from './task-validation'
 import { pushMainLoopEventToMainSessions } from './main-agent-loop'
 import { executeSessionChatTurn } from './chat-execution'
 import { extractTaskResult, formatResultBody } from './task-result'
@@ -28,24 +28,20 @@ import { performGuardianRollback } from './guardian'
 import { shouldAutoDeleteScheduleAfterTerminalRun } from '@/lib/schedule-origin'
 import type { Agent, BoardTask, Message, Session } from '@/types'
 import { buildAgentDisabledMessage, isAgentDisabled } from './agent-availability'
+import {
+  didTaskValidationChange,
+  markInvalidCompletedTaskFailed,
+  markValidatedTaskCompleted,
+  refreshTaskCompletionValidation,
+} from './task-lifecycle'
 
 export const collectTaskConnectorFollowupTargets = collectTaskConnectorFollowupTargetsImpl
 export const resolveTaskOriginConnectorFollowupTarget = resolveTaskOriginConnectorFollowupTargetImpl
 
 // HMR-safe: pin processing flag to globalThis so hot reloads don't reset it
-const _queueState = ((globalThis as Record<string, unknown>).__swarmclaw_queue__ ??= { processing: false, pendingKick: false }) as { processing: boolean; pendingKick: boolean }
+const _queueState = hmrSingleton('__swarmclaw_queue__', () => ({ processing: false, pendingKick: false }))
 
 const DISABLED_AGENT_RETRY_MS = 60_000
-
-function sameReasons(a?: string[] | null, b?: string[] | null): boolean {
-  const av = Array.isArray(a) ? a : []
-  const bv = Array.isArray(b) ? b : []
-  if (av.length !== bv.length) return false
-  for (let i = 0; i < av.length; i++) {
-    if (av[i] !== bv[i]) return false
-  }
-  return true
-}
 
 function normalizeInt(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === 'number'
@@ -70,7 +66,7 @@ function deriveTaskRoutePreferences(task: BoardTask): {
   preferredGatewayUseCase?: string | null
 } {
   const tags = Array.isArray(task.tags)
-    ? [...new Set(task.tags.map((tag) => (typeof tag === 'string' ? tag.trim().toLowerCase() : '')).filter(Boolean))]
+    ? dedup(task.tags.map((tag) => (typeof tag === 'string' ? tag.trim().toLowerCase() : '')).filter(Boolean))
     : []
   const customUseCase = typeof task.customFields?.openclawUseCase === 'string'
     ? task.customFields.openclawUseCase
@@ -605,7 +601,13 @@ export function reconcileFinishedRunningTasks(): { reconciled: number; deadLette
     if (!hasFinishedExecutionSession(session)) continue
 
     const fallbackText = latestAssistantText(session)
-    if (!fallbackText && !task.result) continue
+    if (!fallbackText && !task.result) {
+      task.status = 'failed'
+      task.result = 'Agent session finished without producing output.'
+      task.updatedAt = now
+      tasksDirty = true
+      continue
+    }
 
     applyTaskPolicyDefaults(task)
     const taskResult = extractTaskResult(
@@ -618,18 +620,13 @@ export function reconcileFinishedRunningTasks(): { reconciled: number; deadLette
     task.artifacts = taskResult.artifacts.slice(0, 24)
     task.outputFiles = extractLikelyOutputFiles(enrichedResult).slice(0, 24)
     task.updatedAt = now
-    const report = ensureTaskCompletionReport(task)
-    if (report?.relativePath) task.completionReportPath = report.relativePath
-    const validation = validateTaskCompletion(task, { report, settings })
-    task.validation = validation
+    const { validation } = refreshTaskCompletionValidation(task, settings)
     if (!task.comments) task.comments = []
 
     if (validation.ok) {
-      task.status = 'completed'
-      task.completedAt = now
+      markValidatedTaskCompleted(task, { now })
       task.retryScheduledAt = null
       task.deadLetteredAt = null
-      task.error = null
       task.checkpoint = {
         ...(task.checkpoint || {}),
         lastRunId: sessionId,
@@ -977,42 +974,32 @@ export function validateCompletedTasksQueue() {
     if (task.status !== 'completed') continue
     checked++
 
-    const report = ensureTaskCompletionReport(task)
-    if (report?.relativePath && task.completionReportPath !== report.relativePath) {
-      task.completionReportPath = report.relativePath
+    const previousValidation = task.validation || null
+    const previousReportPath = task.completionReportPath || null
+    const { validation } = refreshTaskCompletionValidation(task, settings)
+    if (task.completionReportPath !== previousReportPath) {
       tasksDirty = true
     }
-
-    const validation = validateTaskCompletion(task, { report, settings })
-    const prevValidation = task.validation || null
-    const validationChanged = !prevValidation
-      || prevValidation.ok !== validation.ok
-      || !sameReasons(prevValidation.reasons, validation.reasons)
+    const validationChanged = didTaskValidationChange(previousValidation, validation)
 
     if (validationChanged) {
-      task.validation = validation
       tasksDirty = true
     }
 
     if (validation.ok) {
       if (!task.completedAt) {
-        task.completedAt = now
-        task.updatedAt = now
+        markValidatedTaskCompleted(task, { now, preserveCompletedAt: true })
         tasksDirty = true
       }
       continue
     }
 
-    task.status = 'failed'
-    task.completedAt = null
-    task.error = formatValidationFailure(validation.reasons).slice(0, 500)
-    task.updatedAt = now
-    if (!task.comments) task.comments = []
-    task.comments.push({
-      id: genId(),
-      author: 'System',
-      text: `Task auto-failed completed-queue validation.\n\n${validation.reasons.map((r) => `- ${r}`).join('\n')}`,
-      createdAt: now,
+    markInvalidCompletedTaskFailed(task, validation, {
+      now,
+      comment: {
+        author: 'System',
+        text: `Task auto-failed completed-queue validation.\n\n${validation.reasons.map((r) => `- ${r}`).join('\n')}`,
+      },
     })
     tasksDirty = true
     demoted++
@@ -1360,20 +1347,15 @@ export async function processNext() {
           t2[taskId].artifacts = taskResult.artifacts.slice(0, 24)
           t2[taskId].outputFiles = extractLikelyOutputFiles(enrichedResult).slice(0, 24)
           t2[taskId].updatedAt = Date.now()
-          const report = ensureTaskCompletionReport(t2[taskId])
-          if (report?.relativePath) t2[taskId].completionReportPath = report.relativePath
-          const validation = validateTaskCompletion(t2[taskId], { report, settings })
-          t2[taskId].validation = validation
+          const { validation } = refreshTaskCompletionValidation(t2[taskId], settings)
 
           const now = Date.now()
           // Add a completion/failure comment from the orchestrator.
           if (!t2[taskId].comments) t2[taskId].comments = []
 
           if (validation.ok) {
-            t2[taskId].status = 'completed'
-            t2[taskId].completedAt = now
+            markValidatedTaskCompleted(t2[taskId], { now })
             t2[taskId].retryScheduledAt = null
-            t2[taskId].error = null
             t2[taskId].checkpoint = {
               ...(t2[taskId].checkpoint || {}),
               lastRunId: sessionId,

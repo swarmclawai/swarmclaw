@@ -4,6 +4,7 @@ import { notify } from '@/lib/server/ws-hub'
 import type { AgentWallet, WalletTransaction } from '@/types'
 import { getWalletAtomicAmount } from '@/lib/wallet'
 import { sendWalletNativeAsset, validateWalletSendLimits } from '@/lib/server/wallet-service'
+import { errorMessage } from '@/lib/shared-utils'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -68,7 +69,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     upsertWalletTransaction(transactionId, tx)
     notify('wallets')
     return NextResponse.json({
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
       transactionId,
       status: 'failed',
     }, { status: 500 })

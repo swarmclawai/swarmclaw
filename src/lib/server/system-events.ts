@@ -3,6 +3,8 @@
  * Events are accumulated between heartbeat ticks and drained into heartbeat prompts.
  */
 
+import { hmrSingleton } from '@/lib/shared-utils'
+
 export interface SystemEvent {
   text: string
   timestamp: number
@@ -11,9 +13,7 @@ export interface SystemEvent {
 
 const MAX_EVENTS_PER_SESSION = 20
 
-const globalKey = '__swarmclaw_system_events__' as const
-const globalScope = globalThis as typeof globalThis & { [globalKey]?: Map<string, SystemEvent[]> }
-const queues: Map<string, SystemEvent[]> = globalScope[globalKey] ?? (globalScope[globalKey] = new Map())
+const queues: Map<string, SystemEvent[]> = hmrSingleton('__swarmclaw_system_events__', () => new Map<string, SystemEvent[]>())
 
 /** Push an event for a session. Deduplicates consecutive identical text, caps at MAX_EVENTS_PER_SESSION. */
 export function enqueueSystemEvent(sessionId: string, text: string, contextKey?: string): void {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getPluginManager } from '@/lib/server/plugins'
 import '@/lib/server/builtin-plugins'
+import { errorMessage } from '@/lib/shared-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,7 +34,7 @@ export async function PUT(req: Request) {
     })
   } catch (err: unknown) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      { error: errorMessage(err) },
       { status: 400 },
     )
   }

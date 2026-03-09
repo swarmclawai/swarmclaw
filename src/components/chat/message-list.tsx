@@ -8,6 +8,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { shouldHidePersistedStreamingAssistantMessage } from '@/lib/chat-streaming-state'
 import { dedupeMessagesForDisplay } from '@/lib/chat-display'
+import { errorMessage } from '@/lib/shared-utils'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { MessageBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
@@ -213,7 +214,7 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
       updated[index] = { ...updated[index], bookmarked: next }
       setMessages(updated)
     } catch (err: unknown) {
-      console.error('Failed to toggle bookmark:', err instanceof Error ? err.message : String(err))
+      console.error('Failed to toggle bookmark:', errorMessage(err))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, messages])

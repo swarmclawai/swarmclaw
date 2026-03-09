@@ -10,6 +10,7 @@
  */
 
 import { genId } from '@/lib/id'
+import { hmrSingleton } from '@/lib/shared-utils'
 import { notify } from './ws-hub'
 
 // ---------------------------------------------------------------------------
@@ -130,18 +131,10 @@ export interface LineageQuery {
 // Storage (globalThis-scoped, HMR-safe)
 // ---------------------------------------------------------------------------
 
-const LINEAGE_KEY = '__swarmclaw_subagent_lineage__' as const
-const scope = globalThis as typeof globalThis & {
-  [LINEAGE_KEY]?: Map<string, LineageNode>
-}
-const store = scope[LINEAGE_KEY] ?? (scope[LINEAGE_KEY] = new Map())
+const store = hmrSingleton('__swarmclaw_subagent_lineage__', () => new Map<string, LineageNode>())
 
 // Session → lineage node index for fast lookup
-const SESSION_INDEX_KEY = '__swarmclaw_lineage_session_idx__' as const
-const sessionScope = globalThis as typeof globalThis & {
-  [SESSION_INDEX_KEY]?: Map<string, string>
-}
-const sessionIndex = sessionScope[SESSION_INDEX_KEY] ?? (sessionScope[SESSION_INDEX_KEY] = new Map())
+const sessionIndex = hmrSingleton('__swarmclaw_lineage_session_idx__', () => new Map<string, string>())
 
 // Debounced notification — collapses rapid-fire updates into one per microtask
 let notifyPending = false

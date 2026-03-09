@@ -8,6 +8,7 @@ import { api } from '@/lib/api-client'
 import { getPluginSourceLabel } from '@/lib/plugin-sources'
 import { toast } from 'sonner'
 import type { PluginMeta, PluginSettingsField, MarketplacePlugin } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 function pluginDescription(plugin: PluginMeta): string {
   const raw = (plugin.description || '').trim()
@@ -417,7 +418,7 @@ export function PluginSheet() {
               : marketplace.length === 0
                 ? <p className="text-[12px] text-text-3/70">No plugins available</p>
                 : (() => {
-                    const allTags = Array.from(new Set(marketplace.flatMap((p) => (p.tags ?? [])))).sort()
+                    const allTags = dedup(marketplace.flatMap((p) => (p.tags ?? []))).sort()
                     const q = search.toLowerCase()
                     const filtered = marketplace
                       .filter((p) => {

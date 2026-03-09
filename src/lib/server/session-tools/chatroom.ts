@@ -7,6 +7,7 @@ import type { ToolBuildContext } from './context'
 import type { Chatroom, Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { errorMessage } from '@/lib/shared-utils'
 
 /**
  * Core Chatroom Execution Logic
@@ -97,7 +98,7 @@ async function executeChatroomAction(args: Record<string, unknown>, context: { a
 
     return `Unknown action "${action}".`
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

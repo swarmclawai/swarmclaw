@@ -6,6 +6,7 @@ import { withRetry } from '../tool-retry'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface HttpRequestArgs {
   method: string
@@ -58,7 +59,7 @@ async function executeHttpAction(args: HttpRequestArgs) {
       }
       return JSON.stringify({ status: res.status, statusText: res.statusText, headers: resHeaders, body: resBody })
     } catch (err: unknown) {
-      return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
+      return JSON.stringify({ error: errorMessage(err) })
     }
   }, requestArgs)
 }

@@ -8,6 +8,7 @@ import { fetchProviderModelDiscovery } from '@/lib/provider-model-discovery-clie
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { toast } from 'sonner'
+import { errorMessage } from '@/lib/shared-utils'
 
 export function ProviderSheet() {
   const open = useAppStore((s) => s.providerSheetOpen)
@@ -456,7 +457,7 @@ export function ProviderSheet() {
                       setAddingKey(false)
                       setNewKeyName('')
                       setNewKeyValue('')
-                    } catch (err: unknown) { toast.error(`Failed to save: ${err instanceof Error ? err.message : String(err)}`) }
+                    } catch (err: unknown) { toast.error(`Failed to save: ${errorMessage(err)}`) }
                     finally { setSavingKey(false) }
                   }}
                   className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40"

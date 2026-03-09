@@ -10,26 +10,22 @@ import {
   loadSkills,
   loadSettings,
   appendUsage,
-  loadUsage,
   active,
 } from './storage'
 import { getProvider } from '@/lib/providers'
 import { estimateCost, checkAgentBudgetLimits } from './cost'
 import { log } from './logger'
 import { logExecution } from './execution-log'
+import { routeTaskIntent } from './capability-router'
 import { buildToolDisciplineLines, streamAgentChat } from './stream-agent-chat'
 import { runLinkUnderstanding } from './link-understanding'
-import { buildSessionTools } from './session-tools'
-import type { StructuredToolInterface } from '@langchain/core/tools'
 import type { Session } from '@/types'
 import { stripMainLoopMetaForPersistence } from './main-agent-loop'
 import { getPluginManager } from './plugins'
 import { isLocalOpenClawEndpoint, normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
-import { routeTaskIntent } from './capability-router'
 import { notify } from './ws-hub'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from './agent-runtime-config'
-import { resolveConcreteToolPolicyBlock, resolveSessionToolPolicy } from './tool-capability-policy'
-import { pluginIdMatches } from './tool-aliases'
+import { resolveSessionToolPolicy } from './tool-capability-policy'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
 import {
   applyContextClearBoundary,
@@ -45,25 +41,29 @@ import {
   getToolEventsSnapshotKey,
   requestedToolNamesFromMessage,
   hasDirectLocalCodingTools,
+  parseUsdLimit,
+  getTodaySpendUsd,
+  classifyHeartbeatResponse,
+  estimateConversationTone,
 } from './chat-execution-utils'
+import { runPostLlmToolRouting } from './chat-turn-tool-routing'
 import {
   getCachedLlmResponse,
   resolveLlmResponseCacheConfig,
   setCachedLlmResponse,
   type LlmResponseCacheKeyInput,
 } from './llm-response-cache'
-import { genId } from '@/lib/id'
 import type { Message, MessageToolEvent, SSEEvent, UsageRecord } from '@/types'
-import { markProviderFailure, markProviderSuccess, rankDelegatesByHealth } from './provider-health'
+import { markProviderFailure, markProviderSuccess } from './provider-health'
 import { isHeartbeatSource, isInternalHeartbeatRun } from './heartbeat-source'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 import { buildIdentityContinuityContext, refreshSessionIdentityState } from './identity-continuity'
 import { syncSessionArchiveMemory } from './session-archive-memory'
 import { evaluateSessionFreshness, resetSessionRuntime, resolveSessionResetPolicy } from './session-reset-policy'
 import { pruneStreamingAssistantArtifacts, upsertStreamingAssistantArtifact } from '@/lib/chat-streaming-state'
-import { resolveActiveProjectContext } from './project-context'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from './assistant-control'
 import { buildAgentDisabledMessage, isAgentDisabled } from './agent-availability'
+import { errorMessage as toErrorMessage } from '@/lib/shared-utils'
 
 export {
   shouldApplySessionFreshnessReset,
@@ -74,14 +74,6 @@ export {
   hasDirectLocalCodingTools,
 }
 
-type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
-
-interface SessionWithTools {
-  plugins?: string[] | null
-  /** @deprecated Use plugins */
-  tools?: string[] | null
-}
-
 interface SessionWithCredentials {
   credentialId?: string | null
 }
@@ -89,66 +81,6 @@ interface SessionWithCredentials {
 interface ProviderApiKeyConfig {
   requiresApiKey?: boolean
   optionalApiKey?: boolean
-}
-
-function parseUsdLimit(value: unknown): number | null {
-  const parsed = typeof value === 'number'
-    ? value
-    : typeof value === 'string'
-      ? Number.parseFloat(value)
-      : Number.NaN
-  if (!Number.isFinite(parsed) || parsed <= 0) return null
-  return Math.max(0.01, Math.min(1_000_000, parsed))
-}
-
-function getTodaySpendUsd(): number {
-  const usage = loadUsage()
-  const dayStart = new Date()
-  dayStart.setHours(0, 0, 0, 0)
-  const minTs = dayStart.getTime()
-  let total = 0
-  for (const records of Object.values(usage)) {
-    for (const record of records || []) {
-      const rec = record as Record<string, unknown>
-      const ts = typeof rec?.timestamp === 'number' ? rec.timestamp : 0
-      if (ts < minTs) continue
-      const cost = typeof rec?.estimatedCost === 'number' ? rec.estimatedCost : 0
-      if (Number.isFinite(cost) && cost > 0) total += cost
-    }
-  }
-  return total
-}
-
-function stripMarkupForHeartbeat(text: string): string {
-  return text
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/^[*`~_]+/, '')
-    .replace(/[*`~_]+$/, '')
-    .trim()
-}
-
-const HEARTBEAT_OK_RE = /HEARTBEAT_OK[^\w]{0,4}$/
-const NO_MESSAGE_RE = /NO_MESSAGE[^\w]{0,4}$/
-
-function classifyHeartbeatResponse(text: string, ackMaxChars: number, hadToolCalls: boolean): 'suppress' | 'strip' | 'keep' {
-  const cleaned = stripMarkupForHeartbeat(text)
-  if (cleaned === 'HEARTBEAT_OK' || cleaned === 'NO_MESSAGE') return 'suppress'
-  if (HEARTBEAT_OK_RE.test(cleaned) || NO_MESSAGE_RE.test(cleaned)) return 'suppress'
-  const stripped = cleaned.replace(/HEARTBEAT_OK/gi, '').replace(/NO_MESSAGE/gi, '').trim()
-  if (!stripped) return 'suppress'
-  if (!hadToolCalls && stripped.length <= ackMaxChars) return 'suppress'
-  return stripped.length < cleaned.length ? 'strip' : 'keep'
-}
-
-function estimateConversationTone(text: string): string {
-  const t = text || ''
-  if (/```/.test(t) || /\b(function|const|let|var|import|export|class|interface|async|await|return)\b/.test(t)) return 'technical'
-  if (/\b(error|bug|debug|stack trace|exception|null|undefined|TypeError)\b/i.test(t)) return 'technical'
-  if (/\b(understand|feel|sorry|empathize|appreciate|grateful|tough|difficult|challenging)\b/i.test(t)) return 'empathetic'
-  if (/\b(furthermore|regarding|consequently|therefore|henceforth|pursuant|accordingly|notwithstanding)\b/i.test(t)) return 'formal'
-  if (/\b(gonna|wanna|gotta|yeah|hey|awesome|cool|lol|btw|tbh)\b/i.test(t) || /!{2,}/.test(t)) return 'casual'
-  return 'neutral'
 }
 
 export interface ExecuteChatTurnInput {
@@ -277,17 +209,6 @@ export function deriveTerminalRunError(params: {
   return undefined
 }
 
-function extractDelegateResponse(outputText: string): string | null {
-  try {
-    const parsed = JSON.parse(outputText) as Record<string, unknown>
-    if (typeof parsed.response === 'string' && parsed.response.trim()) return parsed.response.trim()
-    if (typeof parsed.result === 'string' && parsed.result.trim()) return parsed.result.trim()
-    return null
-  } catch {
-    return null
-  }
-}
-
 export function isLikelyToolErrorOutput(output: string): boolean {
   const trimmed = String(output || '').trim()
   if (!trimmed) return false
@@ -372,177 +293,6 @@ export function reconcileConnectorDeliveryText(text: string, events: MessageTool
     : 'I could not confirm that the connector actually sent anything.'
 
   return `I couldn't send that through the configured connector. ${failureSummary}`.trim()
-}
-
-function parseKeyValueArgs(raw: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  const regex = /([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*("([^"]*)"|'([^']*)'|[^\s,]+)/g
-  let match: RegExpExecArray | null = null
-  while ((match = regex.exec(raw)) !== null) {
-    const key = match[1]
-    const value = match[3] ?? match[4] ?? match[2] ?? ''
-    out[key] = value.replace(/^['"]|['"]$/g, '').trim()
-  }
-  return out
-}
-
-function extractConnectorMessageArgs(message: string): {
-  action:
-    | 'list_running'
-    | 'list_targets'
-    | 'start'
-    | 'stop'
-    | 'send'
-    | 'send_voice_note'
-    | 'schedule_followup'
-  platform?: string
-  connectorId?: string
-  to?: string
-  message?: string
-  voiceText?: string
-  voiceId?: string
-  imageUrl?: string
-  fileUrl?: string
-  mediaPath?: string
-  mimeType?: string
-  fileName?: string
-  caption?: string
-  delaySec?: number
-  followUpMessage?: string
-  followUpDelaySec?: number
-  ptt?: boolean
-  approved?: boolean
-} | null {
-  if (!message.toLowerCase().includes('connector_message_tool')) return null
-  const parsed = parseKeyValueArgs(message)
-
-  let payload = parsed.message
-  if (!payload) {
-    const quoted = message.match(/message\s*=\s*("(.*?)"|'(.*?)')/i)
-    if (quoted) payload = (quoted[2] || quoted[3] || '').trim()
-  }
-  if (!payload) {
-    const raw = message.match(/message\s*=\s*([^\n]+)/i)
-    if (raw?.[1]) {
-      payload = raw[1]
-        .replace(/\b(Return|Output|Then|Respond)\b[\s\S]*$/i, '')
-        .trim()
-        .replace(/^['"]|['"]$/g, '')
-    }
-  }
-
-  const actionRaw = (parsed.action || 'send').toLowerCase()
-  const action = (
-    actionRaw === 'list_running'
-    || actionRaw === 'list_targets'
-    || actionRaw === 'start'
-    || actionRaw === 'stop'
-    || actionRaw === 'send'
-    || actionRaw === 'send_voice_note'
-    || actionRaw === 'schedule_followup'
-  )
-    ? actionRaw
-    : 'send'
-  const args: {
-    action:
-      | 'list_running'
-      | 'list_targets'
-      | 'start'
-      | 'stop'
-      | 'send'
-      | 'send_voice_note'
-      | 'schedule_followup'
-    platform?: string
-    connectorId?: string
-    to?: string
-    message?: string
-    voiceText?: string
-    voiceId?: string
-    imageUrl?: string
-    fileUrl?: string
-    mediaPath?: string
-    mimeType?: string
-    fileName?: string
-    caption?: string
-    delaySec?: number
-    followUpMessage?: string
-    followUpDelaySec?: number
-    ptt?: boolean
-    approved?: boolean
-  } = { action }
-  const quoted = (key: string): string | undefined => {
-    const m = message.match(new RegExp(`${key}\\s*=\\s*(\"([^\"]*)\"|'([^']*)')`, 'i'))
-    return (m?.[2] || m?.[3] || '').trim() || undefined
-  }
-  if (parsed.platform) args.platform = parsed.platform
-  if (parsed.connectorId) args.connectorId = parsed.connectorId
-  if (parsed.to) args.to = parsed.to
-  if (payload) args.message = payload
-  if (parsed.voiceText) args.voiceText = parsed.voiceText
-  if (parsed.voiceId) args.voiceId = parsed.voiceId
-  args.imageUrl = parsed.imageUrl || quoted('imageUrl')
-  args.fileUrl = parsed.fileUrl || quoted('fileUrl')
-  args.mediaPath = parsed.mediaPath || quoted('mediaPath')
-  args.mimeType = parsed.mimeType || quoted('mimeType')
-  args.fileName = parsed.fileName || quoted('fileName')
-  args.caption = parsed.caption || quoted('caption')
-  if (parsed.followUpMessage) args.followUpMessage = parsed.followUpMessage
-  if (parsed.delaySec && Number.isFinite(Number(parsed.delaySec))) args.delaySec = Number(parsed.delaySec)
-  if (parsed.followUpDelaySec && Number.isFinite(Number(parsed.followUpDelaySec))) args.followUpDelaySec = Number(parsed.followUpDelaySec)
-  if (parsed.ptt) args.ptt = ['true', '1', 'yes', 'on'].includes(parsed.ptt.toLowerCase())
-  if (parsed.approved) args.approved = ['true', '1', 'yes', 'on'].includes(parsed.approved.toLowerCase())
-  return args
-}
-
-function extractDelegationTask(message: string, toolName: string): string | null {
-  if (!message.toLowerCase().includes(toolName.toLowerCase())) return null
-  const patterns = [
-    /task\s+exactly\s*:\s*"([^"]+)"/i,
-    /task\s+exactly\s*:\s*'([^']+)'/i,
-    /task\s+exactly\s*:\s*([^\n]+?)(?:\.\s|$)/i,
-    /task\s*:\s*"([^"]+)"/i,
-    /task\s*:\s*'([^']+)'/i,
-    /task\s*:\s*([^\n]+?)(?:\.\s|$)/i,
-  ]
-  for (const re of patterns) {
-    const m = message.match(re)
-    const task = (m?.[1] || '').trim()
-    if (task) return task
-  }
-  return null
-}
-
-function hasToolEnabled(session: SessionWithTools, toolName: string): boolean {
-  return pluginIdMatches(session?.plugins || session?.tools || [], toolName)
-}
-
-function enabledDelegationTools(session: SessionWithTools): DelegateTool[] {
-  const tools: DelegateTool[] = []
-  if (hasToolEnabled(session, 'claude_code') || hasToolEnabled(session, 'delegate')) tools.push('delegate_to_claude_code')
-  if (hasToolEnabled(session, 'codex_cli')) tools.push('delegate_to_codex_cli')
-  if (hasToolEnabled(session, 'opencode_cli')) tools.push('delegate_to_opencode_cli')
-  if (hasToolEnabled(session, 'gemini_cli')) tools.push('delegate_to_gemini_cli')
-  return tools
-}
-
-function findFirstUrl(text: string): string | null {
-  const m = text.match(/https?:\/\/[^\s<>"')]+/i)
-  return m?.[0] || null
-}
-
-function isMemoryListIntent(message: string): boolean {
-  const text = message.toLowerCase()
-  if (!/\bmemory|memories|remember\b/.test(text)) return false
-  if (/\b(save|store|memorize|add to memory|write to memory|remember this)\b/.test(text)) return false
-  if (/\bmemory_tool\b/.test(text)) return true
-  return (
-    /\blist\b[\s\w]{0,24}\bmemories\b/.test(text)
-    || /\bshow\b[\s\w]{0,24}\bmemories\b/.test(text)
-    || /\bget\b[\s\w]{0,24}\bmemories\b/.test(text)
-    || /\bwhat\b[\s\w]{0,40}\bmemories\b/.test(text)
-    || /\bwhat do you remember\b/.test(text)
-    || /\brecall\b[\s\w]{0,24}\bmemories?\b/.test(text)
-  )
 }
 
 function syncSessionFromAgent(sessionId: string): void {
@@ -1219,7 +969,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
     durationMs = Date.now() - startTs
   } catch (err: unknown) {
-    errorMessage = err instanceof Error ? err.message : String(err)
+    errorMessage = toErrorMessage(err)
     const failureText = errorMessage || 'Run failed.'
     markProviderFailure(providerType, failureText)
     emit({ t: 'err', text: failureText })
@@ -1269,197 +1019,31 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
   }
 
-  const requestedToolNames = (!internal && source === 'chat')
-    ? requestedToolNamesFromMessage(message)
-    : []
-  const routingDecision = (!internal && source === 'chat')
-    ? routeTaskIntent(message, pluginsForRun, appSettings)
-    : null
-  const calledNames = new Set((toolEvents || []).map((t) => t.name))
+  const toolRoutingResult = await runPostLlmToolRouting({
+    session: sessionForRun,
+    sessionId,
+    message,
+    effectiveMessage,
+    enabledPlugins: pluginsForRun,
+    toolPolicy,
+    appSettings,
+    internal,
+    source,
+    toolEvents,
+    emit,
+  }, fullResponse, errorMessage)
 
-  const invokeSessionTool = async (toolName: string, args: Record<string, unknown>, failurePrefix: string): Promise<boolean> => {
-    const blockedReason = resolveConcreteToolPolicyBlock(toolName, toolPolicy, appSettings)
-    if (blockedReason) {
-      emit({ t: 'err', text: `Capability policy blocked tool invocation "${toolName}": ${blockedReason}` })
-      return false
-    }
-    if (
-      appSettings.safetyRequireApprovalForOutbound === true
-      && toolName === 'connector_message_tool'
-      && source !== 'chat'
-    ) {
-      emit({ t: 'err', text: 'Outbound connector messaging requires explicit user approval.' })
-      return false
-    }
-    const agent = session.agentId ? loadAgents()[session.agentId] : null
-    const activeProjectContext = resolveActiveProjectContext(session)
-    const { tools, cleanup } = await buildSessionTools(session.cwd, enabledSessionPlugins, {
-      agentId: session.agentId || null,
-      sessionId,
-      platformAssignScope: agent?.platformAssignScope || 'self',
-      mcpServerIds: agent?.mcpServerIds,
-      mcpDisabledTools: agent?.mcpDisabledTools,
-      projectId: activeProjectContext.projectId,
-      projectRoot: activeProjectContext.projectRoot,
-      projectName: activeProjectContext.project?.name || null,
-      projectDescription: activeProjectContext.project?.description || null,
-      memoryScopeMode: (((session as unknown as Record<string, unknown>).memoryScopeMode as string | null | undefined) ?? agent?.memoryScopeMode ?? null),
-    })
-    try {
-      const directTool = tools.find((t) => t?.name === toolName) as StructuredToolInterface | undefined
-      const availableToolNames = tools.map((candidate) => candidate?.name).filter(Boolean)
-      const translated = directTool
-        ? { toolName, args }
-        : translateRequestedToolInvocation(toolName, args, message, availableToolNames)
-      const selectedTool = directTool || tools.find((t) => t?.name === translated.toolName) as StructuredToolInterface | undefined
-      if (!selectedTool?.invoke) return false
-      const toolInput = JSON.stringify(translated.args)
-      const toolCallId = genId()
-      emit({ t: 'tool_call', toolName, toolInput, toolCallId })
-      const toolOutput = await selectedTool.invoke(translated.args)
-      const outputText = typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput)
-      emit({ t: 'tool_result', toolName, toolOutput: outputText, toolCallId })
-      const delegateResponse = (
-        toolName === 'delegate'
-        || toolName.startsWith('delegate_to_')
-      ) ? extractDelegateResponse(outputText) : null
-      if (delegateResponse) {
-        fullResponse = delegateResponse
-      } else if (!fullResponse.trim() && outputText?.trim()) {
-        // Don't overwrite fullResponse with raw tool output — it's already captured
-        // in toolEvents. Only set a brief notice when the LLM produced no text,
-        // so the message bubble isn't empty.
-        const label = toolName.replace(/_/g, ' ')
-        fullResponse = `Used **${label}** — see tool output above for details.`
-      }
-      calledNames.add(toolName)
-      return true
-    } catch (forceErr: unknown) {
-      emit({ t: 'err', text: `${failurePrefix}: ${forceErr instanceof Error ? forceErr.message : String(forceErr)}` })
-      return false
-    } finally {
-      await cleanup()
-    }
-  }
+  fullResponse = toolRoutingResult.fullResponse
+  errorMessage = toolRoutingResult.errorMessage
 
-  if (requestedToolNames.includes('connector_message_tool') && !calledNames.has('connector_message_tool')) {
-    const forcedArgs = extractConnectorMessageArgs(message)
-    if (forcedArgs) {
-      await invokeSessionTool(
-        'connector_message_tool',
-        forcedArgs as unknown as Record<string, unknown>,
-        'Forced connector_message_tool invocation failed',
-      )
-    }
-  }
-
-  const forcedDelegationTools: DelegateTool[] = [
-    'delegate_to_claude_code',
-    'delegate_to_codex_cli',
-    'delegate_to_opencode_cli',
-    'delegate_to_gemini_cli',
-  ]
-  for (const toolName of forcedDelegationTools) {
-    if (!requestedToolNames.includes(toolName)) continue
-    if (calledNames.has(toolName)) continue
-    const task = extractDelegationTask(message, toolName)
-    if (!task) continue
-    await invokeSessionTool(toolName, { task }, `Forced ${toolName} invocation failed`)
-  }
-
-  const hasDelegationCall = forcedDelegationTools.some((toolName) => calledNames.has(toolName))
-  const enabledDelegateTools = enabledDelegationTools(sessionForRun)
-  const shouldAutoDelegateCoding = (!internal && source === 'chat')
-    && enabledDelegateTools.length > 0
-    && !hasDelegationCall
-    && calledNames.size === 0
-    && !requestedToolNames.length
-    && !hasDirectLocalCodingTools(sessionForRun)
-    && routingDecision?.intent === 'coding'
-
-  if (shouldAutoDelegateCoding) {
-    const baseDelegationOrder = routingDecision?.preferredDelegates?.length
-      ? routingDecision.preferredDelegates
-      : forcedDelegationTools
-    const delegationOrder = rankDelegatesByHealth(baseDelegationOrder as DelegateTool[])
-      .filter((tool) => enabledDelegateTools.includes(tool))
-    for (const delegateTool of delegationOrder) {
-      const invoked = await invokeSessionTool(delegateTool, { task: effectiveMessage.trim() }, 'Auto-delegation failed')
-      if (invoked) break
-    }
-  }
-
-  const shouldFailoverDelegate = (!internal && source === 'chat')
-    && !!errorMessage
-    && !(fullResponse || '').trim()
-    && enabledDelegateTools.length > 0
-    && !hasDelegationCall
-    && (routingDecision?.intent === 'coding' || routingDecision?.intent === 'general')
-  if (shouldFailoverDelegate) {
-    const preferred = routingDecision?.preferredDelegates?.length
-      ? routingDecision.preferredDelegates
-      : forcedDelegationTools
-    const fallbackOrder = rankDelegatesByHealth(preferred as DelegateTool[])
-      .filter((tool) => enabledDelegateTools.includes(tool))
-    for (const delegateTool of fallbackOrder) {
-      const invoked = await invokeSessionTool(
-        delegateTool,
-        { task: effectiveMessage.trim() },
-        `Provider failover via ${delegateTool} failed`,
-      )
-      if (invoked) {
-        errorMessage = undefined
-        break
-      }
-    }
-  }
-
-  const canAutoRouteWithTools = (!internal && source === 'chat')
-    && !!routingDecision
-    && calledNames.size === 0
-    && requestedToolNames.length === 0
-
-  if (canAutoRouteWithTools && routingDecision?.intent === 'browsing' && routingDecision.primaryUrl && hasToolEnabled(sessionForRun, 'browser')) {
-    await invokeSessionTool(
-      'browser',
-      { action: 'read_page', url: routingDecision.primaryUrl },
-      'Auto browser routing failed',
-    )
-  }
-
-  if (canAutoRouteWithTools && routingDecision?.intent === 'research') {
-    const routeUrl = routingDecision.primaryUrl || findFirstUrl(message)
-    if (routeUrl && hasToolEnabled(sessionForRun, 'web_fetch')) {
-      await invokeSessionTool('web_fetch', { url: routeUrl }, 'Auto web_fetch routing failed')
-    } else if (hasToolEnabled(sessionForRun, 'web_search')) {
-      await invokeSessionTool('web_search', { query: effectiveMessage.trim(), maxResults: 5 }, 'Auto web_search routing failed')
-    }
-  }
-
-  if (
-    canAutoRouteWithTools
-    && calledNames.size === 0
-    && hasToolEnabled(sessionForRun, 'memory')
-    && isMemoryListIntent(message)
-  ) {
-    await invokeSessionTool(
-      'memory_tool',
-      { action: 'list', key: '', scope: 'auto' },
-      'Auto memory listing failed',
-    )
-  }
-
-  if (requestedToolNames.length > 0) {
-    const missed = requestedToolNames.filter((name) => !calledNames.has(name))
-    if (missed.length > 0) {
-      const notice = `Tool execution notice: requested tool(s) ${missed.join(', ')} were not actually invoked in this run.`
-      emit({ t: 'err', text: notice })
-      if (!fullResponse.includes('Tool execution notice:')) {
-        const trimmedResponse = (fullResponse || '').trim()
-        fullResponse = trimmedResponse
-          ? `${trimmedResponse}\n\n${notice}`
-          : notice
-      }
+  if (toolRoutingResult.missedRequestedTools.length > 0) {
+    const notice = `Tool execution notice: requested tool(s) ${toolRoutingResult.missedRequestedTools.join(', ')} were not actually invoked in this run.`
+    emit({ t: 'err', text: notice })
+    if (!fullResponse.includes('Tool execution notice:')) {
+      const trimmedResponse = (fullResponse || '').trim()
+      fullResponse = trimmedResponse
+        ? `${trimmedResponse}\n\n${notice}`
+        : notice
     }
   }
 

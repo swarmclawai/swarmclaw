@@ -19,6 +19,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { useApprovalStore } from '@/stores/use-approval-store'
 import { AgentAvatar } from './agent-avatar'
 import { toast } from 'sonner'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface Props {
   agent: Agent
@@ -107,7 +108,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
       await loadAgents()
       toast.success('Agent duplicated')
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(errorMessage(err))
     } finally {
       setCloning(false)
     }

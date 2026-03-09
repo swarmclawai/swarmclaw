@@ -7,6 +7,7 @@ import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { normalizeCanvasContent, summarizeCanvasContent } from '@/lib/canvas-content'
+import { errorMessage } from '@/lib/shared-utils'
 
 /**
  * Core Canvas Execution Logic
@@ -55,7 +56,7 @@ async function executeCanvasAction(args: Record<string, unknown>, context: { ses
 
     return `Unknown canvas action "${action}".`
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

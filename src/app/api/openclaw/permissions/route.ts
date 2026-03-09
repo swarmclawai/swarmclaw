@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { PermissionPreset } from '@/types'
 import { getExecConfig } from '@/lib/server/openclaw-exec-config'
 import { resolvePresetFromConfig, applyPreset } from '@/lib/server/openclaw-permission-presets'
+import { errorMessage } from '@/lib/shared-utils'
 
 /** GET ?agentId=X — resolve current permission preset */
 export async function GET(req: Request) {
@@ -16,7 +17,7 @@ export async function GET(req: Request) {
     const preset = resolvePresetFromConfig(snap.file)
     return NextResponse.json({ preset, config: snap.file })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }
@@ -33,7 +34,7 @@ export async function PUT(req: Request) {
     await applyPreset(agentId, preset)
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

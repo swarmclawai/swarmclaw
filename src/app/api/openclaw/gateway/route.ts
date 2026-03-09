@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { ensureGatewayConnected, getGateway, disconnectGateway, manualConnect } from '@/lib/server/openclaw-gateway'
+import { errorMessage } from '@/lib/shared-utils'
 
 /** POST — proxy an RPC call or perform gateway actions */
 export async function POST(req: Request) {
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
       const ok = await manualConnect(url, token, profileId)
       return NextResponse.json({ ok })
     } catch (err: unknown) {
-      return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, { status: 502 })
+      return NextResponse.json({ ok: false, error: errorMessage(err) }, { status: 502 })
     }
   }
 
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
       const mode = (config as Record<string, unknown>)?.reloadMode ?? 'hot'
       return NextResponse.json({ ok: true, result: mode })
     } catch (err: unknown) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 })
+      return NextResponse.json({ error: errorMessage(err) }, { status: 502 })
     }
   }
 
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
       await gw.rpc('config.set', { reloadMode: params?.mode })
       return NextResponse.json({ ok: true })
     } catch (err: unknown) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 })
+      return NextResponse.json({ error: errorMessage(err) }, { status: 502 })
     }
   }
 
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
     const result = await gw.rpc(method, params)
     return NextResponse.json({ ok: true, result })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

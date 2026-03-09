@@ -8,6 +8,7 @@ import { ackMailboxEnvelope, listMailbox, sendMailboxEnvelope } from '../session
 import { loadApprovals } from '../storage'
 import { requestApprovalMaybeAutoApprove } from '../approvals'
 import { createWatchJob, getWatchJob } from '../watch-jobs'
+import { errorMessage } from '@/lib/shared-utils'
 
 async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { sessionId?: string | null; agentId?: string | null }) {
   const normalized = normalizeToolInputArgs(args)
@@ -166,7 +167,7 @@ async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { ses
 
     return `Error: Unknown action "${action}".`
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

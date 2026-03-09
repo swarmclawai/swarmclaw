@@ -1,7 +1,6 @@
 import crypto from 'node:crypto'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundMedia } from './types'
-import { normalizeConnectorIngressResult } from './types'
-import { isNoMessage } from './manager'
+import { resolveConnectorIngressReply } from './ingress-delivery'
 
 const DEFAULT_TIMEOUT_MS = 10_000
 const DEFAULT_WEBHOOK_PATH = '/api/connectors/{id}/webhook'
@@ -261,17 +260,14 @@ const bluebubbles: PlatformConnector = {
         if (!allowed) return {}
       }
 
-      const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
-      if (routeResult.managerHandled || routeResult.delivery === 'silent') return {}
-
-      const response = routeResult.visibleText
-      if (!response || isNoMessage(response)) return {}
+      const reply = await resolveConnectorIngressReply(onMessage, inbound)
+      if (!reply) return {}
 
       await sendBlueBubblesText({
         serverUrl,
         password,
         channelId: inbound.channelId,
-        text: response,
+        text: reply.visibleText,
         timeoutMs,
       })
       return {}

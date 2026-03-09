@@ -1,5 +1,6 @@
 import type { ExecApprovalConfig, ExecApprovalSnapshot } from '@/types'
 import { ensureGatewayConnected } from './openclaw-gateway'
+import { errorMessage } from '@/lib/shared-utils'
 
 const DEFAULT_CONFIG: ExecApprovalConfig = {
   security: 'deny',
@@ -39,7 +40,7 @@ export async function setExecConfig(
       }) as { hash?: string } | undefined
       return { ok: true, hash: result?.hash ?? '' }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       if (msg.includes('conflict') && attempt < 2) {
         // Re-fetch to get fresh hash
         const fresh = await getExecConfig()

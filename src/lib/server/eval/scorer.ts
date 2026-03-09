@@ -1,5 +1,6 @@
 import type { ScoringCriterion, EvalCriterionResult } from './types'
 import type { MessageToolEvent } from '@/types'
+import { errorMessage } from '@/lib/shared-utils'
 
 export async function scoreCriteria(
   criteria: ScoringCriterion[],
@@ -84,7 +85,7 @@ export async function scoreCriteria(
             criterion: criterion.name,
             score: 0,
             maxScore: criterion.weight,
-            evidence: `LLM judge error: ${err instanceof Error ? err.message : String(err)}`,
+            evidence: `LLM judge error: ${errorMessage(err)}`,
           })
         }
         break

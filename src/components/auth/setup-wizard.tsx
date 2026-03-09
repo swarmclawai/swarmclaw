@@ -5,6 +5,7 @@ import { api } from '@/lib/api-client'
 import { OpenClawDeployPanel } from '@/components/openclaw/openclaw-deploy-panel'
 import { useAppStore } from '@/stores/use-app-store'
 import type { ProviderType, Credential, GatewayProfile } from '@/types'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 import {
   ONBOARDING_PATHS,
   SETUP_PROVIDERS,
@@ -499,12 +500,12 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         ...(current || {}),
         ...(nextDeployment || {}),
       }))
-      setProviderTags((current) => Array.from(new Set([
+      setProviderTags((current) => dedup([
         ...current,
         'onboarding',
         ...(nextDeployment?.useCase ? [nextDeployment.useCase] : []),
         ...(nextDeployment?.exposure ? [nextDeployment.exposure] : []),
-      ])))
+      ]))
     }
     setCheckState('idle')
     setCheckMessage('')
@@ -544,7 +545,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       return !!result.ok
     } catch (err: unknown) {
       setCheckState('error')
-      setCheckMessage(err instanceof Error ? err.message : String(err))
+      setCheckMessage(errorMessage(err))
       setCheckErrorCode(null)
       return false
     }
@@ -560,7 +561,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     } catch (err: unknown) {
       setDoctorState('error')
       setDoctorReport(null)
-      setDoctorError(err instanceof Error ? err.message : String(err))
+      setDoctorError(errorMessage(err))
     }
   }
 
@@ -619,7 +620,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       resetProviderForm()
       setStep('providers')
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -698,10 +699,10 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             name: configuredProvider.name,
             endpoint: normalizedEndpoint,
             credentialId: configuredProvider.credentialId || null,
-            tags: Array.from(new Set([
+            tags: dedup([
               'onboarding',
               ...(configuredProvider.tags || []),
-            ])),
+            ]),
             notes: configuredProvider.notes || `Created during setup for ${configuredProvider.name}.`,
             deployment: configuredProvider.deployment || null,
             status: configuredProvider.deployment?.lastVerifiedOk ? 'healthy' : 'pending',
@@ -765,7 +766,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       setCreatedAgents(created)
       setStep('done')
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -779,7 +780,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       setCreatedAgents([])
       setStep('done')
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errorMessage(err))
     } finally {
       setSaving(false)
     }

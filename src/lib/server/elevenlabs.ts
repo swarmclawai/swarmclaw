@@ -1,4 +1,5 @@
 import { decryptKey, loadSettings, loadSecrets } from './storage'
+import { dedup } from '@/lib/shared-utils'
 
 const DEFAULT_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
 const DEFAULT_MODEL_ID = 'eleven_multilingual_v2'
@@ -56,7 +57,7 @@ function resolveElevenLabsApiKeyCandidates(): string[] {
     }
   }
 
-  return [...new Set(candidates)]
+  return dedup(candidates)
 }
 
 function shouldRetryWithFallbackVoice(voiceId: string, errBody: string): boolean {

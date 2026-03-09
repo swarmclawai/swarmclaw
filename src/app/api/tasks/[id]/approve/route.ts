@@ -3,6 +3,7 @@ import { loadTask, patchTask, loadAgents } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { notify } from '@/lib/server/ws-hub'
 import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
+import { errorMessage } from '@/lib/shared-utils'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -61,7 +62,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       })
       if (updated) notify('tasks')
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err)
+      const errMsg = errorMessage(err)
       console.error(`[approve] Resume failed for task ${id}:`, errMsg)
       const updated = patchTask(id, (current) => {
         if (!current) return current

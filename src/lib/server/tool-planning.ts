@@ -1,4 +1,5 @@
 import type { PluginToolPlanning } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 import { getPluginManager } from './plugins'
 import { canonicalizePluginId, expandPluginIds } from './tool-aliases'
 
@@ -165,7 +166,7 @@ const CORE_TOOL_PLANNING: Record<string, ToolPlanningEntry[]> = {
 }
 
 function dedupeStrings(values: string[]): string[] {
-  return Array.from(new Set(values.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim())))
+  return dedup(values.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()))
 }
 
 function normalizePlanningEntry(toolName: string, planning: PluginToolPlanning | null | undefined): ToolPlanningEntry | null {

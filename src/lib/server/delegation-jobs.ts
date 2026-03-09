@@ -1,4 +1,5 @@
 import { genId } from '@/lib/id'
+import { hmrSingleton } from '@/lib/shared-utils'
 import type { DelegationJobArtifact, DelegationJobCheckpoint, DelegationJobRecord, DelegationJobStatus } from '@/types'
 import { loadDelegationJobs, upsertDelegationJob, patchDelegationJob } from './storage'
 import { notify } from './ws-hub'
@@ -7,11 +8,7 @@ interface DelegationRuntimeHandle {
   cancel?: () => void
 }
 
-const runtimeKey = '__swarmclaw_delegation_job_runtime__' as const
-const runtimeScope = globalThis as typeof globalThis & {
-  [runtimeKey]?: Map<string, DelegationRuntimeHandle>
-}
-const runtimeHandles = runtimeScope[runtimeKey] ?? (runtimeScope[runtimeKey] = new Map())
+const runtimeHandles = hmrSingleton('__swarmclaw_delegation_job_runtime__', () => new Map<string, DelegationRuntimeHandle>())
 
 function isTerminalStatus(status: DelegationJobStatus | null | undefined): boolean {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
@@ -104,7 +101,7 @@ export function updateDelegationJob(
     }
   })
   if (result) notifyDelegationJobsChanged()
-  return result as any
+  return result
 }
 
 export function appendDelegationCheckpoint(
@@ -189,7 +186,7 @@ export function cancelDelegationJob(id: string): DelegationJobRecord | null {
     }),
   })
   runtimeHandles.delete(id)
-  return result as any
+  return result
 }
 
 export function cancelDelegationJobsForParentSession(

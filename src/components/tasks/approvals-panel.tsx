@@ -9,6 +9,7 @@ import { useWs } from '@/hooks/use-ws'
 import { ExecApprovalCard } from '@/components/chat/exec-approval-card'
 import { getApprovalPayload, getApprovalTitle } from '@/lib/approval-display'
 import type { AppSettings, ApprovalCategory, ApprovalRequest } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 const CATEGORY_LABELS: Record<string, string> = {
   tool_access: 'Plugin Access',
@@ -137,7 +138,7 @@ export function ApprovalsPanel() {
   const searchTerm = search.trim().toLowerCase()
 
   const workflowCategories = useMemo(() => (
-    Array.from(new Set(workflowApprovals.map((req) => req.category))).sort()
+    dedup(workflowApprovals.map((req) => req.category)).sort()
   ), [workflowApprovals])
 
   const filteredExecApprovals = useMemo(() => {

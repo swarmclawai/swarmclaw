@@ -1,5 +1,6 @@
 import { loadSettings } from './storage'
 import type { AppNotification } from '@/types'
+import { errorMessage } from '@/lib/shared-utils'
 
 /** In-memory rate limiter: dedupKey → last dispatch timestamp */
 const recentDispatches = new Map<string, number>()
@@ -59,6 +60,6 @@ export async function dispatchAlert(notification: AppNotification): Promise<void
       signal: AbortSignal.timeout(5000),
     })
   } catch (err: unknown) {
-    console.warn('[alert-dispatch] Webhook delivery failed:', err instanceof Error ? err.message : String(err))
+    console.warn('[alert-dispatch] Webhook delivery failed:', errorMessage(err))
   }
 }

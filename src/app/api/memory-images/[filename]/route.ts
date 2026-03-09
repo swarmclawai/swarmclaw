@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { notFound } from '@/lib/server/collection-helpers'
+import { MEMORY_IMAGES_DIR } from '@/lib/server/data-dir'
 import fs from 'fs'
 import path from 'path'
-
-const IMAGES_DIR = path.join(process.cwd(), 'data', 'memory-images')
 
 const MIME_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -18,7 +17,7 @@ const MIME_TYPES: Record<string, string> = {
 export async function GET(_req: Request, { params }: { params: Promise<{ filename: string }> }) {
   const { filename } = await params
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '')
-  const filePath = path.join(IMAGES_DIR, safeName)
+  const filePath = path.join(MEMORY_IMAGES_DIR, safeName)
 
   if (!fs.existsSync(filePath)) {
     return notFound()

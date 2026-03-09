@@ -3,9 +3,10 @@ import fs from 'fs'
 import path from 'path'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundThreadHistoryEntry } from './types'
-import { normalizeConnectorIngressResult } from './types'
+import { resolveConnectorIngressReply } from './ingress-delivery'
+import { deliverChunkedConnectorText } from './delivery'
 import { downloadInboundMediaToUpload, inferInboundMediaType } from './media'
-import { getConnectorReplySendOptions, isNoMessage, recordConnectorOutboundDelivery } from './manager'
+import { errorMessage } from '@/lib/shared-utils'
 
 function buildDiscordThreadTitle(params: {
   threadName?: string
@@ -88,7 +89,7 @@ async function hydrateDiscordThreadContext(message: any, inbound: InboundMessage
       }].filter((entry) => entry.text.trim().length > 0)
     }
   } catch (err: unknown) {
-    console.warn(`[discord] Thread context bootstrap failed: ${err instanceof Error ? err.message : String(err)}`)
+    console.warn(`[discord] Thread context bootstrap failed: ${errorMessage(err)}`)
   }
 }
 
@@ -153,7 +154,7 @@ const discord: PlatformConnector = {
               continue
             }
           } catch (err: unknown) {
-            const errMsg = err instanceof Error ? err.message : String(err)
+            const errMsg = errorMessage(err)
             console.warn(`[discord] Media download failed (${attachment.name || 'file'}):`, errMsg)
           }
         }
@@ -189,44 +190,29 @@ const discord: PlatformConnector = {
       try {
         // Show typing indicator
         await message.channel.sendTyping()
-        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
-        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
-        const response = routeResult.visibleText
-
-        const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
-        const targetChannelId = replyOptions.threadId || inbound.channelId
-        const sendChunk = async (chunk: string, isFirstChunk: boolean) => {
-          const channel = await resolveTextChannel(targetChannelId)
-          const payload: Record<string, unknown> = {
-            content: chunk,
-            allowedMentions: { repliedUser: false },
-          }
-          if (isFirstChunk && replyOptions.replyToMessageId) {
-            payload.reply = {
-              messageReference: replyOptions.replyToMessageId,
-              failIfNotExists: false,
-            }
-          }
-          const sent = await channel.send(payload)
-          return String(sent.id || '')
-        }
-
-        let lastMessageId: string | undefined
-        // Discord has a 2000 char limit per message
-        if (response.length <= 2000) {
-          lastMessageId = await sendChunk(response, true)
-        } else {
-          // Split into chunks
-          const chunks = response.match(/[\s\S]{1,1990}/g) || [response]
-          for (let i = 0; i < chunks.length; i += 1) {
-            lastMessageId = await sendChunk(chunks[i], i === 0)
-          }
-        }
-        await recordConnectorOutboundDelivery({
+        const reply = await resolveConnectorIngressReply(onMessage, inbound)
+        if (!reply) return
+        await deliverChunkedConnectorText({
           connectorId: connector.id,
           inbound,
-          messageId: lastMessageId,
-          state: 'sent',
+          text: reply.visibleText,
+          maxSingleMessageLength: 2000,
+          chunkLength: 1990,
+          sendChunk: async (chunk, meta) => {
+            const channel = await resolveTextChannel(meta.threadId || inbound.channelId)
+            const payload: Record<string, unknown> = {
+              content: chunk,
+              allowedMentions: { repliedUser: false },
+            }
+            if (meta.isFirstChunk && meta.replyToMessageId) {
+              payload.reply = {
+                messageReference: meta.replyToMessageId,
+                failIfNotExists: false,
+              }
+            }
+            const sent = await channel.send(payload)
+            return String(sent.id || '')
+          },
         })
       } catch (err: any) {
         console.error(`[discord] Error handling message:`, err.message)

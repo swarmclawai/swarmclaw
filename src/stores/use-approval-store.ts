@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import type { PendingExecApproval, ExecApprovalDecision } from '@/types'
 import { api } from '@/lib/api-client'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface ApprovalState {
   approvals: Record<string, PendingExecApproval>
@@ -47,7 +48,7 @@ export const useApprovalStore = create<ApprovalState>((set) => ({
         return { approvals: next }
       })
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       const isConflict = message.includes('409') || message.includes('Already resolved')
       if (isConflict) {
         // Another session already resolved this — treat as success

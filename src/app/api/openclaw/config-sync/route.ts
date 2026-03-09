@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { detectConfigIssues, repairConfigIssue } from '@/lib/server/openclaw-config-sync'
+import { errorMessage } from '@/lib/shared-utils'
 
 /** GET — detect configuration issues */
 export async function GET() {
@@ -7,7 +8,7 @@ export async function GET() {
     const issues = await detectConfigIssues()
     return NextResponse.json({ issues })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

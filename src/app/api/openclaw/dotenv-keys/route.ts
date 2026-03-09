@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
+import { errorMessage } from '@/lib/shared-utils'
 
 /** GET — list env var keys from gateway .env */
 export async function GET() {
@@ -12,7 +13,7 @@ export async function GET() {
     const result = await gw.rpc('env.keys') as string[] | undefined
     return NextResponse.json(result ?? [])
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

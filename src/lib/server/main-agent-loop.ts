@@ -1,3 +1,4 @@
+import { hmrSingleton } from '@/lib/shared-utils'
 import type { GoalContract, Message, MessageToolEvent, Session } from '@/types'
 import { mergeGoalContracts, parseGoalContractFromText, parseMainLoopPlan, parseMainLoopReview } from './autonomy-contract'
 import { enqueueSystemEvent } from './system-events'
@@ -77,9 +78,7 @@ export interface HandleMainLoopRunResultInput {
 
 type MainSessionLike = Partial<Session> & Record<string, unknown>
 
-const globalKey = '__swarmclaw_main_loop_state__' as const
-const globalScope = globalThis as typeof globalThis & { [globalKey]?: Map<string, MainLoopState> }
-const stateMap = globalScope[globalKey] ?? (globalScope[globalKey] = new Map<string, MainLoopState>())
+const stateMap = hmrSingleton('__swarmclaw_main_loop_state__', () => new Map<string, MainLoopState>())
 
 function now(): number {
   return Date.now()

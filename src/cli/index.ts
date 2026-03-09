@@ -4,6 +4,7 @@ import { Command } from 'commander'
 import { pathToFileURL } from 'node:url'
 import fs from 'node:fs'
 import path from 'node:path'
+import { errorMessage, sleep } from '@/lib/shared-utils'
 import {
   SETUP_PROVIDERS,
   DEFAULT_AGENTS,
@@ -74,7 +75,7 @@ function parseMetadata(raw: string | undefined): Record<string, string> | undefi
   try {
     parsed = JSON.parse(raw)
   } catch (err) {
-    throw new Error(`Invalid --metadata JSON: ${err instanceof Error ? err.message : String(err)}`)
+    throw new Error(`Invalid --metadata JSON: ${errorMessage(err)}`)
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -93,7 +94,7 @@ function parseJsonValue(raw: string | undefined, label: string): unknown {
   try {
     return JSON.parse(raw)
   } catch (err) {
-    throw new Error(`Invalid ${label} JSON: ${err instanceof Error ? err.message : String(err)}`)
+    throw new Error(`Invalid ${label} JSON: ${errorMessage(err)}`)
   }
 }
 
@@ -171,7 +172,7 @@ async function apiRequestWithAccessKey<T = unknown>(
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errorMessage(err)
     throw new Error(`Failed to reach ${ctx.baseUrl}. Is SwarmClaw running? (${msg})`)
   }
 
@@ -269,7 +270,7 @@ async function runWithHandler(command: Command, task: (ctx: CliContext) => Promi
     const result = await task(ctx)
     printResult(result, ctx.rawOutput)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errorMessage(err)
     console.error(msg)
     process.exitCode = 1
   }
@@ -413,7 +414,7 @@ async function runInteractiveSetup(ctx: CliContext): Promise<unknown> {
           console.log(` FAILED: ${check?.message || 'Unknown error'}`)
         }
       } catch (err: unknown) {
-        console.log(` FAILED: ${err instanceof Error ? err.message : String(err)}`)
+        console.log(` FAILED: ${errorMessage(err)}`)
       }
     }
 
@@ -1381,12 +1382,12 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
 
     // Wait briefly for the hint if the command succeeded
     if (hintPromise && code === 0) {
-      await Promise.race([hintPromise, new Promise((r) => setTimeout(r, 2000))])
+      await Promise.race([hintPromise, sleep(2000)])
     }
 
     return code
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errorMessage(err)
     console.error(msg)
     return 1
   }

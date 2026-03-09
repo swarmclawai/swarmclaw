@@ -7,6 +7,7 @@ import type { ToolBuildContext } from './context'
 import type { ApprovalRequest, Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { errorMessage } from '@/lib/shared-utils'
 
 const PLUGINS_DIR = path.join(DATA_DIR, 'plugins')
 
@@ -236,7 +237,7 @@ Key rules:
 
     return `Unknown action "${action}". Valid actions: get_spec, scaffold, read, edit, delete, install_dependencies`
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

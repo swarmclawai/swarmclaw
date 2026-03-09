@@ -1,5 +1,6 @@
 import type { McpServerConfig } from '@/types'
 import { connectMcpServer, disconnectMcpServer } from './mcp-client'
+import { errorMessage } from '@/lib/shared-utils'
 
 export interface McpConformanceIssue {
   level: 'error' | 'warning'
@@ -209,7 +210,7 @@ export async function runMcpConformanceCheck(
         issues.push({
           level: 'error',
           code: 'smoke_tool_failed',
-          message: err instanceof Error ? err.message : String(err),
+          message: errorMessage(err),
           toolName: smokeToolName,
         })
       } finally {
@@ -220,7 +221,7 @@ export async function runMcpConformanceCheck(
     issues.push({
       level: 'error',
       code: 'connect_or_list_failed',
-      message: err instanceof Error ? err.message : String(err),
+      message: errorMessage(err),
     })
   } finally {
     if (client && transport) {

@@ -12,6 +12,7 @@ import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { inputClass } from '@/components/shared/form-styles'
 import { useNow } from '@/hooks/use-now'
 import type { BoardTask, BoardTaskStatus } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 import { toast } from 'sonner'
 
 const ACTIVE_COLUMNS: BoardTaskStatus[] = ['backlog', 'queued', 'running', 'completed', 'failed']
@@ -199,7 +200,7 @@ export function TaskBoard() {
   useWs('tasks', loadTasks, 5000)
 
   // Collect all unique tags across tasks
-  const allTags = Array.from(new Set(Object.values(tasks).flatMap((t) => t.tags || []))).sort()
+  const allTags = dedup(Object.values(tasks).flatMap((t) => t.tags || [])).sort()
 
   const columns: BoardTaskStatus[] = showArchived ? [...ACTIVE_COLUMNS, 'archived'] : ACTIVE_COLUMNS
 

@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import fs from 'fs'
-import path from 'path'
-
-const LOG_FILE = path.join(process.cwd(), 'data', 'app.log')
+import { APP_LOG_PATH } from '@/lib/server/data-dir'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -11,11 +9,11 @@ export async function GET(req: Request) {
   const search = searchParams.get('search') || ''
 
   try {
-    if (!fs.existsSync(LOG_FILE)) {
+    if (!fs.existsSync(APP_LOG_PATH)) {
       return NextResponse.json({ entries: [], total: 0 })
     }
 
-    const content = fs.readFileSync(LOG_FILE, 'utf8')
+    const content = fs.readFileSync(APP_LOG_PATH, 'utf8')
     let allLines = content.split('\n').filter(Boolean)
 
     // Filter by level
@@ -42,8 +40,8 @@ export async function GET(req: Request) {
 
 export async function DELETE() {
   try {
-    if (fs.existsSync(LOG_FILE)) {
-      fs.writeFileSync(LOG_FILE, '')
+    if (fs.existsSync(APP_LOG_PATH)) {
+      fs.writeFileSync(APP_LOG_PATH, '')
     }
     return NextResponse.json({ ok: true })
   } catch (err: any) {

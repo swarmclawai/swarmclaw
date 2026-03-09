@@ -3,6 +3,7 @@ import { loadConnectors, logActivity, upsertStoredItem, deleteStoredItem } from 
 import { notify } from '@/lib/server/ws-hub'
 import { notFound } from '@/lib/server/collection-helpers'
 import { ensureDaemonStarted } from '@/lib/server/daemon-state'
+import { errorMessage } from '@/lib/shared-utils'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   ensureDaemonStarted('api/connectors/[id]:get')
@@ -68,7 +69,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     } catch (err: unknown) {
       // Re-read to get the error state saved by startConnector
       const fresh = loadConnectors()
-      return NextResponse.json(fresh[id] || { error: err instanceof Error ? err.message : String(err) }, { status: 500 })
+      return NextResponse.json(fresh[id] || { error: errorMessage(err) }, { status: 500 })
     }
     // Re-read the connector after manager modified it
     const fresh = loadConnectors()

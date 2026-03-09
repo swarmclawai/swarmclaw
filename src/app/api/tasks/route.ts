@@ -4,15 +4,14 @@ import { deleteTask, loadAgents, loadSettings, loadTasks, logActivity, upsertTas
 import { TaskCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
 import { enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/queue'
-import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
-import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
 import { notify } from '@/lib/server/ws-hub'
-import { computeTaskFingerprint, findDuplicateTask } from '@/lib/task-dedupe'
 import { resolveTaskAgentFromDescription } from '@/lib/server/task-mention'
 import { validateDag } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
-import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
+import {
+  prepareTaskCreation,
+} from '@/lib/server/task-service'
 import '@/lib/server/builtin-plugins'
 
 export async function GET(req: Request) {
@@ -71,9 +70,6 @@ export async function POST(req: Request) {
   const now = Date.now()
   const tasks = loadTasks()
   const settings = loadSettings()
-  const normalizedQualityGate = body.qualityGate
-    ? normalizeTaskQualityGate(body.qualityGate, settings)
-    : null
   const maxAttempts = Number.isFinite(Number(body.maxAttempts))
     ? Math.max(1, Math.min(20, Math.trunc(Number(body.maxAttempts))))
     : Math.max(1, Math.min(20, Math.trunc(Number(settings.defaultTaskMaxAttempts ?? 3))))
@@ -96,101 +92,89 @@ export async function POST(req: Request) {
     ? resolveTaskAgentFromDescription(body.description, body.agentId || '', loadAgents())
     : (body.agentId || '')
 
-  tasks[id] = {
+  const prepared = prepareTaskCreation({
     id,
-    title: body.title || 'Untitled Task',
-    description: body.description || '',
-    status: body.status || 'backlog',
-    agentId: resolvedAgentId,
-    projectId: typeof body.projectId === 'string' && body.projectId ? body.projectId : null,
-    goalContract: body.goalContract || null,
-    cwd: typeof body.cwd === 'string' ? body.cwd : null,
-    file: typeof body.file === 'string' ? body.file : null,
-    sessionId: typeof body.sessionId === 'string' ? body.sessionId : null,
-    result: typeof body.result === 'string' ? body.result : null,
-    error: typeof body.error === 'string' ? body.error : null,
-    outputFiles: Array.isArray(body.outputFiles)
-      ? body.outputFiles.filter((entry: unknown) => typeof entry === 'string').slice(0, 24)
-      : [],
-    artifacts: Array.isArray(body.artifacts)
-      ? body.artifacts
-          .filter((artifact: unknown) => artifact && typeof artifact === 'object')
-          .map((artifact: unknown) => {
-            const row = artifact as {
-              url?: unknown
-              type?: unknown
-              filename?: unknown
-            }
-            const normalizedType = String(row.type || '')
-            return {
-              url: String(row.url || ''),
-              type: ['image', 'video', 'pdf', 'file'].includes(normalizedType)
-                ? (normalizedType as 'image' | 'video' | 'pdf' | 'file')
-                : 'file',
-              filename: String(row.filename || ''),
-            }
-          })
-          .filter((artifact: { url: string; filename: string }) => artifact.url && artifact.filename)
-          .slice(0, 24)
-      : [],
-    createdAt: now,
-    updatedAt: now,
-    queuedAt: null,
-    startedAt: null,
-    completedAt: null,
-    archivedAt: null,
-    attempts: 0,
-    maxAttempts,
-    retryBackoffSec,
-    retryScheduledAt: null,
-    deadLetteredAt: null,
-    checkpoint: null,
-    blockedBy: Array.isArray(body.blockedBy) ? body.blockedBy.filter((s: unknown) => typeof s === 'string') : [],
-    blocks: Array.isArray(body.blocks) ? body.blocks.filter((s: unknown) => typeof s === 'string') : [],
-    tags: Array.isArray(body.tags) ? body.tags.filter((s: unknown) => typeof s === 'string') : [],
-    dueAt: typeof body.dueAt === 'number' ? body.dueAt : null,
-    customFields: body.customFields && typeof body.customFields === 'object' ? body.customFields : undefined,
-    priority: ['low', 'medium', 'high', 'critical'].includes(body.priority) ? body.priority : undefined,
-    fingerprint: computeTaskFingerprint(body.title || 'Untitled Task', body.agentId || ''),
-    qualityGate: normalizedQualityGate,
+    input: {
+      ...body,
+      agentId: resolvedAgentId,
+    },
+    tasks,
+    now,
+    settings,
+    seed: {
+      projectId: typeof body.projectId === 'string' && body.projectId ? body.projectId : null,
+      goalContract: body.goalContract || null,
+      cwd: typeof body.cwd === 'string' ? body.cwd : null,
+      file: typeof body.file === 'string' ? body.file : null,
+      sessionId: typeof body.sessionId === 'string' ? body.sessionId : null,
+      result: typeof body.result === 'string' ? body.result : null,
+      error: typeof body.error === 'string' ? body.error : null,
+      outputFiles: Array.isArray(body.outputFiles)
+        ? body.outputFiles.filter((entry: unknown) => typeof entry === 'string').slice(0, 24)
+        : [],
+      artifacts: Array.isArray(body.artifacts)
+        ? body.artifacts
+            .filter((artifact: unknown) => artifact && typeof artifact === 'object')
+            .map((artifact: unknown) => {
+              const row = artifact as {
+                url?: unknown
+                type?: unknown
+                filename?: unknown
+              }
+              const normalizedType = String(row.type || '')
+              return {
+                url: String(row.url || ''),
+                type: ['image', 'video', 'pdf', 'file'].includes(normalizedType)
+                  ? (normalizedType as 'image' | 'video' | 'pdf' | 'file')
+                  : 'file',
+                filename: String(row.filename || ''),
+              }
+            })
+            .filter((artifact: { url: string; filename: string }) => artifact.url && artifact.filename)
+            .slice(0, 24)
+        : [],
+      archivedAt: null,
+      attempts: 0,
+      maxAttempts,
+      retryBackoffSec,
+      retryScheduledAt: null,
+      deadLetteredAt: null,
+      checkpoint: null,
+      blockedBy: Array.isArray(body.blockedBy) ? body.blockedBy.filter((s: unknown) => typeof s === 'string') : [],
+      blocks: Array.isArray(body.blocks) ? body.blocks.filter((s: unknown) => typeof s === 'string') : [],
+      tags: Array.isArray(body.tags) ? body.tags.filter((s: unknown) => typeof s === 'string') : [],
+      dueAt: typeof body.dueAt === 'number' ? body.dueAt : null,
+      customFields: body.customFields && typeof body.customFields === 'object' ? body.customFields : undefined,
+      priority: ['low', 'medium', 'high', 'critical'].includes(body.priority) ? body.priority : undefined,
+    },
+  })
+  if (!prepared.ok) {
+    return NextResponse.json({ error: prepared.error }, { status: 400 })
   }
 
-  // Dedup: if a non-terminal task with same fingerprint exists, return it
-  const dupe = findDuplicateTask(tasks, { fingerprint: tasks[id].fingerprint! })
-  if (dupe && dupe.id !== id) {
-    return NextResponse.json({ ...dupe, deduplicated: true })
+  if (prepared.duplicate) {
+    return NextResponse.json({ ...prepared.duplicate, deduplicated: true })
   }
 
-  if (tasks[id].status === 'completed') {
-    const report = ensureTaskCompletionReport(tasks[id])
-    if (report?.relativePath) tasks[id].completionReportPath = report.relativePath
-    const validation = validateTaskCompletion(tasks[id], { report, settings })
-    tasks[id].validation = validation
-    if (validation.ok) {
-      tasks[id].completedAt = Date.now()
-      tasks[id].error = null
-      const agentPlugins = resolvedAgentId ? (loadAgents()[resolvedAgentId]?.plugins || []) : []
-      getPluginManager().runHook(
-        'onTaskComplete',
-        { taskId: id, result: tasks[id].result },
-        { enabledIds: agentPlugins },
-      )
-    } else {
-      tasks[id].status = 'failed'
-      tasks[id].completedAt = null
-      tasks[id].error = formatValidationFailure(validation.reasons).slice(0, 500)
-    }
+  const task = prepared.task
+  if (task.status === 'completed') {
+    const agentPlugins = resolvedAgentId ? (loadAgents()[resolvedAgentId]?.plugins || []) : []
+    getPluginManager().runHook(
+      'onTaskComplete',
+      { taskId: id, result: task.result },
+      { enabledIds: agentPlugins },
+    )
   }
 
-  upsertTask(id, tasks[id])
-  logActivity({ entityType: 'task', entityId: id, action: 'created', actor: 'user', summary: `Task created: "${tasks[id].title}"` })
+  upsertTask(id, task)
+  logActivity({ entityType: 'task', entityId: id, action: 'created', actor: 'user', summary: `Task created: "${task.title}"` })
   pushMainLoopEventToMainSessions({
     type: 'task_created',
-    text: `Task created: "${tasks[id].title}" (${id}) with status ${tasks[id].status}.`,
+    text: `Task created: "${task.title}" (${id}) with status ${task.status}.`,
   })
-  if (tasks[id].status === 'queued') {
+  if (task.status === 'queued') {
     enqueueTask(id)
   }
   notify('tasks')
-  return NextResponse.json(tasks[id])
+  return NextResponse.json(task)
 }

@@ -6,6 +6,7 @@ import { formatZodError } from '@/lib/validation/schemas'
 import { loadSettings, loadTasks, logActivity, upsertStoredItems } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import type { BoardTask } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 const MAX_IMPORT_LIMIT = 200
 const BODY_CHAR_LIMIT = 12_000
@@ -131,7 +132,7 @@ export function buildGitHubIssueTaskTags(issue: GitHubIssueRecord, repoFullName:
     repoFullName,
     ...(issue.labels || []).map(normalizeLabelName),
   ]
-  return Array.from(new Set(raw.map(normalizeTag).filter(Boolean))).slice(0, 8)
+  return dedup(raw.map(normalizeTag).filter(Boolean)).slice(0, 8)
 }
 
 function findExistingImportedTask(

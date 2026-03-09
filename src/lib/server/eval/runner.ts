@@ -9,6 +9,7 @@ import { loadSessions, saveSessions, loadAgents, loadCredentials, decryptKey } f
 import { executeSessionChatTurn } from '../chat-execution'
 import { WORKSPACE_DIR } from '../data-dir'
 import type { Session } from '@/types'
+import { errorMessage } from '@/lib/shared-utils'
 
 export function resolveEvalSessionCwd(runId: string): string {
   const dir = path.join(WORKSPACE_DIR, 'evals', runId)
@@ -98,7 +99,7 @@ export async function runEvalScenario(scenarioId: string, agentId: string): Prom
     run.endedAt = Date.now()
   } catch (err: unknown) {
     run.status = 'failed'
-    run.error = err instanceof Error ? err.message : String(err)
+    run.error = errorMessage(err)
     run.endedAt = Date.now()
   } finally {
     // Clean up eval session

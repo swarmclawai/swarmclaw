@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react'
 import type { Message } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 /* ─── Heartbeat meta parsing (shared with message-bubble) ─── */
 
@@ -203,7 +204,7 @@ export function HeartbeatHistoryPanel({ messages, agentHeartbeatGoal, onClose }:
               const goal = entry.meta?.goal || agentHeartbeatGoal
               const isExpanded = expandedIdx === i
               const toolNames = entry.msg.toolEvents?.map((te) => te.name).filter(Boolean) ?? []
-              const uniqueTools = [...new Set(toolNames)]
+              const uniqueTools = dedup(toolNames)
 
               return (
                 <button

@@ -9,6 +9,7 @@ import { safePath, truncate } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { cancelWatchJob, createWatchJob, getWatchJob, listWatchJobs } from '../watch-jobs'
 import { ensureSessionBrowserProfileId, loadBrowserSessionRecord } from '../browser-state'
+import { errorMessage } from '@/lib/shared-utils'
 
 type WatchKind = 'time' | 'http' | 'file' | 'task' | 'webhook' | 'page'
 
@@ -89,7 +90,7 @@ async function createDurableWatch(
 }
 
 function getErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
+  return errorMessage(err)
 }
 
 /**

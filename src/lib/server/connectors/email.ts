@@ -3,8 +3,8 @@ import { createTransport, type Transporter } from 'nodemailer'
 import { simpleParser } from 'mailparser'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
-import { normalizeConnectorIngressResult } from './types'
-import { isNoMessage } from './manager'
+import { resolveConnectorIngressReply } from './ingress-delivery'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface EmailConfig {
   imapHost: string
@@ -93,7 +93,7 @@ const email: PlatformConnector = {
         }
       } catch (err: unknown) {
         connected = false
-        const msg = err instanceof Error ? err.message : String(err)
+        const msg = errorMessage(err)
         console.error(`[email] IMAP connection failed: ${msg}`)
         throw err
       }
@@ -106,7 +106,7 @@ const email: PlatformConnector = {
       try {
         lock = await imap.getMailboxLock(folder)
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
+        const msg = errorMessage(err)
         console.error(`[email] Failed to acquire mailbox lock: ${msg}`)
         connected = false
         return
@@ -126,7 +126,7 @@ const email: PlatformConnector = {
           try {
             await processMessage(msg)
           } catch (err: unknown) {
-            const errMsg = err instanceof Error ? err.message : String(err)
+            const errMsg = errorMessage(err)
             console.error(`[email] Error processing message UID ${msg.uid}: ${errMsg}`)
           }
           if (msg.uid > highwaterUid) {
@@ -134,7 +134,7 @@ const email: PlatformConnector = {
           }
         }
       } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err)
+        const errMsg = errorMessage(err)
         // A fetch on an empty range can throw; that's normal
         if (!errMsg.includes('Nothing to fetch')) {
           console.error(`[email] Poll error: ${errMsg}`)
@@ -192,15 +192,13 @@ const email: PlatformConnector = {
       }
 
       try {
-        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
-        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
-        const response = routeResult.visibleText
-        if (isNoMessage(response)) return
+        const reply = await resolveConnectorIngressReply(onMessage, inbound)
+        if (!reply) return
 
         // Reply via SMTP
-        await sendReply(channelId, response)
+        await sendReply(channelId, reply.visibleText)
       } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err)
+        const errMsg = errorMessage(err)
         console.error(`[email] Error handling message from ${fromAddr}: ${errMsg}`)
       }
     }
@@ -232,7 +230,7 @@ const email: PlatformConnector = {
 
     pollTimer = setInterval(() => {
       pollForNewMessages().catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err)
+        const msg = errorMessage(err)
         console.error(`[email] Poll interval error: ${msg}`)
       })
     }, pollMs)

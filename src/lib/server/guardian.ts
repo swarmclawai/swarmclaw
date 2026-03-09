@@ -1,6 +1,7 @@
 import { execSync } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import { errorMessage } from '@/lib/shared-utils'
 
 /**
  * OpenClaw Guardian — Auto-Rollback capability.
@@ -29,6 +30,6 @@ export function performGuardianRollback(cwd: string): { ok: boolean; reason?: st
     return { ok: true }
   } catch (err: unknown) {
     console.error('[guardian] Auto-rollback failed:', err)
-    return { ok: false, reason: `Git operation failed: ${err instanceof Error ? err.message : String(err)}` }
+    return { ok: false, reason: `Git operation failed: ${errorMessage(err)}` }
   }
 }

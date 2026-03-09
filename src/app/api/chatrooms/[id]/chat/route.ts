@@ -25,6 +25,7 @@ import { applyAgentReactionsFromText } from '@/lib/server/chatroom-orchestration
 import { resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/assistant-control'
 import type { Chatroom, ChatroomMessage, Agent } from '@/types'
+import { errorMessage } from '@/lib/shared-utils'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -283,7 +284,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })
             return []
           } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err)
+            const msg = errorMessage(err)
             markProviderFailure(agent.provider, msg)
             writeEvent({ t: 'err', text: `Agent ${agent.name} error: ${msg}`, agentId: agent.id })
             writeEvent({ t: 'cr_agent_done', agentId: agent.id, agentName: agent.name })
@@ -336,7 +337,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
 
       processAgents().catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err)
+        const msg = errorMessage(err)
         writeEvent({ t: 'err', text: msg })
         writeEvent({ t: 'done' })
         if (!closed) {

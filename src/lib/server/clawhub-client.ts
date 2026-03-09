@@ -1,4 +1,5 @@
 import type { ClawHubSkill } from '@/types'
+import { errorMessage } from '@/lib/shared-utils'
 
 export interface ClawHubSearchResult {
   skills: ClawHubSkill[]
@@ -71,7 +72,7 @@ export async function searchClawHub(query: string, page = 1, limit = 20): Promis
 
     return { skills, total, page, nextCursor: data.nextCursor }
   } catch (err: unknown) {
-    console.warn('[clawhub] search failed:', err instanceof Error ? err.message : String(err))
+    console.warn('[clawhub] search failed:', errorMessage(err))
     return { skills: [], total: 0, page }
   }
 }

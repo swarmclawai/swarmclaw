@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import type { Agent, MarketplacePlugin, PluginMeta } from '@/types'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { dedup } from '@/lib/shared-utils'
 
 type InstalledTab = 'core' | 'extensions'
 type TopTab = InstalledTab | 'marketplace'
@@ -559,7 +560,7 @@ function MarketplaceTab({ marketplace, loading, installing, installedFilenames, 
     )
   }
 
-  const allTags = Array.from(new Set(marketplace.flatMap((p) => p.tags ?? []))).sort()
+  const allTags = dedup(marketplace.flatMap((p) => p.tags ?? [])).sort()
   const q = search.toLowerCase()
   const filtered = marketplace
     .filter((p) => {

@@ -5,6 +5,7 @@ import { api } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { WalletTransaction } from '@/types'
 import { formatWalletAmount, getWalletAssetSymbol, getWalletAtomicAmount } from '@/lib/wallet'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface WalletApprovalDialogProps {
   transaction: WalletTransaction
@@ -28,7 +29,7 @@ export function WalletApprovalDialog({ transaction, walletAddress, onClose, onRe
       onResolved()
       onClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errorMessage(err))
     } finally {
       setSubmitting(false)
     }

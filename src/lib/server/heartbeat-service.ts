@@ -15,6 +15,7 @@ import { buildIdentityContinuityContext } from './identity-continuity'
 import { buildMainLoopHeartbeatPrompt, isMainSession } from './main-agent-loop'
 import { ensureAgentThreadSession } from './agent-thread-session'
 import { isAgentDisabled } from './agent-availability'
+import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 
 const HEARTBEAT_TICK_MS = 60_000
 const MAX_CONCURRENT_HEARTBEATS = 5
@@ -33,14 +34,12 @@ interface HeartbeatState {
   failures: Map<string, FailureRecord>
 }
 
-const globalKey = '__swarmclaw_heartbeat_service__' as const
-const globalScope = globalThis as typeof globalThis & { [globalKey]?: HeartbeatState }
-const state: HeartbeatState = globalScope[globalKey] ?? (globalScope[globalKey] = {
+const state: HeartbeatState = hmrSingleton<HeartbeatState>('__swarmclaw_heartbeat_service__', () => ({
   timer: null,
   running: false,
   lastBySession: new Map<string, number>(),
   failures: new Map<string, FailureRecord>(),
-})
+}))
 
 function parseIntBounded(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === 'number'
@@ -533,7 +532,7 @@ async function tickHeartbeats() {
         count: (prev?.count ?? 0) + 1,
         lastFailedAt: Date.now(),
       })
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       log.warn('heartbeat', `Heartbeat run failed for session ${sid}`, msg)
     })
   }

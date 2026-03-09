@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { runEvalSuite } from '@/lib/server/eval/runner'
+import { errorMessage } from '@/lib/shared-utils'
 
 const SuiteSchema = z.object({
   agentId: z.string().min(1),
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
     return NextResponse.json(result)
   } catch (err: unknown) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      { error: errorMessage(err) },
       { status: 500 },
     )
   }

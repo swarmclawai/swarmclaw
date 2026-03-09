@@ -1,4 +1,5 @@
 import type { AppSettings } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 export type CapabilityPolicyMode = 'permissive' | 'balanced' | 'strict'
 
@@ -117,7 +118,7 @@ function normalizeList(value: unknown): string[] {
     if (!normalized) continue
     names.push(normalized)
   }
-  return Array.from(new Set(names))
+  return dedup(names)
 }
 
 function getSettingsList(settings: Record<string, unknown>, key: string): string[] {
@@ -227,7 +228,7 @@ export function resolveSessionToolPolicy(
   } = parsePolicyConfig(normalizedSettings)
 
   const requestedPlugins = Array.isArray(sessionTools)
-    ? Array.from(new Set(sessionTools.map((id) => normalizeName(id)).filter(Boolean)))
+    ? dedup(sessionTools.map((id) => normalizeName(id)).filter(Boolean))
     : []
 
   const enabledPlugins: string[] = []

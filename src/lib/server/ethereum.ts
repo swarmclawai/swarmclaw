@@ -15,6 +15,7 @@ import {
 } from 'ethers'
 
 import { decryptKey, encryptKey } from './storage'
+import { errorMessage } from '@/lib/shared-utils'
 
 export type EvmNetworkId = 'ethereum' | 'arbitrum' | 'base'
 
@@ -490,7 +491,7 @@ export async function simulateEthereumTransaction(
       `estimate gas on ${network.label}`,
     )).toString()
   } catch (err: unknown) {
-    callError = err instanceof Error ? err.message : String(err)
+    callError = errorMessage(err)
   }
 
   try {
@@ -499,7 +500,7 @@ export async function simulateEthereumTransaction(
       `simulate transaction call on ${network.label}`,
     )
   } catch (err: unknown) {
-    if (!callError) callError = err instanceof Error ? err.message : String(err)
+    if (!callError) callError = errorMessage(err)
   }
 
   return {

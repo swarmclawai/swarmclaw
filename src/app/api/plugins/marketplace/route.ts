@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { inferPluginPublisherSourceFromUrl } from '@/lib/plugin-sources'
 import { searchClawHub } from '@/lib/server/clawhub-client'
 import type { PluginCatalogSource } from '@/types'
+import { errorMessage } from '@/lib/shared-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,7 +78,7 @@ export async function GET(req: Request) {
     } catch (err: unknown) {
       console.warn('[marketplace] SC Registry failed:', {
         registryUrl: registry.url,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       })
     }
   }
@@ -98,7 +99,7 @@ export async function GET(req: Request) {
       catalogSource: 'clawhub',
     })))
   } catch (err: unknown) {
-    console.warn('[marketplace] ClawHub failed:', err instanceof Error ? err.message : String(err))
+    console.warn('[marketplace] ClawHub failed:', errorMessage(err))
   }
 
   allPlugins.sort((a, b) => {

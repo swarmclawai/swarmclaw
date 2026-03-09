@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getPluginManager, sanitizePluginFilename } from '@/lib/server/plugins'
+import { errorMessage } from '@/lib/shared-utils'
 import {
   inferPluginInstallSourceFromUrl,
   inferPluginPublisherSourceFromUrl,
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
     })
     return json({ ok: true, filename: installed.filename, hash: installed.sourceHash }, 200, origin)
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errorMessage(err)
     const isTimeout = /abort|timeout/i.test(msg)
     const status = /valid HTTPS URL|Filename|Invalid filename|HTML page|too large/i.test(msg)
       ? 400

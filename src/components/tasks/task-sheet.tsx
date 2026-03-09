@@ -11,6 +11,7 @@ import { DirBrowser } from '@/components/shared/dir-browser'
 import { SheetFooter } from '@/components/shared/sheet-footer'
 import { inputClass } from '@/components/shared/form-styles'
 import type { BoardTask, TaskComment, TaskQualityGateConfig } from '@/types'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 import { SectionLabel } from '@/components/shared/section-label'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 
@@ -187,7 +188,7 @@ export function TaskSheet() {
         }
       }
     } catch (err: unknown) {
-      setDepError(err instanceof Error ? err.message : String(err))
+      setDepError(errorMessage(err))
       return
     }
     setDepError(null)
@@ -208,7 +209,7 @@ export function TaskSheet() {
       const data = await res.json()
       if (data.url) setImages((prev) => [...prev, data.url])
     } catch (err: unknown) {
-      console.error('Image upload failed:', err instanceof Error ? err.message : String(err))
+      console.error('Image upload failed:', errorMessage(err))
     }
     setUploading(false)
     e.target.value = ''
@@ -758,7 +759,7 @@ export function TaskSheet() {
             list="tag-suggestions"
           />
           <datalist id="tag-suggestions">
-            {Array.from(new Set(Object.values(tasks).flatMap((t) => t.tags || [])))
+            {dedup(Object.values(tasks).flatMap((t) => t.tags || []))
               .filter((t) => !tags.includes(t) && t.includes(tagInput.toLowerCase()))
               .slice(0, 10)
               .map((t) => <option key={t} value={t} />)}

@@ -18,6 +18,7 @@ import { createNotification } from './create-notification'
 import { notify } from './ws-hub'
 import { decryptKey, encryptKey, loadSettings, saveSettings } from './storage'
 import { buildPluginHooks } from './plugins-approval-guidance'
+import { errorMessage } from '@/lib/shared-utils'
 
 const PLUGINS_DIR = path.join(DATA_DIR, 'plugins')
 const PLUGIN_WORKSPACES_DIR = path.join(PLUGINS_DIR, '.workspaces')
@@ -458,7 +459,7 @@ function normalizePlugin(mod: unknown): Plugin | null {
     } catch (err: unknown) {
       log.error('plugins', 'OpenClaw register() failed', {
         pluginName,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       })
       return null
     }
@@ -499,7 +500,7 @@ function normalizePlugin(mod: unknown): Plugin | null {
     } catch (err: unknown) {
       log.error('plugins', 'OpenClaw activate() failed', {
         pluginName: oc.name,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       })
       return null
     }
@@ -532,7 +533,7 @@ function createPluginRequire(): NodeRequire | null {
     return createRequire(path.join(process.cwd(), 'package.json'))
   } catch (err: unknown) {
     log.warn('plugins', 'createRequire failed; external plugins disabled', {
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     })
     return null
   }
@@ -568,7 +569,7 @@ class PluginManager {
       })
       watcher.on('error', (err: unknown) => {
         log.warn('plugins', 'Plugin watcher disabled after runtime watch failure', {
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         })
         if (this.watcher === watcher) {
           try { watcher.close() } catch { /* ignore */ }
@@ -579,7 +580,7 @@ class PluginManager {
       this.watcher = watcher
     } catch (err: unknown) {
       log.warn('plugins', 'Failed to watch plugins directory', {
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       })
     }
   }
@@ -768,7 +769,7 @@ class PluginManager {
     try {
       fs.writeFileSync(PLUGIN_FAILURES, JSON.stringify(state, null, 2))
     } catch (err: unknown) {
-      log.warn('plugins', 'Failed to persist plugin failure state', { error: err instanceof Error ? err.message : String(err) })
+      log.warn('plugins', 'Failed to persist plugin failure state', { error: errorMessage(err) })
     }
   }
 
@@ -792,7 +793,7 @@ class PluginManager {
     } catch (err: unknown) {
       log.error('plugins', 'Failed to write plugins config while auto-disabling plugin', {
         pluginId: id,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       })
       return
     }
@@ -821,7 +822,7 @@ class PluginManager {
   }
 
   private markPluginFailure(id: string, stage: string, err: unknown, disableEligible: boolean): void {
-    const errorText = err instanceof Error ? err.message : String(err)
+    const errorText = errorMessage(err)
     const state = this.readFailureState()
     const failureKey = this.canonicalPluginId(id)
     const nextCount = (state[failureKey]?.count || 0) + 1
@@ -855,7 +856,7 @@ class PluginManager {
     try {
       this.clearFailureState(id)
     } catch (err: unknown) {
-      log.warn('plugins', 'markPluginSuccess failed', { error: err instanceof Error ? err.message : String(err), pluginId: id })
+      log.warn('plugins', 'markPluginSuccess failed', { error: errorMessage(err), pluginId: id })
     }
   }
 
@@ -942,7 +943,7 @@ class PluginManager {
           } catch (err: unknown) {
             log.error('plugins', 'Failed to load external plugin', {
               pluginId: file,
-              error: err instanceof Error ? err.message : String(err),
+              error: errorMessage(err),
             })
             this.markPluginFailure(file, 'load.require', err, true)
           }
@@ -1039,7 +1040,7 @@ class PluginManager {
             pluginId: id,
             pluginName: p.meta.name,
             hookName: String(hookName),
-            error: err instanceof Error ? err.message : String(err),
+            error: errorMessage(err),
           })
           this.markPluginFailure(id, `hook.${String(hookName)}`, err, true)
         }
@@ -1070,7 +1071,7 @@ class PluginManager {
           pluginId: id,
           pluginName: p.meta.name,
           toolName: params.toolName,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         })
         this.markPluginFailure(id, 'hook.beforeToolExec', err, true)
       }
@@ -1101,7 +1102,7 @@ class PluginManager {
             pluginId: id,
             pluginName: p.meta.name,
             hookName,
-            error: err instanceof Error ? err.message : String(err),
+            error: errorMessage(err),
           })
           this.markPluginFailure(id, `hook.${String(hookName)}`, err, true)
         }
@@ -1129,7 +1130,7 @@ class PluginManager {
         log.error('plugins', 'getAgentContext hook failed', {
           pluginId: id,
           pluginName: p.meta.name,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         })
         this.markPluginFailure(id, 'hook.getAgentContext', err, true)
       }
@@ -1154,7 +1155,7 @@ class PluginManager {
           lines.push(`- ${result}`)
         }
       } catch (err: unknown) {
-        log.error('plugins', 'getCapabilityDescription hook failed', { pluginId: id, error: err instanceof Error ? err.message : String(err) })
+        log.error('plugins', 'getCapabilityDescription hook failed', { pluginId: id, error: errorMessage(err) })
       }
     }
 
@@ -1182,7 +1183,7 @@ class PluginManager {
           }
         }
       } catch (err: unknown) {
-        log.error('plugins', 'getOperatingGuidance hook failed', { pluginId: id, error: err instanceof Error ? err.message : String(err) })
+        log.error('plugins', 'getOperatingGuidance hook failed', { pluginId: id, error: errorMessage(err) })
       }
     }
 
@@ -1219,7 +1220,7 @@ class PluginManager {
       } catch (err: unknown) {
         log.error('plugins', 'getApprovalGuidance hook failed', {
           pluginId: id,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         })
       }
     }
@@ -1506,7 +1507,7 @@ class PluginManager {
 
       return metas
     } catch (err: unknown) {
-      log.error('plugins', 'listPlugins failed', { error: err instanceof Error ? err.message : String(err) })
+      log.error('plugins', 'listPlugins failed', { error: errorMessage(err) })
       return []
     }
   }
@@ -1603,7 +1604,7 @@ class PluginManager {
         dependencyInstalledAt: Date.now(),
       })
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       this.setMeta(sanitizedFilename, {
         packageManager,
         dependencyInstallStatus: 'error',
@@ -1721,7 +1722,7 @@ export function getPluginManager(): PluginManager {
     }
     return _manager
   } catch (err: unknown) {
-    log.error('plugins', 'getPluginManager critical failure', { error: err instanceof Error ? err.message : String(err) })
+    log.error('plugins', 'getPluginManager critical failure', { error: errorMessage(err) })
     throw err
   }
 }

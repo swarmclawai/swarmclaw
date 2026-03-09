@@ -2,7 +2,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { NextResponse } from 'next/server'
+import { DATA_DIR } from '@/lib/server/data-dir'
 import { loadAgents, loadCredentials, loadSettings } from '@/lib/server/storage'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 
 type CheckStatus = 'pass' | 'warn' | 'fail'
 
@@ -38,7 +40,7 @@ function run(command: string, args: string[], timeoutMs = 8_000): CommandResult 
     }
     return { ok: true, output: (result.stdout || '').trim() }
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return { ok: false, output: '', error: message }
   }
 }
@@ -77,7 +79,7 @@ function testDataWriteAccess(dataDir: string): { ok: boolean; error?: string } {
     fs.unlinkSync(probe)
     return { ok: true }
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return { ok: false, error: message }
   }
 }
@@ -124,13 +126,12 @@ export async function GET(req: Request) {
     actions.push('Run `npm run setup:easy` to install Deno automatically, or install Deno from https://deno.land/#installation.')
   }
 
-  const dataDir = path.join(process.cwd(), 'data')
-  const dataWrite = testDataWriteAccess(dataDir)
+  const dataWrite = testDataWriteAccess(DATA_DIR)
   if (dataWrite.ok) {
-    pushCheck(checks, 'data-dir', 'Data directory permissions', 'pass', `Writable: ${dataDir}`, true)
+    pushCheck(checks, 'data-dir', 'Data directory permissions', 'pass', `Writable: ${DATA_DIR}`, true)
   } else {
-    pushCheck(checks, 'data-dir', 'Data directory permissions', 'fail', dataWrite.error || `Cannot write to ${dataDir}`, true)
-    actions.push(`Fix filesystem permissions for ${dataDir}.`)
+    pushCheck(checks, 'data-dir', 'Data directory permissions', 'fail', dataWrite.error || `Cannot write to ${DATA_DIR}`, true)
+    actions.push(`Fix filesystem permissions for ${DATA_DIR}.`)
   }
 
   const envFile = path.join(process.cwd(), '.env.local')
@@ -259,7 +260,7 @@ export async function GET(req: Request) {
     checkedAt,
     summary,
     checks,
-    actions: Array.from(new Set(actions)),
+    actions: dedup(actions),
     git: {
       localSha,
       remoteSha,

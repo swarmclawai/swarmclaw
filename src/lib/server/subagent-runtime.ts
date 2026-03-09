@@ -41,6 +41,7 @@ import {
   type LineageTree,
   type SubagentState,
 } from './subagent-lineage'
+import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,11 +106,7 @@ export interface SubagentContext {
 // Handle Registry (for promise-based waiting instead of polling)
 // ---------------------------------------------------------------------------
 
-const HANDLE_KEY = '__swarmclaw_subagent_handles__' as const
-const handleScope = globalThis as typeof globalThis & {
-  [HANDLE_KEY]?: Map<string, SubagentHandle>
-}
-const handleRegistry = handleScope[HANDLE_KEY] ?? (handleScope[HANDLE_KEY] = new Map())
+const handleRegistry = hmrSingleton('__swarmclaw_subagent_handles__', () => new Map<string, SubagentHandle>())
 
 /** Retrieve a handle by job ID (for promise-based waiting). */
 export function getHandle(jobId: string): SubagentHandle | null {
@@ -305,7 +302,7 @@ export function spawnSubagent(
       return buildResult(job.id, sid, lineageNode, agent, 'completed', responseText, null)
     })
     .catch((err: unknown): SubagentResult => {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       const latest = getDelegationJob(job.id)
       const node = getLineageNode(lineageNode.id)
       if (latest?.status === 'cancelled' || node?.status === 'cancelled') {

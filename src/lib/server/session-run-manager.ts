@@ -8,6 +8,7 @@ import { isInternalHeartbeatRun } from './heartbeat-source'
 import { cleanupSessionBrowser } from './session-tools/web'
 import { cancelDelegationJobsForParentSession } from './delegation-jobs'
 import { handleMainLoopRunResult } from './main-agent-loop'
+import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 
 export type SessionRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type SessionQueueMode = 'followup' | 'steer' | 'collect'
@@ -62,15 +63,13 @@ interface RuntimeState {
 
 const MAX_RECENT_RUNS = 500
 const COLLECT_COALESCE_WINDOW_MS = 1500
-const globalKey = '__swarmclaw_session_run_manager__' as const
-const globalScope = globalThis as typeof globalThis & { [globalKey]?: RuntimeState }
-const state: RuntimeState = globalScope[globalKey] ?? (globalScope[globalKey] = {
+const state: RuntimeState = hmrSingleton<RuntimeState>('__swarmclaw_session_run_manager__', () => ({
   runningByExecution: new Map<string, QueueEntry>(),
   queueByExecution: new Map<string, QueueEntry[]>(),
   runs: new Map<string, SessionRunRecord>(),
   recentRunIds: [],
   promises: new Map<string, Promise<ExecuteChatTurnResult>>(),
-})
+}))
 
 function now() {
   return Date.now()
@@ -312,7 +311,7 @@ async function drainExecution(executionKey: string): Promise<void> {
           })
         } catch (err: unknown) {
           log.warn('session-run', `Main loop follow-up enqueue failed for ${next.run.sessionId}`, {
-            error: err instanceof Error ? err.message : String(err),
+            error: errorMessage(err),
           })
         }
       }, Math.max(0, followup.delayMs || 0))
@@ -322,7 +321,7 @@ async function drainExecution(executionKey: string): Promise<void> {
     const aborted = next.signalController.signal.aborted
     next.run.status = aborted ? 'cancelled' : 'failed'
     next.run.endedAt = now()
-    next.run.error = err instanceof Error ? err.message : String(err)
+    next.run.error = errorMessage(err)
     emitRunMeta(next, next.run.status, { error: next.run.error })
     log.error('session-run', `Run failed ${next.run.id}`, {
       sessionId: next.run.sessionId,

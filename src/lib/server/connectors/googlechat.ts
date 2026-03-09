@@ -1,6 +1,5 @@
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
-import { normalizeConnectorIngressResult } from './types'
-import { isNoMessage } from './manager'
+import { resolveConnectorIngressReply } from './ingress-delivery'
 
 const googlechat: PlatformConnector = {
   async start(connector, botToken, onMessage): Promise<ConnectorInstance> {
@@ -71,12 +70,9 @@ const googlechat: PlatformConnector = {
         text,
       }
 
-      const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
-      if (routeResult.managerHandled || routeResult.delivery === 'silent') return {}
-
-      const response = routeResult.visibleText
-      if (!response || isNoMessage(response)) return {}
-      return { text: response }
+      const reply = await resolveConnectorIngressReply(onMessage, inbound)
+      if (!reply) return {}
+      return { text: reply.visibleText }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

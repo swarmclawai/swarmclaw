@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import type { Agent, Session } from '@/types'
 import { AgentAvatar } from './agent-avatar'
 import { toast } from 'sonner'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface Props {
   inSidebar?: boolean
@@ -181,7 +182,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
         const msgs = await fetchMessages(state.currentSessionId)
         setMessages(msgs)
       } catch (err: unknown) {
-        console.error('[agent-chat-list] Failed to load messages:', err instanceof Error ? err.message : String(err))
+        console.error('[agent-chat-list] Failed to load messages:', errorMessage(err))
       }
     }
     onSelect?.()

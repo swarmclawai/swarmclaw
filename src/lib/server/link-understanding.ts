@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio'
+import { dedup } from '@/lib/shared-utils'
 import { truncate } from './session-tools/context'
 
 const BARE_LINK_RE = /https?:\/\/\S+/gi
@@ -11,7 +12,7 @@ export async function runLinkUnderstanding(message: string): Promise<string[]> {
   const links = message.match(BARE_LINK_RE)
   if (!links || links.length === 0) return []
 
-  const uniqueLinks = Array.from(new Set(links)).slice(0, 3) // Limit to first 3 links
+  const uniqueLinks = dedup(links).slice(0, 3) // Limit to first 3 links
   const results: string[] = []
 
   for (const url of uniqueLinks) {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getExecConfig, setExecConfig } from '@/lib/server/openclaw-exec-config'
 import type { ExecApprovalConfig } from '@/types'
+import { errorMessage } from '@/lib/shared-utils'
 
 /** GET ?agentId=X — fetch exec approval config */
 export async function GET(req: Request) {
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
     const snapshot = await getExecConfig(agentId)
     return NextResponse.json(snapshot)
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }
@@ -35,7 +36,7 @@ export async function PUT(req: Request) {
     const result = await setExecConfig(agentId, config, baseHash ?? '')
     return NextResponse.json(result)
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

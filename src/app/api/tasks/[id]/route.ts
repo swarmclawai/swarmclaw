@@ -1,10 +1,7 @@
-import { genId } from '@/lib/id'
 import { NextResponse } from 'next/server'
 import { loadAgents, loadSettings, loadTasks, logActivity, upsertStoredItems, upsertTask } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { disableSessionHeartbeat, enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/queue'
-import { ensureTaskCompletionReport } from '@/lib/server/task-reports'
-import { formatValidationFailure, validateTaskCompletion } from '@/lib/server/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
 import { notify } from '@/lib/server/ws-hub'
 import { createNotification } from '@/lib/server/create-notification'
@@ -12,7 +9,9 @@ import { enqueueSystemEvent } from '@/lib/server/system-events'
 import { requestHeartbeatNow } from '@/lib/server/heartbeat-wake'
 import { validateDag, cascadeUnblock } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
-import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
+import {
+  applyTaskPatch,
+} from '@/lib/server/task-service'
 import type { BoardTask } from '@/types'
 import '@/lib/server/builtin-plugins'
 
@@ -53,43 +52,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     tasks[id].comments.push(body.appendComment)
     tasks[id].updatedAt = Date.now()
   } else {
-    if (Object.prototype.hasOwnProperty.call(body, 'qualityGate')) {
-      body.qualityGate = body.qualityGate
-        ? normalizeTaskQualityGate(body.qualityGate, settings)
-        : null
-    }
-    Object.assign(tasks[id], body, { updatedAt: Date.now() })
-    // Explicitly clear nullable fields when sent as null (Object.assign copies null but not undefined)
-    if (body.projectId === null) delete tasks[id].projectId
+    applyTaskPatch({
+      task: tasks[id],
+      patch: body as Record<string, unknown>,
+      now: Date.now(),
+      settings,
+      preserveCompletedAt: true,
+      clearProjectIdWhenNull: true,
+      invalidCompletionCommentAuthor: 'System',
+    })
   }
   tasks[id].id = id // prevent id overwrite
 
   // Set archivedAt when transitioning to archived
   if (prevStatus !== 'archived' && tasks[id].status === 'archived') {
     tasks[id].archivedAt = Date.now()
-  }
-
-  // Re-validate any completed task updates so "completed" always means actually done.
-  if (tasks[id].status === 'completed') {
-    const report = ensureTaskCompletionReport(tasks[id])
-    if (report?.relativePath) tasks[id].completionReportPath = report.relativePath
-    const validation = validateTaskCompletion(tasks[id], { report, settings })
-    tasks[id].validation = validation
-    if (validation.ok) {
-      tasks[id].completedAt = tasks[id].completedAt || Date.now()
-      tasks[id].error = null
-    } else {
-      tasks[id].status = 'failed'
-      tasks[id].completedAt = null
-      tasks[id].error = formatValidationFailure(validation.reasons).slice(0, 500)
-      if (!tasks[id].comments) tasks[id].comments = []
-      tasks[id].comments.push({
-        id: genId(),
-        author: 'System',
-        text: `Completion validation failed.\n\n${validation.reasons.map((r) => `- ${r}`).join('\n')}`,
-        createdAt: Date.now(),
-      })
-    }
   }
 
   upsertTask(id, tasks[id])

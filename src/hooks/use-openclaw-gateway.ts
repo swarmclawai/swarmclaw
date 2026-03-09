@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api-client'
+import { errorMessage } from '@/lib/shared-utils'
 import { useWs } from './use-ws'
 
 /** Call an OpenClaw gateway RPC method via the proxy route. */
@@ -27,7 +28,7 @@ export function useOpenClawRpc<T = unknown>(method: string | null, params?: unkn
         setData(res.result)
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }

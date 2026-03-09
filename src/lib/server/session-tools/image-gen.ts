@@ -7,6 +7,7 @@ import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { UPLOAD_DIR } from '../storage'
 import type { ToolBuildContext } from './context'
+import { errorMessage, sleep } from '@/lib/shared-utils'
 
 type ImageProvider = 'openai' | 'stability' | 'replicate' | 'fal' | 'together' | 'fireworks' | 'bfl' | 'custom'
 
@@ -87,7 +88,7 @@ async function generateReplicate(prompt: string, size: string, cfg: PluginConfig
   if (prediction.status !== 'succeeded' && prediction.status !== 'failed' && prediction.urls?.get) {
     const deadline = Date.now() + 120_000
     while (prediction.status !== 'succeeded' && prediction.status !== 'failed' && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 2000))
+      await sleep(2000)
       const pollRes = await fetch(prediction.urls.get, {
         headers: { Authorization: `Bearer ${cfg.apiKey}` },
         signal: AbortSignal.timeout(10_000),
@@ -174,7 +175,7 @@ async function generateBFL(prompt: string, size: string, cfg: PluginConfig): Pro
   // Poll for result
   const deadline = Date.now() + 120_000
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 2000))
+    await sleep(2000)
     const pollRes = await fetch(pollingUrl, {
       headers: { 'x-key': cfg.apiKey },
       signal: AbortSignal.timeout(10_000),
@@ -270,7 +271,7 @@ async function executeImageGen(args: Record<string, unknown>): Promise<string> {
     const result = await generate(prompt, size, quality, cfg)
     return saveImageResult(result, prompt, filename)
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

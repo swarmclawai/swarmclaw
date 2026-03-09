@@ -5,6 +5,7 @@ import type { AgentWallet, WalletAssetBalance } from '@/types'
 
 import { getEvmNetworkConfig, getProviderForNetwork, type EvmNetworkId } from './ethereum'
 import { getWalletPortfolioSnapshot } from './wallet-service'
+import { errorMessage } from '@/lib/shared-utils'
 
 const PARASWAP_API_BASE = 'https://api.paraswap.io'
 const PARASWAP_VERSION = '6.2'
@@ -470,6 +471,6 @@ export async function prepareEvmSwapPlan(input: PrepareEvmSwapPlanInput): Promis
 }
 
 export function isLikelyRetryableSwapError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err)
+  const message = errorMessage(err)
   return /rate|price|slippage|expired|call exception|execution reverted|insufficient output/i.test(message)
 }

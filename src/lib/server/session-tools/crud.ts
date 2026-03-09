@@ -21,8 +21,7 @@ import {
   decryptKey,
 } from '../storage'
 import { resolveScheduleName } from '@/lib/schedule-name'
-import { findDuplicateSchedule, findEquivalentSchedules, type ScheduleLike } from '@/lib/schedule-dedupe'
-import { computeTaskFingerprint, findDuplicateTask } from '@/lib/task-dedupe'
+import type { ScheduleLike } from '@/lib/schedule-dedupe'
 import {
   hasManagedAgentAssignmentInput,
   isDelegationTaskPayload,
@@ -30,13 +29,23 @@ import {
   resolveManagedAgentAssignment,
   validateManagedAgentAssignment,
 } from '@/lib/server/agent-assignment'
-import { normalizeTaskQualityGate } from '@/lib/server/task-quality-gate'
-import { normalizeSchedulePayload } from '@/lib/server/schedule-normalization'
 import { buildProjectSnapshot, ensureProjectWorkspace, normalizeProjectCreateInput, normalizeProjectPatchInput } from '@/lib/server/project-utils'
+import {
+  getScheduleClusterIds,
+  prepareScheduleCreate,
+  prepareScheduleUpdate,
+} from '@/lib/server/schedule-service'
+import {
+  applyTaskContinuationDefaults,
+  applyTaskPatch,
+  deriveTaskTitle,
+  prepareTaskCreation,
+} from '@/lib/server/task-service'
 import type { ToolBuildContext } from './context'
 import { safePath, findBinaryOnPath } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import type { BoardTask } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 // ---------------------------------------------------------------------------
 // Document helpers
@@ -98,24 +107,6 @@ function trimDocumentContent(text: string): string {
   const normalized = text.replace(/\r\n/g, '\n').replace(/\u0000/g, '').trim()
   if (normalized.length <= MAX_DOCUMENT_TEXT_CHARS) return normalized
   return normalized.slice(0, MAX_DOCUMENT_TEXT_CHARS)
-}
-
-function deriveTaskTitle(input: { title?: unknown; description?: unknown }): string {
-  const explicit = typeof input.title === 'string' ? input.title.replace(/\s+/g, ' ').trim() : ''
-  if (explicit && !/^untitled task$/i.test(explicit)) return explicit.slice(0, 120)
-
-  const description = typeof input.description === 'string'
-    ? input.description.replace(/\s+/g, ' ').trim()
-    : ''
-  if (!description) return ''
-
-  const firstSentence = description.split(/[.!?]\s+/)[0] || description
-  const compact = firstSentence
-    .replace(/^please\s+/i, '')
-    .replace(/^(create|make|build|implement|write)\s+/i, '')
-    .trim()
-  if (!compact) return ''
-  return compact.slice(0, 120)
 }
 
 function validateAgentSoulPayload(value: unknown): string | null {
@@ -235,60 +226,6 @@ function sanitizeConnectorCrudPayload(
   return out
 }
 
-const TASK_STATUS_VALUES = new Set([
-  'backlog',
-  'queued',
-  'running',
-  'completed',
-  'failed',
-  'archived',
-])
-
-function normalizeTaskStatusInput(status: unknown, prevStatus?: string): string | null {
-  if (typeof status !== 'string') return null
-  const normalized = status.trim().toLowerCase()
-  if (!TASK_STATUS_VALUES.has(normalized)) return null
-  if (normalized === 'running' && prevStatus !== 'running') return 'queued'
-  return normalized
-}
-
-function normalizeTaskIdList(value: unknown): string[] {
-  const rawValues = Array.isArray(value)
-    ? value
-    : typeof value === 'string'
-      ? value.split(',')
-      : []
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const entry of rawValues) {
-    const normalized = typeof entry === 'string' ? entry.trim() : ''
-    if (!normalized || seen.has(normalized)) continue
-    seen.add(normalized)
-    out.push(normalized)
-  }
-  return out
-}
-
-function pickFirstTaskId(value: unknown): string | null {
-  const ids = normalizeTaskIdList(value)
-  return ids[0] || null
-}
-
-function buildScheduleCreatorScope(schedule: Record<string, unknown> | null | undefined): {
-  agentId?: string | null
-  sessionId?: string | null
-} | null {
-  if (!schedule || typeof schedule !== 'object') return null
-  const agentId = typeof schedule.createdByAgentId === 'string' && schedule.createdByAgentId.trim()
-    ? schedule.createdByAgentId.trim()
-    : null
-  const sessionId = typeof schedule.createdInSessionId === 'string' && schedule.createdInSessionId.trim()
-    ? schedule.createdInSessionId.trim()
-    : null
-  if (!agentId && !sessionId) return null
-  return { agentId, sessionId }
-}
-
 function deriveScheduleFollowupTarget(sessionId: string | null | undefined): {
   followupConnectorId?: string | null
   followupChannelId?: string | null
@@ -334,103 +271,6 @@ function deriveScheduleFollowupTarget(sessionId: string | null | undefined): {
   }
 
   return {}
-}
-
-function findRelatedScheduleIds(
-  schedules: Record<string, ScheduleLike>,
-  schedule: Record<string, unknown> | null | undefined,
-  opts: { ignoreId?: string | null } = {},
-): string[] {
-  if (!schedule || typeof schedule !== 'object') return []
-  const scope = buildScheduleCreatorScope(schedule)
-  if (!scope?.sessionId) return []
-  const matches = findEquivalentSchedules(schedules, {
-    id: typeof schedule.id === 'string' ? schedule.id : null,
-    agentId: typeof schedule.agentId === 'string' ? schedule.agentId : null,
-    taskPrompt: typeof schedule.taskPrompt === 'string' ? schedule.taskPrompt : null,
-    scheduleType: typeof schedule.scheduleType === 'string' ? schedule.scheduleType : null,
-    cron: typeof schedule.cron === 'string' ? schedule.cron : null,
-    intervalMs: typeof schedule.intervalMs === 'number' ? schedule.intervalMs : null,
-    runAt: typeof schedule.runAt === 'number' ? schedule.runAt : null,
-    createdByAgentId: scope.agentId,
-    createdInSessionId: scope.sessionId,
-  }, {
-    ignoreId: opts.ignoreId || (typeof schedule.id === 'string' ? schedule.id : null),
-    creatorScope: scope,
-  })
-  return Array.from(new Set(matches
-    .map((entry) => (typeof entry.id === 'string' ? entry.id : ''))
-    .filter(Boolean)))
-}
-
-function applyTaskContinuationDefaults(
-  parsed: Record<string, unknown>,
-  tasks: Record<string, BoardTask>,
-  explicitInput?: Record<string, unknown>,
-): string | null {
-  const explicit = explicitInput || parsed
-  const continuationTaskId = pickFirstTaskId(parsed.continueFromTaskId)
-    || pickFirstTaskId(parsed.followUpToTaskId)
-    || pickFirstTaskId(parsed.resumeFromTaskId)
-  const blockedBy = [
-    ...normalizeTaskIdList(parsed.blockedBy),
-    ...normalizeTaskIdList(parsed.dependsOn),
-    ...normalizeTaskIdList(parsed.dependsOnTaskIds),
-    ...normalizeTaskIdList(parsed.prerequisiteTaskIds),
-  ]
-  if (continuationTaskId && !blockedBy.includes(continuationTaskId)) {
-    blockedBy.unshift(continuationTaskId)
-  }
-  if (blockedBy.length > 0) parsed.blockedBy = blockedBy
-
-  if (continuationTaskId) {
-    const sourceTask = tasks[continuationTaskId]
-    if (!sourceTask) return `Error: source task "${continuationTaskId}" not found.`
-
-    if (!Object.prototype.hasOwnProperty.call(explicit, 'projectId') && typeof sourceTask.projectId === 'string' && sourceTask.projectId.trim()) {
-      parsed.projectId = sourceTask.projectId.trim()
-    }
-    if (
-      !Object.prototype.hasOwnProperty.call(explicit, 'agentId')
-      && !hasManagedAgentAssignmentInput(explicit)
-      && typeof sourceTask.agentId === 'string'
-      && sourceTask.agentId.trim()
-    ) {
-      parsed.agentId = sourceTask.agentId.trim()
-    }
-    if (!Object.prototype.hasOwnProperty.call(explicit, 'cwd') && typeof sourceTask.cwd === 'string' && sourceTask.cwd.trim()) {
-      parsed.cwd = sourceTask.cwd.trim()
-    }
-    const sourceSessionId = typeof sourceTask.checkpoint?.lastSessionId === 'string' && sourceTask.checkpoint.lastSessionId.trim()
-      ? sourceTask.checkpoint.lastSessionId.trim()
-      : typeof sourceTask.sessionId === 'string' && sourceTask.sessionId.trim()
-        ? sourceTask.sessionId.trim()
-        : ''
-    if (!Object.prototype.hasOwnProperty.call(explicit, 'sessionId') && sourceSessionId) {
-      parsed.sessionId = sourceSessionId
-    }
-
-    const resumeFieldMap: Array<[keyof BoardTask, string]> = [
-      ['cliResumeId', 'cliResumeId'],
-      ['cliProvider', 'cliProvider'],
-      ['claudeResumeId', 'claudeResumeId'],
-      ['codexResumeId', 'codexResumeId'],
-      ['opencodeResumeId', 'opencodeResumeId'],
-      ['geminiResumeId', 'geminiResumeId'],
-    ]
-    for (const [sourceKey, targetKey] of resumeFieldMap) {
-      const value = sourceTask[sourceKey]
-      if (Object.prototype.hasOwnProperty.call(explicit, targetKey)) continue
-      if (typeof value === 'string' && value.trim()) {
-        parsed[targetKey] = value.trim()
-      }
-    }
-  }
-
-  for (const aliasKey of ['continueFromTaskId', 'followUpToTaskId', 'resumeFromTaskId', 'dependsOn', 'dependsOnTaskIds', 'prerequisiteTaskIds']) {
-    delete parsed[aliasKey]
-  }
-  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -722,68 +562,55 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 if (assignmentError) return assignmentError
                 parsed.agentId = resolution.agentId
               }
+              let preparedManagedTask: BoardTask | null = null
+              let preparedManagedSchedule: any = null
               if (toolKey === 'manage_schedules') {
-                const normalizedSchedule = normalizeSchedulePayload(parsed as Record<string, unknown>, {
-                  cwd,
+                const prepared = prepareScheduleCreate({
+                  input: parsed as Record<string, unknown>,
+                  schedules: all as Record<string, ScheduleLike>,
                   now,
-                })
-                if (!normalizedSchedule.ok) return normalizedSchedule.error
-                Object.assign(parsed, normalizedSchedule.value)
-                const duplicate = findDuplicateSchedule(all as Record<string, ScheduleLike>, {
-                  agentId: parsed.agentId || null,
-                  taskPrompt: parsed.taskPrompt || '',
-                  scheduleType: parsed.scheduleType || 'interval',
-                  cron: parsed.cron,
-                  intervalMs: parsed.intervalMs,
-                  runAt: parsed.runAt,
-                  createdByAgentId: ctx?.agentId || null,
-                  createdInSessionId: ctx?.sessionId || null,
-                }, {
+                  cwd,
                   creatorScope: {
                     agentId: ctx?.agentId || null,
                     sessionId: ctx?.sessionId || null,
                   },
+                  dedupeCreatorScope: {
+                    agentId: ctx?.agentId || null,
+                    sessionId: ctx?.sessionId || null,
+                  },
+                  followupTarget: deriveScheduleFollowupTarget(ctx?.sessionId || null),
                 })
-                if (duplicate) {
-                  let changed = false
-                  const duplicateId = typeof duplicate.id === 'string' ? duplicate.id : ''
-                  const nextName = resolveScheduleName({
-                    name: parsed.name ?? duplicate.name,
-                    taskPrompt: parsed.taskPrompt ?? duplicate.taskPrompt,
-                  })
-                  if (nextName && nextName !== duplicate.name) {
-                    duplicate.name = nextName
-                    changed = true
+                if (!prepared.ok) return prepared.error
+                if (prepared.kind === 'duplicate') {
+                  for (const [duplicateId, schedule] of prepared.entries) {
+                    all[duplicateId] = schedule
                   }
-                  const normalizedStatus = typeof parsed.status === 'string' ? parsed.status.trim().toLowerCase() : ''
-                  if ((normalizedStatus === 'active' || normalizedStatus === 'paused') && duplicate.status !== normalizedStatus) {
-                    duplicate.status = normalizedStatus
-                    changed = true
-                  }
-                  if (changed) {
-                    duplicate.updatedAt = now
-                    if (duplicateId) all[duplicateId] = duplicate
-                    res.save(all)
-                  }
+                  if (prepared.entries.length > 0) res.save(all)
                   return JSON.stringify({
-                    ...duplicate,
+                    ...prepared.schedule,
                     deduplicated: true,
                   })
                 }
+                preparedManagedSchedule = prepared.schedule
               }
               if (toolKey === 'manage_tasks') {
-                parsed.title = deriveTaskTitle(parsed)
-                if (!parsed.title || /^untitled task$/i.test(parsed.title)) {
-                  return 'Error: manage_tasks create requires a specific title or a meaningful description.'
+                const prepared = prepareTaskCreation({
+                  id: genId(),
+                  input: parsed as Record<string, unknown>,
+                  tasks: all as Record<string, BoardTask>,
+                  now,
+                  settings: loadSettings(),
+                  fallbackAgentId: ctx?.agentId || null,
+                  defaultCwd: cwd,
+                  deriveTitleFromDescription: true,
+                  requireMeaningfulTitle: true,
+                  seed: parsed as Record<string, unknown>,
+                })
+                if (!prepared.ok) return prepared.error
+                if (prepared.duplicate) {
+                  return JSON.stringify({ ...prepared.duplicate, deduplicated: true })
                 }
-                parsed.status = normalizeTaskStatusInput(parsed.status) || 'backlog'
-                if (!parsed.cwd && cwd) parsed.cwd = cwd
-                if (Object.prototype.hasOwnProperty.call(parsed, 'qualityGate')) {
-                  const settings = loadSettings()
-                  parsed.qualityGate = parsed.qualityGate
-                    ? normalizeTaskQualityGate(parsed.qualityGate, settings)
-                    : null
-                }
+                preparedManagedTask = prepared.task
               }
               if (toolKey === 'manage_agents' && Object.prototype.hasOwnProperty.call(parsed, 'soul')) {
                 const soulError = validateAgentSoulPayload((parsed as Record<string, unknown>).soul)
@@ -795,38 +622,33 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   return JSON.stringify({ ...duplicateAgent, deduplicated: true })
                 }
               }
-              // Task dedup
-              if (toolKey === 'manage_tasks') {
-                const fp = computeTaskFingerprint(parsed.title || 'Untitled Task', parsed.agentId || ctx?.agentId || '')
-                parsed.fingerprint = fp
-                const dupe = findDuplicateTask(all as Record<string, import('@/types').BoardTask>, { fingerprint: fp })
-                if (dupe) {
-                  return JSON.stringify({ ...dupe, deduplicated: true })
-                }
-              }
-              const newId = genId()
-              const scheduleFollowupTarget = toolKey === 'manage_schedules'
-                ? deriveScheduleFollowupTarget(ctx?.sessionId || null)
-                : {}
-              const entry = {
-                id: newId,
-                ...parsed,
-                createdByAgentId: ctx?.agentId || null,
-                createdInSessionId: ctx?.sessionId || null,
-                ...scheduleFollowupTarget,
-                createdAt: now,
-                updatedAt: now,
-              }
+              const newId = preparedManagedTask?.id || preparedManagedSchedule?.id || genId()
+              const entry = toolKey === 'manage_tasks' && preparedManagedTask
+                ? {
+                    ...preparedManagedTask,
+                    createdByAgentId: ctx?.agentId || null,
+                    createdInSessionId: ctx?.sessionId || null,
+                  }
+                : toolKey === 'manage_schedules' && preparedManagedSchedule
+                  ? preparedManagedSchedule
+                  : {
+                      id: newId,
+                      ...parsed,
+                      createdByAgentId: ctx?.agentId || null,
+                      createdInSessionId: ctx?.sessionId || null,
+                      createdAt: now,
+                      updatedAt: now,
+                    }
               let responseEntry: unknown = entry
               if (toolKey === 'manage_secrets') {
                 const secretValue = typeof parsed.value === 'string' ? parsed.value : null
                 if (!secretValue) return 'Error: data.value is required to create a secret.'
                 const normalizedScope = parsed.scope === 'agent' ? 'agent' : 'global'
                 const normalizedAgentIds = normalizedScope === 'agent'
-                  ? Array.from(new Set([
-                      ...(Array.isArray(parsed.agentIds) ? parsed.agentIds.filter((x: any) => typeof x === 'string') : []),
+                  ? dedup([
+                      ...(Array.isArray(parsed.agentIds) ? parsed.agentIds.filter((x: unknown) => typeof x === 'string') as string[] : []),
                       ...(ctx?.agentId ? [ctx.agentId] : []),
-                    ]))
+                    ])
                   : []
                 const stored = {
                   ...entry,
@@ -845,21 +667,6 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 responseEntry = buildProjectSnapshot(entry)
               } else {
                 all[newId] = entry
-              }
-
-              if (toolKey === 'manage_tasks' && entry.status === 'completed') {
-                const { formatValidationFailure, validateTaskCompletion } = await import('../task-validation')
-                const { ensureTaskCompletionReport } = await import('../task-reports')
-                const settings = loadSettings()
-                const report = ensureTaskCompletionReport(entry as any)
-                if (report?.relativePath) (entry as any).completionReportPath = report.relativePath
-                const validation = validateTaskCompletion(entry as any, { report, settings })
-                ;(entry as any).validation = validation
-                if (!validation.ok) {
-                  entry.status = 'failed'
-                  ;(entry as any).completedAt = null
-                  ;(entry as any).error = formatValidationFailure(validation.reasons).slice(0, 500)
-                }
               }
 
               res.save(all)
@@ -898,32 +705,23 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 if (continuationError) return continuationError
               }
               const prevStatus = all[effectiveId]?.status
-              if (toolKey === 'manage_tasks' && Object.prototype.hasOwnProperty.call(parsedRecord, 'status')) {
-                const normalized = normalizeTaskStatusInput(parsedRecord.status, prevStatus)
-                if (normalized) parsedRecord.status = normalized
-                else delete parsedRecord.status
-              }
-              if (toolKey === 'manage_tasks' && Object.prototype.hasOwnProperty.call(parsedRecord, 'qualityGate')) {
-                const settings = loadSettings()
-                parsedRecord.qualityGate = parsedRecord.qualityGate
-                  ? normalizeTaskQualityGate(parsedRecord.qualityGate, settings)
-                  : null
-              }
-              if (toolKey === 'manage_tasks' || toolKey === 'manage_schedules') {
-                const agents = loadAgents()
+              const managedAgents = toolKey === 'manage_tasks' || toolKey === 'manage_schedules'
+                ? loadAgents()
+                : null
+              if (managedAgents) {
                 const requestedClear = Object.prototype.hasOwnProperty.call(parsedRecord, 'agentId') && parsedRecord.agentId == null
                 const shouldResolveAssignment = requestedClear
                   || hasManagedAgentAssignmentInput(parsedRecord)
                 if (shouldResolveAssignment) {
                   const resolution = resolveManagedAgentAssignment(
                     parsedRecord,
-                    agents,
+                    managedAgents,
                     null,
                     { allowDescription: false },
                   )
                   const assignmentError = validateManagedAgentAssignment({
                     resourceLabel: res.label,
-                    agents,
+                    agents: managedAgents,
                     assignScope,
                     currentAgentId: ctx?.agentId || null,
                     targetAgentId: requestedClear ? null : resolution.agentId,
@@ -939,40 +737,40 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                       ? resolveDelegatorAgentId({
                           ...all[effectiveId],
                           ...parsedRecord,
-                        }, agents, ctx?.agentId || null)
+                        }, managedAgents, ctx?.agentId || null)
                       : null,
                   })
                   if (assignmentError) return assignmentError
                   if (!requestedClear) parsedRecord.agentId = resolution.agentId
                 }
               }
-              all[effectiveId] = { ...all[effectiveId], ...parsed, updatedAt: Date.now() }
               if (toolKey === 'manage_schedules') {
-                const normalizedSchedule = normalizeSchedulePayload(all[effectiveId] as Record<string, unknown>, {
-                  cwd,
+                const prepared = prepareScheduleUpdate({
+                  id: effectiveId,
+                  current: all[effectiveId] as Record<string, unknown>,
+                  patch: parsedRecord,
+                  schedules: all as Record<string, ScheduleLike>,
                   now: Date.now(),
+                  cwd,
+                  agentExists: (agentId) => Boolean(managedAgents?.[agentId]),
+                  propagateEquivalentStatuses: true,
+                  propagationSource: previousEntry as Record<string, unknown>,
                 })
-                if (!normalizedSchedule.ok) return normalizedSchedule.error
-                all[effectiveId] = {
-                  ...all[effectiveId],
-                  ...normalizedSchedule.value,
-                  updatedAt: Date.now(),
+                if (!prepared.ok) return prepared.error
+                for (const [scheduleId, schedule] of prepared.entries) {
+                  all[scheduleId] = schedule
                 }
-                const nextStatus = typeof all[effectiveId].status === 'string' ? all[effectiveId].status.trim().toLowerCase() : ''
-                if (nextStatus === 'paused' || nextStatus === 'completed' || nextStatus === 'failed') {
-                  const relatedIds = findRelatedScheduleIds(all as Record<string, ScheduleLike>, previousEntry, {
-                    ignoreId: effectiveId,
-                  })
-                  for (const relatedId of relatedIds) {
-                    if (!all[relatedId]) continue
-                    all[relatedId] = {
-                      ...all[relatedId],
-                      status: nextStatus,
-                      updatedAt: Date.now(),
-                    }
-                  }
-                  affectedScheduleIds = [effectiveId, ...relatedIds]
-                }
+                affectedScheduleIds = prepared.affectedScheduleIds.length > 1 ? prepared.affectedScheduleIds : null
+              } else if (toolKey === 'manage_tasks') {
+                applyTaskPatch({
+                  task: all[effectiveId] as BoardTask,
+                  patch: parsedRecord,
+                  now: Date.now(),
+                  settings: loadSettings(),
+                  preserveCompletedAt: true,
+                })
+              } else {
+                all[effectiveId] = { ...all[effectiveId], ...parsed, updatedAt: Date.now() }
               }
               if (toolKey === 'manage_secrets') {
                 if (!canAccessSecret(all[effectiveId])) return 'Error: you do not have access to this secret.'
@@ -987,10 +785,10 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                     : Array.isArray(all[effectiveId].agentIds)
                       ? all[effectiveId].agentIds
                       : []
-                  all[effectiveId].agentIds = Array.from(new Set([
+                  all[effectiveId].agentIds = dedup([
                     ...incomingIds,
                     ...(ctx?.agentId ? [ctx.agentId] : []),
-                  ]))
+                  ])
                 } else {
                   all[effectiveId].agentIds = []
                 }
@@ -1004,23 +802,6 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   all[effectiveId].encryptedValue = encryptKey(parsedRecord.value)
                 }
                 delete all[effectiveId].value
-              }
-
-              if (toolKey === 'manage_tasks' && all[effectiveId].status === 'completed') {
-                const { formatValidationFailure, validateTaskCompletion } = await import('../task-validation')
-                const { ensureTaskCompletionReport } = await import('../task-reports')
-                const settings = loadSettings()
-                const report = ensureTaskCompletionReport(all[effectiveId] as any)
-                if (report?.relativePath) (all[effectiveId] as any).completionReportPath = report.relativePath
-                const validation = validateTaskCompletion(all[effectiveId] as any, { report, settings })
-                ;(all[effectiveId] as any).validation = validation
-                if (!validation.ok) {
-                  all[effectiveId].status = 'failed'
-                  ;(all[effectiveId] as any).completedAt = null
-                  ;(all[effectiveId] as any).error = formatValidationFailure(validation.reasons).slice(0, 500)
-                } else if ((all[effectiveId] as any).completedAt == null) {
-                  ;(all[effectiveId] as any).completedAt = Date.now()
-                }
               }
 
               res.save(all)
@@ -1063,7 +844,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 return 'Error: you do not have access to this secret.'
               }
               const deletedIds = toolKey === 'manage_schedules'
-                ? [effectiveId, ...findRelatedScheduleIds(all as Record<string, ScheduleLike>, all[effectiveId], { ignoreId: effectiveId })]
+                ? getScheduleClusterIds(all as Record<string, ScheduleLike>, all[effectiveId])
                 : [effectiveId]
               for (const deleteId of deletedIds) {
                 delete all[deleteId]

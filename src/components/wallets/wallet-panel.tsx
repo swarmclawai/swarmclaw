@@ -21,6 +21,7 @@ import {
 } from '@/lib/wallet'
 import { type WalletTransactionFilter, filterWalletTransactions, getWalletTransactionStatusGroup } from '@/lib/wallet-transactions'
 import { toast } from 'sonner'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 
 type SafeWallet = Omit<AgentWallet, 'encryptedPrivateKey'> & {
   balanceAtomic?: string
@@ -39,7 +40,7 @@ function getAgentWalletIds(agent: Agent | undefined | null): string[] {
   const legacy = typeof agent?.walletId === 'string' && agent.walletId.trim()
     ? [agent.walletId.trim()]
     : []
-  return [...new Set([...ids, ...legacy])]
+  return dedup([...ids, ...legacy])
 }
 
 function getAgentActiveWalletId(agent: Agent | undefined | null, fallbackWallets: SafeWallet[] = []): string | null {
@@ -256,7 +257,7 @@ export function WalletPanel() {
       setEditingLimits(false)
       loadDetail()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(errorMessage(err))
     }
     setSaving(false)
   }, [selectedWalletId, selectedWallet, perTxLimit, dailyLimit, requireApproval, loadDetail])
@@ -269,7 +270,7 @@ export function WalletPanel() {
       toast.success('Default wallet updated')
       loadWallets()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(errorMessage(err))
     }
     setSettingDefault(false)
   }, [selectedWalletId, loadWallets])
@@ -322,7 +323,7 @@ export function WalletPanel() {
       setCreateChain('solana')
       loadWallets()
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : String(err))
+      setCreateError(errorMessage(err))
     }
     setCreating(false)
   }, [createAgentId, createChain, loadWallets])
@@ -636,7 +637,7 @@ export function WalletPanel() {
                         setReassigning(false)
                         loadWallets()
                       } catch (err: unknown) {
-                        setReassignError(err instanceof Error ? err.message : String(err) || 'Reassign failed')
+                        setReassignError(errorMessage(err) || 'Reassign failed')
                       }
                       setReassignSaving(false)
                     }}

@@ -1,4 +1,5 @@
 import type { OpenClawSkillEntry, SkillInstallOption, SkillRequirements } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 interface GatewayConfigCheck {
   path?: string
@@ -38,7 +39,7 @@ interface GatewaySkillsStatusPayload {
 }
 
 function uniq(values: Array<string | undefined | null>): string[] {
-  return [...new Set(values.map((value) => (value ?? '').trim()).filter(Boolean))]
+  return dedup(values.map((value) => (value ?? '').trim()).filter(Boolean))
 }
 
 function normalizeSource(source: string | undefined): OpenClawSkillEntry['source'] {

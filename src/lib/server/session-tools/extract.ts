@@ -7,6 +7,7 @@ import { runStructuredExtraction } from '../structured-extract'
 import type { ToolBuildContext } from './context'
 import { safePath } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { errorMessage } from '@/lib/shared-utils'
 
 function resolveSessionForExtraction(bctx: ToolBuildContext) {
   const session = bctx.resolveCurrentSession?.()
@@ -67,7 +68,7 @@ async function executeExtractAction(args: Record<string, unknown>, bctx: ToolBui
       raw: normalized.includeRaw === true ? result.raw : undefined,
     })
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

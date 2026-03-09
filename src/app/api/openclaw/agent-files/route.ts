@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
 import { resolveOpenClawGatewayAgentId } from '@/lib/server/openclaw-agent-resolver'
+import { errorMessage } from '@/lib/shared-utils'
 
 const AGENT_FILES = ['SOUL.md', 'IDENTITY.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'MEMORY.md', 'AGENTS.md'] as const
 
@@ -21,7 +22,7 @@ export async function GET(req: Request) {
   try {
     gatewayAgentId = await resolveOpenClawGatewayAgentId(agentId, gw)
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     const status = message.includes('not an OpenClaw agent') ? 400 : 404
     return NextResponse.json({ error: message }, { status })
   }
@@ -36,7 +37,7 @@ export async function GET(req: Request) {
         }) as { file?: { content?: string } } | undefined
         files[filename] = { content: result?.file?.content ?? '' }
       } catch (err: unknown) {
-        files[filename] = { content: '', error: err instanceof Error ? err.message : String(err) }
+        files[filename] = { content: '', error: errorMessage(err) }
       }
     }),
   )
@@ -69,7 +70,7 @@ export async function PUT(req: Request) {
     })
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     const status = message.includes('not an OpenClaw agent')
       ? 400
       : message.includes('not found')

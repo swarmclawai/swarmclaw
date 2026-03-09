@@ -16,6 +16,7 @@ import { HintTip } from '@/components/shared/hint-tip'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { ConnectorHealth } from '@/components/connectors/connector-health'
+import { errorMessage } from '@/lib/shared-utils'
 
 /** Auto-detect URLs in text and make them clickable links that open in a new tab */
 function linkify(text: string) {
@@ -645,7 +646,7 @@ export function ConnectorSheet() {
       setOpen(false)
       setEditingId(null)
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(errorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -670,7 +671,7 @@ export function ConnectorSheet() {
       await loadConnectors()
     } catch (err: unknown) {
       setWaConnecting(false)
-      toast.error(`Failed to ${action}: ${err instanceof Error ? err.message : String(err)}`)
+      toast.error(`Failed to ${action}: ${errorMessage(err)}`)
     } finally {
       setActionLoading(false)
     }
@@ -686,7 +687,7 @@ export function ConnectorSheet() {
       setOpen(false)
       setEditingId(null)
     } catch (err: unknown) {
-      toast.error(`Failed to delete connector: ${err instanceof Error ? err.message : String(err)}`)
+      toast.error(`Failed to delete connector: ${errorMessage(err)}`)
     } finally {
       setDeleting(false)
     }
@@ -704,7 +705,7 @@ export function ConnectorSheet() {
       setConfirmWhatsAppAction(null)
       await loadConnectors()
     } catch (err: unknown) {
-      toast.error(`Failed to ${mode === 'unlink' ? 'unlink' : 're-pair'}: ${err instanceof Error ? err.message : String(err)}`)
+      toast.error(`Failed to ${mode === 'unlink' ? 'unlink' : 're-pair'}: ${errorMessage(err)}`)
     } finally {
       setActionLoading(false)
     }
@@ -1056,7 +1057,7 @@ export function ConnectorSheet() {
                       setNewCredName('')
                       setNewCredValue('')
                     } catch (err: unknown) {
-                      toast.error(`Failed to save: ${err instanceof Error ? err.message : String(err)}`)
+                      toast.error(`Failed to save: ${errorMessage(err)}`)
                     } finally {
                       setSavingCred(false)
                     }

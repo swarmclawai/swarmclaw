@@ -13,6 +13,7 @@ import { withRetry } from '../tool-retry'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { dedup, errorMessage, hmrSingleton, sleep } from '@/lib/shared-utils'
 import { resolvePathWithinBaseDir } from '../path-utils'
 import {
   ensureSessionBrowserProfileId,
@@ -57,32 +58,21 @@ type BrowserRuntimeEntry = {
 
 // Stored on globalThis to survive HMR reloads in dev mode —
 // prevents orphaned Chromium processes when web.ts is edited.
-const _g = globalThis as typeof globalThis & Record<string, unknown>
-
-function getOrInitGlobalMap<K, V>(key: string): Map<K, V> {
-  const existing = _g[key]
-  if (existing instanceof Map) return existing as Map<K, V>
-  const created = new Map<K, V>()
-  _g[key] = created
-  return created
-}
-
 export const activeBrowsers: Map<string, BrowserRuntimeEntry> =
-  getOrInitGlobalMap<string, BrowserRuntimeEntry>('__swarmclaw_active_browsers__')
+  hmrSingleton('__swarmclaw_active_browsers__', () => new Map<string, BrowserRuntimeEntry>())
 const pendingBrowserInitializations: Map<string, Promise<BrowserRuntimeEntry>> =
-  getOrInitGlobalMap<string, Promise<BrowserRuntimeEntry>>('__swarmclaw_pending_browser_inits__')
+  hmrSingleton('__swarmclaw_pending_browser_inits__', () => new Map<string, Promise<BrowserRuntimeEntry>>())
 
 // Kill all browsers on process exit to prevent orphaned Chromium processes
-const shutdownKey = '__swarmclaw_browser_shutdown_registered__'
-if (!_g[shutdownKey]) {
-  _g[shutdownKey] = true
+const _shutdownRegistered = hmrSingleton('__swarmclaw_browser_shutdown_registered__', () => {
   process.on('exit', () => {
     for (const [, entry] of activeBrowsers) {
       try { entry.client?.close?.() } catch { /* ignore */ }
       try { entry.server?.close?.() } catch { /* ignore */ }
     }
   })
-}
+  return true
+})
 
 export function sweepOrphanedBrowsers(maxAgeMs = 30 * 60 * 1000): number {
   const now = Date.now(); let cleaned = 0
@@ -150,7 +140,7 @@ async function executeWebAction(args: Record<string, unknown>) {
           const result = await pdfParse(Buffer.from(arrayBuffer))
           return truncate(result.text, MAX_OUTPUT)
         } catch (err: unknown) {
-          return `Error parsing PDF: ${err instanceof Error ? err.message : String(err)}`
+          return `Error parsing PDF: ${errorMessage(err)}`
         }
       }
       const html = await res.text()
@@ -162,7 +152,7 @@ async function executeWebAction(args: Record<string, unknown>) {
     }
     return `Error: Unknown action "${action}"`
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 
@@ -293,7 +283,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
                 inheritedFromSessionId: profileInfo.inheritedFromSessionId,
                 status: 'error',
                 lastAction: 'browser_restore',
-                lastError: err instanceof Error ? err.message : String(err),
+                lastError: errorMessage(err),
               })
             }
           }
@@ -656,7 +646,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             }
             if (isScreenshotTool) parts = dedupeScreenshotMarkdownLines(parts)
             if (savedPaths.length > 0) {
-              const unique = Array.from(new Set(savedPaths))
+              const unique = dedup(savedPaths)
               parts.push(`Saved to: ${unique.map((p) => path.relative(cwd, p) || '.').join(', ')}`)
             }
             upsertBrowserSessionRecord({
@@ -681,7 +671,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
           })
           return fallback
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err)
+          const message = errorMessage(err)
           upsertBrowserSessionRecord({
             sessionId: sessionKey,
             profileId: profileInfo.profileId,
@@ -724,7 +714,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
     }
 
     const dismissCookieBanners = async (mcpCall: (toolName: string, args: Record<string, unknown>) => Promise<string>) => {
-      await new Promise((r) => setTimeout(r, 1200))
+      await sleep(1200)
       const js = `() => {
         const docs = [document];
         const roots = [document];
@@ -993,7 +983,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       try {
         await callBrowserEvaluate(`async () => { await new Promise(resolve => setTimeout(resolve, ${Math.min(waitMs, 5000)})); }`)
       } catch {
-        await new Promise((resolve) => setTimeout(resolve, waitMs))
+        await sleep(waitMs)
       }
 
       return {
@@ -1397,7 +1387,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
                     }
                   }); }`)
               } catch {
-                await new Promise((r) => setTimeout(r, 1200))
+                await sleep(1200)
               }
               try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ }
             }
@@ -1412,7 +1402,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
 
             let result = await callMcpTool(mcpTool, args, { saveTo: typeof params.saveTo === 'string' ? params.saveTo : undefined })
             if (action === 'navigate' && result.includes('ERR_ABORTED')) {
-              await new Promise((r) => setTimeout(r, 1000))
+              await sleep(1000)
               result = await callMcpTool('browser_snapshot', {})
             }
             if (action === 'navigate') {
@@ -1429,7 +1419,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
 
             return result
           } catch (err: unknown) {
-            return `Error: ${err instanceof Error ? err.message : String(err)}`
+            return `Error: ${errorMessage(err)}`
           }
         },
         {
@@ -1518,7 +1508,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             const result = runBrowserCommand(command, parsedArgs)
             if (result.status !== 0) return `Error (exit ${result.status}): ${result.stderr || result.stdout || 'unknown'}`
             return truncate(result.stdout || '(no output)', MAX_OUTPUT)
-          } catch (err: unknown) { return `Error: ${err instanceof Error ? err.message : String(err)}` }
+          } catch (err: unknown) { return `Error: ${errorMessage(err)}` }
         },
         {
           name: 'openclaw_browser',

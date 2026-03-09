@@ -5,6 +5,8 @@ import { streamOpenAiChat } from './openai'
 import { streamOllamaChat } from './ollama'
 import { streamAnthropicChat } from './anthropic'
 import { streamOpenClawChat } from './openclaw'
+import { errorMessage } from '../shared-utils'
+import { sleep } from '@/lib/shared-utils'
 import type { ProviderInfo, ProviderConfig as CustomProviderConfig, ProviderType } from '../../types'
 
 const RETRYABLE_STATUS_CODES = [401, 429, 500, 502, 503]
@@ -392,7 +394,7 @@ export async function streamChatWithFailover(
       lastError = err
       const errObj = err as Record<string, unknown>
       const statusCode = (typeof errObj?.status === 'number' ? errObj.status : typeof errObj?.statusCode === 'number' ? errObj.statusCode : 0) as number
-      const errMessage = err instanceof Error ? err.message : String(err)
+      const errMessage = errorMessage(err)
       const isRetryable = RETRYABLE_STATUS_CODES.includes(statusCode)
         || errMessage?.includes('rate limit')
         || errMessage?.includes('Rate limit')
@@ -409,7 +411,7 @@ export async function streamChatWithFailover(
         // Exponential backoff for rate-limit / server errors (skip for auth rotation)
         if (statusCode !== 401) {
           const delay = Math.min(500 * Math.pow(2, i), 8000)
-          await new Promise((r) => setTimeout(r, delay))
+          await sleep(delay)
         }
         continue
       }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { ensureGatewayConnected, getGateway } from '@/lib/server/openclaw-gateway'
 import type { PendingExecApproval, ExecApprovalDecision } from '@/types'
+import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 
 /** GET — fetch pending execution approvals from gateway */
 export async function GET() {
@@ -18,9 +19,7 @@ export async function GET() {
 }
 
 /* ── Conflict-detection: track recently resolved approval IDs in-process ── */
-const resolvedKey = '__swarmclaw_resolved_approvals__'
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const resolved: Map<string, number> = (globalThis as any)[resolvedKey] ?? ((globalThis as any)[resolvedKey] = new Map<string, number>())
+const resolved: Map<string, number> = hmrSingleton('__swarmclaw_resolved_approvals__', () => new Map<string, number>())
 const RESOLVED_TTL_MS = 5 * 60 * 1000
 
 function pruneResolved() {
@@ -60,7 +59,7 @@ export async function POST(req: Request) {
     resolved.set(id, Date.now())
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

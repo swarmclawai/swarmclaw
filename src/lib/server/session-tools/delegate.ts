@@ -7,6 +7,7 @@ import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { canonicalizePluginId } from '../tool-aliases'
+import { errorMessage, sleep } from '@/lib/shared-utils'
 import {
   appendDelegationCheckpoint,
   cancelDelegationJob,
@@ -87,9 +88,6 @@ function _computeDelegationDepth(
   return depth
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 function buildDelegateContextFromSessionish(session: unknown): DelegateContext {
   const record = session && typeof session === 'object' ? session as Record<string, unknown> : {}
@@ -560,7 +558,7 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
       return { backend, result }
     })
     .catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       const latest = getDelegationJob(job.id)
       if (latest?.status === 'cancelled') return { backend: requestedBackend, result: `Error: ${message}` }
       appendDelegationCheckpoint(job.id, `Delegate crashed on ${requestedBackend}: ${message}`, 'failed')
@@ -697,7 +695,7 @@ async function runCodexDelegate(binary: string, task: string, resume: boolean, r
       child.stdin?.end()
     })
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 
@@ -774,7 +772,7 @@ async function runOpenCodeDelegate(binary: string, task: string, resume: boolean
       })
     })
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 
@@ -855,7 +853,7 @@ async function runGeminiDelegate(binary: string, task: string, resume: boolean, 
       })
     })
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 
@@ -913,7 +911,7 @@ async function runClaudeDelegate(binary: string, task: string, resume: boolean, 
       child.stdin?.write(task)
       child.stdin?.end()
     })
-  } catch (err: unknown) { return `Error: ${err instanceof Error ? err.message : String(err)}` }
+  } catch (err: unknown) { return `Error: ${errorMessage(err)}` }
 }
 
 /**

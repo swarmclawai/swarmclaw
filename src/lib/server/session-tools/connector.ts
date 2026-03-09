@@ -10,7 +10,9 @@ import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { safeJsonParseObject } from '../json-utils'
 import { tryResolvePathWithinBaseDir } from '../path-utils'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 
 const CONNECTOR_ACTION_DEDUPE_TTL_MS = 30_000
 const CONNECTOR_TURN_SEND_TTL_MS = 180_000
@@ -158,29 +160,24 @@ function buildConnectorActionKey(parts: Array<string | number | boolean | null |
 }
 
 function normalizeDedupedReplayResult(raw: string, fallback: { connectorId: string; platform: string; to: string }): string {
-  try {
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid')
-    const record = parsed as Record<string, unknown>
-    if (String(record.status || '') === 'deduped') {
-      return JSON.stringify({
-        status: 'sent',
-        connectorId: String(record.connectorId || fallback.connectorId),
-        platform: String(record.platform || fallback.platform),
-        to: String(record.to || fallback.to),
-        deduped: true,
-      })
-    }
-    return raw
-  } catch {
+  const record = safeJsonParseObject(raw)
+  if (record && String(record.status || '') === 'deduped') {
     return JSON.stringify({
       status: 'sent',
-      connectorId: fallback.connectorId,
-      platform: fallback.platform,
-      to: fallback.to,
+      connectorId: String(record.connectorId || fallback.connectorId),
+      platform: String(record.platform || fallback.platform),
+      to: String(record.to || fallback.to),
       deduped: true,
     })
   }
+  if (record) return raw
+  return JSON.stringify({
+    status: 'sent',
+    connectorId: fallback.connectorId,
+    platform: fallback.platform,
+    to: fallback.to,
+    deduped: true,
+  })
 }
 
 export function normalizeConnectorActionName(action: string): string {
@@ -442,7 +439,7 @@ function pickChannelTarget(params: {
       ...parseCsv(connector.config?.allowedJids),
       ...parseCsv(connector.config?.allowFrom),
     ].filter(Boolean) as string[]
-    const unique = [...new Set(knownTargets)]
+    const unique = dedup(knownTargets)
     if (unique.length) {
       return {
         channelId: '',
@@ -843,7 +840,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
 
     return 'Unknown action.'
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

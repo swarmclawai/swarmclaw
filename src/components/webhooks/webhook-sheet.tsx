@@ -7,6 +7,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { api } from '@/lib/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import type { Webhook, WebhookLogEntry } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 import { toast } from 'sonner'
 
 type WebhookApiResponse = Webhook | { error: string }
@@ -23,7 +24,7 @@ function parseEvents(input: string): string[] {
     .split(/[\n,]+/)
     .map((v) => v.trim())
     .filter(Boolean)
-  return Array.from(new Set(values))
+  return dedup(values)
 }
 
 function makeSecret(length = 28): string {

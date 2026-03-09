@@ -12,10 +12,11 @@ import fs from 'fs'
 import os from 'os'
 import { spawnSync } from 'child_process'
 import type { Connector } from '@/types'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
-import { normalizeConnectorIngressResult } from './types'
+import { resolveConnectorIngressReply } from './ingress-delivery'
 import { saveInboundMediaBuffer, mimeFromPath, isImageMime, isAudioMime } from './media'
-import { isNoMessage, recordConnectorOutboundDelivery } from './manager'
+import { recordConnectorOutboundDelivery } from './delivery'
 import { formatTextForWhatsApp } from './whatsapp-text'
 import { getWhatsAppApprovedSenderIds } from './pairing'
 
@@ -172,6 +173,7 @@ export function normalizeWhatsAppAudioForSend(params: {
   return converted || { buffer: params.buffer, mimeType }
 }
 
+/** Extract the user part from a JID, stripping the server and device suffix */
 function jidUserPart(raw: string): string {
   const trimmed = String(raw || '').trim().toLowerCase()
   if (!trimmed) return ''
@@ -179,16 +181,15 @@ function jidUserPart(raw: string): string {
   return withoutServer.split(':')[0]
 }
 
-/** Normalize a phone number or JID user part for inbound matching */
+/**
+ * Normalize a phone number or JID to a bare-digit identifier for matching.
+ * Works for all country codes — strips formatting, `whatsapp:` prefixes,
+ * JID suffixes (`@s.whatsapp.net`, `@lid`), and device suffixes (`:0`).
+ * Returns bare digits (no `+` prefix) for comparison.
+ */
 export function normalizeWhatsAppIdentifier(raw: string): string {
-  let n = jidUserPart(raw).replace(/[\s\-()]/g, '')
-  // UK local: 07xxx → 447xxx
-  if (n.startsWith('0') && n.length >= 10) {
-    n = '44' + n.slice(1)
-  }
-  // Strip leading +
-  if (n.startsWith('+')) n = n.slice(1)
-  return n.replace(/[^a-z0-9]/g, '')
+  const withoutPrefix = String(raw || '').replace(/^whatsapp:/i, '').trim()
+  return jidUserPart(withoutPrefix).replace(/[^\da-z]/g, '')
 }
 
 function parseAllowedIdentifiers(raw: unknown): string[] | null {
@@ -209,7 +210,7 @@ export function resolveWhatsAppAllowedIdentifiers(params: {
   const settings = getWhatsAppApprovedSenderIds(params.settingsContacts)
     .map((entry) => normalizeWhatsAppIdentifier(entry))
     .filter(Boolean)
-  const merged = Array.from(new Set([...configured, ...settings]))
+  const merged = dedup([...configured, ...settings])
   return merged.length ? merged : null
 }
 
@@ -234,7 +235,7 @@ export function collectWhatsAppAddressCandidates(msg: Pick<WAMessage, 'key'>): s
   const normalized = raw
     .map((entry) => normalizeWhatsAppIdentifier(String(entry || '')))
     .filter(Boolean)
-  return Array.from(new Set(normalized))
+  return dedup(normalized)
 }
 
 export function isWhatsAppInboundAllowed(params: {
@@ -385,7 +386,7 @@ const whatsapp: PlatformConnector = {
             try {
               sent = await sock.sendMessage(channelId, { image: buf, caption, mimetype: mime })
             } catch (err: unknown) {
-              const errMsg = err instanceof Error ? err.message : String(err)
+              const errMsg = errorMessage(err)
               console.warn(`[whatsapp] Image send failed (${errMsg}); retrying as document: ${fName}`)
               sent = await sock.sendMessage(channelId, { document: buf, fileName: fName, mimetype: mime, caption })
             }
@@ -652,15 +653,11 @@ const whatsapp: PlatformConnector = {
 
           try {
             await sock!.sendPresenceUpdate('composing', jid)
-            const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
+            const reply = await resolveConnectorIngressReply(onMessage, inbound)
             await sock!.sendPresenceUpdate('paused', jid)
+            if (!reply) continue
 
-            if (routeResult.managerHandled || routeResult.delivery === 'silent') continue
-
-            const response = routeResult.visibleText
-            if (isNoMessage(response)) continue
-
-            const sent = await instance.sendMessage?.(jid, response)
+            const sent = await instance.sendMessage?.(jid, reply.visibleText)
             await recordConnectorOutboundDelivery({
               connectorId: connector.id,
               inbound,

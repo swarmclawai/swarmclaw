@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { hmrSingleton } from '@/lib/shared-utils'
 import { getProviderList } from '@/lib/providers'
 import { OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
 import { decryptKey, loadCredentials } from '@/lib/server/storage'
@@ -33,20 +34,10 @@ const CLOUD_CACHE_TTL_MS = 15 * 60_000
 const LOCAL_CACHE_TTL_MS = 60_000
 const ERROR_CACHE_TTL_MS = 30_000
 const DISCOVERY_TIMEOUT_MS = 10_000
-const gk = '__swarmclaw_provider_model_discovery__' as const
-
-type DiscoveryGlobals = typeof globalThis & {
-  [gk]?: {
-    cache: Map<string, DiscoveryCacheEntry>
-    pending: Map<string, Promise<ProviderModelDiscoveryResult>>
-  }
-}
-
-const discoveryGlobals = globalThis as DiscoveryGlobals
-const discoveryState = discoveryGlobals[gk] ?? (discoveryGlobals[gk] = {
+const discoveryState = hmrSingleton('__swarmclaw_provider_model_discovery__', () => ({
   cache: new Map<string, DiscoveryCacheEntry>(),
   pending: new Map<string, Promise<ProviderModelDiscoveryResult>>(),
-})
+}))
 
 function clean(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : ''

@@ -15,7 +15,9 @@ import type { ToolBuildContext } from './context'
 import { safePath, truncate, coerceEnvMap, MAX_OUTPUT } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
+import { safeJsonParseObject } from '../json-utils'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { errorMessage } from '@/lib/shared-utils'
 
 function resolveShellWorkdir(baseCwd: string, requestedWorkdir?: string): string {
   const raw = typeof requestedWorkdir === 'string' ? requestedWorkdir.trim() : ''
@@ -54,14 +56,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function parseNestedInput(raw: unknown): Record<string, unknown> | null {
-  if (typeof raw === 'string') {
-    try {
-      return asRecord(JSON.parse(raw))
-    } catch {
-      return null
-    }
-  }
-  return asRecord(raw)
+  return typeof raw === 'string' ? safeJsonParseObject(raw) : asRecord(raw)
 }
 
 function pickString(...values: unknown[]): string | undefined {
@@ -171,7 +166,7 @@ async function executeShellAction(args: Record<string, unknown>, bctx: { cwd: st
       default: return `Error: Unknown action "${action}"`
     }
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

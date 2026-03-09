@@ -2,7 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import * as cheerio from 'cheerio'
+import { dedup } from '@/lib/shared-utils'
 import { findBinaryOnPath } from './session-tools/context'
+import { safeJsonParse } from './json-utils'
 
 const TEXT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.json', '.jsonl', '.csv', '.tsv',
@@ -113,7 +115,7 @@ function matrixToTable(name: string, matrix: string[][]): StructuredTable {
 }
 
 function objectsToTable(name: string, rows: Array<Record<string, unknown>>): StructuredTable {
-  const headers = Array.from(new Set(rows.flatMap((row) => Object.keys(row))))
+  const headers = dedup(rows.flatMap((row) => Object.keys(row)))
   const normalizedRows = rows.map((row) => {
     const out: Record<string, unknown> = {}
     for (const header of headers) out[header] = normalizeScalar(row[header])
@@ -264,13 +266,9 @@ export async function extractDocumentArtifact(filePath: string, options?: { maxC
     const raw = fs.readFileSync(resolved, 'utf-8')
     text = raw
     method = 'json'
-    try {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.every((row) => row && typeof row === 'object' && !Array.isArray(row))) {
-        tables = [objectsToTable(path.basename(resolved), parsed as Array<Record<string, unknown>>)]
-      }
-    } catch {
-      // keep raw json text only
+    const parsed = safeJsonParse<unknown>(raw, null)
+    if (Array.isArray(parsed) && parsed.every((row) => row && typeof row === 'object' && !Array.isArray(row))) {
+      tables = [objectsToTable(path.basename(resolved), parsed as Array<Record<string, unknown>>)]
     }
   } else if (ext === '.html' || ext === '.htm') {
     const html = fs.readFileSync(resolved, 'utf-8')

@@ -9,6 +9,7 @@ import { loadSettings } from '../storage'
 import { resolveSessionToolPolicy } from '../tool-capability-policy'
 import { loadRuntimeSettings } from '../runtime-settings'
 import { expandPluginIds } from '../tool-aliases'
+import { dedup } from '@/lib/shared-utils'
 
 function parsePlatformData(value: unknown): Record<string, unknown> | null {
   if (!value) return null
@@ -146,7 +147,7 @@ export function normalizePlatformActionArgs(rawArgs: Record<string, unknown>): R
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
-  return [...new Set(values.filter((value): value is string => Boolean(value)))]
+  return dedup(values.filter((value): value is string => Boolean(value)))
 }
 
 function resolvePlatformResourceAccess(toolId: string, bctx: ToolBuildContext): { allowed: boolean; reason: string | null } {

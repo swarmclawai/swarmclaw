@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getPluginManager } from '@/lib/server/plugins'
+import { errorMessage } from '@/lib/shared-utils'
 
 export async function POST(req: Request) {
   const body = await req.json()
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, dependencyInfo: result })
   } catch (err: unknown) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      { error: errorMessage(err) },
       { status: 400 },
     )
   }

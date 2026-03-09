@@ -1,5 +1,6 @@
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { safeStorageGet, safeStorageSet, safeStorageRemove } from '@/lib/safe-storage'
+import { sleep } from '@/lib/shared-utils'
 
 const ACCESS_KEY_STORAGE = 'sc_access_key'
 const DEFAULT_API_TIMEOUT_MS = 12_000
@@ -19,9 +20,6 @@ export function clearStoredAccessKey() {
   safeStorageRemove(ACCESS_KEY_STORAGE)
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 function isAbortError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false

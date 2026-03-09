@@ -5,6 +5,7 @@ import { api } from '@/lib/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import type { AgentWallet, WalletAssetBalance, WalletPortfolioSummary, WalletChain } from '@/types'
 import { toast } from 'sonner'
+import { errorMessage } from '@/lib/shared-utils'
 import {
   SUPPORTED_WALLET_CHAINS,
   formatWalletAmount,
@@ -67,7 +68,7 @@ export function WalletSection({ agentId, wallets, activeWalletId, onWalletCreate
       toast.success('Agent wallet created successfully')
       await onWalletCreated()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       setError(msg)
       toast.error(msg)
     } finally {
@@ -92,7 +93,7 @@ export function WalletSection({ agentId, wallets, activeWalletId, onWalletCreate
       toast.success('Default wallet updated')
       await onWalletCreated()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       setError(msg)
       toast.error(msg)
     } finally {

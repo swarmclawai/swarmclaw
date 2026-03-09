@@ -5,6 +5,7 @@ import { normalizeOpenClawSkillsPayload } from '@/lib/server/openclaw-skills-nor
 import { loadAgents, saveAgents } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import type { SkillAllowlistMode } from '@/types'
+import { errorMessage } from '@/lib/shared-utils'
 
 /** GET ?agentId=X — fetch skills from gateway with eligibility */
 export async function GET(req: Request) {
@@ -24,7 +25,7 @@ export async function GET(req: Request) {
     const result = await gw.rpc('skills.status', { agentId: gatewayAgentId }) as unknown
     return NextResponse.json(normalizeOpenClawSkillsPayload(result))
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     const status = message.includes('not an OpenClaw agent')
       ? 400
       : message.includes('not found')
@@ -55,7 +56,7 @@ export async function PATCH(req: Request) {
     await gw.rpc('skills.update', { skillKey, enabled, apiKey })
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

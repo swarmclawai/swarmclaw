@@ -1,4 +1,5 @@
 import type { AppSettings } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 import { getToolsForCapability, matchToolCapabilitiesForMessage, TOOL_CAPABILITY } from './tool-planning'
 
 export type TaskIntent =
@@ -29,7 +30,7 @@ function containsAny(text: string, terms: string[]): boolean {
 }
 
 function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values.filter(Boolean)))
+  return dedup(values.filter(Boolean))
 }
 
 function isMonitoringOrCurrentEventsRequest(text: string): boolean {
@@ -78,7 +79,7 @@ function normalizeDelegateOrder(value: unknown): DelegateTool[] {
     else if (raw === 'gemini') mapped.push('delegate_to_gemini_cli')
   }
   if (!mapped.length) return fallback
-  const deduped = Array.from(new Set(mapped))
+  const deduped = dedup(mapped)
   for (const tool of fallback) {
     if (!deduped.includes(tool)) deduped.push(tool)
   }

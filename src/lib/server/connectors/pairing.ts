@@ -2,8 +2,9 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { WhatsAppApprovedContact } from '@/types'
+import { CONNECTORS_DATA_DIR } from '../data-dir'
+import { safeJsonParseObject } from '../json-utils'
 
-const DEFAULT_DATA_DIR = path.join(process.cwd(), 'data')
 const STORE_VERSION = 1
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000
 const MAX_PENDING_PER_CONNECTOR = 100
@@ -11,8 +12,7 @@ const PAIR_CODE_LENGTH = 8
 const PAIR_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 function resolveStorePath(): string {
-  const dataDir = process.env.DATA_DIR || DEFAULT_DATA_DIR
-  return path.join(dataDir, 'connectors', 'pairing-store.json')
+  return path.join(CONNECTORS_DATA_DIR, 'pairing-store.json')
 }
 
 export type PairingPolicy = 'open' | 'allowlist' | 'pairing' | 'disabled'
@@ -105,7 +105,7 @@ function loadStore(): PairingStore {
   try {
     if (!fs.existsSync(storePath)) return emptyStore()
     const raw = fs.readFileSync(storePath, 'utf8')
-    const parsed = JSON.parse(raw) as PairingStore
+    const parsed = safeJsonParseObject<PairingStore>(raw)
     if (!parsed || typeof parsed !== 'object' || typeof parsed.connectors !== 'object') {
       return emptyStore()
     }

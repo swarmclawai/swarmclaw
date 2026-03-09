@@ -3,6 +3,7 @@ import path from 'node:path'
 import { decryptKey, loadCredentials, loadSettings } from '../storage'
 import { mimeFromPath } from './media'
 import type { InboundMessage, InboundMedia } from './types'
+import { errorMessage } from '@/lib/shared-utils'
 
 const PLACEHOLDER_TEXT = new Set([
   '',
@@ -252,7 +253,7 @@ export async function enrichInboundMessageWithAudioTranscript(params: {
       console.log(`[connector] Inbound audio transcribed via ${attempt.provider}: ${path.basename(localPath)}`)
       return { ...msg, text: transcript }
     } catch (err: unknown) {
-      const reason = err instanceof Error ? err.message : String(err)
+      const reason = errorMessage(err)
       console.warn(`[connector] Inbound audio transcription failed via ${attempt.provider}: ${reason}`)
     }
   }

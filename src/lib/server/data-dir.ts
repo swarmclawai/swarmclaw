@@ -20,6 +20,10 @@ function resolveDataDir(): string {
 }
 
 export const DATA_DIR = resolveDataDir()
+export const CONNECTORS_DATA_DIR = path.join(DATA_DIR, 'connectors')
+export const OPENCLAW_DATA_DIR = path.join(DATA_DIR, 'openclaw')
+export const MEMORY_IMAGES_DIR = path.join(DATA_DIR, 'memory-images')
+export const APP_LOG_PATH = path.join(DATA_DIR, 'app.log')
 
 function supportsChildWrites(dir: string): boolean {
   try {

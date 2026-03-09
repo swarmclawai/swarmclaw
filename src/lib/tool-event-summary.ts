@@ -1,4 +1,5 @@
 import type { MessageToolEvent } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 interface ToolEventAssistantSummaryOptions {
   interrupted?: boolean
@@ -13,7 +14,7 @@ export function buildToolEventAssistantSummary(
     : []
   if (events.length === 0) return ''
 
-  const uniqueNames = [...new Set(events.map((event) => event.name.trim()))]
+  const uniqueNames = dedup(events.map((event) => event.name.trim()))
   const visibleNames = uniqueNames.slice(0, 4).map((name) => `\`${name}\``).join(', ')
   const hiddenCount = Math.max(0, uniqueNames.length - 4)
   const pendingCount = events.filter((event) => !event.output).length

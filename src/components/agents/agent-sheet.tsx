@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { createAgent, updateAgent, deleteAgent } from '@/lib/agents'
 import { api } from '@/lib/api-client'
+import { sleep } from '@/lib/shared-utils'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { toast } from 'sonner'
 import { ModelCombobox } from '@/components/shared/model-combobox'
@@ -19,6 +20,7 @@ import { SectionLabel } from '@/components/shared/section-label'
 import { SoulLibraryPicker } from './soul-library-picker'
 import { HintTip } from '@/components/shared/hint-tip'
 import { isOllamaCloudModel } from '@/lib/ollama-model'
+import { errorMessage } from '@/lib/shared-utils'
 
 const HB_PRESETS = [1800, 3600, 7200, 21600, 43200] as const
 const FALLBACK_ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
@@ -745,7 +747,7 @@ export function AgentSheet() {
       if (!passed) return
       if (!openclawEnabled) {
         // Brief pause so the user can see the success state on the button
-        await new Promise((r) => setTimeout(r, 1500))
+        await sleep(1500)
       }
     }
     setSaving(true)
@@ -1627,7 +1629,7 @@ export function AgentSheet() {
                           setAddingKey(false)
                           setNewKeyName('')
                           setNewKeyValue('')
-                        } catch (err: unknown) { toast.error(`Failed to save: ${err instanceof Error ? err.message : String(err)}`) }
+                        } catch (err: unknown) { toast.error(`Failed to save: ${errorMessage(err)}`) }
                         finally { setSavingKey(false) }
                       }}
                       className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40"
@@ -1886,7 +1888,7 @@ export function AgentSheet() {
                       setAddingKey(false)
                       setNewKeyName('')
                       setNewKeyValue('')
-                    } catch (err: unknown) { toast.error(`Failed to save: ${err instanceof Error ? err.message : String(err)}`) }
+                    } catch (err: unknown) { toast.error(`Failed to save: ${errorMessage(err)}`) }
                     finally { setSavingKey(false) }
                   }}
                   className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40"

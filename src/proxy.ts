@@ -7,6 +7,7 @@ import {
   resolvePluginInstallCorsOrigin,
 } from '@/lib/plugin-install-cors'
 import { isProductionRuntime } from '@/lib/runtime-env'
+import { hmrSingleton } from '@/lib/shared-utils'
 
 /* ------------------------------------------------------------------ */
 /*  Rate-limit state — HMR-safe via globalThis                        */
@@ -17,9 +18,7 @@ interface RateLimitEntry {
   lockedUntil: number
 }
 
-const rateLimitMap = (
-  (globalThis as Record<string, unknown>).__swarmclaw_rate_limit__ ??= new Map()
-) as Map<string, RateLimitEntry>
+const rateLimitMap = hmrSingleton('__swarmclaw_rate_limit__', () => new Map<string, RateLimitEntry>())
 
 const MAX_ATTEMPTS = 5
 const LOCKOUT_MS = 15 * 60 * 1000 // 15 minutes

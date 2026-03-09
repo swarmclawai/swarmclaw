@@ -25,6 +25,7 @@ import { enqueueSessionRun } from './session-run-manager'
 import { WORKSPACE_DIR } from './data-dir'
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
 import { genId } from '@/lib/id'
+import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 import path from 'node:path'
 import type { Session, WebhookRetryEntry } from '@/types'
 import { createNotification } from '@/lib/server/create-notification'
@@ -71,8 +72,7 @@ export {
 }
 
 // Store daemon state on globalThis to survive HMR reloads
-const gk = '__swarmclaw_daemon__' as const
-const ds: {
+interface DaemonState {
   queueIntervalId: ReturnType<typeof setInterval> | null
   browserSweepId: ReturnType<typeof setInterval> | null
   healthIntervalId: ReturnType<typeof setInterval> | null
@@ -91,8 +91,9 @@ const ds: {
   manualStopRequested: boolean
   running: boolean
   lastProcessedAt: number | null
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-} = (globalThis as any)[gk] ?? ((globalThis as any)[gk] = {
+}
+
+const ds: DaemonState = hmrSingleton<DaemonState>('__swarmclaw_daemon__', () => ({
   queueIntervalId: null,
   browserSweepId: null,
   healthIntervalId: null,
@@ -108,7 +109,7 @@ const ds: {
   manualStopRequested: false,
   running: false,
   lastProcessedAt: null,
-})
+}))
 
 // Backfill fields for hot-reloaded daemon state objects from older code versions.
 if (!ds.staleSessionIds) ds.staleSessionIds = new Set<string>()
@@ -167,14 +168,14 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
   } catch (err: unknown) {
     ds.running = false
     notify('daemon')
-    console.error('[daemon] Failed to start:', err instanceof Error ? err.message : String(err))
+    console.error('[daemon] Failed to start:', errorMessage(err))
     throw err
   }
 
   if (isDaemonBackgroundServicesEnabled()) {
     // Auto-start enabled connectors only when the full background stack is enabled.
     autoStartConnectors().catch((err: unknown) => {
-      console.error('[daemon] Error auto-starting connectors:', err instanceof Error ? err.message : String(err))
+      console.error('[daemon] Error auto-starting connectors:', errorMessage(err))
     })
   }
 }
@@ -224,6 +225,7 @@ function stopBrowserSweep() {
 function startQueueProcessor() {
   if (ds.queueIntervalId) return
   ds.queueIntervalId = setInterval(async () => {
+    if (!ds.running) return
     const queue = loadQueue()
     if (queue.length > 0) {
       console.log(`[daemon] Processing ${queue.length} queued task(s)`)
@@ -277,7 +279,7 @@ async function runConnectorHealthChecks(now: number) {
   try {
     await checkConnectorHealth()
   } catch (err: unknown) {
-    console.error('[health] Connector isAlive check failed:', err instanceof Error ? err.message : String(err))
+    console.error('[health] Connector isAlive check failed:', errorMessage(err))
   }
 
   const connectors = loadConnectors()
@@ -323,7 +325,7 @@ async function runConnectorHealthChecks(now: number) {
       clearReconnectState(connector.id)
       await sendHealthAlert(`Connector "${connector.name}" (${connector.platform}) was down and has been auto-restarted.`)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       const next = advanceConnectorReconnectState(current, message, now, {
         initialBackoffMs: CONNECTOR_RESTART_BASE_MS,
         maxBackoffMs: CONNECTOR_RESTART_MAX_MS,
@@ -471,7 +473,7 @@ async function processWebhookRetries() {
       deleteWebhookRetry(entry.id)
       console.log(`[webhook-retry] Successfully retried ${entry.id} for webhook ${entry.webhookId} (attempt ${entry.attempts})`)
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
+      const errorMsg = errorMessage(err)
       entry.attempts += 1
 
       if (entry.attempts >= entry.maxAttempts) {
@@ -652,7 +654,7 @@ async function runOpenClawGatewayHealthChecks() {
         const { runOpenClawDoctor } = await import('./openclaw-doctor')
         await runOpenClawDoctor({ fix: true })
       } catch (err: unknown) {
-        console.warn('[daemon] openclaw doctor --fix failed:', err instanceof Error ? err.message : String(err))
+        console.warn('[daemon] openclaw doctor --fix failed:', errorMessage(err))
       }
       repair.attempts += 1
       repair.lastAttemptAt = now
@@ -703,7 +705,7 @@ async function runPendingApprovalConnectorNotifications(now: number) {
         entityId: reminder.approvalId,
       })
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
+      const errorMsg = errorMessage(err)
       markApprovalConnectorNotificationAttempt(reminder.approvalId, {
         at: now,
         connectorId: reminder.connectorId,
@@ -796,20 +798,20 @@ async function runHealthChecks() {
   try {
     await runProviderHealthChecks()
   } catch (err: unknown) {
-    console.error('[daemon] Provider health check failed:', err instanceof Error ? err.message : String(err))
+    console.error('[daemon] Provider health check failed:', errorMessage(err))
   }
 
   // OpenClaw gateway health checks + auto-repair
   try {
     await runOpenClawGatewayHealthChecks()
   } catch (err: unknown) {
-    console.error('[daemon] OpenClaw gateway health check failed:', err instanceof Error ? err.message : String(err))
+    console.error('[daemon] OpenClaw gateway health check failed:', errorMessage(err))
   }
 
   try {
     await runPendingApprovalConnectorNotifications(now)
   } catch (err: unknown) {
-    console.error('[daemon] Approval connector reminder check failed:', err instanceof Error ? err.message : String(err))
+    console.error('[daemon] Approval connector reminder check failed:', errorMessage(err))
   }
 
   // Integrity drift monitoring for identity/config/plugin files.
@@ -838,14 +840,14 @@ async function runHealthChecks() {
       await sendHealthAlert(`Integrity monitor detected ${integrity.drifts.length} file drift event(s).`)
     }
   } catch (err: unknown) {
-    console.error('[daemon] Integrity monitor check failed:', err instanceof Error ? err.message : String(err))
+    console.error('[daemon] Integrity monitor check failed:', errorMessage(err))
   }
 
   // Process webhook retry queue
   try {
     await processWebhookRetries()
   } catch (err: unknown) {
-    console.error('[daemon] Webhook retry processing failed:', err instanceof Error ? err.message : String(err))
+    console.error('[daemon] Webhook retry processing failed:', errorMessage(err))
   }
 }
 
@@ -886,7 +888,7 @@ function startConnectorHealthMonitor(options?: { runImmediately?: boolean }) {
 
   const tick = () => {
     runConnectorHealthChecks(Date.now()).catch((err) => {
-      console.error('[daemon] Connector health tick failed:', err instanceof Error ? err.message : String(err))
+      console.error('[daemon] Connector health tick failed:', errorMessage(err))
     })
   }
 
@@ -912,7 +914,7 @@ function runConsolidationTick() {
       }
     }),
   ).catch((err: unknown) => {
-    console.error('[daemon] Memory consolidation failed:', err instanceof Error ? err.message : String(err))
+    console.error('[daemon] Memory consolidation failed:', errorMessage(err))
   })
 }
 
@@ -964,11 +966,11 @@ async function runEvalSchedulerTick() {
           type: result.percentage >= 60 ? 'info' : 'warning',
         })
       } catch (err: unknown) {
-        console.error(`[daemon:eval] Failed for agent ${agentId}:`, err instanceof Error ? err.message : String(err))
+        console.error(`[daemon:eval] Failed for agent ${agentId}:`, errorMessage(err))
       }
     }
   } catch (err: unknown) {
-    console.error('[daemon:eval] Scheduler tick error:', err instanceof Error ? err.message : String(err))
+    console.error('[daemon:eval] Scheduler tick error:', errorMessage(err))
   }
 }
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/lib/api-client'
+import { errorMessage } from '@/lib/shared-utils'
 import { PersonalityBuilder } from './personality-builder'
 
 const FILES = ['SOUL.md', 'IDENTITY.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'MEMORY.md', 'AGENTS.md'] as const
@@ -47,7 +48,7 @@ export function AgentFilesEditor({ agentId }: Props) {
         return next
       })
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       setFiles((prev) => {
         const next = { ...prev }
         for (const f of FILES) {
@@ -83,7 +84,7 @@ export function AgentFilesEditor({ agentId }: Props) {
         [filename]: { ...prev[filename], saving: false, original: prev[filename].content },
       }))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       setFiles((prev) => ({
         ...prev,
         [filename]: { ...prev[filename], saving: false, error: message },

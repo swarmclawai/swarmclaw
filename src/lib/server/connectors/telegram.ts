@@ -3,9 +3,10 @@ import fs from 'fs'
 import path from 'path'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundMediaType } from './types'
-import { normalizeConnectorIngressResult } from './types'
+import { resolveConnectorIngressReply } from './ingress-delivery'
+import { deliverChunkedConnectorText } from './delivery'
 import { downloadInboundMediaToUpload, inferInboundMediaType, mimeFromPath, isImageMime, isAudioMime } from './media'
-import { getConnectorReplySendOptions, isNoMessage, recordConnectorOutboundDelivery } from './manager'
+import { errorMessage } from '@/lib/shared-utils'
 
 const telegram: PlatformConnector = {
   async start(connector, botToken, onMessage): Promise<ConnectorInstance> {
@@ -153,37 +154,25 @@ const telegram: PlatformConnector = {
 
       try {
         await ctx.api.sendChatAction(ctx.chat.id, 'typing')
-        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
-        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
-        const response = routeResult.visibleText
-
-        const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
-        const baseOptions: Record<string, unknown> = {}
-        if (replyOptions.replyToMessageId) {
-          baseOptions.reply_parameters = { message_id: Number(replyOptions.replyToMessageId) }
-        }
-        if (replyOptions.threadId) {
-          baseOptions.message_thread_id = Number(replyOptions.threadId)
-        }
-
-        let lastMessageId: string | undefined
-
-        // Telegram has a 4096 char limit
-        if (response.length <= 4096) {
-          const sent = await ctx.api.sendMessage(ctx.chat.id, response, baseOptions as any)
-          lastMessageId = String(sent.message_id)
-        } else {
-          const chunks = response.match(/[\s\S]{1,4090}/g) || [response]
-          for (let i = 0; i < chunks.length; i += 1) {
-            const sent = await ctx.api.sendMessage(ctx.chat.id, chunks[i], (i === 0 ? baseOptions : {}) as any)
-            lastMessageId = String(sent.message_id)
-          }
-        }
-        await recordConnectorOutboundDelivery({
+        const reply = await resolveConnectorIngressReply(onMessage, inbound)
+        if (!reply) return
+        await deliverChunkedConnectorText({
           connectorId: connector.id,
           inbound,
-          messageId: lastMessageId,
-          state: 'sent',
+          text: reply.visibleText,
+          maxSingleMessageLength: 4096,
+          chunkLength: 4090,
+          sendChunk: async (chunk, meta) => {
+            const options: Record<string, unknown> = {}
+            if (meta.isFirstChunk && meta.replyToMessageId) {
+              options.reply_parameters = { message_id: Number(meta.replyToMessageId) }
+            }
+            if (meta.threadId) {
+              options.message_thread_id = Number(meta.threadId)
+            }
+            const sent = await ctx.api.sendMessage(ctx.chat.id, chunk, options as any)
+            return String(sent.message_id)
+          },
         })
       } catch (err: any) {
         console.error(`[telegram] Error handling message:`, err.message)
@@ -292,7 +281,7 @@ const telegram: PlatformConnector = {
       },
     }).catch((err: unknown) => {
       botRunning = false
-      const errMsg = err instanceof Error ? err.message : String(err)
+      const errMsg = errorMessage(err)
       console.error(`[telegram] Polling stopped with error:`, errMsg)
       instance.onCrash?.(`Polling stopped: ${errMsg}`)
     })

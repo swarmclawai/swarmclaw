@@ -7,6 +7,7 @@ import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks, Session } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface ContextToolContext {
   ctx?: { agentId?: string | null; sessionId?: string | null }
@@ -23,7 +24,7 @@ async function executeContextStatus(bctx: ContextToolContext) {
     if (!session) return 'Error: no current session context.'
     const status = getContextStatus(session.messages || [], 2000, session.provider as string, session.model as string)
     return JSON.stringify(status)
-  } catch (err: unknown) { return `Error: ${err instanceof Error ? err.message : String(err)}` }
+  } catch (err: unknown) { return `Error: ${errorMessage(err)}` }
 }
 
 async function executeContextSummarize(args: { keepLastN?: number }, bctx: ContextToolContext) {
@@ -55,7 +56,7 @@ async function executeContextSummarize(args: { keepLastN?: number }, bctx: Conte
       saveSessions(sessions)
     }
     return JSON.stringify({ status: 'compacted', remaining: result.messages.length })
-  } catch (err: unknown) { return `Error: ${err instanceof Error ? err.message : String(err)}` }
+  } catch (err: unknown) { return `Error: ${errorMessage(err)}` }
 }
 
 /**

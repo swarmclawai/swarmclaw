@@ -1,6 +1,5 @@
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
-import { normalizeConnectorIngressResult } from './types'
-import { isNoMessage } from './manager'
+import { resolveConnectorIngressReply } from './ingress-delivery'
 
 const teams: PlatformConnector = {
   async start(connector, botToken, onMessage): Promise<ConnectorInstance> {
@@ -46,11 +45,9 @@ const teams: PlatformConnector = {
         }
 
         try {
-          const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
-          if (routeResult.managerHandled || routeResult.delivery === 'silent') return
-          const response = routeResult.visibleText
-          if (isNoMessage(response)) return
-          await context.sendActivity(response)
+          const reply = await resolveConnectorIngressReply(onMessage, inbound)
+          if (!reply) return
+          await context.sendActivity(reply.visibleText)
         } catch (err: any) {
           console.error(`[teams] Error handling message:`, err.message)
           try {

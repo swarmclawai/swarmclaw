@@ -12,6 +12,7 @@ import {
   replyMailboxMessage,
 } from '../mailbox-utils'
 import { createWatchJob } from '../watch-jobs'
+import { errorMessage } from '@/lib/shared-utils'
 
 function parseMessageUid(value: unknown): number {
   const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number.parseInt(value, 10) : Number.NaN
@@ -191,7 +192,7 @@ async function executeMailboxAction(args: Record<string, unknown>, bctx: { cwd: 
 
     return `Error: Unknown action "${action}".`
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

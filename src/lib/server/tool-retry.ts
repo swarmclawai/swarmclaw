@@ -2,6 +2,8 @@
  * Structured retry with exponential backoff for transient tool failures.
  */
 
+import { sleep } from '@/lib/shared-utils'
+
 export interface RetryOptions {
   maxAttempts?: number
   backoffMs?: number
@@ -25,9 +27,6 @@ function isRetryableError(error: string, patterns: RegExp[]): boolean {
   return patterns.some((p) => p.test(error))
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 /**
  * Wraps a tool handler function with retry logic for transient failures.

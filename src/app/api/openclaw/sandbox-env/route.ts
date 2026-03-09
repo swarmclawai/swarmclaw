@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
+import { errorMessage } from '@/lib/shared-utils'
 
 /** GET — list available and allowed env keys for sandbox */
 export async function GET() {
@@ -29,7 +30,7 @@ export async function GET() {
 
     return NextResponse.json({ available: available ?? [], allowed })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }
@@ -63,7 +64,7 @@ export async function PUT(req: Request) {
 
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

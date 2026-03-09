@@ -2,8 +2,7 @@ import { spawn, execSync } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, ConnectorIngressResult } from './types'
-import { normalizeConnectorIngressResult } from './types'
-import { isNoMessage } from './manager'
+import { resolveConnectorIngressReply } from './ingress-delivery'
 
 const signal: PlatformConnector = {
   async start(connector, _botToken, onMessage): Promise<ConnectorInstance> {
@@ -152,10 +151,8 @@ export async function handleSignalEvent(
   }
 
   try {
-    const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
-    if (routeResult.managerHandled || routeResult.delivery === 'silent') return
-    const response = routeResult.visibleText
-    if (isNoMessage(response)) return
+    const reply = await resolveConnectorIngressReply(onMessage, inbound)
+    if (!reply) return
 
     // Send reply back
     const cliPath = connector.config.signalCliPath || 'signal-cli'
@@ -168,14 +165,14 @@ export async function handleSignalEvent(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: response,
+          message: reply.visibleText,
           number: phoneNumber,
           recipients: [inbound.channelId],
         }),
       })
     } else {
       execSync(
-        `${cliPath} -u ${phoneNumber} send -m ${JSON.stringify(response)} ${inbound.channelId}`,
+        `${cliPath} -u ${phoneNumber} send -m ${JSON.stringify(reply.visibleText)} ${inbound.channelId}`,
         { timeout: 15_000 },
       )
     }

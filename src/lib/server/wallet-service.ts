@@ -9,6 +9,7 @@ import {
   normalizeAtomicString,
 } from '@/lib/wallet'
 import type { Agent, AgentWallet, WalletChain, WalletTransaction } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 import { loadAgent, loadAgents, loadWalletTransactions, loadWallets, upsertAgent, upsertWallet } from './storage'
 import { generateEthereumWallet, isValidEthereumAddress, sendEth } from './ethereum'
 import { generateSolanaKeypair, isValidSolanaAddress, sendSol } from './solana'
@@ -31,7 +32,7 @@ export function getAgentWalletIds(agent: Pick<Agent, 'walletIds' | 'walletId'> |
   const legacy = typeof agent?.walletId === 'string' && agent.walletId.trim()
     ? [agent.walletId.trim()]
     : []
-  return [...new Set([...ids, ...legacy])]
+  return dedup([...ids, ...legacy])
 }
 
 export function getAgentActiveWalletId(
@@ -44,7 +45,7 @@ export function getAgentActiveWalletId(
 }
 
 function syncAgentWalletPointers(agent: Agent, walletIds: string[], activeWalletId?: string | null): Agent {
-  const normalizedIds = [...new Set(walletIds.filter(Boolean))]
+  const normalizedIds = dedup(walletIds.filter(Boolean))
   const normalizedActive = activeWalletId && normalizedIds.includes(activeWalletId)
     ? activeWalletId
     : normalizedIds[0] || null

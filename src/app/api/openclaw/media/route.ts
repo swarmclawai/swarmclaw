@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
 import { lookup } from 'mime-types'
+import { errorMessage } from '@/lib/shared-utils'
 
 const MAX_SIZE = 25 * 1024 * 1024 // 25MB
 
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
       },
     })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

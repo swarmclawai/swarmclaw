@@ -1,3 +1,5 @@
+import { hmrSingleton } from '@/lib/shared-utils'
+
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const isWorkerOnly = process.env.SWARMCLAW_WORKER_ONLY === '1'
@@ -15,10 +17,10 @@ export async function register() {
     }
 
     // Graceful shutdown: stop background services and close WS connections
-    const shutdownState = (
-      (globalThis as Record<string, unknown>).__swarmclaw_shutdown_state__
-      ??= { registered: false, shuttingDown: false }
-    ) as { registered: boolean; shuttingDown: boolean }
+    const shutdownState = hmrSingleton('__swarmclaw_shutdown_state__', () => ({
+      registered: false,
+      shuttingDown: false,
+    }))
 
     const shutdown = async (signal: string) => {
       if (shutdownState.shuttingDown) return

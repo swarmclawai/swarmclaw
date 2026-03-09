@@ -9,6 +9,7 @@ import {
   normalizeWhatsAppIdentifier,
   resolveWhatsAppAllowedIdentifiers,
 } from './whatsapp'
+import { normalizeE164, normalizeWhatsappTarget } from './response-media'
 
 test('buildWhatsAppTextPayloads disables link previews for text sends', () => {
   const payloads = buildWhatsAppTextPayloads('See https://example.com for details')
@@ -32,6 +33,19 @@ test('normalizeWhatsAppIdentifier strips jid wrappers and device suffixes', () =
   assert.equal(normalizeWhatsAppIdentifier('+1 (555) 000-1111@s.whatsapp.net'), '15550001111')
   assert.equal(normalizeWhatsAppIdentifier('15550001111:7@s.whatsapp.net'), '15550001111')
   assert.equal(normalizeWhatsAppIdentifier('199900000001@lid'), '199900000001')
+})
+
+test('normalizeWhatsAppIdentifier handles international numbers', () => {
+  // Swiss
+  assert.equal(normalizeWhatsAppIdentifier('+41 79 666 68 64@s.whatsapp.net'), '41796666864')
+  // German
+  assert.equal(normalizeWhatsAppIdentifier('491711234567@s.whatsapp.net'), '491711234567')
+  // Brazilian
+  assert.equal(normalizeWhatsAppIdentifier('+55 11 99999-8888'), '5511999998888')
+  // Indian
+  assert.equal(normalizeWhatsAppIdentifier('919876543210:0@s.whatsapp.net'), '919876543210')
+  // Plain number with whatsapp: prefix
+  assert.equal(normalizeWhatsAppIdentifier('whatsapp:+447911123456'), '447911123456')
 })
 
 test('isWhatsAppInboundAllowed matches allow-list entries against alt phone JIDs', () => {
@@ -183,4 +197,46 @@ test('normalizeWhatsAppAudioForSend leaves normal audio attachments alone when p
 
   assert.equal(converted.buffer.toString(), 'music')
   assert.equal(converted.mimeType, 'audio/mpeg')
+})
+
+// ---------------------------------------------------------------------------
+// normalizeE164 — E.164 formatting for all country codes
+// ---------------------------------------------------------------------------
+
+test('normalizeE164 strips formatting and ensures + prefix', () => {
+  assert.equal(normalizeE164('+41 79 666 68 64'), '+41796666864')
+  assert.equal(normalizeE164('(555) 123-4567'), '+5551234567')
+  assert.equal(normalizeE164('whatsapp:+447911123456'), '+447911123456')
+  assert.equal(normalizeE164('491711234567'), '+491711234567')
+  assert.equal(normalizeE164('+55 11 99999-8888'), '+5511999998888')
+})
+
+// ---------------------------------------------------------------------------
+// normalizeWhatsappTarget — JID normalization for outbound messages
+// ---------------------------------------------------------------------------
+
+test('normalizeWhatsappTarget builds user JIDs from plain numbers', () => {
+  assert.equal(normalizeWhatsappTarget('+41796666864'), '41796666864@s.whatsapp.net')
+  assert.equal(normalizeWhatsappTarget('447911123456'), '447911123456@s.whatsapp.net')
+  assert.equal(normalizeWhatsappTarget('+55 11 99999-8888'), '5511999998888@s.whatsapp.net')
+  assert.equal(normalizeWhatsappTarget('(555) 123-4567'), '5551234567@s.whatsapp.net')
+})
+
+test('normalizeWhatsappTarget preserves group JIDs', () => {
+  assert.equal(normalizeWhatsappTarget('120363401234567890@g.us'), '120363401234567890@g.us')
+  assert.equal(normalizeWhatsappTarget('120363-401234567890@g.us'), '120363-401234567890@g.us')
+})
+
+test('normalizeWhatsappTarget extracts phone from user JIDs', () => {
+  assert.equal(normalizeWhatsappTarget('41796666864:0@s.whatsapp.net'), '41796666864@s.whatsapp.net')
+  assert.equal(normalizeWhatsappTarget('15550001111:7@s.whatsapp.net'), '15550001111@s.whatsapp.net')
+})
+
+test('normalizeWhatsappTarget passes through LID JIDs unchanged', () => {
+  assert.equal(normalizeWhatsappTarget('199900000001@lid'), '199900000001@lid')
+})
+
+test('normalizeWhatsappTarget strips whatsapp: prefix', () => {
+  assert.equal(normalizeWhatsappTarget('whatsapp:+447911123456'), '447911123456@s.whatsapp.net')
+  assert.equal(normalizeWhatsappTarget('whatsapp:120363401234567890@g.us'), '120363401234567890@g.us')
 })

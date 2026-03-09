@@ -5,6 +5,7 @@ import { deriveOpenClawWsUrl } from '@/lib/openclaw-endpoint'
 import { loadAgents, loadCredentials, decryptKey } from './storage'
 import { notify, notifyWithPayload } from './ws-hub'
 import { getGatewayProfile, getGatewayProfiles, resolvePrimaryAgentRoute } from './agent-runtime-config'
+import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 
 // --- Types ---
 
@@ -18,18 +19,16 @@ type EventHandler = (payload: unknown) => void
 
 // --- Singleton (HMR-safe) ---
 
-const GK = '__swarmclaw_ocgateway__' as const
-
 interface GatewayState {
   instances: Map<string, OpenClawGateway>
   activeKey: string | null
 }
 
 function getState(): GatewayState {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const g = globalThis as any
-  if (!g[GK]) g[GK] = { instances: new Map<string, OpenClawGateway>(), activeKey: null }
-  return g[GK] as GatewayState
+  return hmrSingleton<GatewayState>('__swarmclaw_ocgateway__', () => ({
+    instances: new Map<string, OpenClawGateway>(),
+    activeKey: null,
+  }))
 }
 
 // --- Helper: resolve gateway config from first OpenClaw agent ---
@@ -190,7 +189,7 @@ export class OpenClawGateway {
 
       return true
     } catch (err: unknown) {
-      console.error('[openclaw-gateway] Connect error:', err instanceof Error ? err.message : String(err))
+      console.error('[openclaw-gateway] Connect error:', errorMessage(err))
       this.scheduleReconnect()
       return false
     }

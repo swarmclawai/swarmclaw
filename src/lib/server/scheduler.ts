@@ -1,4 +1,3 @@
-import { genId } from '@/lib/id'
 import { loadSchedules, loadAgents, loadTasks, upsertSchedule, upsertSchedules, upsertTask } from './storage'
 import { enqueueTask } from './queue'
 import { CronExpressionParser } from 'cron-parser'
@@ -8,6 +7,7 @@ import { enqueueSystemEvent } from './system-events'
 import { requestHeartbeatNow } from './heartbeat-wake'
 import { processDueWatchJobs } from './watch-jobs'
 import { isAgentDisabled } from './agent-availability'
+import { prepareScheduledTaskRun } from './task-lifecycle'
 
 const TICK_INTERVAL = 60_000 // 60 seconds
 let intervalId: ReturnType<typeof setInterval> | null = null
@@ -147,69 +147,12 @@ async function tick() {
     // Compute next run
     advanceSchedule(schedule)
 
-    // Reuse linked task if it exists and is not currently in-flight
-    let taskId = ''
-    const existingTaskId = typeof schedule.linkedTaskId === 'string' ? schedule.linkedTaskId : ''
-    const existingTask = existingTaskId ? tasks[existingTaskId] : null
-    if (existingTask && existingTask.status !== 'queued' && existingTask.status !== 'running') {
-      // Accumulate stats from the previous run before resetting
-      taskId = existingTaskId
-      const prev = existingTask as any
-      prev.totalRuns = (prev.totalRuns || 0) + 1
-      if (existingTask.status === 'completed') prev.totalCompleted = (prev.totalCompleted || 0) + 1
-      if (existingTask.status === 'failed') prev.totalFailed = (prev.totalFailed || 0) + 1
-
-      // Reset for the new run
-      existingTask.status = 'backlog'
-      existingTask.title = `[Sched] ${schedule.name} (run #${schedule.runNumber})`
-      existingTask.result = null
-      existingTask.error = null
-      existingTask.outputFiles = []
-      existingTask.artifacts = []
-      existingTask.sessionId = null
-      existingTask.completionReportPath = null
-      existingTask.updatedAt = now
-      existingTask.queuedAt = null
-      existingTask.startedAt = null
-      existingTask.completedAt = null
-      existingTask.archivedAt = null
-      existingTask.attempts = 0
-      existingTask.retryScheduledAt = null
-      existingTask.deadLetteredAt = null
-      existingTask.validation = null
-      prev.runNumber = schedule.runNumber
-    } else {
-      // Create a new linked task (first run or previous task still in-flight)
-      taskId = genId()
-      tasks[taskId] = {
-        id: taskId,
-        title: `[Sched] ${schedule.name} (run #${schedule.runNumber})`,
-        description: schedule.taskPrompt,
-        status: 'backlog',
-        agentId: schedule.agentId,
-        sessionId: null,
-        result: null,
-        error: null,
-        createdAt: now,
-        updatedAt: now,
-        queuedAt: null,
-        startedAt: null,
-        completedAt: null,
-        sourceType: 'schedule',
-        sourceScheduleId: schedule.id,
-        sourceScheduleName: schedule.name,
-        sourceScheduleKey: scheduleSignature || null,
-        createdInSessionId: schedule.createdInSessionId || null,
-        createdByAgentId: schedule.createdByAgentId || null,
-        followupConnectorId: schedule.followupConnectorId || null,
-        followupChannelId: schedule.followupChannelId || null,
-        followupThreadId: schedule.followupThreadId || null,
-        followupSenderId: schedule.followupSenderId || null,
-        followupSenderName: schedule.followupSenderName || null,
-        runNumber: schedule.runNumber,
-      }
-      schedule.linkedTaskId = taskId
-    }
+    const { taskId } = prepareScheduledTaskRun({
+      schedule,
+      tasks,
+      now,
+      scheduleSignature,
+    })
 
     upsertTask(taskId, tasks[taskId])
     upsertSchedule(schedule.id, schedule)

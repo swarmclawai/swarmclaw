@@ -10,6 +10,7 @@ import { FilePreview } from '@/components/shared/file-preview'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface Props {
   streaming: boolean
@@ -119,7 +120,7 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
       const result = await uploadImage(file)
       addPendingFile({ file, path: result.path, url: result.url })
     } catch (err: unknown) {
-      console.error('File upload failed:', err instanceof Error ? err.message : String(err))
+      console.error('File upload failed:', errorMessage(err))
     }
   }, [addPendingFile])
 

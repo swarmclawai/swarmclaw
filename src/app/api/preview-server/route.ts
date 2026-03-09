@@ -6,6 +6,7 @@ import path from 'path'
 import { localIP } from '@/lib/server/storage'
 import { resolveDevServerLaunchDir } from '@/lib/server/devserver-launch'
 import { resolvePathWithinBaseDir } from '@/lib/server/path-utils'
+import { hmrSingleton, sleep } from '@/lib/shared-utils'
 
 // ---------------------------------------------------------------------------
 // MIME types for static server
@@ -36,9 +37,8 @@ interface PreviewServer {
   log: string
 }
 
-const globalKey = '__swarmclaw_preview_servers__' as const
-const servers: Map<string, PreviewServer> = (globalThis as unknown as Record<string, unknown>)[globalKey] as Map<string, PreviewServer>
-  ?? ((globalThis as unknown as Record<string, unknown>)[globalKey] = new Map<string, PreviewServer>())
+const servers: Map<string, PreviewServer> =
+  hmrSingleton('__swarmclaw_preview_servers__', () => new Map<string, PreviewServer>())
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -242,7 +242,7 @@ async function startNpmServer(dir: string, command: string[], port: number, fram
   servers.set(dirKey(dir), entry)
 
   // Wait for the server to start and detect the actual port
-  await new Promise((resolve) => setTimeout(resolve, 5000))
+  await sleep(5000)
   if (proc.exitCode !== null) {
     servers.delete(dirKey(dir))
     throw new Error(`npm dev server exited early with code ${proc.exitCode}\n${log.slice(-4000)}`)

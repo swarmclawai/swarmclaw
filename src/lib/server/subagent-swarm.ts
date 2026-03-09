@@ -10,6 +10,7 @@
  */
 
 import { genId } from '@/lib/id'
+import { errorMessage, hmrSingleton, sleep } from '@/lib/shared-utils'
 import { notify } from './ws-hub'
 import {
   spawnSubagent,
@@ -132,11 +133,7 @@ export interface AggregatedResult {
 // Storage (globalThis-scoped for HMR safety)
 // ---------------------------------------------------------------------------
 
-const SWARM_KEY = '__swarmclaw_swarm_registry__' as const
-const globalScope = globalThis as typeof globalThis & {
-  [SWARM_KEY]?: Map<string, SwarmHandle>
-}
-const swarmRegistry = globalScope[SWARM_KEY] ?? (globalScope[SWARM_KEY] = new Map())
+const swarmRegistry = hmrSingleton('__swarmclaw_swarm_registry__', () => new Map<string, SwarmHandle>())
 
 function notifySwarmChanged() {
   notify('swarm_status')
@@ -194,7 +191,7 @@ export function spawnSwarm(
         index: i,
         handle: null as unknown as SubagentHandle,
         result: null,
-        spawnError: err instanceof Error ? err.message : String(err),
+        spawnError: errorMessage(err),
       })
     }
   }
@@ -435,7 +432,7 @@ export async function waitForAll(
   while (Date.now() < timeoutAt) {
     const snapshot = aggregateResults(jobIds)
     if (snapshot.allCompleted) return snapshot
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+    await sleep(pollIntervalMs)
   }
 
   // Final snapshot after timeout

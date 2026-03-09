@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { Session } from '@/types'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 import { loadApprovals, loadSettings, loadSession, loadMcpServers, patchSession } from '../storage'
 import { loadRuntimeSettings } from '../runtime-settings'
 import { log } from '../logger'
@@ -80,15 +81,15 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
     const cliProcessTimeoutMs = runtime.cliProcessTimeoutMs
     const appSettings = loadSettings()
     const grantedToolIds = approvedToolAccessIds(ctx)
-    const effectiveEnabledPlugins = Array.from(new Set([
+    const effectiveEnabledPlugins = dedup([
       ...(Array.isArray(enabledPlugins) ? enabledPlugins : []),
       ...grantedToolIds,
-    ]))
+    ])
     if (ctx?.sessionId && grantedToolIds.length > 0) {
       patchSession(ctx.sessionId, (currentSession) => {
         if (!currentSession) return currentSession
         const currentPlugins = Array.isArray(currentSession.plugins) ? currentSession.plugins : []
-        const mergedPlugins = Array.from(new Set([...currentPlugins, ...grantedToolIds]))
+        const mergedPlugins = dedup([...currentPlugins, ...grantedToolIds])
         if (mergedPlugins.length === currentPlugins.length) return currentSession
         currentSession.plugins = mergedPlugins
         currentSession.updatedAt = Date.now()
@@ -261,7 +262,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
         )
       }
     } catch (err: unknown) {
-      log.error('session-tools', 'Failed to load plugin tools', { error: err instanceof Error ? err.message : String(err) })
+      log.error('session-tools', 'Failed to load plugin tools', { error: errorMessage(err) })
     }
 
     // 3. MCP server tools

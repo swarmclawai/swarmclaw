@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { genId } from '@/lib/id'
 import type { ApprovalRequest, MessageToolEvent, Session } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 import { submitDecision } from '../approvals'
 import { executeSessionChatTurn, type ExecuteChatTurnResult } from '../chat-execution'
 import { WORKSPACE_DIR } from '../data-dir'
@@ -850,11 +851,11 @@ export function resolveRegressionPlugins(
   agent: Record<string, unknown>,
   pluginMode: RegressionPluginMode,
 ): RegressionPluginResolution {
-  const requiredCanonical = Array.from(new Set(
+  const requiredCanonical = dedup(
     normalizePluginList(requiredPlugins)
       .map((plugin) => canonicalizePluginId(plugin))
       .filter(Boolean),
-  ))
+  )
   if (pluginMode === 'scenario') {
     return {
       requiredPlugins: requiredCanonical,

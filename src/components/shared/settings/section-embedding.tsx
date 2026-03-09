@@ -5,6 +5,7 @@ import { api } from '@/lib/api-client'
 import { useAppStore } from '@/stores/use-app-store'
 import toast from 'react-hot-toast'
 import type { SettingsSectionProps } from './types'
+import { errorMessage } from '@/lib/shared-utils'
 
 interface EmbeddingSectionProps extends SettingsSectionProps {
   credList: Array<{ id: string; name: string; provider: string }>
@@ -99,7 +100,7 @@ export function EmbeddingSection({ appSettings, patchSettings, inputClass, credL
                         setAddingKey(false)
                         setNewKeyName('')
                         setNewKeyValue('')
-                      } catch (err: unknown) { toast.error(`Failed to save: ${err instanceof Error ? err.message : String(err)}`) }
+                      } catch (err: unknown) { toast.error(`Failed to save: ${errorMessage(err)}`) }
                       finally { setSavingKey(false) }
                     }} className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40" style={{ fontFamily: 'inherit' }}>
                       {savingKey ? 'Saving...' : 'Save Key'}

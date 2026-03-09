@@ -43,6 +43,7 @@ import {
   buildContinuationPrompt,
 } from './stream-continuation'
 import type { ContinuationType } from './stream-continuation'
+import { errorMessage, sleep } from '@/lib/shared-utils'
 import {
   compactThreadRecallText,
   getExplicitRequiredToolNames,
@@ -1226,7 +1227,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         const errName = innerErr instanceof Error ? innerErr.constructor.name : ''
         const errMsg = idleTimedOut
           ? 'Model stream stalled without emitting text or tool results for 90 seconds.'
-          : innerErr instanceof Error ? innerErr.message : String(innerErr)
+          : errorMessage(innerErr)
         const errStack = innerErr instanceof Error ? innerErr.stack?.slice(0, 500) : undefined
 
         // Classify the error:
@@ -1439,13 +1440,13 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
         lastSegment = ''
       } else if (shouldContinue === 'transient') {
         // Short delay before retrying transient errors (API timeout, rate limit, etc.)
-        await new Promise((r) => setTimeout(r, 2000 * transientRetryCount))
+        await sleep(2000 * transientRetryCount)
       }
     }
   } catch (err: unknown) {
     const errMsg = timedOut
       ? 'Ongoing loop stopped after reaching the configured runtime limit.'
-      : err instanceof Error ? err.message : String(err)
+      : errorMessage(err)
     const heartbeatEligible = runtime.loopMode === 'ongoing' || session.heartbeatEnabled === true || agentHeartbeatEnabled
     const budgetLimited = timedOut || /recursion limit|maximum recursion/i.test(errMsg)
     if (heartbeatEligible && budgetLimited) {

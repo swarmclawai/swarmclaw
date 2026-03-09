@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { validateAccessKey, isFirstTimeSetup, markSetupComplete } from '@/lib/server/storage'
 import { AUTH_COOKIE_NAME, getCookieValue } from '@/lib/auth'
 import { isProductionRuntime } from '@/lib/runtime-env'
+import { hmrSingleton } from '@/lib/shared-utils'
 export const dynamic = 'force-dynamic'
 
 interface AuthAttemptEntry {
@@ -9,9 +10,7 @@ interface AuthAttemptEntry {
   lockedUntil: number
 }
 
-const authRateLimitMap = (
-  (globalThis as Record<string, unknown>).__swarmclaw_auth_rate_limit__ ??= new Map()
-) as Map<string, AuthAttemptEntry>
+const authRateLimitMap = hmrSingleton('__swarmclaw_auth_rate_limit__', () => new Map<string, AuthAttemptEntry>())
 
 const MAX_ATTEMPTS = 5
 const LOCKOUT_MS = 15 * 60 * 1000

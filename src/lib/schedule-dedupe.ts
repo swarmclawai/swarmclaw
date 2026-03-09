@@ -1,5 +1,6 @@
 import { CronExpressionParser } from 'cron-parser'
 import type { ScheduleType } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 export type ScheduleLike = {
   id?: string
@@ -242,8 +243,8 @@ function countTokenOverlap(a: string[], b: string[]): number {
 
 function hasFuzzyPromptMatch(a: ScheduleSignature, b: ScheduleSignature): boolean {
   if (!a.promptTokens.length || !b.promptTokens.length) return false
-  const uniqueA = [...new Set(a.promptTokens)]
-  const uniqueB = [...new Set(b.promptTokens)]
+  const uniqueA = dedup(a.promptTokens)
+  const uniqueB = dedup(b.promptTokens)
   const overlap = countTokenOverlap(uniqueA, uniqueB)
   if (overlap === 0) return false
   const smallerSize = Math.min(uniqueA.length, uniqueB.length)

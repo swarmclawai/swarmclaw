@@ -1,9 +1,11 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { DATA_DIR } from '../data-dir'
+import { OPENCLAW_DATA_DIR } from '../data-dir'
+import { safeJsonParse } from '../json-utils'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
-import { normalizeConnectorIngressResult } from './types'
+import { resolveConnectorIngressReply } from './ingress-delivery'
+import { NO_MESSAGE_SENTINEL, isNoMessage } from './message-sentinel'
 import {
   createGatewayRequestFrame,
   parseGatewayFrame,
@@ -39,7 +41,6 @@ const DEFAULT_CHAT_HISTORY_LIMIT = 40
 const MIN_CHAT_HISTORY_LIMIT = 5
 const MAX_CHAT_HISTORY_LIMIT = 200
 const MAX_INLINE_ATTACHMENT_BYTES = 5_000_000
-const NO_MESSAGE_SENTINEL = 'NO_MESSAGE'
 const MAX_SEEN_HISTORY_MESSAGES = 4_096
 const RECENT_HISTORY_DUPLICATE_WINDOW_MS = 20_000
 const HISTORY_ERROR_LOG_INTERVAL_MS = 30_000
@@ -127,10 +128,6 @@ function isSecureWsUrl(url: string): boolean {
   return false
 }
 
-function isNoMessage(text: string): boolean {
-  return text.trim().toUpperCase() === NO_MESSAGE_SENTINEL
-}
-
 function base64UrlEncode(buf: Buffer): string {
   return buf.toString('base64').replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '')
 }
@@ -186,7 +183,7 @@ function signDevicePayload(privateKeyPem: string, payload: string): string {
 }
 
 function resolveIdentityPath(connectorId: string): string {
-  return path.join(DATA_DIR, 'openclaw', `${connectorId}-device.json`)
+  return path.join(OPENCLAW_DATA_DIR, `${connectorId}-device.json`)
 }
 
 function persistIdentity(filePath: string, identity: DeviceIdentity) {
@@ -206,7 +203,7 @@ function persistIdentity(filePath: string, identity: DeviceIdentity) {
 function loadOrCreateIdentity(filePath: string): DeviceIdentity {
   try {
     if (fs.existsSync(filePath)) {
-      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as StoredIdentity
+      const parsed = safeJsonParse<StoredIdentity | null>(fs.readFileSync(filePath, 'utf8'), null)
       if (
         parsed?.version === 1
         && typeof parsed.deviceId === 'string'
@@ -961,10 +958,9 @@ const openclaw: PlatformConnector = {
       markRecentInbound(inbound, now)
 
       try {
-        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
-        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
-        const response = routeResult.visibleText
-        if (!isNoMessage(response)) await sendChat(inbound.channelId, response)
+        const reply = await resolveConnectorIngressReply(onMessage, inbound)
+        if (!reply) return
+        await sendChat(inbound.channelId, reply.visibleText)
       } catch (err: unknown) {
         const message = getErrorMessage(err)
         console.error('[openclaw] Error routing inbound chat event:', message)

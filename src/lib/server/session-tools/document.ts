@@ -9,6 +9,7 @@ import { extractDocumentArtifact } from '../document-utils'
 import type { ToolBuildContext } from './context'
 import { findBinaryOnPath, safePath } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { errorMessage } from '@/lib/shared-utils'
 
 function parseMetadataInput(value: unknown): Record<string, unknown> {
   if (!value) return {}
@@ -219,7 +220,7 @@ async function executeDocumentAction(
 
     return `Error: Unknown action "${action}".`
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

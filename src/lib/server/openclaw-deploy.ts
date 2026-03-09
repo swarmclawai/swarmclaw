@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { hmrSingleton, sleep } from '@/lib/shared-utils'
 import {
   getManagedProcess,
   killManagedProcess,
@@ -191,7 +192,7 @@ interface ExposureMeta {
 
 const DEFAULT_LOCAL_PORT = 18789
 const DEFAULT_REMOTE_PORT = 18789
-const GLOBAL_KEY = '__swarmclaw_openclaw_deploy__' as const
+const OC_DEPLOY_KEY = '__swarmclaw_openclaw_deploy__'
 
 const REMOTE_PROVIDER_META: Record<OpenClawRemoteDeployProvider, RemoteProviderMeta> = {
   hetzner: {
@@ -542,13 +543,11 @@ function normalizeRuntimeState(raw: unknown): DeployRuntimeState {
 }
 
 function getRuntimeState(): DeployRuntimeState {
-  const globalState = globalThis as typeof globalThis & { [GLOBAL_KEY]?: DeployRuntimeState }
-  if (!globalState[GLOBAL_KEY]) {
-    globalState[GLOBAL_KEY] = defaultRuntimeState()
-  } else {
-    globalState[GLOBAL_KEY] = normalizeRuntimeState(globalState[GLOBAL_KEY])
-  }
-  return globalState[GLOBAL_KEY] || defaultRuntimeState()
+  const raw = hmrSingleton<DeployRuntimeState>(OC_DEPLOY_KEY, defaultRuntimeState)
+  const normalized = normalizeRuntimeState(raw)
+  // Write back the normalized state so subsequent reads see it
+  ;(globalThis as Record<string, unknown>)[OC_DEPLOY_KEY] = normalized
+  return normalized
 }
 
 function shellEscape(value: string): string {
@@ -818,16 +817,13 @@ async function startRemoteCommand(params: {
   }
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 async function waitForLocalRuntime(processId: string, attempts = 12): Promise<void> {
   for (let i = 0; i < attempts; i += 1) {
     const process = getManagedProcess(processId)
     if (!process || process.status !== 'running') break
     if ((process.log || '').toLowerCase().includes('listening')) return
-    await wait(500)
+    await sleep(500)
   }
 }
 

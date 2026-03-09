@@ -1,4 +1,5 @@
 import { genId } from '@/lib/id'
+import { hmrSingleton, sleep } from '@/lib/shared-utils'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 
 const MAX_LOG_CHARS = 200_000
@@ -52,12 +53,11 @@ interface RuntimeState {
   exitWaiters: Map<string, Promise<ProcessRecord>>
 }
 
-const globalKey = '__swarmclaw_process_manager__' as const
-const state: RuntimeState = (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = {
+const state: RuntimeState = hmrSingleton<RuntimeState>('__swarmclaw_process_manager__', () => ({
   records: new Map<string, ProcessRecord>(),
   children: new Map<string, ChildProcessWithoutNullStreams>(),
   exitWaiters: new Map<string, Promise<ProcessRecord>>(),
-})
+}))
 
 function now() {
   return Date.now()
@@ -91,9 +91,6 @@ function normalizeLines(text: string): string[] {
   return text.split('\n')
 }
 
-async function wait(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 function getShellCommand(command: string): { shell: string; args: string[] } {
   return { shell: '/bin/zsh', args: ['-lc', command] }
@@ -177,7 +174,7 @@ export async function startManagedProcess(opts: StartProcessOptions): Promise<St
       Math.max(100, BACKGROUND_STARTUP_GRACE_MS),
       Math.max(200, timeoutMs),
     )
-    await wait(startupWaitMs)
+    await sleep(startupWaitMs)
     const rec = state.records.get(id)
     if (rec && rec.status !== 'running') {
       return {
@@ -197,7 +194,7 @@ export async function startManagedProcess(opts: StartProcessOptions): Promise<St
 
   const completed = await Promise.race([
     exitPromise.then((r) => ({ type: 'exit' as const, record: r })),
-    wait(yieldMs).then(() => ({ type: 'yield' as const })),
+    sleep(yieldMs).then(() => ({ type: 'yield' as const })),
   ])
 
   if (completed.type === 'yield') {

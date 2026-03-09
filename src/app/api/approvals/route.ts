@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { listPendingApprovals, submitDecision } from '@/lib/server/approvals'
+import { errorMessage } from '@/lib/shared-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +18,6 @@ export async function POST(req: Request) {
     await submitDecision(id, approved)
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 })
   }
 }

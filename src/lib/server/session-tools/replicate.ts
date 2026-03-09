@@ -4,6 +4,7 @@ import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import type { ToolBuildContext } from './context'
+import { errorMessage, sleep } from '@/lib/shared-utils'
 
 interface ReplicateConfig {
   apiToken: string
@@ -71,7 +72,7 @@ function formatPrediction(p: Record<string, unknown>): Record<string, unknown> {
 async function pollPrediction(token: string, predictionId: string, cfg: ReplicateConfig): Promise<Record<string, unknown>> {
   const deadline = Date.now() + cfg.timeoutMs
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, cfg.pollingIntervalMs))
+    await sleep(cfg.pollingIntervalMs)
     const r = await replicateRequest('GET', `/predictions/${predictionId}`, token)
     if (!r.ok) return { status: 'failed', error: r.error }
     const prediction = r.data as Record<string, unknown>
@@ -206,7 +207,7 @@ async function executeReplicate(args: Record<string, unknown>): Promise<string> 
         return `Error: Unknown action "${action}". Use: run, get, cancel, get_model, search, status.`
     }
   } catch (err: unknown) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`
+    return `Error: ${errorMessage(err)}`
   }
 }
 

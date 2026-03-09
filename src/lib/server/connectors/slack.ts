@@ -3,9 +3,10 @@ import fs from 'fs'
 import path from 'path'
 import type { Connector } from '@/types'
 import type { PlatformConnector, ConnectorInstance, InboundMessage, InboundThreadHistoryEntry } from './types'
-import { normalizeConnectorIngressResult } from './types'
+import { resolveConnectorIngressReply } from './ingress-delivery'
+import { deliverChunkedConnectorText } from './delivery'
 import { downloadInboundMediaToUpload, inferInboundMediaType, mimeFromPath, isImageMime } from './media'
-import { getConnectorReplySendOptions, isNoMessage, recordConnectorOutboundDelivery } from './manager'
+import { dedup, errorMessage } from '@/lib/shared-utils'
 
 function normalizeSlackEmoji(input: string): string {
   const raw = input.trim().replace(/^:|:$/g, '')
@@ -55,7 +56,7 @@ async function hydrateSlackThreadContext(params: {
     const messages = Array.isArray((result as any)?.messages) ? (result as any).messages as any[] : []
     if (!messages.length) return
 
-    const userIds = [...new Set(messages.map((message) => typeof message?.user === 'string' ? message.user : '').filter(Boolean))]
+    const userIds = dedup(messages.map((message) => typeof message?.user === 'string' ? message.user : '').filter(Boolean))
     const nameMap = new Map<string, string>()
     await Promise.all(userIds.map(async (userId) => {
       const name = await resolveSlackUserDisplayName(params.client, userId)
@@ -98,7 +99,7 @@ async function hydrateSlackThreadContext(params: {
     params.inbound.threadPersonaLabel = params.inbound.threadTitle
     params.inbound.threadHistory = history.length ? history : undefined
   } catch (err: unknown) {
-    console.warn(`[slack] Thread context bootstrap failed: ${err instanceof Error ? err.message : String(err)}`)
+    console.warn(`[slack] Thread context bootstrap failed: ${errorMessage(err)}`)
   }
 }
 
@@ -243,38 +244,22 @@ const slack: PlatformConnector = {
       await hydrateSlackThreadContext({ client, inbound, currentTs: msg.ts || undefined, botUserId })
 
       try {
-        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
-        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
-        const response = routeResult.visibleText
-
-        const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
-        const threadTs = replyOptions.threadId || replyOptions.replyToMessageId
-        let lastMessageId: string | undefined
-
-        // Slack has a 4000 char limit for messages
-        if (response.length <= 4000) {
-          const sent = await client.chat.postMessage({
-            channel: channelId,
-            text: response,
-            thread_ts: threadTs,
-          })
-          lastMessageId = sent.ts || undefined
-        } else {
-          const chunks = response.match(/[\s\S]{1,3990}/g) || [response]
-          for (const chunk of chunks) {
+        const reply = await resolveConnectorIngressReply(onMessage, inbound)
+        if (!reply) return
+        await deliverChunkedConnectorText({
+          connectorId: connector.id,
+          inbound,
+          text: reply.visibleText,
+          maxSingleMessageLength: 4000,
+          chunkLength: 3990,
+          sendChunk: async (chunk, meta) => {
             const sent = await client.chat.postMessage({
               channel: channelId,
               text: chunk,
-              thread_ts: threadTs,
+              thread_ts: meta.threadId || meta.replyToMessageId,
             })
-            lastMessageId = sent.ts || undefined
-          }
-        }
-        await recordConnectorOutboundDelivery({
-          connectorId: connector.id,
-          inbound,
-          messageId: lastMessageId,
-          state: 'sent',
+            return sent.ts || undefined
+          },
         })
       } catch (err: any) {
         console.error(`[slack] Error handling message:`, err.message)
@@ -317,20 +302,22 @@ const slack: PlatformConnector = {
       })
 
       try {
-        const routeResult = normalizeConnectorIngressResult(await onMessage(inbound))
-        if (routeResult.managerHandled || routeResult.delivery === 'silent') return
-        const response = routeResult.visibleText
-        const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound })
-        const sent = await client.chat.postMessage({
-          channel: event.channel,
-          text: response,
-          thread_ts: replyOptions.threadId || replyOptions.replyToMessageId,
-        })
-        await recordConnectorOutboundDelivery({
+        const reply = await resolveConnectorIngressReply(onMessage, inbound)
+        if (!reply) return
+        await deliverChunkedConnectorText({
           connectorId: connector.id,
           inbound,
-          messageId: sent.ts || undefined,
-          state: 'sent',
+          text: reply.visibleText,
+          maxSingleMessageLength: 4000,
+          chunkLength: 3990,
+          sendChunk: async (chunk, meta) => {
+            const sent = await client.chat.postMessage({
+              channel: event.channel,
+              text: chunk,
+              thread_ts: meta.threadId || meta.replyToMessageId,
+            })
+            return sent.ts || undefined
+          },
         })
       } catch (err: any) {
         console.error(`[slack] Error handling mention:`, err.message)

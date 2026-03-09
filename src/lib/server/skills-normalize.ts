@@ -1,5 +1,6 @@
 import path from 'path'
 import type { SkillInstallOption, SkillRequirements, SkillSecuritySummary } from '@/types'
+import { dedup } from '@/lib/shared-utils'
 
 export type SkillSourceFormat = 'openclaw' | 'plain'
 
@@ -292,7 +293,7 @@ function pickRuntimeMetadata(frontmatter: Record<string, unknown>): Record<strin
 }
 
 function uniqueStrings(values: string[]): string[] {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)))
+  return dedup(values.map((value) => value.trim()).filter(Boolean))
 }
 
 function extractDetectedEnvVars(rawContent: string): string[] {
