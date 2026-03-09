@@ -148,7 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.8.6 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.8.7 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -701,7 +701,7 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example patch release (v0.8.6 style)
+# example patch release (v0.8.7 style)
 npm version patch
 git push origin main --follow-tags
 ```
@@ -711,14 +711,14 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.8.6 Release Readiness Notes
+#### v0.8.7 Release Readiness Notes
 
-Before shipping `v0.8.6`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.8.7`, confirm the following user-facing changes are reflected in docs:
 
-1. Agent/tooling docs note that enabled tools are now canonicalized onto `plugins`, and editing an agent immediately syncs the main thread session/tool badge state.
-2. Provider docs note that successful credential tests can hydrate the saved model picker from live provider model discovery instead of relying only on static defaults.
-3. Chat/media docs reflect the lighter refresh path: attachment image previews reuse the shared preview panel, and agent/chat switching no longer triggers redundant message reloads.
-4. Site and README install/version strings are updated to `v0.8.6`, including install snippets, release notes index text, and sidebar/footer labels.
+1. Install/update docs note that `v0.8.7` repairs the committed npm lockfile so `npm ci` succeeds again on clean GitHub Actions and operator installs.
+2. Site and README install/version strings are updated to `v0.8.7`, including install snippets, release notes index text, and sidebar/footer labels.
+3. Release notes make it explicit that this patch is a packaging/install integrity fix on top of the `v0.8.6` runtime changes, not a new behavior rollout.
+4. The release branch and `main` stay aligned so the shipped tag points at the same commit users see on the default branch.
 
 ## CLI
 
