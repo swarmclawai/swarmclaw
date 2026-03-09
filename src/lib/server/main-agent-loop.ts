@@ -505,6 +505,21 @@ export function getMainLoopStateForSession(sessionId: string): MainLoopState | n
   return state ? normalizeState(state) : null
 }
 
+/**
+ * Remove stateMap entries for sessions that no longer exist.
+ * Called periodically by the daemon health sweep.
+ */
+export function pruneMainLoopState(liveSessionIds: Set<string>): number {
+  let removed = 0
+  for (const sessionId of stateMap.keys()) {
+    if (!liveSessionIds.has(sessionId)) {
+      stateMap.delete(sessionId)
+      removed++
+    }
+  }
+  return removed
+}
+
 export function setMainLoopStateForSession(sessionId: string, patch: Partial<MainLoopState>): MainLoopState | null {
   const current = getOrCreateState(sessionId)
   if (!current) return null
@@ -607,15 +622,15 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   state.updatedAt = nowTs
   state.missionTokens += Math.max(0, Math.trunc((input.inputTokens || 0) + (input.outputTokens || 0)))
   state.missionCostUsd += Math.max(0, Number(input.estimatedCost || 0))
-  state.metaMissCount = heartbeat || plan || review ? 0 : state.metaMissCount + 1
+  const cleanedResult = persistedText.trim()
+  const waitingForExternal = extractWaitSignal(resultText, toolEvents)
+  const gotTerminalAck = /^HEARTBEAT_OK$/i.test(cleanedResult) || /^NO_MESSAGE$/i.test(cleanedResult)
+  state.metaMissCount = heartbeat || plan || review || gotTerminalAck ? 0 : state.metaMissCount + 1
 
   if (input.internal) {
     state.pendingEvents = []
   }
 
-  const cleanedResult = persistedText.trim()
-  const waitingForExternal = extractWaitSignal(resultText, toolEvents)
-  const gotTerminalAck = /^HEARTBEAT_OK$/i.test(cleanedResult) || /^NO_MESSAGE$/i.test(cleanedResult)
   const needsReplan = review?.needs_replan === true || ((review?.confidence ?? 1) < 0.45)
   const limit = followupLimit()
 

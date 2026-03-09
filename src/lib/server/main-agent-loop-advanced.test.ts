@@ -195,6 +195,68 @@ describe('main-agent-loop advanced', () => {
     assert.equal(output.followupOk, null, 'no followup on terminal ack')
   })
 
+  it('resets metadata miss count when structured metadata returns and keeps terminal acks at zero', () => {
+    const meta = heartbeatMetaLine('progress', 'deploy', 'continue')
+    const output = runWithTempDataDir(`
+      ${sessionSetupScript()}
+
+      const miss1 = mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: 'Continue objective.',
+        internal: true,
+        source: 'heartbeat',
+        resultText: 'Still working without structured metadata.',
+      })
+      const state1 = mainLoop.getMainLoopStateForSession('main')
+
+      const miss2 = mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: 'Continue objective.',
+        internal: true,
+        source: 'heartbeat',
+        resultText: 'Another plain-text update without metadata.',
+      })
+      const state2 = mainLoop.getMainLoopStateForSession('main')
+
+      const withMeta = mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: 'Continue objective.',
+        internal: true,
+        source: 'heartbeat',
+        resultText: \`Metadata restored.\\n${meta}\`,
+      })
+      const state3 = mainLoop.getMainLoopStateForSession('main')
+
+      const terminalAck = mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: 'Continue objective.',
+        internal: true,
+        source: 'heartbeat',
+        resultText: 'HEARTBEAT_OK',
+      })
+      const state4 = mainLoop.getMainLoopStateForSession('main')
+
+      console.log(JSON.stringify({
+        followupMiss1: miss1,
+        followupMiss2: miss2,
+        followupWithMeta: withMeta,
+        followupTerminalAck: terminalAck,
+        missCount1: state1?.metaMissCount ?? -1,
+        missCount2: state2?.metaMissCount ?? -1,
+        missCount3: state3?.metaMissCount ?? -1,
+        missCount4: state4?.metaMissCount ?? -1,
+        statusAfterAck: state4?.status ?? null,
+      }))
+    `)
+
+    assert.equal(output.missCount1, 1)
+    assert.equal(output.missCount2, 2)
+    assert.equal(output.missCount3, 0, 'structured metadata resets the miss counter')
+    assert.equal(output.missCount4, 0, 'terminal ack should not count as a metadata miss')
+    assert.equal(output.statusAfterAck, 'ok')
+    assert.equal(output.followupTerminalAck, null)
+  })
+
   // ─────────────────────────────────────────────────────────────────────
   // 3. Chain reset on error
   // ─────────────────────────────────────────────────────────────────────

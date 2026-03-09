@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { api } from '@/lib/api-client'
 import { toast } from 'sonner'
+import { useMountedRef } from '@/hooks/use-mounted-ref'
 
 const transportColors: Record<string, string> = {
   stdio: 'bg-emerald-500/15 text-emerald-400',
@@ -48,6 +49,7 @@ function buildArgsTemplate(inputSchema: Record<string, unknown> | undefined): st
 }
 
 export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
+  const mountedRef = useMountedRef()
   const mcpServers = useAppStore((s) => s.mcpServers)
   const loadMcpServers = useAppStore((s) => s.loadMcpServers)
   const setMcpServerSheetOpen = useAppStore((s) => s.setMcpServerSheetOpen)
@@ -66,6 +68,8 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const inspectorRequestIdRef = useRef(0)
+  const invokeRequestIdRef = useRef(0)
 
   useEffect(() => {
     loadMcpServers()
@@ -87,6 +91,7 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
 
   // Staggered status tests on mount
   useEffect(() => {
+    let cancelled = false
     timersRef.current.forEach(clearTimeout)
     timersRef.current = []
 
@@ -95,15 +100,20 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
       const timer = setTimeout(async () => {
         try {
           const res = await api<{ ok: boolean; tools?: string[]; error?: string }>('POST', `/mcp-servers/${server.id}/test`)
+          if (cancelled || !mountedRef.current) return
           setStatuses((prev) => ({ ...prev, [server.id]: { ok: res.ok, tools: res.tools, error: res.error, loading: false } }))
         } catch {
+          if (cancelled || !mountedRef.current) return
           setStatuses((prev) => ({ ...prev, [server.id]: { ok: false, error: 'Test failed', loading: false } }))
         }
       }, i * 200)
       timersRef.current.push(timer)
     })
 
-    return () => timersRef.current.forEach(clearTimeout)
+    return () => {
+      cancelled = true
+      timersRef.current.forEach(clearTimeout)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mcpServers])
 
@@ -125,11 +135,14 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
       await api('DELETE', `/mcp-servers/${confirmDelete.id}`)
       toast.success('MCP server deleted')
       await loadMcpServers()
+      if (!mountedRef.current) return
       setConfirmDelete(null)
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete server')
     } finally {
-      setDeletingId(null)
+      if (mountedRef.current) {
+        setDeletingId(null)
+      }
     }
   }
 
@@ -138,10 +151,12 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
     setStatuses((prev) => ({ ...prev, [id]: { ok: false, loading: true } }))
     try {
       const res = await api<{ ok: boolean; tools?: string[]; error?: string }>('POST', `/mcp-servers/${id}/test`)
+      if (!mountedRef.current) return
       setStatuses((prev) => ({ ...prev, [id]: { ok: res.ok, tools: res.tools, error: res.error, loading: false } }))
       if (res.ok) toast.success('Connection test passed')
       else toast.error(res.error || 'Connection test failed')
     } catch (err: unknown) {
+      if (!mountedRef.current) return
       setStatuses((prev) => ({ ...prev, [id]: { ok: false, error: 'Test failed', loading: false } }))
       toast.error(err instanceof Error ? err.message : 'Test failed')
     }
@@ -154,11 +169,13 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
       const res = await api<McpConformanceResult>('POST', `/mcp-servers/${id}/conformance`, {
         timeoutMs: 12000,
       })
+      if (!mountedRef.current) return
       setConformanceByServer((prev) => ({ ...prev, [id]: res }))
       if (res.ok) toast.success('Conformance check passed')
       else toast.error(`Conformance issues found (${res.issues.length})`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Conformance failed'
+      if (!mountedRef.current) return
       setConformanceByServer((prev) => ({
         ...prev,
         [id]: {
@@ -171,17 +188,22 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
       }))
       toast.error(msg)
     } finally {
-      setConformanceLoading((prev) => ({ ...prev, [id]: false }))
+      if (mountedRef.current) {
+        setConformanceLoading((prev) => ({ ...prev, [id]: false }))
+      }
     }
   }
 
   const openInspector = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
     if (inspectorServerId === id) {
+      inspectorRequestIdRef.current += 1
       setInspectorServerId(null)
       setInspectorError(null)
       return
     }
+    const requestId = inspectorRequestIdRef.current + 1
+    inspectorRequestIdRef.current = requestId
     setInspectorServerId(id)
     setInspectorError(null)
     setInvokeResult(null)
@@ -196,16 +218,20 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
     setInspectorLoading(true)
     try {
       const tools = await api<McpToolMeta[]>('GET', `/mcp-servers/${id}/tools`)
+      if (!mountedRef.current || inspectorRequestIdRef.current !== requestId) return
       setToolsByServer((prev) => ({ ...prev, [id]: Array.isArray(tools) ? tools : [] }))
       const first = Array.isArray(tools) && tools.length > 0 ? tools[0] : null
       setSelectedTool(first?.name || '')
       setArgsJson(first ? buildArgsTemplate(first.inputSchema) : '{}')
     } catch (err) {
+      if (!mountedRef.current || inspectorRequestIdRef.current !== requestId) return
       setInspectorError(err instanceof Error ? err.message : 'Failed to load tools')
       setSelectedTool('')
       setArgsJson('{}')
     } finally {
-      setInspectorLoading(false)
+      if (mountedRef.current && inspectorRequestIdRef.current === requestId) {
+        setInspectorLoading(false)
+      }
     }
   }
 
@@ -218,6 +244,8 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
 
   const handleInvoke = async () => {
     if (!inspectorServerId || !selectedTool) return
+    const requestId = invokeRequestIdRef.current + 1
+    invokeRequestIdRef.current = requestId
     let parsedArgs: Record<string, unknown> = {}
     try {
       parsedArgs = argsJson.trim() ? JSON.parse(argsJson) : {}
@@ -237,6 +265,7 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
         toolName: selectedTool,
         args: parsedArgs,
       })
+      if (!mountedRef.current || invokeRequestIdRef.current !== requestId) return
       setInvokeResult(result)
       if (result.ok) {
         if (result.isError) toast.error('Tool returned an error')
@@ -246,10 +275,13 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Invocation failed'
+      if (!mountedRef.current || invokeRequestIdRef.current !== requestId) return
       setInvokeResult({ ok: false, error: msg })
       toast.error(msg)
     } finally {
-      setInvokeLoading(false)
+      if (mountedRef.current && invokeRequestIdRef.current === requestId) {
+        setInvokeLoading(false)
+      }
     }
   }
 

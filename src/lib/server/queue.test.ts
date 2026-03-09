@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
+import type { BoardTask, Session } from '@/types'
+import type { SessionLike } from './task-followups'
 
 const originalEnv = {
   DATA_DIR: process.env.DATA_DIR,
@@ -304,7 +306,7 @@ describe('resolveTaskResumeContext', () => {
 // applyTaskResumeStateToSession
 // ---------------------------------------------------------------------------
 describe('applyTaskResumeStateToSession', () => {
-  function makeSession(overrides: Record<string, unknown> = {}): import('@/types').Session {
+  function makeSession(overrides: Record<string, unknown> = {}): Session {
     return {
       id: 'sess-1',
       agentId: 'agent-1',
@@ -313,7 +315,7 @@ describe('applyTaskResumeStateToSession', () => {
       lastActiveAt: Date.now(),
       active: true,
       ...overrides,
-    } as any
+    } as unknown as Session
   }
 
   it('returns false for null/undefined resume state', () => {
@@ -379,14 +381,14 @@ describe('resolveReusableTaskSessionId', () => {
       checkpoint: { lastSessionId: 'sess-abc', updatedAt: Date.now() },
     })
     const sessions = { 'sess-abc': { id: 'sess-abc', cwd: '/tmp', messages: [], user: '' } }
-    const result = queue.resolveReusableTaskSessionId(task, { t1: task }, sessions as Record<string, any>)
+    const result = queue.resolveReusableTaskSessionId(task, { t1: task }, sessions as Record<string, SessionLike>)
     assert.equal(result, 'sess-abc')
   })
 
   it('returns session from task sessionId', () => {
     const task = makeTask({ id: 't1', sessionId: 'sess-direct' })
     const sessions = { 'sess-direct': { id: 'sess-direct', cwd: '/tmp', messages: [], user: '' } }
-    const result = queue.resolveReusableTaskSessionId(task, { t1: task }, sessions as Record<string, any>)
+    const result = queue.resolveReusableTaskSessionId(task, { t1: task }, sessions as Record<string, SessionLike>)
     assert.equal(result, 'sess-direct')
   })
 
@@ -400,7 +402,7 @@ describe('resolveReusableTaskSessionId', () => {
       'sess-old': { id: 'sess-old', cwd: '/tmp', messages: [], user: '' },
       'sess-new': { id: 'sess-new', cwd: '/tmp', messages: [], user: '' },
     }
-    const result = queue.resolveReusableTaskSessionId(task, { t1: task }, sessions as Record<string, any>)
+    const result = queue.resolveReusableTaskSessionId(task, { t1: task }, sessions as Record<string, SessionLike>)
     assert.equal(result, 'sess-new')
   })
 
@@ -408,7 +410,7 @@ describe('resolveReusableTaskSessionId', () => {
     const parent = makeTask({ id: 'parent', sessionId: 'sess-parent' })
     const child = makeTask({ id: 'child', delegatedFromTaskId: 'parent' })
     const sessions = { 'sess-parent': { id: 'sess-parent', cwd: '/tmp', messages: [], user: '' } }
-    const result = queue.resolveReusableTaskSessionId(child, { parent, child }, sessions as Record<string, any>)
+    const result = queue.resolveReusableTaskSessionId(child, { parent, child }, sessions as Record<string, SessionLike>)
     assert.equal(result, 'sess-parent')
   })
 
@@ -416,7 +418,7 @@ describe('resolveReusableTaskSessionId', () => {
     const blocker = makeTask({ id: 'blocker', sessionId: 'sess-blocker' })
     const blocked = makeTask({ id: 'blocked', blockedBy: ['blocker'] })
     const sessions = { 'sess-blocker': { id: 'sess-blocker', cwd: '/tmp', messages: [], user: '' } }
-    const result = queue.resolveReusableTaskSessionId(blocked, { blocker, blocked }, sessions as Record<string, any>)
+    const result = queue.resolveReusableTaskSessionId(blocked, { blocker, blocked }, sessions as Record<string, SessionLike>)
     assert.equal(result, 'sess-blocker')
   })
 
@@ -434,8 +436,8 @@ describe('enqueueTask', () => {
   it('sets task to queued status and adds to queue', async () => {
     const storage = await import('./storage')
     const taskId = 'enq-test-1'
-    const tasks: Record<string, any> = {}
-    tasks[taskId] = makeTask({ id: taskId, status: 'todo' as any })
+    const tasks: Record<string, BoardTask> = {}
+    tasks[taskId] = makeTask({ id: taskId, status: 'backlog' })
     storage.saveTasks(tasks)
     storage.saveQueue([])
 
@@ -451,8 +453,8 @@ describe('enqueueTask', () => {
   it('does not duplicate task in queue on double enqueue', async () => {
     const storage = await import('./storage')
     const taskId = 'enq-test-2'
-    const tasks: Record<string, any> = {}
-    tasks[taskId] = makeTask({ id: taskId, status: 'todo' as any })
+    const tasks: Record<string, BoardTask> = {}
+    tasks[taskId] = makeTask({ id: taskId, status: 'backlog' })
     storage.saveTasks(tasks)
     storage.saveQueue([])
 
@@ -480,11 +482,11 @@ describe('cleanupFinishedTaskSessions', () => {
   it('disables heartbeat on sessions for completed tasks', async () => {
     const storage = await import('./storage')
     const sessionId = 'sess-cleanup-1'
-    const tasks: Record<string, any> = {}
+    const tasks: Record<string, BoardTask> = {}
     tasks['t-done'] = makeTask({ id: 't-done', status: 'completed', sessionId })
     storage.saveTasks(tasks)
 
-    const sessions: Record<string, any> = {}
+    const sessions: Record<string, unknown> = {}
     sessions[sessionId] = {
       id: sessionId,
       agentId: 'a1',
@@ -505,11 +507,11 @@ describe('cleanupFinishedTaskSessions', () => {
   it('skips sessions already disabled', async () => {
     const storage = await import('./storage')
     const sessionId = 'sess-cleanup-2'
-    const tasks: Record<string, any> = {}
+    const tasks: Record<string, BoardTask> = {}
     tasks['t-done2'] = makeTask({ id: 't-done2', status: 'completed', sessionId })
     storage.saveTasks(tasks)
 
-    const sessions: Record<string, any> = {}
+    const sessions: Record<string, unknown> = {}
     sessions[sessionId] = {
       id: sessionId,
       agentId: 'a1',
@@ -536,7 +538,7 @@ describe('disableSessionHeartbeat', () => {
   it('disables heartbeat on existing session', async () => {
     const storage = await import('./storage')
     const sessionId = 'sess-hb-1'
-    const sessions: Record<string, any> = {}
+    const sessions: Record<string, unknown> = {}
     sessions[sessionId] = {
       id: sessionId,
       agentId: 'a1',

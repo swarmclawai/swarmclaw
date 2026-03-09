@@ -5,13 +5,12 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { useNow } from '@/hooks/use-now'
-import { fetchMessages } from '@/lib/chats'
+import { useMountedRef } from '@/hooks/use-mounted-ref'
 import { api } from '@/lib/api-client'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import type { Agent, Session } from '@/types'
 import { AgentAvatar } from './agent-avatar'
 import { toast } from 'sonner'
-import { errorMessage } from '@/lib/shared-utils'
 
 interface Props {
   inSidebar?: boolean
@@ -19,13 +18,13 @@ interface Props {
 }
 
 export function AgentChatList({ inSidebar, onSelect }: Props) {
+  const mountedRef = useMountedRef()
   const now = useNow()
   const agents = useAppStore((s) => s.agents)
   const sessions = useAppStore((s) => s.sessions)
   const loadAgents = useAppStore((s) => s.loadAgents)
   const currentAgentId = useAppStore((s) => s.currentAgentId)
   const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
-  const setMessages = useChatStore((s) => s.setMessages)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const tasks = useAppStore((s) => s.tasks)
   const togglePinAgent = useAppStore((s) => s.togglePinAgent)
@@ -63,17 +62,19 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
     try {
       await api('DELETE', '/chats', { ids: sessionIds })
       await loadSessions()
+      if (!mountedRef.current) return
       toast.success(`Deleted ${sessionIds.length} chat(s)`)
       setBulkMode(false)
       setSelectedIds(new Set())
     } catch {
       toast.error('Failed to delete chats')
     }
-  }, [selectedIds, agents, loadSessions])
+  }, [selectedIds, agents, loadSessions, mountedRef])
 
   // FLIP animation refs
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map())
   const previousTopRef = useRef<Map<string, number>>(new Map())
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const setRowRef = useCallback((id: string, el: HTMLElement | null) => {
     if (el) rowRefs.current.set(id, el)
@@ -81,6 +82,14 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
   }, [])
 
   useEffect(() => { loadAgents() }, [loadAgents])
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimerRef.current) {
+        clearTimeout(scrollTimerRef.current)
+      }
+    }
+  }, [])
 
   // Build agent list sorted by last activity in their thread session
   const sortedAgents = useMemo(() => {
@@ -175,20 +184,13 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
       return
     }
     await setCurrentAgent(agent.id)
-    // Load messages for the thread
-    const state = useAppStore.getState()
-    if (state.currentSessionId) {
-      try {
-        const msgs = await fetchMessages(state.currentSessionId)
-        setMessages(msgs)
-      } catch (err: unknown) {
-        console.error('[agent-chat-list] Failed to load messages:', errorMessage(err))
-      }
-    }
     onSelect?.()
     // Delay scroll so React renders the new messages first
-    if (typeof window !== 'undefined') {
-      setTimeout(() => {
+    if (mountedRef.current && typeof window !== 'undefined') {
+      if (scrollTimerRef.current) {
+        clearTimeout(scrollTimerRef.current)
+      }
+      scrollTimerRef.current = setTimeout(() => {
         window.dispatchEvent(new CustomEvent('swarmclaw:scroll-bottom'))
       }, 100)
     }
@@ -221,7 +223,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto" data-testid="agent-chat-list">
       {/* Filter control + bulk mode toggle */}
       {sortedAgents.length > 2 && (
         <div className="flex items-center gap-1 px-4 pt-2.5 pb-1">
@@ -269,6 +271,8 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search agents..."
+            aria-label="Search agents"
+            data-testid="agent-search"
             className="w-full px-4 py-2.5 rounded-[12px] border border-white/[0.04] bg-surface text-text
               text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
             style={{ fontFamily: 'inherit' }}
@@ -297,7 +301,20 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
                   ${isActive
                     ? 'bg-accent-soft border-accent-bright/25'
                     : 'bg-accent-soft/40 border-accent-bright/15 hover:bg-accent-soft/55'}`}
+                role="button"
+                tabIndex={0}
+                data-testid="agent-row"
+                data-agent-id={defaultAgent.id}
+                data-agent-name={defaultAgent.name}
+                aria-label={`Open agent chat ${defaultAgent.name}`}
                 onClick={() => bulkMode ? toggleSelected(defaultAgent.id) : handleSelect(defaultAgent)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    if (bulkMode) toggleSelected(defaultAgent.id)
+                    else void handleSelect(defaultAgent)
+                  }
+                }}
               >
                 <div className="flex items-center gap-3">
                   {bulkMode && (
@@ -385,7 +402,20 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
                 ${isActive
                   ? 'bg-accent-soft/80 border border-accent-bright/20'
                   : 'bg-transparent hover:bg-white/[0.02]'}`}
+              role="button"
+              tabIndex={0}
+              data-testid="agent-row"
+              data-agent-id={agent.id}
+              data-agent-name={agent.name}
+              aria-label={`Open agent chat ${agent.name}`}
               onClick={() => bulkMode ? toggleSelected(agent.id) : handleSelect(agent)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  if (bulkMode) toggleSelected(agent.id)
+                  else void handleSelect(agent)
+                }
+              }}
             >
               <div className="flex items-center gap-2.5">
                 {bulkMode && (

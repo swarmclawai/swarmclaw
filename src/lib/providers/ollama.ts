@@ -3,6 +3,7 @@ import http from 'http'
 import https from 'https'
 import type { StreamChatOptions } from './index'
 import { resolveOllamaRuntimeConfig } from '@/lib/server/ollama-runtime'
+import { resolveImagePath } from '@/lib/server/resolve-image'
 
 const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|webp|bmp)$/i
 const TEXT_EXTS = /\.(txt|md|csv|json|xml|html|js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|yml|yaml|toml|env|log|sh|sql|css|scss)$/i
@@ -144,20 +145,22 @@ function fileToOllamaMsg(text: string, filePath?: string): { content: string; im
   return { content: `[Attached file: ${filePath.split('/').pop()}]\n\n${text}` }
 }
 
-function buildMessages(session: any, message: string, imagePath: string | undefined, loadHistory: (id: string) => any[]) {
+function buildMessages(session: Record<string, unknown>, message: string, imagePath: string | undefined, loadHistory: (id: string) => Record<string, unknown>[]) {
   const msgs: Array<{ role: string; content: string; images?: string[] }> = []
 
   if (loadHistory) {
-    const history = loadHistory(session.id).slice(-40)
+    const history = loadHistory(session.id as string).slice(-40)
     for (const m of history) {
-      if (m.role === 'user' && m.imagePath) {
-        msgs.push({ role: 'user', ...fileToOllamaMsg(m.text, m.imagePath) })
+      const histImagePath = resolveImagePath(m.imagePath as string | undefined, m.imageUrl as string | undefined)
+      if (m.role === 'user' && histImagePath) {
+        msgs.push({ role: 'user', ...fileToOllamaMsg(m.text as string, histImagePath) })
       } else {
-        msgs.push({ role: m.role, content: m.text })
+        msgs.push({ role: m.role as string, content: m.text as string })
       }
     }
   }
 
-  msgs.push({ role: 'user', ...fileToOllamaMsg(message, imagePath) })
+  const resolvedPath = resolveImagePath(imagePath)
+  msgs.push({ role: 'user', ...fileToOllamaMsg(message, resolvedPath ?? undefined) })
   return msgs
 }

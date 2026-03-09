@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { Badge } from '@/components/ui/badge'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ClawHubBrowser } from './clawhub-browser'
 import { toast } from 'sonner'
+import { useMountedRef } from '@/hooks/use-mounted-ref'
 
 interface ClawHubSkill {
   id: string
@@ -26,6 +27,7 @@ interface SearchResponse {
 }
 
 export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
+  const mountedRef = useMountedRef()
   const skills = useAppStore((s) => s.skills)
   const loadSkills = useAppStore((s) => s.loadSkills)
   const agents = useAppStore((s) => s.agents)
@@ -45,6 +47,7 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
   const [hubSearched, setHubSearched] = useState(false)
   const [hubError, setHubError] = useState<string | null>(null)
   const [installing, setInstalling] = useState<string | null>(null)
+  const hubSearchRequestIdRef = useRef(0)
 
   useEffect(() => {
     loadSkills()
@@ -67,10 +70,13 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
 
   // Embedded ClawHub search
   const searchHub = useCallback(async (q: string, p: number, append = false) => {
+    const requestId = hubSearchRequestIdRef.current + 1
+    hubSearchRequestIdRef.current = requestId
     setHubLoading(true)
     setHubError(null)
     try {
       const res = await api<SearchResponse>('GET', `/clawhub/search?q=${encodeURIComponent(q)}&page=${p}`)
+      if (!mountedRef.current || hubSearchRequestIdRef.current !== requestId) return
       if (append) {
         setHubSkills(prev => [...prev, ...res.skills])
       } else {
@@ -80,11 +86,14 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
       setHubPage(res.page)
       setHubSearched(true)
     } catch (err) {
+      if (!mountedRef.current || hubSearchRequestIdRef.current !== requestId) return
       setHubError(err instanceof Error ? err.message : 'Failed to search ClawHub')
     } finally {
-      setHubLoading(false)
+      if (mountedRef.current && hubSearchRequestIdRef.current === requestId) {
+        setHubLoading(false)
+      }
     }
-  }, [])
+  }, [mountedRef])
 
   useEffect(() => {
     if (!inSidebar && tab === 'clawhub' && !hubSearched) {
@@ -111,7 +120,9 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Install failed')
     } finally {
-      setInstalling(null)
+      if (mountedRef.current) {
+        setInstalling(null)
+      }
     }
   }
 

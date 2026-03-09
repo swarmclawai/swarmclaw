@@ -16,6 +16,7 @@ export type ContinuationType =
   | 'recursion'
   | 'transient'
   | 'required_tool'
+  | 'attachment_followthrough'
   | 'execution_followthrough'
   | 'deliverable_followthrough'
   | 'tool_summary'
@@ -263,6 +264,25 @@ function buildDeliverableFollowthroughPrompt(params: {
   return lines.join('\n')
 }
 
+function buildAttachmentFollowthroughPrompt(params: {
+  message: string
+  fullText: string
+}): string {
+  return [
+    'The current thread already includes user attachments as inline context.',
+    'Image attachments are directly visible to you in the message content. Text and PDF attachments are also available inline when present.',
+    'Do not claim that you cannot use images, attachments, or external tools when they are available in this session.',
+    'If the user wants you to look something up from an attachment, first extract the identifier or details from the attachment/history, then use the enabled tools to continue.',
+    'Only state a blocker if the attachment is genuinely unreadable or a needed tool is actually unavailable after a real attempt.',
+    '',
+    `Original request:\n${params.message}`,
+    '',
+    `Your previous response:\n${params.fullText || '(none)'}`,
+    '',
+    'Now continue and handle the attachment-aware task correctly.',
+  ].join('\n')
+}
+
 function buildToolSummaryPrompt(params: {
   message: string
   fullText: string
@@ -307,6 +327,12 @@ export function buildContinuationPrompt(params: {
 
     case 'required_tool':
       return `You have not yet completed the required explicit tool step(s): ${params.requiredToolReminderNames.join(', ')}. Use those enabled tools now before declaring success. Do not replace ask_human with a plain-text request, do not replace outbound delivery tools with prose, and do not replace screenshot requests with text-only summaries.`
+
+    case 'attachment_followthrough':
+      return buildAttachmentFollowthroughPrompt({
+        message: params.message,
+        fullText: params.fullText,
+      })
 
     case 'execution_followthrough':
       return buildExternalExecutionFollowthroughPrompt({

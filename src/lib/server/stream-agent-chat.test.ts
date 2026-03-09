@@ -14,13 +14,16 @@ import {
   resolveFinalStreamResponseText,
   shouldAllowToolForDirectMemoryWrite,
   shouldAllowToolForCurrentThreadRecall,
+  shouldForceAttachmentFollowthrough,
   shouldTerminateOnSuccessfulMemoryMutation,
   shouldForceDeliverableFollowthrough,
   shouldForceExternalExecutionFollowthrough,
   shouldForceExternalServiceSummary,
 } from './stream-agent-chat'
 
-const streamAgentChatSource = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'stream-agent-chat'), 'utf-8')
+const streamAgentChatSource = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'stream-agent-chat.ts'), 'utf-8')
+const streamContinuationSource = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'stream-continuation.ts'), 'utf-8')
+const streamSources = `${streamAgentChatSource}\n${streamContinuationSource}`
 
 describe('buildToolDisciplineLines', () => {
   it('tells the agent to use direct platform tools when manage_platform is absent', () => {
@@ -28,6 +31,9 @@ describe('buildToolDisciplineLines', () => {
 
     assert.equal(lines[0], 'Enabled tools in this session: `files`, `manage_schedules`.')
     assert.ok(lines.some((line) => line.includes('Do not substitute `manage_platform`')))
+    assert.ok(lines.some((line) => line.includes('Treat enabled tools as available now')))
+    assert.ok(lines.some((line) => line.includes('try that tool before telling the user to do it themselves')))
+    assert.ok(lines.some((line) => line.includes('Only talk about approvals when a tool result explicitly returns an approval boundary')))
   })
 
   it('omits the manage_platform warning when the umbrella tool is enabled', () => {
@@ -65,6 +71,7 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(lines.some((line) => line.includes('connector/channel setup is missing')))
     assert.ok(lines.some((line) => line.includes('capture the artifact first with `browser`') && line.includes('`connector_message_tool`')))
     assert.ok(lines.some((line) => line.includes('Keep JSON request bodies as raw JSON strings')))
+    assert.ok(lines.some((line) => line.includes('try one other enabled acquisition path') && line.includes('`http_request`') && line.includes('`browser`')))
     assert.ok(lines.some((line) => line.includes('{"action":"send","to":"user@example.com","subject":"...","body":"..."}')))
     assert.ok(lines.some((line) => line.includes('do not guess or keep re-submitting blank forms')))
     assert.ok(lines.some((line) => line.includes('store it with `manage_secrets`') && line.includes('do not echo the raw value')))
@@ -121,11 +128,30 @@ describe('buildToolDisciplineLines', () => {
     assert.deepEqual(required, [])
   })
 
+  it('treats explicit curl or terminal execution requests as shell requirements when shell is enabled', () => {
+    const required = getExplicitRequiredToolNames(
+      'Yeah, do the curl. Curl request.',
+      ['shell', 'web', 'browser'],
+    )
+    assert.deepEqual(required, ['shell'])
+  })
+
+  it('does not force shell just because a prompt mentions curl in a non-execution context', () => {
+    const required = getExplicitRequiredToolNames(
+      'Write a shell script that uses curl to fetch a page.',
+      ['shell', 'files'],
+    )
+    assert.deepEqual(required, [])
+  })
+
   it('tells the agent that named enabled tools are completion requirements', () => {
     assert.ok(streamAgentChatSource.includes('If a task explicitly names an enabled tool, use that tool before declaring success.'))
     assert.ok(streamAgentChatSource.includes('collect required human input through the tool'))
-    assert.ok(streamAgentChatSource.includes('You have not yet completed the required explicit tool step(s):'))
-    assert.ok(streamAgentChatSource.includes('do not replace screenshot requests with text-only summaries'))
+    assert.ok(streamAgentChatSource.includes('## Attachments'))
+    assert.ok(streamAgentChatSource.includes('Do not claim you cannot use images, attachments, or external tools when those capabilities are available in this session.'))
+    assert.ok(streamSources.includes('You have not yet completed the required explicit tool step(s):'))
+    assert.ok(streamSources.includes('attachment_followthrough'))
+    assert.ok(streamSources.includes('do not replace screenshot requests with text-only summaries'))
     assert.ok(streamAgentChatSource.includes('## External Service Execution'))
     assert.ok(streamAgentChatSource.includes('toolCallId: event.run_id'))
     assert.ok(streamAgentChatSource.includes('[Loop Budget Reached]'))
@@ -144,7 +170,7 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(streamAgentChatSource.includes('const directMemoryWriteOnlyTurn = isNarrowDirectMemoryWriteTurn(message)'))
     assert.ok(streamAgentChatSource.includes('shouldAllowToolForDirectMemoryWrite(toolName)'))
     assert.ok(streamAgentChatSource.includes('shouldAllowToolForCurrentThreadRecall(toolName)'))
-    assert.ok(streamAgentChatSource.includes('Preserve hard structural constraints from the original request'))
+    assert.ok(streamSources.includes('Preserve hard structural constraints from the original request'))
     assert.ok(streamAgentChatSource.includes('## Exact Structural Constraints'))
   })
 
@@ -473,6 +499,59 @@ describe('shouldForceExternalExecutionFollowthrough', () => {
             output: '{"type":"plugin_wallet_action_request","status":"pending"}',
           },
         ],
+      }),
+      false,
+    )
+  })
+})
+
+describe('shouldForceAttachmentFollowthrough', () => {
+  it('forces a retry for attachment-backed research turns that still skipped tools', () => {
+    assert.equal(
+      shouldForceAttachmentFollowthrough({
+        userMessage: 'Look up my ally code from the attached screenshot.',
+        enabledPlugins: ['web', 'browser'],
+        hasToolCalls: false,
+        hasAttachmentContext: true,
+      }),
+      true,
+    )
+    assert.equal(
+      shouldForceAttachmentFollowthrough({
+        userMessage: 'Research the URL shown in the attached screenshot and inspect it in the browser.',
+        enabledPlugins: ['web', 'browser'],
+        hasToolCalls: false,
+        hasAttachmentContext: true,
+      }),
+      true,
+    )
+  })
+
+  it('does not force a retry when there was no attachment context or a real tool attempt already happened', () => {
+    assert.equal(
+      shouldForceAttachmentFollowthrough({
+        userMessage: 'Look up my ally code from the attached screenshot.',
+        enabledPlugins: ['web', 'browser'],
+        hasToolCalls: false,
+        hasAttachmentContext: false,
+      }),
+      false,
+    )
+    assert.equal(
+      shouldForceAttachmentFollowthrough({
+        userMessage: 'Look up my ally code from the attached screenshot.',
+        enabledPlugins: ['web', 'browser'],
+        hasToolCalls: true,
+        hasAttachmentContext: true,
+      }),
+      false,
+    )
+    assert.equal(
+      shouldForceAttachmentFollowthrough({
+        userMessage: 'What does this screenshot say?',
+        enabledPlugins: ['web', 'browser'],
+        hasToolCalls: false,
+        hasAttachmentContext: true,
       }),
       false,
     )

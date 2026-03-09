@@ -47,3 +47,24 @@ test('does not dedupe non-GET requests', async () => {
 
   assert.equal(calls, 2)
 })
+
+test('retries GET requests that fail with TimeoutError', async () => {
+  let calls = 0
+  global.fetch = (async () => {
+    calls += 1
+    if (calls === 1) {
+      const error = new Error('Request timed out after 12000ms')
+      error.name = 'TimeoutError'
+      throw error
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { 'content-type': 'application/json' },
+      status: 200,
+    })
+  }) as typeof fetch
+
+  const result = await api<{ ok: boolean }>('GET', '/timeout-retry')
+
+  assert.deepEqual(result, { ok: true })
+  assert.equal(calls, 2)
+})

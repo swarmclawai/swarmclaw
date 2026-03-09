@@ -54,12 +54,32 @@ export function upsertStreamingAssistantArtifact(
   return true
 }
 
+function normalizeAssistantMergeText(text: string | undefined): string {
+  return String(text || '').replace(/\s+/g, ' ').trim()
+}
+
+function withPreservedAssistantFields(previous: Message, next: Message): Message {
+  const merged: Message = {
+    ...previous,
+    ...next,
+    time: previous.time,
+  }
+  if (next.kind === undefined && previous.kind !== undefined) merged.kind = previous.kind
+  if (next.thinking === undefined && previous.thinking === undefined) delete merged.thinking
+  if (next.thinking === undefined && previous.thinking !== undefined) merged.thinking = previous.thinking
+  if (next.toolEvents === undefined && previous.toolEvents === undefined) delete merged.toolEvents
+  if (next.toolEvents === undefined && previous.toolEvents !== undefined) merged.toolEvents = previous.toolEvents
+  if (next.suggestions === undefined && previous.suggestions === undefined) delete merged.suggestions
+  if (next.suggestions === undefined && previous.suggestions !== undefined) merged.suggestions = previous.suggestions
+  return merged
+}
+
 export function materializeStreamingAssistantArtifacts(
   messages: Message[],
   opts: StreamingArtifactWindow = {},
 ): boolean {
   let changed = false
-  const nextMessages: Message[] = []
+  let nextMessages: Message[] = []
 
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]
@@ -81,7 +101,7 @@ export function materializeStreamingAssistantArtifacts(
       continue
     }
 
-    nextMessages.push({
+    nextMessages = mergeCompletedAssistantMessage(nextMessages, {
       ...message,
       text: nextText,
       streaming: false,
@@ -107,15 +127,11 @@ export function mergeCompletedAssistantMessage(messages: Message[], assistantMes
     last
     && last.role === 'assistant'
     && (last.kind || 'chat') === (assistantMessage.kind || 'chat')
-    && last.text.trim() === assistantMessage.text.trim()
+    && normalizeAssistantMergeText(last.text) === normalizeAssistantMergeText(assistantMessage.text)
   ) {
     return [
       ...base.slice(0, -1),
-      {
-        ...last,
-        ...assistantMessage,
-        time: last.time,
-      },
+      withPreservedAssistantFields(last, assistantMessage),
     ]
   }
   return [...base, assistantMessage]

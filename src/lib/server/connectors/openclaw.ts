@@ -5,7 +5,6 @@ import { OPENCLAW_DATA_DIR } from '../data-dir'
 import { safeJsonParse } from '../json-utils'
 import type { PlatformConnector, ConnectorInstance, InboundMessage } from './types'
 import { resolveConnectorIngressReply } from './ingress-delivery'
-import { NO_MESSAGE_SENTINEL, isNoMessage } from './message-sentinel'
 import {
   createGatewayRequestFrame,
   parseGatewayFrame,

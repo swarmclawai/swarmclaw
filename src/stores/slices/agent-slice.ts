@@ -6,6 +6,7 @@ import { fetchAgents } from '../../lib/agents'
 import { findLatestObservablePlatformSession, isLocalhostBrowser } from '../../lib/local-observability'
 import { api } from '../../lib/api-client'
 import { safeStorageRemove, safeStorageSet } from '../../lib/safe-storage'
+import { setIfChanged, invalidateFingerprint } from '../set-if-changed'
 
 export interface AgentSlice {
   currentAgentId: string | null
@@ -54,6 +55,7 @@ export const createAgentSlice: StateCreator<AppState, [], [], AgentSlice> = (set
         const session = await api<Session>('POST', `/agents/${id}/thread`, { user })
         if (session?.id) {
           const sessions = { ...get().sessions, [session.id]: session }
+          invalidateFingerprint('sessions')
           set({ sessions, currentSessionId: session.id })
         }
       } catch {
@@ -74,7 +76,7 @@ export const createAgentSlice: StateCreator<AppState, [], [], AgentSlice> = (set
   loadAgents: async () => {
     try {
       const agents = await fetchAgents()
-      set({ agents })
+      setIfChanged<AppState>(set, 'agents', agents)
     } catch (err) {
       console.warn('Store error:', err)
     }
@@ -83,6 +85,7 @@ export const createAgentSlice: StateCreator<AppState, [], [], AgentSlice> = (set
     const agents = { ...get().agents }
     if (agents[id]) {
       agents[id] = { ...agents[id], pinned: !agents[id].pinned }
+      invalidateFingerprint('agents')
       set({ agents })
       void api('PUT', `/agents/${id}`, { pinned: agents[id].pinned })
     }
@@ -91,7 +94,7 @@ export const createAgentSlice: StateCreator<AppState, [], [], AgentSlice> = (set
   loadTrashedAgents: async () => {
     try {
       const trashedAgents = await api<Record<string, Agent>>('GET', '/agents/trash')
-      set({ trashedAgents })
+      setIfChanged<AppState>(set, 'trashedAgents', trashedAgents)
     } catch (err) {
       console.warn('Store error:', err)
     }
@@ -100,7 +103,7 @@ export const createAgentSlice: StateCreator<AppState, [], [], AgentSlice> = (set
   loadExternalAgents: async () => {
     try {
       const externalAgents = await api<ExternalAgentRuntime[]>('GET', '/external-agents')
-      set({ externalAgents })
+      setIfChanged<AppState>(set, 'externalAgents', externalAgents)
     } catch (err) {
       console.warn('Store error:', err)
     }

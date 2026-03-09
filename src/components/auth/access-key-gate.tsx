@@ -2,13 +2,17 @@
 
 import { useState, useEffect } from 'react'
 import { setStoredAccessKey } from '@/lib/api-client'
-import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { fetchWithTimeout, isAbortError, isTimeoutError } from '@/lib/fetch-timeout'
 
 interface AccessKeyGateProps {
   onAuthenticated: () => void
 }
 
 const AUTH_CHECK_TIMEOUT_MS = 8_000
+
+function isExpectedAuthCheckError(err: unknown): boolean {
+  return isAbortError(err) || isTimeoutError(err)
+}
 
 export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
   const [key, setKey] = useState('')
@@ -29,7 +33,9 @@ export function AccessKeyGate({ onAuthenticated }: AccessKeyGateProps) {
           setFirstTime(true)
         }
       } catch (err) {
-        console.error('Auth check failed:', err)
+        if (!isExpectedAuthCheckError(err)) {
+          console.error('Auth check failed:', err)
+        }
       } finally {
         if (!cancelled) setChecking(false)
       }

@@ -64,6 +64,7 @@ const pendingBrowserInitializations: Map<string, Promise<BrowserRuntimeEntry>> =
   hmrSingleton('__swarmclaw_pending_browser_inits__', () => new Map<string, Promise<BrowserRuntimeEntry>>())
 
 // Kill all browsers on process exit to prevent orphaned Chromium processes
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _shutdownRegistered = hmrSingleton('__swarmclaw_browser_shutdown_registered__', () => {
   process.on('exit', () => {
     for (const [, entry] of activeBrowsers) {

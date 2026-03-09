@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..')
 
-export function runWithTempDataDir<T = any>(
+export function runWithTempDataDir<T = unknown>(
   script: string,
   options: {
     prefix?: string

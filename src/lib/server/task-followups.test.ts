@@ -93,8 +93,10 @@ describe('task-followups', () => {
   // ---- normalizeWhatsappTarget ----
 
   describe('normalizeWhatsappTarget', () => {
-    it('converts UK local number to international JID', () => {
-      assert.equal(mod.normalizeWhatsappTarget('07123456789'), '447123456789@s.whatsapp.net')
+    it('converts plain digits to JID (no UK locale normalization)', () => {
+      // normalizeWhatsappTarget strips to digits — UK local→international
+      // conversion is in connectors/whatsapp.ts normalizeNumber, not here
+      assert.equal(mod.normalizeWhatsappTarget('07123456789'), '07123456789@s.whatsapp.net')
     })
 
     it('passes through already-formatted JID', () => {
@@ -193,7 +195,7 @@ describe('task-followups', () => {
       const target = mod.resolveTaskOriginConnectorFollowupTarget({
         task,
         sessions: {},
-        connectors: connectors as any,
+        connectors: connectors as Record<string, import('@/types').Connector>,
         running,
       })
 
@@ -232,7 +234,7 @@ describe('task-followups', () => {
       const target = mod.resolveTaskOriginConnectorFollowupTarget({
         task,
         sessions: {},
-        connectors: connectors as any,
+        connectors: connectors as Record<string, import('@/types').Connector>,
         running: [],
       })
 
@@ -308,7 +310,7 @@ describe('task-followups', () => {
       const target = mod.resolveTaskOriginConnectorFollowupTarget({
         task,
         sessions: sessions as Record<string, import('./task-followups').SessionLike>,
-        connectors: connectors as any,
+        connectors: connectors as Record<string, import('@/types').Connector>,
         running,
       })
 
@@ -346,7 +348,7 @@ describe('task-followups', () => {
       const target = mod.resolveTaskOriginConnectorFollowupTarget({
         task,
         sessions: {},
-        connectors: connectors as any,
+        connectors: connectors as Record<string, import('@/types').Connector>,
         running: [],
       })
 
@@ -394,7 +396,7 @@ describe('task-followups', () => {
       const targets = mod.collectTaskConnectorFollowupTargets({
         task,
         sessions: {},
-        connectors: connectors as any,
+        connectors: connectors as Record<string, import('@/types').Connector>,
         running,
       })
 
@@ -437,7 +439,7 @@ describe('task-followups', () => {
       const targets = mod.collectTaskConnectorFollowupTargets({
         task,
         sessions: {},
-        connectors: connectors as any,
+        connectors: connectors as Record<string, import('@/types').Connector>,
         running,
       })
 

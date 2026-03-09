@@ -1,9 +1,23 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-09T16:53:05.137Z",
-  "totalIssues": 570,
-  "uniqueIssues": 192,
+  "generatedAt": "2026-03-09T20:06:24.129Z",
+  "totalIssues": 537,
+  "uniqueIssues": 188,
   "issues": [
+    {
+      "filePath": "bin/worker-cmd.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 4
+    },
+    {
+      "filePath": "fix-crud.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
+    },
     {
       "filePath": "fix-kdb-2.js",
       "ruleId": "@typescript-eslint/no-require-imports",
@@ -19,18 +33,32 @@
       "count": 1
     },
     {
-      "filePath": "fix-ts.js",
+      "filePath": "rewrite-execution.js",
       "ruleId": "@typescript-eslint/no-require-imports",
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
       "count": 1
     },
     {
-      "filePath": "src/app/api/chatrooms/[id]/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
+      "filePath": "rewrite-layout.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
       "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
+    },
+    {
+      "filePath": "split-agent-sheet.js",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'fs' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "split-agent-sheet.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
     },
     {
       "filePath": "src/app/api/chats/[id]/deploy/route.ts",
@@ -646,17 +674,10 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 4
+      "count": 1
     },
     {
       "filePath": "src/lib/providers/codex-cli.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
-    },
-    {
-      "filePath": "src/lib/providers/ollama.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
@@ -674,7 +695,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 5
+      "count": 2
     },
     {
       "filePath": "src/lib/providers/opencode-cli.ts",
@@ -712,13 +733,6 @@
       "count": 1
     },
     {
-      "filePath": "src/lib/server/chat-execution.ts",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 1
-    },
-    {
       "filePath": "src/lib/server/connectors/connector-routing.test.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -730,13 +744,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'Connector' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/connectors/discord.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'isNoMessage' is defined but never used.",
       "count": 1
     },
     {
@@ -796,13 +803,6 @@
       "count": 16
     },
     {
-      "filePath": "src/lib/server/connectors/outbox.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
-    },
-    {
       "filePath": "src/lib/server/connectors/signal.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -821,13 +821,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'isImageMime' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/connectors/slack.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'isNoMessage' is defined but never used.",
       "count": 1
     },
     {
@@ -860,17 +853,10 @@
     },
     {
       "filePath": "src/lib/server/connectors/telegram.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'isNoMessage' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/connectors/telegram.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 15
+      "count": 14
     },
     {
       "filePath": "src/lib/server/connectors/whatsapp.test.ts",
@@ -894,25 +880,11 @@
       "count": 1
     },
     {
-      "filePath": "src/lib/server/daemon-state.test.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 4
-    },
-    {
       "filePath": "src/lib/server/data-dir.test.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 3
-    },
-    {
-      "filePath": "src/lib/server/delegation-jobs.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
     },
     {
       "filePath": "src/lib/server/embeddings.ts",
@@ -1014,17 +986,10 @@
     },
     {
       "filePath": "src/lib/server/orchestrator-lg.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'state' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/orchestrator-lg.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 19
+      "count": 18
     },
     {
       "filePath": "src/lib/server/orchestrator.ts",
@@ -1038,13 +1003,6 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 4
-    },
-    {
-      "filePath": "src/lib/server/provider-health.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
       "count": 2
     },
     {
@@ -1055,18 +1013,18 @@
       "count": 9
     },
     {
+      "filePath": "src/lib/server/queue-recovery.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
       "filePath": "src/lib/server/queue.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 4
-    },
-    {
-      "filePath": "src/lib/server/scheduler.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
     },
     {
       "filePath": "src/lib/server/session-tools/connector.ts",
@@ -1101,7 +1059,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 38
+      "count": 24
     },
     {
       "filePath": "src/lib/server/session-tools/delegate.ts",
@@ -1347,6 +1305,20 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 4
+    },
+    {
+      "filePath": "summarize-eval.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
+    },
+    {
+      "filePath": "summarize-manager.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
     }
   ]
 }

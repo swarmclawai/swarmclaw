@@ -50,13 +50,18 @@ const ToolSummaryRow = memo(function ToolSummaryRow({ event, caption }: { event:
   const color = isError ? '#F43F5E' : isRunning ? '#F59E0B' : '#22C55E'
 
   return (
-    <div className={`rounded-[14px] border px-3.5 py-3 ${
+    <div
+      className={`rounded-[14px] border px-3.5 py-3 ${
       isRunning
         ? 'border-amber-500/20 bg-amber-500/[0.06]'
         : isError
           ? 'border-rose-500/18 bg-rose-500/[0.05]'
           : 'border-white/[0.06] bg-white/[0.03]'
-    }`}>
+    }`}
+      data-testid="tool-call-row"
+      data-tool-name={event.name}
+      data-tool-status={event.status}
+    >
       <div className="flex items-start gap-3">
         <div className="mt-0.5 shrink-0">
           {isRunning ? (
@@ -143,7 +148,7 @@ const ToolEventsSection = memo(function ToolEventsSection({ toolEvents }: { tool
   }, [expanded, toolEvents])
 
   return (
-    <div className="max-w-[85%] md:max-w-[72%] mb-2">
+    <div className="max-w-[85%] md:max-w-[72%] mb-2" data-testid="tool-activity">
       <div className="rounded-[16px] border border-white/[0.08] bg-surface/72 backdrop-blur-sm overflow-hidden">
         <div className="px-4 py-3.5">
           <div className="flex flex-wrap items-start gap-3 justify-between">
@@ -195,6 +200,7 @@ const ToolEventsSection = memo(function ToolEventsSection({ toolEvents }: { tool
             <button
               type="button"
               onClick={() => setExpanded((value) => !value)}
+              data-testid="tool-activity-toggle"
               className="inline-flex items-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[11px] font-600 text-text-2 hover:bg-white/[0.06] cursor-pointer transition-colors"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>

@@ -148,7 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 ```
 
 The installer resolves the latest stable release tag and installs that version by default.
-To pin a version: `SWARMCLAW_VERSION=v0.8.4 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.8.6 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -701,8 +701,8 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example minor release (v0.8.4 style)
-npm version minor
+# example patch release (v0.8.6 style)
+npm version patch
 git push origin main --follow-tags
 ```
 
@@ -711,14 +711,14 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.8.4 Release Readiness Notes
+#### v0.8.6 Release Readiness Notes
 
-Before shipping `v0.8.4`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.8.6`, confirm the following user-facing changes are reflected in docs:
 
-1. Connector/runtime docs note that the current patch line includes the connector-manager follow-up fix already shipped in the latest app commit.
-2. Chat/session docs still note that the chat index serves lightweight session summaries instead of full transcript payloads, and full messages are loaded from per-chat endpoints.
-3. Operator/runtime docs still note that the daemon owns scheduler/queue startup; background services should be described from the daemon controls rather than as unconditional boot behavior.
-4. Site and README install/version strings are updated to `v0.8.4`, including install snippets, release notes index text, and sidebar/footer labels.
+1. Agent/tooling docs note that enabled tools are now canonicalized onto `plugins`, and editing an agent immediately syncs the main thread session/tool badge state.
+2. Provider docs note that successful credential tests can hydrate the saved model picker from live provider model discovery instead of relying only on static defaults.
+3. Chat/media docs reflect the lighter refresh path: attachment image previews reuse the shared preview panel, and agent/chat switching no longer triggers redundant message reloads.
+4. Site and README install/version strings are updated to `v0.8.6`, including install snippets, release notes index text, and sidebar/footer labels.
 
 ## CLI
 

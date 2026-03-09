@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { Message } from '@/types'
-import { pruneSuppressedHeartbeatStreamMessage, shouldApplySessionFreshnessReset } from './chat-execution'
+import {
+  buildAgentRuntimeCapabilities,
+  buildEnabledToolsAutonomyGuidance,
+  buildNoToolsGuidance,
+  pruneSuppressedHeartbeatStreamMessage,
+  shouldApplySessionFreshnessReset,
+} from './chat-execution'
 
 describe('pruneSuppressedHeartbeatStreamMessage', () => {
   it('removes a trailing streaming assistant heartbeat artifact', () => {
@@ -36,5 +42,40 @@ describe('pruneSuppressedHeartbeatStreamMessage', () => {
     assert.equal(shouldApplySessionFreshnessReset('chat'), true)
     assert.equal(shouldApplySessionFreshnessReset('heartbeat'), true)
     assert.equal(shouldApplySessionFreshnessReset('eval'), false)
+  })
+
+  it('does not advertise tool capabilities when no plugins are enabled', () => {
+    assert.deepEqual(buildAgentRuntimeCapabilities([]), ['heartbeats', 'autonomous_loop', 'multi_agent_chat'])
+    assert.deepEqual(buildAgentRuntimeCapabilities(['web']), ['tools', 'heartbeats', 'autonomous_loop', 'multi_agent_chat'])
+  })
+
+  it('tells no-tool agents to report missing capability instead of asking for approval', () => {
+    const guidance = buildNoToolsGuidance().join('\n')
+    assert.match(guidance, /No session tools are enabled/i)
+    assert.match(guidance, /Do not imply that a normal read-only action is waiting on user permission or approval/i)
+    assert.match(guidance, /state that the capability is not enabled in this session/i)
+  })
+
+  it('tells tool-enabled agents to use enabled tools autonomously before asking for permission', () => {
+    const guidance = buildEnabledToolsAutonomyGuidance().join('\n')
+    assert.match(guidance, /Enabled session tools are already available for normal use/i)
+    assert.match(guidance, /Do not ask the user for permission before using enabled tools/i)
+    assert.match(guidance, /attempt that tool path before asking the user to do the work manually/i)
+    assert.match(guidance, /Only surface approval or permission as a blocker when a real runtime tool result explicitly requires approval/i)
+  })
+
+  it('tells tool-enabled agents when approvals are disabled platform-wide', () => {
+    const guidance = buildEnabledToolsAutonomyGuidance({ approvalsEnabled: false }).join('\n')
+    assert.match(guidance, /Approvals are disabled platform-wide in this runtime/i)
+    assert.match(guidance, /Do not tell the user that enabled tool use is waiting on approval/i)
+  })
+
+  it('tells tool-enabled agents which approval categories auto-approve', () => {
+    const guidance = buildEnabledToolsAutonomyGuidance({
+      approvalsEnabled: true,
+      approvalAutoApproveCategories: ['tool_access', 'wallet_action'],
+    }).join('\n')
+    assert.match(guidance, /These approval categories auto-approve in this runtime: tool_access, wallet_action/i)
+    assert.match(guidance, /call the tool and let the runtime auto-approve it instead of asking the user first in prose/i)
   })
 })

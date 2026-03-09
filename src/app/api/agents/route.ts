@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
+import { perf } from '@/lib/server/perf'
 import { loadAgents, loadSessions, loadUsage, logActivity, upsertStoredItem } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { notify } from '@/lib/server/ws-hub'
 import { getAgentSpendWindows } from '@/lib/server/cost'
+import { resolveAgentPluginSelection } from '@/lib/agent-default-tools'
 import { AgentCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
 export const dynamic = 'force-dynamic'
@@ -15,6 +17,7 @@ async function ensureDaemonIfNeeded(source: string) {
 
 
 export async function GET(req: Request) {
+  const endPerf = perf.start('api', 'GET /api/agents')
   const agents = loadAgents()
   const sessions = loadSessions()
   const usage = loadUsage()
@@ -37,23 +40,34 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url)
   const limitParam = searchParams.get('limit')
-  if (!limitParam) return NextResponse.json(agents)
+  if (!limitParam) {
+    endPerf({ count: Object.keys(agents).length })
+    return NextResponse.json(agents)
+  }
 
   const limit = Math.max(1, Number(limitParam) || 50)
   const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
   const all = Object.values(agents).sort((a, b) => b.updatedAt - a.updatedAt)
   const items = all.slice(offset, offset + limit)
+  endPerf({ count: items.length, total: all.length })
   return NextResponse.json({ items, total: all.length, hasMore: offset + limit < all.length })
 }
 
 export async function POST(req: Request) {
   await ensureDaemonIfNeeded('api/agents:post')
   const raw = await req.json()
+  const rawRecord = raw && typeof raw === 'object' ? raw as Record<string, unknown> : null
   const parsed = AgentCreateSchema.safeParse(raw)
   if (!parsed.success) {
     return NextResponse.json(formatZodError(parsed.error as z.ZodError), { status: 400 })
   }
   const body = parsed.data
+  const plugins = resolveAgentPluginSelection({
+    hasExplicitPlugins: Boolean(rawRecord && Object.prototype.hasOwnProperty.call(rawRecord, 'plugins')),
+    hasExplicitTools: Boolean(rawRecord && Object.prototype.hasOwnProperty.call(rawRecord, 'tools')),
+    plugins: body.plugins,
+    tools: body.tools,
+  })
   const id = genId()
   const now = Date.now()
   const platformAssignScope = body.platformAssignScope
@@ -79,7 +93,7 @@ export async function POST(req: Request) {
     isOrchestrator: platformAssignScope === 'all',
     platformAssignScope,
     subAgentIds: body.subAgentIds,
-    plugins: body.plugins?.length ? body.plugins : (body.tools || []),
+    plugins,
     skills: body.skills,
     skillIds: body.skillIds,
     mcpServerIds: body.mcpServerIds,

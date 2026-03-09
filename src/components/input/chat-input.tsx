@@ -162,6 +162,8 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
             </div>
             <button
               onClick={onStop}
+              aria-label="Stop response"
+              data-testid="chat-stop"
               className="px-4 py-2 rounded-pill border border-danger/20 bg-danger/[0.06]
                 text-danger text-[12px] font-600 cursor-pointer transition-all duration-200
                 active:scale-95 hover:bg-danger/[0.1] hover:border-danger/30 shrink-0"
@@ -211,6 +213,8 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder="Ask me anything..."
+            aria-label="Message input"
+            data-testid="chat-input"
             rows={1}
             className="w-full px-5 pt-4 pb-2 bg-transparent text-text text-[15px] outline-none resize-none
               max-h-[140px] leading-[1.55] placeholder:text-text-3/70 border-none"
@@ -221,6 +225,8 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
             <button
               type="button"
               onClick={() => setExtrasOpen((open) => !open)}
+              aria-label="Add attachment"
+              data-testid="chat-add"
               className="flex items-center gap-1.5 px-3 py-2 rounded-[10px] border-none bg-transparent
                 text-text-3 text-[13px] cursor-pointer hover:text-text-2 hover:bg-white/[0.05] transition-all duration-200"
               style={{ fontFamily: 'inherit' }}
@@ -241,6 +247,8 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
             <button
               onClick={handleSend}
               disabled={!hasContent}
+              aria-label={streaming ? 'Queue message' : 'Send message'}
+              data-testid="chat-send"
               className={`w-9 h-9 rounded-[11px] border-none flex items-center justify-center
                 shrink-0 cursor-pointer transition-all duration-250
                 ${hasContent

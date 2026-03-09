@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { loadAgents, saveAgents, loadSessions, logActivity, upsertStoredItem, upsertStoredItems } from '@/lib/server/storage'
 import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
 import { mutateItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
+import { ensureAgentThreadSession } from '@/lib/server/agent-thread-session'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ops: CollectionOps<any> = { load: () => loadAgents({ includeTrashed: true }), save: saveAgents, topic: 'agents', table: 'agents' }
@@ -11,6 +12,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const body = await req.json()
   const result = mutateItem(ops, id, (agent) => {
     Object.assign(agent, body, { updatedAt: Date.now() })
+    if (Array.isArray(body.plugins) || Array.isArray(body.tools)) {
+      agent.plugins = Array.isArray(body.plugins) ? body.plugins : body.tools
+      delete (agent as Record<string, unknown>).tools
+    }
     if (body.platformAssignScope === 'all' || body.platformAssignScope === 'self') {
       agent.platformAssignScope = body.platformAssignScope
       agent.isOrchestrator = body.platformAssignScope === 'all'
@@ -63,6 +68,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return agent
   })
   if (!result) return notFound()
+
+  if (result.threadSessionId) {
+    ensureAgentThreadSession(id)
+  }
 
   if (result.threadSessionId) {
     const sessions = loadSessions()

@@ -494,6 +494,11 @@ describe('buildToolDisciplineLines advanced', () => {
     const lines = buildToolDisciplineLines(['delegate', 'shell', 'files'])
     assert.ok(lines.some((line) => line.includes('prefer using them directly for straightforward coding')))
   })
+
+  it('tells research-capable agents to try another enabled acquisition path before manual fallback', () => {
+    const lines = buildToolDisciplineLines(['web_search', 'web_fetch', 'http_request', 'shell'])
+    assert.ok(lines.some((line) => line.includes('try one other enabled acquisition path') && line.includes('`shell`') && line.includes('`http_request`')))
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -640,12 +645,12 @@ describe('normalizeAssistantArtifactLinks', () => {
 // getExplicitRequiredToolNames
 // ---------------------------------------------------------------------------
 describe('getExplicitRequiredToolNames', () => {
-  it('requires web_search for research-oriented query when web_search is enabled', () => {
+  it('does not force web_search for generic research phrasing when the tool was not explicitly named', () => {
     const result = getExplicitRequiredToolNames(
       'Search the web for the latest news about AI regulation',
       ['web_search', 'web_fetch', 'browser'],
     )
-    assert.ok(result.includes('web_search') || result.includes('web'))
+    assert.deepEqual(result, [])
   })
 
   it('returns empty when no tool matches the message', () => {
@@ -654,5 +659,13 @@ describe('getExplicitRequiredToolNames', () => {
       ['files', 'shell'],
     )
     assert.deepEqual(result, [])
+  })
+
+  it('forces shell when the user explicitly asks for curl execution', () => {
+    const result = getExplicitRequiredToolNames(
+      'Can you run the curl request in the terminal?',
+      ['files', 'shell'],
+    )
+    assert.deepEqual(result, ['shell'])
   })
 })

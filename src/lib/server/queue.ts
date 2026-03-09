@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSchedules, saveSchedules, loadSessions, saveSessions, loadSettings } from './storage'
 import { notify } from './ws-hub'
+import { perf } from './perf'
 import { WORKSPACE_DIR } from './data-dir'
 import { createOrchestratorSession } from './orchestrator'
 import { formatValidationFailure } from './task-validation'
@@ -1110,6 +1111,7 @@ export function dequeueNextRunnableTask(queue: string[], tasks: Record<string, B
 export async function processNext() {
   if (_queueState.processing) return
   _queueState.processing = true
+  const endQueuePerf = perf.start('queue', 'processNext')
 
   try {
     // Recover orphaned tasks: status is 'queued' but missing from the queue array
@@ -1330,7 +1332,9 @@ export async function processNext() {
       console.log(`[queue] Running task "${task.title}" (${taskId}) with ${agent.name}`)
 
       try {
+        const endTaskRunPerf = perf.start('queue', 'executeTaskRun', { taskId, agentName: agent.name })
         const result = await executeTaskRun(task, agent, sessionId)
+        endTaskRunPerf()
         const t2 = loadTasks()
         const settings = loadSettings()
         if (t2[taskId]) {
@@ -1521,6 +1525,7 @@ export async function processNext() {
       }
     }
   } finally {
+    endQueuePerf()
     _queueState.processing = false
     // If tasks were enqueued while we were processing, kick another round
     if (_queueState.pendingKick) {
@@ -1597,7 +1602,6 @@ export function recoverStalledRunningTasks(): { recovered: number; deadLettered:
     disableSessionHeartbeat(task.sessionId)
     changed = true
     if (state === 'retry') {
-      task.retryScheduledAt = Date.now() + 30_000
       pushQueueUnique(queue, task.id)
       recovered++
       pushMainLoopEventToMainSessions({

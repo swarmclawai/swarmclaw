@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import type { Message } from '@/types'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { AiAvatar } from '@/components/shared/avatar'
@@ -95,7 +96,10 @@ const emptyToolEvents: NonNullable<Message['toolEvents']> = []
 // AttachmentChip, parseAttachmentUrl, regex constants, and FILE_TYPE_COLORS
 // are now imported from @/components/shared/attachment-chip
 
-function renderAttachments(message: Message) {
+function renderAttachments(
+  message: Message,
+  onOpenImage?: (image: { url: string; filename: string }) => void,
+) {
   const isUser = message.role === 'user'
   const seen = new Set<string>()
   const chips: { url: string; filename: string }[] = []
@@ -123,7 +127,15 @@ function renderAttachments(message: Message) {
   if (!chips.length) return null
   return (
     <div className="flex flex-col">
-      {chips.map((c) => <AttachmentChip key={c.url} url={c.url} filename={c.filename} isUserMsg={isUser} />)}
+      {chips.map((c) => (
+        <AttachmentChip
+          key={c.url}
+          url={c.url}
+          filename={c.filename}
+          isUserMsg={isUser}
+          onOpenImage={onOpenImage}
+        />
+      ))}
     </div>
   )
 }
@@ -184,6 +196,8 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     return null
   }, [message.text, isUser])
   const currentUser = useAppStore((s) => s.currentUser)
+  const isDesktop = useMediaQuery('(min-width: 768px)')
+  const setPreviewContent = useChatStore((s) => s.setPreviewContent)
   const [copied, setCopied] = useState(false)
   const [heartbeatExpanded, setHeartbeatExpanded] = useState(false)
   const [toolEventsExpanded, setToolEventsExpanded] = useState(false)
@@ -256,6 +270,10 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     ? rawDisplayText.split('\n').filter((l) => !/\[(MAIN_LOOP_META|MAIN_LOOP_PLAN|MAIN_LOOP_REVIEW|AGENT_HEARTBEAT_META)\]/.test(l)).join('\n').trim()
     : ''
 
+  const handleOpenAttachmentImage = useCallback(({ url, filename }: { url: string; filename: string }) => {
+    setPreviewContent({ type: 'image', url, title: filename })
+  }, [setPreviewContent])
+
   const handleCopy = useCallback(() => {
     void copyTextToClipboard(message.text).then((copiedText) => {
       if (!copiedText) return
@@ -268,6 +286,11 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
 
   return (
     <div
+      data-testid="message-bubble"
+      data-message-role={message.role}
+      data-message-kind={message.kind || 'chat'}
+      data-message-time={message.time || undefined}
+      data-message-has-tools={hasToolEvents || undefined}
       className={`group ${isUser ? 'flex flex-col items-end' : 'flex flex-col items-start relative pl-[44px]'}`}
     >
       {/* Avatar on spine (assistant) */}
@@ -307,7 +330,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
 
       {/* Tool call events (assistant messages only) */}
       {hasToolEvents && (
-        <div className="max-w-[85%] md:max-w-[72%] flex flex-col gap-2 mb-2">
+        <div className="max-w-[85%] md:max-w-[72%] flex flex-col gap-2 mb-2" data-testid="message-tool-events">
           {nonSendFileEvents.length > 1 && (
             <button
               type="button"
@@ -433,7 +456,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
       ) : (
       /* Message bubble */
       <div className={`${isStructured ? 'max-w-[92%] md:max-w-[85%]' : 'max-w-[85%] md:max-w-[72%]'} ${isUser ? 'bubble-user px-5 py-3.5' : isHeartbeat ? 'bubble-ai px-4 py-3' : 'bubble-ai px-5 py-3.5'}`}>
-        {renderAttachments(message)}
+        {renderAttachments(message, isDesktop ? handleOpenAttachmentImage : undefined)}
 
         {walletRequest ? (
           <div className="flex flex-col gap-3 p-4 rounded-[18px] bg-sky-500/[0.03] border border-sky-500/20 shadow-[0_0_20px_rgba(14,165,233,0.05)]">

@@ -230,6 +230,12 @@ export function ChatArea() {
 
   const refreshMessages = useCallback(async () => {
     if (!sessionId) return
+    // Skip message refresh while we're locally streaming this session —
+    // the SSE stream already handles the live display via StreamingBubble.
+    // Fetching messages here would replace the array with new objects on every
+    // WS notification, causing the full MessageList to re-render and flash.
+    const chatState = useChatStore.getState()
+    if (chatState.streaming && chatState.streamingSessionId === sessionId) return
     try {
       const msgs = await fetchMessages(sessionId)
       const previous = messagesRef.current
@@ -369,6 +375,7 @@ export function ChatArea() {
   return (
     <div className="flex-1 flex h-full min-h-0 min-w-0">
     <div
+      data-testid="chat-area"
       className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative"
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}

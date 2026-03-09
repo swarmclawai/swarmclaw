@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
+import type { Agent, Connector, Session } from '@/types'
 
 const originalEnv = {
   DATA_DIR: process.env.DATA_DIR,
@@ -90,7 +91,7 @@ describe('connectors/session', () => {
         connectorThinkLevel: null as string | null,
         messages: [],
         createdAt: Date.now(),
-      } as any
+      } as unknown as Session
 
       mod.applyConnectorRuntimeDefaults(session, {
         provider: 'anthropic',
@@ -120,7 +121,7 @@ describe('connectors/session', () => {
         enabled: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-      } as any
+      } as unknown as Connector
       const msg = {
         platform: 'discord',
         channelId: 'ch-1',
@@ -142,7 +143,7 @@ describe('connectors/session', () => {
         enabled: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-      } as any
+      } as unknown as Connector
       const msg = {
         platform: 'discord',
         channelId: 'ch-no-match',
@@ -165,7 +166,7 @@ describe('connectors/session', () => {
         enabled: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-      } as any
+      } as unknown as Connector
       const msg = {
         platform: 'discord',
         channelId: 'ch-findable',
@@ -181,7 +182,7 @@ describe('connectors/session', () => {
         plugins: [],
         systemPrompt: '',
         createdAt: Date.now(),
-      } as any
+      } as unknown as Agent
 
       storage.upsertStoredItem('agents', 'agent-findable', agent)
       const created = mod.resolveDirectSession({ connector, msg, agent })
@@ -206,7 +207,7 @@ describe('connectors/session', () => {
         messages: [],
         createdAt: Date.now(),
         connectorContext: {},
-      } as any
+      } as unknown as Session
       const connector = {
         id: 'conn-ctx',
         name: 'CTX',
@@ -216,7 +217,7 @@ describe('connectors/session', () => {
         enabled: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-      } as any
+      } as unknown as Connector
       const msg = {
         platform: 'telegram',
         channelId: 'tg-ch-1',
@@ -264,7 +265,7 @@ describe('connectors/session', () => {
         enabled: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-      } as any
+      } as unknown as Connector
       const msg = {
         platform: 'slack',
         channelId: 'slack-ch-unique',
@@ -280,7 +281,7 @@ describe('connectors/session', () => {
         plugins: ['web'],
         systemPrompt: 'You are helpful.',
         createdAt: Date.now(),
-      } as any
+      } as unknown as Agent
 
       const result = mod.resolveDirectSession({ connector, msg, agent })
 
@@ -302,7 +303,7 @@ describe('connectors/session', () => {
         enabled: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-      } as any
+      } as unknown as Connector
       const msg = {
         platform: 'discord',
         channelId: 'disc-ch-reuse',
@@ -318,7 +319,7 @@ describe('connectors/session', () => {
         plugins: [],
         systemPrompt: '',
         createdAt: Date.now(),
-      } as any
+      } as unknown as Agent
 
       storage.upsertStoredItem('agents', 'agent-reuse', agent)
 
@@ -343,7 +344,7 @@ describe('connectors/session', () => {
         messages: [],
         createdAt: Date.now(),
         updatedAt: 0,
-      } as any
+      } as unknown as Session
 
       mod.persistSessionRecord(session)
 

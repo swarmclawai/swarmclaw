@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { useWs } from '@/hooks/use-ws'
+import { useMountedRef } from '@/hooks/use-mounted-ref'
 import { api } from '@/lib/api-client'
 import type { Connector } from '@/types'
 import {
@@ -55,6 +56,7 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [groupFilter, setGroupFilter] = useState<'all' | ConnectorGroup>('all')
+  const mountedRef = useMountedRef()
   const openConnector = useCallback((id: string | null) => {
     setEditingConnectorId(id)
     setConnectorSheetOpen(true)
@@ -62,9 +64,8 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
 
   const refresh = useCallback(async () => {
     await Promise.all([loadConnectors(), loadAgents(), loadChatrooms()])
-    setLoaded(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadConnectors, loadAgents])
+    if (mountedRef.current) setLoaded(true)
+  }, [loadConnectors, loadAgents, loadChatrooms, mountedRef])
 
   useEffect(() => { void refresh() }, [refresh])
   useWs('connectors', loadConnectors, 15_000)
@@ -77,34 +78,38 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
   const handleToggle = async (e: React.MouseEvent, c: Connector) => {
     e.stopPropagation()
     const action = c.status === 'running' ? 'stop' : 'start'
-    setToggling(c.id)
-    setError(null)
+    if (mountedRef.current) {
+      setToggling(c.id)
+      setError(null)
+    }
     try {
       await api('PUT', `/connectors/${c.id}`, { action })
       await refresh()
     } catch (err: unknown) {
       const msg = err instanceof Error && err.message ? err.message : `Failed to ${action}`
-      setError(msg)
+      if (mountedRef.current) setError(msg)
       await refresh()
     } finally {
-      setToggling(null)
+      if (mountedRef.current) setToggling(null)
     }
   }
 
   const handleReconnect = async (e: React.MouseEvent, c: Connector) => {
     e.stopPropagation()
-    setReconnecting(c.id)
-    setError(null)
+    if (mountedRef.current) {
+      setReconnecting(c.id)
+      setError(null)
+    }
     try {
       try { await api('PUT', `/connectors/${c.id}`, { action: 'stop' }) } catch { /* may already be stopped */ }
       await api('PUT', `/connectors/${c.id}`, { action: 'start' })
       await refresh()
     } catch (err: unknown) {
       const msg = err instanceof Error && err.message ? err.message : 'Failed to reconnect'
-      setError(msg)
+      if (mountedRef.current) setError(msg)
       await refresh()
     } finally {
-      setReconnecting(null)
+      if (mountedRef.current) setReconnecting(null)
     }
   }
 

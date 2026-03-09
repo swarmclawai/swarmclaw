@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
-import { useChatStore } from '@/stores/use-chat-store'
 import { ChatCard } from './chat-card'
-import { fetchMessages } from '@/lib/chats'
 import { getSessionLastAssistantAt, getSessionLastMessage, getSessionMessageCount } from '@/lib/session-summary'
 import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
 import { toast } from 'sonner'
@@ -34,7 +32,6 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   const lastReadTimestamps = useAppStore((s) => s.lastReadTimestamps)
   const agents = useAppStore((s) => s.agents)
   const connectors = useAppStore((s) => s.connectors)
-  const setMessages = useChatStore((s) => s.setMessages)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<SessionFilter>('all')
   const [sortMode, setSortMode] = useState<SortMode>('lastActive')
@@ -110,14 +107,6 @@ export function ChatList({ inSidebar, onSelect }: Props) {
     markChatRead(id)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('swarmclaw:scroll-bottom'))
-    }
-    try {
-      const msgs = await fetchMessages(id)
-      setMessages(msgs)
-    } catch {
-      const fallback = sessions[id]
-      const fallbackLastMessage = fallback ? getSessionLastMessage(fallback) : null
-      setMessages(fallback?.messages?.length ? fallback.messages : (fallbackLastMessage ? [fallbackLastMessage] : []))
     }
     onSelect?.()
   }
@@ -214,6 +203,8 @@ export function ChatList({ inSidebar, onSelect }: Props) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search..."
+          aria-label="Search chats"
+          data-testid="chat-search"
           className="flex-1 px-4 py-2.5 rounded-[12px] border border-white/[0.04] bg-surface text-text
             text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
           style={{ fontFamily: 'inherit' }}

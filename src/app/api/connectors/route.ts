@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
+import { perf } from '@/lib/server/perf'
 import { loadConnectors, upsertStoredItem } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { ensureDaemonStarted } from '@/lib/server/daemon-state'
@@ -10,6 +11,7 @@ export const dynamic = 'force-dynamic'
 
 
 export async function GET() {
+  const endPerf = perf.start('api', 'GET /api/connectors')
   ensureDaemonStarted('api/connectors:get')
   const connectors = loadConnectors()
   // Merge runtime status from manager
@@ -39,6 +41,7 @@ export async function GET() {
       }
     }
   } catch { /* manager not loaded yet */ }
+  endPerf({ count: Object.keys(connectors).length })
   return NextResponse.json(connectors)
 }
 

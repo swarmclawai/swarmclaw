@@ -12,12 +12,14 @@ import { buildSkillPromptText } from './skill-prompt-budget'
 
 import { logExecution } from './execution-log'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
-import { canonicalizePluginId, expandPluginIds } from './tool-aliases'
+import { canonicalizePluginId, expandPluginIds, pluginIdMatches } from './tool-aliases'
 import type { Session, Message, UsageRecord, PluginInvocationRecord, MessageToolEvent } from '@/types'
 import { extractSuggestions } from './suggestions'
 import { buildIdentityContinuityContext } from './identity-continuity'
 import { enqueueSystemEvent } from './system-events'
 import { resolveActiveProjectContext } from './project-context'
+import { resolveImagePath } from './resolve-image'
+import { routeTaskIntent } from './capability-router'
 import {
   getEnabledToolPlanningView,
   getFirstToolForCapability,
@@ -44,6 +46,7 @@ import {
 } from './stream-continuation'
 import type { ContinuationType } from './stream-continuation'
 import { errorMessage, sleep } from '@/lib/shared-utils'
+import { perf } from './perf'
 import {
   compactThreadRecallText,
   getExplicitRequiredToolNames,
@@ -112,6 +115,9 @@ export function buildToolDisciplineLines(enabledPlugins: string[]): string[] {
   const lines = [
     `Enabled tools in this session: ${uniqueTools.map((toolId) => `\`${toolId}\``).join(', ')}.`,
     'Only call tools from this enabled list or tools explicitly returned by the runtime.',
+    'Treat enabled tools as available now. Do not ask the user for permission before routine use of an enabled tool.',
+    'If the request clearly maps to an enabled tool, try that tool before telling the user to do it themselves.',
+    'Only talk about approvals when a tool result explicitly returns an approval boundary for a concrete state-changing action.',
   ]
 
   const directPlatformTools = uniqueTools.filter((toolId) => toolId.startsWith('manage_') && toolId !== 'manage_platform')
@@ -135,6 +141,16 @@ export function buildToolDisciplineLines(enabledPlugins: string[]): string[] {
 
   if (researchSearchTools.length) {
     lines.push(`For current events, live conflicts, or “keep watching for updates” requests, use \`${researchSearchTools[0]}\` before answering. Do not rely on memory or unstated background knowledge for fresh developments.`)
+  }
+
+  const alternateResearchTools = Array.from(new Set([
+    ...(researchSearchTools.length || researchFetchTools.length ? [...researchSearchTools, ...researchFetchTools] : []),
+    ...httpTools,
+    ...(uniqueTools.includes('shell') ? ['shell'] : []),
+    ...(uniqueTools.includes('browser') ? ['browser'] : []),
+  ]))
+  if (alternateResearchTools.length >= 2) {
+    lines.push(`If one enabled research path is blocked by a site-specific error or access challenge, try one other enabled acquisition path (${alternateResearchTools.map((toolName) => `\`${toolName}\``).join(', ')}) before telling the user to fetch the data manually.`)
   }
 
   if (browserCaptureTools.length && deliveryMediaTools.length) {
@@ -201,6 +217,19 @@ const OPEN_ENDED_REVISION_BLOCK = [
 
 function getEnabledDisplayTool(enabledPlugins: string[], canonicalPluginId: string): string | null {
   return getEnabledToolPlanningView(enabledPlugins).displayToolIds.find((toolId) => toolId === canonicalPluginId) || null
+}
+
+export function shouldForceAttachmentFollowthrough(params: {
+  userMessage: string
+  enabledPlugins: string[]
+  hasToolCalls: boolean
+  hasAttachmentContext: boolean
+}): boolean {
+  if (!params.hasAttachmentContext) return false
+  if (params.hasToolCalls) return false
+  const decision = routeTaskIntent(params.userMessage, params.enabledPlugins, null)
+  if (decision.intent !== 'research' && decision.intent !== 'browsing') return false
+  return decision.preferredTools.some((toolName) => pluginIdMatches(params.enabledPlugins, toolName))
 }
 
 export function buildExternalWalletExecutionBlock(enabledPlugins: string[]): string {
@@ -294,6 +323,7 @@ function buildAgenticExecutionPolicy(opts: {
   platformAssignScope?: 'self' | 'all'
   userMessage?: string
   history?: Message[]
+  hasAttachmentContext?: boolean
   responseStyle?: 'concise' | 'normal' | 'detailed' | null
   responseMaxChars?: number | null
 }) {
@@ -332,6 +362,16 @@ function buildAgenticExecutionPolicy(opts: {
   }
   if (hasMemoryTools && directMemoryWriteOnlyTurn) {
     parts.push(buildDirectMemoryWriteBlock())
+  }
+
+  if (opts.hasAttachmentContext) {
+    parts.push(
+      '## Attachments',
+      'User attachments in this thread are part of the available context. Image attachments are directly visible to you, and readable files/PDFs are inlined when available.',
+      'If the user asks you to identify, read, transcribe, compare, or look something up from an attachment, inspect the attachment content first instead of claiming the image/file is unavailable.',
+      'When the task depends on details from an attachment plus outside lookup, extract the identifier from the attachment and then use the enabled tools to continue.',
+      'Do not claim you cannot use images, attachments, or external tools when those capabilities are available in this session. Only report a blocker after a real attempt or when the attachment is genuinely unreadable.',
+    )
   }
 
   // Plugin-specific operating guidance (collected dynamically from plugins)
@@ -429,7 +469,20 @@ export interface StreamAgentChatResult {
   finalResponse: string
 }
 
+type StreamAgentChatHandler = (opts: StreamAgentChatOpts) => Promise<StreamAgentChatResult>
+
+let streamAgentChatOverride: StreamAgentChatHandler | null = null
+
+export function setStreamAgentChatForTest(handler: StreamAgentChatHandler | null): void {
+  streamAgentChatOverride = handler
+}
+
 export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<StreamAgentChatResult> {
+  if (streamAgentChatOverride) return streamAgentChatOverride(opts)
+  return streamAgentChatCore(opts)
+}
+
+async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAgentChatResult> {
   const startTs = Date.now()
   const { session, message, imagePath, attachedFiles, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
   const rawPlugins = Array.isArray(session.plugins) ? session.plugins : []
@@ -480,6 +533,11 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   const hasProvidedSystemPrompt = typeof systemPrompt === 'string' && systemPrompt.trim().length > 0
   const directMemoryWriteOnlyTurn = isNarrowDirectMemoryWriteTurn(message)
   const currentThreadRecallRequest = !directMemoryWriteOnlyTurn && isCurrentThreadRecallRequest(message)
+  const hasAttachmentContext = Boolean(
+    imagePath
+    || attachedFiles?.length
+    || history.some((entry) => entry.imagePath || entry.imageUrl || (Array.isArray(entry.attachedFiles) && entry.attachedFiles.length > 0)),
+  )
 
   if (hasProvidedSystemPrompt) {
     stateModifierParts.push(systemPrompt!.trim())
@@ -674,6 +732,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       platformAssignScope: agentPlatformAssignScope,
       userMessage: message,
       history,
+      hasAttachmentContext,
       responseStyle: agentResponseStyle,
       responseMaxChars: agentResponseMaxChars,
     }),
@@ -681,6 +740,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
   let stateModifier = stateModifierParts.join('\n\n')
 
+  const endToolBuildPerf = perf.start('stream-agent-chat', 'buildSessionTools', { sessionId: session.id })
   const { tools, cleanup, toolToPluginMap } = await buildSessionTools(session.cwd, sessionPlugins, {
     agentId: session.agentId,
     sessionId: session.id,
@@ -693,6 +753,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
     projectDescription: activeProjectContext.project?.description || null,
     memoryScopeMode: agentMemoryScopeMode,
   })
+  endToolBuildPerf({ toolCount: tools.length })
   const toolsForTurn = currentThreadRecallRequest
     ? tools.filter((tool) => {
         const toolName = typeof (tool as { name?: unknown }).name === 'string'
@@ -858,7 +919,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   const langchainMessages: Array<HumanMessage | AIMessage> = []
   for (const m of effectiveHistory) {
     if (m.role === 'user') {
-      langchainMessages.push(new HumanMessage({ content: await buildLangChainContent(m.text, m.imagePath, m.attachedFiles) }))
+      const resolvedImg = resolveImagePath(m.imagePath, m.imageUrl)
+      langchainMessages.push(new HumanMessage({ content: await buildLangChainContent(m.text, resolvedImg ?? undefined, m.attachedFiles) }))
     } else {
       langchainMessages.push(new AIMessage({ content: m.text }))
     }
@@ -903,12 +965,14 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
   const MAX_TRANSIENT_RETRIES = 2
   const MAX_REQUIRED_TOOL_CONTINUES = 2
   const MAX_EXECUTION_FOLLOWTHROUGHS = 1
+  const MAX_ATTACHMENT_FOLLOWTHROUGHS = 1
   const MAX_DELIVERABLE_FOLLOWTHROUGHS = 2
   const MAX_TOOL_SUMMARY_RETRIES = 2
   let autoContinueCount = 0
   let transientRetryCount = 0
   let requiredToolContinueCount = 0
   let executionFollowthroughCount = 0
+  let attachmentFollowthroughCount = 0
   let deliverableFollowthroughCount = 0
   let toolSummaryRetryCount = 0
   const explicitRequiredToolNames = getExplicitRequiredToolNames(message, sessionPlugins)
@@ -975,6 +1039,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
       // to suppress the duplicate nested events.
       const acceptedToolRunIds = new Set<string>()
       const seenToolInputKeys = new Set<string>()
+      const toolPerfEnds = new Map<string, (extra?: Record<string, unknown>) => number>()
 
       try {
         armIdleWatchdog()
@@ -1058,6 +1123,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
             }
             seenToolInputKeys.add(toolDedupeKey)
             acceptedToolRunIds.add(event.run_id)
+            toolPerfEnds.set(event.run_id, perf.start('tool-call', toolName, { sessionId: session.id }))
 
             clearIdleWatchdog()
             waitingForToolResult = true
@@ -1095,6 +1161,8 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
             // Dedup: skip on_tool_end for run_ids we didn't accept in on_tool_start
             if (!acceptedToolRunIds.has(event.run_id)) continue
             acceptedToolRunIds.delete(event.run_id)
+            const endToolPerf = toolPerfEnds.get(event.run_id)
+            toolPerfEnds.delete(event.run_id)
 
             waitingForToolResult = false
             armIdleWatchdog()
@@ -1155,6 +1223,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
               }
             }
 
+            endToolPerf?.({ outputLen: outputStr?.length || 0 })
             write(`data: ${JSON.stringify({
               t: 'tool_result',
               toolName,
@@ -1338,6 +1407,25 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
             }),
           })}\n\n`)
         }
+      }
+
+      if (!shouldContinue
+        && attachmentFollowthroughCount < MAX_ATTACHMENT_FOLLOWTHROUGHS
+        && shouldForceAttachmentFollowthrough({
+          userMessage: message,
+          enabledPlugins: sessionPlugins,
+          hasToolCalls,
+          hasAttachmentContext,
+        })) {
+        shouldContinue = 'attachment_followthrough'
+        attachmentFollowthroughCount++
+        write(`data: ${JSON.stringify({
+          t: 'status',
+          text: JSON.stringify({
+            attachmentFollowthrough: attachmentFollowthroughCount,
+            maxFollowthroughs: MAX_ATTACHMENT_FOLLOWTHROUGHS,
+          }),
+        })}\n\n`)
       }
 
       if (!shouldContinue

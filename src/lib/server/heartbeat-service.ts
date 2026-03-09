@@ -602,3 +602,25 @@ export function getHeartbeatServiceStatus() {
     trackedSessions: state.lastBySession.size,
   }
 }
+
+/**
+ * Remove tracking entries for sessions that no longer exist.
+ * Called periodically by the daemon health sweep.
+ */
+export function pruneHeartbeatState(liveSessionIds: Set<string>): number {
+  let removed = 0
+  for (const id of state.lastBySession.keys()) {
+    if (!liveSessionIds.has(id)) {
+      state.lastBySession.delete(id)
+      state.failures.delete(id)
+      removed++
+    }
+  }
+  // Also clean up orphaned failure entries
+  for (const id of state.failures.keys()) {
+    if (!liveSessionIds.has(id)) {
+      state.failures.delete(id)
+    }
+  }
+  return removed
+}

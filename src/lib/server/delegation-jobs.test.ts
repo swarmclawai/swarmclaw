@@ -158,9 +158,10 @@ describe('delegation-jobs', () => {
     assert.ok(cancelled)
     assert.equal(cancelled!.status, 'cancelled')
     assert.ok(cancelled!.completedAt! > 0)
-    const lastCp = cancelled!.checkpoints[cancelled!.checkpoints.length - 1]
-    assert.equal(lastCp.status, 'cancelled')
-    assert.equal(lastCp.note, 'Job cancelled')
+    const cps = cancelled!.checkpoints ?? []
+    const lastCp = cps[cps.length - 1]
+    assert.equal(lastCp?.status, 'cancelled')
+    assert.equal(lastCp?.note, 'Job cancelled')
   })
 
   it('cancel is idempotent — repeated cancel returns unchanged job', () => {
@@ -172,7 +173,7 @@ describe('delegation-jobs', () => {
     const first = delegationJobs.cancelDelegationJob(job.id)!
     const second = delegationJobs.cancelDelegationJob(job.id)!
     assert.equal(second.status, 'cancelled')
-    assert.equal(second.checkpoints.length, first.checkpoints.length)
+    assert.equal((second.checkpoints ?? []).length, (first.checkpoints ?? []).length)
   })
 
   it('does not cancel completed jobs', () => {

@@ -99,6 +99,18 @@ export function ChatCard({ session, active, onClick }: Props) {
     <>
       <div
         onClick={onClick}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onClick()
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-label={`Open chat ${displayName}`}
+        data-testid="chat-row"
+        data-session-id={session.id}
+        data-agent-id={session.agentId || undefined}
         className={`group/card relative py-3.5 px-4 cursor-pointer rounded-[14px]
           transition-all duration-200 active:scale-[0.98]
           ${active

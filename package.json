@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "Self-hosted AI agent orchestration dashboard — manage LLM providers, orchestrate agent swarms, schedule tasks, and bridge agents to chat platforms.",
   "license": "MIT",
   "publishConfig": {
@@ -50,6 +50,7 @@
     "start": "node .next/standalone/server.js",
     "start:standalone": "node .next/standalone/server.js",
     "smoke:browser": "node ./scripts/browser-route-smoke.mjs",
+    "smoke:browser:workbench": "node ./scripts/browser-workbench-smoke.mjs",
     "benchmark:autonomy": "node ./scripts/benchmark-autonomy-harness.mjs",
     "benchmark:agent-regression": "node --import tsx ./scripts/run-agent-regression-suite.ts",
     "lint": "eslint",

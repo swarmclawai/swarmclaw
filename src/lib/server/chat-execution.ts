@@ -1,5 +1,6 @@
 import fs from 'fs'
 import os from 'os'
+import { perf } from './perf'
 import {
   loadSessions,
   saveSessions,
@@ -16,10 +17,10 @@ import { getProvider } from '@/lib/providers'
 import { estimateCost, checkAgentBudgetLimits } from './cost'
 import { log } from './logger'
 import { logExecution } from './execution-log'
-import { routeTaskIntent } from './capability-router'
 import { buildToolDisciplineLines, streamAgentChat } from './stream-agent-chat'
 import { runLinkUnderstanding } from './link-understanding'
 import type { Session } from '@/types'
+import type { ApprovalCategory } from '@/types'
 import { stripMainLoopMetaForPersistence } from './main-agent-loop'
 import { getPluginManager } from './plugins'
 import { isLocalOpenClawEndpoint, normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
@@ -27,6 +28,8 @@ import { notify } from './ws-hub'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from './agent-runtime-config'
 import { resolveSessionToolPolicy } from './tool-capability-policy'
 import { buildCurrentDateTimePromptContext } from './prompt-runtime-context'
+import { buildWorkspaceContext } from './workspace-context'
+import { resolveImagePath } from './resolve-image'
 import {
   applyContextClearBoundary,
   shouldApplySessionFreshnessReset,
@@ -72,6 +75,46 @@ export {
   normalizeAssistantArtifactLinks,
   requestedToolNamesFromMessage,
   hasDirectLocalCodingTools,
+}
+
+export function buildAgentRuntimeCapabilities(enabledPlugins: string[]): string[] {
+  const capabilities = ['heartbeats', 'autonomous_loop', 'multi_agent_chat']
+  if (enabledPlugins.length > 0) capabilities.unshift('tools')
+  return capabilities
+}
+
+export function buildNoToolsGuidance(): string[] {
+  return [
+    '## Tool Availability',
+    'No session tools are enabled in this chat.',
+    'Do not imply that a normal read-only action is waiting on user permission or approval when the real blocker is missing tool access.',
+    'If browsing, web fetches, file edits, or other actions are unavailable, state that the capability is not enabled in this session.',
+    'Only mention approval when a real runtime tool explicitly returned an approval requirement for a concrete action.',
+  ]
+}
+
+export function buildEnabledToolsAutonomyGuidance(options?: {
+  approvalsEnabled?: boolean
+  approvalAutoApproveCategories?: ApprovalCategory[] | null
+}): string[] {
+  const lines = [
+    '## Tool Autonomy',
+    'Enabled session tools are already available for normal use in this chat.',
+    'Do not ask the user for permission before using enabled tools for ordinary read-only work, routine diagnostics, or reversible execution steps that are clearly part of the request.',
+    'If the user asks you to use an enabled tool or to perform a task that clearly maps to an enabled tool, attempt that tool path before asking the user to do the work manually.',
+    'Only surface approval or permission as a blocker when a real runtime tool result explicitly requires approval for a concrete state-changing action.',
+  ]
+  if (options?.approvalsEnabled === false) {
+    lines.push('Approvals are disabled platform-wide in this runtime. Do not tell the user that enabled tool use is waiting on approval.')
+  }
+  const autoApproved = Array.isArray(options?.approvalAutoApproveCategories)
+    ? options!.approvalAutoApproveCategories.filter((value): value is ApprovalCategory => typeof value === 'string' && value.trim().length > 0)
+    : []
+  if (autoApproved.length > 0) {
+    lines.push(`These approval categories auto-approve in this runtime: ${autoApproved.join(', ')}.`)
+    lines.push('If a tool-backed action falls into one of those categories, call the tool and let the runtime auto-approve it instead of asking the user first in prose.')
+  }
+  return lines
 }
 
 interface SessionWithCredentials {
@@ -403,6 +446,7 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
 
   const settings = loadSettings()
   const parts: string[] = []
+  const enabledPlugins = Array.isArray(session.plugins) ? session.plugins : (Array.isArray(agent.plugins) ? agent.plugins : [])
 
   // 1. Identity & Persona (Grounded OpenClaw Style)
   const identityLines = [`## My Identity`]
@@ -421,7 +465,9 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
   const runtimeLines = [
     '## Runtime',
     `os=${process.platform} | host=${os.hostname()} | agent=${agent.id} | provider=${agent.provider} | model=${agent.model}`,
-    `capabilities=tools,heartbeats,autonomous_loop,multi_agent_chat`,
+    `capabilities=${buildAgentRuntimeCapabilities(enabledPlugins).join(',')}`,
+    `approvals=${settings.approvalsEnabled === false ? 'disabled' : 'enabled_or_tool_specific'}`,
+    `approval_auto_approve_categories=${Array.isArray(settings.approvalAutoApproveCategories) && settings.approvalAutoApproveCategories.length > 0 ? settings.approvalAutoApproveCategories.join(',') : 'none'}`,
   ]
   parts.push(runtimeLines.join('\n'))
 
@@ -444,7 +490,6 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
 
   // 5b. Workspace context files (HEARTBEAT.md, IDENTITY.md, AGENTS.md, etc.)
   try {
-    const { buildWorkspaceContext } = require('./workspace-context')
     const wsCtx = buildWorkspaceContext({ cwd: session.cwd })
     if (wsCtx.block) parts.push(wsCtx.block)
   } catch {
@@ -460,7 +505,14 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
   ]
   parts.push(thinkingHint.join('\n'))
 
-  const enabledPlugins = Array.isArray(session.plugins) ? session.plugins : (Array.isArray(agent.plugins) ? agent.plugins : [])
+  if (enabledPlugins.length === 0) {
+    parts.push(buildNoToolsGuidance().join('\n'))
+  } else {
+    parts.push(buildEnabledToolsAutonomyGuidance({
+      approvalsEnabled: settings.approvalsEnabled,
+      approvalAutoApproveCategories: settings.approvalAutoApproveCategories,
+    }).join('\n'))
+  }
   const toolDisciplineLines = buildToolDisciplineLines(enabledPlugins)
   if (toolDisciplineLines.length > 0) parts.push(['## Tool Discipline', ...toolDisciplineLines].join('\n'))
   const operatingGuidance = getPluginManager().collectOperatingGuidance(enabledPlugins)
@@ -509,6 +561,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     onEvent,
     signal,
   } = input
+
+  // Resolve image path early: if the filesystem path is gone, fall back to
+  // the upload URL which resolveImagePath maps back to the uploads directory.
+  const resolvedImagePath = resolveImagePath(imagePath, imageUrl) ?? undefined
+
+  const endTurnPerf = perf.start('chat-execution', 'executeSessionChatTurn', { sessionId, source })
 
   syncSessionFromAgent(sessionId)
 
@@ -747,9 +805,19 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   let lastPartialSaveAt = 0
   let lastPartialSnapshotKey = ''
   let partialSaveTimeout: ReturnType<typeof setTimeout> | null = null
+  let partialPersistenceClosed = false
+
+  const stopPartialAssistantPersistence = () => {
+    partialPersistenceClosed = true
+    if (partialSaveTimeout) {
+      clearTimeout(partialSaveTimeout)
+      partialSaveTimeout = null
+    }
+  }
 
   const persistStreamingAssistantArtifact = () => {
     partialSaveTimeout = null
+    if (partialPersistenceClosed) return
     const persistedToolEvents = toolEvents.length ? dedupeConsecutiveToolEvents([...toolEvents]) : []
     if (!hasPersistableAssistantPayload(streamingPartialText, thinkingText, persistedToolEvents)) return
 
@@ -787,6 +855,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   }
 
   const queuePartialAssistantPersist = (immediate = false) => {
+    if (partialPersistenceClosed) return
     const now = Date.now()
     const minIntervalMs = 400
     if (immediate || now - lastPartialSaveAt >= minIntervalMs) {
@@ -888,6 +957,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   let durationMs = 0
   const startTs = Date.now()
+  const endLlmPerf = perf.start('chat-execution', 'llm-round-trip', {
+    sessionId,
+    provider: providerType,
+    hasPlugins,
+    pluginCount: enabledSessionPlugins.length,
+  })
   try {
     // Heartbeat runs get a small tail of recent messages so the agent can see
     // prior findings and avoid repeating the same searches. Full history is
@@ -896,12 +971,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       ? getSessionMessages(sessionId).slice(-6)
       : undefined
 
-    console.log(`[chat-execution] provider=${providerType}, hasPlugins=${hasPlugins}, localOpenClawNative=${useLocalOpenClawNativeRuntime}, imagePath=${imagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, plugins=${enabledSessionPlugins.length}`)
+    console.log(`[chat-execution] provider=${providerType}, hasPlugins=${hasPlugins}, localOpenClawNative=${useLocalOpenClawNativeRuntime}, imagePath=${resolvedImagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, plugins=${enabledSessionPlugins.length}`)
     if (hasPlugins) {
       const result = await streamAgentChat({
         session: sessionForRun,
         message: effectiveMessage,
-        imagePath,
+        imagePath: resolvedImagePath,
         attachedFiles,
         apiKey,
         systemPrompt,
@@ -948,7 +1023,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         fullResponse = await provider.handler.streamChat({
           session: sessionForRun,
           message: effectiveMessage,
-          imagePath,
+          imagePath: resolvedImagePath,
           apiKey,
           systemPrompt,
           write: (raw: string) => parseAndEmit(raw),
@@ -968,7 +1043,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       }
     }
     durationMs = Date.now() - startTs
+    endLlmPerf({ durationMs, cacheHit: responseCacheHit })
   } catch (err: unknown) {
+    endLlmPerf({ error: true })
     errorMessage = toErrorMessage(err)
     const failureText = errorMessage || 'Run failed.'
     markProviderFailure(providerType, failureText)
@@ -981,7 +1058,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     })
   } finally {
     clearInterval(partialSaveTimer)
-    if (partialSaveTimeout) clearTimeout(partialSaveTimeout)
+    stopPartialAssistantPersistence()
     active.delete(sessionId)
     if (signal) signal.removeEventListener('abort', abortFromOutside)
   }
@@ -1019,6 +1096,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
   }
 
+  const endPostProcessPerf = perf.start('chat-execution', 'post-process', { sessionId })
   const toolRoutingResult = await runPostLlmToolRouting({
     session: sessionForRun,
     sessionId,
@@ -1272,6 +1350,15 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     saveSessions(fresh)
     notify(`messages:${sessionId}`)
   }
+
+  endPostProcessPerf({ toolEventCount: persistedToolEvents.length })
+  endTurnPerf({
+    durationMs,
+    toolEventCount: persistedToolEvents.length,
+    inputTokens: accumulatedUsage.inputTokens || 0,
+    outputTokens: accumulatedUsage.outputTokens || 0,
+    error: !!errorMessage,
+  })
 
   return {
     runId,

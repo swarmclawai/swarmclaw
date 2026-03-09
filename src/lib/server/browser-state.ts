@@ -1,5 +1,4 @@
 import fs from 'fs'
-import path from 'path'
 import type { BrowserObservation, BrowserSessionRecord, Session } from '@/types'
 import { BROWSER_PROFILES_DIR } from './data-dir'
 import { resolvePathWithinBaseDir } from './path-utils'

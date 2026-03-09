@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { api } from '@/lib/api-client'
 import { getPluginSourceLabel } from '@/lib/plugin-sources'
 import { toast } from 'sonner'
+import { useMountedRef } from '@/hooks/use-mounted-ref'
 import type { Agent, MarketplacePlugin, PluginMeta } from '@/types'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -43,19 +44,21 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
   const [search, setSearch] = useState('')
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [sort, setSort] = useState<'name' | 'downloads'>('downloads')
+  const mountedRef = useMountedRef()
 
   useEffect(() => {
     void loadPlugins()
   }, [loadPlugins])
 
   const loadMarketplace = useCallback(async () => {
+    if (!mountedRef.current) return
     setMpLoading(true)
     try {
       const data = await api<MarketplacePlugin[]>('GET', '/plugins/marketplace')
-      if (Array.isArray(data)) setMarketplace(data)
+      if (mountedRef.current && Array.isArray(data)) setMarketplace(data)
     } catch { /* ignore */ }
-    setMpLoading(false)
-  }, [])
+    if (mountedRef.current) setMpLoading(false)
+  }, [mountedRef])
 
   useEffect(() => {
     if (inSidebar || tab !== 'marketplace') return

@@ -21,7 +21,17 @@ export function parseAttachmentUrl(filePath?: string, fileUrl?: string) {
   return { url, filename }
 }
 
-export function AttachmentChip({ url, filename, isUserMsg }: { url: string; filename: string; isUserMsg?: boolean }) {
+export function AttachmentChip({
+  url,
+  filename,
+  isUserMsg,
+  onOpenImage,
+}: {
+  url: string
+  filename: string
+  isUserMsg?: boolean
+  onOpenImage?: (image: { url: string; filename: string }) => void
+}) {
   const isImage = IMAGE_ATTACH_RE.test(filename)
   const isCode = CODE_ATTACH_RE.test(filename)
   const isPdf = PDF_ATTACH_RE.test(filename)
@@ -36,10 +46,16 @@ export function AttachmentChip({ url, filename, isUserMsg }: { url: string; file
           src={url} alt="Attached"
           loading="lazy"
           className="max-w-[240px] rounded-[12px] mb-2 border border-white/10 cursor-pointer hover:border-white/25 transition-colors"
-          onClick={() => setLightbox(true)}
+          onClick={() => {
+            if (onOpenImage) {
+              onOpenImage({ url, filename })
+              return
+            }
+            setLightbox(true)
+          }}
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
         />
-        {lightbox && (
+        {!onOpenImage && lightbox && (
           <div
             className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm cursor-pointer"
             onClick={() => setLightbox(false)}

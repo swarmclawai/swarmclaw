@@ -120,6 +120,7 @@ const LiveStreamLane = memo(function LiveStreamLane({
 export function MessageList({ messages, streaming, connectorFilter = null, loading = false }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const settledCountRef = useRef(0)
   const snapUntilRef = useRef(0)
   const prevSessionIdRef = useRef<string | null>(null)
   const hasLiveText = useChatStore((s) => s.displayText.trim().length > 0)
@@ -203,33 +204,41 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
 
   // Connector filtering is handled via connectorFilter prop from chat-area
 
+  // Use refs for callbacks so transcriptNodes memo doesn't bust on every messages change
+  const messagesCallbackRef = useRef(messages)
+  messagesCallbackRef.current = messages
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
+
   const toggleBookmark = useCallback(async (index: number) => {
-    if (!sessionId) return
-    const msg = messages[index]
+    const sid = sessionIdRef.current
+    const msgs = messagesCallbackRef.current
+    if (!sid) return
+    const msg = msgs[index]
     if (!msg) return
     const next = !msg.bookmarked
     try {
-      await api('PUT', `/chats/${sessionId}/messages`, { messageIndex: index, bookmarked: next })
-      const updated = [...messages]
+      await api('PUT', `/chats/${sid}/messages`, { messageIndex: index, bookmarked: next })
+      const updated = [...msgs]
       updated[index] = { ...updated[index], bookmarked: next }
       setMessages(updated)
     } catch (err: unknown) {
       console.error('Failed to toggle bookmark:', errorMessage(err))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, messages])
+  }, [])
 
   const handleEditResend = useCallback(async (index: number, newText: string) => {
-    if (!sessionId || !editAndResend) return
+    if (!sessionIdRef.current || !editAndResend) return
     await editAndResend(index, newText)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId])
+  }, [])
 
   const handleFork = useCallback(async (index: number) => {
-    if (!sessionId || !forkSession) return
-    await forkSession(sessionId, index)
+    if (!sessionIdRef.current || !forkSession) return
+    await forkSession(sessionIdRef.current, index)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId])
+  }, [])
 
   // In-thread search
   const [searchOpen, setSearchOpen] = useState(false)
@@ -303,14 +312,21 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
   }, [messages])
 
   const handleDeleteMessage = useCallback(async (messageIndex: number) => {
-    if (!sessionId || messageIndex < 0) return
+    const sid = sessionIdRef.current
+    const msgs = messagesCallbackRef.current
+    if (!sid || messageIndex < 0) return
     try {
-      await api('DELETE', `/chats/${sessionId}/messages`, { messageIndex })
-      setMessages(messages.filter((_: Message, idx: number) => idx !== messageIndex))
+      await api('DELETE', `/chats/${sid}/messages`, { messageIndex })
+      setMessages(msgs.filter((_: Message, idx: number) => idx !== messageIndex))
     } catch {
       // best-effort
     }
-  }, [messages, sessionId, setMessages])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Snapshot the settled count at memo time so it's captured in the closure.
+  // Messages up to this count appear instantly; only new ones get entrance animations.
+  const settledSnapshot = settledCountRef.current
 
   const transcriptNodes = useMemo(() => {
     let lastAssistantIndex = -1
@@ -376,14 +392,21 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
         }
       }
 
+      // Only animate genuinely new messages (arrived after the batch load).
+      // Settled messages (loaded on session switch) appear instantly.
+      const isSettled = i < settledSnapshot
+      const animStyle = isSettled
+        ? undefined
+        : {
+            animation: `${msg.role === 'user' ? 'msg-in-right' : 'msg-in-left'} 0.4s var(--ease-spring) both`,
+            animationDelay: `${Math.min((i - settledSnapshot) * 0.05, 0.4)}s`,
+          }
+
       return (
         <div
           key={`${sessionId}-${msg.role}-${originalIndex >= 0 ? originalIndex : i}`}
           data-message-index={i}
-          style={{
-            animation: `${msg.role === 'user' ? 'msg-in-right' : 'msg-in-left'} 0.4s var(--ease-spring) both`,
-            animationDelay: `${Math.min(i * 0.05, 0.4)}s`
-          }}
+          style={animStyle}
         >
           {showDateSep && (
             <div className="flex items-center gap-4 py-2 mb-2">
@@ -413,6 +436,7 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
         </div>
       )
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     agent?.avatarSeed,
     agent?.avatarUrl,
@@ -421,16 +445,13 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
     currentMoment,
     currentSearchMatchIndex,
     filteredMessages,
-    handleDeleteMessage,
-    handleEditResend,
-    handleFork,
     originalIndexMap,
     retryLastMessage,
     searchMatchSet,
     searchQuery,
     sessionId,
+    settledSnapshot,
     streaming,
-    toggleBookmark,
   ])
 
   // Track whether user is at/near bottom so we know whether to auto-scroll on new content
@@ -473,8 +494,15 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
       prevSessionIdRef.current = sessionId
       wasAtBottomRef.current = true
       snapUntilRef.current = Date.now() + 2000
+      // Mark all messages as settled — new messages loaded for this session
+      // will also be settled (see below).
+      settledCountRef.current = 0
+    } else if (Date.now() < snapUntilRef.current) {
+      // Still in the snap window (messages just loaded for this session).
+      // Treat the new batch as settled so they appear without stagger.
+      settledCountRef.current = messages.length
     }
-  }, [sessionId])
+  }, [messages.length, sessionId])
 
   // Position scroll before paint — no setState here to avoid cascading renders.
   // The onScroll handler and the state-update effect below handle UI state.
@@ -577,7 +605,7 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
   }, [searchOpen])
 
   return (
-    <div className="relative flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+    <div className="relative flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden" data-testid="message-list">
       <div className="shrink-0 px-4 md:px-12 lg:px-16 pt-3">
         <div className="flex flex-wrap items-center gap-2 rounded-[14px] border border-white/[0.06] bg-surface/55 px-3 py-2 backdrop-blur-sm">
           <button
@@ -717,6 +745,9 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
       <div
         ref={scrollRef}
         onScroll={updateScrollState}
+        role="log"
+        aria-label="Conversation transcript"
+        data-testid="chat-thread"
         className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 md:px-12 lg:px-16 pt-4 pb-[120px] md:pb-10 fade-up"
       >
         <div className="flex flex-col gap-6 relative">

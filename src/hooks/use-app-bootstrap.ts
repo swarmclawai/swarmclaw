@@ -3,13 +3,18 @@ import { useAppStore } from '@/stores/use-app-store'
 import { getStoredAccessKey, clearStoredAccessKey, api } from '@/lib/api-client'
 import { safeStorageGet, safeStorageSet } from '@/lib/safe-storage'
 import { connectWs, disconnectWs } from '@/lib/ws-client'
-import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { fetchWithTimeout, isAbortError, isTimeoutError } from '@/lib/fetch-timeout'
 import { isDevelopmentLikeRuntime } from '@/lib/runtime-env'
 import { useWs } from '@/hooks/use-ws'
+import { useMountedRef } from '@/hooks/use-mounted-ref'
 import type { Agent } from '@/types'
 
 const AUTH_CHECK_TIMEOUT_MS = isDevelopmentLikeRuntime() ? 20_000 : 8_000
 const POST_AUTH_BOOTSTRAP_TIMEOUT_MS = isDevelopmentLikeRuntime() ? 20_000 : 8_000
+
+function isExpectedAuthProbeError(err: unknown): boolean {
+  return isAbortError(err) || isTimeoutError(err)
+}
 
 export function useAppBootstrap() {
   const currentUser = useAppStore((s) => s.currentUser)
@@ -24,6 +29,7 @@ export function useAppBootstrap() {
   const [authenticated, setAuthenticated] = useState(false)
   const [setupDone, setSetupDone] = useState<boolean | null>(null)
   const [agentReady, setAgentReady] = useState(false)
+  const mountedRef = useMountedRef()
 
   const checkAuth = useCallback(async () => {
     try {
@@ -33,16 +39,20 @@ export function useAppBootstrap() {
         return {}
       })
       if (data?.authenticated === true) {
+        if (!mountedRef.current) return
         setAuthenticated(true)
         setAuthChecked(true)
         return
       }
     } catch (err) {
-      console.warn('Auth check probe failed, falling back to stored key:', err)
+      if (!isExpectedAuthProbeError(err)) {
+        console.warn('Auth check probe failed, falling back to stored key:', err)
+      }
     }
 
     const key = getStoredAccessKey()
     if (!key) {
+      if (!mountedRef.current) return
       setAuthenticated(false)
       setAuthChecked(true)
       return
@@ -55,19 +65,25 @@ export function useAppBootstrap() {
         body: JSON.stringify({ key }),
       }, AUTH_CHECK_TIMEOUT_MS)
       if (res.ok) {
+        if (!mountedRef.current) return
         setAuthenticated(true)
       } else {
         clearStoredAccessKey()
+        if (!mountedRef.current) return
         setAuthenticated(false)
       }
     } catch (err) {
-      console.warn('Stored key auth check failed:', err)
+      if (!isExpectedAuthProbeError(err)) {
+        console.warn('Stored key auth check failed:', err)
+      }
       clearStoredAccessKey()
+      if (!mountedRef.current) return
       setAuthenticated(false)
     } finally {
+      if (!mountedRef.current) return
       setAuthChecked(true)
     }
-  }, [])
+  }, [mountedRef])
 
   const syncUserFromServer = useCallback(async () => {
     if (currentUser) return
@@ -136,10 +152,10 @@ export function useAppBootstrap() {
       } catch (err) {
         console.warn('Failed to initialize agents:', err)
       }
-      if (!cancelled) setAgentReady(true)
+      if (!cancelled && mountedRef.current) setAgentReady(true)
     })()
     return () => { cancelled = true }
-  }, [authenticated, currentUser])
+  }, [authenticated, currentUser, mountedRef])
 
   useEffect(() => {
     if (!authenticated || !currentUser) return
@@ -163,14 +179,15 @@ export function useAppBootstrap() {
         const hasCreds = Object.keys(creds).length > 0
         const done = bothFailed ? true : settings.setupCompleted === true || hasCreds
         if (done) safeStorageSet('sc_setup_done', '1')
+        if (!mountedRef.current) return
         setSetupDone(done)
       } catch (err) {
         console.warn('Failed to check setup state:', err)
-        if (!cancelled) setSetupDone(true)
+        if (!cancelled && mountedRef.current) setSetupDone(true)
       }
     })()
     return () => { cancelled = true }
-  }, [authenticated, currentUser])
+  }, [authenticated, currentUser, mountedRef])
 
   return {
     hydrated,

@@ -19,7 +19,7 @@ import {
   setReconnectState,
 } from './connectors/manager'
 import { startConnectorOutboxWorker, stopConnectorOutboxWorker } from './connectors/outbox'
-import { startHeartbeatService, stopHeartbeatService, getHeartbeatServiceStatus } from './heartbeat-service'
+import { startHeartbeatService, stopHeartbeatService, getHeartbeatServiceStatus, pruneHeartbeatState } from './heartbeat-service'
 import { hasOpenClawAgents, ensureGatewayConnected, disconnectGateway, getGateway } from './openclaw-gateway'
 import { enqueueSessionRun } from './session-run-manager'
 import { WORKSPACE_DIR } from './data-dir'
@@ -32,6 +32,8 @@ import { createNotification } from '@/lib/server/create-notification'
 import { pingProvider, OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
 import { runIntegrityMonitor } from '@/lib/server/integrity-monitor'
 import { recoverStaleDelegationJobs } from './delegation-jobs'
+import { pruneMainLoopState } from './main-agent-loop'
+import { sweepManagedProcesses } from './process-manager'
 import {
   listPendingApprovalsNeedingConnectorNotification,
   markApprovalConnectorNotificationAttempt,
@@ -718,6 +720,33 @@ async function runPendingApprovalConnectorNotifications(now: number) {
   }
 }
 
+/**
+ * Prune orphaned entries from module-level Maps/Sets that reference
+ * sessions, connectors, or agents that no longer exist in storage.
+ * Runs every health-check cycle (2 minutes).
+ */
+function pruneOrphanedState(sessions: Record<string, unknown>): void {
+  const liveSessionIds = new Set(Object.keys(sessions))
+
+  // Main-loop state map (per-session autonomous state)
+  pruneMainLoopState(liveSessionIds)
+
+  // Heartbeat service tracking maps
+  pruneHeartbeatState(liveSessionIds)
+
+  // Process manager — sweep completed processes older than TTL
+  sweepManagedProcesses()
+
+  // Daemon-local: prune openclawRepairState for agents that no longer exist
+  const agents = loadAgents()
+  for (const agentId of ds.openclawRepairState.keys()) {
+    if (!agents[agentId]) ds.openclawRepairState.delete(agentId)
+  }
+  for (const agentId of ds.openclawDownAgentIds) {
+    if (!agents[agentId]) ds.openclawDownAgentIds.delete(agentId)
+  }
+}
+
 async function runHealthChecks() {
   // Continuously keep the completed queue honest.
   validateCompletedTasksQueue()
@@ -848,6 +877,13 @@ async function runHealthChecks() {
     await processWebhookRetries()
   } catch (err: unknown) {
     console.error('[daemon] Webhook retry processing failed:', errorMessage(err))
+  }
+
+  // Periodic memory hygiene: prune orphaned state for deleted sessions/connectors
+  try {
+    pruneOrphanedState(sessions)
+  } catch (err: unknown) {
+    console.error('[daemon] Memory hygiene sweep failed:', errorMessage(err))
   }
 }
 

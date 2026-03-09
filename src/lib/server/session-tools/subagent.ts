@@ -342,11 +342,27 @@ async function executeSubagentAction(args: unknown, context: ActionContext) {
 const SubagentPlugin: Plugin = {
   name: 'Core Subagents',
   description: 'Delegate tasks to other specialized agents with resumable job handles.',
-  hooks: {} as PluginHooks,
+  hooks: {
+    getCapabilityDescription: () =>
+      'Delegate tasks to other agents (spawn_subagent). Single task: action "start". '
+      + 'Multiple independent tasks: action "batch" with a tasks array. '
+      + 'Event-driven parallel with status tracking: action "swarm" with a tasks array.',
+    getOperatingGuidance: () => [
+      'SUBAGENT DISPATCH RULES:',
+      '- Single task → action "start" with agentId + message.',
+      '- 2+ independent tasks that can run in parallel → action "batch" with tasks array [{agentId, message}, ...].',
+      '- DO NOT call "start" in a loop when tasks are independent — use "batch" or "swarm" instead.',
+      '- Only use subagents when the task genuinely requires another agent\'s specialization or parallel execution.',
+      '- If you can answer directly from your own knowledge, do NOT spawn a subagent.',
+    ],
+  } as PluginHooks,
   tools: [
     {
       name: 'spawn_subagent',
-      description: 'Delegate tasks to other agents with native execution and lineage tracking. Actions: start (single), batch (simple parallel), swarm (event-driven parallel with callbacks), swarm_status, swarm_list, swarm_cancel, status, list, wait, wait_all, cancel, lineage, aggregate.',
+      description: 'Delegate tasks to other agents. '
+            + 'Actions: start (single agent), batch (2+ parallel tasks via "tasks" array), swarm (parallel with status tracking via "tasks" array). '
+            + 'Management: status, list, wait, wait_all, cancel, lineage, aggregate, swarm_status, swarm_list, swarm_cancel. '
+            + 'For multiple independent tasks, prefer "batch" with tasks:[{agentId,message},...] over calling "start" repeatedly.',
       parameters: {
         type: 'object',
         properties: {

@@ -103,6 +103,15 @@ const COMMAND_GROUPS = {
       pick: { description: 'Open native picker (body: {"mode":"file|folder"})', method: 'POST', path: '/dirs/pick' },
     },
   },
+  perf: {
+    description: 'Inspect or control runtime perf tracing',
+    commands: {
+      status: { description: 'Get current perf tracing status and recent entries', method: 'GET', path: '/perf' },
+      enable: { description: 'Enable perf tracing and clear existing entries', method: 'POST', path: '/perf', staticBody: { action: 'enable' } },
+      disable: { description: 'Disable perf tracing', method: 'POST', path: '/perf', staticBody: { action: 'disable' } },
+      clear: { description: 'Clear recent perf entries', method: 'POST', path: '/perf', staticBody: { action: 'clear' } },
+    },
+  },
   documents: {
     description: 'File uploads/downloads and TTS audio',
     commands: {

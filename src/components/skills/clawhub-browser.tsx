@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { api } from '@/lib/api-client'
 import { toast } from 'sonner'
+import { useMountedRef } from '@/hooks/use-mounted-ref'
 
 interface ClawHubSkill {
   id: string
@@ -33,6 +34,7 @@ interface ClawHubBrowserProps {
 }
 
 export function ClawHubBrowser({ open, onOpenChange, onInstalled }: ClawHubBrowserProps) {
+  const mountedRef = useMountedRef()
   const [query, setQuery] = useState('')
   const [skills, setSkills] = useState<ClawHubSkill[]>([])
   const [page, setPage] = useState(1)
@@ -41,12 +43,16 @@ export function ClawHubBrowser({ open, onOpenChange, onInstalled }: ClawHubBrows
   const [error, setError] = useState<string | null>(null)
   const [installing, setInstalling] = useState<string | null>(null)
   const [searched, setSearched] = useState(false)
+  const searchRequestIdRef = useRef(0)
 
   const search = useCallback(async (q: string, p: number, append = false) => {
+    const requestId = searchRequestIdRef.current + 1
+    searchRequestIdRef.current = requestId
     setLoading(true)
     setError(null)
     try {
       const res = await api<SearchResponse>('GET', `/clawhub/search?q=${encodeURIComponent(q)}&page=${p}`)
+      if (!mountedRef.current || searchRequestIdRef.current !== requestId) return
       if (append) {
         setSkills(prev => [...prev, ...res.skills])
       } else {
@@ -56,11 +62,14 @@ export function ClawHubBrowser({ open, onOpenChange, onInstalled }: ClawHubBrows
       setPage(res.page)
       setSearched(true)
     } catch (err) {
+      if (!mountedRef.current || searchRequestIdRef.current !== requestId) return
       setError(err instanceof Error ? err.message : 'Failed to search ClawHub')
     } finally {
-      setLoading(false)
+      if (mountedRef.current && searchRequestIdRef.current === requestId) {
+        setLoading(false)
+      }
     }
-  }, [])
+  }, [mountedRef])
 
   useEffect(() => {
     if (open) {
@@ -101,7 +110,9 @@ export function ClawHubBrowser({ open, onOpenChange, onInstalled }: ClawHubBrows
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Install failed')
     } finally {
-      setInstalling(null)
+      if (mountedRef.current) {
+        setInstalling(null)
+      }
     }
   }
 

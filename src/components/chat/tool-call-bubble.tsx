@@ -429,9 +429,15 @@ export const ToolCallBubble = memo(function ToolCallBubble({ event }: { event: T
   }
 
   return (
-    <div className="w-full text-left">
+    <div
+      className="w-full text-left"
+      data-testid="tool-call-card"
+      data-tool-name={event.name}
+      data-tool-status={event.status}
+    >
       <details open={isError || isRunning} className="group/tool">
         <summary
+          data-testid="tool-call-summary"
           className="w-full text-left rounded-[12px] border bg-surface/80 backdrop-blur-sm transition-all duration-200 hover:bg-surface-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden"
           style={{ borderLeft: `3px solid ${color}`, borderColor: `${color}33` }}
         >

@@ -5,6 +5,7 @@ import os from 'os'
 import type { ChildProcess } from 'node:child_process'
 import Database from 'better-sqlite3'
 
+import { perf } from './perf'
 import { DATA_DIR, IS_BUILD_BOOTSTRAP, WORKSPACE_DIR } from './data-dir'
 import { safeJsonParseObject } from './json-utils'
 import { normalizeHeartbeatSettingFields } from '@/lib/heartbeat-defaults'
@@ -267,6 +268,7 @@ function normalizeStoredRecord(table: string, value: unknown): unknown {
 }
 
 function loadCollection(table: string): Record<string, any> {
+  const endPerf = perf.start('storage', 'loadCollection', { table })
   const raw = getCollectionRawCache(table)
   const result: Record<string, any> = {}
   for (const [id, data] of raw.entries()) {
@@ -276,10 +278,12 @@ function loadCollection(table: string): Record<string, any> {
       // Ignore malformed records instead of crashing list endpoints.
     }
   }
+  endPerf({ count: raw.size })
   return result
 }
 
 function saveCollection(table: string, data: Record<string, any>) {
+  const endPerf = perf.start('storage', 'saveCollection', { table })
   const current = getCollectionRawCache(table)
   const next = new Map<string, string>()
   const toUpsert: Array<[string, string]> = []
@@ -299,7 +303,10 @@ function saveCollection(table: string, data: Record<string, any>) {
     if (!next.has(id)) toDelete.push(id)
   }
 
-  if (!toUpsert.length && !toDelete.length) return
+  if (!toUpsert.length && !toDelete.length) {
+    endPerf({ upserts: 0, deletes: 0 })
+    return
+  }
 
   const transaction = db.transaction(() => {
     if (toDelete.length) {
@@ -312,6 +319,7 @@ function saveCollection(table: string, data: Record<string, any>) {
     }
   })
   transaction()
+  endPerf({ upserts: toUpsert.length, deletes: toDelete.length })
 
   for (const id of toDelete) {
     current.delete(id)

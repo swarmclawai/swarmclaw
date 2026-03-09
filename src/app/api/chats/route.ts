@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import os from 'os'
 import path from 'path'
+import { perf } from '@/lib/server/perf'
 import { loadSessions, saveSessions, deleteSession, active, loadAgents, upsertStoredItem } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { notify } from '@/lib/server/ws-hub'
@@ -20,6 +21,7 @@ async function ensureDaemonIfNeeded(source: string) {
 
 
 export async function GET(req: Request) {
+  const endPerf = perf.start('api', 'GET /api/chats')
   const sessions = loadSessions()
   const changedSessionIds: string[] = []
   for (const id of Object.keys(sessions)) {
@@ -45,12 +47,16 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url)
   const limitParam = searchParams.get('limit')
-  if (!limitParam) return NextResponse.json(summarized)
+  if (!limitParam) {
+    endPerf({ count: Object.keys(summarized).length })
+    return NextResponse.json(summarized)
+  }
 
   const limit = Math.max(1, Number(limitParam) || 50)
   const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
   const all = Object.values(summarized).sort((a, b) => (b.lastActiveAt ?? b.createdAt) - (a.lastActiveAt ?? a.createdAt))
   const items = all.slice(offset, offset + limit)
+  endPerf({ count: items.length, total: all.length })
   return NextResponse.json({ items, total: all.length, hasMore: offset + limit < all.length })
 }
 

@@ -7,12 +7,14 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { api } from '@/lib/api-client'
 import { toast } from 'sonner'
 import type { McpServerConfig, McpTransport } from '@/types'
+import { useMountedRef } from '@/hooks/use-mounted-ref'
 
 function McpServerForm({ editing, onClose, loadMcpServers }: {
   editing: McpServerConfig | null
   onClose: () => void
   loadMcpServers: () => Promise<void>
 }) {
+  const mountedRef = useMountedRef()
   const [name, setName] = useState(editing?.name || '')
   const [transport, setTransport] = useState<McpTransport>(editing?.transport || 'stdio')
   const [command, setCommand] = useState(editing?.command || '')
@@ -71,6 +73,7 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
         toast.success('MCP server created')
       }
       await loadMcpServers()
+      if (!mountedRef.current) return
       onClose()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to save server')
@@ -84,12 +87,15 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
       await api('DELETE', `/mcp-servers/${editing.id}`)
       toast.success('MCP server deleted')
       await loadMcpServers()
+      if (!mountedRef.current) return
       setConfirmDelete(false)
       onClose()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete server')
     } finally {
-      setDeleting(false)
+      if (mountedRef.current) {
+        setDeleting(false)
+      }
     }
   }
 
@@ -99,15 +105,19 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
     setTestResult(null)
     try {
       const result = await api<{ ok: boolean; tools?: string[]; error?: string }>('POST', `/mcp-servers/${editing.id}/test`)
+      if (!mountedRef.current) return
       setTestResult(result)
       if (result.ok) toast.success('Connection test passed')
       else toast.error(result.error || 'Connection test failed')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Test failed'
+      if (!mountedRef.current) return
       setTestResult({ ok: false, error: msg })
       toast.error(msg)
     }
-    setTesting(false)
+    if (mountedRef.current) {
+      setTesting(false)
+    }
   }
 
   const canSave = name.trim() && (transport === 'stdio' ? command.trim() : url.trim())

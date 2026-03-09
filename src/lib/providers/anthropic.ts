@@ -2,6 +2,7 @@ import fs from 'fs'
 import https from 'https'
 import type { StreamChatOptions } from './index'
 import { PROVIDER_DEFAULTS } from './provider-defaults'
+import { resolveImagePath } from '@/lib/server/resolve-image'
 
 const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|webp|bmp)$/i
 const TEXT_EXTS = /\.(txt|md|csv|json|xml|html|js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|yml|yaml|toml|env|log|sh|sql|css|scss)$/i
@@ -24,9 +25,9 @@ function fileToContentBlocks(filePath: string): any[] {
   return [{ type: 'text', text: `[Attached file: ${filePath.split('/').pop()}]` }]
 }
 
-export function streamAnthropicChat({ session, message, imagePath, imageUrl, apiKey, systemPrompt, write, active, loadHistory, onUsage, signal }: StreamChatOptions): Promise<string> {
+export function streamAnthropicChat({ session, message, imagePath, apiKey, systemPrompt, write, active, loadHistory, onUsage, signal }: StreamChatOptions): Promise<string> {
   return new Promise((resolve) => {
-    const messages = buildMessages(session, message, imagePath, loadHistory, imageUrl)
+    const messages = buildMessages(session, message, imagePath, loadHistory)
     const model = session.model || 'claude-sonnet-4-6'
     let usageInput = 0
     let usageOutput = 0
@@ -136,30 +137,25 @@ export function streamAnthropicChat({ session, message, imagePath, imageUrl, api
   })
 }
 
-function urlToImageBlock(url: string): { type: string; source: { type: string; url: string } } {
-  return { type: 'image', source: { type: 'url', url } }
-}
-
-function buildMessages(session: any, message: string, imagePath: string | undefined, loadHistory: (id: string) => any[], imageUrl?: string) {
-  const msgs: Array<{ role: string; content: any }> = []
+function buildMessages(session: Record<string, unknown> & { id: string }, message: string, imagePath: string | undefined, loadHistory: (id: string) => Record<string, unknown>[]) {
+  const msgs: Array<{ role: string; content: unknown }> = []
 
   if (loadHistory) {
     const history = loadHistory(session.id).slice(-40)
     for (const m of history) {
-      if (m.role === 'user' && (m.imagePath || m.imageUrl)) {
-        const blocks = m.imagePath ? fileToContentBlocks(m.imagePath) : []
-        if (m.imageUrl) blocks.push(urlToImageBlock(m.imageUrl))
+      const histImagePath = resolveImagePath(m.imagePath as string | undefined, m.imageUrl as string | undefined)
+      if (m.role === 'user' && histImagePath) {
+        const blocks = fileToContentBlocks(histImagePath)
         msgs.push({ role: 'user', content: [...blocks, { type: 'text', text: m.text }] })
       } else {
-        msgs.push({ role: m.role, content: m.text })
+        msgs.push({ role: m.role as string, content: m.text })
       }
     }
   }
 
-  // Current message with optional attachment
-  if (imagePath || imageUrl) {
-    const blocks = imagePath ? fileToContentBlocks(imagePath) : []
-    if (imageUrl) blocks.push(urlToImageBlock(imageUrl))
+  // Current message with optional attachment (imagePath already resolved by caller)
+  if (imagePath) {
+    const blocks = fileToContentBlocks(imagePath)
     msgs.push({ role: 'user', content: [...blocks, { type: 'text', text: message }] })
   } else {
     msgs.push({ role: 'user', content: message })

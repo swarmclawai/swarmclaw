@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
+import { perf } from '@/lib/server/perf'
 import { deleteTask, loadAgents, loadSettings, loadTasks, logActivity, upsertTask } from '@/lib/server/storage'
 import { TaskCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
@@ -15,6 +16,7 @@ import {
 import '@/lib/server/builtin-plugins'
 
 export async function GET(req: Request) {
+  const endPerf = perf.start('api', 'GET /api/tasks')
   // Keep completed queue integrity even if daemon is not running.
   validateCompletedTasksQueue()
   recoverStalledRunningTasks()
@@ -24,6 +26,7 @@ export async function GET(req: Request) {
   const allTasks = loadTasks()
 
   if (includeArchived) {
+    endPerf({ count: Object.keys(allTasks).length })
     return NextResponse.json(allTasks)
   }
 
@@ -34,6 +37,7 @@ export async function GET(req: Request) {
       filtered[id] = task
     }
   }
+  endPerf({ count: Object.keys(filtered).length })
   return NextResponse.json(filtered)
 }
 

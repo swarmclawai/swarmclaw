@@ -5,6 +5,7 @@ import type { Sessions, Session } from '../../types'
 import { fetchChat, fetchChats } from '../../lib/chats'
 import { api } from '../../lib/api-client'
 import { errorMessage } from '../../lib/shared-utils'
+import { setIfChanged, invalidateFingerprint } from '../set-if-changed'
 
 export interface SessionSlice {
   sessions: Sessions
@@ -25,11 +26,13 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
   loadSessions: async () => {
     try {
       const sessions = await fetchChats()
-      const currentSessionId = get().currentSessionId
-      set({
-        sessions,
-        currentSessionId: currentSessionId && sessions[currentSessionId] ? currentSessionId : null,
-      })
+      const changed = setIfChanged<AppState>(set, 'sessions', sessions)
+      if (changed) {
+        const currentSessionId = get().currentSessionId
+        if (currentSessionId && !sessions[currentSessionId]) {
+          set({ currentSessionId: null })
+        }
+      }
     } catch (err) {
       console.warn('Store error:', err)
     }
@@ -46,6 +49,7 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
       try {
         const session = await fetchChat(id)
         const currentSessionId = get().currentSessionId
+        invalidateFingerprint('sessions')
         set({
           sessions: { ...get().sessions, [id]: session },
           currentSessionId: currentSessionId && currentSessionId === id ? id : currentSessionId,
@@ -68,6 +72,7 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
   removeSession: (id) => {
     const sessions = { ...get().sessions }
     delete sessions[id]
+    invalidateFingerprint('sessions')
     set({ sessions, currentSessionId: get().currentSessionId === id ? null : get().currentSessionId })
   },
   clearSessions: async (ids) => {
@@ -75,18 +80,21 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
     await api('DELETE', '/chats', { ids })
     const sessions = { ...get().sessions }
     for (const id of ids) delete sessions[id]
+    invalidateFingerprint('sessions')
     set({ sessions, currentSessionId: ids.includes(get().currentSessionId!) ? null : get().currentSessionId })
   },
   togglePinSession: (id) => {
     const sessions = { ...get().sessions }
     if (sessions[id]) {
       sessions[id] = { ...sessions[id], pinned: !sessions[id].pinned }
+      invalidateFingerprint('sessions')
       set({ sessions })
       // Persist to server
       void api('PUT', `/chats/${id}`, { pinned: sessions[id].pinned })
     }
   },
   updateSessionInStore: (session) => {
+    invalidateFingerprint('sessions')
     set({ sessions: { ...get().sessions, [session.id]: session } })
   },
   forkSession: async (sessionId, messageIndex) => {

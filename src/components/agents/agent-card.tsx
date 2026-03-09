@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Agent } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useWs } from '@/hooks/use-ws'
+import { useMountedRef } from '@/hooks/use-mounted-ref'
 import { api } from '@/lib/api-client'
 import { deleteAgent } from '@/lib/agents'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -31,6 +32,7 @@ interface Props {
 }
 
 export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, onSetDefault }: Props) {
+  const mountedRef = useMountedRef()
   const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const loadSessions = useAppStore((s) => s.loadSessions)
@@ -47,6 +49,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
   const approvals = useApprovalStore((s) => s.approvals)
   const pendingApprovalCount = Object.values(approvals).filter((a) => a.agentId === agent.id).length
   const [heartbeatPulse, setHeartbeatPulse] = useState(false)
+  const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const monthlyBudget = typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0
     ? agent.monthlyBudget
     : null
@@ -66,9 +69,24 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
   const canDelegateToAgents = agent.platformAssignScope === 'all'
   const agentDisabled = agent.disabled === true
   useWs(`heartbeat:agent:${agent.id}`, () => {
+    if (heartbeatTimerRef.current) {
+      clearTimeout(heartbeatTimerRef.current)
+    }
     setHeartbeatPulse(true)
-    setTimeout(() => setHeartbeatPulse(false), 1500)
+    heartbeatTimerRef.current = setTimeout(() => {
+      if (mountedRef.current) {
+        setHeartbeatPulse(false)
+      }
+    }, 1500)
   })
+
+  useEffect(() => {
+    return () => {
+      if (heartbeatTimerRef.current) {
+        clearTimeout(heartbeatTimerRef.current)
+      }
+    }
+  }, [])
 
   const handleClick = () => {
     setEditingAgentId(agent.id)
@@ -90,6 +108,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
       const session = await api<{ id: string }>('POST', `/agents/${agent.id}/thread`, { user: 'default' })
       if (!session?.id) throw new Error('Agent thread not available')
       await loadSessions()
+      if (!mountedRef.current) return
       setMessages([])
       setCurrentSession(session.id)
       setActiveView('agents')
@@ -97,7 +116,9 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
     } catch (err) {
       console.error('Agent task run failed:', err)
     }
-    setRunning(false)
+    if (mountedRef.current) {
+      setRunning(false)
+    }
   }
 
   const [cloning, setCloning] = useState(false)
@@ -110,7 +131,9 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
     } catch (err: unknown) {
       toast.error(errorMessage(err))
     } finally {
-      setCloning(false)
+      if (mountedRef.current) {
+        setCloning(false)
+      }
     }
   }
 
@@ -118,7 +141,9 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
     await deleteAgent(agent.id)
     await loadAgents()
     toast.success('Agent moved to trash')
-    setConfirmDelete(false)
+    if (mountedRef.current) {
+      setConfirmDelete(false)
+    }
   }
 
   return (

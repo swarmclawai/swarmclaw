@@ -1,4 +1,4 @@
-import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { fetchWithTimeout, isAbortError, isTimeoutError } from '@/lib/fetch-timeout'
 import { safeStorageGet, safeStorageSet, safeStorageRemove } from '@/lib/safe-storage'
 import { sleep } from '@/lib/shared-utils'
 
@@ -18,12 +18,6 @@ export function setStoredAccessKey(key: string) {
 
 export function clearStoredAccessKey() {
   safeStorageRemove(ACCESS_KEY_STORAGE)
-}
-
-
-function isAbortError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false
-  return (err as { name?: string }).name === 'AbortError'
 }
 
 function buildInflightGetKey(path: string, key: string): string {
@@ -83,7 +77,10 @@ export async function api<T = unknown>(
         return r.text() as unknown as T
       } catch (err) {
         const isLastAttempt = attempt >= retries
-        const retryable = isAbortError(err) || (err instanceof TypeError && !String(err.message || '').includes('Unauthorized'))
+        const retryable =
+          isAbortError(err)
+          || isTimeoutError(err)
+          || (err instanceof TypeError && !String(err.message || '').includes('Unauthorized'))
         if (isLastAttempt || !retryable) throw err
         await sleep(RETRY_DELAY_BASE_MS * (attempt + 1))
       }

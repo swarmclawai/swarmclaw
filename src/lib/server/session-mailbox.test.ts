@@ -122,7 +122,7 @@ describe('session-mailbox', () => {
 
   it('clearMailbox with includeAcked=false only removes acked', () => {
     createTestSession('mb-sess-6')
-    const env1 = mailbox.sendMailboxEnvelope({ toSessionId: 'mb-sess-6', type: 'msg', payload: 'keep' })
+    mailbox.sendMailboxEnvelope({ toSessionId: 'mb-sess-6', type: 'msg', payload: 'keep' })
     const env2 = mailbox.sendMailboxEnvelope({ toSessionId: 'mb-sess-6', type: 'msg', payload: 'ack-then-remove' })
     mailbox.ackMailboxEnvelope('mb-sess-6', env2.id)
 

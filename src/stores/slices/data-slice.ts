@@ -5,6 +5,7 @@ import { fetchDirs, fetchProviders, fetchCredentials } from '../../lib/chats'
 import { fetchSchedules } from '../../lib/schedules'
 import { api } from '../../lib/api-client'
 import { safeStorageGetJson, safeStorageSet } from '../../lib/safe-storage'
+import { setIfChanged } from '../set-if-changed'
 
 export interface DataSlice {
   networkInfo: NetworkInfo | null
@@ -58,19 +59,19 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
   loadNetworkInfo: async () => {
     try {
       const info = await api<NetworkInfo>('GET', '/ip')
-      set({ networkInfo: info })
+      setIfChanged<AppState>(set, 'networkInfo', info)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ networkInfo: null })
+      setIfChanged<AppState>(set, 'networkInfo', null)
     }
   },
   dirs: [],
   loadDirs: async () => {
     try {
       const dirs = await fetchDirs()
-      set({ dirs })
+      setIfChanged<AppState>(set, 'dirs', dirs)
     } catch {
-      set({ dirs: [] })
+      setIfChanged<AppState>(set, 'dirs', [])
     }
   },
   providers: [],
@@ -78,39 +79,39 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
   loadProviders: async () => {
     try {
       const providers = await fetchProviders()
-      set({ providers })
+      setIfChanged<AppState>(set, 'providers', providers)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ providers: [] })
+      setIfChanged<AppState>(set, 'providers', [])
     }
   },
   loadCredentials: async () => {
     try {
       const credentials = await fetchCredentials()
-      set({ credentials })
+      setIfChanged<AppState>(set, 'credentials', credentials)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ credentials: {} })
+      setIfChanged<AppState>(set, 'credentials', {})
     }
   },
   schedules: {},
   loadSchedules: async () => {
     try {
       const schedules = await fetchSchedules()
-      set({ schedules })
+      setIfChanged<AppState>(set, 'schedules', schedules)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ schedules: {} })
+      setIfChanged<AppState>(set, 'schedules', {})
     }
   },
   appSettings: {},
   loadSettings: async () => {
     try {
       const settings = await api<AppSettings>('GET', '/settings')
-      set({ appSettings: settings })
+      setIfChanged<AppState>(set, 'appSettings', settings)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ appSettings: {} })
+      setIfChanged<AppState>(set, 'appSettings', {})
     }
   },
   updateSettings: async (patch) => {
@@ -125,70 +126,70 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
   loadSecrets: async () => {
     try {
       const secrets = await api<Record<string, OrchestratorSecret>>('GET', '/secrets')
-      set({ secrets })
+      setIfChanged<AppState>(set, 'secrets', secrets)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ secrets: {} })
+      setIfChanged<AppState>(set, 'secrets', {})
     }
   },
   providerConfigs: [],
   loadProviderConfigs: async () => {
     try {
       const configs = await api<ProviderConfig[]>('GET', '/providers/configs')
-      set({ providerConfigs: configs })
+      setIfChanged<AppState>(set, 'providerConfigs', configs)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ providerConfigs: [] })
+      setIfChanged<AppState>(set, 'providerConfigs', [])
     }
   },
   gatewayProfiles: [],
   loadGatewayProfiles: async () => {
     try {
       const gatewayProfiles = await api<GatewayProfile[]>('GET', '/gateways')
-      set({ gatewayProfiles })
+      setIfChanged<AppState>(set, 'gatewayProfiles', gatewayProfiles)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ gatewayProfiles: [] })
+      setIfChanged<AppState>(set, 'gatewayProfiles', [])
     }
   },
   skills: {},
   loadSkills: async () => {
     try {
       const skills = await api<Record<string, Skill>>('GET', '/skills')
-      set({ skills })
+      setIfChanged<AppState>(set, 'skills', skills)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ skills: {} })
+      setIfChanged<AppState>(set, 'skills', {})
     }
   },
   connectors: {},
   loadConnectors: async () => {
     try {
       const connectors = await api<Record<string, Connector>>('GET', '/connectors')
-      set({ connectors })
+      setIfChanged<AppState>(set, 'connectors', connectors)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ connectors: {} })
+      setIfChanged<AppState>(set, 'connectors', {})
     }
   },
   webhooks: {},
   loadWebhooks: async () => {
     try {
       const webhooks = await api<Record<string, Webhook>>('GET', '/webhooks')
-      set({ webhooks })
+      setIfChanged<AppState>(set, 'webhooks', webhooks)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ webhooks: {} })
+      setIfChanged<AppState>(set, 'webhooks', {})
     }
   },
   mcpServers: {},
   loadMcpServers: async () => {
     try {
       const mcpServers = await api<Record<string, McpServerConfig>>('GET', '/mcp-servers')
-      set({ mcpServers })
+      setIfChanged<AppState>(set, 'mcpServers', mcpServers)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ mcpServers: {} })
+      setIfChanged<AppState>(set, 'mcpServers', {})
     }
   },
   plugins: {},
@@ -197,20 +198,20 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
       const list = await api<PluginMeta[]>('GET', '/plugins')
       const plugins: Record<string, PluginMeta> = {}
       for (const p of list) plugins[p.filename] = p
-      set({ plugins })
+      setIfChanged<AppState>(set, 'plugins', plugins)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ plugins: {} })
+      setIfChanged<AppState>(set, 'plugins', {})
     }
   },
   projects: {},
   loadProjects: async () => {
     try {
       const projects = await api<Record<string, Project>>('GET', '/projects')
-      set({ projects })
+      setIfChanged<AppState>(set, 'projects', projects)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ projects: {} })
+      setIfChanged<AppState>(set, 'projects', {})
     }
   },
   activityEntries: [],
@@ -221,10 +222,10 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
       if (filters?.limit) params.set('limit', String(filters.limit))
       const qs = params.toString()
       const entries = await api<ActivityEntry[]>('GET', `/activity${qs ? `?${qs}` : ''}`)
-      set({ activityEntries: entries })
+      setIfChanged<AppState>(set, 'activityEntries', entries)
     } catch (err) {
       console.warn('Store error:', err)
-      set({ activityEntries: [] })
+      setIfChanged<AppState>(set, 'activityEntries', [])
     }
   },
   lastReadTimestamps: safeStorageGetJson<Record<string, number>>('sc_last_read', {}),
@@ -239,7 +240,7 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
       const list = await api<ApprovalRequest[]>('GET', '/approvals')
       const approvals: Record<string, ApprovalRequest> = {}
       for (const a of list) approvals[a.id] = a
-      set({ approvals })
+      setIfChanged<AppState>(set, 'approvals', approvals)
     } catch (err) { console.warn('Store error:', err) }
   },
   submitApprovalDecision: async (id, approved) => {
@@ -253,13 +254,14 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
   loadNotifications: async () => {
     try {
       const notifications = await api<AppNotification[]>('GET', '/notifications')
-      set({
-        notifications,
-        unreadNotificationCount: notifications.filter((n) => !n.read).length,
-      })
+      if (setIfChanged<AppState>(set, 'notifications', notifications)) {
+        set({ unreadNotificationCount: notifications.filter((n) => !n.read).length })
+      }
     } catch (err) {
       console.warn('Store error:', err)
-      set({ notifications: [], unreadNotificationCount: 0 })
+      if (setIfChanged<AppState>(set, 'notifications', [])) {
+        set({ unreadNotificationCount: 0 })
+      }
     }
   },
   markNotificationRead: async (id) => {

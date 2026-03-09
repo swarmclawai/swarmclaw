@@ -140,6 +140,53 @@ describe('chat-streaming-state', () => {
     ])
   })
 
+  it('reuses the previous assistant slot when only streaming whitespace differs', () => {
+    const messages: Message[] = [
+      { role: 'user', text: 'hello', time: 1 },
+      { role: 'assistant', text: 'Here are the results.', time: 2, kind: 'chat' },
+    ]
+    const completed: Message = { role: 'assistant', text: 'Here\n\n are the results.', time: 3, kind: 'chat' }
+
+    assert.deepEqual(mergeCompletedAssistantMessage(messages, completed), [
+      { role: 'user', text: 'hello', time: 1 },
+      { role: 'assistant', text: 'Here\n\n are the results.', time: 2, kind: 'chat' },
+    ])
+  })
+
+  it('materializes a stale streaming artifact into the existing completed assistant slot', () => {
+    const messages: Message[] = [
+      { role: 'user', text: 'hello', time: 1 },
+      {
+        role: 'assistant',
+        text: 'Here are the results.',
+        time: 2,
+        kind: 'chat',
+      },
+      {
+        role: 'assistant',
+        text: 'Here\n\n are the results.',
+        time: 3,
+        streaming: true,
+        toolEvents: [{ name: 'web', input: '{"action":"search"}' }],
+      },
+    ]
+
+    const changed = materializeStreamingAssistantArtifacts(messages)
+
+    assert.equal(changed, true)
+    assert.deepEqual(messages, [
+      { role: 'user', text: 'hello', time: 1 },
+      {
+        role: 'assistant',
+        text: 'Here\n\n are the results.',
+        time: 2,
+        kind: 'chat',
+        streaming: false,
+        toolEvents: [{ name: 'web', input: '{"action":"search"}' }],
+      },
+    ])
+  })
+
   it('detects same-length message updates during reconciliation', () => {
     const previous: Message[] = [
       { role: 'assistant', text: 'partial', time: 1, streaming: true },

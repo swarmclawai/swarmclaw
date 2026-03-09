@@ -5,6 +5,7 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { useMountedRef } from '@/hooks/use-mounted-ref'
 import { useNow } from '@/hooks/use-now'
 import { api } from '@/lib/api-client'
 import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
@@ -93,10 +94,10 @@ export function HomeView() {
   const setCurrentSession = useAppStore((s) => s.setCurrentSession)
   const setEditingTaskId = useAppStore((s) => s.setEditingTaskId)
   const setTaskSheetOpen = useAppStore((s) => s.setTaskSheetOpen)
-  const setMessages = useChatStore((s) => s.setMessages)
   const [todayCost, setTodayCost] = useState(0)
   const [costTrend, setCostTrend] = useState<{ cost: number; bucket: string }[]>([])
   const [localhostBrowser, setLocalhostBrowser] = useState(false)
+  const mountedRef = useMountedRef()
 
   useEffect(() => {
     setLocalhostBrowser(isLocalhostBrowser())
@@ -157,14 +158,16 @@ export function HomeView() {
 
   // Load data on mount
   useEffect(() => {
+    let cancelled = false
     void loadActivity({ limit: 8 })
     void loadSchedules()
     void loadNotifications()
     const connectorTimer = window.setTimeout(() => {
-      void loadConnectors()
+      if (!cancelled) void loadConnectors()
     }, 1200)
     api<{ records: Array<{ estimatedCost: number }>; timeSeries: Array<{ cost: number; bucket: string }> }>('GET', '/usage?range=7d')
       .then((data) => {
+        if (cancelled || !mountedRef.current) return
         const series = (data.timeSeries || []).map((pt: { cost: number; bucket?: string }) => ({ cost: pt.cost, bucket: pt.bucket || '' }))
         setCostTrend(series)
         const todayBucket = new Date().toISOString().slice(0, 10)
@@ -172,12 +175,14 @@ export function HomeView() {
         setTodayCost(todayPt?.cost || 0)
       })
       .catch(() => {})
-    return () => window.clearTimeout(connectorTimer)
+    return () => {
+      cancelled = true
+      window.clearTimeout(connectorTimer)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [mountedRef])
 
   const handleAgentClick = (agent: Agent) => {
-    setMessages([])
     void setCurrentAgent(agent.id)
     setActiveView('agents')
   }

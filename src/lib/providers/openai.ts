@@ -1,6 +1,7 @@
 import fs from 'fs'
 import type { StreamChatOptions } from './index'
 import { PROVIDER_DEFAULTS } from './provider-defaults'
+import { resolveImagePath } from '@/lib/server/resolve-image'
 
 const IMAGE_EXTS = /\.(png|jpg|jpeg|gif|webp|bmp)$/i
 const TEXT_EXTS = /\.(txt|md|csv|json|xml|html|js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|yml|yaml|toml|env|log|sh|sql|css|scss)$/i
@@ -168,34 +169,30 @@ export function streamOpenAiChat({ session, message, imagePath, imageUrl, apiKey
   })
 }
 
-function urlToImagePart(url: string): { type: string; image_url: { url: string; detail: string } } {
-  return { type: 'image_url', image_url: { url, detail: 'auto' } }
-}
-
-async function buildMessages(session: any, message: string, imagePath: string | undefined, systemPrompt: string | undefined, loadHistory: (id: string) => any[], imageUrl?: string) {
-  const msgs: Array<{ role: string; content: any }> = []
+async function buildMessages(session: Record<string, unknown>, message: string, imagePath: string | undefined, systemPrompt: string | undefined, loadHistory: (id: string) => Record<string, unknown>[], imageUrl?: string) {
+  const msgs: Array<{ role: string; content: unknown }> = []
 
   if (systemPrompt) {
     msgs.push({ role: 'system', content: systemPrompt })
   }
 
   if (loadHistory) {
-    const history = loadHistory(session.id).slice(-40)
+    const history = loadHistory(session.id as string).slice(-40)
     for (const m of history) {
-      if (m.role === 'user' && (m.imagePath || m.imageUrl)) {
-        const parts = m.imagePath ? await fileToContentParts(m.imagePath) : []
-        if (m.imageUrl) parts.push(urlToImagePart(m.imageUrl))
+      const histImagePath = resolveImagePath(m.imagePath as string | undefined, m.imageUrl as string | undefined)
+      if (m.role === 'user' && histImagePath) {
+        const parts = await fileToContentParts(histImagePath)
         msgs.push({ role: 'user', content: [...parts, { type: 'text', text: m.text }] })
       } else {
-        msgs.push({ role: m.role, content: m.text })
+        msgs.push({ role: m.role as string, content: m.text })
       }
     }
   }
 
   // Current message with optional attachment
-  if (imagePath || imageUrl) {
-    const parts = imagePath ? await fileToContentParts(imagePath) : []
-    if (imageUrl) parts.push(urlToImagePart(imageUrl))
+  const resolvedPath = resolveImagePath(imagePath, imageUrl)
+  if (resolvedPath) {
+    const parts = await fileToContentParts(resolvedPath)
     msgs.push({ role: 'user', content: [...parts, { type: 'text', text: message }] })
   } else {
     msgs.push({ role: 'user', content: message })

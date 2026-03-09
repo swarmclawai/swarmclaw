@@ -89,6 +89,7 @@ import {
   maybeSendStatusReaction,
   recordConnectorOutboundDelivery,
 } from './delivery'
+import { enqueueConnectorOutbox } from './outbox'
 import {
   advanceConnectorReconnectState,
   clearReconnectState,
@@ -2238,7 +2239,7 @@ export async function sendConnectorMessage(params: {
   replyToMessageId?: string
   threadId?: string
   ptt?: boolean
-}): Promise<{ connectorId: string; platform: string; channelId: string; messageId?: string }> {
+}): Promise<{ connectorId: string; platform: string; channelId: string; messageId?: string; suppressed?: boolean }> {
   const connectors = loadConnectors()
   const requestedId = params.connectorId?.trim()
   let connector: Connector | undefined
@@ -2276,7 +2277,7 @@ export async function sendConnectorMessage(params: {
   // Apply NO_MESSAGE filter at the delivery layer so all outbound paths respect it
   if ((suppressHiddenText || isNoMessage(sanitizedText)) && !params.imageUrl && !params.fileUrl && !params.mediaPath) {
     console.log(`[connector] sendConnectorMessage: NO_MESSAGE — suppressing outbound send`)
-    return { connectorId, platform: connector.platform, channelId: params.channelId }
+    return { connectorId, platform: connector.platform, channelId: params.channelId, suppressed: true }
   }
 
   const hasMedia = !!(params.imageUrl || params.fileUrl || params.mediaPath)
@@ -2375,6 +2376,7 @@ export async function sendConnectorMessage(params: {
     platform: connector.platform,
     channelId,
     messageId: result?.messageId,
+    suppressed: false,
   }
 }
 
@@ -2405,60 +2407,28 @@ export function scheduleConnectorFollowUp(params: {
     params.threadId || '',
     (params.text || '').trim().slice(0, 160),
   ].join('|')
-  const existing = scheduledFollowupByDedupe.get(dedupeKey)
-  if (existing && existing.sendAt > Date.now() && !params.replaceExisting) {
-    return { followUpId: existing.id, sendAt: existing.sendAt }
-  }
-  if (existing && params.replaceExisting) {
-    const scheduled = scheduledFollowups.get(existing.id)
-    if (scheduled) {
-      clearTimeout(scheduled.timer)
-      scheduledFollowups.delete(existing.id)
-    }
-    scheduledFollowupByDedupe.delete(dedupeKey)
-  }
-  const followUpId = genId()
-  const sendAt = Date.now() + delayMs
-
-  const timer = setTimeout(() => {
-    void sendConnectorMessage({
-      connectorId: params.connectorId,
-      platform: params.platform,
-      channelId: params.channelId,
-      text: params.text,
-      sessionId: params.sessionId,
-      imageUrl: params.imageUrl,
-      fileUrl: params.fileUrl,
-      mediaPath: params.mediaPath,
-      mimeType: params.mimeType,
-      fileName: params.fileName,
-      caption: params.caption,
-      replyToMessageId: params.replyToMessageId,
-      threadId: params.threadId,
-      ptt: params.ptt,
-    }).catch((err: unknown) => {
-      const msg = errorMessage(err)
-      console.warn(`[connector] Scheduled follow-up ${followUpId} failed: ${msg}`)
-    }).finally(() => {
-      scheduledFollowups.delete(followUpId)
-      if (scheduledFollowupByDedupe.get(dedupeKey)?.id === followUpId) {
-        scheduledFollowupByDedupe.delete(dedupeKey)
-      }
-    })
-  }, delayMs)
-  timer.unref?.()
-
-  scheduledFollowups.set(followUpId, {
-    id: followUpId,
+  const { outboxId, sendAt } = enqueueConnectorOutbox({
     connectorId: params.connectorId,
     platform: params.platform,
     channelId: params.channelId,
-    sendAt,
-    timer,
+    text: params.text,
+    sessionId: params.sessionId,
+    imageUrl: params.imageUrl,
+    fileUrl: params.fileUrl,
+    mediaPath: params.mediaPath,
+    mimeType: params.mimeType,
+    fileName: params.fileName,
+    caption: params.caption,
+    replyToMessageId: params.replyToMessageId,
+    threadId: params.threadId,
+    ptt: params.ptt,
+    sendAt: Date.now() + delayMs,
+    dedupeKey,
+  }, {
+    replaceExisting: params.replaceExisting,
   })
-  scheduledFollowupByDedupe.set(dedupeKey, { id: followUpId, sendAt })
 
-  return { followUpId, sendAt }
+  return { followUpId: outboxId, sendAt }
 }
 
 /**

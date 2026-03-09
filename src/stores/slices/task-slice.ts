@@ -3,6 +3,7 @@ import type { AppState } from '../use-app-store'
 import type { BoardTask } from '../../types'
 import { fetchTasks } from '../../lib/tasks'
 import { api } from '../../lib/api-client'
+import { setIfChanged, invalidateFingerprint } from '../set-if-changed'
 
 export interface TaskSlice {
   tasks: Record<string, BoardTask>
@@ -19,7 +20,7 @@ export const createTaskSlice: StateCreator<AppState, [], [], TaskSlice> = (set, 
     try {
       const show = includeArchived ?? get().showArchivedTasks
       const tasks = await fetchTasks(show)
-      set({ tasks })
+      setIfChanged<AppState>(set, 'tasks', tasks)
     } catch (err) {
       console.warn('Store error:', err)
     }
@@ -27,11 +28,13 @@ export const createTaskSlice: StateCreator<AppState, [], [], TaskSlice> = (set, 
   optimisticUpdateTask: async (taskId, patch) => {
     const prev = get().tasks[taskId]
     if (!prev) return false
+    invalidateFingerprint('tasks')
     set({ tasks: { ...get().tasks, [taskId]: { ...prev, ...patch, updatedAt: Date.now() } } })
     try {
       await api('PUT', `/tasks/${taskId}`, patch)
       return true
     } catch {
+      invalidateFingerprint('tasks')
       set({ tasks: { ...get().tasks, [taskId]: prev } })
       return false
     }
@@ -41,11 +44,13 @@ export const createTaskSlice: StateCreator<AppState, [], [], TaskSlice> = (set, 
     if (!prev) return false
     const next = { ...get().tasks }
     delete next[taskId]
+    invalidateFingerprint('tasks')
     set({ tasks: next })
     try {
       await api('DELETE', `/tasks/${taskId}`)
       return true
     } catch {
+      invalidateFingerprint('tasks')
       set({ tasks: { ...get().tasks, [taskId]: prev } })
       return false
     }

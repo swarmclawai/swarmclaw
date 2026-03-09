@@ -16,7 +16,7 @@ export type ConnectorOutboxStatus =
   | 'failed'
   | 'cancelled'
 
-export interface ConnectorOutboxEntry extends Record<string, any> {
+export interface ConnectorOutboxEntry extends Record<string, unknown> {
   id: string
   status: ConnectorOutboxStatus
   sendAt: number
@@ -24,6 +24,21 @@ export interface ConnectorOutboxEntry extends Record<string, any> {
   updatedAt: number
   attemptCount: number
   maxAttempts: number
+  /** Destination fields (set by enqueueConnectorOutbox) */
+  connectorId?: string
+  platform?: string
+  channelId?: string
+  text?: string
+  sessionId?: string | null
+  imageUrl?: string
+  fileUrl?: string
+  mediaPath?: string
+  mimeType?: string
+  fileName?: string
+  caption?: string
+  replyToMessageId?: string
+  threadId?: string
+  ptt?: boolean
   dedupeKey?: string | null
   lastError?: string | null
   deliveredAt?: number | null
@@ -183,8 +198,9 @@ async function processEntry(id: string, now: number): Promise<ConnectorOutboxEnt
   if (!claimed) return null
 
   try {
-    const manager = await import('./manager')
-    const result = await (manager as any).dispatchConnectorMessageNow(claimed) as any
+    const { sendConnectorMessage } = await import('./manager')
+    // Outbox entries always have channelId+text from enqueueConnectorOutbox
+    const result = await sendConnectorMessage(claimed as ConnectorOutboxEntry & { channelId: string; text: string })
     const deliveredAt = Date.now()
     const next: ConnectorOutboxEntry = {
       ...claimed,
@@ -224,7 +240,7 @@ async function processEntry(id: string, now: number): Promise<ConnectorOutboxEnt
 }
 
 export function enqueueConnectorOutbox(
-  input: Record<string, any> & {
+  input: Record<string, unknown> & {
     sendAt?: number
     maxAttempts?: number
     dedupeKey?: string | null

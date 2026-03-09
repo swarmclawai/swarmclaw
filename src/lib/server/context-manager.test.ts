@@ -215,7 +215,7 @@ describe('context-manager', () => {
     })
 
     it('splits messages across multiple chunks', () => {
-      const msgs = Array.from({ length: 10 }, (_, i) =>
+      const msgs = Array.from({ length: 10 }, () =>
         makeMsg('user', 'x'.repeat(400)), // ~100 tokens + 4 overhead each
       )
       // Budget of 210 tokens should fit ~2 messages per chunk

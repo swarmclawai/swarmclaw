@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { createAgent, updateAgent, deleteAgent } from '@/lib/agents'
 import { api } from '@/lib/api-client'
+import { fetchProviderModelDiscovery } from '@/lib/provider-model-discovery-client'
 import { sleep } from '@/lib/shared-utils'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { toast } from 'sonner'
@@ -21,9 +22,22 @@ import { SoulLibraryPicker } from './soul-library-picker'
 import { HintTip } from '@/components/shared/hint-tip'
 import { isOllamaCloudModel } from '@/lib/ollama-model'
 import { errorMessage } from '@/lib/shared-utils'
+import { getDefaultAgentPluginIds } from '@/lib/agent-default-tools'
 
 const HB_PRESETS = [1800, 3600, 7200, 21600, 43200] as const
 const FALLBACK_ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
+const AUTO_SYNC_MODEL_PROVIDER_IDS = new Set<ProviderType>([
+  'openai',
+  'anthropic',
+  'google',
+  'deepseek',
+  'groq',
+  'together',
+  'mistral',
+  'xai',
+  'fireworks',
+  'ollama',
+])
 
 type AgentSheetSectionId = 'overview' | 'instructions' | 'model' | 'tools'
 type SafeAgentWallet = Omit<AgentWallet, 'encryptedPrivateKey'> & {
@@ -139,6 +153,12 @@ export function AgentSheet() {
   const setEditingId = useAppStore((s) => s.setEditingAgentId)
   const agents = useAppStore((s) => s.agents)
   const loadAgents = useAppStore((s) => s.loadAgents)
+  const currentSessionId = useAppStore((s) => s.currentSessionId)
+  const currentSession = useAppStore((s) => {
+    const id = s.currentSessionId
+    return id ? s.sessions[id] : null
+  })
+  const refreshSession = useAppStore((s) => s.refreshSession)
   const projects = useAppStore((s) => s.projects)
   const loadProjects = useAppStore((s) => s.loadProjects)
   const providers = useAppStore((s) => s.providers)
@@ -240,6 +260,7 @@ export function AgentSheet() {
   const [soulLibraryOpen, setSoulLibraryOpen] = useState(false)
   const promptFileRef = useRef<HTMLInputElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
+  const lastAutoSyncedModelsKeyRef = useRef<string | null>(null)
   const sectionRefs = useRef<Record<AgentSheetSectionId, HTMLDivElement | null>>({
     overview: null,
     instructions: null,
@@ -290,11 +311,61 @@ export function AgentSheet() {
       : 'Built-in fallback'
   const providerSummary = openclawEnabled ? 'OpenClaw gateway' : (currentProvider?.name || provider)
   const modelSummary = openclawEnabled ? (gatewayProfileId ? 'Gateway-managed' : 'default') : (model || 'Select a model')
+  const syncLiveProviderModels = useCallback(async (
+    providerId: ProviderType,
+    nextCredentialId: string | null,
+    nextEndpoint: string | null,
+    force = false,
+  ): Promise<{ synced: boolean; models: string[] } | null> => {
+    if (openclawEnabled) return null
+    if (!AUTO_SYNC_MODEL_PROVIDER_IDS.has(providerId)) return null
+    const providerInfo = providers.find((item) => item.id === providerId)
+    if (!providerInfo?.supportsModelDiscovery) return null
+
+    const result = await fetchProviderModelDiscovery({
+      providerId,
+      credentialId: nextCredentialId,
+      endpoint: nextEndpoint,
+      force,
+    })
+
+    if (!result.ok || result.models.length === 0) return { synced: false, models: result.models }
+
+    const sameModels = providerInfo.models.length === result.models.length
+      && providerInfo.models.every((item, index) => item === result.models[index])
+
+    if (!sameModels) {
+      await api('PUT', `/providers/${providerId}/models`, { models: result.models })
+      await loadProviders()
+    }
+
+    setModel((currentModel) => currentModel.trim() || result.models[0] || '')
+    return { synced: !sameModels, models: result.models }
+  }, [loadProviders, openclawEnabled, providers])
 
   const providerNeedsKey = !editing && (
     (currentProvider?.requiresApiKey && providerCredentials.length === 0 && !addingKey) ||
     (provider === 'ollama' && ollamaMode === 'cloud' && providerCredentials.length === 0 && !addingKey)
   )
+
+  useEffect(() => {
+    if (!open) {
+      lastAutoSyncedModelsKeyRef.current = null
+      return
+    }
+    if (openclawEnabled) return
+    if (!AUTO_SYNC_MODEL_PROVIDER_IDS.has(provider)) return
+    if (!currentProvider?.supportsModelDiscovery) return
+
+    const requiresCredential = currentProvider.requiresApiKey || (provider === 'ollama' && ollamaMode === 'cloud')
+    if (requiresCredential && !credentialId) return
+
+    const syncKey = `${provider}::${credentialId || ''}::${apiEndpoint?.trim() || ''}`
+    if (lastAutoSyncedModelsKeyRef.current === syncKey) return
+    lastAutoSyncedModelsKeyRef.current = syncKey
+
+    void syncLiveProviderModels(provider, credentialId, apiEndpoint, false).catch(() => {})
+  }, [apiEndpoint, credentialId, currentProvider, ollamaMode, open, openclawEnabled, provider, syncLiveProviderModels])
 
   useEffect(() => {
     if (open) {
@@ -392,7 +463,7 @@ export function AgentSheet() {
         setRoutingTargets([])
         setPlatformAssignScope('self')
         setAgentAgentIds([])
-        setTools([])
+        setTools(getDefaultAgentPluginIds())
         setSkills([])
         setSkillIds([])
         setMcpDisabledTools([])
@@ -582,7 +653,7 @@ export function AgentSheet() {
         priority: typeof target.priority === 'number' ? target.priority : index + 1,
       })),
       subAgentIds: canDelegateToAgents ? subAgentIds : [],
-      tools,
+      plugins: tools,
       skills,
       skillIds,
       mcpServerIds,
@@ -623,6 +694,17 @@ export function AgentSheet() {
       toast.success('Agent created')
     }
     await loadAgents()
+    if (
+      editing
+      && currentSessionId
+      && currentSession?.agentId === editing.id
+      && (
+        currentSession.shortcutForAgentId === editing.id
+        || currentSessionId === editing.threadSessionId
+      )
+    ) {
+      await refreshSession(currentSessionId)
+    }
     setSoulInitial(soul)
     setSoulSaveState('saved')
     setTimeout(() => setSoulSaveState('idle'), 1500)
@@ -659,8 +741,8 @@ export function AgentSheet() {
         gatewayProfileId: editing.gatewayProfileId || null,
         routingStrategy: editing.routingStrategy || null,
         routingTargets: editing.routingTargets || [],
-        tools: editing.tools,
-        plugins: editing.plugins,
+        tools: editing.plugins || editing.tools || [],
+        plugins: editing.plugins || editing.tools || [],
         capabilities: editing.capabilities,
         elevenLabsVoiceId: editing.elevenLabsVoiceId || null,
         soul: editing.soul,
@@ -716,8 +798,19 @@ export function AgentSheet() {
       })
       if (result.deviceId) setTestDeviceId(result.deviceId)
       if (result.ok) {
+        let syncedModels: string[] = []
+        try {
+          const synced = await syncLiveProviderModels(provider, credentialId, apiEndpoint, true)
+          syncedModels = synced?.models || []
+        } catch {
+          // Best-effort: a passing connection test should still pass if model sync fails.
+        }
         setTestStatus('pass')
-        setTestMessage(result.message)
+        setTestMessage(
+          syncedModels.length > 0
+            ? `${result.message} Synced ${syncedModels.length} live model${syncedModels.length === 1 ? '' : 's'} into the model picker.`
+            : result.message,
+        )
         return true
       } else {
         setTestStatus('fail')
@@ -769,8 +862,8 @@ export function AgentSheet() {
   return (
     <>
     <BottomSheet open={open} onClose={onClose} wide>
-      <div className="mb-10 flex items-start justify-between">
-        <div>
+      <div className="mb-10 flex items-start justify-between gap-6 pr-14 sm:pr-20">
+        <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <h2 className="font-display text-[28px] font-700 tracking-[-0.03em]">
               {editing ? 'Edit Agent' : 'New Agent'}
@@ -785,7 +878,7 @@ export function AgentSheet() {
           </div>
           <p className="text-[14px] text-text-3">Define an AI agent and optional multi-agent delegation behavior</p>
         </div>
-        <div className="flex items-center gap-3 mt-1.5">
+        <div className="mt-1.5 flex shrink-0 items-center gap-3">
           <label className="text-[11px] font-600 text-text-3 uppercase tracking-[0.08em]">OpenClaw</label>
           <button
             type="button"
@@ -1879,18 +1972,24 @@ export function AgentSheet() {
                 <button
                   type="button"
                   disabled={savingKey || !newKeyValue.trim()}
-                  onClick={async () => {
-                    setSavingKey(true)
-                    try {
-                      const cred = await api<{ id: string }>('POST', '/credentials', { provider, name: newKeyName.trim() || `${provider} key`, apiKey: newKeyValue.trim() })
-                      await loadCredentials()
-                      setCredentialId(cred.id)
-                      setAddingKey(false)
-                      setNewKeyName('')
-                      setNewKeyValue('')
-                    } catch (err: unknown) { toast.error(`Failed to save: ${errorMessage(err)}`) }
-                    finally { setSavingKey(false) }
-                  }}
+                      onClick={async () => {
+                        setSavingKey(true)
+                        try {
+                          const cred = await api<{ id: string }>('POST', '/credentials', { provider, name: newKeyName.trim() || `${provider} key`, apiKey: newKeyValue.trim() })
+                          await loadCredentials()
+                          setCredentialId(cred.id)
+                          const synced = await syncLiveProviderModels(provider, cred.id, apiEndpoint, true).catch(() => null)
+                          setAddingKey(false)
+                          setNewKeyName('')
+                          setNewKeyValue('')
+                          if (synced?.models.length) {
+                            toast.success(`Key saved. Synced ${synced.models.length} model${synced.models.length === 1 ? '' : 's'}.`)
+                          } else {
+                            toast.success('Key saved')
+                          }
+                        } catch (err: unknown) { toast.error(`Failed to save: ${errorMessage(err)}`) }
+                        finally { setSavingKey(false) }
+                      }}
                   className="px-4 py-1.5 rounded-[8px] bg-accent-bright text-white text-[12px] font-600 cursor-pointer border-none hover:brightness-110 transition-all disabled:opacity-40"
                   style={{ fontFamily: 'inherit' }}
                 >

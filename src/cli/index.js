@@ -161,6 +161,25 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'perf',
+    description: 'Inspect or control runtime perf tracing',
+    commands: [
+      cmd('status', 'GET', '/perf', 'Get current perf tracing status and recent entries'),
+      cmd('enable', 'POST', '/perf', 'Enable perf tracing and clear existing entries', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'enable' },
+      }),
+      cmd('disable', 'POST', '/perf', 'Disable perf tracing', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'disable' },
+      }),
+      cmd('clear', 'POST', '/perf', 'Clear recent perf entries', {
+        expectsJsonBody: true,
+        defaultBody: { action: 'clear' },
+      }),
+    ],
+  },
+  {
     name: 'documents',
     description: 'Manage documents',
     commands: [

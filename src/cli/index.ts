@@ -4,13 +4,13 @@ import { Command } from 'commander'
 import { pathToFileURL } from 'node:url'
 import fs from 'node:fs'
 import path from 'node:path'
-import { errorMessage, sleep } from '@/lib/shared-utils'
+import { errorMessage, sleep } from '../lib/shared-utils.ts'
 import {
   SETUP_PROVIDERS,
   DEFAULT_AGENTS,
   STARTER_AGENT_TOOLS,
   type SetupProvider,
-} from '../lib/setup-defaults'
+} from '../lib/setup-defaults.ts'
 
 interface CliContext {
   baseUrl: string
@@ -665,6 +665,36 @@ export function buildProgram(): Command {
     .argument('<id>', 'Run id')
     .action(async function (id: string) {
       await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'GET', `/runs/${encodeURIComponent(id)}`))
+    })
+
+  const perf = program.command('perf').description('Inspect or control runtime perf tracing')
+
+  perf
+    .command('status')
+    .description('Get current perf tracing status and recent entries')
+    .action(async function () {
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'GET', '/perf'))
+    })
+
+  perf
+    .command('enable')
+    .description('Enable perf tracing and clear existing entries')
+    .action(async function () {
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'POST', '/perf', { action: 'enable' }))
+    })
+
+  perf
+    .command('disable')
+    .description('Disable perf tracing')
+    .action(async function () {
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'POST', '/perf', { action: 'disable' }))
+    })
+
+  perf
+    .command('clear')
+    .description('Clear recent perf entries')
+    .action(async function () {
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'POST', '/perf', { action: 'clear' }))
     })
 
   const chats = program.command('chats').description('Manage chats')

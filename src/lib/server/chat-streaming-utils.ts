@@ -11,15 +11,29 @@ import {
 export function getExplicitRequiredToolNames(userMessage: string, enabledPlugins: string[]): string[] {
   const normalized = userMessage.toLowerCase()
   const required: string[] = []
+  const hasEnabledTool = (toolId: string) => enabledPlugins.some((enabled) => (canonicalizePluginId(enabled) || enabled) === toolId)
 
-  if (enabledPlugins.includes('ask_human')
+  if (hasEnabledTool('ask_human')
     && (/\bask_human\b/.test(normalized) || /ask the human/.test(normalized) || /request_input/.test(normalized))) {
     required.push('ask_human')
   }
 
-  if (enabledPlugins.includes('email')
+  if (hasEnabledTool('email')
     && (/\bemail\b/.test(normalized) || /send a welcome email/.test(normalized) || /send an email/.test(normalized))) {
     required.push('email')
+  }
+
+  if (
+    hasEnabledTool('shell')
+    && (
+      /\bcurl request\b/.test(normalized)
+      || /\b(?:run|execute|do|use|try)\b[\s\S]{0,40}\bcurl\b/.test(normalized)
+      || /\brun (?:this )?command\b/.test(normalized)
+      || /\buse (?:the )?(?:shell|terminal)\b/.test(normalized)
+      || /\bin (?:the )?terminal\b/.test(normalized)
+    )
+  ) {
+    required.push('shell')
   }
 
   return required

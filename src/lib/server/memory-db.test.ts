@@ -415,7 +415,7 @@ describe('memory-db', () => {
       assert.equal(typeof counts, 'object')
       // Should have at least one key
       assert.ok(Object.keys(counts).length >= 1)
-      for (const [_key, val] of Object.entries(counts)) {
+      for (const [, val] of Object.entries(counts)) {
         assert.equal(typeof val, 'number')
         assert.ok(val > 0)
       }
