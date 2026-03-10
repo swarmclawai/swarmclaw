@@ -3,6 +3,7 @@ import { afterEach, describe, it } from 'node:test'
 
 import {
   _clearSwarmRegistry,
+  _resolveSwarmExecutionMode,
   getSwarm,
   getSwarmSnapshot,
   listSwarms,
@@ -116,6 +117,35 @@ describe('subagent-swarm', () => {
       assert.ok(getSwarm('s1'))
       assert.equal(removeSwarm('s1'), true)
       assert.equal(getSwarm('s1'), null)
+    })
+  })
+
+  describe('execution mode resolution', () => {
+    it('defaults to serial when any target agent is ollama-backed', () => {
+      const mode = _resolveSwarmExecutionMode(
+        [{ agentId: 'ollama-agent', message: 'task' }],
+        'auto',
+        { 'ollama-agent': { provider: 'ollama' } } as any,
+      )
+      assert.equal(mode, 'serial')
+    })
+
+    it('defaults to parallel when targets are not ollama-backed', () => {
+      const mode = _resolveSwarmExecutionMode(
+        [{ agentId: 'openai-agent', message: 'task' }],
+        'auto',
+        { 'openai-agent': { provider: 'openai' } } as any,
+      )
+      assert.equal(mode, 'parallel')
+    })
+
+    it('honors an explicit execution mode override', () => {
+      const mode = _resolveSwarmExecutionMode(
+        [{ agentId: 'ollama-agent', message: 'task' }],
+        'parallel',
+        { 'ollama-agent': { provider: 'ollama' } } as any,
+      )
+      assert.equal(mode, 'parallel')
     })
   })
 

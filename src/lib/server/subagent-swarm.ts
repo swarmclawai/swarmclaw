@@ -18,7 +18,7 @@ import {
   type SubagentHandle,
   type SubagentResult,
 } from './subagent-runtime'
-import { loadSessions } from './storage'
+import { loadAgents, loadSessions } from './storage'
 import { getDelegationJob } from './delegation-jobs'
 import {
   getLineageNode,
@@ -100,6 +100,8 @@ export interface BatchSpawnInput {
   onMemberComplete?: (member: SwarmMember, swarm: SwarmHandle) => void
   /** Callback when all members complete */
   onSwarmComplete?: (result: SwarmAggregateResult) => void
+  /** Execution mode for sibling subagents. Auto defaults to serial for Ollama-backed targets. */
+  executionMode?: 'auto' | 'parallel' | 'serial'
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +113,16 @@ export interface BatchTask {
   message: string
   cwd?: string
   shareBrowserProfile?: boolean
+}
+
+export function _resolveSwarmExecutionMode(
+  tasks: BatchTask[],
+  executionMode: BatchSpawnInput['executionMode'],
+  agents = loadAgents() as Record<string, Record<string, unknown>>,
+): 'parallel' | 'serial' {
+  if (executionMode === 'parallel' || executionMode === 'serial') return executionMode
+  const hasOllamaTarget = tasks.some((task) => agents[task.agentId]?.provider === 'ollama')
+  return hasOllamaTarget ? 'serial' : 'parallel'
 }
 
 export interface AggregatedResult {
@@ -164,6 +176,10 @@ export function spawnSwarm(
   const swarmId = genId(10)
   const createdAt = Date.now()
   const members: SwarmMember[] = []
+  const executionMode = _resolveSwarmExecutionMode(input.tasks, input.executionMode)
+  const executionGroupKey = executionMode === 'serial'
+    ? `swarm:${context.sessionId || 'root'}:${swarmId}`
+    : undefined
 
   // Pre-load sessions once for all spawns (avoids N SQLite reads)
   const cachedSessions = context._sessions ?? loadSessions()
@@ -181,6 +197,7 @@ export function spawnSwarm(
           cwd: task.cwd,
           shareBrowserProfile: task.shareBrowserProfile,
           waitForCompletion: false,
+          executionGroupKey,
         },
         cachedContext,
       )

@@ -367,6 +367,8 @@ export interface EnqueueSessionRunInput {
     deliveryMode?: 'default' | 'tool_only'
   }
   replyToId?: string
+  /** Optional shared execution lane key. When set, multiple sessions can be serialized together. */
+  executionGroupKey?: string
   /** External abort signal (e.g. from the HTTP request) — chained to the run's internal AbortController */
   callerSignal?: AbortSignal
 }
@@ -404,7 +406,9 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
   const internal = input.internal === true
   const mode = normalizeMode(input.mode, internal)
   const source = input.source || 'chat'
-  const executionKey = executionKeyForSession(input.sessionId)
+  const executionKey = typeof input.executionGroupKey === 'string' && input.executionGroupKey.trim()
+    ? input.executionGroupKey.trim()
+    : executionKeyForSession(input.sessionId)
   const runtime = loadRuntimeSettings()
   const defaultMaxRuntimeMs = runtime.ongoingLoopMaxRuntimeMs ?? (10 * 60_000)
   const sessionData = loadSession(input.sessionId) as SessionToolConfig | null
@@ -583,15 +587,18 @@ export function getSessionExecutionState(sessionId: string): {
   hasRunningNonHeartbeat: boolean
   hasQueuedNonHeartbeat: boolean
 } {
-  const executionKey = executionKeyForSession(sessionId)
-  const running = state.runningByExecution.get(executionKey)
-  const runningMatchesSession = running?.run.sessionId === sessionId
+  const running = Array.from(state.runningByExecution.values())
+    .find((entry) => entry.run.sessionId === sessionId)
+  const runningMatchesSession = Boolean(running)
   const runningHeartbeat = Boolean(
     runningMatchesSession
+    && running
     && isInternalHeartbeatRun(running.run.internal, running.run.source),
   )
   const runningNonHeartbeat = Boolean(runningMatchesSession && !runningHeartbeat)
-  const queuedEntries = queueForExecution(executionKey).filter((entry) => entry.run.sessionId === sessionId)
+  const queuedEntries = Array.from(state.queueByExecution.values())
+    .flatMap((queue) => queue)
+    .filter((entry) => entry.run.sessionId === sessionId)
   const queuedHeartbeat = queuedEntries.filter((entry) =>
     isInternalHeartbeatRun(entry.run.internal, entry.run.source),
   ).length
@@ -634,10 +641,10 @@ export function listRuns(params?: {
 }
 
 export function cancelSessionRuns(sessionId: string, reason = 'Cancelled'): { cancelledQueued: number; cancelledRunning: boolean } {
-  const executionKey = executionKeyForSession(sessionId)
-  const running = state.runningByExecution.get(executionKey)
+  const running = Array.from(state.runningByExecution.values())
+    .find((entry) => entry.run.sessionId === sessionId)
   let cancelledRunning = false
-  if (running && running.run.sessionId === sessionId) {
+  if (running) {
     cancelledRunning = true
     abortSessionRuntime(running, reason)
   }

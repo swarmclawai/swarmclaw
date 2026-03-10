@@ -150,9 +150,12 @@ async function handleBatch(args: Record<string, unknown>, ctx: ActionContext): P
     if (!t.agentId || !t.message) return 'Error: each task requires agentId and message.'
   }
   const waitForCompletion = args.waitForCompletion !== false && args.background !== true
+  const executionMode = args.executionMode === 'parallel' || args.executionMode === 'serial'
+    ? args.executionMode
+    : 'auto'
 
   // Use spawnSwarm internally — batch is a simplified interface
-  const swarm = spawnSwarm({ tasks }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
+  const swarm = spawnSwarm({ tasks, executionMode }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
   const jobIds = swarm.members
     .filter((m) => !m.spawnError && m.handle)
     .map((m) => m.handle.jobId)
@@ -206,8 +209,11 @@ async function handleSwarm(args: Record<string, unknown>, ctx: ActionContext): P
     if (!t.agentId || !t.message) return 'Error: each task requires agentId and message.'
   }
   const waitForCompletion = args.waitForCompletion !== false && args.background !== true
+  const executionMode = args.executionMode === 'parallel' || args.executionMode === 'serial'
+    ? args.executionMode
+    : 'auto'
 
-  const swarm = spawnSwarm({ tasks }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
+  const swarm = spawnSwarm({ tasks, executionMode }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
   if (!waitForCompletion) {
     const snapshot = getSwarmSnapshot(swarm.swarmId)
     return JSON.stringify({
@@ -350,7 +356,9 @@ const SubagentPlugin: Plugin = {
     getOperatingGuidance: () => [
       'SUBAGENT DISPATCH RULES:',
       '- Single task → action "start" with agentId + message.',
-      '- 2+ independent tasks that can run in parallel → action "batch" with tasks array [{agentId, message}, ...].',
+      '- 2+ independent tasks → action "batch" with tasks array [{agentId, message}, ...]. Use `executionMode:"serial"` when local models are rate-limited.',
+      '- If your final answer depends on all delegated results, set `waitForCompletion:true` and do not summarize early.',
+      '- Prefer one coordinated `batch`/`swarm` call over mixing `start`, `delegate`, and follow-up retries for the same set of sibling tasks.',
       '- DO NOT call "start" in a loop when tasks are independent — use "batch" or "swarm" instead.',
       '- Only use subagents when the task genuinely requires another agent\'s specialization or parallel execution.',
       '- If you can answer directly from your own knowledge, do NOT spawn a subagent.',
@@ -360,9 +368,11 @@ const SubagentPlugin: Plugin = {
     {
       name: 'spawn_subagent',
       description: 'Delegate tasks to other agents. '
-            + 'Actions: start (single agent), batch (2+ parallel tasks via "tasks" array), swarm (parallel with status tracking via "tasks" array). '
+            + 'Actions: start (single agent), batch (2+ tasks via "tasks" array), swarm (multi-agent execution with status tracking via "tasks" array). '
             + 'Management: status, list, wait, wait_all, cancel, lineage, aggregate, swarm_status, swarm_list, swarm_cancel. '
-            + 'For multiple independent tasks, prefer "batch" with tasks:[{agentId,message},...] over calling "start" repeatedly.',
+            + 'For multiple independent tasks, prefer one `batch` or `swarm` call with tasks:[{agentId,message},...] over calling `start` repeatedly. '
+            + 'When the final answer depends on every delegated result, keep waitForCompletion enabled so you can synthesize after all children finish. '
+            + 'Use executionMode:"serial" to avoid rate limits on local models.',
       parameters: {
         type: 'object',
         properties: {
@@ -394,6 +404,11 @@ const SubagentPlugin: Plugin = {
               required: ['agentId', 'message'],
             },
             description: 'Array of tasks for batch/swarm action.',
+          },
+          executionMode: {
+            type: 'string',
+            enum: ['auto', 'parallel', 'serial'],
+            description: 'How to schedule sibling subagents. "auto" defaults to serial for Ollama-backed targets and parallel otherwise.',
           },
           waitForCompletion: { type: 'boolean' },
           background: { type: 'boolean' },

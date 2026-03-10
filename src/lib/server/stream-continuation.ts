@@ -5,6 +5,9 @@
  * builds the appropriate follow-up prompts, and resolves final
  * response text from tool-heavy turns.
  */
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import type { MessageToolEvent } from '@/types'
 import { extractSuggestions } from './suggestions'
 
@@ -75,6 +78,71 @@ function looksLikeIncompleteDeliverableResponse(text: string): boolean {
   const lastChunk = trimmed.slice(-400).toLowerCase()
   return /\b(?:next|now|then|after that|moving on to|proceeding to)\b[^.!?\n]{0,120}\b(?:i(?:'ll| will)|create|build|write|capture|take|start|finish|generate)\b/.test(lastChunk)
     || /\b(?:i(?:'ll| will)|let me)\s+(?:now|next)?\s*(?:create|build|write|capture|take|start|finish|generate|continue)\b/.test(lastChunk)
+}
+
+const ARTIFACT_PATH_EXT_RE = /\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|ts|tsx|js|jsx|mjs|cjs|py|sql|sh)$/i
+
+function normalizeArtifactPathCandidate(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^[`'"]+|[`'"]+$/g, '')
+    .replace(/[),.;:]+$/g, '')
+}
+
+function isLikelyArtifactPath(value: string): boolean {
+  const normalized = normalizeArtifactPathCandidate(value)
+  if (!normalized) return false
+  if (/^(?:https?:\/\/|file:\/\/|sandbox:\/api\/uploads\/|\/api\/uploads\/)/i.test(normalized)) return false
+  if (!ARTIFACT_PATH_EXT_RE.test(normalized)) return false
+  return normalized.includes('/') || normalized.startsWith('~') || normalized.startsWith('.') || ARTIFACT_PATH_EXT_RE.test(path.basename(normalized))
+}
+
+function collectArtifactPathCandidates(text: string): string[] {
+  const candidates = new Set<string>()
+
+  for (const match of text.matchAll(/`([^`\n]+)`/g)) {
+    const candidate = normalizeArtifactPathCandidate(match[1] || '')
+    if (isLikelyArtifactPath(candidate)) candidates.add(candidate)
+  }
+
+  for (const match of text.matchAll(/["']([^"'\n]+)["']/g)) {
+    const candidate = normalizeArtifactPathCandidate(match[1] || '')
+    if (isLikelyArtifactPath(candidate)) candidates.add(candidate)
+  }
+
+  for (const match of text.matchAll(/(?:^|[\s(])((?:\/|~\/|\.\.?\/)[^\s,'"`)]+|[A-Za-z0-9._-]+\/[A-Za-z0-9._/\-]+\.[A-Za-z0-9]{1,8}|[A-Za-z0-9._-]+\.[A-Za-z0-9]{1,8})(?=$|[\s),.;:])/g)) {
+    const candidate = normalizeArtifactPathCandidate(match[1] || '')
+    if (isLikelyArtifactPath(candidate)) candidates.add(candidate)
+  }
+
+  return [...candidates]
+}
+
+function resolveArtifactPath(cwd: string, candidate: string): string {
+  if (candidate.startsWith('~/')) return path.join(os.homedir(), candidate.slice(2))
+  if (path.isAbsolute(candidate)) return candidate
+  return path.resolve(cwd, candidate)
+}
+
+function artifactLooksMaterialized(filePath: string): boolean {
+  try {
+    const stats = fs.statSync(filePath)
+    if (!stats.isFile() || stats.size <= 0) return false
+    if (/\.(?:png|jpe?g|webp|gif|pdf|zip)$/i.test(filePath)) return true
+    return fs.readFileSync(filePath, 'utf8').trim().length > 0
+  } catch {
+    return false
+  }
+}
+
+function getRequestedArtifactStatus(params: {
+  userMessage: string
+  cwd?: string
+}): { requested: string[]; missing: string[] } {
+  if (!params.cwd) return { requested: [], missing: [] }
+  const requested = collectArtifactPathCandidates(params.userMessage)
+  const missing = requested.filter((candidate) => !artifactLooksMaterialized(resolveArtifactPath(params.cwd!, candidate)))
+  return { requested, missing }
 }
 
 // ---------------------------------------------------------------------------
@@ -149,9 +217,15 @@ export function shouldForceDeliverableFollowthrough(params: {
   finalResponse: string
   hasToolCalls: boolean
   toolEvents: MessageToolEvent[]
+  cwd?: string
 }): boolean {
   if (!looksLikeOpenEndedDeliverableTask(params.userMessage)) return false
   if (!params.hasToolCalls || params.toolEvents.length === 0) return false
+  const requestedArtifacts = getRequestedArtifactStatus({
+    userMessage: params.userMessage,
+    cwd: params.cwd,
+  })
+  if (requestedArtifacts.missing.length > 0) return true
   const trimmed = params.finalResponse.trim()
   if (!trimmed) return params.toolEvents.length >= 2
   if (
@@ -228,6 +302,7 @@ function buildDeliverableFollowthroughPrompt(params: {
   userMessage: string
   fullText: string
   toolEvents: MessageToolEvent[]
+  cwd?: string
 }): string {
   const lines = [
     'You are in the middle of a multi-step deliverable and stopped after only a partial batch of work.',
@@ -238,6 +313,18 @@ function buildDeliverableFollowthroughPrompt(params: {
     'Preserve hard structural constraints from the original request: exact counts stay exact, required titled sections stay present, and source coverage gaps should be filled instead of skipped.',
     'End with a concise grouped completion summary that lists exact file paths, upload URLs, localhost URLs/ports, and screenshots you produced.',
   ]
+  const requestedArtifacts = getRequestedArtifactStatus({
+    userMessage: params.userMessage,
+    cwd: params.cwd,
+  })
+  if (requestedArtifacts.missing.length > 0) {
+    lines.push(
+      '',
+      'CRITICAL: The following requested artifacts are still missing from the workspace:',
+      ...requestedArtifacts.missing.map((candidate) => `- ${candidate}`),
+      'Write or repair every missing artifact before you conclude.',
+    )
+  }
 
   const userNormalized = params.userMessage.toLowerCase()
   const fileOutputMatch = userNormalized.match(/\b(?:save|write|output|export)\b[^.!?\n]{0,80}\b(?:to|as|at|in)\b[^.!?\n]{0,60}(\/[^\s,'"]+|~\/[^\s,'"]+|\.\/[^\s,'"]+)/i)
@@ -320,6 +407,7 @@ export function buildContinuationPrompt(params: {
   fullText: string
   toolEvents: MessageToolEvent[]
   requiredToolReminderNames: string[]
+  cwd?: string
 }): string | null {
   switch (params.type) {
     case 'recursion':
@@ -346,6 +434,7 @@ export function buildContinuationPrompt(params: {
         userMessage: params.message,
         fullText: params.fullText,
         toolEvents: params.toolEvents,
+        cwd: params.cwd,
       })
 
     case 'tool_summary':

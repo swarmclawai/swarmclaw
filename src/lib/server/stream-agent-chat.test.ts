@@ -619,6 +619,49 @@ describe('shouldForceDeliverableFollowthrough', () => {
       false,
     )
   })
+
+  it('forces followthrough when a requested artifact path is still missing on disk', () => {
+    const cwd = fs.mkdtempSync('/tmp/swarmclaw-deliverable-missing-')
+    try {
+      assert.equal(
+        shouldForceDeliverableFollowthrough({
+          userMessage: 'Write the launch brief to `launch-brief.md` and the change log to `changes.txt`.',
+          finalResponse: 'Done. Saved launch-brief.md and changes.txt.',
+          hasToolCalls: true,
+          cwd,
+          toolEvents: [
+            { name: 'files', input: '{"action":"write","filePath":"launch-brief.md"}', output: '{"ok":true}' },
+          ],
+        }),
+        true,
+      )
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it('does not force followthrough when requested artifact paths exist on disk', () => {
+    const cwd = fs.mkdtempSync('/tmp/swarmclaw-deliverable-present-')
+    try {
+      fs.writeFileSync(path.join(cwd, 'launch-brief.md'), '# Brief\n')
+      fs.writeFileSync(path.join(cwd, 'changes.txt'), '- change\n')
+      assert.equal(
+        shouldForceDeliverableFollowthrough({
+          userMessage: 'Write the launch brief to `launch-brief.md` and the change log to `changes.txt`.',
+          finalResponse: 'Done. Saved launch-brief.md and changes.txt.',
+          hasToolCalls: true,
+          cwd,
+          toolEvents: [
+            { name: 'files', input: '{"action":"write","filePath":"launch-brief.md"}', output: '{"ok":true}' },
+            { name: 'files', input: '{"action":"write","filePath":"changes.txt"}', output: '{"ok":true}' },
+          ],
+        }),
+        false,
+      )
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('looksLikeOpenEndedDeliverableTask — file-output regression', () => {
@@ -648,5 +691,14 @@ describe('looksLikeOpenEndedDeliverableTask — file-output regression', () => {
       looksLikeOpenEndedDeliverableTask('Fix the bug in src/components/dashboard.tsx and run npm run build'),
       false,
     )
+  })
+})
+
+describe('transient provider retry coverage', () => {
+  it('treats upstream 500 and 429 class failures as transient retry candidates', () => {
+    assert.ok(streamAgentChatSource.includes('InternalServerError'))
+    assert.ok(streamAgentChatSource.includes('RateLimitError'))
+    assert.ok(streamAgentChatSource.includes('too many requests'))
+    assert.ok(streamAgentChatSource.includes('internal server error'))
   })
 })

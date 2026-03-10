@@ -1304,10 +1304,16 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
         // 2. Transient abort/timeout — LLM API failure, not from client disconnect
         const isRecursionError = errName === 'GraphRecursionError'
           || /recursion limit|maximum recursion/i.test(errMsg)
+        const isTransientProviderError = !isRecursionError && (
+          /^(InternalServerError|RateLimitError|APIConnectionError|APIConnectionTimeoutError)$/i.test(errName)
+          || /\b(429|500|502|503|504)\b/i.test(errMsg)
+          || /internal server error|too many requests|rate limit|service unavailable|bad gateway|gateway timeout|overloaded/i.test(errMsg)
+        )
         const isTransientAbort = (!isRecursionError && idleTimedOut)
           || (!isRecursionError
           && /abort|timed?\s*out|ECONNRESET|ECONNREFUSED|socket hang up|network/i.test(errMsg)
           && !abortController.signal.aborted)
+          || (isTransientProviderError && !abortController.signal.aborted)
 
         // Log diagnostic details for every error so we can trace root causes
         console.error(`[stream-agent-chat] Error in streamEvents iteration=${iteration}`, {
@@ -1516,6 +1522,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
         fullText,
         toolEvents: streamedToolEvents,
         requiredToolReminderNames,
+        cwd: session.cwd,
       })
 
       if (continuationPrompt) {

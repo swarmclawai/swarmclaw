@@ -62,6 +62,8 @@ export interface SpawnSubagentInput {
   waitForCompletion?: boolean
   /** Timeout in seconds for waiting */
   timeoutSec?: number
+  /** Optional shared execution lane key for serializing sibling runs. */
+  executionGroupKey?: string
 }
 
 export interface SubagentHandle {
@@ -272,6 +274,7 @@ export function spawnSubagent(
     internal: true,
     source: 'subagent',
     mode: 'followup',
+    executionGroupKey: input.executionGroupKey,
   })
 
   // 8. Register runtime handle for cancellation
