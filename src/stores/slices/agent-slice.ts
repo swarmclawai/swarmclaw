@@ -12,6 +12,7 @@ export interface AgentSlice {
   setCurrentAgent: (id: string | null) => Promise<void>
   agents: Record<string, Agent>
   loadAgents: () => Promise<void>
+  updateAgentInStore: (agent: Agent) => void
   togglePinAgent: (id: string) => void
   trashedAgents: Record<string, Agent>
   loadTrashedAgents: () => Promise<void>
@@ -74,6 +75,10 @@ export const createAgentSlice: StateCreator<AppState, [], [], AgentSlice> = (set
     } catch (err) {
       console.warn('Store error:', err)
     }
+  },
+  updateAgentInStore: (agent) => {
+    invalidateFingerprint('agents')
+    set({ agents: { ...get().agents, [agent.id]: agent } })
   },
   togglePinAgent: (id) => {
     const agents = { ...get().agents }

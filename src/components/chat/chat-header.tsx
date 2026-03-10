@@ -2,7 +2,7 @@
 
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/runtime/heartbeat-defaults'
 import { useEffect, useState, useMemo, useRef, useCallback, type ReactNode } from 'react'
-import type { Session } from '@/types'
+import type { Agent, Session } from '@/types'
 import { dedup } from '@/lib/shared-utils'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
@@ -138,6 +138,8 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const appSettings = useAppStore((s) => s.appSettings)
   const refreshSession = useAppStore((s) => s.refreshSession)
   const loadAgents = useAppStore((s) => s.loadAgents)
+  const updateAgentInStore = useAppStore((s) => s.updateAgentInStore)
+  const updateSessionInStore = useAppStore((s) => s.updateSessionInStore)
   const inspectorOpen = useAppStore((s) => s.inspectorOpen)
   const setInspectorOpen = useAppStore((s) => s.setInspectorOpen)
   const connectors = useAppStore((s) => s.connectors)
@@ -419,13 +421,14 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     try {
       const next = !heartbeatEnabled
       if (session.agentId) {
-        await api('PUT', `/agents/${session.agentId}`, { heartbeatEnabled: next })
+        const updatedAgent = await api<Agent>('PUT', `/agents/${session.agentId}`, { heartbeatEnabled: next })
+        updateAgentInStore(updatedAgent)
         // Clear any stale session-level override so the agent value wins
-        await api('PUT', `/chats/${session.id}`, { heartbeatEnabled: null })
-        await Promise.all([loadAgents(), refreshSession(session.id)])
+        const updatedSession = await api<Session>('PUT', `/chats/${session.id}`, { heartbeatEnabled: null })
+        updateSessionInStore(updatedSession)
       } else {
-        await api('PUT', `/chats/${session.id}`, { heartbeatEnabled: next })
-        await refreshSession(session.id)
+        const updatedSession = await api<Session>('PUT', `/chats/${session.id}`, { heartbeatEnabled: next })
+        updateSessionInStore(updatedSession)
       }
       toast.success(`Heartbeat ${next ? 'enabled' : 'disabled'}`)
     } finally {
@@ -440,16 +443,17 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     try {
       if (session.agentId) {
         // Save the cadence without implicitly toggling heartbeat on.
-        await api('PUT', `/agents/${session.agentId}`, {
+        const updatedAgent = await api<Agent>('PUT', `/agents/${session.agentId}`, {
           heartbeatInterval: formatDurationSec(sec),
           heartbeatIntervalSec: sec,
         })
+        updateAgentInStore(updatedAgent)
         // Clear stale session-level overrides
-        await api('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: null, heartbeatEnabled: null })
-        await Promise.all([loadAgents(), refreshSession(session.id)])
+        const updatedSession = await api<Session>('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: null, heartbeatEnabled: null })
+        updateSessionInStore(updatedSession)
       } else {
-        await api('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: sec })
-        await refreshSession(session.id)
+        const updatedSession = await api<Session>('PUT', `/chats/${session.id}`, { heartbeatIntervalSec: sec })
+        updateSessionInStore(updatedSession)
       }
     } finally {
       setHeartbeatSaving(false)

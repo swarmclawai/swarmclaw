@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-10T20:45:59.647Z",
-  "totalIssues": 528,
+  "generatedAt": "2026-03-10T22:00:45.306Z",
+  "totalIssues": 527,
   "uniqueIssues": 185,
   "issues": [
     {
@@ -870,7 +870,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 11
+      "count": 10
     },
     {
       "filePath": "src/lib/server/connectors/whatsapp.ts",
