@@ -135,6 +135,8 @@
   "optionalDependencies": {
     "botbuilder": "^4.23.3",
     "googleapis": "^171.4.0",
-    "matrix-bot-sdk": "^0.8.0"
+    "matrix-bot-sdk": "^0.8.0",
+    "opusscript": "0.0.8",
+    "utf-8-validate": "5.0.10"
   }
 }
