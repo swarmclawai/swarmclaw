@@ -5,7 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { useWs } from '@/hooks/use-ws'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import type { Connector } from '@/types'
 import {
   ConnectorPlatformIcon,
@@ -14,6 +14,7 @@ import {
   resolveConnectorPlatformMeta,
 } from '@/components/shared/connector-platform-icon'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { StatusDot } from '@/components/ui/status-dot'
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts
@@ -210,10 +211,10 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
                   {chatroom ? chatroom.name : agent?.name || meta?.label}
                 </span>
               </div>
-              <span className={`shrink-0 w-2 h-2 rounded-full ${
-                group === 'healthy' ? 'bg-green-400' : group === 'attention' ? 'bg-red-400' : 'bg-amber-400'
-              }`}
-              style={isRunning ? { animation: 'pulse-subtle 2s infinite' } : undefined} />
+              <StatusDot
+                status={group === 'healthy' ? 'online' : group === 'attention' ? 'offline' : 'warning'}
+                pulse={isRunning}
+              />
             </button>
           )
         })}
@@ -327,10 +328,11 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="text-[14px] font-600 text-text truncate">{c.name}</span>
-                              <span className={`shrink-0 w-2 h-2 rounded-full ${
-                                group === 'healthy' ? 'bg-green-400' : group === 'attention' ? 'bg-red-400' : 'bg-amber-400'
-                              }`}
-                              style={isRunning ? { animation: 'pulse-subtle 2s infinite' } : c.status === 'error' ? { animation: 'ai-shake 0.5s' } : undefined} />
+                              <StatusDot
+                                status={group === 'healthy' ? 'online' : group === 'attention' ? 'offline' : 'warning'}
+                                pulse={isRunning}
+                                className={c.status === 'error' && !isRunning ? 'animate-[ai-shake_0.5s]' : undefined}
+                              />
                             </div>
                             <div className="flex flex-wrap items-center gap-1.5 mt-1">
                               <span className={`px-1.5 py-0.5 rounded-[5px] text-[10px] font-700 uppercase tracking-[0.08em] ${meta.tone} bg-white/[0.05]`}>

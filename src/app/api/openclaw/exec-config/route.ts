@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getExecConfig, setExecConfig } from '@/lib/server/openclaw-exec-config'
+import { getExecConfig, setExecConfig } from '@/lib/server/openclaw/exec-config'
 import type { ExecApprovalConfig } from '@/types'
 import { errorMessage } from '@/lib/shared-utils'
 

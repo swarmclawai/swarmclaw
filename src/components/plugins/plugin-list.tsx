@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
+import { useNavigate } from '@/lib/app/navigation'
+import { api } from '@/lib/app/api-client'
 import { getPluginSourceLabel } from '@/lib/plugin-sources'
 import { toast } from 'sonner'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
@@ -20,20 +21,14 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
   const setPluginSheetOpen = useAppStore((s) => s.setPluginSheetOpen)
   const setEditingPluginFilename = useAppStore((s) => s.setEditingPluginFilename)
   const agents = useAppStore((s) => s.agents)
-  const sessions = useAppStore((s) => s.sessions)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
-  const setActiveView = useAppStore((s) => s.setActiveView)
+  const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
+  const navigateTo = useNavigate()
 
   const navigateToAgentChat = useCallback((agentId: string) => {
-    const agentSession = Object.values(sessions)
-      .filter((s) => s.agentId === agentId)
-      .sort((a, b) => (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0))[0]
-    if (agentSession) {
-      setCurrentSession(agentSession.id)
-      setActiveView('agents')
-    }
+    void setCurrentAgent(agentId)
+    navigateTo('agents')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions])
+  }, [])
 
   const [tab, setTab] = useState<TopTab>('core')
   const [marketplace, setMarketplace] = useState<MarketplacePlugin[]>([])

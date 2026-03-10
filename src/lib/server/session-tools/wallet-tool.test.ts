@@ -16,7 +16,7 @@ const originalEnv = {
 let tempDir = ''
 let workspaceDir = ''
 let buildWalletTools: typeof import('./wallet').buildWalletTools
-let createAgentWallet: typeof import('../wallet-service').createAgentWallet
+let createAgentWallet: typeof import('@/lib/server/wallet/wallet-service').createAgentWallet
 let storage: typeof import('../storage')
 
 function makeAgent(): Agent {
@@ -83,13 +83,8 @@ before(async () => {
   fs.mkdirSync(workspaceDir, { recursive: true })
 
   ;({ buildWalletTools } = await import('./wallet'))
-  ;({ createAgentWallet } = await import('../wallet-service'))
+  ;({ createAgentWallet } = await import('@/lib/server/wallet/wallet-service'))
   storage = await import('../storage')
-
-  storage.saveSettings({
-    approvalsEnabled: true,
-    approvalAutoApproveCategories: [],
-  })
   storage.saveAgents({ agent_wallet: makeAgent() })
   storage.saveSessions({ session_wallet: makeSession() })
 })
@@ -107,7 +102,7 @@ after(() => {
 })
 
 describe('wallet tool generic execution', () => {
-  it('requests approval before signing a message', async () => {
+  it('signs messages directly without creating approval records', async () => {
     createAgentWallet({ agentId: 'agent_wallet', chain: 'ethereum' })
     const session = makeSession()
     const [walletTool] = buildWalletTools(makeBuildContext(session))
@@ -115,51 +110,28 @@ describe('wallet tool generic execution', () => {
     const result = JSON.parse(String(await walletTool.invoke({
       action: 'sign_message',
       chain: 'ethereum',
-      message: 'approve me',
+      message: 'sign me',
     })))
 
-    assert.equal(result.type, 'plugin_wallet_action_request')
-    assert.equal(result.action, 'sign_message')
+    assert.equal(result.status, 'signed')
+    assert.equal(result.chain, 'ethereum')
+    assert.equal(typeof result.signature, 'string')
 
     const approvals = storage.loadApprovals()
-    const pending: any = Object.values(approvals).find((approval: any) => approval.category === 'wallet_action')
-    assert.ok(pending)
-    assert.equal(pending?.status, 'pending')
+    const walletApprovals = Object.values(approvals).filter((approval: any) => approval.category === 'wallet_action')
+    assert.equal(walletApprovals.length, 0)
   })
 
-  it('signs messages after approval and encodes contract calls', async () => {
+  it('ignores legacy approval fields and still encodes contract calls', async () => {
     const session = makeSession()
     const [walletTool] = buildWalletTools(makeBuildContext(session))
-
-    const bypassAttempt = JSON.parse(String(await walletTool.invoke({
-      action: 'sign_message',
-      chain: 'ethereum',
-      message: 'signed',
-      approved: true,
-    })))
-    assert.match(String(bypassAttempt.error || ''), /approvalId/i)
-
-    const approvalRequest = JSON.parse(String(await walletTool.invoke({
-      action: 'sign_message',
-      chain: 'ethereum',
-      message: 'signed',
-    })))
-    assert.equal(approvalRequest.type, 'plugin_wallet_action_request')
-
-    const approvals = storage.loadApprovals()
-    const pending: any = approvalRequest.approvalId ? approvals[approvalRequest.approvalId] : undefined
-    assert.ok(pending)
-    storage.upsertApproval(pending!.id, {
-      ...pending,
-      status: 'approved',
-      updatedAt: Date.now(),
-    })
 
     const signResult = JSON.parse(String(await walletTool.invoke({
       action: 'sign_message',
       chain: 'ethereum',
       message: 'signed',
-      approvalId: pending!.id,
+      approved: true,
+      approvalId: 'legacy-approval-id',
     })))
     assert.equal(signResult.status, 'signed')
     assert.equal(signResult.chain, 'ethereum')
@@ -174,81 +146,5 @@ describe('wallet tool generic execution', () => {
     })))
     assert.equal(encoded.status, 'encoded')
     assert.equal(encoded.data.startsWith('0x095ea7b3'), true)
-  })
-
-  it('requests a fresh approval when a stale approvalId is reused for a changed transaction', async () => {
-    const session = makeSession()
-    const [walletTool] = buildWalletTools(makeBuildContext(session))
-
-    const firstApproval = JSON.parse(String(await walletTool.invoke({
-      action: 'send_transaction',
-      chain: 'ethereum',
-      network: 'arbitrum',
-      toAddress: '0x000000000000000000000000000000000000dEaD',
-      data: '0x1234',
-    })))
-    assert.equal(firstApproval.type, 'plugin_wallet_action_request')
-    assert.equal(typeof firstApproval.approvalId, 'string')
-
-    const approvals = storage.loadApprovals()
-    const approved = approvals[firstApproval.approvalId]
-    assert.ok(approved)
-    storage.upsertApproval(firstApproval.approvalId, {
-      ...approved,
-      status: 'approved',
-      updatedAt: Date.now(),
-    })
-
-    const replacement = JSON.parse(String(await walletTool.invoke({
-      action: 'send_transaction',
-      chain: 'ethereum',
-      network: 'arbitrum',
-      toAddress: '0x000000000000000000000000000000000000bEEF',
-      data: '0x5678',
-      approvalId: firstApproval.approvalId,
-    })))
-
-    assert.equal(replacement.type, 'plugin_wallet_action_request')
-    assert.equal(typeof replacement.approvalId, 'string')
-    assert.notEqual(replacement.approvalId, firstApproval.approvalId)
-    assert.equal(replacement.replacesApprovalId, firstApproval.approvalId)
-
-    const nextApprovals = storage.loadApprovals()
-    assert.equal(nextApprovals[replacement.approvalId]?.status, 'pending')
-  })
-
-  it('requests one resumable approval for a live swap intent when approvals are enabled', async () => {
-    const wallets = storage.loadWallets() as Record<string, { id: string; agentId: string; chain: string; publicKey: string }>
-    const existingEthWallet = Object.values(wallets).find((wallet) => wallet.agentId === 'agent_wallet' && wallet.chain === 'ethereum')
-    const ethWallet = existingEthWallet || createAgentWallet({ agentId: 'agent_wallet', chain: 'ethereum' })
-    storage.upsertWallet(ethWallet.id, {
-      ...(wallets[ethWallet.id] || ethWallet),
-      publicKey: '0x684faBf3F7a39aD667b503E771b86b99a09C8b30',
-      updatedAt: Date.now(),
-    })
-
-    const session = makeSession()
-    const [walletTool] = buildWalletTools(makeBuildContext(session))
-
-    const approvalRequest = JSON.parse(String(await walletTool.invoke({
-      action: 'swap',
-      chain: 'ethereum',
-      network: 'arbitrum',
-      sellToken: 'USDC',
-      buyToken: 'ETH',
-      sellAmount: '1',
-    })))
-
-    assert.equal(approvalRequest.type, 'plugin_wallet_action_request')
-    assert.equal(approvalRequest.action, 'swap')
-
-    const approvals = storage.loadApprovals()
-    const pending: any = approvalRequest.approvalId ? approvals[approvalRequest.approvalId] : undefined
-    assert.ok(pending)
-    assert.equal(pending?.status, 'pending')
-    assert.equal(String(pending?.data.amountAtomic), '1000000')
-    assert.equal(String(pending?.data.network), 'arbitrum')
-    assert.equal(String(pending?.data.sellToken).toLowerCase(), '0xaf88d065e77c8cc2239327c5edb3a432268e5831')
-    assert.equal(String(pending?.data.buyToken).toLowerCase(), '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
   })
 })

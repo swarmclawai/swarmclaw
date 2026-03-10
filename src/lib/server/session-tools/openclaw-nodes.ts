@@ -5,7 +5,7 @@ import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { ensureGatewayConnected } from '../openclaw-gateway'
+import { ensureGatewayConnected } from '../openclaw/gateway'
 
 interface OpenClawNodesDeps {
   ensureGatewayConnected?: typeof ensureGatewayConnected

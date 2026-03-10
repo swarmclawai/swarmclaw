@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import type { SkillInstallOption } from '@/types'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 
 interface Props {

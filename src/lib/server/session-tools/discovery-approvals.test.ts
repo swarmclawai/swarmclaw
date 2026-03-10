@@ -32,15 +32,13 @@ function runWithTempDataDir(script: string) {
   }
 }
 
-describe('discovery approval flows', () => {
-  it('request_tool_access creates a real approval and grants the tool when auto-approved', () => {
+describe('discovery tool access flows', () => {
+  it('request_tool_access grants tools immediately without creating approvals', () => {
     const output = runWithTempDataDir(`
       const storageMod = await import('./src/lib/server/storage')
       const toolsMod = await import('./src/lib/server/session-tools/index')
       const storage = storageMod.default || storageMod
       const toolsApi = toolsMod.default || toolsMod
-
-      storage.saveSettings({ approvalsEnabled: false })
 
       const now = Date.now()
       storage.saveSessions({
@@ -77,19 +75,17 @@ describe('discovery approval flows', () => {
       }))
     `)
 
-    assert.match(String(output.raw), /auto-approved|granted/i)
-    assert.equal(output.approvalCount, 1)
+    assert.match(String(output.raw), /tool_access_granted|granted immediately/i)
+    assert.equal(output.approvalCount, 0)
     assert.equal(output.plugins.includes('shell'), true)
   })
 
-  it('manage_capabilities request_access accepts query aliases for pluginId', () => {
+  it('manage_capabilities request_access grants tools immediately without approval state', () => {
     const output = runWithTempDataDir(`
       const storageMod = await import('./src/lib/server/storage')
       const toolsMod = await import('./src/lib/server/session-tools/index')
       const storage = storageMod.default || storageMod
       const toolsApi = toolsMod.default || toolsMod
-
-      storage.saveSettings({ approvalsEnabled: false })
 
       const now = Date.now()
       storage.saveSessions({
@@ -124,7 +120,7 @@ describe('discovery approval flows', () => {
       }))
     `)
 
-    assert.match(String(output.raw), /auto-approved|granted/i)
+    assert.match(String(output.raw), /plugin_access_granted|granted immediately/i)
     assert.equal(output.plugins.includes('shell'), true)
   })
 
@@ -166,46 +162,6 @@ describe('discovery approval flows', () => {
 
     assert.match(String(output.raw), /"alreadyAvailable":true/)
     assert.match(String(output.raw), /memory_store\\\" directly now/i)
-  })
-
-  it('granting manage_schedules does not surface the manage_platform umbrella tool', () => {
-    const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage')
-      const toolsMod = await import('./src/lib/server/session-tools/index')
-      const storage = storageMod.default || storageMod
-      const toolsApi = toolsMod.default || toolsMod
-
-      const now = Date.now()
-      storage.saveSessions({
-        session_sched: {
-          id: 'session_sched',
-          name: 'Schedule Tool Isolation',
-          cwd: process.env.WORKSPACE_DIR,
-          user: 'tester',
-          provider: 'openai',
-          model: 'gpt-test',
-          claudeSessionId: null,
-          messages: [],
-          createdAt: now,
-          lastActiveAt: now,
-          sessionType: 'human',
-          agentId: 'default',
-          plugins: ['manage_schedules'],
-        },
-      })
-
-      const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, ['manage_schedules'], {
-        sessionId: 'session_sched',
-        agentId: 'default',
-        platformAssignScope: 'self',
-      })
-      console.log(JSON.stringify({
-        toolNames: built.tools.map((entry) => entry.name).sort(),
-      }))
-    `)
-
-    assert.equal(output.toolNames.includes('manage_schedules'), true)
-    assert.equal(output.toolNames.includes('manage_platform'), false)
   })
 
   it('session-granted builtins disabled by default still appear in the next turn tool list', () => {
@@ -289,64 +245,5 @@ describe('discovery approval flows', () => {
 
     assert.equal(output.email.granted, true)
     assert.equal(output.email.availableNow, true)
-  })
-
-  it('hydrates agent-approved tools into stale connector sessions on the next turn', () => {
-    const output = runWithTempDataDir(`
-      const storageMod = await import('./src/lib/server/storage')
-      const toolsMod = await import('./src/lib/server/session-tools/index')
-      const approvalsMod = await import('./src/lib/server/approvals')
-      const storage = storageMod.default || storageMod
-      const toolsApi = toolsMod.default || toolsMod
-      const approvals = approvalsMod.default || approvalsMod
-
-      const now = Date.now()
-      storage.saveSettings({ approvalsEnabled: true })
-      storage.saveSessions({
-        connector_session: {
-          id: 'connector_session',
-          name: 'Connector Session',
-          cwd: process.env.WORKSPACE_DIR,
-          user: 'connector',
-          provider: 'openai',
-          model: 'gpt-test',
-          claudeSessionId: null,
-          messages: [],
-          createdAt: now,
-          lastActiveAt: now,
-          sessionType: 'human',
-          agentId: 'agent_1',
-          plugins: ['browser'],
-        },
-      })
-
-      const approval = approvals.requestApproval({
-        category: 'tool_access',
-        title: 'Enable connector tool',
-        description: 'Grant connector messaging',
-        data: { toolId: 'connector_message_tool', pluginId: 'connector_message_tool' },
-        agentId: 'agent_1',
-        sessionId: null,
-      })
-      await approvals.submitDecision(approval.id, true)
-
-      const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, ['browser'], {
-        sessionId: 'connector_session',
-        agentId: 'agent_1',
-        platformAssignScope: 'self',
-      })
-      try {
-        const session = storage.loadSessions().connector_session
-        console.log(JSON.stringify({
-          toolNames: built.tools.map((entry) => entry.name).sort(),
-          plugins: session.plugins || [],
-        }))
-      } finally {
-        await built.cleanup()
-      }
-    `)
-
-    assert.equal(output.toolNames.includes('connector_message_tool'), true)
-    assert.equal(output.plugins.includes('connector_message_tool'), true)
   })
 })

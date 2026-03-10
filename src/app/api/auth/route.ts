@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { validateAccessKey, isFirstTimeSetup, markSetupComplete } from '@/lib/server/storage'
 import { AUTH_COOKIE_NAME, getCookieValue } from '@/lib/auth'
-import { isProductionRuntime } from '@/lib/runtime-env'
+import { isProductionRuntime } from '@/lib/runtime/runtime-env'
 import { hmrSingleton } from '@/lib/shared-utils'
 export const dynamic = 'force-dynamic'
 
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
   if (isFirstTimeSetup()) {
     markSetupComplete()
   }
-  const { ensureDaemonStarted } = await import('@/lib/server/daemon-state')
+  const { ensureDaemonStarted } = await import('@/lib/server/runtime/daemon-state')
   ensureDaemonStarted('api/auth:post')
   return setAuthCookie(NextResponse.json({ ok: true }), req, key)
 }

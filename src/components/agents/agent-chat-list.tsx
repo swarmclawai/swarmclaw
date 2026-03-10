@@ -6,10 +6,13 @@ import { useChatStore } from '@/stores/use-chat-store'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { useNow } from '@/hooks/use-now'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
-import { api } from '@/lib/api-client'
+import { useNavigate } from '@/lib/app/navigation'
+import { api } from '@/lib/app/api-client'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import type { Agent, Session } from '@/types'
 import { AgentAvatar } from './agent-avatar'
+import { SearchInput } from '@/components/ui/search-input'
+import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 
 interface Props {
@@ -19,12 +22,12 @@ interface Props {
 
 export function AgentChatList({ inSidebar, onSelect }: Props) {
   const mountedRef = useMountedRef()
+  const navigateTo = useNavigate()
   const now = useNow()
   const agents = useAppStore((s) => s.agents)
   const sessions = useAppStore((s) => s.sessions)
   const loadAgents = useAppStore((s) => s.loadAgents)
   const currentAgentId = useAppStore((s) => s.currentAgentId)
-  const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const tasks = useAppStore((s) => s.tasks)
   const togglePinAgent = useAppStore((s) => s.togglePinAgent)
@@ -183,7 +186,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
       toast.error(`${agent.name} is disabled. Re-enable it to start a new chat.`)
       return
     }
-    await setCurrentAgent(agent.id)
+    navigateTo('agents', agent.id)
     onSelect?.()
     // Delay scroll so React renders the new messages first
     if (mountedRef.current && typeof window !== 'undefined') {
@@ -208,15 +211,13 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
         <p className="font-display text-[15px] font-600 text-text-2">No agents yet</p>
         <p className="text-[13px] text-text-3/50">Create agents to start chatting</p>
         {!inSidebar && (
-          <button
+          <Button
+            variant="accent"
             onClick={() => setAgentSheetOpen(true)}
-            className="mt-3 px-8 py-3 rounded-[14px] border-none bg-accent-bright text-white
-              text-[14px] font-600 cursor-pointer active:scale-95 transition-all duration-200
-              shadow-[0_4px_16px_rgba(99,102,241,0.2)]"
-            style={{ fontFamily: 'inherit' }}
+            className="mt-3 px-8 py-3 rounded-[14px] text-[14px] cursor-pointer active:scale-95 shadow-[0_4px_16px_rgba(99,102,241,0.2)]"
           >
             + New Agent
-          </button>
+          </Button>
         )}
       </div>
     )
@@ -266,16 +267,14 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
       )}
       {(sortedAgents.length > 5 || search) && (
         <div className="px-4 py-2.5">
-          <input
-            type="text"
+          <SearchInput
+            size="sm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onClear={() => setSearch('')}
             placeholder="Search agents..."
             aria-label="Search agents"
             data-testid="agent-search"
-            className="w-full px-4 py-2.5 rounded-[12px] border border-white/[0.04] bg-surface text-text
-              text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
-            style={{ fontFamily: 'inherit' }}
           />
         </div>
       )}

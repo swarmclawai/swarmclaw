@@ -10,8 +10,8 @@ import {
   storeMemoryImageFromDataUrl,
   type MemoryRerankMode,
   type MemoryScopeFilter,
-} from '@/lib/server/memory-db'
-import { resolveLookupRequest } from '@/lib/server/memory-graph'
+} from '@/lib/server/memory/memory-db'
+import { resolveLookupRequest } from '@/lib/server/memory/memory-graph'
 import type { MemoryReference, FileReference, MemoryImage } from '@/types'
 
 function parseOptionalInt(raw: string | null): number | undefined {

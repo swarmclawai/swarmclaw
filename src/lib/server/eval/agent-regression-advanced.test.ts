@@ -233,22 +233,19 @@ describe('resolveRegressionPlugins', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolveRegressionApprovalSettings', () => {
-  it('manual mode enables approvals with no auto-approve categories', () => {
+  it('manual mode no longer enables a platform approval queue', () => {
     const settings = resolveRegressionApprovalSettings('manual')
-    assert.equal(settings.approvalsEnabled, true)
-    assert.deepEqual(settings.approvalAutoApproveCategories, [])
+    assert.deepEqual(settings, {})
   })
 
-  it('auto mode enables approvals with tool_access auto-approved', () => {
+  it('auto mode no longer injects auto-approve settings', () => {
     const settings = resolveRegressionApprovalSettings('auto')
-    assert.equal(settings.approvalsEnabled, true)
-    assert.deepEqual(settings.approvalAutoApproveCategories, ['tool_access'])
+    assert.deepEqual(settings, {})
   })
 
-  it('off mode disables approvals entirely', () => {
+  it('off mode is also inert now', () => {
     const settings = resolveRegressionApprovalSettings('off')
-    assert.equal(settings.approvalsEnabled, false)
-    assert.deepEqual(settings.approvalAutoApproveCategories, [])
+    assert.deepEqual(settings, {})
   })
 })
 

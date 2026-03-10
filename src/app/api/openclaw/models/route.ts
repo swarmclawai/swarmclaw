@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { fetchGatewayModelPolicy, buildAllowedModelKeys } from '@/lib/server/openclaw-models'
+import { fetchGatewayModelPolicy, buildAllowedModelKeys } from '@/lib/server/openclaw/models'
 
 /** GET — fetch allowed models for OpenClaw agents from gateway policy */
 export async function GET() {

@@ -1,8 +1,8 @@
 import { genId } from '@/lib/id'
-import { upsertNotificationRecord } from '@/lib/notification-utils'
+import { upsertNotificationRecord } from '@/lib/notifications/notification-utils'
 import { findNotificationByDedupKey, saveNotification } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
-import { dispatchAlert } from '@/lib/server/alert-dispatch'
+import { dispatchAlert } from '@/lib/server/runtime/alert-dispatch'
 import type { AppNotification } from '@/types'
 
 /**

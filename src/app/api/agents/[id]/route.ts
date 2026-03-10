@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { loadAgents, saveAgents, loadSessions, logActivity, upsertStoredItem, upsertStoredItems } from '@/lib/server/storage'
-import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { mutateItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
-import { ensureAgentThreadSession } from '@/lib/server/agent-thread-session'
+import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
+import { suspendAgentReferences } from '@/lib/server/agents/agent-cascade'
+import { notify } from '@/lib/server/ws-hub'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ops: CollectionOps<any> = { load: () => loadAgents({ includeTrashed: true }), save: saveAgents, topic: 'agents', table: 'agents' }
@@ -110,6 +112,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   for (const session of Object.values(sessions) as Array<Record<string, unknown>>) {
     if (!session || session.agentId !== id) continue
     session.agentId = null
+    session.heartbeatEnabled = false
     detached.push([session.id as string, session])
   }
   if (detached.length > 0) {
@@ -117,5 +120,13 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   }
   const detachedSessions = detached.length
 
-  return NextResponse.json({ ok: true, detachedSessions })
+  // Cascade: suspend tasks, schedules, watch jobs, connectors, webhooks, chatrooms
+  const cascade = suspendAgentReferences(id)
+  if (cascade.tasks) notify('tasks')
+  if (cascade.schedules) notify('schedules')
+  if (cascade.connectors) notify('connectors')
+  if (cascade.webhooks) notify('webhooks')
+  if (cascade.chatrooms) notify('chatrooms')
+
+  return NextResponse.json({ ok: true, detachedSessions, ...cascade })
 }

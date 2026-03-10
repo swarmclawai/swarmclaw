@@ -151,6 +151,42 @@ test('TTL-backed storage loaders return defensive clones on cold reads', () => {
   assert.equal(output.connectorName, 'Primary connector')
 })
 
+test('item-level upserts invalidate TTL-backed collection loaders', () => {
+  const output = runWithTempDataDir(`
+    const storageMod = await import('./src/lib/server/storage')
+    const storage = storageMod.default || storageMod['module.exports'] || storageMod
+
+    storage.saveConnectors({
+      connector_1: {
+        id: 'connector_1',
+        name: 'Primary connector',
+        platform: 'discord',
+      },
+    })
+
+    const warmed = storage.loadConnectors()
+    const beforeKeys = Object.keys(warmed).sort()
+
+    storage.upsertStoredItem('connectors', 'connector_2', {
+      id: 'connector_2',
+      name: 'Secondary connector',
+      platform: 'discord',
+    })
+
+    const afterKeys = Object.keys(storage.loadConnectors()).sort()
+
+    console.log(JSON.stringify({
+      beforeKeys,
+      afterKeys,
+      connector2Name: storage.loadConnectors().connector_2?.name || null,
+    }))
+  `)
+
+  assert.deepEqual(output.beforeKeys, ['connector_1'])
+  assert.deepEqual(output.afterKeys, ['connector_1', 'connector_2'])
+  assert.equal(output.connector2Name, 'Secondary connector')
+})
+
 test('queue patching, runtime locks, and usage spend queries are transactional', () => {
   const output = runWithTempDataDir(`
     const storageMod = await import('./src/lib/server/storage')

@@ -2,8 +2,8 @@ import { genId } from '@/lib/id'
 import { getProvider } from '@/lib/providers'
 import type { Agent, Connector, MessageSource, Session } from '@/types'
 import { WORKSPACE_DIR } from '../data-dir'
-import { ensureAgentThreadSession } from '../agent-thread-session'
-import { syncSessionArchiveMemory } from '../session-archive-memory'
+import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
+import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
 import { loadAgents, loadSessions, loadStoredItem, upsertStoredItem } from '../storage'
 import { notify } from '../ws-hub'
 import {
@@ -45,6 +45,7 @@ export function findDirectSessionForInbound(connector: Connector, msg: InboundMe
       && (
         channelIds.has(session?.connectorContext?.channelId || '')
         || channelIds.has(session?.connectorContext?.channelIdAlt || '')
+        || (session?.connectorContext?.allKnownPeerIds || []).some((id) => channelIds.has(id))
       ),
   )
   if (msg.threadId) {
@@ -56,6 +57,13 @@ export function findDirectSessionForInbound(connector: Connector, msg: InboundMe
     || senderIds.has(session?.connectorContext?.senderIdAlt || ''),
   )
   if (senderExact) return senderExact
+
+  // Fallback: match via allKnownPeerIds (covers WhatsApp phone↔LID alternation)
+  const peerIdMatch = candidates.find((s) =>
+    (s.connectorContext?.allKnownPeerIds || []).some((id) => senderIds.has(id)),
+  )
+  if (peerIdMatch) return peerIdMatch
+
   return candidates[0] || null
 }
 
@@ -102,6 +110,13 @@ export function updateSessionConnectorContext(
     lastResetAt: session.connectorContext?.lastResetAt ?? null,
     lastResetReason: session.connectorContext?.lastResetReason ?? null,
   }
+
+  // Accumulate all known peer IDs so future lookups can match across JID formats
+  const knownIds = new Set(session.connectorContext.allKnownPeerIds || [])
+  for (const id of [msg.senderId, msg.senderIdAlt, msg.channelId, msg.channelIdAlt].filter(Boolean) as string[]) {
+    knownIds.add(id)
+  }
+  session.connectorContext.allKnownPeerIds = [...knownIds]
 }
 
 export function describeSessionControls(
@@ -114,8 +129,8 @@ export function describeSessionControls(
   const sessionAgeSec = Math.max(0, Math.round((Date.now() - (session.createdAt || Date.now())) / 1000))
   const idleSec = Math.max(0, Math.round((Date.now() - (session.lastActiveAt || Date.now())) / 1000))
   return [
-    `Session controls for ${connector.platform}/${connector.name}:`,
-    `- Session: ${session.id}`,
+    `Chat controls for ${connector.platform}/${connector.name}:`,
+    `- Chat: ${session.id}`,
     `- Scope: ${policy.scope}`,
     `- Reply mode: ${policy.replyMode}`,
     `- Thread binding: ${policy.threadBinding}`,
@@ -409,9 +424,22 @@ export function pushSessionMessage(
 export function modelHistoryTail(
   messages: Session['messages'] | null | undefined,
   limit = 20,
+  maxChars = 0,
 ): Session['messages'] {
   const filtered = (Array.isArray(messages) ? messages : []).filter((message) => message?.historyExcluded !== true)
-  return filtered.slice(-limit)
+  let tail = filtered.slice(-limit)
+  if (maxChars > 0) {
+    let chars = 0
+    let startIndex = tail.length
+    for (let i = tail.length - 1; i >= 0; i--) {
+      const msgChars = (tail[i].text?.length || 0) + 20
+      if (chars + msgChars > maxChars) break
+      chars += msgChars
+      startIndex = i
+    }
+    tail = tail.slice(startIndex)
+  }
+  return tail
 }
 
 export function persistSession(session: ConnectorSession): void {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { OpenClawSkillEntry, SkillAllowlistMode } from '@/types'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { SkillInstallDialog } from './skill-install-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { errorMessage } from '@/lib/shared-utils'

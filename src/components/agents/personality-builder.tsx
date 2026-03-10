@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { PersonalityDraft } from '@/types'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import {
   parseIdentityMd, serializeIdentityMd,
   parseUserMd, serializeUserMd,

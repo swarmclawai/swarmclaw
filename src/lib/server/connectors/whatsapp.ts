@@ -658,14 +658,25 @@ const whatsapp: PlatformConnector = {
             if (!reply) continue
 
             const sent = await instance.sendMessage?.(jid, reply.visibleText)
-            await recordConnectorOutboundDelivery({
-              connectorId: connector.id,
-              inbound,
-              messageId: sent?.messageId,
-              state: 'sent',
-            })
-          } catch (err: any) {
-            console.error(`[whatsapp] Error handling message:`, err.message)
+            // Response delivered — register in outbound dedup so sendConnectorMessage
+            // won't re-send the same text via a parallel path
+            try {
+              const { registerOutboundSend } = await import('./manager')
+              registerOutboundSend(connector.id, jid, reply.visibleText)
+            } catch { /* best effort */ }
+            // Record delivery metadata (best-effort — don't send error if this fails)
+            try {
+              await recordConnectorOutboundDelivery({
+                connectorId: connector.id,
+                inbound,
+                messageId: sent?.messageId,
+                state: 'sent',
+              })
+            } catch (recordErr: unknown) {
+              console.warn(`[whatsapp] Delivery recording failed (response already sent):`, errorMessage(recordErr))
+            }
+          } catch (err: unknown) {
+            console.error(`[whatsapp] Error handling message:`, errorMessage(err))
             try {
               await sock!.sendMessage(jid, { text: 'Sorry, I encountered an error processing your message.' })
             } catch { /* ignore */ }

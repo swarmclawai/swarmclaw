@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-09T20:06:24.129Z",
-  "totalIssues": 537,
-  "uniqueIssues": 188,
+  "generatedAt": "2026-03-10T20:45:59.647Z",
+  "totalIssues": 528,
+  "uniqueIssues": 185,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -313,11 +313,11 @@
       "count": 1
     },
     {
-      "filePath": "src/cli/index.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 2
+      "filePath": "src/app/usage/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_id' is defined but never used.",
+      "count": 1
     },
     {
       "filePath": "src/cli/index.test.js",
@@ -404,13 +404,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/chat/session-debug-panel.tsx",
-      "ruleId": "react-hooks/set-state-in-effect",
-      "severity": 2,
-      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
-      "count": 1
-    },
-    {
       "filePath": "src/components/chat/swarm-panel.tsx",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -474,34 +467,6 @@
       "count": 2
     },
     {
-      "filePath": "src/components/layout/app-layout.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_error' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/layout/app-layout.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'DesktopEmptyState' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/layout/app-layout.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'NetworkBanner' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/layout/app-layout.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'UpdateBanner' is defined but never used.",
-      "count": 1
-    },
-    {
       "filePath": "src/components/layout/daemon-indicator.tsx",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
@@ -520,6 +485,13 @@
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
       "message": "React Hook useEffect has a missing dependency: 'loadAgents'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "filePath": "src/components/memory/memory-card.tsx",
+      "ruleId": "react-hooks/purity",
+      "severity": 2,
+      "message": "Error: Cannot call impure function during render `Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).",
       "count": 1
     },
     {
@@ -579,27 +551,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/shared/settings/section-heartbeat.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/shared/settings/section-providers.tsx",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/shared/settings/section-secrets.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'appSettings' is defined but never used.",
-      "count": 1
-    },
-    {
       "filePath": "src/components/skills/skill-sheet.tsx",
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
@@ -642,13 +593,6 @@
       "count": 1
     },
     {
-      "filePath": "src/components/usage/metrics-dashboard.tsx",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_id' is defined but never used.",
-      "count": 1
-    },
-    {
       "filePath": "src/hooks/use-openclaw-gateway.ts",
       "ruleId": "react-hooks/set-state-in-effect",
       "severity": 2,
@@ -663,7 +607,7 @@
       "count": 4
     },
     {
-      "filePath": "src/lib/local-observability.test.ts",
+      "filePath": "src/lib/observability/local-observability.test.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
@@ -705,18 +649,53 @@
       "count": 1
     },
     {
-      "filePath": "src/lib/runtime-env.test.ts",
+      "filePath": "src/lib/runtime/runtime-env.test.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 6
     },
     {
-      "filePath": "src/lib/server/approvals-auto-approve.test.ts",
+      "filePath": "src/lib/server/agents/orchestrator-lg.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
+      "count": 18
+    },
+    {
+      "filePath": "src/lib/server/agents/orchestrator.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "filePath": "src/lib/server/agents/subagent-runtime.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "filePath": "src/lib/server/agents/subagent-swarm.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'members' is assigned a value but never used.",
       "count": 1
+    },
+    {
+      "filePath": "src/lib/server/agents/subagent-swarm.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'swarm' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/agents/subagent-swarm.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 22
     },
     {
       "filePath": "src/lib/server/build-llm.ts",
@@ -730,6 +709,27 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/chat-execution/chat-execution.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'ApprovalCategory' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/connectors/access.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'agent' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/connectors/access.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'session' is assigned a value but never used.",
       "count": 1
     },
     {
@@ -901,27 +901,6 @@
       "count": 1
     },
     {
-      "filePath": "src/lib/server/heartbeat-service.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 17
-    },
-    {
-      "filePath": "src/lib/server/langgraph-checkpoint.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'_newVersions' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/langgraph-checkpoint.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 4
-    },
-    {
       "filePath": "src/lib/server/mcp-client.test.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -957,74 +936,102 @@
       "count": 14
     },
     {
-      "filePath": "src/lib/server/memory-db.ts",
+      "filePath": "src/lib/server/memory/memory-db.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 13
     },
     {
-      "filePath": "src/lib/server/openclaw-gateway.ts",
+      "filePath": "src/lib/server/openclaw/gateway.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'buildOpenClawConnectParams' is defined but never used.",
       "count": 1
     },
     {
-      "filePath": "src/lib/server/openclaw-gateway.ts",
+      "filePath": "src/lib/server/openclaw/gateway.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'id' is assigned a value but never used.",
       "count": 1
     },
     {
-      "filePath": "src/lib/server/openclaw-sync.ts",
+      "filePath": "src/lib/server/openclaw/sync.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 2
     },
     {
-      "filePath": "src/lib/server/orchestrator-lg.ts",
+      "filePath": "src/lib/server/runtime/daemon-state.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'listRunningConnectors' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/runtime/daemon-state.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'sendConnectorMessage' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/runtime/heartbeat-service.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 18
+      "count": 17
     },
     {
-      "filePath": "src/lib/server/orchestrator.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 4
-    },
-    {
-      "filePath": "src/lib/server/process-manager.ts",
+      "filePath": "src/lib/server/runtime/process-manager.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 2
     },
     {
-      "filePath": "src/lib/server/queue-followups.test.ts",
+      "filePath": "src/lib/server/runtime/queue-followups.test.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 9
     },
     {
-      "filePath": "src/lib/server/queue-recovery.test.ts",
+      "filePath": "src/lib/server/runtime/queue-recovery.test.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 1
     },
     {
-      "filePath": "src/lib/server/queue.ts",
+      "filePath": "src/lib/server/runtime/queue.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 4
+    },
+    {
+      "filePath": "src/lib/server/runtime/wake-dispatcher.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'wakeModeToSource' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/runtime/wake-dispatcher.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 5
+    },
+    {
+      "filePath": "src/lib/server/runtime/wake-mode.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'WakeModeRequest' is defined but never used.",
+      "count": 1
     },
     {
       "filePath": "src/lib/server/session-tools/connector.ts",
@@ -1066,6 +1073,13 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'_computeDelegationDepth' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/session-tools/discovery.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'trimString' is defined but never used.",
       "count": 1
     },
     {
@@ -1111,6 +1125,13 @@
       "count": 1
     },
     {
+      "filePath": "src/lib/server/session-tools/primitive-tools.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'sessionMailbox' is assigned a value but never used.",
+      "count": 1
+    },
+    {
       "filePath": "src/lib/server/session-tools/sample-ui.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1150,7 +1171,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 4
+      "count": 1
     },
     {
       "filePath": "src/lib/server/session-tools/wallet.ts",
@@ -1174,7 +1195,7 @@
       "count": 7
     },
     {
-      "filePath": "src/lib/server/skill-prompt-budget.test.ts",
+      "filePath": "src/lib/server/skills/skill-prompt-budget.test.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'MAX_SKILLS_PROMPT_CHARS' is defined but never used.",
@@ -1195,77 +1216,14 @@
       "count": 28
     },
     {
-      "filePath": "src/lib/server/stream-agent-chat.ts",
-      "ruleId": "@typescript-eslint/ban-ts-comment",
-      "severity": 2,
-      "message": "Use \"@ts-expect-error\" instead of \"@ts-ignore\", as \"@ts-ignore\" will do nothing if the following line is error-free.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/stream-agent-chat.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 3
-    },
-    {
-      "filePath": "src/lib/server/subagent-runtime.test.ts",
+      "filePath": "src/lib/server/tasks/task-followups.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 4
     },
     {
-      "filePath": "src/lib/server/subagent-swarm.test.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'members' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/subagent-swarm.test.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'swarm' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/subagent-swarm.test.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 19
-    },
-    {
-      "filePath": "src/lib/server/task-followups.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 4
-    },
-    {
-      "filePath": "src/lib/server/wake-dispatcher.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'wakeModeToSource' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/wake-dispatcher.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 5
-    },
-    {
-      "filePath": "src/lib/server/wake-mode.test.ts",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'WakeModeRequest' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "src/lib/server/wallet-service.ts",
+      "filePath": "src/lib/server/wallet/wallet-service.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
@@ -1305,6 +1263,27 @@
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
       "count": 4
+    },
+    {
+      "filePath": "src/views/settings/section-heartbeat.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/views/settings/section-providers.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "filePath": "src/views/settings/section-secrets.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'appSettings' is defined but never used.",
+      "count": 1
     },
     {
       "filePath": "summarize-eval.js",

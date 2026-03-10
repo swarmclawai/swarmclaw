@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNavigate } from '@/lib/app/navigation'
 
 // Module-level gateway status store with subscribe/getSnapshot for useSyncExternalStore
 let _status: 'connected' | 'disconnected' | null = null
@@ -49,7 +50,7 @@ export function useGatewayStatus() {
 }
 
 export function GatewayDisconnectOverlay() {
-  const setActiveView = useAppStore((s) => s.setActiveView)
+  const navigateTo = useNavigate()
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
 
   return (
@@ -66,7 +67,7 @@ export function GatewayDisconnectOverlay() {
         </div>
         <button
           onClick={() => {
-            setActiveView('settings')
+            navigateTo('settings')
             setSidebarOpen(true)
           }}
           className="px-5 py-2 rounded-[10px] border-none bg-accent-bright text-white text-[13px] font-600 cursor-pointer transition-all hover:brightness-110"

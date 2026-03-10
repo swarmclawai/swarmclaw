@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { WalletTransaction } from '@/types'
-import { formatWalletAmount, getWalletAssetSymbol, getWalletAtomicAmount } from '@/lib/wallet'
+import { formatWalletAmount, getWalletAssetSymbol, getWalletAtomicAmount } from '@/lib/wallet/wallet'
 import { errorMessage } from '@/lib/shared-utils'
 
 interface WalletApprovalDialogProps {

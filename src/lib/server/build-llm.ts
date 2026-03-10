@@ -2,7 +2,7 @@ import { ChatAnthropic } from '@langchain/anthropic'
 import { ChatOpenAI } from '@langchain/openai'
 import { loadCredentials, decryptKey, loadAgents, loadSettings } from './storage'
 import { getProviderList } from '../providers'
-import { normalizeOpenClawEndpoint } from '../openclaw-endpoint'
+import { normalizeOpenClawEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '../provider-sets'
 import { resolveOllamaRuntimeConfig } from './ollama-runtime'
 

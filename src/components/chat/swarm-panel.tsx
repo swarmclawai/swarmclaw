@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { formatDurationMs } from '@/lib/format-display'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -252,12 +253,7 @@ function AgentStatusIcon({ status }: { status: SwarmAgent['status'] }) {
   )
 }
 
-function formatDuration(ms: number | undefined): string {
-  if (!ms) return ''
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
-  return `${(ms / 60_000).toFixed(1)}m`
-}
+
 
 // ---------------------------------------------------------------------------
 // Agent Card
@@ -289,7 +285,7 @@ function SwarmAgentCard({ agent }: { agent: SwarmAgent }) {
         </span>
         {agent.durationMs != null && agent.durationMs > 0 && (
           <span className="text-[10px] text-text-3/50 font-mono shrink-0">
-            {formatDuration(agent.durationMs)}
+            {formatDurationMs(agent.durationMs)}
           </span>
         )}
         <span className="text-[10px] font-500 shrink-0" style={{ color: cfg.color }}>
@@ -376,7 +372,7 @@ export function SwarmPanel({ data }: { data: SwarmPanelData }) {
           {summaryParts.length > 0 && (
             <span className="text-[10px] text-text-3/60">
               {summaryParts.join(' · ')}
-              {data.totalDurationMs ? ` · ${formatDuration(data.totalDurationMs)}` : ''}
+              {data.totalDurationMs ? ` · ${formatDurationMs(data.totalDurationMs)}` : ''}
             </span>
           )}
         </div>

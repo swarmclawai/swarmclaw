@@ -25,6 +25,7 @@ import {
   upsertBrowserSessionRecord,
 } from '../browser-state'
 import {
+  DEFAULT_BROWSER_MCP_CALL_TIMEOUT_MS,
   buildBrowserConnectionOptions,
   buildBrowserStdioServerParams,
   formatWebSearchResults,
@@ -546,7 +547,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       return fallback
     }
 
-    const MCP_CALL_TIMEOUT_MS = 30000 // 30s timeout per browser action
+    const MCP_CALL_TIMEOUT_MS = DEFAULT_BROWSER_MCP_CALL_TIMEOUT_MS
     const callMcpTool = async (toolName: string, args: Record<string, any>, options?: { saveTo?: string }): Promise<string> => {
       const rawCall = async (): Promise<string> => {
         try {

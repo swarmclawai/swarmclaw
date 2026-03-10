@@ -2,9 +2,10 @@
 
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { selectActiveSessionId } from '@/stores/slices/session-slice'
 import { useWs } from '@/hooks/use-ws'
 import { useChatStore } from '@/stores/use-chat-store'
-import { fetchMessages, fetchMessagesPaginated, clearMessages, deleteChat, devServer, checkBrowser, stopBrowser } from '@/lib/chats'
+import { fetchMessages, fetchMessagesPaginated, clearMessages, deleteChat, devServer, checkBrowser, stopBrowser } from '@/lib/chat/chats'
 import { uploadImage } from '@/lib/upload'
 import { deleteAgent } from '@/lib/agents'
 import { useMediaQuery } from '@/hooks/use-media-query'
@@ -21,9 +22,9 @@ import { HeartbeatHistoryPanel } from './heartbeat-history-panel'
 import { Dropdown, DropdownItem } from '@/components/shared/dropdown'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { speak } from '@/lib/tts'
-import { api } from '@/lib/api-client'
-import { messagesDiffer } from '@/lib/chat-streaming-state'
-import { getSessionLastMessage } from '@/lib/session-summary'
+import { api } from '@/lib/app/api-client'
+import { messagesDiffer } from '@/lib/chat/chat-streaming-state'
+import { getSessionLastMessage } from '@/lib/chat/session-summary'
 
 const DIRECT_PROMPT_SUGGESTIONS = [
   { text: 'What can you help me with?', icon: 'book', gradient: 'from-[#6366F1]/10 to-[#818CF8]/5' },
@@ -41,12 +42,12 @@ const AGENT_PROMPT_SUGGESTIONS = [
 
 export function ChatArea() {
   const session = useAppStore((s) => {
-    const id = s.currentSessionId
+    const id = selectActiveSessionId(s)
     return id ? s.sessions[id] : null
   })
-  const sessionId = useAppStore((s) => s.currentSessionId)
+  const sessionId = useAppStore(selectActiveSessionId)
   const currentUser = useAppStore((s) => s.currentUser)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
+  const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
   const removeSessionFromStore = useAppStore((s) => s.removeSession)
   const refreshSession = useAppStore((s) => s.refreshSession)
   const appSettings = useAppStore((s) => s.appSettings)
@@ -135,17 +136,19 @@ export function ChatArea() {
     const requestedSessionId = sessionId
     const chatState = useChatStore.getState()
     const preserveLocalStream = chatState.streaming && chatState.streamingSessionId === requestedSessionId
-    // Keep the previous thread visible while the next one loads to avoid blank flashes.
+    // Clear stale messages immediately so the skeleton loader shows instead of
+    // the previous chat's messages flashing briefly during the fetch.
+    if (!preserveLocalStream) setMessages([])
     setMessagesLoading(true)
     if (!preserveLocalStream) {
       useChatStore.setState({ streaming: false, streamingSessionId: null, streamText: '', toolEvents: [] })
     }
     fetchMessagesPaginated(requestedSessionId, 100).then((data) => {
-      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+      if (cancelled || selectActiveSessionId(useAppStore.getState()) !== requestedSessionId) return
       setMessages(data.messages)
       useChatStore.setState({ hasMoreMessages: data.hasMore, totalMessages: data.total })
     }).catch((err) => {
-      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+      if (cancelled || selectActiveSessionId(useAppStore.getState()) !== requestedSessionId) return
       console.error('Failed to load messages:', err)
       const fallbackSession = useAppStore.getState().sessions[requestedSessionId]
       const fallbackLastMessage = fallbackSession ? getSessionLastMessage(fallbackSession) : null
@@ -155,7 +158,7 @@ export function ChatArea() {
           : (fallbackLastMessage ? [fallbackLastMessage] : []),
       )
     }).finally(() => {
-      if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+      if (cancelled || selectActiveSessionId(useAppStore.getState()) !== requestedSessionId) return
       setMessagesLoading(false)
     })
 
@@ -175,7 +178,7 @@ export function ChatArea() {
     const requestedSessionId = sessionId
     const timer = window.setTimeout(() => {
       void refreshSession(requestedSessionId).then(() => {
-        if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+        if (cancelled || selectActiveSessionId(useAppStore.getState()) !== requestedSessionId) return
         const refreshed = useAppStore.getState().sessions[requestedSessionId]
         if (refreshed?.active) {
           useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamText: '' })
@@ -183,10 +186,10 @@ export function ChatArea() {
       }).catch((err) => console.error('Failed to refresh session:', err))
 
       void devServer(requestedSessionId, 'status').then((r) => {
-        if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+        if (cancelled || selectActiveSessionId(useAppStore.getState()) !== requestedSessionId) return
         setDevServer(r.running ? r : null)
       }).catch(() => {
-        if (cancelled || useAppStore.getState().currentSessionId !== requestedSessionId) return
+        if (cancelled || selectActiveSessionId(useAppStore.getState()) !== requestedSessionId) return
         setDevServer(null)
       })
     }, 200)
@@ -205,10 +208,10 @@ export function ChatArea() {
       return
     }
     checkBrowser(sessionId).then((r) => {
-      if (cancelled || useAppStore.getState().currentSessionId !== sessionId) return
+      if (cancelled || selectActiveSessionId(useAppStore.getState()) !== sessionId) return
       setBrowserActive(r.active)
     }).catch((err) => {
-      if (cancelled || useAppStore.getState().currentSessionId !== sessionId) return
+      if (cancelled || selectActiveSessionId(useAppStore.getState()) !== sessionId) return
       console.error('Browser check failed:', err)
       setBrowserActive(false)
     })
@@ -280,11 +283,10 @@ export function ChatArea() {
       !isServerActive
       && state.streaming
       && (state.streamingSessionId === sessionId || state.streamingSessionId == null)
-      && !state.streamText
     ) {
-      // Server finished but we weren't the ones streaming — clear the indicator
+      // Server finished — clear all streaming state and fetch final messages
       fetchMessages(sessionId).then(setMessages).catch(() => {})
-      useChatStore.setState({ streaming: false, streamingSessionId: null, streamText: '' })
+      useChatStore.setState({ streaming: false, streamingSessionId: null, streamText: '', displayText: '', streamPhase: 'thinking', streamToolName: '', thinkingText: '', thinkingStartTime: 0 })
     }
   }, [isServerActive, sessionId, setMessages])
 
@@ -326,8 +328,8 @@ export function ChatArea() {
     if (!sessionId) return
     await deleteChat(sessionId)
     removeSessionFromStore(sessionId)
-    setCurrentSession(null)
-  }, [removeSessionFromStore, sessionId, setCurrentSession])
+    void setCurrentAgent(null)
+  }, [removeSessionFromStore, sessionId, setCurrentAgent])
 
   const handlePrompt = useCallback((text: string) => {
     sendMessage(text)

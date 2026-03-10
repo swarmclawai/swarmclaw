@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { loadAgents, loadSchedules, upsertSchedule, upsertSchedules } from '@/lib/server/storage'
-import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agent-availability'
+import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
-import { prepareScheduleCreate } from '@/lib/server/schedule-service'
+import { prepareScheduleCreate } from '@/lib/server/schedules/schedule-service'
 import { notify } from '@/lib/server/ws-hub'
 export const dynamic = 'force-dynamic'
 

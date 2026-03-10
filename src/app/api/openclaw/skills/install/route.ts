@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
+import { ensureGatewayConnected } from '@/lib/server/openclaw/gateway'
 import { errorMessage } from '@/lib/shared-utils'
 
 /** POST { name, installId, timeoutMs? } — install a skill via gateway */

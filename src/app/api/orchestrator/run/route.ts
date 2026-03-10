@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { loadAgents, upsertTask } from '@/lib/server/storage'
-import { enqueueTask } from '@/lib/server/queue'
-import { buildBoardTask } from '@/lib/server/task-lifecycle'
+import { enqueueTask } from '@/lib/server/runtime/queue'
+import { buildBoardTask } from '@/lib/server/tasks/task-lifecycle'
 
 export async function POST(req: Request) {
   const { agentId, task } = await req.json().catch(() => ({}))

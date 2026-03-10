@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { OpenClawDeployPanel } from '@/components/openclaw/openclaw-deploy-panel'
 import { useAppStore } from '@/stores/use-app-store'
 import type { ProviderType, Credential, GatewayProfile } from '@/types'

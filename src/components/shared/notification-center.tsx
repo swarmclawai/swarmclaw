@@ -6,17 +6,9 @@ import type { CSSProperties } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
-import { getNotificationActivityAt, getNotificationOccurrenceCount } from '@/lib/notification-utils'
+import { getNotificationActivityAt, getNotificationOccurrenceCount } from '@/lib/notifications/notification-utils'
+import { timeAgo } from '@/lib/time-format'
 import type { AppNotification } from '@/types'
-
-function timeAgo(ts: number, now: number | null): string {
-  if (!now) return 'recently'
-  const diff = now - ts
-  if (diff < 60_000) return 'just now'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
-  return `${Math.floor(diff / 86_400_000)}d ago`
-}
 
 const TYPE_COLORS: Record<AppNotification['type'], string> = {
   info: 'border-l-blue-400',

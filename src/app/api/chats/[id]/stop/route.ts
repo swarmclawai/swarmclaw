@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { materializeStreamingAssistantArtifacts } from '@/lib/chat-streaming-state'
+import { materializeStreamingAssistantArtifacts } from '@/lib/chat/chat-streaming-state'
 import { active, loadStoredItem, upsertStoredItem } from '@/lib/server/storage'
-import { cancelSessionRuns } from '@/lib/server/session-run-manager'
+import { cancelSessionRuns } from '@/lib/server/runtime/session-run-manager'
 import type { Session } from '@/types'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {

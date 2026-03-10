@@ -5,8 +5,8 @@ import { notify } from '@/lib/server/ws-hub'
 import type { AgentWallet, WalletTransaction } from '@/types'
 import {
   normalizeAtomicString,
-} from '@/lib/wallet'
-import { isValidWalletAddress, sendWalletNativeAsset, validateWalletSendLimits } from '@/lib/server/wallet-service'
+} from '@/lib/wallet/wallet'
+import { isValidWalletAddress, sendWalletNativeAsset, validateWalletSendLimits } from '@/lib/server/wallet/wallet-service'
 import { errorMessage } from '@/lib/shared-utils'
 export const dynamic = 'force-dynamic'
 

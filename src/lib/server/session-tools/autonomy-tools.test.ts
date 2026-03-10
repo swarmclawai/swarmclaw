@@ -94,7 +94,7 @@ describe('primitive plugin surfaces', () => {
     for (const action of ['list_messages', 'list_threads', 'search_messages', 'read_message', 'download_attachment', 'reply', 'wait_for_email']) {
       assert.equal(mailboxSrc.includes(`'${action}'`), true, `mailbox.ts should expose ${action}`)
     }
-    for (const action of ['request_input', 'request_approval', 'wait_for_reply', 'wait_for_approval', 'list_mailbox', 'ack_mailbox', 'status']) {
+    for (const action of ['request_input', 'wait_for_reply', 'list_mailbox', 'ack_mailbox', 'status']) {
       assert.equal(humanSrc.includes(`'${action}'`), true, `human-loop.ts should expose ${action}`)
     }
   })

@@ -1,10 +1,10 @@
 import { StateCreator } from 'zustand'
 import type { AppState } from '../use-app-store'
-import type { NetworkInfo, Directory, ProviderInfo, Credentials, Schedule, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, ActivityEntry, AppNotification, ApprovalRequest, GatewayProfile } from '../../types'
-import { fetchDirs, fetchProviders, fetchCredentials } from '../../lib/chats'
-import { fetchSchedules } from '../../lib/schedules'
-import { api } from '../../lib/api-client'
-import { safeStorageGetJson, safeStorageSet } from '../../lib/safe-storage'
+import type { NetworkInfo, Directory, ProviderInfo, Credentials, Schedule, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, ActivityEntry, AppNotification, GatewayProfile } from '../../types'
+import { api } from '@/lib/app/api-client'
+import { safeStorageGetJson, safeStorageSet } from '@/lib/app/safe-storage'
+import { fetchDirs, fetchProviders, fetchCredentials } from '@/lib/chat/chats'
+import { fetchSchedules } from '@/lib/schedules/schedules'
 import { setIfChanged } from '../set-if-changed'
 
 export interface DataSlice {
@@ -43,9 +43,6 @@ export interface DataSlice {
   loadActivity: (filters?: { entityType?: string; limit?: number }) => Promise<void>
   lastReadTimestamps: Record<string, number>
   markChatRead: (id: string) => void
-  approvals: Record<string, ApprovalRequest>
-  loadApprovals: () => Promise<void>
-  submitApprovalDecision: (id: string, approved: boolean) => Promise<void>
   notifications: AppNotification[]
   unreadNotificationCount: number
   loadNotifications: () => Promise<void>
@@ -233,21 +230,6 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
     const ts = { ...get().lastReadTimestamps, [id]: Date.now() }
     set({ lastReadTimestamps: ts })
     safeStorageSet('sc_last_read', JSON.stringify(ts))
-  },
-  approvals: {},
-  loadApprovals: async () => {
-    try {
-      const list = await api<ApprovalRequest[]>('GET', '/approvals')
-      const approvals: Record<string, ApprovalRequest> = {}
-      for (const a of list) approvals[a.id] = a
-      setIfChanged<AppState>(set, 'approvals', approvals)
-    } catch (err) { console.warn('Store error:', err) }
-  },
-  submitApprovalDecision: async (id, approved) => {
-    try {
-      await api('POST', '/approvals', { id, approved })
-      await get().loadApprovals()
-    } catch (err) { console.warn('Store error:', err) }
   },
   notifications: [],
   unreadNotificationCount: 0,

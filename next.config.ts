@@ -3,7 +3,6 @@ import { execSync } from "child_process";
 import { networkInterfaces } from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { DIRECT_NAV_SEGMENTS } from "./view-route-paths";
 
 const PROJECT_ROOT = path.dirname(fileURLToPath(import.meta.url))
 
@@ -76,19 +75,6 @@ const nextConfig: NextConfig = {
     'qrcode',
   ],
   allowedDevOrigins: getAllowedDevOrigins(),
-  async rewrites() {
-    const views = DIRECT_NAV_SEGMENTS.join('|')
-    return [
-      {
-        source: `/:view(${views})`,
-        destination: '/',
-      },
-      {
-        source: `/:view(${views})/:id`,
-        destination: '/',
-      },
-    ]
-  },
 };
 
 export default nextConfig;

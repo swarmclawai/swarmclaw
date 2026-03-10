@@ -10,9 +10,12 @@ import {
   removeManagedProcess,
   startManagedProcess,
   writeManagedProcessStdin,
-} from '../process-manager'
+  type SandboxOptions,
+} from '@/lib/server/runtime/process-manager'
+import { detectDocker } from '@/lib/server/sandbox/docker-detect'
 import type { ToolBuildContext } from './context'
 import { safePath, truncate, coerceEnvMap, MAX_OUTPUT } from './context'
+import { checkFileAccess } from './file-access-policy'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { safeJsonParseObject } from '../json-utils'
@@ -116,9 +119,82 @@ export function normalizeShellArgs(rawArgs: Record<string, unknown>): Record<str
 }
 
 /**
+ * Extract file path operands from common shell commands.
+ * Covers cat, rm, cp, mv, tee, and redirections (>, >>).
+ * Returns best-effort paths — won't catch variable expansion or complex pipelines.
+ */
+function extractShellFileTargets(command: string): string[] {
+  const paths: string[] = []
+  // Redirect targets: > /path or >> /path
+  for (const m of command.matchAll(/>{1,2}\s*([^\s;|&]+)/g)) {
+    if (m[1] && !m[1].startsWith('-')) paths.push(m[1])
+  }
+  // tee [flags] <path>
+  for (const m of command.matchAll(/\btee\s+(?:-[a-zA-Z]+\s+)*([^\s;|&]+)/g)) {
+    if (m[1] && !m[1].startsWith('-')) paths.push(m[1])
+  }
+  // cat/rm/cp/mv operands (skip flags starting with -)
+  for (const m of command.matchAll(/\b(?:cat|rm|cp|mv)\s+((?:(?:-[a-zA-Z]+\s+)*)(.+?))\s*(?:[;|&]|$)/g)) {
+    const argsStr = m[1] || ''
+    for (const token of argsStr.split(/\s+/)) {
+      if (token && !token.startsWith('-')) paths.push(token)
+    }
+  }
+  return paths
+}
+
+/**
+ * Check shell command file targets against file access policy.
+ * Returns an error string if any path is blocked, null otherwise.
+ */
+function checkShellFileAccessPolicy(
+  command: string,
+  cwd: string,
+  policy: { allowedPaths?: string[]; blockedPaths?: string[] } | null | undefined,
+): string | null {
+  if (!policy) return null
+  const targets = extractShellFileTargets(command)
+  for (const target of targets) {
+    const result = checkFileAccess(target, cwd, policy)
+    if (!result.allowed) {
+      return `Shell command blocked: ${result.reason}`
+    }
+  }
+  return null
+}
+
+/**
  * Unified Shell Execution Logic
  */
-async function executeShellAction(args: Record<string, unknown>, bctx: { cwd: string; agentId?: string | null; sessionId?: string | null }) {
+function resolveSandboxOptions(
+  cwd: string,
+  config: { enabled: boolean; image?: string; network?: 'none' | 'bridge'; memoryMb?: number; cpus?: number; readonlyRoot?: boolean } | null | undefined,
+): SandboxOptions | undefined {
+  if (!config?.enabled) return undefined
+  const docker = detectDocker()
+  if (!docker.available) {
+    throw new Error('Sandbox is enabled but Docker is not available. Install Docker Desktop or disable the sandbox in agent settings.')
+  }
+  return {
+    image: config.image || 'node:22-slim',
+    network: config.network || 'none',
+    memoryMb: config.memoryMb || 512,
+    cpus: config.cpus || 1.0,
+    readonlyRoot: config.readonlyRoot || false,
+    workspaceMounts: [{ hostPath: cwd, containerPath: '/workspace' }],
+  }
+}
+
+async function executeShellAction(
+  args: Record<string, unknown>,
+  bctx: {
+    cwd: string
+    agentId?: string | null
+    sessionId?: string | null
+    fileAccessPolicy?: { allowedPaths?: string[]; blockedPaths?: string[] } | null
+    sandboxConfig?: { enabled: boolean; image?: string; network?: 'none' | 'bridge'; memoryMb?: number; cpus?: number; readonlyRoot?: boolean } | null
+  },
+) {
   const normalized = normalizeShellArgs(args)
   const action = normalized.action as string | undefined
   const command = normalized.command as string | undefined
@@ -135,12 +211,21 @@ async function executeShellAction(args: Record<string, unknown>, bctx: { cwd: st
     switch (action) {
       case 'execute': {
         if (!command) return 'Error: command or cmd is required for execute action.'
+        // Enforce file access policy on shell command targets
+        const policyDenial = checkShellFileAccessPolicy(command, bctx.cwd, bctx.fileAccessPolicy)
+        if (policyDenial) return policyDenial
         const rewrittenCommand = rewriteShellWorkspaceAliases(bctx.cwd, command)
         const effectiveBackground = !!background || (typeof rewrittenCommand === 'string' && isLikelyServerCommand(rewrittenCommand))
         const managedCommand = effectiveBackground ? stripManagedBackgroundSuffix(rewrittenCommand) : rewrittenCommand
         const envMap = coerceEnvMap(env) || {}
         if (!envMap.WORKSPACE) envMap.WORKSPACE = bctx.cwd
         if (!envMap.SESSION_CWD) envMap.SESSION_CWD = bctx.cwd
+        let sandbox: SandboxOptions | undefined
+        try {
+          sandbox = resolveSandboxOptions(bctx.cwd, bctx.sandboxConfig)
+        } catch (err: unknown) {
+          return `Error: ${errorMessage(err)}`
+        }
         const result = await startManagedProcess({
           command: managedCommand,
           cwd: resolveShellWorkdir(bctx.cwd, workdir),
@@ -149,6 +234,7 @@ async function executeShellAction(args: Record<string, unknown>, bctx: { cwd: st
           sessionId: bctx.sessionId || null,
           background: effectiveBackground,
           timeoutMs: typeof timeoutSec === 'number' ? timeoutSec * 1000 : 30000,
+          sandbox,
         })
         if (result.status === 'completed') return truncate(result.output || '(no output)', MAX_OUTPUT)
         return JSON.stringify({ status: 'running', processId: result.processId, tail: result.tail || '' }, null, 2)
@@ -205,7 +291,7 @@ export function buildShellTools(bctx: ToolBuildContext) {
   if (!bctx.hasPlugin('shell')) return []
   return [
     tool(
-      async (args) => executeShellAction(args, { ...bctx.ctx, cwd: bctx.cwd }),
+      async (args) => executeShellAction(args, { ...bctx.ctx, cwd: bctx.cwd, fileAccessPolicy: bctx.fileAccessPolicy, sandboxConfig: bctx.sandboxConfig }),
       {
         name: 'shell',
         description: ShellPlugin.tools![0].description,

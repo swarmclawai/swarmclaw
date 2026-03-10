@@ -5,7 +5,7 @@ import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { FilePreview } from '@/components/shared/file-preview'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { uploadImage } from '@/lib/upload'
-import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/app/safe-storage'
 import type { Agent } from '@/types'
 
 interface Props {

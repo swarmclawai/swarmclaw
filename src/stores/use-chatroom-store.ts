@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import { api, getStoredAccessKey } from '@/lib/api-client'
+import { api, getStoredAccessKey } from '@/lib/app/api-client'
 import type { Chatroom, ChatroomMessage, ChatroomRoutingRule, SSEEvent } from '@/types'
 import type { PendingFile } from '@/stores/use-chat-store'
 

@@ -1,5 +1,5 @@
 import type { UploadResult } from '../types'
-import { getStoredAccessKey } from './api-client'
+import { getStoredAccessKey } from './app/api-client'
 
 export async function uploadImage(file: File): Promise<UploadResult> {
   const key = getStoredAccessKey()

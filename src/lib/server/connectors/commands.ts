@@ -1,7 +1,7 @@
 import { getProvider } from '@/lib/providers'
 import type { Connector } from '@/types'
 import { loadAgents } from '../storage'
-import { syncSessionArchiveMemory } from '../session-archive-memory'
+import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
 import { resolvePairingAccess } from './access'
 import {
   addAllowedSender,

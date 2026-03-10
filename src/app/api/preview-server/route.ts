@@ -4,7 +4,7 @@ import http from 'http'
 import fs from 'fs'
 import path from 'path'
 import { localIP } from '@/lib/server/storage'
-import { resolveDevServerLaunchDir } from '@/lib/server/devserver-launch'
+import { resolveDevServerLaunchDir } from '@/lib/server/runtime/devserver-launch'
 import { resolvePathWithinBaseDir } from '@/lib/server/path-utils'
 import { hmrSingleton, sleep } from '@/lib/shared-utils'
 

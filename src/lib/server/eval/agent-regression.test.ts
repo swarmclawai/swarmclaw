@@ -9,19 +9,10 @@ import {
 } from './agent-regression'
 
 describe('agent regression helpers', () => {
-  it('maps approval modes onto deterministic platform settings', () => {
-    assert.deepEqual(resolveRegressionApprovalSettings('manual'), {
-      approvalsEnabled: true,
-      approvalAutoApproveCategories: [],
-    })
-    assert.deepEqual(resolveRegressionApprovalSettings('auto'), {
-      approvalsEnabled: true,
-      approvalAutoApproveCategories: ['tool_access'],
-    })
-    assert.deepEqual(resolveRegressionApprovalSettings('off'), {
-      approvalsEnabled: false,
-      approvalAutoApproveCategories: [],
-    })
+  it('keeps approval mode settings inert after approval queue removal', () => {
+    assert.deepEqual(resolveRegressionApprovalSettings('manual'), {})
+    assert.deepEqual(resolveRegressionApprovalSettings('auto'), {})
+    assert.deepEqual(resolveRegressionApprovalSettings('off'), {})
   })
 
   it('scores scenarios from assertion weights instead of prose', () => {

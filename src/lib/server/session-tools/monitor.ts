@@ -7,7 +7,7 @@ import { getPluginManager } from '../plugins'
 import type { Plugin, PluginHooks } from '@/types'
 import { safePath, truncate } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { cancelWatchJob, createWatchJob, getWatchJob, listWatchJobs } from '../watch-jobs'
+import { cancelWatchJob, createWatchJob, getWatchJob, listWatchJobs } from '@/lib/server/runtime/watch-jobs'
 import { ensureSessionBrowserProfileId, loadBrowserSessionRecord } from '../browser-state'
 import { errorMessage } from '@/lib/shared-utils'
 

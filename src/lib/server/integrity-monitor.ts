@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { DATA_DIR } from './data-dir'
-import { resolveOpenClawWorkspace } from './openclaw-sync'
+import { resolveOpenClawWorkspace } from './openclaw/sync'
 import { loadIntegrityBaselines, saveIntegrityBaselines } from './storage'
 
 export interface IntegrityBaselineEntry {

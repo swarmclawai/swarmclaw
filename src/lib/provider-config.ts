@@ -1,4 +1,4 @@
-import { api } from './api-client'
+import { api } from './app/api-client'
 import type { ProviderConfig } from '../types'
 
 export const fetchProviderConfigs = () => api<ProviderConfig[]>('GET', '/providers/configs')

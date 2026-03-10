@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getRunById } from '@/lib/server/session-run-manager'
+import { getRunById } from '@/lib/server/runtime/session-run-manager'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

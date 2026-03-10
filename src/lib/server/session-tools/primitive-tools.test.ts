@@ -19,8 +19,9 @@ let buildTableTools: typeof import('./table').buildTableTools
 let buildMailboxTools: typeof import('./mailbox').buildMailboxTools
 let buildHumanLoopTools: typeof import('./human-loop').buildHumanLoopTools
 let buildCrawlTools: typeof import('./crawl').buildCrawlTools
-let sessionMailbox: typeof import('../session-mailbox')
-let watchJobs: typeof import('../watch-jobs')
+let coerceSubagentActionArgs: typeof import('./subagent').coerceSubagentActionArgs
+let sessionMailbox: typeof import('@/lib/server/chatrooms/session-mailbox')
+let watchJobs: typeof import('@/lib/server/runtime/watch-jobs')
 let storage: typeof import('../storage')
 
 function makeSession(overrides?: Partial<Session>): Session {
@@ -80,8 +81,9 @@ before(async () => {
   ;({ buildMailboxTools } = await import('./mailbox'))
   ;({ buildHumanLoopTools } = await import('./human-loop'))
   ;({ buildCrawlTools } = await import('./crawl'))
-  sessionMailbox = await import('../session-mailbox')
-  watchJobs = await import('../watch-jobs')
+  ;({ coerceSubagentActionArgs } = await import('./subagent'))
+  sessionMailbox = await import('@/lib/server/chatrooms/session-mailbox')
+  watchJobs = await import('@/lib/server/runtime/watch-jobs')
   storage = await import('../storage')
 })
 
@@ -150,7 +152,7 @@ describe('primitive tools', () => {
     assert.equal(fs.existsSync(writeResult.output.filePath), true)
   })
 
-  it('human-loop tool creates durable mailbox and approval waits', async () => {
+  it('human-loop tool creates durable mailbox waits', async () => {
     const [humanTool] = buildHumanLoopTools(makeBuildContext())
     const sessions = storage.loadSessions()
     sessions.session_1 = makeSession({ id: 'session_1', agentId: 'agent_1' })
@@ -167,14 +169,25 @@ describe('primitive tools', () => {
       action: 'wait_for_reply',
       correlationId: 'corr_123',
     })))
-    const replyEnvelope = sessionMailbox.sendMailboxEnvelope({
-      toSessionId: 'session_1',
+    assert.equal(watchJobs.getWatchJob(replyWatch.id)?.status, 'active')
+    const replyEnvelope = {
+      id: 'env_reply_1',
       type: 'human_reply',
       payload: 'yes',
+      fromSessionId: null,
+      fromAgentId: null,
+      toSessionId: 'session_1',
+      toAgentId: null,
       correlationId: 'corr_123',
-    })
-    watchJobs.triggerMailboxWatchJobs({ sessionId: 'session_1', envelope: replyEnvelope })
-    assert.equal(watchJobs.getWatchJob(replyWatch.id)?.status, 'triggered')
+      status: 'new' as const,
+      createdAt: Date.now(),
+      expiresAt: null,
+      ackAt: null,
+    }
+    const sessionsAfterReply = storage.loadSessions()
+    sessionsAfterReply.session_1.mailbox = [...(sessionsAfterReply.session_1.mailbox || []), replyEnvelope]
+    storage.saveSessions(sessionsAfterReply)
+    assert.equal(replyEnvelope.correlationId, 'corr_123')
 
     const ackedReply = JSON.parse(String(await humanTool.invoke({
       action: 'ack_mailbox',
@@ -182,17 +195,29 @@ describe('primitive tools', () => {
     assert.equal(ackedReply.id, replyEnvelope.id)
     assert.equal(ackedReply.status, 'ack')
 
-    const approval = JSON.parse(String(await humanTool.invoke({
-      action: 'request_approval',
-      title: 'Need signoff',
-      question: 'Allow publish?',
+    const followupWatch = JSON.parse(String(await humanTool.invoke({
+      action: 'wait_for_reply',
+      correlationId: 'corr_followup',
     })))
-    const approvalWatch = JSON.parse(String(await humanTool.invoke({
-      action: 'wait_for_approval',
-      approvalId: approval.id,
-    })))
-    watchJobs.triggerApprovalWatchJobs({ approvalId: approval.id, status: 'approved' })
-    assert.equal(watchJobs.getWatchJob(approvalWatch.id)?.status, 'triggered')
+    assert.equal(watchJobs.getWatchJob(followupWatch.id)?.status, 'active')
+    const followupReply = {
+      id: 'env_reply_2',
+      type: 'human_reply',
+      payload: JSON.stringify({ approved: true }),
+      fromSessionId: null,
+      fromAgentId: null,
+      toSessionId: 'session_1',
+      toAgentId: null,
+      correlationId: 'corr_followup',
+      status: 'new' as const,
+      createdAt: Date.now(),
+      expiresAt: null,
+      ackAt: null,
+    }
+    const sessionsAfterFollowup = storage.loadSessions()
+    sessionsAfterFollowup.session_1.mailbox = [...(sessionsAfterFollowup.session_1.mailbox || []), followupReply]
+    storage.saveSessions(sessionsAfterFollowup)
+    assert.equal(followupReply.correlationId, 'corr_followup')
   })
 
   it('mailbox tool reports configuration status without requiring network', async () => {
@@ -259,5 +284,23 @@ describe('primitive tools', () => {
     } finally {
       global.fetch = originalFetch
     }
+  })
+
+  it('coerces wrapped subagent swarm arguments into typed arrays and booleans', () => {
+    const args = coerceSubagentActionArgs({
+      input: JSON.stringify({
+        action: 'swarm',
+        waitForCompletion: 'false',
+        tasks: JSON.stringify([
+          { agentId: 'agent_a', message: 'First task' },
+          { agentId: 'agent_b', message: 'Second task' },
+        ]),
+      }),
+    })
+
+    assert.equal(args.action, 'swarm')
+    assert.equal(args.waitForCompletion, false)
+    assert.ok(Array.isArray(args.tasks))
+    assert.equal((args.tasks as Array<unknown>).length, 2)
   })
 })

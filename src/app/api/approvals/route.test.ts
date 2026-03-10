@@ -32,7 +32,7 @@ function runWithTempDataDir(script: string) {
   }
 }
 
-test('GET and POST /api/approvals smoke the pending approval flow end-to-end', () => {
+test('GET and POST /api/approvals handle human-loop approvals only', () => {
   const output = runWithTempDataDir(`
     const storageMod = await import('./src/lib/server/storage')
     const approvalsMod = await import('./src/lib/server/approvals')
@@ -41,17 +41,15 @@ test('GET and POST /api/approvals smoke the pending approval flow end-to-end', (
     const approvals = approvalsMod.default || approvalsMod
     const route = routeMod.default || routeMod
 
-    const now = Date.now()
-    storage.saveSettings({
-      approvalsEnabled: true,
-      approvalAutoApproveCategories: [],
+    const humanApproval = approvals.requestApproval({
+      category: 'human_loop',
+      title: 'Approve deploy',
+      data: { question: 'Deploy now?' },
     })
-
-    const approval = await approvals.requestApprovalMaybeAutoApprove({
-      category: 'tool_access',
-      title: 'Enable Plugin: shell',
-      description: 'Need shell access for a smoke test.',
-      data: { toolId: 'shell', pluginId: 'shell' },
+    approvals.requestApproval({
+      category: 'wallet_action',
+      title: 'Legacy wallet approval',
+      data: { action: 'sign_message' },
     })
 
     const pendingBefore = await route.GET()
@@ -60,14 +58,14 @@ test('GET and POST /api/approvals smoke the pending approval flow end-to-end', (
     const approveResponse = await route.POST(new Request('http://local/api/approvals', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: approval.id, approved: true }),
+      body: JSON.stringify({ id: humanApproval.id, approved: true }),
     }))
     const approvePayload = await approveResponse.json()
 
     const pendingAfter = await route.GET()
     const pendingAfterJson = await pendingAfter.json()
 
-    const storedApproval = storage.loadApprovals()[approval.id]
+    const storedApproval = storage.loadApprovals()[humanApproval.id]
     console.log(JSON.stringify({
       pendingBeforeCount: Array.isArray(pendingBeforeJson) ? pendingBeforeJson.length : -1,
       pendingBeforeId: Array.isArray(pendingBeforeJson) ? pendingBeforeJson[0]?.id || null : null,
@@ -86,63 +84,43 @@ test('GET and POST /api/approvals smoke the pending approval flow end-to-end', (
   assert.equal(output.storedStatus, 'approved')
 })
 
-test('POST /api/approvals rejects invalid payloads and remains idempotent for repeated decisions', () => {
+test('POST /api/approvals rejects invalid and non-human-loop approvals', () => {
   const output = runWithTempDataDir(`
-    const storageMod = await import('./src/lib/server/storage')
     const approvalsMod = await import('./src/lib/server/approvals')
     const routeMod = await import('./src/app/api/approvals/route')
-    const storage = storageMod.default || storageMod
     const approvals = approvalsMod.default || approvalsMod
     const route = routeMod.default || routeMod
 
-    const now = Date.now()
-    storage.saveSettings({
-      approvalsEnabled: true,
-      approvalAutoApproveCategories: [],
-    })
-
-    const approval = await approvals.requestApprovalMaybeAutoApprove({
-      category: 'tool_access',
-      title: 'Enable Plugin: shell',
-      description: 'Need shell access for idempotency test.',
-      data: { toolId: 'shell', pluginId: 'shell' },
+    const walletApproval = approvals.requestApproval({
+      category: 'wallet_action',
+      title: 'Legacy wallet approval',
+      data: { action: 'sign_message' },
     })
 
     const invalidResponse = await route.POST(new Request('http://local/api/approvals', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: approval.id }),
+      body: JSON.stringify({ id: walletApproval.id }),
     }))
     const invalidPayload = await invalidResponse.json()
 
-    const firstApprove = await route.POST(new Request('http://local/api/approvals', {
+    const wrongCategory = await route.POST(new Request('http://local/api/approvals', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: approval.id, approved: true }),
+      body: JSON.stringify({ id: walletApproval.id, approved: true }),
     }))
-    const secondApprove = await route.POST(new Request('http://local/api/approvals', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: approval.id, approved: true }),
-    }))
+    const wrongCategoryPayload = await wrongCategory.json()
 
-    const pending = await route.GET()
-    const pendingJson = await pending.json()
-    const storedApproval = storage.loadApprovals()[approval.id]
     console.log(JSON.stringify({
       invalidStatus: invalidResponse.status,
       invalidError: invalidPayload?.error || null,
-      firstApproveStatus: firstApprove.status,
-      secondApproveStatus: secondApprove.status,
-      pendingCount: Array.isArray(pendingJson) ? pendingJson.length : -1,
-      storedStatus: storedApproval?.status || null,
+      wrongCategoryStatus: wrongCategory.status,
+      wrongCategoryError: wrongCategoryPayload?.error || null,
     }))
   `)
 
   assert.equal(output.invalidStatus, 400)
   assert.match(String(output.invalidError || ''), /id and approved required/i)
-  assert.equal(output.firstApproveStatus, 200)
-  assert.equal(output.secondApproveStatus, 200)
-  assert.equal(output.pendingCount, 0)
-  assert.equal(output.storedStatus, 'approved')
+  assert.equal(output.wrongCategoryStatus, 400)
+  assert.match(String(output.wrongCategoryError || ''), /human-loop/i)
 })

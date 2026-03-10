@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useWs } from '@/hooks/use-ws'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { normalizeCanvasContent } from '@/lib/canvas-content'
 import type { CanvasContent, CanvasDocument } from '@/types'
 

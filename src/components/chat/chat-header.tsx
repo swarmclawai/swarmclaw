@@ -1,6 +1,6 @@
 'use client'
 
-import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
+import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/runtime/heartbeat-defaults'
 import { useEffect, useState, useMemo, useRef, useCallback, type ReactNode } from 'react'
 import type { Session } from '@/types'
 import { dedup } from '@/lib/shared-utils'
@@ -9,7 +9,7 @@ import { useChatStore } from '@/stores/use-chat-store'
 import { useNow } from '@/hooks/use-now'
 import { IconButton } from '@/components/shared/icon-button'
 import { ChatToolToggles } from './chat-tool-toggles'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import {
   ConnectorPlatformIcon,
   getSessionConnector,
@@ -21,8 +21,11 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { toast } from 'sonner'
 import type { ProviderType } from '@/types'
 import { copyTextToClipboard } from '@/lib/clipboard'
-import { buildOpenClawMainSessionKey } from '@/lib/openclaw-agent-id'
+import { buildOpenClawMainSessionKey } from '@/lib/openclaw/openclaw-agent-id'
 import { useWs } from '@/hooks/use-ws'
+import { useNavigate } from '@/lib/app/navigation'
+import { StatusDot } from '@/components/ui/status-dot'
+import { formatDurationSec } from '@/lib/format-display'
 
 function Tip({ label, children, side = 'bottom' }: { label: string; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
   return (
@@ -91,15 +94,7 @@ function shortPath(p: string): string {
   return (p || '').replace(/^\/Users\/\w+/, '~')
 }
 
-function formatDuration(sec: number): string {
-  if (sec >= 3600) {
-    const h = Math.floor(sec / 3600)
-    const m = Math.floor((sec % 3600) / 60)
-    return m > 0 ? `${h}h${m}m` : `${h}h`
-  }
-  if (sec >= 60) return `${Math.floor(sec / 60)}m`
-  return `${sec}s`
-}
+
 
 const PROVIDER_LABELS: Record<string, string> = {
   'claude-cli': 'CLI',
@@ -137,7 +132,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const agentStatus = useChatStore((s) => s.agentStatus)
   const agents = useAppStore((s) => s.agents)
   const tasks = useAppStore((s) => s.tasks)
-  const setActiveView = useAppStore((s) => s.setActiveView)
+  const navigateTo = useNavigate()
   const setMemoryAgentFilter = useAppStore((s) => s.setMemoryAgentFilter)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const appSettings = useAppStore((s) => s.appSettings)
@@ -307,7 +302,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const handleHeaderWidgetClick = (widgetId: string) => {
     if (widgetId === 'wallet-status') {
       if (agent?.id) setWalletPanelAgentId(agent.id)
-      setActiveView('wallets')
+      navigateTo('wallets')
     }
   }
 
@@ -446,7 +441,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       if (session.agentId) {
         // Save the cadence without implicitly toggling heartbeat on.
         await api('PUT', `/agents/${session.agentId}`, {
-          heartbeatInterval: formatDuration(sec),
+          heartbeatInterval: formatDurationSec(sec),
           heartbeatIntervalSec: sec,
         })
         // Clear stale session-level overrides
@@ -864,7 +859,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1.5 rounded-l-[11px] transition-colors cursor-pointer border-none text-[11px] font-600
                   ${heartbeatWillRun ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-text-3/70 hover:bg-white/[0.04]'}`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full transition-colors ${heartbeatWillRun ? 'bg-emerald-400' : heartbeatEnabled ? 'bg-amber-300' : 'bg-text-3/30'}`} />
+                <StatusDot status={heartbeatWillRun ? 'online' : heartbeatEnabled ? 'warning' : 'idle'} size="sm" />
                 <span className="hidden sm:inline">Heartbeat</span>
                 <span className="sm:hidden">HB</span>
                 <span className={`hidden md:inline text-[9px] uppercase tracking-wider ${
@@ -881,7 +876,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                   disabled={heartbeatSaving}
                   className="flex items-center gap-0.5 pl-1 pr-2.5 py-1.5 text-text-3/60 hover:text-text-2 hover:bg-white/[0.04] transition-colors cursor-pointer border-none rounded-r-[11px]"
                 >
-                  <span className="text-[11px] font-600">{formatDuration(heartbeatIntervalSec)}</span>
+                  <span className="text-[11px] font-600">{formatDurationSec(heartbeatIntervalSec)}</span>
                   <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="opacity-40">
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
@@ -896,7 +891,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                         className={`w-full text-left px-3 py-1.5 text-[11px] font-600 transition-colors cursor-pointer border-none
                           ${sec === heartbeatIntervalSec ? 'bg-accent-soft text-accent-bright' : 'text-text-3 hover:bg-white/[0.06]'}`}
                       >
-                        {formatDuration(sec)}
+                        {formatDurationSec(sec)}
                       </button>
                     ))}
                   </div>
@@ -970,7 +965,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
           {hasMemoryLink && (
             <Tip label="View agent memories">
             <button
-              onClick={() => { setMemoryAgentFilter(session.agentId!); setActiveView('memory'); setSidebarOpen(true) }}
+              onClick={() => { setMemoryAgentFilter(session.agentId!); navigateTo('memory'); setSidebarOpen(true) }}
               className="flex items-center gap-1 px-2.5 py-1 rounded-[8px] bg-accent-soft/40 hover:bg-accent-soft/70 transition-colors cursor-pointer text-[10px] font-600 text-accent-bright/55 hover:text-accent-bright/80 shrink-0"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -1053,7 +1048,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
           {linkedTask && (
             <Tip label="View linked task">
             <button
-              onClick={() => setActiveView('tasks')}
+              onClick={() => navigateTo('tasks')}
               className="flex items-center gap-1 px-2 py-1 rounded-[7px] bg-amber-500/8 hover:bg-amber-500/12 transition-colors cursor-pointer text-[10px] font-600 text-amber-500 shrink-0"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

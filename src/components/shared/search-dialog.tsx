@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
-import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
+import { api } from '@/lib/app/api-client'
+import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/observability/local-observability'
+import { useNavigate } from '@/lib/app/navigation'
+import { InfoChip } from '@/components/ui/info-chip'
 import type { AppView } from '@/types'
 
 interface SearchResult {
@@ -64,7 +66,7 @@ export function SearchDialog() {
 
   const sessions = useAppStore((s) => s.sessions)
   const currentUser = useAppStore((s) => s.currentUser)
-  const setActiveView = useAppStore((s) => s.setActiveView)
+  const navigateToView = useNavigate()
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
@@ -76,7 +78,7 @@ export function SearchDialog() {
   const setWebhookSheetOpen = useAppStore((s) => s.setWebhookSheetOpen)
   const setEditingSkillId = useAppStore((s) => s.setEditingSkillId)
   const setSkillSheetOpen = useAppStore((s) => s.setSkillSheetOpen)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
+  const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
 
   // Global Cmd+K / Ctrl+K listener
   useEffect(() => {
@@ -138,10 +140,10 @@ export function SearchDialog() {
   }
 
   // Navigate to a result
-  const navigateTo = useCallback((result: SearchResult) => {
+  const goToResult = useCallback((result: SearchResult) => {
     setOpen(false)
     const view = TYPE_VIEW_MAP[result.type]
-    setActiveView(view)
+    navigateToView(view)
     setSidebarOpen(true)
 
     switch (result.type) {
@@ -153,13 +155,16 @@ export function SearchDialog() {
         setEditingTaskId(result.id)
         setTaskSheetOpen(true)
         break
-      case 'session':
-        setCurrentSession(result.id)
-        setActiveView('agents')
+      case 'session': {
+        const sessionAgentId = sessions[result.id]?.agentId
+        if (sessionAgentId) void setCurrentAgent(sessionAgentId)
+        navigateToView('agents')
         break
-      case 'message':
-        setCurrentSession(result.id)
-        setActiveView('agents')
+      }
+      case 'message': {
+        const msgSessionAgentId = sessions[result.id]?.agentId
+        if (msgSessionAgentId) void setCurrentAgent(msgSessionAgentId)
+        navigateToView('agents')
         // Scroll to the matched message after the chat renders
         if (result.messageIndex != null) {
           setTimeout(() => {
@@ -167,6 +172,7 @@ export function SearchDialog() {
           }, 300)
         }
         break
+      }
       case 'schedule':
         setEditingScheduleId(result.id)
         setScheduleSheetOpen(true)
@@ -193,7 +199,7 @@ export function SearchDialog() {
       setSelectedIdx((i) => Math.max(i - 1, 0))
     } else if (e.key === 'Enter' && results[selectedIdx]) {
       e.preventDefault()
-      navigateTo(results[selectedIdx])
+      goToResult(results[selectedIdx])
     }
   }
 
@@ -251,7 +257,7 @@ export function SearchDialog() {
           {results.map((result, idx) => (
             <button
               key={result.type === 'message' ? `${result.type}-${result.id}-${result.messageIndex}` : `${result.type}-${result.id}`}
-              onClick={() => navigateTo(result)}
+              onClick={() => goToResult(result)}
               onMouseEnter={() => setSelectedIdx(idx)}
               className={`w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer transition-colors border-none bg-transparent focus-visible:ring-1 focus-visible:ring-accent-bright/50 focus-visible:ring-inset
                 ${idx === selectedIdx ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'}`}
@@ -271,9 +277,9 @@ export function SearchDialog() {
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-500 text-text truncate">{result.title}</span>
                   {result.status && (
-                    <span className="px-1.5 py-0.5 rounded-[4px] bg-white/[0.06] text-[10px] font-500 text-text-3 shrink-0">
+                    <InfoChip size="sm" tone="muted" className="font-500">
                       {result.status}
-                    </span>
+                    </InfoChip>
                   )}
                 </div>
                 {result.description && (

@@ -129,12 +129,26 @@ export function getSolanaExplorerUrl(cluster: SolanaCluster | string | null | un
   return `https://explorer.solana.com/${prefix}/${value}${clusterSuffix}`
 }
 
+const connectionCache = new Map<string, Connection>()
+
+function getCachedConnection(url: string): Connection {
+  let conn = connectionCache.get(url)
+  if (!conn) {
+    conn = new Connection(url, {
+      commitment: 'confirmed',
+      disableRetryOnRateLimit: true,
+    })
+    connectionCache.set(url, conn)
+  }
+  return conn
+}
+
 export function getConnection(rpcUrl?: string): Connection {
-  return new Connection(rpcUrl || DEFAULT_RPC_URL, 'confirmed')
+  return getCachedConnection(rpcUrl || DEFAULT_RPC_URL)
 }
 
 export function getConnectionForCluster(cluster?: SolanaCluster | string | null, rpcUrl?: string | null): Connection {
-  return new Connection(rpcUrl || getClusterRpcUrl(normalizeSolanaCluster(cluster)), 'confirmed')
+  return getCachedConnection(rpcUrl || getClusterRpcUrl(normalizeSolanaCluster(cluster)))
 }
 
 export async function getBalance(publicKey: string, rpcUrl?: string): Promise<number> {

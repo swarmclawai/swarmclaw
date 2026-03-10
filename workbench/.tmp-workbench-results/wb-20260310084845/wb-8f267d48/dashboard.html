@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Monitoring Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            padding: 2rem;
+            color: #e0e0e0;
+        }
+
+        .dashboard-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .dashboard-header h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #ffffff;
+            letter-spacing: 0.5px;
+        }
+
+        .dashboard-header .timestamp {
+            margin-top: 0.5rem;
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .card-icon.cpu { background: linear-gradient(135deg, #ff6b6b, #ee5a24); }
+        .card-icon.memory { background: linear-gradient(135deg, #4ecdc4, #44bd32); }
+        .card-icon.disk { background: linear-gradient(135deg, #a29bfe, #6c5ce7); }
+        .card-icon.network { background: linear-gradient(135deg, #ffeaa7, #fdcb6e); }
+
+        .card-title {
+            font-size: 0.9rem;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .card-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 1rem;
+        }
+
+        .progress-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            height: 12px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            border-radius: 8px;
+            transition: width 0.5s ease;
+        }
+
+        .progress-bar.cpu { width: 82%; background: linear-gradient(90deg, #ff6b6b, #ee5a24); }
+        .progress-bar.memory { width: 38.1%; background: linear-gradient(90deg, #4ecdc4, #44bd32); }
+        .progress-bar.disk { width: 34%; background: linear-gradient(90deg, #a29bfe, #6c5ce7); }
+        .progress-bar.network { width: 45%; background: linear-gradient(90deg, #ffeaa7, #fdcb6e); }
+
+        .card-footer {
+            margin-top: 0.75rem;
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 1rem;
+            }
+            .dashboard-header h1 {
+                font-size: 1.5rem;
+            }
+            .card-value {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-header">
+        <h1>📊 System Monitoring Dashboard</h1>
+        <p class="timestamp">Last updated: <span id="timestamp"></span></p>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon cpu">🔲</div>
+                <div class="card-title">CPU Usage</div>
+            </div>
+            <div class="card-value">82%</div>
+            <div class="progress-container">
+                <div class="progress-bar cpu"></div>
+            </div>
+            <div class="card-footer">High load detected</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon memory">💾</div>
+                <div class="card-title">Memory</div>
+            </div>
+            <div class="card-value">6.1GB / 16GB</div>
+            <div class="progress-container">
+                <div class="progress-bar memory"></div>
+            </div>
+            <div class="card-footer">38% utilized</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon disk">💿</div>
+                <div class="card-title">Disk</div>
+            </div>
+            <div class="card-value">340GB / 1TB</div>
+            <div class="progress-container">
+                <div class="progress-bar disk"></div>
+            </div>
+            <div class="card-footer">34% utilized</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon network">🌐</div>
+                <div class="card-title">Network</div>
+            </div>
+            <div class="card-value">45 Mbps</div>
+            <div class="progress-container">
+                <div class="progress-bar network"></div>
+            </div>
+            <div class="card-footer">Active connections: 24</div>
+        </div>
+    </div>
+
+    <script>
+        function updateTimestamp() {
+            const now = new Date();
+            const options = { 
+                weekday: 'short', 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric',
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit',
+                timeZoneName: 'short'
+            };
+            document.getElementById('timestamp').textContent = now.toLocaleDateString('en-US', options);
+        }
+        updateTimestamp();
+        setInterval(updateTimestamp, 1000);
+    </script>
+</body>
+</html>

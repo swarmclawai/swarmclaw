@@ -4,8 +4,16 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const isWorkerOnly = process.env.SWARMCLAW_WORKER_ONLY === '1'
     const { initWsServer, closeWsServer } = await import('./lib/server/ws-hub')
-    const { ensureDaemonStarted } = await import('./lib/server/daemon-state')
+    const { ensureDaemonStarted } = await import('@/lib/server/runtime/daemon-state')
     
+    // One-time migration: backfill allKnownPeerIds on existing connector sessions
+    try {
+      const { backfillAllKnownPeerIds } = await import('@/lib/server/connectors/session-consolidation')
+      backfillAllKnownPeerIds()
+    } catch (err) {
+      console.error('[instrumentation] backfillAllKnownPeerIds failed:', err)
+    }
+
     // In worker-only mode, we FORCE the daemon to start, but skip the WebSocket listener
     if (isWorkerOnly) {
       console.log('[instrumentation] Booting in WORKER ONLY mode')
@@ -27,7 +35,7 @@ export async function register() {
       shutdownState.shuttingDown = true
       console.log(`[server] ${signal} received, shutting down gracefully...`)
       try {
-        const { stopDaemon } = await import('./lib/server/daemon-state')
+        const { stopDaemon } = await import('@/lib/server/runtime/daemon-state')
         stopDaemon({ source: signal })
       } catch (err) {
         console.error('[instrumentation] Failed to stop daemon during shutdown:', err)

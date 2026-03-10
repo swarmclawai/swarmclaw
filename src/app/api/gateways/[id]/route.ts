@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { normalizeOpenClawEndpoint } from '@/lib/openclaw-endpoint'
+import { normalizeOpenClawEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { loadAgents, loadGatewayProfiles, saveGatewayProfiles, upsertAgent } from '@/lib/server/storage'
 import { mutateItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
 import type { Agent, AgentRoutingTarget, GatewayProfile, OpenClawDeploymentConfig, OpenClawGatewayStats } from '@/types'

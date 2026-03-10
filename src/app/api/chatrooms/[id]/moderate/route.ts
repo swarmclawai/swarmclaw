@@ -3,7 +3,7 @@ import crypto from 'crypto'
 import { loadChatrooms, saveChatrooms, appendModerationLog } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { notFound } from '@/lib/server/collection-helpers'
-import { getMembers } from '@/lib/server/chatroom-helpers'
+import { getMembers } from '@/lib/server/chatrooms/chatroom-helpers'
 import type { Chatroom, ChatroomMember } from '@/types'
 
 export const dynamic = 'force-dynamic'

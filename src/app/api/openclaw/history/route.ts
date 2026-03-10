@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
-import { mergeHistoryMessages, isValidSessionKey } from '@/lib/server/openclaw-history-merge'
+import { ensureGatewayConnected } from '@/lib/server/openclaw/gateway'
+import { mergeHistoryMessages, isValidSessionKey } from '@/lib/server/openclaw/history-merge'
 import { loadSessions, saveSessions } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import type { GatewaySessionPreview } from '@/types'

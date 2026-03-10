@@ -9,21 +9,21 @@ import {
   normalizeMemoryScopeMode,
   storeMemoryImageAsset,
   type MemoryScopeFilter,
-} from '../memory-db'
+} from '@/lib/server/memory/memory-db'
 import { loadSettings } from '../storage'
 import { expandQuery } from '../query-expansion'
 import type { FileReference, MemoryEntry, MemoryImage, MemoryReference, Plugin, PluginHooks, Session } from '@/types'
 import type { ToolBuildContext } from './context'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { getMemoryTier, partitionMemoriesByTier, shouldHideFromDurableRecall } from '../memory-tiers'
-import { syncSessionArchiveMemory } from '../session-archive-memory'
+import { getMemoryTier, partitionMemoriesByTier, shouldHideFromDurableRecall } from '@/lib/server/memory/memory-tiers'
+import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
 import {
   buildMemoryDoctorReport,
   normalizeMemoryCategory,
   shouldAutoCaptureMemoryTurn,
   shouldInjectMemoryContext,
-} from '../memory-policy'
+} from '@/lib/server/memory/memory-policy'
 
 /**
  * Advanced Database-Backed Memory logic.

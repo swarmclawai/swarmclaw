@@ -2,20 +2,20 @@ import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import os from 'os'
 import path from 'path'
-import { perf } from '@/lib/server/perf'
+import { perf } from '@/lib/server/runtime/perf'
 import { loadSessions, saveSessions, deleteSession, active, loadAgents, upsertStoredItem } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { notify } from '@/lib/server/ws-hub'
-import { getSessionRunState } from '@/lib/server/session-run-manager'
-import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
-import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
-import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agent-availability'
-import { materializeStreamingAssistantArtifacts } from '@/lib/chat-streaming-state'
-import { buildSessionListSummary } from '@/lib/session-summary'
+import { getSessionRunState } from '@/lib/server/runtime/session-run-manager'
+import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
+import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
+import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
+import { materializeStreamingAssistantArtifacts } from '@/lib/chat/chat-streaming-state'
+import { buildSessionListSummary } from '@/lib/chat/session-summary'
 export const dynamic = 'force-dynamic'
 
 async function ensureDaemonIfNeeded(source: string) {
-  const { ensureDaemonStarted } = await import('@/lib/server/daemon-state')
+  const { ensureDaemonStarted } = await import('@/lib/server/runtime/daemon-state')
   ensureDaemonStarted(source)
 }
 

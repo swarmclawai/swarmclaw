@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { notFound } from '@/lib/server/collection-helpers'
 import { loadSchedule, loadAgents, loadTasks, upsertSchedule, upsertTask } from '@/lib/server/storage'
-import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agent-availability'
-import { enqueueTask } from '@/lib/server/queue'
-import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
-import { getScheduleSignatureKey } from '@/lib/schedule-dedupe'
-import { prepareScheduledTaskRun } from '@/lib/server/task-lifecycle'
+import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
+import { enqueueTask } from '@/lib/server/runtime/queue'
+import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
+import { getScheduleSignatureKey } from '@/lib/schedules/schedule-dedupe'
+import { prepareScheduledTaskRun } from '@/lib/server/tasks/task-lifecycle'
 
 type InFlightTask = {
   status?: string

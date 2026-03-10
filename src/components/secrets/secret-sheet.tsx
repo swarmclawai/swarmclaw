@@ -5,7 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { toast } from 'sonner'
 
 const inputClass = 'w-full px-4 py-3 rounded-[14px] bg-bg border border-white/[0.06] text-text text-[14px] outline-none focus:border-accent-bright/40 transition-colors placeholder:text-text-3/70'

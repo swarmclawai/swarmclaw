@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server'
 import { loadAgents, loadSettings, loadTasks, logActivity, upsertStoredItems, upsertTask } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
-import { disableSessionHeartbeat, enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/queue'
-import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
+import { disableSessionHeartbeat, enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/runtime/queue'
+import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
 import { notify } from '@/lib/server/ws-hub'
 import { createNotification } from '@/lib/server/create-notification'
-import { enqueueSystemEvent } from '@/lib/server/system-events'
-import { requestHeartbeatNow } from '@/lib/server/heartbeat-wake'
+import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
+import { requestHeartbeatNow } from '@/lib/server/runtime/heartbeat-wake'
 import { validateDag, cascadeUnblock } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
 import {
   applyTaskPatch,
-} from '@/lib/server/task-service'
+} from '@/lib/server/tasks/task-service'
 import type { BoardTask } from '@/types'
 import '@/lib/server/builtin-plugins'
 

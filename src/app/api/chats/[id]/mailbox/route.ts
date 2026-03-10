@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { ackMailboxEnvelope, clearMailbox, listMailbox, sendMailboxEnvelope } from '@/lib/server/session-mailbox'
+import { ackMailboxEnvelope, clearMailbox, listMailbox, sendMailboxEnvelope } from '@/lib/server/chatrooms/session-mailbox'
 import { loadSessions } from '@/lib/server/storage'
 
 function parseIntParam(value: string | null, fallback: number, min: number, max: number): number {

@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { perf } from '@/lib/server/perf'
+import { perf } from '@/lib/server/runtime/perf'
 import { deleteTask, loadAgents, loadSettings, loadTasks, logActivity, upsertTask } from '@/lib/server/storage'
 import { TaskCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
-import { enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/queue'
-import { pushMainLoopEventToMainSessions } from '@/lib/server/main-agent-loop'
+import { enqueueTask, recoverStalledRunningTasks, validateCompletedTasksQueue } from '@/lib/server/runtime/queue'
+import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
 import { notify } from '@/lib/server/ws-hub'
-import { resolveTaskAgentFromDescription } from '@/lib/server/task-mention'
+import { resolveTaskAgentFromDescription } from '@/lib/server/tasks/task-mention'
 import { validateDag } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
 import {
   prepareTaskCreation,
-} from '@/lib/server/task-service'
+} from '@/lib/server/tasks/task-service'
 import '@/lib/server/builtin-plugins'
 
 export async function GET(req: Request) {

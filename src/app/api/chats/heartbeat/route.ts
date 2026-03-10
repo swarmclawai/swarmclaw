@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
+import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/runtime/heartbeat-defaults'
 import { disableAllSessionHeartbeats, loadSettings, saveSettings } from '@/lib/server/storage'
-import { cancelAllHeartbeatRuns } from '@/lib/server/session-run-manager'
+import { cancelAllHeartbeatRuns } from '@/lib/server/runtime/session-run-manager'
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))

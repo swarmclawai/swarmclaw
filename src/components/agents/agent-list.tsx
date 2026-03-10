@@ -22,7 +22,7 @@ export function AgentList({ inSidebar }: Props) {
   const setShowTrash = useAppStore((s) => s.setShowTrash)
   const fleetFilter = useAppStore((s) => s.fleetFilter)
   const setFleetFilter = useAppStore((s) => s.setFleetFilter)
-  const currentSessionId = useAppStore((s) => s.currentSessionId)
+  const currentAgentId = useAppStore((s) => s.currentAgentId)
   const approvals = useApprovalStore((s) => s.approvals)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'delegating' | 'solo'>('all')
@@ -31,8 +31,7 @@ export function AgentList({ inSidebar }: Props) {
   const flipPositions = useRef<Map<string, number>>(new Map())
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
-  const currentSession = currentSessionId ? sessions[currentSessionId] : null
-  const selectedAgentId = currentSession?.agentId
+  const selectedAgentId = currentAgentId
 
   const appSettings = useAppStore((s) => s.appSettings)
   const updateSettings = useAppStore((s) => s.updateSettings)

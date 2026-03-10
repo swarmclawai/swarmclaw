@@ -4,7 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { DATA_DIR } from '../data-dir'
 import type { ToolBuildContext } from './context'
-import type { ApprovalRequest, Plugin, PluginHooks } from '@/types'
+import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { errorMessage } from '@/lib/shared-utils'
@@ -30,7 +30,6 @@ async function executePluginCreatorAction(args: Record<string, unknown>, ctxOrBc
   const code = (normalized.code ?? normalized.content) as string | undefined
   const packageJson = normalized.packageJson ?? normalized.package_json ?? normalized.manifest
   const packageManager = typeof normalized.packageManager === 'string' ? normalized.packageManager : undefined
-  const approved = normalized.approved as boolean | undefined
 
   try {
     if (!fs.existsSync(PLUGINS_DIR)) {
@@ -40,32 +39,6 @@ async function executePluginCreatorAction(args: Record<string, unknown>, ctxOrBc
     if (action === 'scaffold') {
       if (!filename || !code) return 'Error: filename and code are required for scaffold.'
       if (!filename.endsWith('.js')) return 'Error: filename must end with .js'
-
-      // REQUIRE USER APPROVAL
-      if (approved !== true) {
-        const { requestApprovalMaybeAutoApprove } = await import('../approvals')
-        const approval = await requestApprovalMaybeAutoApprove({
-          category: 'plugin_scaffold',
-          title: `Scaffold Plugin: ${filename}`,
-          description: `Create new plugin file with ${code.length} chars of code.`,
-          data: { filename, code, packageJson, packageManager, createdByAgentId: pctx.agentId || null },
-          agentId: pctx.agentId,
-          sessionId: pctx.sessionId,
-        })
-        if (approval.status === 'approved') {
-          return JSON.stringify({
-            type: 'plugin_scaffold_request',
-            filename,
-            autoApproved: true,
-            message: `Plugin "${filename}" was auto-approved and scaffolded. It is now available in this chat.`,
-          })
-        }
-        return JSON.stringify({
-          type: 'plugin_scaffold_request',
-          filename,
-          message: `I've submitted a request to create plugin "${filename}". The user needs to approve it via the Approvals page or the approval card in chat. Once approved, the plugin file will be written automatically — no need to call this tool again.`
-        })
-      }
 
       const manager = getPluginManager()
       await manager.savePluginSource(filename, code, {
@@ -91,36 +64,16 @@ async function executePluginCreatorAction(args: Record<string, unknown>, ctxOrBc
         } catch { /* best effort */ }
       }
 
-      return `Plugin saved to ${filePath} and PluginManager reloaded. It is now enabled for this chat.`
+      return JSON.stringify({
+        type: 'plugin_scaffold_result',
+        filename,
+        filePath,
+        message: `Plugin "${filename}" was scaffolded and reloaded successfully.`,
+      })
     }
 
     if (action === 'install_dependencies') {
       if (!filename) return 'Error: filename is required for install_dependencies.'
-
-      if (approved !== true) {
-        const { requestApprovalMaybeAutoApprove } = await import('../approvals')
-        const approval = await requestApprovalMaybeAutoApprove({
-          category: 'plugin_install',
-          title: `Install Plugin Dependencies: ${filename}`,
-          description: `Install package dependencies for plugin ${filename}${packageManager ? ` using ${packageManager}` : ''}.`,
-          data: { filename, packageJson, packageManager, createdByAgentId: pctx.agentId || null },
-          agentId: pctx.agentId,
-          sessionId: pctx.sessionId,
-        })
-        if (approval.status === 'approved') {
-          return JSON.stringify({
-            type: 'plugin_install_request',
-            filename,
-            autoApproved: true,
-            message: `Dependencies for "${filename}" were auto-approved and are being installed.`,
-          })
-        }
-        return JSON.stringify({
-          type: 'plugin_install_request',
-          filename,
-          message: `I've requested approval to install dependencies for "${filename}". Once approved, the plugin manager will run the selected package manager automatically.`,
-        })
-      }
 
       const manager = getPluginManager()
       if (packageJson !== undefined) {
@@ -134,7 +87,12 @@ async function executePluginCreatorAction(args: Record<string, unknown>, ctxOrBc
       const result = await manager.installPluginDependencies(filename, {
         packageManager: packageManager as import('@/types').PluginPackageManager | undefined,
       })
-      return `Dependencies installed for ${filename} using ${result.packageManager || packageManager || 'npm'}.`
+      return JSON.stringify({
+        type: 'plugin_install_result',
+        filename,
+        packageManager: result.packageManager || packageManager || 'npm',
+        message: `Dependencies installed for "${filename}".`,
+      })
     }
 
     if (action === 'get_spec') {
@@ -241,38 +199,6 @@ Key rules:
   }
 }
 
-function trimString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function buildPluginCreatorApprovalResumeInput(approval: ApprovalRequest): Record<string, unknown> | null {
-  if (approval.category === 'plugin_scaffold') {
-    const filename = trimString(approval.data.filename)
-    const code = trimString(approval.data.code)
-    if (!filename || !code) return null
-    return {
-      action: 'scaffold',
-      filename,
-      code,
-      packageJson: approval.data.packageJson,
-      packageManager: trimString(approval.data.packageManager) || undefined,
-      approved: true,
-    }
-  }
-  if (approval.category === 'plugin_install') {
-    const filename = trimString(approval.data.filename)
-    if (!filename) return null
-    return {
-      action: 'install_dependencies',
-      filename,
-      packageJson: approval.data.packageJson,
-      packageManager: trimString(approval.data.packageManager) || undefined,
-      approved: true,
-    }
-  }
-  return null
-}
-
 /**
  * Register as a Built-in Plugin
  */
@@ -286,30 +212,6 @@ const PluginCreatorPlugin: Plugin = {
       'Put API keys in plugin settings or SwarmClaw secrets instead of hardcoding them in plugin source.',
       'Call `get_spec` before scaffolding so the plugin follows the current contract.',
     ],
-    getApprovalGuidance: ({ approval, phase, approved }) => {
-      if (approval.category !== 'plugin_scaffold' && approval.category !== 'plugin_install') return null
-      if (phase === 'request') {
-        return [
-          'When this approval is granted, continue with `plugin_creator_tool` for the exact approved action instead of asking again in prose.',
-          'Do not change the approved filename, dependency manifest, or package manager unless tool evidence proves the approved action can no longer execute as approved.',
-        ]
-      }
-      if (phase === 'connector_reminder') {
-        return 'Approving this lets the agent resume the exact plugin scaffolding or dependency install step automatically.'
-      }
-      if (approved !== true) {
-        return 'Do not retry the rejected plugin scaffolding or install request unless the exact requested action materially changes.'
-      }
-      const resumeInput = buildPluginCreatorApprovalResumeInput(approval)
-      const lines = [
-        'Resume immediately with `plugin_creator_tool` using the exact approved action.',
-        'Do not re-explain or re-request the same plugin action once approval has been granted.',
-      ]
-      if (resumeInput) {
-        lines.push(`Exact tool input: ${JSON.stringify(resumeInput)}`)
-      }
-      return lines
-    },
   } as PluginHooks,
   tools: [
     {
@@ -318,12 +220,11 @@ const PluginCreatorPlugin: Plugin = {
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['get_spec', 'scaffold', 'read', 'edit', 'delete', 'install_dependencies'], description: 'get_spec: learn format. scaffold: create (needs approval). read: view code. edit: update existing. delete: remove. install_dependencies: write/read package.json and install runtime deps.' },
+          action: { type: 'string', enum: ['get_spec', 'scaffold', 'read', 'edit', 'delete', 'install_dependencies'], description: 'get_spec: learn format. scaffold: create. read: view code. edit: update existing. delete: remove. install_dependencies: write/read package.json and install runtime deps.' },
           filename: { type: 'string', description: 'Plugin filename, e.g. my-plugin.js. Required for scaffold and delete.' },
           code: { type: 'string', description: 'The raw JavaScript code for the plugin. Required for scaffold.' },
           packageJson: { type: 'object', description: 'Optional package.json object for dependency-aware plugins. Use with scaffold or install_dependencies.' },
-          packageManager: { type: 'string', enum: ['npm', 'pnpm', 'yarn', 'bun'], description: 'Optional package manager to use for dependency installs.' },
-          approved: { type: 'boolean', description: 'Internal flag — do NOT set this. The approval system handles it automatically.' }
+          packageManager: { type: 'string', enum: ['npm', 'pnpm', 'yarn', 'bun'], description: 'Optional package manager to use for dependency installs.' }
         },
         required: ['action']
       },
@@ -357,8 +258,7 @@ export function buildPluginCreatorTools(bctx: ToolBuildContext): StructuredToolI
           filename: z.string().optional(),
           code: z.string().optional(),
           packageJson: z.record(z.string(), z.any()).optional(),
-          packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun']).optional(),
-          approved: z.boolean().optional()
+          packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun']).optional()
         })
       }
     )

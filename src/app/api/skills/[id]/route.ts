@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { loadSkills, saveSkills, deleteSkill } from '@/lib/server/storage'
-import { normalizeSkillPayload } from '@/lib/server/skills-normalize'
+import { normalizeSkillPayload } from '@/lib/server/skills/skills-normalize'
 import { mutateItem, deleteItem, notFound, type CollectionOps } from '@/lib/server/collection-helpers'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

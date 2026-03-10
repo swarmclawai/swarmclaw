@@ -2,7 +2,7 @@ import { StateCreator } from 'zustand'
 import type { AppState } from '../use-app-store'
 import type { BoardTask } from '../../types'
 import { fetchTasks } from '../../lib/tasks'
-import { api } from '../../lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { setIfChanged, invalidateFingerprint } from '../set-if-changed'
 
 export interface TaskSlice {

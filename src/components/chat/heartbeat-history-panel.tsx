@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react'
 import type { Message } from '@/types'
+import { InfoChip } from '@/components/ui/info-chip'
 import { dedup } from '@/lib/shared-utils'
 
 /* ─── Heartbeat meta parsing (shared with message-bubble) ─── */
@@ -246,9 +247,9 @@ export function HeartbeatHistoryPanel({ messages, agentHeartbeatGoal, onClose }:
                   {uniqueTools.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
                       {uniqueTools.map((name) => (
-                        <span key={name} className="px-1.5 py-0.5 rounded-[4px] text-[10px] font-600 bg-sky-400/[0.08] text-sky-400/70">
+                        <InfoChip key={name} size="sm" tone="info" className="bg-sky-400/[0.08] text-sky-400/70">
                           {name}
-                        </span>
+                        </InfoChip>
                       ))}
                     </div>
                   )}

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { inferPluginPublisherSourceFromUrl } from '@/lib/plugin-sources'
-import { searchClawHub } from '@/lib/server/clawhub-client'
+import { searchClawHub } from '@/lib/server/skills/clawhub-client'
 import type { PluginCatalogSource } from '@/types'
 import { errorMessage } from '@/lib/shared-utils'
 

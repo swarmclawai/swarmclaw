@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 
 export function SandboxEnvPanel() {
   const [available, setAvailable] = useState<string[]>([])

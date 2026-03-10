@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { listRuns, type SessionRunStatus } from '@/lib/server/session-run-manager'
+import { listRuns, type SessionRunStatus } from '@/lib/server/runtime/session-run-manager'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)

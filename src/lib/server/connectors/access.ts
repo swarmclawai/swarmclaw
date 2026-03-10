@@ -1,6 +1,5 @@
 import type { Connector } from '@/types'
 import { loadSettings } from '../storage'
-import { requestApprovalMaybeAutoApprove } from '../approvals'
 import {
   createOrTouchPairingRequest,
   getWhatsAppApprovedSenderIds,
@@ -99,30 +98,11 @@ export async function enforceInboundAccessPolicy(params: {
 
   const senderId = resolveInboundApprovalSenderId(msg)
   const senderSubject = buildInboundApprovalSubject(msg)
-  const approval = await requestApprovalMaybeAutoApprove({
-    category: 'connector_sender',
-    title: `Approve ${senderSubject} on ${connector.name}`,
-    description: `Allow ${senderSubject} to message ${agent.name} via ${connector.platform}/${connector.name}.`,
-    data: {
-      connectorId: connector.id,
-      connectorName: connector.name,
-      platform: connector.platform,
-      senderId,
-      senderIdRaw: typeof msg.senderId === 'string' ? msg.senderId.trim() : '',
-      senderName: typeof msg.senderName === 'string' ? msg.senderName.trim() : '',
-      channelId: typeof msg.channelId === 'string' ? msg.channelId.trim() : '',
-      policy,
-    },
-    agentId: agent.id,
-    sessionId: session.id,
-  })
-
-  if (approval.status === 'approved') return null
 
   if (policy === 'allowlist') {
     return [
-      `${senderSubject} is pending approval for this connector.`,
-      'A SwarmClaw approval request has been created for this sender.',
+      `${senderSubject} is not approved for this connector.`,
+      'This connector is using allowlist mode, so no automatic approval queue is created.',
       'An approved operator can allow this sender in the app or via /pair allow <senderId>.',
     ].join('\n')
   }
@@ -135,8 +115,7 @@ export async function enforceInboundAccessPolicy(params: {
       channelId: msg.channelId,
     })
     return [
-      `${senderSubject} is pending approval for this connector.`,
-      'A SwarmClaw approval request has been created for this sender.',
+      `${senderSubject} is pending pairing for this connector.`,
       `Pairing code: ${request.code}`,
       'Approve in the app, or ask an approved sender to run /pair approve <code>.',
     ].join('\n')

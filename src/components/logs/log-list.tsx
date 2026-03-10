@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { useWs } from '@/hooks/use-ws'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
-import { safeStorageGetJson, safeStorageSet } from '@/lib/safe-storage'
+import { safeStorageGetJson, safeStorageSet } from '@/lib/app/safe-storage'
 
 interface LogEntry {
   time: string

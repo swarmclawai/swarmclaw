@@ -3,9 +3,10 @@
 import { useEffect, useState, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { toast } from 'sonner'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
+import { StatusDot } from '@/components/ui/status-dot'
 
 const transportColors: Record<string, string> = {
   stdio: 'bg-emerald-500/15 text-emerald-400',
@@ -405,14 +406,14 @@ export function McpServerList({ inSidebar }: { inSidebar?: boolean }) {
                   <div className="flex items-center gap-2 min-w-0">
                     {(() => {
                       const s = statuses[server.id]
-                      if (!s || s.loading) return <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0" title="Testing..." />
+                      if (!s || s.loading) return <StatusDot status="warning" pulse className="shrink-0" />
                       if (s.ok) return (
                         <span className="flex items-center gap-1 shrink-0">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                          <StatusDot status="online" />
                           {s.tools && <span className="text-[10px] text-emerald-400/80 font-mono">{s.tools.length} tools</span>}
                         </span>
                       )
-                      return <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" title={s.error || 'Failed'} />
+                      return <StatusDot status="offline" className="shrink-0" />
                     })()}
                     <span className="font-display text-[14px] font-600 text-text truncate">{server.name}</span>
                   </div>

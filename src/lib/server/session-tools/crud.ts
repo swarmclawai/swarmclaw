@@ -20,27 +20,27 @@ import {
   encryptKey,
   decryptKey,
 } from '../storage'
-import { resolveScheduleName } from '@/lib/schedule-name'
-import type { ScheduleLike } from '@/lib/schedule-dedupe'
+import { resolveScheduleName } from '@/lib/schedules/schedule-name'
+import type { ScheduleLike } from '@/lib/schedules/schedule-dedupe'
 import {
   hasManagedAgentAssignmentInput,
   isDelegationTaskPayload,
   resolveDelegatorAgentId,
   resolveManagedAgentAssignment,
   validateManagedAgentAssignment,
-} from '@/lib/server/agent-assignment'
+} from '@/lib/server/agents/agent-assignment'
 import { buildProjectSnapshot, ensureProjectWorkspace, normalizeProjectCreateInput, normalizeProjectPatchInput } from '@/lib/server/project-utils'
 import {
   getScheduleClusterIds,
   prepareScheduleCreate,
   prepareScheduleUpdate,
-} from '@/lib/server/schedule-service'
+} from '@/lib/server/schedules/schedule-service'
 import {
   applyTaskContinuationDefaults,
   applyTaskPatch,
   deriveTaskTitle,
   prepareTaskCreation,
-} from '@/lib/server/task-service'
+} from '@/lib/server/tasks/task-service'
 import type { ToolBuildContext } from './context'
 import { safePath, findBinaryOnPath } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
@@ -671,14 +671,14 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
 
               res.save(all)
               if (toolKey === 'manage_tasks' && entry.status === 'queued') {
-                const { enqueueTask } = await import('../queue')
+                const { enqueueTask } = await import('@/lib/server/runtime/queue')
                 enqueueTask(newId)
               } else if (
                 toolKey === 'manage_tasks'
                 && (entry.status === 'completed' || entry.status === 'failed')
                 && entry.sessionId
               ) {
-                const { disableSessionHeartbeat } = await import('../queue')
+                const { disableSessionHeartbeat } = await import('@/lib/server/runtime/queue')
                 disableSessionHeartbeat(entry.sessionId)
               }
               return JSON.stringify(responseEntry)
@@ -809,7 +809,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 ensureProjectWorkspace(effectiveId, all[effectiveId].name)
               }
               if (toolKey === 'manage_tasks' && prevStatus !== 'queued' && all[effectiveId].status === 'queued') {
-                const { enqueueTask } = await import('../queue')
+                const { enqueueTask } = await import('@/lib/server/runtime/queue')
                 enqueueTask(effectiveId)
               } else if (
                 toolKey === 'manage_tasks'
@@ -817,7 +817,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                 && (all[effectiveId].status === 'completed' || all[effectiveId].status === 'failed')
                 && all[effectiveId].sessionId
               ) {
-                const { disableSessionHeartbeat } = await import('../queue')
+                const { disableSessionHeartbeat } = await import('@/lib/server/runtime/queue')
                 disableSessionHeartbeat(all[effectiveId].sessionId)
               }
               if (toolKey === 'manage_secrets') {

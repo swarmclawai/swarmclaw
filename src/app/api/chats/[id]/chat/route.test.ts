@@ -15,8 +15,8 @@ test('chat route keeps long-lived user runs alive after stream disconnect and re
     const storageMod = await import('./src/lib/server/storage')
     const providersMod = await import('@/lib/providers')
     const routeMod = await import('./src/app/api/chats/[id]/chat/route')
-    const runsMod = await import('./src/lib/server/session-run-manager')
-    const perfMod = await import('./src/lib/server/perf')
+    const runsMod = await import('@/lib/server/runtime/session-run-manager')
+    const perfMod = await import('@/lib/server/runtime/perf')
     const storage = storageMod.default || storageMod
     const providers = providersMod.default || providersMod
     const route = routeMod.default || routeMod
@@ -132,7 +132,7 @@ test('chat route heartbeat runs stay internal and do not persist terminal ack te
     const storageMod = await import('./src/lib/server/storage')
     const providersMod = await import('@/lib/providers')
     const routeMod = await import('./src/app/api/chats/[id]/chat/route')
-    const runsMod = await import('./src/lib/server/session-run-manager')
+    const runsMod = await import('@/lib/server/runtime/session-run-manager')
     const storage = storageMod.default || storageMod
     const providers = providersMod.default || providersMod
     const route = routeMod.default || routeMod
@@ -250,7 +250,7 @@ test('chat route queues a second user message behind the first run and completes
     const storageMod = await import('./src/lib/server/storage')
     const providersMod = await import('@/lib/providers')
     const routeMod = await import('./src/app/api/chats/[id]/chat/route')
-    const runsMod = await import('./src/lib/server/session-run-manager')
+    const runsMod = await import('@/lib/server/runtime/session-run-manager')
     const storage = storageMod.default || storageMod
     const providers = providersMod.default || providersMod
     const route = routeMod.default || routeMod
@@ -376,7 +376,7 @@ test('chat route forwards plugin-path tool activity when a plugin-enabled run us
     const storageMod = await import('./src/lib/server/storage')
     const providersMod = await import('@/lib/providers')
     const routeMod = await import('./src/app/api/chats/[id]/chat/route')
-    const streamMod = await import('./src/lib/server/stream-agent-chat')
+    const streamMod = await import('@/lib/server/chat-execution/stream-agent-chat')
     const storage = storageMod.default || storageMod
     const providers = providersMod.default || providersMod
     const route = routeMod.default || routeMod

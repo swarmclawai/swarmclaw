@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
-import { createSchedule, updateSchedule, deleteSchedule } from '@/lib/schedules'
+import { createSchedule, updateSchedule, deleteSchedule } from '@/lib/schedules/schedules'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AgentPickerList } from '@/components/shared/agent-picker-list'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -11,9 +11,9 @@ import { AgentAvatar } from '@/components/agents/agent-avatar'
 import type { ScheduleType, ScheduleStatus } from '@/types'
 import cronstrue from 'cronstrue'
 import { SectionLabel } from '@/components/shared/section-label'
-import { SCHEDULE_TEMPLATES, type ScheduleTemplate } from '@/lib/schedule-templates'
+import { SCHEDULE_TEMPLATES, type ScheduleTemplate } from '@/lib/schedules/schedule-templates'
 import { HintTip } from '@/components/shared/hint-tip'
-import { isUserCreatedSchedule } from '@/lib/schedule-origin'
+import { isUserCreatedSchedule } from '@/lib/schedules/schedule-origin'
 import { toast } from 'sonner'
 import {
   Newspaper, BarChart3, HeartPulse, PenLine, Trash2,

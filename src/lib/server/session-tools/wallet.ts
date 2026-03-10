@@ -12,12 +12,11 @@ import {
   getWalletExplorerUrl,
   getWalletLimitAtomic,
   parseDisplayAmountToAtomic,
-} from '@/lib/wallet'
+} from '@/lib/wallet/wallet'
 
 import type { ToolBuildContext } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import type { SolanaCluster } from '../solana'
-import { buildApprovalComparablePayload } from '../approval-match'
 import { isLikelyRetryableSwapError, prepareEvmSwapPlan } from '../evm-swap'
 import {
   callEthereumContract,
@@ -30,7 +29,7 @@ import {
   simulateEthereumTransaction,
 } from '../ethereum'
 import { getPluginManager } from '../plugins'
-import { loadAgents, loadApprovals, loadWalletTransactions, upsertWalletTransaction } from '../storage'
+import { loadAgents, loadWalletTransactions, upsertWalletTransaction } from '../storage'
 import {
   getSolanaClusterLabel,
   normalizeSolanaCluster,
@@ -40,7 +39,7 @@ import {
   simulateSolanaTransaction,
 } from '../solana'
 import { TOOL_CAPABILITY } from '../tool-planning'
-import { clearWalletPortfolioCache } from '../wallet-portfolio'
+import { clearWalletPortfolioCache } from '@/lib/server/wallet/wallet-portfolio'
 import {
   createAgentWallet,
   getAgentActiveWalletId,
@@ -48,7 +47,7 @@ import {
   getWalletPortfolioSnapshot,
   getWalletsByAgentId,
   isValidWalletAddress,
-} from '../wallet-service'
+} from '@/lib/server/wallet/wallet-service'
 import { errorMessage } from '@/lib/shared-utils'
 
 const WALLET_TOOL_ACTIONS = [
@@ -138,19 +137,6 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function buildWalletApprovalComparableData(
-  category: ApprovalCategory,
-  action: string,
-  chain: 'ethereum' | 'solana',
-  data: Record<string, unknown>,
-): Record<string, unknown> | null {
-  return buildApprovalComparablePayload(category, {
-    action,
-    chain,
-    ...data,
-  })
-}
-
 async function requestWalletApproval(params: {
   wallet: { requireApproval: boolean; chain: 'ethereum' | 'solana' }
   approved: unknown
@@ -163,122 +149,8 @@ async function requestWalletApproval(params: {
   data: Record<string, unknown>
   context: { agentId?: string | null; sessionId?: string | null }
 }): Promise<string | null> {
-  if (!params.wallet.requireApproval) return null
-  const requestedComparable = buildWalletApprovalComparableData(
-    params.category,
-    params.action,
-    params.wallet.chain,
-    params.data,
-  )
-  const requestFreshApproval = async (replacedApprovalId?: string): Promise<string | null> => {
-    const { requestApprovalMaybeAutoApprove } = await import('../approvals')
-    const approval = await requestApprovalMaybeAutoApprove({
-      category: params.category,
-      title: params.title,
-      description: replacedApprovalId
-        ? `${params.description} Replacing stale approval ${replacedApprovalId} because the exact wallet action changed.`
-        : params.description,
-      data: {
-        action: params.action,
-        chain: params.wallet.chain,
-        summary: params.summary,
-        ...params.data,
-      },
-      agentId: params.context.agentId,
-      sessionId: params.context.sessionId,
-    })
-    if (approval.status === 'approved') return null
-    return JSON.stringify({
-      type: 'plugin_wallet_action_request',
-      approvalId: approval.id,
-      action: params.action,
-      chain: params.wallet.chain,
-      network: trimString(params.data.network),
-      summary: params.summary,
-      message: params.description,
-      replacesApprovalId: replacedApprovalId || undefined,
-    })
-  }
-
-  const requestedApprovalId = trimString(params.approvalId)
-  if (requestedApprovalId) {
-    const approvals = loadApprovals() as Record<string, ApprovalRequest>
-    const approval = approvals[requestedApprovalId]
-    if (!approval) {
-      return JSON.stringify({ error: `Approval "${requestedApprovalId}" was not found.` })
-    }
-    if (approval.category !== params.category) {
-      return JSON.stringify({ error: `Approval "${requestedApprovalId}" is not valid for ${params.category}.` })
-    }
-    if (params.context.agentId && approval.agentId && approval.agentId !== params.context.agentId) {
-      return JSON.stringify({ error: `Approval "${requestedApprovalId}" belongs to a different agent.` })
-    }
-    if (params.context.sessionId && approval.sessionId && approval.sessionId !== params.context.sessionId) {
-      return JSON.stringify({ error: `Approval "${requestedApprovalId}" belongs to a different session.` })
-    }
-    let approvalMatchesRequestedAction = true
-    if (params.category === 'wallet_action') {
-      if (trimString(approval.data.action) !== params.action) {
-        approvalMatchesRequestedAction = false
-      }
-      if (trimString(approval.data.chain) !== params.wallet.chain) {
-        approvalMatchesRequestedAction = false
-      }
-      const approvedComparable = buildWalletApprovalComparableData(
-        params.category,
-        params.action,
-        params.wallet.chain,
-        approval.data,
-      )
-      if (JSON.stringify(approvedComparable) !== JSON.stringify(requestedComparable)) {
-        approvalMatchesRequestedAction = false
-      }
-    }
-    if (params.category === 'wallet_transfer') {
-      const approvedComparable = buildWalletApprovalComparableData(
-        params.category,
-        params.action,
-        params.wallet.chain,
-        approval.data,
-      )
-      if (JSON.stringify(approvedComparable) !== JSON.stringify(requestedComparable)) {
-        approvalMatchesRequestedAction = false
-      }
-    }
-    if (!approvalMatchesRequestedAction) {
-      if (params.approved === true) {
-        return JSON.stringify({
-          error: `Approval "${requestedApprovalId}" does not match the requested wallet action. Omit approvalId or use the new approval the tool returns for the changed exact action.`,
-        })
-      }
-      return requestFreshApproval(requestedApprovalId)
-    }
-    if (approval.status === 'approved') return null
-    if (approval.status === 'pending') {
-      return JSON.stringify({
-        type: params.category === 'wallet_transfer' ? 'plugin_wallet_transfer_request' : 'plugin_wallet_action_request',
-        approvalId: approval.id,
-        action: params.category === 'wallet_action' ? params.action : undefined,
-        chain: params.wallet.chain,
-        network: trimString(params.data.network),
-        summary: params.category === 'wallet_action' ? params.summary : undefined,
-        amount: params.category === 'wallet_transfer' ? params.data.amount : undefined,
-        amountDisplay: params.category === 'wallet_transfer' ? params.data.amountDisplay : undefined,
-        assetSymbol: params.category === 'wallet_transfer' ? params.data.assetSymbol : undefined,
-        toAddress: params.category === 'wallet_transfer' ? params.data.toAddress : undefined,
-        memo: params.category === 'wallet_transfer' ? params.data.memo : undefined,
-        message: params.description,
-      })
-    }
-    return JSON.stringify({ error: `Approval "${requestedApprovalId}" was rejected.` })
-  }
-
-  if (params.approved === true) {
-    return JSON.stringify({
-      error: `Manual wallet approval must be linked with an approvalId for ${params.action}. Do not set approved:true without a real approval.`,
-    })
-  }
-  return requestFreshApproval()
+  void params
+  return null
 }
 
 function buildEthereumTransaction(normalized: Record<string, unknown>): {
@@ -1168,7 +1040,11 @@ async function executeWalletAction(args: unknown, context: { agentId?: string | 
         return JSON.stringify({ error: `Unknown action: ${action}` })
     }
   } catch (err: unknown) {
-    return JSON.stringify({ error: errorMessage(err) })
+    const msg = errorMessage(err)
+    if (msg.includes('429') || msg.toLowerCase().includes('too many requests')) {
+      console.warn('[wallet] Solana RPC rate-limited. Consider using a dedicated RPC endpoint (SOLANA_RPC_URL env var).')
+    }
+    return JSON.stringify({ error: msg })
   }
 }
 
@@ -1188,7 +1064,7 @@ const WalletPlugin: Plugin = {
       const lines = [
         wallets.length === 1 ? '## Your Wallet' : '## Your Wallets',
         wallets.length === 1
-          ? `You own a ${onlyWallet?.chain || 'wallet'} wallet. Speak about it in the first person ("my wallet", "my balance"). You can inspect assets, sign messages, sign transactions, and submit generic onchain actions${onlyWallet?.requireApproval ? ', but the user may still need to approve risky actions' : ''}.`
+          ? `You own a ${onlyWallet?.chain || 'wallet'} wallet. Speak about it in the first person ("my wallet", "my balance"). You can inspect assets, sign messages, sign transactions, and submit generic onchain actions directly.`
           : `You own ${wallets.length} wallets across multiple chains. Speak about them in the first person ("my wallet", "my Ethereum wallet", "my Solana wallet"). If you need a specific wallet, use the \`chain\` parameter on \`wallet_tool\` actions.`,
       ]
 
@@ -1235,7 +1111,7 @@ const WalletPlugin: Plugin = {
       'Use the browser only for rendered UI or interactive page steps after the required wallet action is already understood.',
       'If multiple public APIs fail, switch to direct read-only contract calls with `wallet_tool` action `call_contract` instead of continuing to shop for venues.',
       'Treat token addresses, token mints, router addresses, spender addresses, and network identifiers returned by tools as authoritative unless newer tool evidence proves they changed.',
-      'A prose approval request does not count. When the next step is a signature, approval, or transaction, call the real `wallet_tool` action so the runtime can create the exact approval boundary.',
+      'When the next step is a signature or transaction, call the real `wallet_tool` action instead of describing the action only in prose.',
       'Pass `chain: "ethereum"` or `chain: "solana"` explicitly whenever the task depends on a specific wallet.',
       'For EVM actions, also pass `network: "ethereum"`, `"arbitrum"`, or `"base"` when the venue or asset lives on a specific network.',
       'Treat `wallet_tool` as a server-side wallet capability. It does not inject a browser wallet extension or click wallet-connect/signature prompts inside third-party UIs.',

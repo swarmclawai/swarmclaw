@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { probeOpenClawHealth } from '@/lib/server/openclaw-health'
+import { probeOpenClawHealth } from '@/lib/server/openclaw/health'
 
 function parseIntBounded(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === 'number'

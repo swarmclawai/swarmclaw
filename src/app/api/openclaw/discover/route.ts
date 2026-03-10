@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import os from 'node:os'
-import { probeOpenClawHealth } from '@/lib/server/openclaw-health'
+import { probeOpenClawHealth } from '@/lib/server/openclaw/health'
 export const dynamic = 'force-dynamic'
 
 const DEFAULT_PORTS = [18789, 18790]

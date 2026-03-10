@@ -2,14 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { selectActiveSessionId } from '@/stores/slices/session-slice'
 import { ChatCard } from './chat-card'
-import { getSessionLastAssistantAt, getSessionLastMessage, getSessionMessageCount } from '@/lib/session-summary'
-import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
+import { getSessionLastAssistantAt, getSessionLastMessage, getSessionMessageCount } from '@/lib/chat/session-summary'
+import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/observability/local-observability'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/shared/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Dropdown, DropdownItem } from '@/components/shared/dropdown'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { SearchInput } from '@/components/ui/search-input'
 
 interface Props {
   inSidebar?: boolean
@@ -22,8 +24,8 @@ type SortMode = 'lastActive' | 'name' | 'messages'
 export function ChatList({ inSidebar, onSelect }: Props) {
   const sessions = useAppStore((s) => s.sessions)
   const currentUser = useAppStore((s) => s.currentUser)
-  const currentSessionId = useAppStore((s) => s.currentSessionId)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
+  const currentSessionId = useAppStore(selectActiveSessionId)
+  const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
   const loadConnectors = useAppStore((s) => s.loadConnectors)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const clearSessions = useAppStore((s) => s.clearSessions)
@@ -103,7 +105,8 @@ export function ChatList({ inSidebar, onSelect }: Props) {
   }, [agents, allUserSessions, connectors, lastReadTimestamps, search, sortMode, typeFilter])
 
   const handleSelect = async (id: string) => {
-    setCurrentSession(id)
+    const agentId = sessions[id]?.agentId
+    if (agentId) void setCurrentAgent(agentId)
     markChatRead(id)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('swarmclaw:scroll-bottom'))
@@ -198,16 +201,15 @@ export function ChatList({ inSidebar, onSelect }: Props) {
 
       {/* Search — always visible */}
       <div className="px-4 py-2 shrink-0 flex gap-2">
-        <input
-          type="text"
+        <SearchInput
+          size="sm"
+          className="flex-1"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onClear={() => setSearch('')}
           placeholder="Search..."
           aria-label="Search chats"
           data-testid="chat-search"
-          className="flex-1 px-4 py-2.5 rounded-[12px] border border-white/[0.04] bg-surface text-text
-            text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
-          style={{ fontFamily: 'inherit' }}
         />
         {/* Sort dropdown */}
         <select

@@ -7,12 +7,12 @@ import { genId } from '@/lib/id'
 import type { ApprovalRequest, MessageToolEvent, Session } from '@/types'
 import { dedup } from '@/lib/shared-utils'
 import { submitDecision } from '../approvals'
-import { executeSessionChatTurn, type ExecuteChatTurnResult } from '../chat-execution'
+import { executeSessionChatTurn, type ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-execution'
 import { WORKSPACE_DIR } from '../data-dir'
 import { getPluginManager } from '../plugins'
-import { sendMailboxEnvelope, listMailbox } from '../session-mailbox'
+import { sendMailboxEnvelope, listMailbox } from '@/lib/server/chatrooms/session-mailbox'
 import { canonicalizePluginId, expandPluginIds } from '../tool-aliases'
-import { processDueWatchJobs } from '../watch-jobs'
+import { processDueWatchJobs } from '@/lib/server/runtime/watch-jobs'
 import {
   deleteApproval,
   deleteBrowserSession,
@@ -799,22 +799,8 @@ function writeScenarioEvidenceFiles(ctx: ScenarioContext): AgentRegressionScenar
 }
 
 export function resolveRegressionApprovalSettings(mode: RegressionApprovalMode): Record<string, unknown> {
-  if (mode === 'off') {
-    return {
-      approvalsEnabled: false,
-      approvalAutoApproveCategories: [],
-    }
-  }
-  if (mode === 'auto') {
-    return {
-      approvalsEnabled: true,
-      approvalAutoApproveCategories: ['tool_access'],
-    }
-  }
-  return {
-    approvalsEnabled: true,
-    approvalAutoApproveCategories: [],
-  }
+  void mode
+  return {}
 }
 
 export function scoreAssertions(assertions: RegressionAssertion[]): { score: number; maxScore: number; status: 'passed' | 'failed' } {

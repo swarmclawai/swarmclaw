@@ -4,6 +4,7 @@ import { memo, useMemo, useState } from 'react'
 import type { ToolEvent } from '@/stores/use-chat-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNavigate } from '@/lib/app/navigation'
 
 const TOOL_COLORS: Record<string, string> = {
   execute_command: '#F59E0B',
@@ -39,6 +40,7 @@ const TOOL_COLORS: Record<string, string> = {
   manage_sessions: '#EC4899',
   memory: '#A855F7',
   browser: '#3B82F6',
+  google_workspace: '#2563EB',
 }
 
 /** Sub-labels for browser actions shown after the main "Browser" label */
@@ -93,6 +95,7 @@ export const TOOL_LABELS: Record<string, string> = {
   manage_sessions: 'Chats',
   memory: 'Memory',
   browser: 'Browser',
+  google_workspace: 'Google Workspace',
 }
 
 export const TOOL_DESCRIPTIONS: Record<string, string> = {
@@ -132,6 +135,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   manage_sessions: 'Create and manage agent chats',
   memory: 'Store and recall information across conversations',
   browser: 'Browse the web, take screenshots, and interact with pages',
+  google_workspace: 'Run Google Workspace CLI commands for Drive, Docs, Sheets, Gmail, Calendar, Chat, and more',
 }
 
 /**
@@ -284,6 +288,23 @@ export function getToolLabel(name: string, input: string): string {
   return TOOL_LABELS[name] || name.replace(/_/g, ' ')
 }
 
+/**
+ * Check whether a tool event's media should be shown prominently.
+ * For `browser` tool events, only the explicit `screenshot` and `pdf` actions
+ * are user/agent-requested captures — all other actions (navigate, click, type,
+ * etc.) produce screenshots as incidental side effects.
+ */
+export function isExplicitScreenshot(toolName: string, input: string): boolean {
+  if (toolName !== 'browser') return true // non-browser tools: always show media
+  try {
+    let parsed = JSON.parse(input)
+    if (parsed?.input && Object.keys(parsed).length === 1) {
+      parsed = typeof parsed.input === 'string' ? JSON.parse(parsed.input) : parsed.input
+    }
+    return parsed?.action === 'screenshot' || parsed?.action === 'pdf'
+  } catch { return true }
+}
+
 /** Extract embedded images, videos, PDFs, and file links from tool output */
 export function extractMedia(output: string): { images: string[]; videos: string[]; pdfs: { name: string; url: string }[]; files: { name: string; url: string }[]; cleanText: string } {
   const images: string[] = []
@@ -387,6 +408,7 @@ function TimeoutQuickFix({ event }: { event: ToolEvent }) {
 }
 
 export const ToolCallBubble = memo(function ToolCallBubble({ event }: { event: ToolEvent }) {
+  const navigateTo = useNavigate()
   const [imgExpanded, setImgExpanded] = useState(false)
   const isError = event.status === 'error'
   const color = isError ? '#F43F5E' : (TOOL_COLORS[event.name] || '#6366F1')
@@ -408,6 +430,8 @@ export const ToolCallBubble = memo(function ToolCallBubble({ event }: { event: T
     return formatToolOutput(event.name, media.cleanText)
   }, [event.name, media.cleanText])
 
+  // Only show images prominently for explicit screenshot/pdf actions — incidental browser screenshots stay hidden
+  const showProminentMedia = useMemo(() => isExplicitScreenshot(event.name, event.input), [event.name, event.input])
   const hasMedia = media.images.length > 0 || media.videos.length > 0 || media.pdfs.length > 0 || media.files.length > 0
 
   // Parse delegation info for clickable agent link
@@ -422,9 +446,7 @@ export const ToolCallBubble = memo(function ToolCallBubble({ event }: { event: T
   const handleAgentClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (delegationInfo?.agentId) {
-      const store = useAppStore.getState()
-      store.setActiveView('agents')
-      store.setCurrentAgent(delegationInfo.agentId)
+      navigateTo('agents', delegationInfo.agentId)
     }
   }
 
@@ -523,8 +545,8 @@ export const ToolCallBubble = memo(function ToolCallBubble({ event }: { event: T
         </div>
       </details>
 
-      {/* Render images below the tool call bubble (always visible when present) */}
-      {media.images.length > 0 && (
+      {/* Render images below the tool call bubble — only for explicit screenshot/pdf actions */}
+      {showProminentMedia && media.images.length > 0 && (
         <div className="mt-2 flex flex-col gap-2">
           {media.images.map((src, i) => (
             <div key={i} className="relative group/img">

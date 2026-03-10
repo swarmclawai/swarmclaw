@@ -11,6 +11,7 @@ import { ReactionPicker } from './reaction-picker'
 import { ReplyQuote } from '@/components/shared/reply-quote'
 import { AttachmentChip, parseAttachmentUrl } from '@/components/shared/attachment-chip'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNavigate } from '@/lib/app/navigation'
 import { AgentHoverCard } from './agent-hover-card'
 import { ChatroomToolRequestBanner } from './chatroom-tool-request-banner'
 import { isStructuredMarkdown } from '@/components/chat/markdown-utils'
@@ -50,11 +51,6 @@ function formatRelativeTime(ts: number, now: number | null): string {
   const diffHr = Math.floor(diffMin / 60)
   if (diffHr < 24) return `${diffHr}h ago`
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-function navigateToAgent(agentId: string) {
-  useAppStore.getState().setActiveView('agents')
-  useAppStore.getState().setCurrentAgent(agentId)
 }
 
 function getMemberRoleFromChatroom(chatroom: Chatroom | undefined, agentId: string): string {
@@ -137,6 +133,8 @@ function renderChatroomAttachments(message: ChatroomMessage) {
 }
 
 export function ChatroomMessageBubble({ message, agents, onToggleReaction, onReply, onTogglePin, onTransfer, onDeleteMessage, onMuteAgent, onUnmuteAgent, onSetRole, chatroom, pinnedMessageIds, streamingAgentIds, messages, grouped: isGrouped, momentOverlay }: Props) {
+  const navigateTo = useNavigate()
+  const navigateToAgent = (agentId: string) => navigateTo('agents', agentId)
   const now = useNow({ enabled: false })
   const [showPicker, setShowPicker] = useState(false)
   const [showTransferPicker, setShowTransferPicker] = useState(false)

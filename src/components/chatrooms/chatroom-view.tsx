@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import type { StreamingAgent } from '@/stores/use-chatroom-store'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNavigate } from '@/lib/app/navigation'
 import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
 import { ChatroomMessageBubble } from './chatroom-message'
@@ -14,11 +15,6 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { HeartbeatMoment, ActivityMoment, isNotableTool } from '@/components/chat/activity-moment'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import type { Chatroom, ChatroomMessage, ChatroomMember, Agent } from '@/types'
-
-function navigateToAgent(agentId: string) {
-  useAppStore.getState().setActiveView('agents')
-  useAppStore.getState().setCurrentAgent(agentId)
-}
 
 function getRoleBadge(role: string) {
   if (role === 'admin') return { label: 'Admin', className: 'bg-purple-500/20 text-purple-400 border-purple-500/30' }
@@ -83,6 +79,8 @@ function dayLabel(ts: number, now: number | null): string {
 }
 
 export function ChatroomView() {
+  const navigateTo = useNavigate()
+  const navigateToAgent = (agentId: string) => navigateTo('agents', agentId)
   const now = useNow()
   const currentChatroomId = useChatroomStore((s) => s.currentChatroomId)
   const chatrooms = useChatroomStore((s) => s.chatrooms)
@@ -469,6 +467,7 @@ export function ChatroomView() {
           mutedCount={mutedCount}
           adminCount={adminCount}
           onFocusMessage={focusMessage}
+          onNavigateToAgent={navigateToAgent}
         />
       </aside>
 
@@ -484,6 +483,7 @@ export function ChatroomView() {
             setDetailsOpen(false)
             setTimeout(() => focusMessage(messageId), 50)
           }}
+          onNavigateToAgent={navigateToAgent}
           compact
         />
       </BottomSheet>
@@ -499,6 +499,7 @@ function RoomDetailsPanel({
   mutedCount,
   adminCount,
   onFocusMessage,
+  onNavigateToAgent,
   compact = false,
 }: {
   chatroom: Chatroom
@@ -508,6 +509,7 @@ function RoomDetailsPanel({
   mutedCount: number
   adminCount: number
   onFocusMessage: (messageId: string) => void
+  onNavigateToAgent: (agentId: string) => void
   compact?: boolean
 }) {
   return (
@@ -547,7 +549,7 @@ function RoomDetailsPanel({
               return (
                 <button
                   key={agent.id}
-                  onClick={() => navigateToAgent(agent.id)}
+                  onClick={() => onNavigateToAgent(agent.id)}
                   className="w-full rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left hover:bg-white/[0.05] transition-all cursor-pointer"
                   style={{ fontFamily: 'inherit' }}
                 >

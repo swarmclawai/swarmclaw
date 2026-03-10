@@ -828,7 +828,7 @@ const openclaw: PlatformConnector = {
       if (normalized) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { setSharedDeviceToken } = require('../openclaw-sync')
+          const { setSharedDeviceToken } = require('../openclaw/sync')
           setSharedDeviceToken(normalized)
         } catch { /* openclaw-sync not available */ }
       }

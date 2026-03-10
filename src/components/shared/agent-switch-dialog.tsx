@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNavigate } from '@/lib/app/navigation'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { InfoChip } from '@/components/ui/info-chip'
 import { toast } from 'sonner'
 
 export function AgentSwitchDialog() {
@@ -15,7 +17,7 @@ export function AgentSwitchDialog() {
 
   const agents = useAppStore((s) => s.agents)
   const currentAgentId = useAppStore((s) => s.currentAgentId)
-  const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
+  const navigateTo = useNavigate()
 
   // Global Cmd+Shift+A / Ctrl+Shift+A listener
   useEffect(() => {
@@ -54,9 +56,9 @@ export function AgentSwitchDialog() {
       return
     }
     setOpen(false)
-    void setCurrentAgent(agentId)
-     
-  }, [agents, setCurrentAgent])
+    navigateTo('agents', agentId)
+
+  }, [agents, navigateTo])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -126,14 +128,14 @@ export function AgentSwitchDialog() {
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-500 text-text truncate">{agent.name}</span>
                   {agent.disabled === true && (
-                    <span className="px-1.5 py-0.5 rounded-[4px] bg-amber-400/[0.08] text-[10px] font-500 text-amber-300 shrink-0">
+                    <InfoChip size="sm" tone="warning" className="font-500">
                       disabled
-                    </span>
+                    </InfoChip>
                   )}
                   {agent.id === currentAgentId && (
-                    <span className="px-1.5 py-0.5 rounded-[4px] bg-accent-bright/15 text-[10px] font-500 text-accent-bright shrink-0">
+                    <InfoChip size="sm" tone="accent" className="font-500">
                       current
-                    </span>
+                    </InfoChip>
                   )}
                 </div>
                 {agent.description && (

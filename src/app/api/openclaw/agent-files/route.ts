@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { ensureGatewayConnected } from '@/lib/server/openclaw-gateway'
-import { resolveOpenClawGatewayAgentId } from '@/lib/server/openclaw-agent-resolver'
+import { ensureGatewayConnected } from '@/lib/server/openclaw/gateway'
+import { resolveOpenClawGatewayAgentId } from '@/lib/server/openclaw/agent-resolver'
 import { errorMessage } from '@/lib/shared-utils'
 
 const AGENT_FILES = ['SOUL.md', 'IDENTITY.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'MEMORY.md', 'AGENTS.md'] as const

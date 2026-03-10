@@ -6,6 +6,30 @@ import { safePath, truncate, MAX_OUTPUT } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import type { SearchResult } from './search-providers'
 
+function readBrowserTimeoutMs(envKey: string, fallbackMs: number, bounds: { min: number; max: number }): number {
+  const raw = Number.parseInt(process.env[envKey] || '', 10)
+  if (!Number.isFinite(raw)) return fallbackMs
+  return Math.max(bounds.min, Math.min(bounds.max, raw))
+}
+
+export const DEFAULT_BROWSER_ACTION_TIMEOUT_MS = readBrowserTimeoutMs(
+  'SWARMCLAW_BROWSER_ACTION_TIMEOUT_MS',
+  60_000,
+  { min: 15_000, max: 5 * 60_000 },
+)
+
+export const DEFAULT_BROWSER_NAVIGATION_TIMEOUT_MS = readBrowserTimeoutMs(
+  'SWARMCLAW_BROWSER_NAVIGATION_TIMEOUT_MS',
+  90_000,
+  { min: 30_000, max: 10 * 60_000 },
+)
+
+export const DEFAULT_BROWSER_MCP_CALL_TIMEOUT_MS = readBrowserTimeoutMs(
+  'SWARMCLAW_BROWSER_MCP_CALL_TIMEOUT_MS',
+  Math.max(DEFAULT_BROWSER_NAVIGATION_TIMEOUT_MS + 15_000, DEFAULT_BROWSER_ACTION_TIMEOUT_MS + 15_000),
+  { min: 30_000, max: 12 * 60_000 },
+)
+
 function cleanSearchField(value: string | undefined): string {
   return (value || '').replace(/\s+/g, ' ').trim()
 }
@@ -63,8 +87,8 @@ export function buildBrowserConnectionOptions(profileDir: string) {
     capabilities: ['core', 'pdf', 'vision', 'network', 'storage'],
     sharedBrowserContext: false,
     timeouts: {
-      action: 15_000,
-      navigation: 60_000,
+      action: DEFAULT_BROWSER_ACTION_TIMEOUT_MS,
+      navigation: DEFAULT_BROWSER_NAVIGATION_TIMEOUT_MS,
     },
   }
 }
@@ -87,8 +111,8 @@ export function buildBrowserStdioServerParams(profileDir: string) {
       '--caps', 'vision,pdf',
       '--image-responses', 'allow',
       '--output-mode', 'file',
-      '--timeout-action', '15000',
-      '--timeout-navigation', '60000',
+      '--timeout-action', String(DEFAULT_BROWSER_ACTION_TIMEOUT_MS),
+      '--timeout-navigation', String(DEFAULT_BROWSER_NAVIGATION_TIMEOUT_MS),
     ],
     env: {
       ...env,
@@ -97,8 +121,8 @@ export function buildBrowserStdioServerParams(profileDir: string) {
       PLAYWRIGHT_MCP_IMAGE_RESPONSES: 'allow',
       PLAYWRIGHT_MCP_OUTPUT_DIR: outputDir,
       PLAYWRIGHT_MCP_OUTPUT_MODE: 'file',
-      PLAYWRIGHT_MCP_TIMEOUT_ACTION: '15000',
-      PLAYWRIGHT_MCP_TIMEOUT_NAVIGATION: '60000',
+      PLAYWRIGHT_MCP_TIMEOUT_ACTION: String(DEFAULT_BROWSER_ACTION_TIMEOUT_MS),
+      PLAYWRIGHT_MCP_TIMEOUT_NAVIGATION: String(DEFAULT_BROWSER_NAVIGATION_TIMEOUT_MS),
     },
     stderr: 'inherit' as const,
   }

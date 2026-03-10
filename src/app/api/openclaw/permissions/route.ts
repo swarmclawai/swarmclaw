@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { PermissionPreset } from '@/types'
-import { getExecConfig } from '@/lib/server/openclaw-exec-config'
-import { resolvePresetFromConfig, applyPreset } from '@/lib/server/openclaw-permission-presets'
+import { getExecConfig } from '@/lib/server/openclaw/exec-config'
+import { resolvePresetFromConfig, applyPreset } from '@/lib/server/openclaw/permission-presets'
 import { errorMessage } from '@/lib/shared-utils'
 
 /** GET ?agentId=X — resolve current permission preset */

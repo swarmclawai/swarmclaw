@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { loadSkills, saveSkills } from '@/lib/server/storage'
-import { fetchSkillContent } from '@/lib/server/clawhub-client'
-import { normalizeSkillPayload } from '@/lib/server/skills-normalize'
+import { fetchSkillContent } from '@/lib/server/skills/clawhub-client'
+import { normalizeSkillPayload } from '@/lib/server/skills/skills-normalize'
 
 export async function POST(req: Request) {
   const body = await req.json()

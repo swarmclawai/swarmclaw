@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { searchClawHub } from '@/lib/server/clawhub-client'
+import { searchClawHub } from '@/lib/server/skills/clawhub-client'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)

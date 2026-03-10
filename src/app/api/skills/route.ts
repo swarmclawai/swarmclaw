@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
 import { loadSkills, saveSkills } from '@/lib/server/storage'
-import { normalizeSkillPayload } from '@/lib/server/skills-normalize'
+import { normalizeSkillPayload } from '@/lib/server/skills/skills-normalize'
 export const dynamic = 'force-dynamic'
 
 

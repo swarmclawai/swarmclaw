@@ -36,10 +36,32 @@ function getLatestStableTag() {
   return tags.find((t) => RELEASE_TAG_RE.test(t)) || null
 }
 
+function rebuildStandaloneServer(
+  execImpl = execFileSync,
+  logger = { log, logError },
+) {
+  const serverCmdPath = path.join(PKG_ROOT, 'bin', 'server-cmd.js')
+  logger.log('Rebuilding the standalone server bundle...')
+  try {
+    execImpl(process.execPath, [serverCmdPath, '--build'], {
+      cwd: PKG_ROOT,
+      stdio: 'inherit',
+      timeout: 10 * 60_000,
+    })
+    logger.log('Standalone server bundle rebuilt.')
+    return 0
+  } catch (err) {
+    logger.logError(`Standalone rebuild failed: ${err.message}`)
+    logger.logError('Retry manually with: swarmclaw server --build')
+    return 1
+  }
+}
+
 function runRegistrySelfUpdate(
   packageManager = PACKAGE_MANAGER,
   execImpl = execFileSync,
   logger = { log, logError },
+  rebuildImpl = execFileSync,
 ) {
   const update = getGlobalUpdateSpec(packageManager, PACKAGE_NAME)
   logger.log(`No git checkout detected. Updating the global ${PACKAGE_NAME} install via ${packageManager}...`)
@@ -50,13 +72,17 @@ function runRegistrySelfUpdate(
       timeout: 120_000,
     })
     logger.log(`Global update complete via ${packageManager}.`)
-    logger.log('Restart the server to apply changes: swarmclaw server stop && swarmclaw server start')
-    return 0
   } catch (err) {
     logger.logError(`Registry update failed: ${err.message}`)
     logger.logError(`Retry manually with: ${update.display}`)
     return 1
   }
+
+  const rebuildExitCode = rebuildStandaloneServer(rebuildImpl, logger)
+  if (rebuildExitCode !== 0) return rebuildExitCode
+
+  logger.log('Restart the server to apply changes: swarmclaw server stop && swarmclaw server start')
+  return 0
 }
 
 function main() {

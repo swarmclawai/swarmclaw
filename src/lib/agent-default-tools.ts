@@ -1,20 +1,6 @@
 import { ALL_TOOLS } from '@/lib/tool-definitions'
 
-const DEFAULT_AGENT_PLUGIN_IDS = [
-  'shell',
-  'files',
-  'edit_file',
-  'web',
-  'browser',
-  'memory',
-  'delegate',
-  'sandbox',
-  'create_document',
-  'create_spreadsheet',
-  'http_request',
-  'git',
-  'monitor',
-] as const
+const DEFAULT_AGENT_PLUGIN_IDS = Array.from(new Set(ALL_TOOLS.map((tool) => tool.id)))
 
 const KNOWN_TOOL_IDS = new Set(ALL_TOOLS.map((tool) => tool.id))
 

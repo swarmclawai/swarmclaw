@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import type { SessionRunRecord, SessionRunStatus } from '@/types'
+import { formatElapsed } from '@/lib/format-display'
 
 const STATUS_COLORS: Record<SessionRunStatus, { bg: string; text: string }> = {
   queued: { bg: 'bg-yellow-500/10', text: 'text-yellow-400' },
@@ -26,14 +27,7 @@ function relativeTime(ts: number, now: number | null): string {
   return `${Math.floor(diff / 86_400_000)}d ago`
 }
 
-function formatDuration(start: number | undefined, end: number | undefined, now: number | null): string {
-  if (!start) return '-'
-  if (!end && !now) return '-'
-  const elapsed = (end || now || start) - start
-  if (elapsed < 1000) return `${elapsed}ms`
-  if (elapsed < 60_000) return `${(elapsed / 1000).toFixed(1)}s`
-  return `${Math.floor(elapsed / 60_000)}m ${Math.floor((elapsed % 60_000) / 1000)}s`
-}
+
 
 export function RunList() {
   const now = useNow({ intervalMs: 1000 })
@@ -140,7 +134,7 @@ export function RunList() {
                 <div className="text-[12px] text-text-2 truncate">{run.messagePreview || run.id}</div>
                 {run.startedAt && (
                   <div className="text-[10px] text-text-3/50 mt-1">
-                    Duration: {formatDuration(run.startedAt, run.endedAt, now)}
+                    Duration: {formatElapsed(run.startedAt, run.endedAt, now)}
                   </div>
                 )}
               </button>
@@ -188,7 +182,7 @@ export function RunList() {
                 )}
                 <div className="p-2.5 rounded-[10px] bg-white/[0.02] border border-white/[0.04]">
                   <div className="text-[10px] text-text-3/60 mb-0.5">Duration</div>
-                  <div className="text-[12px] text-text font-mono">{formatDuration(selected.startedAt, selected.endedAt, now)}</div>
+                  <div className="text-[12px] text-text font-mono">{formatElapsed(selected.startedAt, selected.endedAt, now)}</div>
                 </div>
               </div>
             </div>

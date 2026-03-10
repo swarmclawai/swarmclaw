@@ -1,12 +1,12 @@
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { z } from 'zod'
-import { enqueueSystemEvent } from '../system-events'
-import { requestHeartbeatNow } from '../heartbeat-wake'
+import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
+import { requestHeartbeatNow } from '@/lib/server/runtime/heartbeat-wake'
 import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { createWatchJob } from '../watch-jobs'
+import { createWatchJob } from '@/lib/server/runtime/watch-jobs'
 
 /**
  * Core Schedule Execution Logic

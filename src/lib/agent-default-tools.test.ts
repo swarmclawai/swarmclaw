@@ -5,13 +5,13 @@ import { ALL_TOOLS } from '@/lib/tool-definitions'
 import { getDefaultAgentPluginIds, resolveAgentPluginSelection } from './agent-default-tools'
 
 describe('agent default tools', () => {
-  it('only includes known tool ids', () => {
-    const knownToolIds = new Set(ALL_TOOLS.map((tool) => tool.id))
+  it('enables every known tool by default', () => {
+    const allToolIds = Array.from(new Set(ALL_TOOLS.map((tool) => tool.id)))
     const defaults = getDefaultAgentPluginIds()
 
     assert.ok(defaults.length > 0)
     assert.deepEqual(defaults, Array.from(new Set(defaults)))
-    assert.equal(defaults.every((toolId) => knownToolIds.has(toolId)), true)
+    assert.deepEqual(defaults, allToolIds)
   })
 
   it('uses the shared defaults when a request never chose tools', () => {

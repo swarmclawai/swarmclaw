@@ -9,7 +9,7 @@ import {
   traverseLinkedMemoryGraph,
   type MemoryLookupLimits,
   type LinkedMemoryNode,
-} from '../src/lib/server/memory-graph'
+} from '../src/lib/server/memory/memory-graph'
 
 // Use a test-specific database path
 const TEST_DB_DIR = path.join(process.cwd(), 'data', 'test-memory')

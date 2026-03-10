@@ -3,7 +3,7 @@ import { genId } from '@/lib/id'
 import { loadChatrooms, saveChatrooms, loadAgents } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { notFound } from '@/lib/server/collection-helpers'
-import { streamAgentChat } from '@/lib/server/stream-agent-chat'
+import { streamAgentChat } from '@/lib/server/chat-execution/stream-agent-chat'
 import { getProvider } from '@/lib/providers'
 import {
   resolveApiKey,
@@ -17,13 +17,13 @@ import {
   buildAgentSystemPromptForChatroom,
   buildHistoryForAgent,
   isMuted,
-} from '@/lib/server/chatroom-helpers'
-import { filterHealthyChatroomAgents } from '@/lib/server/chatroom-health'
-import { evaluateRoutingRules } from '@/lib/server/chatroom-routing'
+} from '@/lib/server/chatrooms/chatroom-helpers'
+import { filterHealthyChatroomAgents } from '@/lib/server/chatrooms/chatroom-health'
+import { evaluateRoutingRules } from '@/lib/server/chatrooms/chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '@/lib/server/provider-health'
-import { applyAgentReactionsFromText } from '@/lib/server/chatroom-orchestration'
-import { resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
-import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/assistant-control'
+import { applyAgentReactionsFromText } from '@/lib/server/chatrooms/chatroom-orchestration'
+import { resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
+import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/agents/assistant-control'
 import type { Chatroom, ChatroomMessage, Agent } from '@/types'
 import { errorMessage } from '@/lib/shared-utils'
 

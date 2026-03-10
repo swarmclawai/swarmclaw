@@ -10,8 +10,8 @@ import {
   fetchMailboxMessages,
   getMailboxConfig,
   replyMailboxMessage,
-} from '../mailbox-utils'
-import { createWatchJob } from '../watch-jobs'
+} from '@/lib/server/chatrooms/mailbox-utils'
+import { createWatchJob } from '@/lib/server/runtime/watch-jobs'
 import { errorMessage } from '@/lib/shared-utils'
 
 function parseMessageUid(value: unknown): number {

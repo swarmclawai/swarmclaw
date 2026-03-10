@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { createProviderConfig, updateProviderConfig, deleteProviderConfig } from '@/lib/provider-config'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { fetchProviderModelDiscovery } from '@/lib/provider-model-discovery-client'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'

@@ -10,7 +10,7 @@ import {
   getDelegationJob,
   listDelegationJobs,
   recoverStaleDelegationJobs,
-} from '../delegation-jobs'
+} from '@/lib/server/agents/delegation-jobs'
 import {
   spawnSubagent,
   getHandle,
@@ -19,7 +19,7 @@ import {
   getChildren,
   buildLineageTree,
   cancelSubagentBySession,
-} from '../subagent-runtime'
+} from '@/lib/server/agents/subagent-runtime'
 import {
   spawnSwarm,
   getSwarm,
@@ -27,7 +27,46 @@ import {
   listSwarms,
   aggregateResults,
   waitForAll,
-} from '../subagent-swarm'
+} from '@/lib/server/agents/subagent-swarm'
+
+const SUBAGENT_ACTIONS = [
+  'start',
+  'status',
+  'list',
+  'wait',
+  'wait_all',
+  'cancel',
+  'lineage',
+  'batch',
+  'aggregate',
+  'swarm',
+  'swarm_status',
+  'swarm_list',
+  'swarm_cancel',
+] as const
+
+const subagentTaskSchema = z.object({
+  agentId: z.string(),
+  message: z.string(),
+  cwd: z.string().optional(),
+  shareBrowserProfile: z.boolean().optional(),
+}).passthrough()
+
+const subagentToolSchema = z.object({
+  action: z.enum(SUBAGENT_ACTIONS).optional(),
+  agentId: z.string().optional(),
+  message: z.string().optional(),
+  cwd: z.string().optional(),
+  shareBrowserProfile: z.boolean().optional(),
+  jobId: z.string().optional(),
+  swarmId: z.string().optional(),
+  jobIds: z.union([z.array(z.string()), z.string()]).optional(),
+  tasks: z.union([z.array(subagentTaskSchema), z.string()]).optional(),
+  executionMode: z.enum(['auto', 'parallel', 'serial']).optional(),
+  waitForCompletion: z.boolean().optional(),
+  background: z.boolean().optional(),
+  timeoutSec: z.union([z.number(), z.string()]).optional(),
+}).passthrough()
 
 export function resolveSubagentBrowserProfileId(
   parentSession: Record<string, unknown> | null | undefined,
@@ -50,6 +89,57 @@ export function resolveSubagentBrowserProfileId(
 interface ActionContext {
   sessionId?: string
   cwd: string
+}
+
+function parseBooleanLike(value: unknown): boolean | unknown {
+  if (typeof value !== 'string') return value
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'true') return true
+  if (normalized === 'false') return false
+  return value
+}
+
+function parseNumberLike(value: unknown): number | unknown {
+  if (typeof value !== 'string') return value
+  const normalized = value.trim()
+  if (!normalized) return value
+  if (!/^-?\d+(?:\.\d+)?$/.test(normalized)) return value
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : value
+}
+
+function parseJsonLike(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  const trimmed = value.trim()
+  if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) return value
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return value
+  }
+}
+
+export function coerceSubagentActionArgs(rawArgs: Record<string, unknown>): Record<string, unknown> {
+  const normalized = normalizeToolInputArgs(rawArgs)
+  const coerced: Record<string, unknown> = { ...normalized }
+
+  for (const key of ['waitForCompletion', 'background', 'shareBrowserProfile'] as const) {
+    coerced[key] = parseBooleanLike(coerced[key])
+  }
+  coerced.timeoutSec = parseNumberLike(coerced.timeoutSec)
+
+  const parsedTasks = parseJsonLike(coerced.tasks)
+  if (Array.isArray(parsedTasks)) {
+    coerced.tasks = parsedTasks
+  } else {
+    const parsedTasksJson = parseJsonLike(coerced.tasksJson)
+    if (Array.isArray(parsedTasksJson)) coerced.tasks = parsedTasksJson
+  }
+
+  const parsedJobIds = parseJsonLike(coerced.jobIds)
+  if (Array.isArray(parsedJobIds)) coerced.jobIds = parsedJobIds
+
+  return coerced
 }
 
 function requireString(args: Record<string, unknown>, key: string): string {
@@ -327,7 +417,7 @@ const ACTIONS: Record<string, ActionHandler> = {
  * Uses dispatch map instead of if-else chain for maintainability.
  */
 async function executeSubagentAction(args: unknown, context: ActionContext) {
-  const normalized = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
+  const normalized = coerceSubagentActionArgs((args ?? {}) as Record<string, unknown>)
   const action = String(normalized.action || 'start').trim().toLowerCase()
 
   recoverStaleDelegationJobs()
@@ -352,11 +442,13 @@ const SubagentPlugin: Plugin = {
     getCapabilityDescription: () =>
       'Delegate tasks to other agents (spawn_subagent). Single task: action "start". '
       + 'Multiple independent tasks: action "batch" with a tasks array. '
-      + 'Event-driven parallel with status tracking: action "swarm" with a tasks array.',
+      + 'Event-driven parallel with status tracking: action "swarm" with a tasks array. '
+      + 'Background swarms return a swarmId you can pass to swarm_status, swarm_list, and swarm_cancel.',
     getOperatingGuidance: () => [
       'SUBAGENT DISPATCH RULES:',
       '- Single task → action "start" with agentId + message.',
       '- 2+ independent tasks → action "batch" with tasks array [{agentId, message}, ...]. Use `executionMode:"serial"` when local models are rate-limited.',
+      '- Background coordination example → `{"action":"swarm","tasks":[...],"background":true}` and then read the returned `swarmId` before calling `swarm_status` or `swarm_cancel`.',
       '- If your final answer depends on all delegated results, set `waitForCompletion:true` and do not summarize early.',
       '- Prefer one coordinated `batch`/`swarm` call over mixing `start`, `delegate`, and follow-up retries for the same set of sibling tasks.',
       '- DO NOT call "start" in a loop when tasks are independent — use "batch" or "swarm" instead.',
@@ -372,7 +464,8 @@ const SubagentPlugin: Plugin = {
             + 'Management: status, list, wait, wait_all, cancel, lineage, aggregate, swarm_status, swarm_list, swarm_cancel. '
             + 'For multiple independent tasks, prefer one `batch` or `swarm` call with tasks:[{agentId,message},...] over calling `start` repeatedly. '
             + 'When the final answer depends on every delegated result, keep waitForCompletion enabled so you can synthesize after all children finish. '
-            + 'Use executionMode:"serial" to avoid rate limits on local models.',
+            + 'Use executionMode:"serial" to avoid rate limits on local models. '
+            + 'Example background swarm: {"action":"swarm","tasks":[{"agentId":"agent-a","message":"..."},{"agentId":"agent-b","message":"..."}],"background":true}.',
       parameters: {
         type: 'object',
         properties: {
@@ -434,7 +527,7 @@ export function buildSubagentTools(bctx: ToolBuildContext): StructuredToolInterf
       {
         name: 'spawn_subagent',
         description: SubagentPlugin.tools![0].description,
-        schema: z.object({}).passthrough()
+        schema: subagentToolSchema
       }
     )
   ]

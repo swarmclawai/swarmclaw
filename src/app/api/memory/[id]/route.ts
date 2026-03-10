@@ -2,8 +2,8 @@ import { genId } from '@/lib/id'
 import fs from 'fs'
 import { NextResponse } from 'next/server'
 import { notFound } from '@/lib/server/collection-helpers'
-import { getMemoryDb, getMemoryLookupLimits, storeMemoryImageAsset, storeMemoryImageFromDataUrl } from '@/lib/server/memory-db'
-import { resolveLookupRequest } from '@/lib/server/memory-graph'
+import { getMemoryDb, getMemoryLookupLimits, storeMemoryImageAsset, storeMemoryImageFromDataUrl } from '@/lib/server/memory/memory-db'
+import { resolveLookupRequest } from '@/lib/server/memory/memory-graph'
 import type { MemoryImage } from '@/types'
 
 function parseOptionalInt(raw: string | null): number | undefined {

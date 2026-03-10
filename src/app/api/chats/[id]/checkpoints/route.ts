@@ -10,13 +10,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const saver = getCheckpointSaver()
   const checkpoints = []
-  
-  // LangGraph's list() is an async generator
+
   const iterator = saver.list({ configurable: { thread_id: threadId } })
-  
+
   for await (const tuple of iterator) {
+    const checkpointNs = typeof tuple.config.configurable?.checkpoint_ns === 'string'
+      ? tuple.config.configurable.checkpoint_ns
+      : ''
+    if (checkpointNs && !checkpointNs.startsWith('chat:')) continue
+
     checkpoints.push({
       checkpointId: tuple.config.configurable?.checkpoint_id,
+      checkpointNs,
       parentCheckpointId: tuple.parentConfig?.configurable?.checkpoint_id,
       metadata: tuple.metadata,
       createdAt: new Date(tuple.checkpoint.ts).getTime(),

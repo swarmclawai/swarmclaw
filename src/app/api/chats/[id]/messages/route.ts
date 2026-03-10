@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { active, loadStoredItem, upsertStoredItem } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
-import { getSessionRunState } from '@/lib/server/session-run-manager'
-import { materializeStreamingAssistantArtifacts } from '@/lib/chat-streaming-state'
+import { getSessionRunState } from '@/lib/server/runtime/session-run-manager'
+import { materializeStreamingAssistantArtifacts } from '@/lib/chat/chat-streaming-state'
 import { appendSessionNote } from '@/lib/server/session-note'
 import type { Message, Session } from '@/types'
 

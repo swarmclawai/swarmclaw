@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   open: boolean
@@ -47,28 +48,28 @@ export function ConfirmDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-6">
-            <button
+            <Button
               type="button"
+              variant="surface"
               onClick={onCancel}
               disabled={cancelDisabled}
-              className="flex-1 rounded-[12px] border border-white/[0.06] bg-transparent px-4 py-2.5 text-[13px] font-600 text-text-2 transition-all duration-200 hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ fontFamily: 'inherit' }}
+              className="flex-1 px-4 py-2.5 text-[13px]"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant={danger ? 'destructive' : 'accent'}
               onClick={onConfirm}
               disabled={confirmDisabled}
-              className={`flex-1 rounded-[12px] border-none px-4 py-2.5 text-[13px] font-600 text-white transition-all duration-200 active:scale-[0.98]
+              className={`flex-1 px-4 py-2.5 text-[13px] active:scale-[0.98]
                 ${danger
-                  ? 'bg-danger shadow-[0_4px_20px_rgba(244,63,94,0.2)]'
-                  : 'bg-accent-bright shadow-[0_4px_20px_rgba(99,102,241,0.2)]'}
-                disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100`}
-              style={{ fontFamily: 'inherit' }}
+                  ? 'shadow-[0_4px_20px_rgba(244,63,94,0.2)]'
+                  : 'shadow-[0_4px_20px_rgba(99,102,241,0.2)]'}
+                disabled:active:scale-100`}
             >
               {confirmLabel}
-            </button>
+            </Button>
           </DialogFooter>
         </div>
       </DialogContent>

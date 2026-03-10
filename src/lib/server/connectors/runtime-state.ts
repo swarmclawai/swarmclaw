@@ -39,6 +39,7 @@ export interface ConnectorRuntimeState {
   pendingInboundDebounce: Map<string, DebouncedInboundEntry>
   scheduledFollowupByDedupe: Map<string, { id: string; sendAt: number }>
   reconnectStates: Map<string, ConnectorReconnectState>
+  recentOutbound: Map<string, number>
   routeMessageHandlerRef: { current: RouteMessageHandler }
 }
 
@@ -54,6 +55,7 @@ export function getConnectorRuntimeState(): ConnectorRuntimeState {
     pendingInboundDebounce: hmrSingleton('__swarmclaw_connector_inbound_debounce__', () => new Map<string, DebouncedInboundEntry>()),
     scheduledFollowupByDedupe: hmrSingleton('__swarmclaw_connector_followup_dedupe__', () => new Map<string, { id: string; sendAt: number }>()),
     reconnectStates: hmrSingleton('__swarmclaw_connector_reconnect_state__', () => new Map<string, ConnectorReconnectState>()),
+    recentOutbound: hmrSingleton('__swarmclaw_connector_outbound_dedupe__', () => new Map<string, number>()),
     routeMessageHandlerRef: hmrSingleton('__swarmclaw_connector_route_handler__', () => ({
       current: async () => '[Error] Connector router unavailable.',
     })),

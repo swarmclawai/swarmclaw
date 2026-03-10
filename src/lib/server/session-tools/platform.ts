@@ -7,7 +7,7 @@ import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { loadSettings } from '../storage'
 import { resolveSessionToolPolicy } from '../tool-capability-policy'
-import { loadRuntimeSettings } from '../runtime-settings'
+import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { expandPluginIds } from '../tool-aliases'
 import { dedup } from '@/lib/shared-utils'
 

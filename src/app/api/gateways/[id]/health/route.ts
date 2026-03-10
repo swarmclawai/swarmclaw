@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { probeOpenClawHealth } from '@/lib/server/openclaw-health'
+import { probeOpenClawHealth } from '@/lib/server/openclaw/health'
 import { loadGatewayProfiles, saveGatewayProfiles } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
 import { notify } from '@/lib/server/ws-hub'
 import type { GatewayProfile } from '@/types'
-import type { OpenClawHealthResult } from '@/lib/server/openclaw-health'
+import type { OpenClawHealthResult } from '@/lib/server/openclaw/health'
 export const dynamic = 'force-dynamic'
 
 export function persistGatewayHealthResult(

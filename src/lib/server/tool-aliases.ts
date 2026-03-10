@@ -32,6 +32,7 @@ const PLUGIN_ALIAS_GROUPS: string[][] = [
   ['email', 'send_email'],
   ['calendar', 'calendar_events'],
   ['replicate', 'replicate_run', 'replicate_models'],
+  ['google_workspace', 'gws', 'google-workspace'],
   ['mailbox', 'inbox'],
   ['ask_human', 'human_loop'],
   ['document', 'ocr_document', 'parse_document'],

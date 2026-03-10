@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { setStoredAccessKey } from '@/lib/api-client'
+import { setStoredAccessKey } from '@/lib/app/api-client'
 import { fetchWithTimeout, isAbortError, isTimeoutError } from '@/lib/fetch-timeout'
 
 interface AccessKeyGateProps {

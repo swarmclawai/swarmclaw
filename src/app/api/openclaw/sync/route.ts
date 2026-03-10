@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { runSync, type SyncType } from '@/lib/server/openclaw-sync'
+import { runSync, type SyncType } from '@/lib/server/openclaw/sync'
 export const dynamic = 'force-dynamic'
 
 const VALID_ACTIONS = new Set(['push', 'pull', 'both'])

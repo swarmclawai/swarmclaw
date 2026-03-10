@@ -11,18 +11,16 @@ import { useChatStore } from '@/stores/use-chat-store'
 import { AiAvatar } from '@/components/shared/avatar'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { CodeBlock } from './code-block'
-import { ToolCallBubble, extractMedia } from './tool-call-bubble'
-import { ToolRequestBanner } from './tool-request-banner'
+import { extractMedia, isExplicitScreenshot } from './tool-call-bubble'
+import { ToolEventsSection } from './tool-events-section'
 import { AttachmentChip, parseAttachmentUrl } from '@/components/shared/attachment-chip'
 import { isStructuredMarkdown } from './markdown-utils'
 import { FilePathChip, FILE_PATH_RE, DIR_PATH_RE } from './file-path-chip'
 import { TransferAgentPicker } from './transfer-agent-picker'
-import { DelegationBanner, DelegationSourceBanner, TaskCompletionCard, parseTaskCompletion } from './delegation-banner'
-import { SwarmPanel, parseSwarmOutput, parseSwarmStatusOutput } from './swarm-panel'
-import { SwarmStatusCard, SwarmStatusStyles } from './swarm-status-card'
+import { DelegationSourceBanner, TaskCompletionCard, parseTaskCompletion } from './delegation-banner'
 import { ConnectorPlatformIcon, getConnectorPlatformLabel } from '@/components/shared/connector-platform-icon'
 import { copyTextToClipboard } from '@/lib/clipboard'
-import { formatMessageTimestamp } from '@/lib/chat-display'
+import { formatMessageTimestamp } from '@/lib/chat/chat-display'
 
 /** Parse delegation-source metadata prefix from system messages */
 const DELEGATION_SOURCE_RE = /^\[delegation-source:([^:]*):([^:]*):([^\]]*)\]/
@@ -151,12 +149,11 @@ interface Props {
   messageIndex?: number
   onToggleBookmark?: (index: number) => void
   onEditResend?: (index: number, newText: string) => void
-  onFork?: (index: number) => void
   onTransferToAgent?: (messageIndex: number, agentId: string) => void
   momentOverlay?: React.ReactNode
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, assistantName, agentAvatarSeed, agentAvatarUrl, agentName, isLast, onRetry, messageIndex, onToggleBookmark, onEditResend, onFork, onTransferToAgent, momentOverlay }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, assistantName, agentAvatarSeed, agentAvatarUrl, agentName, isLast, onRetry, messageIndex, onToggleBookmark, onEditResend, onTransferToAgent, momentOverlay }: Props) {
   const isUser = message.role === 'user'
   const isHeartbeat = !isUser && (message.kind === 'heartbeat' || /^\s*HEARTBEAT_OK\b/i.test(message.text || ''))
   const isPluginUI = !isUser && message.kind === 'plugin-ui'
@@ -164,7 +161,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     if (isUser) return null
     try {
       const data = JSON.parse(message.text)
-      if (data.type === 'plugin_scaffold_request') return data
+      if (data.type === 'plugin_scaffold_result') return data
     } catch { /* ignore */ }
     return null
   }, [message.text, isUser])
@@ -173,7 +170,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
     if (isUser) return null
     try {
       const data = JSON.parse(message.text)
-      if (data.type === 'plugin_install_request') return data
+      if (data.type === 'plugin_install_result') return data
     } catch { /* ignore */ }
     return null
   }, [message.text, isUser])
@@ -200,7 +197,6 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   const setPreviewContent = useChatStore((s) => s.setPreviewContent)
   const [copied, setCopied] = useState(false)
   const [heartbeatExpanded, setHeartbeatExpanded] = useState(false)
-  const [toolEventsExpanded, setToolEventsExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
   const [transferPickerOpen, setTransferPickerOpen] = useState(false)
@@ -208,7 +204,15 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
   // Separate send_file events — they render as inline attachments, not in the tool accordion
   const nonSendFileEvents = useMemo(() => toolEvents.filter((ev) => ev.name !== 'send_file' || ev.error), [toolEvents])
   const hasToolEvents = !isUser && nonSendFileEvents.length > 0
-  const visibleToolEvents = toolEventsExpanded ? [...nonSendFileEvents].reverse() : nonSendFileEvents.slice(-1)
+
+  // Map persisted MessageToolEvent[] → ToolEvent[] for the unified ToolEventsSection
+  const mappedToolEvents = useMemo(() => nonSendFileEvents.map((ev, i) => ({
+    id: ev.toolCallId || `${message.time}-${ev.name}-${i}`,
+    name: ev.name,
+    input: ev.input,
+    output: ev.output,
+    status: ev.error ? 'error' as const : 'done' as const,
+  })), [nonSendFileEvents, message.time])
 
   // Extract ALL media from ALL tool events for inline display after the message text.
   // Covers send_file, browser screenshots, file tool outputs — everything.
@@ -221,6 +225,7 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
 
     for (const ev of toolEvents) {
       if (ev.error || !ev.output) continue
+      if (!isExplicitScreenshot(ev.name, ev.input)) continue
       const m = extractMedia(ev.output)
       for (const url of m.images) {
         if (!seen.has(url)) { seen.add(url); images.push({ name: url.split('/').pop() || 'Image', url }) }
@@ -328,84 +333,9 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
         )}
       </div>
 
-      {/* Tool call events (assistant messages only) */}
+      {/* Tool call events (assistant messages only) — unified grouped card matching streaming layout */}
       {hasToolEvents && (
-        <div className="max-w-[85%] md:max-w-[72%] flex flex-col gap-2 mb-2" data-testid="message-tool-events">
-          {nonSendFileEvents.length > 1 && (
-            <button
-              type="button"
-              onClick={() => setToolEventsExpanded((v) => !v)}
-              className="self-start px-2.5 py-1 rounded-[8px] bg-white/[0.04] hover:bg-white/[0.07] text-[11px] text-text-3 border border-white/[0.06] cursor-pointer transition-colors"
-            >
-              {toolEventsExpanded ? 'Show latest only' : `Show all tool calls (${nonSendFileEvents.length})`}
-            </button>
-          )}
-          <div className={`${toolEventsExpanded ? 'max-h-[320px] overflow-y-auto pr-1 flex flex-col gap-2' : 'flex flex-col gap-2'}`}>
-            {visibleToolEvents.map((event, i) => {
-              const eventKey = event.toolCallId || `${message.time}-${event.name}-${event.input}`
-              const key = `${message.time}-tool-${toolEventsExpanded ? `all-${eventKey}` : `latest-${eventKey}`}`
-
-              if (event.name === 'spawn_subagent' && event.output) {
-                // Prefer rich SwarmStatusCard when snapshot data is available
-                const statusData = parseSwarmStatusOutput(event.name, event.output)
-                if (statusData) {
-                  return <div key={key}><SwarmStatusStyles /><SwarmStatusCard data={statusData} /></div>
-                }
-                const swarmData = parseSwarmOutput(event.name, event.output)
-                if (swarmData) {
-                  return <SwarmPanel key={key} data={swarmData} />
-                }
-              }
-
-              if (event.name === 'delegate_to_agent') {
-                const inp = tryParseJson(event.input || '{}')
-                const out = tryParseJson(event.output || '{}')
-                return (
-                  <DelegationBanner
-                    key={key}
-                    agentName={out?.agentName as string || inp?.agentName as string || inp?.agentId as string || 'Agent'}
-                    agentAvatarSeed={(out?.agentAvatarSeed as string) || null}
-                    taskPreview={(inp?.task as string || '').slice(0, 100)}
-                    taskId={(out?.taskId as string) || null}
-                    status="delegating"
-                  />
-                )
-              }
-
-              if (event.name === 'check_delegation_status') {
-                const out = tryParseJson(event.output || '{}')
-                const rawStatus = out?.status as string || ''
-                const mapped = rawStatus === 'completed' ? 'completed' as const
-                  : rawStatus === 'failed' ? 'failed' as const
-                  : 'checking' as const
-                return (
-                  <DelegationBanner
-                    key={key}
-                    agentName={out?.agentName as string || 'Agent'}
-                    agentAvatarSeed={(out?.agentAvatarSeed as string) || null}
-                    taskPreview={(out?.title as string || '').slice(0, 100)}
-                    taskId={(out?.taskId as string) || null}
-                    status={mapped}
-                  />
-                )
-              }
-
-              return (
-                <ToolCallBubble
-                  key={key}
-                  event={{
-                    id: event.toolCallId || `${message.time}-${toolEventsExpanded ? i : toolEvents.length - 1}`,
-                    name: event.name,
-                    input: event.input,
-                    output: event.output,
-                    status: event.error ? 'error' : 'done',
-                    
-                  }}
-                />
-              )
-            })}
-          </div>
-        </div>
+        <ToolEventsSection toolEvents={mappedToolEvents} />
       )}
 
       {/* Thinking block (collapsible, shown for assistant messages with persisted thinking) */}
@@ -556,26 +486,14 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                   <line x1="12" y1="3" x2="12" y2="15" />
                 </svg>
               </div>
-              <span className="text-[11px] font-700 uppercase tracking-wider text-emerald-400/80">Plugin Install Request</span>
+              <span className="text-[11px] font-700 uppercase tracking-wider text-emerald-400/80">Plugin Installed</span>
             </div>
             <p className="text-[13px] text-text-2/90 leading-relaxed">{installRequest.message}</p>
             <div className="p-3 rounded-[12px] bg-black/40 border border-white/5 flex flex-col gap-1">
-              <div className="text-[11px] text-text-3/60 font-600 uppercase tracking-tight">Source URL</div>
+              <div className="text-[11px] text-text-3/60 font-600 uppercase tracking-tight">Plugin</div>
+              <div className="text-[12px] font-mono text-emerald-200/70">{installRequest.filename || installRequest.pluginId || 'plugin'}</div>
+              <div className="text-[11px] text-text-3/60 font-600 uppercase tracking-tight mt-2">Source URL</div>
               <div className="text-[12px] font-mono text-emerald-200/70 truncate">{installRequest.url}</div>
-            </div>
-            <div className="flex gap-2 mt-1">
-              <button
-                onClick={() => useChatStore.getState().sendMessage(`I approve the installation of the plugin from ${installRequest.url}. Proceed with install_request and set approved=true.`)}
-                className="px-4 py-2 rounded-[12px] bg-emerald-500 text-black text-[13px] font-700 hover:bg-emerald-400 transition-all active:scale-[0.98]"
-              >
-                Approve & Install
-              </button>
-              <button
-                onClick={() => useChatStore.getState().sendMessage(`I do not approve this plugin installation. Please stop.`)}
-                className="px-4 py-2 rounded-[12px] bg-white/[0.05] hover:bg-white/[0.1] text-text-2 text-[13px] font-600 transition-all border border-white/10"
-              >
-                Reject
-              </button>
             </div>
           </div>
         ) : scaffoldRequest ? (
@@ -586,28 +504,16 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
                   <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                 </svg>
               </div>
-              <span className="text-[11px] font-700 uppercase tracking-wider text-amber-400/80">Plugin Creation Request</span>
+              <span className="text-[11px] font-700 uppercase tracking-wider text-amber-400/80">Plugin Created</span>
             </div>
             <p className="text-[13px] text-text-2/90 leading-relaxed">{scaffoldRequest.message}</p>
             <div className="p-3 rounded-[12px] bg-black/40 border border-white/5">
               <div className="text-[11px] font-mono text-text-3/60 mb-2 border-b border-white/5 pb-1">filename: {scaffoldRequest.filename}</div>
-              <div className="text-[12px] font-mono text-amber-200/70 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-all">
-                {scaffoldRequest.code}
-              </div>
-            </div>
-            <div className="flex gap-2 mt-1">
-              <button
-                onClick={() => useChatStore.getState().sendMessage(`I approve the creation of the plugin ${scaffoldRequest.filename}. Proceed with scaffold and set approved=true.`)}
-                className="px-4 py-2 rounded-[12px] bg-amber-500 text-black text-[13px] font-700 hover:bg-amber-400 transition-all active:scale-[0.98]"
-              >
-                Approve & Install
-              </button>
-              <button
-                onClick={() => useChatStore.getState().sendMessage(`I do not approve the creation of this plugin. Please find another way or stop.`)}
-                className="px-4 py-2 rounded-[12px] bg-white/[0.05] hover:bg-white/[0.1] text-text-2 text-[13px] font-600 transition-all border border-white/10"
-              >
-                Reject
-              </button>
+              {scaffoldRequest.filePath && (
+                <div className="text-[12px] font-mono text-amber-200/70 break-all">
+                  {scaffoldRequest.filePath}
+                </div>
+              )}
             </div>
           </div>
         ) : isPluginUI ? (
@@ -908,12 +814,6 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
         </div>
       )}
 
-      {/* Tool access request banners */}
-      {!isUser && <ToolRequestBanner
-        text={message.text || ''}
-        toolOutputs={toolEvents.map((e) => e.output || '').filter(Boolean)}
-      />}
-
       {/* Bookmark indicator */}
       {message.bookmarked && (
         <div className={`flex items-center gap-1 mt-1 px-1 ${isUser ? 'justify-end' : ''}`}>
@@ -966,24 +866,6 @@ export const MessageBubble = memo(function MessageBubble({ message, assistantNam
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
             Edit
-          </button>
-        )}
-        {typeof messageIndex === 'number' && onFork && (
-          <button
-            onClick={() => onFork(messageIndex)}
-            aria-label="Fork conversation from here"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 rounded-[8px] border-none bg-transparent
-              text-[11px] font-500 text-text-3 cursor-pointer hover:text-text-2 hover:bg-white/[0.04] transition-all justify-center md:justify-start"
-            style={{ fontFamily: 'inherit' }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="12" cy="18" r="3" />
-              <circle cx="6" cy="6" r="3" />
-              <circle cx="18" cy="6" r="3" />
-              <path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9" />
-              <path d="M12 12v3" />
-            </svg>
-            Fork
           </button>
         )}
         {!isUser && isLast && onRetry && (

@@ -19,8 +19,10 @@ import {
   recoverStaleDelegationJobs,
   registerDelegationRuntime,
   startDelegationJob,
-} from '../delegation-jobs'
+} from '@/lib/server/agents/delegation-jobs'
 import { markProviderFailure, markProviderSuccess } from '../provider-health'
+import { loadRuntimeSettings } from '../runtime/runtime-settings'
+import { getSessionDepth } from '../agents/subagent-runtime'
 
 const MAX_DELEGATION_CHAIN_HOPS = 128
 const DELEGATE_BACKEND_ORDER: DelegateBackend[] = ['claude', 'codex', 'opencode', 'gemini']
@@ -517,6 +519,14 @@ async function executeDelegateAction(args: Record<string, unknown>, bctx: Delega
   }
 
   if (!task) return 'Error: task is required.'
+
+  // Enforce delegation depth limit (matches subagent depth guard)
+  const runtime = loadRuntimeSettings()
+  const maxDepth = runtime.delegationMaxDepth || 3
+  const currentDepth = parentSessionId ? getSessionDepth(parentSessionId, maxDepth) : 0
+  if (currentDepth >= maxDepth) {
+    return `Error: Maximum delegation depth (${maxDepth}) reached. Complete the task directly instead of delegating further.`
+  }
 
   const job = createDelegationJob({
     kind: 'delegate',

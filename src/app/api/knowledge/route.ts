@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { addKnowledge, searchKnowledge, listKnowledge } from '@/lib/server/memory-db'
+import { addKnowledge, searchKnowledge, listKnowledge } from '@/lib/server/memory/memory-db'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)

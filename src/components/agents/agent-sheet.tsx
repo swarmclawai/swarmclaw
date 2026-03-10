@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { selectActiveSessionId } from '@/stores/slices/session-slice'
 import { createAgent, updateAgent, deleteAgent } from '@/lib/agents'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { fetchProviderModelDiscovery } from '@/lib/provider-model-discovery-client'
 import { sleep } from '@/lib/shared-utils'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
@@ -20,6 +21,7 @@ import { copyTextToClipboard } from '@/lib/clipboard'
 import { SectionLabel } from '@/components/shared/section-label'
 import { SoulLibraryPicker } from './soul-library-picker'
 import { HintTip } from '@/components/shared/hint-tip'
+import { StatusDot } from '@/components/ui/status-dot'
 import { isOllamaCloudModel } from '@/lib/ollama-model'
 import { errorMessage } from '@/lib/shared-utils'
 import { getDefaultAgentPluginIds } from '@/lib/agent-default-tools'
@@ -153,9 +155,9 @@ export function AgentSheet() {
   const setEditingId = useAppStore((s) => s.setEditingAgentId)
   const agents = useAppStore((s) => s.agents)
   const loadAgents = useAppStore((s) => s.loadAgents)
-  const currentSessionId = useAppStore((s) => s.currentSessionId)
+  const activeSessionId = useAppStore(selectActiveSessionId)
   const currentSession = useAppStore((s) => {
-    const id = s.currentSessionId
+    const id = selectActiveSessionId(s)
     return id ? s.sessions[id] : null
   })
   const refreshSession = useAppStore((s) => s.refreshSession)
@@ -198,7 +200,7 @@ export function AgentSheet() {
   const [preferredGatewayUseCase, setPreferredGatewayUseCase] = useState('')
   const [routingStrategy, setRoutingStrategy] = useState<AgentRoutingStrategy>('single')
   const [routingTargets, setRoutingTargets] = useState<AgentRoutingTarget[]>([])
-  const [platformAssignScope, setPlatformAssignScope] = useState<'self' | 'all'>('self')
+  const [platformAssignScope, setPlatformAssignScope] = useState<'self' | 'all'>('all')
   const [subAgentIds, setAgentAgentIds] = useState<string[]>([])
   const [tools, setTools] = useState<string[]>([])
   const [skills, setSkills] = useState<string[]>([])
@@ -219,6 +221,7 @@ export function AgentSheet() {
   const [thinkingLevel, setThinkingLevel] = useState<'' | 'minimal' | 'low' | 'medium' | 'high'>('')
   const [memoryScopeMode, setMemoryScopeMode] = useState<'auto' | 'all' | 'global' | 'agent' | 'session' | 'project'>('auto')
   const [memoryTierPreference, setMemoryTierPreference] = useState<'working' | 'durable' | 'archive' | 'blended'>('blended')
+  const [proactiveMemory, setProactiveMemory] = useState(false)
   const [autoRecovery, setAutoRecovery] = useState(false)
   const [disabled, setDisabled] = useState(false)
   const [voiceId, setVoiceId] = useState('')
@@ -226,7 +229,7 @@ export function AgentSheet() {
   const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
   const [heartbeatModel, setHeartbeatModel] = useState('')
   const [heartbeatPrompt, setHeartbeatPrompt] = useState('')
-  const [sessionResetMode, setSessionResetMode] = useState<'' | 'idle' | 'daily'>('')
+  const [sessionResetMode, setSessionResetMode] = useState<'' | 'idle' | 'daily' | 'isolated'>('')
   const [sessionIdleTimeoutSec, setSessionIdleTimeoutSec] = useState('')
   const [sessionMaxAgeSec, setSessionMaxAgeSec] = useState('')
   const [sessionDailyResetAt, setSessionDailyResetAt] = useState('')
@@ -394,7 +397,7 @@ export function AgentSheet() {
         setPreferredGatewayUseCase(editing.preferredGatewayUseCase || '')
         setRoutingStrategy(editing.routingStrategy || 'single')
         setRoutingTargets(editing.routingTargets || [])
-        setPlatformAssignScope(editing.platformAssignScope || 'self')
+        setPlatformAssignScope(editing.platformAssignScope || 'all')
         setAgentAgentIds(editing.subAgentIds || [])
         setTools(editing.plugins || [])
         setSkills(editing.skills || [])
@@ -416,6 +419,7 @@ export function AgentSheet() {
         setThinkingLevel(editing.thinkingLevel || '')
         setMemoryScopeMode(editing.memoryScopeMode || 'auto')
         setMemoryTierPreference(editing.memoryTierPreference || 'blended')
+        setProactiveMemory(editing.proactiveMemory || false)
         setAutoRecovery(editing.autoRecovery || false)
         setDisabled(editing.disabled === true)
         setVoiceId(editing.elevenLabsVoiceId || '')
@@ -461,7 +465,7 @@ export function AgentSheet() {
         setPreferredGatewayUseCase('')
         setRoutingStrategy('single')
         setRoutingTargets([])
-        setPlatformAssignScope('self')
+        setPlatformAssignScope('all')
         setAgentAgentIds([])
         setTools(getDefaultAgentPluginIds())
         setSkills([])
@@ -667,6 +671,7 @@ export function AgentSheet() {
       thinkingLevel: thinkingLevel || undefined,
       memoryScopeMode,
       memoryTierPreference,
+      proactiveMemory,
       autoRecovery,
       disabled,
       elevenLabsVoiceId: voiceId.trim() || null,
@@ -696,14 +701,14 @@ export function AgentSheet() {
     await loadAgents()
     if (
       editing
-      && currentSessionId
+      && activeSessionId
       && currentSession?.agentId === editing.id
       && (
         currentSession.shortcutForAgentId === editing.id
-        || currentSessionId === editing.threadSessionId
+        || activeSessionId === editing.threadSessionId
       )
     ) {
-      await refreshSession(currentSessionId)
+      await refreshSession(activeSessionId)
     }
     setSoulInitial(soul)
     setSoulSaveState('saved')
@@ -1156,6 +1161,19 @@ export function AgentSheet() {
           </select>
         </div>
         <p className="text-[11px] text-text-3/70 mt-1.5">Use working for fast recent context, durable for facts/preferences, and archive for long-lived history.</p>
+
+        <div className="flex items-center justify-between mt-3">
+          <label className="flex items-center gap-2 text-[12px] text-text-2">
+            Proactive Memory Recall
+          </label>
+          <div
+            onClick={() => setProactiveMemory(!proactiveMemory)}
+            className={`w-9 h-5 rounded-full transition-all relative cursor-pointer ${proactiveMemory ? 'bg-accent-bright' : 'bg-surface-3'}`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${proactiveMemory ? 'left-[18px]' : 'left-0.5'}`} />
+          </div>
+        </div>
+        <p className="text-[11px] text-text-3/70 mt-1">Automatically inject relevant memories from previous chats into the agent&apos;s context before each response.</p>
       </div>
 
       {/* Auto-Recovery */}
@@ -1433,7 +1451,7 @@ export function AgentSheet() {
             <HintTip text="The agent's voice and tone — how it talks, not what it knows" />
             {soul !== soulInitial && soulSaveState === 'idle' && (
               <span className="inline-flex items-center gap-1 normal-case tracking-normal text-[10px] text-amber-400 font-600">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <StatusDot status="warning" size="sm" />
                 Unsaved
               </span>
             )}
@@ -1578,6 +1596,7 @@ export function AgentSheet() {
               <option value="">Inherit global default</option>
               <option value="idle">Idle</option>
               <option value="daily">Daily</option>
+              <option value="isolated">Isolated (fresh context per run)</option>
             </select>
           </div>
           <div>
@@ -1755,7 +1774,7 @@ export function AgentSheet() {
           {testStatus === 'pass' && (
             <div className="p-4 rounded-[12px] bg-emerald-500/[0.06] border border-emerald-500/15 space-y-2">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <StatusDot status="online" />
                 <p className="text-[14px] text-emerald-400 font-600">Connected</p>
               </div>
               <p className="text-[13px] text-text-2/80 leading-[1.6]">Gateway is reachable and this device is paired. Tools and models are managed by the OpenClaw instance.</p>
@@ -1770,7 +1789,7 @@ export function AgentSheet() {
             >
               {testErrorCode === 'PAIRING_REQUIRED' ? (<>
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <StatusDot status="online" pulse />
                   <p className="text-[14px] text-[#22c55e] font-600">Awaiting Approval</p>
                 </div>
                 <p className="text-[13px] text-text-2/80 leading-[1.6]">

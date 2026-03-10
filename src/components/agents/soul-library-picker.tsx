@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { SOUL_LIBRARY, SOUL_ARCHETYPES, searchSouls, type SoulTemplate } from '@/lib/soul-library'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 
 interface SoulLibraryPickerProps {
   open: boolean

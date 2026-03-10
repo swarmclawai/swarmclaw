@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getMemoryDb } from '@/lib/server/memory-db'
+import { getMemoryDb } from '@/lib/server/memory/memory-db'
 import type { MemoryEntry } from '@/types'
 
 export const dynamic = 'force-dynamic'

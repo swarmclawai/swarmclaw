@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { loadConnectors, logActivity, upsertStoredItem, deleteStoredItem } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { notFound } from '@/lib/server/collection-helpers'
-import { ensureDaemonStarted } from '@/lib/server/daemon-state'
+import { ensureDaemonStarted } from '@/lib/server/runtime/daemon-state'
 import { errorMessage } from '@/lib/shared-utils'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {

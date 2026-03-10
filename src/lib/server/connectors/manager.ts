@@ -9,11 +9,11 @@ import type { ConnectorHealthEventType } from '@/types'
 import { dedup, errorMessage, sleep } from '@/lib/shared-utils'
 import { WORKSPACE_DIR } from '../data-dir'
 import path from 'path'
-import { streamAgentChat } from '../stream-agent-chat'
+import { streamAgentChat } from '@/lib/server/chat-execution/stream-agent-chat'
 import { notify } from '../ws-hub'
 import { logExecution } from '../execution-log'
-import { enqueueSystemEvent } from '../system-events'
-import { requestHeartbeatNow } from '../heartbeat-wake'
+import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
+import { requestHeartbeatNow } from '@/lib/server/runtime/heartbeat-wake'
 import { buildCurrentDateTimePromptContext } from '../prompt-runtime-context'
 import {
   parseMentions,
@@ -23,13 +23,13 @@ import {
   buildAgentSystemPromptForChatroom,
   buildHistoryForAgent,
   resolveApiKey as resolveApiKeyHelper,
-} from '../chatroom-helpers'
-import { filterHealthyChatroomAgents } from '../chatroom-health'
-import { evaluateRoutingRules } from '../chatroom-routing'
+} from '@/lib/server/chatrooms/chatroom-helpers'
+import { filterHealthyChatroomAgents } from '@/lib/server/chatrooms/chatroom-health'
+import { evaluateRoutingRules } from '@/lib/server/chatrooms/chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '../provider-health'
-import { syncSessionArchiveMemory } from '../session-archive-memory'
+import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
 import { buildIdentityContinuityContext } from '../identity-continuity'
-import { ensureAgentThreadSession } from '../agent-thread-session'
+import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
 import { getProvider } from '@/lib/providers'
 import type { Agent, Connector, MessageSource, Chatroom, ChatroomMessage, Session } from '@/types'
 import type { ConnectorInstance, InboundMessage } from './types'
@@ -56,8 +56,8 @@ import {
   shouldReplyToInboundMessage,
   textMentionsAlias,
 } from './policy'
-import { buildConnectorThreadContextBlock, resolveThreadPersonaLabel } from './thread-context'
-import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '../assistant-control'
+import { buildConnectorThreadContextBlock } from './thread-context'
+import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/agents/assistant-control'
 import {
   buildInboundApprovalSubject as buildInboundApprovalSubjectHelper,
   enforceInboundAccessPolicy as enforceInboundAccessPolicyHelper,
@@ -65,9 +65,13 @@ import {
   resolvePairingAccess as resolvePairingAccessHelper,
 } from './access'
 import {
+  describeSessionControls as describeSessionControlsCanonical,
   findDirectSessionForInbound as findDirectSessionForInboundHelper,
+  modelHistoryTail,
+  persistSessionRecord as persistSessionRecordCanonical,
   pushSessionMessage as pushSessionMessageHelper,
   resolveDirectSession as resolveDirectSessionHelper,
+  updateSessionConnectorContext as updateSessionConnectorContextCanonical,
 } from './session'
 import { NO_MESSAGE_SENTINEL, isNoMessage } from './message-sentinel'
 import {
@@ -142,6 +146,65 @@ const {
   scheduledFollowupByDedupe,
   routeMessageHandlerRef,
 } = connectorRuntimeState
+
+// Outbound deduplication: tracks recent sends to prevent triple-message bug
+const { recentOutbound } = connectorRuntimeState
+const OUTBOUND_DEDUP_TTL_MS = 30_000
+const OUTBOUND_DEDUP_PRUNE_TTL_MS = 60_000
+
+function outboundDedupeKey(connectorId: string, channelId: string, text: string): string {
+  return `${connectorId}:${channelId}:${text.slice(0, 200).trim()}`
+}
+
+function pruneRecentOutbound(now = Date.now()): void {
+  for (const [key, ts] of recentOutbound.entries()) {
+    if (now - ts > OUTBOUND_DEDUP_PRUNE_TTL_MS) recentOutbound.delete(key)
+  }
+}
+
+function isDuplicateOutbound(connectorId: string, channelId: string, text: string): boolean {
+  const now = Date.now()
+  pruneRecentOutbound(now)
+  const key = outboundDedupeKey(connectorId, channelId, text)
+  const lastSent = recentOutbound.get(key)
+  if (lastSent && now - lastSent < OUTBOUND_DEDUP_TTL_MS) return true
+  recentOutbound.set(key, now)
+  return false
+}
+
+/**
+ * Check whether a connector_message_tool delivery matches the inbound channel.
+ * For WhatsApp, bridges LID ↔ phone JID via `allKnownPeerIds` accumulated on
+ * the session (since `normalizeWhatsappTarget` can't convert between them).
+ */
+function isConnectorToolDeliveryMatch(params: {
+  platform: string
+  inboundChannelId: string
+  outboundTo: string
+  allKnownPeerIds?: string[] | null
+}): boolean {
+  const { platform, inboundChannelId, outboundTo, allKnownPeerIds } = params
+  if (platform === 'whatsapp') {
+    const inbound = normalizeWhatsappTarget(inboundChannelId)
+    const outbound = normalizeWhatsappTarget(outboundTo)
+    if (inbound && outbound && inbound === outbound) return true
+    // Bridge LID ↔ phone via known peer IDs accumulated on the session
+    if (allKnownPeerIds?.length) {
+      const peerSet = new Set(allKnownPeerIds.map(normalizeWhatsappTarget).filter(Boolean))
+      if (peerSet.has(inbound) && peerSet.has(outbound)) return true
+    }
+    return false
+  }
+  return inboundChannelId === outboundTo
+}
+
+/** Register an outbound send in the dedup map without checking for duplicates */
+export function registerOutboundSend(connectorId: string, channelId: string, text: string): void {
+  const now = Date.now()
+  pruneRecentOutbound(now)
+  const key = outboundDedupeKey(connectorId, channelId, text)
+  recentOutbound.set(key, now)
+}
 
 /** Record a health event for a connector (persisted to connector_health collection) */
 function recordHealthEvent(connectorId: string, event: ConnectorHealthEventType, message?: string): void {
@@ -362,73 +425,15 @@ function parseConnectorCommand(text: string): ParsedConnectorCommand | null {
 }
 
 function persistSessionRecord(session: ConnectorSession): void {
-  const sessions = loadSessions()
-  session.updatedAt = Date.now()
-  sessions[session.id] = session
-  saveSessions(sessions)
-  notify('sessions')
+  persistSessionRecordCanonical(session)
 }
 
 function updateSessionConnectorContext(session: ConnectorSession, connector: Connector, msg: InboundMessage, sessionKey: string): void {
-  const policy = resolveConnectorSessionPolicy(connector, msg, session)
-  session.connectorContext = {
-    ...(session.connectorContext || {}),
-    connectorId: connector.id,
-    platform: connector.platform,
-    channelId: msg.channelId,
-    senderId: msg.senderId,
-    senderName: msg.senderName,
-    sessionKey,
-    peerKey: msg.senderId,
-    scope: policy.scope,
-    replyMode: policy.replyMode,
-    threadBinding: policy.threadBinding,
-    groupPolicy: policy.groupPolicy,
-    threadId: msg.threadId || session.connectorContext?.threadId || null,
-    threadTitle: msg.threadTitle || session.connectorContext?.threadTitle || null,
-    threadPersonaLabel: resolveThreadPersonaLabel(msg) || session.connectorContext?.threadPersonaLabel || null,
-    threadParentChannelId: msg.threadParentChannelId || session.connectorContext?.threadParentChannelId || null,
-    threadParentChannelName: msg.threadParentChannelName || session.connectorContext?.threadParentChannelName || null,
-    isGroup: !!msg.isGroup,
-    lastInboundAt: Date.now(),
-    lastInboundMessageId: msg.messageId || null,
-    lastInboundReplyToMessageId: msg.replyToMessageId || null,
-    lastInboundThreadId: msg.threadId || null,
-    lastOutboundAt: session.connectorContext?.lastOutboundAt ?? null,
-    lastOutboundMessageId: session.connectorContext?.lastOutboundMessageId ?? null,
-    lastResetAt: session.connectorContext?.lastResetAt ?? null,
-    lastResetReason: session.connectorContext?.lastResetReason ?? null,
-  }
+  updateSessionConnectorContextCanonical(session, connector, msg, sessionKey)
 }
 
 function describeSessionControls(session: ConnectorSession, connector: Connector, msg: InboundMessage): string {
-  const policy = resolveConnectorSessionPolicy(connector, msg, session)
-  const context = session.connectorContext || {}
-  const sessionAgeSec = Math.max(0, Math.round((Date.now() - (session.createdAt || Date.now())) / 1000))
-  const idleSec = Math.max(0, Math.round((Date.now() - (session.lastActiveAt || Date.now())) / 1000))
-  return [
-    `Session controls for ${connector.platform}/${connector.name}:`,
-    `- Session: ${session.id}`,
-    `- Scope: ${policy.scope}`,
-    `- Reply mode: ${policy.replyMode}`,
-    `- Thread binding: ${policy.threadBinding}`,
-    `- Group policy: ${policy.groupPolicy}`,
-    `- Reset mode: ${policy.resetMode}`,
-    `- Idle timeout: ${policy.idleTimeoutSec ?? 0}s`,
-    `- Max age: ${policy.maxAgeSec ?? 0}s`,
-    `- Daily reset: ${policy.dailyResetAt || 'off'}`,
-    `- Reset timezone: ${policy.resetTimezone || 'local'}`,
-    `- Debounce: ${policy.inboundDebounceMs}ms`,
-    `- Typing indicators: ${policy.typingIndicators ? 'on' : 'off'}`,
-    `- Thinking: ${policy.thinkingLevel || session.thinkingLevel || 'inherit'}`,
-    `- Model: ${session.provider}/${session.model}`,
-    `- Last outbound message: ${context.lastOutboundMessageId || 'none'}`,
-    `- Thread: ${context.threadId || 'none'}`,
-    `- Thread title: ${context.threadTitle || 'none'}`,
-    `- Thread persona: ${context.threadPersonaLabel || 'none'}`,
-    `- Session age: ${sessionAgeSec}s`,
-    `- Idle for: ${idleSec}s`,
-  ].join('\n')
+  return describeSessionControlsCanonical(session, connector, msg)
 }
 
 function normalizeSessionSettingKey(raw: string): string {
@@ -716,13 +721,6 @@ function pushSessionMessage(
   pushSessionMessageHelper(session, role, text, extra)
 }
 
-function modelHistoryTail(
-  messages: Session['messages'] | null | undefined,
-  limit = 20,
-) : Session['messages'] {
-  const filtered = (Array.isArray(messages) ? messages : []).filter((message) => message?.historyExcluded !== true)
-  return filtered.slice(-limit)
-}
 
 function persistSession(session: ConnectorSession): void {
   const sessions = loadSessions()
@@ -1628,13 +1626,13 @@ If media sending fails, report the exact error and retry with a corrected path/t
               if (!parsed?.status || !parsed.to) continue
               const sentLikeStatus = parsed.status === 'sent' || parsed.status === 'voice_sent'
               if (!sentLikeStatus) continue
-              const inboundTarget = connector.platform === 'whatsapp'
-                ? normalizeWhatsappTarget(msg.channelId)
-                : msg.channelId
-              const outboundTarget = connector.platform === 'whatsapp'
-                ? normalizeWhatsappTarget(parsed.to)
-                : parsed.to
-              if (inboundTarget && outboundTarget && inboundTarget === outboundTarget) {
+              const isCurrentChannel = isConnectorToolDeliveryMatch({
+                platform: connector.platform,
+                inboundChannelId: msg.channelId,
+                outboundTo: parsed.to,
+                allKnownPeerIds: session.connectorContext?.allKnownPeerIds,
+              })
+              if (isCurrentChannel) {
                 connectorToolDeliveredCurrentChannel = true
                 if (parsed.messageId) connectorToolDeliveredMessageId = parsed.messageId
                 const mirrorText = visibleConnectorToolText(mirrorInput)
@@ -1643,7 +1641,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
             }
           }
         },
-        history: modelHistoryTail(session.messages),
+        history: modelHistoryTail(session.messages, 50, 48_000),
       })
       // Use finalResponse for connectors — strips intermediate planning/tool-use text
       fullText = result.finalResponse || result.fullText
@@ -1676,7 +1674,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
         }
       },
       active: new Map(),
-      loadHistory: () => modelHistoryTail(session.messages),
+      loadHistory: () => modelHistoryTail(session.messages, 50, 48_000),
     })
     mediaExtractionText = fullText
   }
@@ -2284,6 +2282,13 @@ export async function sendConnectorMessage(params: {
   const channelId = connector.platform === 'whatsapp'
     ? normalizeWhatsappTarget(params.channelId)
     : params.channelId
+
+  // Outbound deduplication: skip if identical text was sent to the same channel recently
+  // Must run AFTER WhatsApp channel normalization so dedup keys are consistent
+  if (sanitizedText && isDuplicateOutbound(connectorId, channelId, sanitizedText)) {
+    console.log(`[connector] sendConnectorMessage: duplicate suppressed for ${connectorId}:${channelId}`)
+    return { connectorId, platform: connector.platform, channelId, suppressed: true }
+  }
 
   let outboundText = sanitizedText
   let outboundOptions: Parameters<NonNullable<ConnectorInstance['sendMessage']>>[2] | undefined = {

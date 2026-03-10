@@ -3,7 +3,7 @@
 import { useId, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 
 export function UserPicker() {
   const setUser = useAppStore((s) => s.setUser)

@@ -1,5 +1,7 @@
 'use strict'
 
+/* eslint-disable @typescript-eslint/no-require-imports */
+
 const fs = require('fs')
 const path = require('path')
 
@@ -44,10 +46,10 @@ const COMMAND_GROUPS = [
   },
   {
     name: 'approvals',
-    description: 'Manage runtime approvals',
+    description: 'List and resolve human-loop approvals',
     commands: [
-      cmd('list', 'GET', '/approvals', 'List pending approvals'),
-      cmd('resolve', 'POST', '/approvals', 'Approve/reject a pending approval', { expectsJsonBody: true }),
+      cmd('list', 'GET', '/approvals', 'List pending human-loop approvals'),
+      cmd('resolve', 'POST', '/approvals', 'Resolve a human-loop approval', { expectsJsonBody: true }),
     ],
   },
   {
@@ -522,7 +524,6 @@ const COMMAND_GROUPS = [
       cmd('messages-update', 'PUT', '/chats/:id/messages', 'Update chat message metadata (e.g. bookmark)', { expectsJsonBody: true }),
       cmd('messages-send', 'POST', '/chats/:id/messages', 'Append a user/system message to a chat', { expectsJsonBody: true }),
       cmd('messages-delete', 'DELETE', '/chats/:id/messages', 'Delete a message from a chat', { expectsJsonBody: true }),
-      cmd('fork', 'POST', '/chats/:id/fork', 'Fork chat from a specific message index', { expectsJsonBody: true }),
       cmd('edit-resend', 'POST', '/chats/:id/edit-resend', 'Edit and resend from a specific message index', { expectsJsonBody: true }),
       cmd('chat', 'POST', '/chats/:id/chat', 'Send chat message (streaming)', {
         expectsJsonBody: true,
@@ -550,7 +551,6 @@ const COMMAND_GROUPS = [
         defaultBody: { action: 'status' },
       }),
       cmd('checkpoints', 'GET', '/chats/:id/checkpoints', 'List checkpoint history for a chat'),
-      cmd('restore', 'POST', '/chats/:id/restore', 'Restore chat to a previous checkpoint', { expectsJsonBody: true }),
     ],
   },
   {

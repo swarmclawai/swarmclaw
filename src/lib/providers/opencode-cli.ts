@@ -4,7 +4,7 @@ import path from 'path'
 import { spawn } from 'child_process'
 import type { StreamChatOptions } from './index'
 import { log } from '../server/logger'
-import { loadRuntimeSettings } from '../server/runtime-settings'
+import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 
 function findOpencode(): string {
   const locations = [

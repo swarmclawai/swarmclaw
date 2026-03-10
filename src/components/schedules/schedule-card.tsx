@@ -2,11 +2,12 @@
 
 import type { Schedule } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
-import { cronToHuman } from '@/lib/cron-human'
+import { api } from '@/lib/app/api-client'
+import { cronToHuman } from '@/lib/schedules/cron-human'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { InfoChip } from '@/components/ui/info-chip'
 import { useNow } from '@/hooks/use-now'
-import { isUserCreatedSchedule } from '@/lib/schedule-origin'
+import { isUserCreatedSchedule } from '@/lib/schedules/schedule-origin'
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'text-emerald-400 bg-emerald-400/[0.08]',
@@ -120,7 +121,7 @@ export function ScheduleCard({ schedule, inSidebar, index = 0 }: Props) {
       </div>
       <div className="flex flex-wrap items-center gap-1.5 mt-2">
         {creatorAgent ? (
-          <span className="inline-flex max-w-full items-center gap-1.5 rounded-[7px] bg-white/[0.05] px-2 py-1 text-[10px] font-600 text-text-2">
+          <InfoChip tone="neutral" className="max-w-full">
             <AgentAvatar
               seed={creatorAgent.avatarSeed}
               avatarUrl={creatorAgent.avatarUrl}
@@ -128,15 +129,15 @@ export function ScheduleCard({ schedule, inSidebar, index = 0 }: Props) {
               size={14}
             />
             <span className="truncate">Created by {creatorAgent.name}</span>
-          </span>
+          </InfoChip>
         ) : (
-          <span className="inline-flex max-w-full items-center gap-1.5 rounded-[7px] bg-white/[0.04] px-2 py-1 text-[10px] font-600 text-text-3">
+          <InfoChip tone="muted" className="max-w-full">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="12" cy="8" r="4" />
               <path d="M4 20c1.5-3.5 4.6-5 8-5s6.5 1.5 8 5" />
             </svg>
             <span className="truncate">{isUserCreatedSchedule(schedule) ? 'Created manually' : 'Creator unknown'}</span>
-          </span>
+          </InfoChip>
         )}
       </div>
       <div className="text-[11px] text-text-3/60 mt-1">

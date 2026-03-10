@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
+import { selectActiveSessionId } from '@/stores/slices/session-slice'
 import { uploadImage } from '@/lib/upload'
 import { useAutoResize } from '@/hooks/use-auto-resize'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { FilePreview } from '@/components/shared/file-preview'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
-import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/app/safe-storage'
 import { errorMessage } from '@/lib/shared-utils'
 
 interface Props {
@@ -34,7 +35,7 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
   const addPendingFile = useChatStore((s) => s.addPendingFile)
   const removePendingFile = useChatStore((s) => s.removePendingFile)
   const speechRecognitionLang = useAppStore((s) => s.appSettings.speechRecognitionLang)
-  const sessionId = useAppStore((s) => s.currentSessionId)
+  const sessionId = useAppStore(selectActiveSessionId)
 
   const queuedMessages = useChatStore((s) => s.queuedMessages)
   const addQueuedMessage = useChatStore((s) => s.addQueuedMessage)

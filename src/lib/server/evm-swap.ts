@@ -1,10 +1,10 @@
 import { Contract, JsonRpcProvider, getAddress, isAddress } from 'ethers'
 
-import { formatAtomicAmount, normalizeAtomicString, parseDisplayAmountToAtomic } from '@/lib/wallet'
+import { formatAtomicAmount, normalizeAtomicString, parseDisplayAmountToAtomic } from '@/lib/wallet/wallet'
 import type { AgentWallet, WalletAssetBalance } from '@/types'
 
 import { getEvmNetworkConfig, getProviderForNetwork, type EvmNetworkId } from './ethereum'
-import { getWalletPortfolioSnapshot } from './wallet-service'
+import { getWalletPortfolioSnapshot } from '@/lib/server/wallet/wallet-service'
 import { errorMessage } from '@/lib/shared-utils'
 
 const PARASWAP_API_BASE = 'https://api.paraswap.io'

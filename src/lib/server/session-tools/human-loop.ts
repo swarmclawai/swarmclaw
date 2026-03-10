@@ -4,10 +4,10 @@ import type { Plugin, PluginHooks } from '@/types'
 import type { ToolBuildContext } from './context'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { ackMailboxEnvelope, listMailbox, sendMailboxEnvelope } from '../session-mailbox'
+import { ackMailboxEnvelope, listMailbox, sendMailboxEnvelope } from '@/lib/server/chatrooms/session-mailbox'
 import { loadApprovals } from '../storage'
-import { requestApprovalMaybeAutoApprove } from '../approvals'
-import { createWatchJob, getWatchJob } from '../watch-jobs'
+import { requestApproval } from '../approvals'
+import { createWatchJob, getWatchJob } from '@/lib/server/runtime/watch-jobs'
 import { errorMessage } from '@/lib/shared-utils'
 
 async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { sessionId?: string | null; agentId?: string | null }) {
@@ -74,7 +74,7 @@ async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { ses
       const title = typeof normalized.title === 'string' && normalized.title.trim()
         ? normalized.title.trim()
         : 'Human approval requested'
-      const approval = await requestApprovalMaybeAutoApprove({
+      const approval = requestApproval({
         category: 'human_loop',
         title,
         description: typeof normalized.description === 'string' ? normalized.description : undefined,

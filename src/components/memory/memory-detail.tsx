@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNavigate } from '@/lib/app/navigation'
 import { getMemory, updateMemory, deleteMemory } from '@/lib/memory'
 import { deriveMemoryScope, getMemoryScopeLabel, getMemoryTier } from '@/lib/memory-presentation'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
@@ -16,8 +17,8 @@ export function MemoryDetail() {
   const triggerRefresh = useAppStore((s) => s.triggerMemoryRefresh)
   const agents = useAppStore((s) => s.agents)
   const sessions = useAppStore((s) => s.sessions)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
-  const setActiveView = useAppStore((s) => s.setActiveView)
+  const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
+  const navigateTo = useNavigate()
 
   const [entry, setEntry] = useState<MemoryEntry | null>(null)
   const [editing, setEditing] = useState(false)
@@ -136,10 +137,11 @@ export function MemoryDetail() {
 
   const handleNavigateToSession = useCallback(() => {
     if (!entry?.sessionId) return
-    setActiveView('agents')
-    setCurrentSession(entry.sessionId)
+    const agentId = sessions[entry.sessionId]?.agentId
+    if (agentId) void setCurrentAgent(agentId)
+    navigateTo('agents')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entry])
+  }, [entry, sessions])
 
   if (!entry) {
     return (

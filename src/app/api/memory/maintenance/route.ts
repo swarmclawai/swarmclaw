@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import path from 'path'
-import { getMemoryDb } from '@/lib/server/memory-db'
+import { getMemoryDb } from '@/lib/server/memory/memory-db'
 import { loadSettings } from '@/lib/server/storage'
-import { syncAllSessionArchiveMemories } from '@/lib/server/session-archive-memory'
+import { syncAllSessionArchiveMemories } from '@/lib/server/memory/session-archive-memory'
 import { DATA_DIR } from '@/lib/server/data-dir'
 
 function parseBool(value: unknown, fallback: boolean): boolean {

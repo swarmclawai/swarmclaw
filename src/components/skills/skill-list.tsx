@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { Badge } from '@/components/ui/badge'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ClawHubBrowser } from './clawhub-browser'

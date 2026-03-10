@@ -10,6 +10,8 @@ describe('browser tool connection config', () => {
     assert.equal(config.sharedBrowserContext, false)
     assert.equal(config.browser.userDataDir, '/tmp/swarmclaw-browser-profile')
     assert.deepEqual(config.browser.contextOptions.viewport, { width: 1440, height: 900 })
+    assert.equal(config.timeouts.action, 60_000)
+    assert.equal(config.timeouts.navigation, 90_000)
   })
 
   it('spawns a dedicated stdio MCP server with an isolated profile directory', () => {
@@ -21,6 +23,8 @@ describe('browser tool connection config', () => {
     assert.equal(params.args.includes('/tmp/swarmclaw-browser-profile'), true)
     assert.equal(params.env.PLAYWRIGHT_MCP_USER_DATA_DIR, '/tmp/swarmclaw-browser-profile')
     assert.equal(params.env.PLAYWRIGHT_MCP_OUTPUT_MODE, 'file')
+    assert.equal(params.env.PLAYWRIGHT_MCP_TIMEOUT_ACTION, '60000')
+    assert.equal(params.env.PLAYWRIGHT_MCP_TIMEOUT_NAVIGATION, '90000')
   })
 
   it('strips host Playwright MCP env overrides before applying the local browser config', () => {

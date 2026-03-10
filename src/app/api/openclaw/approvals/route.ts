@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { ensureGatewayConnected, getGateway } from '@/lib/server/openclaw-gateway'
+import { ensureGatewayConnected, getGateway } from '@/lib/server/openclaw/gateway'
 import type { PendingExecApproval, ExecApprovalDecision } from '@/types'
 import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 

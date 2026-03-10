@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getNotificationActivityAt } from '@/lib/notification-utils'
+import { getNotificationActivityAt } from '@/lib/notifications/notification-utils'
 import { createNotification } from '@/lib/server/create-notification'
 import { loadNotifications, deleteNotification } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'

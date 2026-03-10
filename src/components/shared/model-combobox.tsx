@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useEffectEvent } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { useAppStore } from '@/stores/use-app-store'
 import { fetchProviderModelDiscovery } from '@/lib/provider-model-discovery-client'
 

@@ -1,0 +1,405 @@
+import { genId } from '@/lib/id'
+import {
+  loadSessions, saveSessions, loadAgents,
+  loadCredentials, decryptKey, loadSettings, loadSkills,
+} from '@/lib/server/storage'
+import { WORKSPACE_DIR } from '@/lib/server/data-dir'
+import { loadRuntimeSettings, getLegacyOrchestratorMaxTurns } from '@/lib/server/runtime/runtime-settings'
+import { getMemoryDb } from '@/lib/server/memory/memory-db'
+import { buildCurrentDateTimePromptContext } from '@/lib/server/prompt-runtime-context'
+import { getProvider } from '@/lib/providers'
+import type { Agent } from '@/types'
+
+/**
+ * Creates the orchestrator session and returns its ID immediately.
+ * Call executeOrchestrator() separately to run the loop in the background.
+ */
+export function createOrchestratorSession(
+  orchestrator: Agent,
+  task: string,
+  parentSessionId?: string,
+  cwd?: string,
+  routePreferences?: {
+    preferredGatewayTags?: string[]
+    preferredGatewayUseCase?: string | null
+  } | null,
+): string {
+  const sessions = loadSessions()
+  const sessionId = genId()
+  const preferredGatewayTags = Array.isArray(routePreferences?.preferredGatewayTags)
+    ? routePreferences.preferredGatewayTags.filter((tag) => typeof tag === 'string' && tag.trim())
+    : []
+  sessions[sessionId] = {
+    id: sessionId,
+    name: `[Orch] ${orchestrator.name}: ${task.slice(0, 40)}`,
+    cwd: cwd || WORKSPACE_DIR,
+    user: 'system',
+    provider: orchestrator.provider,
+    model: orchestrator.model,
+    credentialId: orchestrator.credentialId || null,
+    apiEndpoint: orchestrator.apiEndpoint || null,
+    routePreferredGatewayTags: preferredGatewayTags,
+    routePreferredGatewayUseCase: routePreferences?.preferredGatewayUseCase || null,
+    claudeSessionId: null,
+    codexThreadId: null,
+    opencodeSessionId: null,
+    delegateResumeIds: {
+      claudeCode: null,
+      codex: null,
+      opencode: null,
+      gemini: null,
+    },
+    messages: [] as any[],
+    createdAt: Date.now(),
+    lastActiveAt: Date.now(),
+    sessionType: 'human' as const,
+    agentId: orchestrator.id,
+    parentSessionId: parentSessionId || null,
+    plugins: Array.isArray(orchestrator.plugins) ? [...orchestrator.plugins] : (Array.isArray(orchestrator.tools) ? [...orchestrator.tools] : []),
+    heartbeatEnabled: false,
+  }
+  saveSessions(sessions)
+  return sessionId
+}
+
+export async function runOrchestrator(
+  orchestrator: Agent,
+  task: string,
+  parentSessionId?: string,
+): Promise<string> {
+  const sessionId = createOrchestratorSession(orchestrator, task, parentSessionId)
+  return executeOrchestrator(orchestrator, task, sessionId)
+}
+
+export async function executeOrchestrator(
+  orchestrator: Agent,
+  task: string,
+  sessionId: string,
+  taskId?: string,
+): Promise<string> {
+  // Use LangGraph for all non-CLI providers (including OpenAI-compatible custom providers)
+  const isCliProvider = orchestrator.provider === 'claude-cli' || orchestrator.provider === 'codex-cli' || orchestrator.provider === 'opencode-cli'
+  if (!isCliProvider) {
+    console.log(`[orchestrator] Using LangGraph engine for ${orchestrator.name} (${orchestrator.provider})`)
+    const { executeLangGraphOrchestrator } = await import('@/lib/server/agents/orchestrator-lg')
+    return executeLangGraphOrchestrator(orchestrator, task, sessionId, taskId)
+  }
+
+  // claude-cli fallback (no structured tool calling)
+  console.warn(`[orchestrator] Using legacy regex-based engine for ${orchestrator.name} (claude-cli)`)
+  return executeOrchestratorLegacy(orchestrator, task, sessionId, taskId)
+}
+
+async function executeOrchestratorLegacy(
+  orchestrator: Agent,
+  task: string,
+  sessionId: string,
+  taskId?: string,
+): Promise<string> {
+  void taskId
+  const allAgents = loadAgents()
+  const sessions = loadSessions()
+  const session = sessions[sessionId]
+  if (!session) throw new Error('Orchestrator session not found')
+
+  // Build available agents list
+  const agentIds = orchestrator.subAgentIds || []
+  const agents = agentIds.map((id) => allAgents[id]).filter(Boolean)
+  const agentList = agents.map((a) => {
+    const plugins = (a.plugins || a.tools)?.length ? ` [plugins: ${(a.plugins || a.tools)!.join(', ')}]` : ''
+    const skills = a.skills?.length ? ` [skills: ${a.skills.join(', ')}]` : ''
+    return `- ${a.name}: ${a.description}${plugins}${skills}`
+  }).join('\n')
+
+  // Load relevant memories
+  const db = getMemoryDb()
+  const memories = db.getByAgent(orchestrator.id)
+  const memoryContext = memories.length
+    ? '\n\nRelevant memories:\n' + memories.slice(0, 10).map((m) => `[${m.category}] ${m.title}: ${m.content.slice(0, 200)}`).join('\n')
+    : ''
+
+  // Build system prompt: [userPrompt] \n\n [soul] \n\n [systemPrompt] \n\n [orchestrator context]
+  const settings = loadSettings()
+  const promptParts: string[] = []
+  if (settings.userPrompt) promptParts.push(settings.userPrompt)
+  promptParts.push(buildCurrentDateTimePromptContext())
+  if (orchestrator.soul) promptParts.push(orchestrator.soul)
+  if (orchestrator.systemPrompt) promptParts.push(orchestrator.systemPrompt)
+  if (orchestrator.skillIds?.length) {
+    const allSkills = loadSkills()
+    for (const skillId of orchestrator.skillIds) {
+      const skill = allSkills[skillId]
+      if (skill?.content) promptParts.push(`## Skill: ${skill.name}\n${skill.content}`)
+    }
+  }
+  const basePrompt = promptParts.join('\n\n')
+
+  const systemPrompt = [
+    basePrompt,
+    '\n\nYou are an orchestrator agent. You can delegate tasks to these agents:',
+    agentList || '(no agents available)',
+    '\n\nTo delegate a task, output a JSON block on its own line:',
+    '{"delegate": {"agent": "agent-name", "task": "what to do"}}',
+    '\n\nTo store something in memory:',
+    '{"memory_store": {"category": "keyword", "title": "...", "content": "..."}}',
+    '\n\nTo read memories:',
+    '{"memory_read": {"query": "search terms"}}',
+    '\n\nAgents with [tools: browser] have access to a Playwright browser and can navigate websites, scrape data, fill forms, take screenshots, and interact with web pages.',
+    '\n\nWhen you are done, output: {"done": true, "summary": "what was accomplished"}',
+    memoryContext,
+  ].join('\n')
+
+  // Conversation loop
+  const conversationHistory: { role: string; text: string }[] = []
+  conversationHistory.push({ role: 'user', text: task })
+
+  let result = ''
+  const runtime = loadRuntimeSettings()
+  const maxTurns = getLegacyOrchestratorMaxTurns(runtime)
+  const loopStart = Date.now()
+
+  for (let turn = 0; turn < maxTurns; turn++) {
+    if (runtime.loopMode === 'ongoing' && runtime.ongoingLoopMaxRuntimeMs) {
+      const elapsed = Date.now() - loopStart
+      if (elapsed >= runtime.ongoingLoopMaxRuntimeMs) {
+        const timeoutMsg = 'Ongoing loop stopped after reaching the configured runtime limit.'
+        session.messages.push({ role: 'assistant' as const, text: timeoutMsg, time: Date.now() })
+        session.lastActiveAt = Date.now()
+        const s = loadSessions()
+        s[sessionId] = session
+        saveSessions(s)
+        return timeoutMsg
+      }
+    }
+
+    const windowedHistory = conversationHistory.length > 10
+      ? [conversationHistory[0], ...conversationHistory.slice(-9)]
+      : conversationHistory
+    const fullText = await callProvider(orchestrator, systemPrompt, windowedHistory)
+    conversationHistory.push({ role: 'assistant', text: fullText })
+
+    // Save to session
+    session.messages.push({ role: 'user' as const, text: turn === 0 ? task : '[system response]', time: Date.now() })
+    session.messages.push({ role: 'assistant' as const, text: fullText, time: Date.now() })
+    session.lastActiveAt = Date.now()
+    const s = loadSessions()
+    s[sessionId] = session
+    saveSessions(s)
+
+    // Parse JSON commands from the response
+    const commands = extractJsonCommands(fullText)
+    let hasDelegate = false
+
+    for (const cmd of commands) {
+      if (cmd.delegate) {
+        hasDelegate = true
+        const agent = agents.find((a) => a.name.toLowerCase() === cmd.delegate.agent.toLowerCase())
+        if (!agent) {
+          conversationHistory.push({
+            role: 'user',
+            text: `[System] Agent "${cmd.delegate.agent}" not found. Available agents: ${agents.map((a) => a.name).join(', ')}`,
+          })
+          continue
+        }
+
+        // Execute sub-task
+        const subResult = await executeSubTask(agent, cmd.delegate.task, sessionId)
+        conversationHistory.push({
+          role: 'user',
+          text: `[Agent ${agent.name} result]:\n${subResult}`,
+        })
+        // Save structured delegation message for rich card rendering
+        session.messages.push({
+          role: 'assistant' as const,
+          text: `Delegated to ${agent.name}: ${cmd.delegate.task.slice(0, 100)}`,
+          time: Date.now(),
+          toolEvents: [{
+            name: 'delegate_to_agent',
+            input: JSON.stringify({ agentName: agent.name, agentId: agent.id, task: cmd.delegate.task }),
+            output: subResult.slice(0, 2000),
+          }],
+        })
+        session.lastActiveAt = Date.now()
+        const ds = loadSessions()
+        ds[sessionId] = session
+        saveSessions(ds)
+      }
+
+      if (cmd.memory_store) {
+        db.add({
+          agentId: orchestrator.id,
+          sessionId,
+          category: cmd.memory_store.category || 'note',
+          title: cmd.memory_store.title || 'Untitled',
+          content: cmd.memory_store.content || '',
+        })
+        conversationHistory.push({
+          role: 'user',
+          text: '[System] Memory stored successfully.',
+        })
+      }
+
+      if (cmd.memory_read) {
+        const results = db.search(cmd.memory_read.query, orchestrator.id)
+        const memText = results.length
+          ? results.map((m) => `[${m.category}] ${m.title}: ${m.content.slice(0, 300)}`).join('\n')
+          : 'No matching memories found.'
+        conversationHistory.push({
+          role: 'user',
+          text: `[Memory search results]:\n${memText}`,
+        })
+      }
+
+      if (cmd.done) {
+        result = cmd.summary || fullText
+        return result
+      }
+    }
+
+    if (!hasDelegate && commands.length === 0) {
+      // No commands found, treat as final response
+      result = fullText
+      break
+    }
+  }
+
+  if (!result) {
+    result = `Loop stopped after reaching max turns (${maxTurns}).`
+  }
+
+  return result
+}
+
+async function executeSubTask(
+  agent: Agent,
+  task: string,
+  parentSessionId: string,
+): Promise<string> {
+  // Look up parent session cwd to inherit
+  const sessions = loadSessions()
+  const parentSession = sessions[parentSessionId]
+  const childId = genId()
+  const childSession = {
+    id: childId,
+    name: `[Agent] ${agent.name}: ${task.slice(0, 40)}`,
+    cwd: parentSession?.cwd || WORKSPACE_DIR,
+    user: 'system',
+    provider: agent.provider,
+    model: agent.model,
+    credentialId: agent.credentialId || null,
+    apiEndpoint: agent.apiEndpoint || null,
+    claudeSessionId: null,
+    codexThreadId: null,
+    opencodeSessionId: null,
+    delegateResumeIds: {
+      claudeCode: null,
+      codex: null,
+      opencode: null,
+      gemini: null,
+    },
+    messages: [] as any[],
+    createdAt: Date.now(),
+    lastActiveAt: Date.now(),
+    sessionType: 'human' as const,
+    agentId: agent.id,
+    parentSessionId,
+    plugins: agent.plugins || agent.tools || [],
+  }
+  sessions[childId] = childSession
+  saveSessions(sessions)
+
+  const history = [{ role: 'user', text: task }]
+  // Build system prompt with identity so the agent knows who it is
+  const promptParts: string[] = []
+  promptParts.push(`## My Identity\nMy name is ${agent.name}.${agent.description ? ' ' + agent.description : ''} I should always refer to myself by this name.`)
+  if (agent.soul) promptParts.push(agent.soul)
+  if (agent.systemPrompt) promptParts.push(agent.systemPrompt)
+  const result = await callProvider(agent, promptParts.join('\n\n'), history)
+
+  childSession.messages.push({ role: 'user', text: task, time: Date.now() })
+  childSession.messages.push({ role: 'assistant', text: result, time: Date.now() })
+  childSession.lastActiveAt = Date.now()
+  const s = loadSessions()
+  s[childId] = childSession
+  saveSessions(s)
+
+  return result
+}
+
+export async function callProvider(
+  agent: Agent,
+  systemPrompt?: string,
+  history: { role: string; text: string }[] = [],
+): Promise<string> {
+  const provider = getProvider(agent.provider)
+  if (!provider) throw new Error(`Unknown provider: ${agent.provider}`)
+
+  let apiKey: string | null = null
+  if (agent.credentialId) {
+    const creds = loadCredentials()
+    const cred = creds[agent.credentialId]
+    if (cred?.encryptedKey) {
+      try { apiKey = decryptKey(cred.encryptedKey) } catch { /* ignore */ }
+    }
+  }
+
+  // Build a mock session for the provider
+  const mockSession = {
+    id: 'orch-' + genId(2),
+    provider: agent.provider,
+    model: agent.model,
+    credentialId: agent.credentialId,
+    apiEndpoint: agent.apiEndpoint,
+    cwd: WORKSPACE_DIR,
+    plugins: agent.plugins || agent.tools || [],
+    messages: history.map((h) => ({
+      role: h.role as 'user' | 'assistant',
+      text: h.text,
+      time: Date.now(),
+    })),
+  }
+
+  let fullText = ''
+  const { active } = await import('@/lib/server/storage')
+
+  await provider.handler.streamChat({
+    session: mockSession,
+    message: history[history.length - 1].text,
+    apiKey,
+    systemPrompt,
+    write: (data: string) => {
+      // Parse SSE data to extract text
+      if (data.startsWith('data: ')) {
+        try {
+          const event = JSON.parse(data.slice(6))
+          if (event.t === 'd' || event.t === 'md' || event.t === 'r') {
+            if (event.t === 'd') fullText += event.text || ''
+            else fullText = event.text || ''
+          }
+        } catch { /* ignore */ }
+      }
+    },
+    active,
+    loadHistory: () => mockSession.messages,
+  })
+
+  return fullText
+}
+
+function extractJsonCommands(text: string): any[] {
+  const commands: any[] = []
+  // Match JSON blocks on their own lines
+  const regex = /^\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})\s*$/gm
+  let match
+  while ((match = regex.exec(text)) !== null) {
+    try {
+      const parsed = JSON.parse(match[1])
+      if (parsed.delegate || parsed.memory_store || parsed.memory_read || parsed.done) {
+        commands.push(parsed)
+      }
+    } catch {
+      // Not valid JSON, skip
+    }
+  }
+  return commands
+}

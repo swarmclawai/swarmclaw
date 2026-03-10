@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { executeNodesAction } from './openclaw-nodes'
-import type { OpenClawGateway } from '../openclaw-gateway'
+import type { OpenClawGateway } from '../openclaw/gateway'
 
 test('executeNodesAction returns not_connected when no gateway is available', async () => {
   const raw = await executeNodesAction(

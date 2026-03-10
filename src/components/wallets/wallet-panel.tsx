@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { useAppStore } from '@/stores/use-app-store'
+import { useNavigate } from '@/lib/app/navigation'
 import { useWs } from '@/hooks/use-ws'
 import { WalletApprovalDialog } from './wallet-approval-dialog'
 import { AgentPickerList } from '@/components/shared/agent-picker-list'
@@ -18,8 +19,8 @@ import {
   getWalletChainMeta,
   getWalletLimitAtomic,
   parseDisplayAmountToAtomic,
-} from '@/lib/wallet'
-import { type WalletTransactionFilter, filterWalletTransactions, getWalletTransactionStatusGroup } from '@/lib/wallet-transactions'
+} from '@/lib/wallet/wallet'
+import { type WalletTransactionFilter, filterWalletTransactions, getWalletTransactionStatusGroup } from '@/lib/wallet/wallet-transactions'
 import { toast } from 'sonner'
 import { dedup, errorMessage } from '@/lib/shared-utils'
 
@@ -115,7 +116,7 @@ export function WalletPanel() {
   const agents = useAppStore((s) => s.agents)
   const walletPanelAgentId = useAppStore((s) => s.walletPanelAgentId)
   const setWalletPanelAgentId = useAppStore((s) => s.setWalletPanelAgentId)
-  const setActiveView = useAppStore((s) => s.setActiveView)
+  const navigateTo = useNavigate()
   const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
 
   const [wallets, setWallets] = useState<Record<string, SafeWallet>>({})
@@ -581,7 +582,7 @@ export function WalletPanel() {
                 return a ? (
                   <button
                     type="button"
-                    onClick={() => { setEditingAgentId(a.id); setActiveView('agents') }}
+                    onClick={() => { setEditingAgentId(a.id); navigateTo('agents') }}
                     className="flex items-center gap-2 bg-transparent border-none p-0 cursor-pointer group"
                     style={{ fontFamily: 'inherit' }}
                     title="Open agent settings"

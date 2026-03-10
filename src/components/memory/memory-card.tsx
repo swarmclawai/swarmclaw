@@ -3,15 +3,7 @@
 import type { MemoryEntry } from '@/types'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { deriveMemoryScope, getMemoryScopeLabel, getMemoryTier } from '@/lib/memory-presentation'
-
-function timeAgo(ts: number): string {
-  if (!ts) return ''
-  const s = Math.floor((Date.now() - ts) / 1000)
-  if (s < 60) return 'now'
-  if (s < 3600) return Math.floor(s / 60) + 'm'
-  if (s < 86400) return Math.floor(s / 3600) + 'h'
-  return Math.floor(s / 86400) + 'd'
-}
+import { timeAgoShort } from '@/lib/time-format'
 
 interface Props {
   entry: MemoryEntry
@@ -49,7 +41,7 @@ export function MemoryCard({ entry, active, agentName, agentAvatarSeed, agentAva
         )}
         <span className="font-display text-[13px] font-600 truncate flex-1 tracking-[-0.01em]">{entry.title}</span>
         <span className="text-[10px] text-text-3/60 shrink-0 tabular-nums font-mono">
-          {timeAgo(entry.updatedAt || entry.createdAt)}
+          {timeAgoShort(entry.updatedAt || entry.createdAt, Date.now())}
         </span>
       </div>
       <div className="text-[12px] text-text-2/40 mt-1 line-clamp-3 leading-relaxed">

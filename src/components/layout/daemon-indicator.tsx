@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { useWs } from '@/hooks/use-ws'
+import { StatusDot } from '@/components/ui/status-dot'
 
 interface DaemonStatus {
   running: boolean
@@ -40,7 +41,7 @@ export function DaemonIndicator() {
       className="flex items-center gap-2 px-3 py-2 rounded-[10px] bg-surface border border-white/[0.06] hover:bg-surface-2 transition-colors cursor-pointer w-full"
       title={status.running ? 'Daemon running — click to pause' : 'Daemon paused — click to start'}
     >
-      <span className={`w-2 h-2 rounded-full shrink-0 ${status.running ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]' : 'bg-text-3/30'}`} />
+      <StatusDot status={status.running ? 'online' : 'idle'} glow={status.running} />
       <span className="text-[12px] font-600 text-text-2 flex-1 text-left">
         Daemon
       </span>

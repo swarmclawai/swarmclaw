@@ -4,13 +4,13 @@ import fs from 'fs'
 import path from 'path'
 import type { StreamChatOptions } from './index'
 import type { Agent } from '@/types'
-import { deriveOpenClawWsUrl } from '@/lib/openclaw-endpoint'
-import { normalizeOpenClawAgentId } from '@/lib/openclaw-agent-id'
+import { deriveOpenClawWsUrl } from '@/lib/openclaw/openclaw-endpoint'
+import { normalizeOpenClawAgentId } from '@/lib/openclaw/openclaw-agent-id'
 import { loadAgents } from '../server/storage'
 import {
   resolveOpenClawGatewayAgentIdFromList,
   type OpenClawGatewayAgentSummary,
-} from '../server/openclaw-agent-resolver'
+} from '../server/openclaw/agent-resolver'
 
 // --- Device Identity (Ed25519 keypair for gateway auth) ---
 
@@ -74,7 +74,7 @@ function loadOrCreateDeviceIdentity(): DeviceIdentity {
   // 0. Check shared device token for cross-synced identity
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getSharedDeviceToken } = require('../server/openclaw-sync')
+    const { getSharedDeviceToken } = require('../server/openclaw/sync')
     const sharedToken = getSharedDeviceToken()
     if (sharedToken) {
       // Shared token exists — the connector has already paired.

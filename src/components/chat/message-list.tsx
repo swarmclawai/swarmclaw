@@ -1,13 +1,14 @@
 'use client'
 
-import { DEFAULT_HEARTBEAT_SHOW_ALERTS, DEFAULT_HEARTBEAT_SHOW_OK } from '@/lib/heartbeat-defaults'
+import { DEFAULT_HEARTBEAT_SHOW_ALERTS, DEFAULT_HEARTBEAT_SHOW_OK } from '@/lib/runtime/heartbeat-defaults'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Message } from '@/types'
 import { useChatStore } from '@/stores/use-chat-store'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
-import { shouldHidePersistedStreamingAssistantMessage } from '@/lib/chat-streaming-state'
-import { dedupeMessagesForDisplay } from '@/lib/chat-display'
+import { selectActiveSessionId } from '@/stores/slices/session-slice'
+import { api } from '@/lib/app/api-client'
+import { shouldHidePersistedStreamingAssistantMessage } from '@/lib/chat/chat-streaming-state'
+import { dedupeMessagesForDisplay } from '@/lib/chat/chat-display'
 import { errorMessage } from '@/lib/shared-utils'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { MessageBubble } from './message-bubble'
@@ -15,8 +16,6 @@ import { StreamingBubble } from './streaming-bubble'
 import { ThinkingIndicator } from './thinking-indicator'
 import { SuggestionsBar } from './suggestions-bar'
 import { ExecApprovalCard } from './exec-approval-card'
-import { TaskApprovalCard } from './task-approval-card'
-import { SessionApprovalCard } from './session-approval-card'
 import { HeartbeatMoment, ActivityMoment, isNotableTool } from './activity-moment'
 import { useApprovalStore } from '@/stores/use-approval-store'
 import { useWs } from '@/hooks/use-ws'
@@ -137,9 +136,8 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
   const loadingMore = useChatStore((s) => s.loadingMore)
   const totalMessages = useChatStore((s) => s.totalMessages)
   const loadMoreMessages = useChatStore((s) => s.loadMoreMessages)
-  const forkSession = useAppStore((s) => s.forkSession)
   const session = useAppStore((s) => {
-    const id = s.currentSessionId
+    const id = selectActiveSessionId(s)
     return id ? s.sessions[id] : null
   })
   const sessionId = session?.id ?? null
@@ -231,12 +229,6 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
   const handleEditResend = useCallback(async (index: number, newText: string) => {
     if (!sessionIdRef.current || !editAndResend) return
     await editAndResend(index, newText)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const handleFork = useCallback(async (index: number) => {
-    if (!sessionIdRef.current || !forkSession) return
-    await forkSession(sessionIdRef.current, index)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -429,7 +421,6 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
               messageIndex={originalIndex >= 0 ? originalIndex : undefined}
               onToggleBookmark={toggleBookmark}
               onEditResend={handleEditResend}
-              onFork={handleFork}
               momentOverlay={momentOverlay}
             />
           </div>
@@ -872,45 +863,15 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
 
 function ApprovalCards({ agentId }: { agentId?: string | null }) {
   const approvals = useApprovalStore((s) => s.approvals)
-  const tasks = useAppStore((s) => s.tasks)
-  const sessionId = useAppStore((s) => s.currentSessionId)
-  const serverApprovals = useAppStore((s) => s.approvals)
 
   const cards = Object.values(approvals).filter((a) => !agentId || a.agentId === agentId)
 
-  // Find tasks associated with this session that need approval
-  const pendingTasks = Object.values(tasks).filter((t) => {
-    if (!t.pendingApproval) return false
-    return t.sessionId === sessionId || (agentId && t.agentId === agentId)
-  })
-
-  // Server-side approvals (tool_access, wallet, plugin) matching this session/agent
-  // Exclude any that overlap with task-based approvals to prevent duplicates
-  const pendingTaskIds = new Set(pendingTasks.map((t) => t.id))
-  const sessionApprovalCards = Object.values(serverApprovals).filter((a) => {
-    if (a.status !== 'pending') return false
-    if (a.category === 'task_tool') return false // Already shown via TaskApprovalCard
-    if (a.category === 'tool_access') return false // Handled inline by ToolRequestBanner (with auto-continue)
-    if (a.taskId && pendingTaskIds.has(a.taskId)) return false // Dedupe with task card
-    return a.sessionId === sessionId || (agentId && a.agentId === agentId)
-  })
-
-  if (!cards.length && !pendingTasks.length && !sessionApprovalCards.length) return null
-
-  const handleSessionApprovalResolved = () => {
-    useAppStore.getState().loadApprovals()
-  }
+  if (!cards.length) return null
 
   return (
     <div className="flex flex-col gap-2">
       {cards.map((a) => (
         <ExecApprovalCard key={a.id} approval={a} />
-      ))}
-      {pendingTasks.map((t) => (
-        <TaskApprovalCard key={t.id} task={t} />
-      ))}
-      {sessionApprovalCards.map((a) => (
-        <SessionApprovalCard key={a.id} approval={a} onResolved={handleSessionApprovalResolved} />
       ))}
     </div>
   )

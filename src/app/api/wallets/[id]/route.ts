@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { loadWallets, upsertWallet, deleteWallet as deleteWalletFromStore, loadAgent, loadAgents, upsertAgent } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
-import { getWalletLimitAtomic, normalizeAtomicString } from '@/lib/wallet'
+import { getWalletLimitAtomic, normalizeAtomicString } from '@/lib/wallet/wallet'
 import type { AgentWallet, WalletAssetBalance, WalletPortfolioSummary } from '@/types'
-import { buildEmptyWalletPortfolio, getCachedWalletPortfolio } from '@/lib/server/wallet-portfolio'
+import { buildEmptyWalletPortfolio, getCachedWalletPortfolio } from '@/lib/server/wallet/wallet-portfolio'
 import {
   getAgentActiveWalletId,
   getWalletPortfolioSnapshot,
@@ -11,7 +11,7 @@ import {
   setAgentActiveWallet,
   stripWalletPrivateKey,
   unlinkWalletFromAgent,
-} from '@/lib/server/wallet-service'
+} from '@/lib/server/wallet/wallet-service'
 export const dynamic = 'force-dynamic'
 const WALLET_DETAIL_PORTFOLIO_TIMEOUT_MS = 2500
 

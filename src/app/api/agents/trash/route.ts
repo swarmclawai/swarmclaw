@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { loadTrashedAgents, loadAgents, saveAgents, deleteAgent } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { badRequest, notFound } from '@/lib/server/collection-helpers'
+import { purgeAgentReferences, restoreAgentSchedules } from '@/lib/server/agents/agent-cascade'
 
 /** GET — list trashed agents */
 export async function GET() {
@@ -24,6 +25,11 @@ export async function POST(req: Request) {
   all[id] = agent
   saveAgents(all)
   notify('agents')
+
+  // Re-enable schedules that were paused when the agent was trashed
+  const restoredSchedules = restoreAgentSchedules(id)
+  if (restoredSchedules) notify('schedules')
+
   return NextResponse.json(agent)
 }
 
@@ -38,7 +44,14 @@ export async function DELETE(req: Request) {
   if (!agent) return notFound()
   if (!agent.trashedAt) return badRequest('Agent must be trashed before permanent deletion')
 
+  // Hard-delete all referencing entities before removing the agent record
+  const purged = purgeAgentReferences(id)
   deleteAgent(id)
   notify('agents')
-  return NextResponse.json({ ok: true })
+  if (purged.tasks) notify('tasks')
+  if (purged.schedules) notify('schedules')
+  if (purged.connectors) notify('connectors')
+  if (purged.webhooks) notify('webhooks')
+  if (purged.chatrooms) notify('chatrooms')
+  return NextResponse.json({ ok: true, ...purged })
 }

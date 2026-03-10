@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import type { Message } from '@/types'
 import { IconButton } from '@/components/shared/icon-button'
 import { CheckpointTimeline } from './checkpoint-timeline'
 import { useAppStore } from '@/stores/use-app-store'
+import { selectActiveSessionId } from '@/stores/slices/session-slice'
 
 interface Props {
   messages: Message[]
@@ -67,19 +68,14 @@ function fmtTime(ts: number) {
 }
 
 export function SessionDebugPanel({ messages, open, onClose }: Props) {
-  const [tab, setTab] = useState<'log' | 'timeline'>('log')
+  const [tab, setTab] = useState<'log' | 'checkpoints'>('log')
   const [filter, setFilter] = useState<EventType | 'all'>('all')
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
   
-  const currentSessionId = useAppStore((s) => s.currentSessionId)
+  const currentSessionId = useAppStore(selectActiveSessionId)
 
   const events = messages.map(classifyMessage)
   const filtered = filter === 'all' ? events : events.filter((e) => e.type === filter)
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    setExpandedIdx(null)
-  }, [messages.length])
 
   if (!open) return null
 
@@ -110,10 +106,10 @@ export function SessionDebugPanel({ messages, open, onClose }: Props) {
              Event Log
            </button>
            <button 
-             onClick={() => setTab('timeline')}
-             className={`px-3 py-1 rounded-[6px] text-[11px] font-600 transition-all ${tab === 'timeline' ? 'bg-accent-soft text-accent-bright' : 'text-text-3 hover:text-text-2'}`}
+             onClick={() => setTab('checkpoints')}
+             className={`px-3 py-1 rounded-[6px] text-[11px] font-600 transition-all ${tab === 'checkpoints' ? 'bg-accent-soft text-accent-bright' : 'text-text-3 hover:text-text-2'}`}
            >
-             Time Travel
+             Checkpoints
            </button>
         </div>
 

@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
+import { useNavigate } from '@/lib/app/navigation'
+import { api } from '@/lib/app/api-client'
 import { AVAILABLE_TOOLS, PLATFORM_TOOLS, TOOL_LABELS } from '@/lib/tool-definitions'
 import type { Agent } from '@/types'
 
@@ -17,6 +18,7 @@ interface Props {
 const ALL_TOOL_IDS = [...AVAILABLE_TOOLS, ...PLATFORM_TOOLS].map((t) => t.id)
 
 export function AgentHoverCard({ agent, children, status }: Props) {
+  const navigateTo = useNavigate()
   const [showAll, setShowAll] = useState(false)
   const [busy, setBusy] = useState(false)
   const tools = agent.plugins ?? []
@@ -101,8 +103,7 @@ export function AgentHoverCard({ agent, children, status }: Props) {
         <div className="flex gap-2">
           <button
             onClick={() => {
-              useAppStore.getState().setActiveView('agents')
-              useAppStore.getState().setCurrentAgent(agent.id)
+              navigateTo('agents', agent.id)
             }}
             className="flex-1 text-[12px] font-500 text-text-2 hover:text-text py-1 rounded-[6px] bg-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer"
           >

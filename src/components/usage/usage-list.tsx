@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 
 interface UsageData {
   totalTokens: number

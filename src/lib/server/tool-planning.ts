@@ -153,6 +153,23 @@ const CORE_TOOL_PLANNING: Record<string, ToolPlanningEntry[]> = {
       requestMatchers: [],
     },
   ],
+  google_workspace: [
+    {
+      toolName: 'google_workspace',
+      capabilities: ['workspace.google'],
+      disciplineGuidance: [
+        'For `google_workspace`, pass exact `gws` arguments in `{"args":[...]}` form. Prefer list/get/read commands first to confirm IDs and current state before mutating Drive, Docs, Sheets, Gmail, Calendar, or Chat resources.',
+        'Use `params` and `jsonInput` for `--params` / `--json` payloads instead of packing raw JSON blobs into the `args` array.',
+        'Do not call interactive `gws auth login` or `gws auth setup` from the agent. Use the plugin settings or a pre-authenticated `gws` install.',
+      ],
+      requestMatchers: [
+        {
+          capability: 'workspace.google',
+          patterns: ['google workspace', 'google docs', 'google doc', 'google sheets', 'spreadsheet', 'google drive', 'gmail', 'google calendar', 'google chat', 'workspace file', 'shared drive'],
+        },
+      ],
+    },
+  ],
   ask_human: [
     {
       toolName: 'ask_human',

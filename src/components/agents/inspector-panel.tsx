@@ -1,10 +1,10 @@
 'use client'
 
-import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
+import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/runtime/heartbeat-defaults'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { Agent } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { AgentAvatar } from './agent-avatar'
 import { AgentFilesEditor } from './agent-files-editor'
 import { OpenClawSkillsPanel } from './openclaw-skills-panel'
@@ -13,6 +13,7 @@ import { ExecConfigPanel } from './exec-config-panel'
 import { SandboxEnvPanel } from './sandbox-env-panel'
 import { CronJobForm } from './cron-job-form'
 import { toast } from 'sonner'
+import { StatusDot } from '@/components/ui/status-dot'
 
 interface Props {
   agent: Agent
@@ -91,13 +92,13 @@ export function InspectorPanel({ agent, onEditAgent, onClearHistory, onDeleteAge
               <h3 className="font-display text-[16px] font-700 text-text truncate tracking-[-0.02em]">{agent.name}</h3>
               {agent.disabled === true && (
                 <span className="inline-flex items-center gap-1 rounded-[7px] border border-amber-400/15 bg-amber-400/[0.1] px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-amber-300">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-300" />
+                  <StatusDot status="warning" size="sm" />
                   Disabled
                 </span>
               )}
               {agent.heartbeatEnabled && (
                 <span className="inline-flex items-center gap-1 rounded-[7px] border border-emerald-400/15 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-emerald-300">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <StatusDot status="online" size="sm" />
                   Heartbeat
                 </span>
               )}
@@ -351,7 +352,7 @@ function AutomationsTab({ schedules, agent }: { schedules: Array<{ id: string; n
     if (!isOpenClaw) return
     setCronLoading(true)
     try {
-      const { api } = await import('@/lib/api-client')
+      const { api } = await import('@/lib/app/api-client')
       const crons = await api<Array<{ id: string; name: string; enabled: boolean; schedule?: { kind: string; value: string }; state?: { nextRun?: string; lastRun?: string } }>>('GET', '/openclaw/cron')
       setGatewayCrons(crons.filter((c) => (c as Record<string, unknown>).agentId === agent.id))
     } catch { /* ignore */ }
@@ -362,14 +363,14 @@ function AutomationsTab({ schedules, agent }: { schedules: Array<{ id: string; n
 
   const handleRunCron = async (id: string) => {
     try {
-      const { api } = await import('@/lib/api-client')
+      const { api } = await import('@/lib/app/api-client')
       await api('POST', '/openclaw/cron', { action: 'run', id })
     } catch { /* ignore */ }
   }
 
   const handleRemoveCron = async (id: string) => {
     try {
-      const { api } = await import('@/lib/api-client')
+      const { api } = await import('@/lib/app/api-client')
       await api('POST', '/openclaw/cron', { action: 'remove', id })
       setGatewayCrons((prev) => prev.filter((c) => c.id !== id))
     } catch { /* ignore */ }
@@ -437,11 +438,126 @@ function AutomationsTab({ schedules, agent }: { schedules: Array<{ id: string; n
   )
 }
 
+function SandboxConfigSection({ agent }: { agent: Agent }) {
+  const loadAgents = useAppStore((s) => s.loadAgents)
+  const [saving, setSaving] = useState(false)
+  const [dockerAvailable, setDockerAvailable] = useState<boolean | null>(null)
+  const config = agent.sandboxConfig ?? { enabled: false }
+
+  useEffect(() => {
+    api<{ docker?: { available: boolean; version?: string | null } }>('GET', '/setup/doctor')
+      .then((data) => setDockerAvailable(data?.docker?.available ?? false))
+      .catch(() => setDockerAvailable(false))
+  }, [])
+
+  const update = useCallback(async (patch: Partial<NonNullable<typeof agent.sandboxConfig>>) => {
+    setSaving(true)
+    try {
+      const next = { ...config, ...patch }
+      await api('PUT', `/agents/${agent.id}`, { sandboxConfig: next })
+      await loadAgents()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update sandbox config')
+    } finally {
+      setSaving(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id, config])
+
+  return (
+    <div className={panelCardClass('p-4')}>
+      <SectionLabel>Container Sandbox</SectionLabel>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[12px] text-text-2">Sandbox shell commands in Docker</span>
+        <button
+          onClick={() => update({ enabled: !config.enabled })}
+          disabled={saving}
+          className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer border-none ${config.enabled ? 'bg-accent-bright/80' : 'bg-white/[0.08]'}`}
+        >
+          <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${config.enabled ? 'translate-x-4' : ''}`} />
+        </button>
+      </div>
+      {dockerAvailable === false && (
+        <div className="text-[11px] text-amber-400/80 bg-amber-400/[0.06] rounded-[8px] px-2.5 py-2 mb-3 border border-amber-400/10">
+          Docker is not detected. Install Docker Desktop to use sandbox execution.
+        </div>
+      )}
+      {dockerAvailable === true && (
+        <div className="text-[11px] text-emerald-400/70 mb-3 flex items-center gap-1.5">
+          <StatusDot status="online" size="sm" /> Docker available
+        </div>
+      )}
+      {config.enabled && (
+        <div className="flex flex-col gap-2.5 mt-1">
+          <div>
+            <label className="text-[10px] text-text-3/50 block mb-1">Image</label>
+            <input
+              type="text"
+              defaultValue={config.image || 'node:22-slim'}
+              onBlur={(e) => update({ image: e.target.value.trim() || 'node:22-slim' })}
+              className="w-full rounded-[8px] border border-white/[0.06] bg-black/[0.14] px-2.5 py-1.5 text-[12px] text-text font-mono outline-none focus:border-accent-bright/30"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-text-3/50 block mb-1">Network</label>
+            <select
+              defaultValue={config.network || 'none'}
+              onChange={(e) => update({ network: e.target.value as 'none' | 'bridge' })}
+              className="w-full rounded-[8px] border border-white/[0.06] bg-black/[0.14] px-2.5 py-1.5 text-[12px] text-text outline-none cursor-pointer focus:border-accent-bright/30"
+            >
+              <option value="none">none (isolated)</option>
+              <option value="bridge">bridge (internet access)</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-text-3/50 block mb-1">Memory (MB)</label>
+              <input
+                type="number"
+                defaultValue={config.memoryMb || 512}
+                min={64}
+                max={8192}
+                onBlur={(e) => update({ memoryMb: Math.max(64, Math.min(8192, Number(e.target.value) || 512)) })}
+                className="w-full rounded-[8px] border border-white/[0.06] bg-black/[0.14] px-2.5 py-1.5 text-[12px] text-text font-mono outline-none focus:border-accent-bright/30"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-text-3/50 block mb-1">CPUs</label>
+              <input
+                type="number"
+                defaultValue={config.cpus || 1.0}
+                min={0.25}
+                max={8}
+                step={0.25}
+                onBlur={(e) => update({ cpus: Math.max(0.25, Math.min(8, Number(e.target.value) || 1)) })}
+                className="w-full rounded-[8px] border border-white/[0.06] bg-black/[0.14] px-2.5 py-1.5 text-[12px] text-text font-mono outline-none focus:border-accent-bright/30"
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-text-3/60">Read-only root filesystem</span>
+            <button
+              onClick={() => update({ readonlyRoot: !config.readonlyRoot })}
+              disabled={saving}
+              className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer border-none ${config.readonlyRoot ? 'bg-accent-bright/80' : 'bg-white/[0.08]'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${config.readonlyRoot ? 'translate-x-4' : ''}`} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AdvancedTab({ agent }: { agent: Agent }) {
   const isOpenClaw = agent.provider === 'openclaw'
 
   return (
     <div className="p-4 flex flex-col gap-4">
+      {/* Container sandbox (available for all agents) */}
+      <SandboxConfigSection agent={agent} />
+
       {/* Permission Presets + Exec Config + Sandbox Env (OpenClaw only) */}
       {isOpenClaw && (
         <>

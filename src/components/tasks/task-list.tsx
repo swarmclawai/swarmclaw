@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import type { BoardTaskStatus } from '@/types'
 import { EmptyState } from '@/components/shared/empty-state'
+import { SearchInput } from '@/components/ui/search-input'
 
 const STATUS_DOT: Record<BoardTaskStatus, string> = {
   backlog: 'bg-white/20',
@@ -66,14 +67,12 @@ export function TaskList({ inSidebar }: { inSidebar?: boolean }) {
       {/* Search + clear */}
       {sorted.length > 0 && (
         <div className="px-3 py-2 shrink-0 flex flex-col gap-2">
-          <input
-            type="text"
+          <SearchInput
+            size="sm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onClear={() => setSearch('')}
             placeholder="Search tasks..."
-            className="w-full px-3 py-2 rounded-[10px] border border-white/[0.04] bg-surface text-text
-              text-[12px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
-            style={{ fontFamily: 'inherit' }}
           />
           {doneCount > 0 && (
             <button

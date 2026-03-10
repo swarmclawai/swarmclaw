@@ -1,1 +1,1 @@
-export { SettingsSheet } from './settings/settings-sheet'
+export { SettingsSheet } from '@/views/settings/settings-sheet'

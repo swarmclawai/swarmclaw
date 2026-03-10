@@ -5,11 +5,11 @@ import os from 'os'
 import type { ChildProcess } from 'node:child_process'
 import Database from 'better-sqlite3'
 
-import { perf } from './perf'
+import { perf } from '@/lib/server/runtime/perf'
 import { DATA_DIR, IS_BUILD_BOOTSTRAP, WORKSPACE_DIR } from './data-dir'
 import { safeJsonParseObject } from './json-utils'
-import { normalizeHeartbeatSettingFields } from '@/lib/heartbeat-defaults'
-import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
+import { normalizeHeartbeatSettingFields } from '@/lib/runtime/heartbeat-defaults'
+import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
 import type { AppNotification, BoardTask, ExternalAgentRuntime, GatewayProfile, Message, Session } from '@/types'
 import { dedup, hmrSingleton } from '@/lib/shared-utils'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
@@ -333,6 +333,7 @@ function deleteCollectionItem(table: string, id: string) {
   db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id)
   const cached = collectionCache.get(table)
   if (cached) cached.delete(id)
+  factoryTtlCaches.get(table)?.invalidate()
 }
 
 /**
@@ -348,6 +349,7 @@ function upsertCollectionItem(table: string, id: string, value: unknown) {
   if (cached) {
     cached.set(id, serialized)
   }
+  factoryTtlCaches.get(table)?.invalidate()
 }
 
 function loadCollectionItem(table: string, id: string): unknown | null {
@@ -381,6 +383,7 @@ function upsertCollectionItems(table: string, entries: Array<[string, unknown]>)
       cached.set(id, serialized)
     }
   }
+  factoryTtlCaches.get(table)?.invalidate()
 }
 
 export function loadStoredItem(table: StorageCollection, id: string): unknown | null {
@@ -1065,9 +1068,6 @@ function isProvidedSecretValue(value: unknown): value is string {
 
 function buildPersistedSettings(input: Record<string, any>, existing?: PersistedSettingsRecord): PersistedSettingsRecord {
   const next = cloneRecord(input) as PersistedSettingsRecord
-  if (typeof next.approvalsEnabled !== 'boolean' && typeof existing?.approvalsEnabled !== 'boolean') {
-    next.approvalsEnabled = false
-  }
   Object.assign(next, normalizeRuntimeSettingFields(next))
   Object.assign(next, normalizeHeartbeatSettingFields(next))
   const encrypted = {

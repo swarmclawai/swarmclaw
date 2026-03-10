@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { loadSession, upsertSession, deleteSession, active, loadAgents } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
-import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
-import { resolvePrimaryAgentRoute } from '@/lib/server/agent-runtime-config'
-import { getSessionRunState } from '@/lib/server/session-run-manager'
+import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
+import { resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
+import { getSessionRunState } from '@/lib/server/runtime/session-run-manager'
 import type { Session } from '@/types'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {

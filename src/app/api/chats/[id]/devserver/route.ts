@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import { loadSessions, devServers, localIP } from '@/lib/server/storage'
 import { notFound } from '@/lib/server/collection-helpers'
-import { resolveDevServerLaunchDir } from '@/lib/server/devserver-launch'
+import { resolveDevServerLaunchDir } from '@/lib/server/runtime/devserver-launch'
 import { sleep } from '@/lib/shared-utils'
 import net from 'net'
 

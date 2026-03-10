@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { runOpenClawDoctor } from '@/lib/server/openclaw-doctor'
+import { runOpenClawDoctor } from '@/lib/server/openclaw/doctor'
 
 export const dynamic = 'force-dynamic'
 

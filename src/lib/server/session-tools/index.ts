@@ -2,12 +2,12 @@ import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { Session } from '@/types'
 import { dedup, errorMessage } from '@/lib/shared-utils'
-import { loadApprovals, loadSettings, loadSession, loadMcpServers, patchSession } from '../storage'
-import { loadRuntimeSettings } from '../runtime-settings'
+import { loadSettings, loadSession, loadAgent, loadMcpServers, patchAgent, patchSession } from '../storage'
+import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { log } from '../logger'
 import { resolveSessionToolPolicy } from '../tool-capability-policy'
 import { expandPluginIds } from '../tool-aliases'
-import type { ToolContext, SessionToolsResult, ToolBuildContext } from './context'
+import type { ToolContext, SessionToolsResult, ToolBuildContext, AbortSignalRef } from './context'
 
 // Import all tool modules to trigger their builtin registration
 import { buildShellTools } from './shell'
@@ -44,8 +44,10 @@ import { buildDocumentTools } from './document'
 import { buildExtractTools } from './extract'
 import { buildTableTools } from './table'
 import { buildCrawlTools } from './crawl'
+import { buildGoogleWorkspaceTools } from './google-workspace'
 import './connector'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { enforceFileAccessPolicy } from './file-access-policy'
 
 import { getPluginManager } from '../plugins'
 import { jsonSchemaToZod } from '../mcp-client'
@@ -53,26 +55,10 @@ import { jsonSchemaToZod } from '../mcp-client'
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
 
-function approvedToolAccessIds(ctx?: ToolContext): string[] {
-  if (!ctx?.sessionId && !ctx?.agentId) return []
-  const approvals = loadApprovals()
-  const granted = new Set<string>()
-  for (const request of Object.values(approvals) as Array<Record<string, unknown>>) {
-    if (request?.status !== 'approved' || request?.category !== 'tool_access') continue
-    const sessionMatch = ctx.sessionId && request.sessionId === ctx.sessionId
-    const agentMatch = ctx.agentId && request.agentId === ctx.agentId
-    if (!sessionMatch && !agentMatch) continue
-    const toolId = typeof request.data === 'object' && request.data && !Array.isArray(request.data)
-      ? String((request.data as Record<string, unknown>).toolId || (request.data as Record<string, unknown>).pluginId || '').trim()
-      : ''
-    if (toolId) granted.add(toolId)
-  }
-  return [...granted]
-}
-
 export async function buildSessionTools(cwd: string, enabledPlugins: string[], ctx?: ToolContext): Promise<SessionToolsResult> {
   const tools: StructuredToolInterface[] = []
   const cleanupFns: (() => Promise<void>)[] = []
+  const abortSignalRef: AbortSignalRef = {}
 
   try {
     const runtime = loadRuntimeSettings()
@@ -80,22 +66,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
     const claudeTimeoutMs = runtime.claudeCodeTimeoutMs
     const cliProcessTimeoutMs = runtime.cliProcessTimeoutMs
     const appSettings = loadSettings()
-    const grantedToolIds = approvedToolAccessIds(ctx)
-    const effectiveEnabledPlugins = dedup([
-      ...(Array.isArray(enabledPlugins) ? enabledPlugins : []),
-      ...grantedToolIds,
-    ])
-    if (ctx?.sessionId && grantedToolIds.length > 0) {
-      patchSession(ctx.sessionId, (currentSession) => {
-        if (!currentSession) return currentSession
-        const currentPlugins = Array.isArray(currentSession.plugins) ? currentSession.plugins : []
-        const mergedPlugins = dedup([...currentPlugins, ...grantedToolIds])
-        if (mergedPlugins.length === currentPlugins.length) return currentSession
-        currentSession.plugins = mergedPlugins
-        currentSession.updatedAt = Date.now()
-        return currentSession
-      })
-    }
+    const effectiveEnabledPlugins = dedup(Array.isArray(enabledPlugins) ? enabledPlugins : [])
     const toolPolicy = resolveSessionToolPolicy(effectiveEnabledPlugins, appSettings)
     const expandedEnabled = expandPluginIds(toolPolicy.enabledPlugins)
     const expandedBlocked = expandPluginIds(toolPolicy.blockedPlugins.map((entry) => entry.tool))
@@ -119,6 +90,9 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
         blockedPlugins: toolPolicy.blockedPlugins.map((entry) => `${entry.tool}:${entry.reason}`),
       })
     }
+
+    // Load agent early so fileAccessPolicy is available during tool building (e.g. shell)
+    const agentRecord = ctx?.agentId ? loadAgent(ctx.agentId) : null
 
     const resolveCurrentSession = (): Session | null => {
       if (!ctx?.sessionId) return null
@@ -162,6 +136,8 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       readStoredDelegateResumeId,
       resolveCurrentSession,
       activePlugins,
+      fileAccessPolicy: agentRecord?.fileAccessPolicy ?? null,
+      sandboxConfig: agentRecord?.sandboxConfig ?? null,
     }
 
     // 1. Build Native Bridge Tools (Legacy enablement)
@@ -195,6 +171,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       ['email', buildEmailTools],
       ['calendar', buildCalendarTools],
       ['replicate', buildReplicateTools],
+      ['google_workspace', buildGoogleWorkspaceTools],
       ['mailbox', buildMailboxTools],
       ['ask_human', buildHumanLoopTools],
       ['document', buildDocumentTools],
@@ -310,28 +287,31 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
               message: 'Specify the exact plugin ID to request access for.',
             })
           }
-          const { requestApprovalMaybeAutoApprove } = await import('../approvals')
-          const approval = await requestApprovalMaybeAutoApprove({
-            category: 'tool_access',
-            title: `Enable Plugin: ${toolId}`,
-            description: reason || `Agent is requesting access to "${toolId}".`,
-            data: { toolId, pluginId: toolId, reason: reason || '' },
-            agentId: ctx?.agentId,
-            sessionId: ctx?.sessionId,
-          })
-          if (approval.status === 'approved') {
-            return JSON.stringify({
-              type: 'tool_request',
-              toolId,
-              autoApproved: true,
-              message: `Tool access for "${toolId}" was granted. It will be available on the next agent turn.`,
+          const normalizedToolId = toolId.trim()
+          if (ctx?.sessionId) {
+            patchSession(ctx.sessionId, (currentSession) => {
+              if (!currentSession) return currentSession
+              const currentPlugins = Array.isArray(currentSession.plugins) ? currentSession.plugins : []
+              if (currentPlugins.includes(normalizedToolId)) return currentSession
+              currentSession.plugins = [...currentPlugins, normalizedToolId]
+              currentSession.updatedAt = Date.now()
+              return currentSession
+            })
+          } else if (ctx?.agentId) {
+            patchAgent(ctx.agentId, (currentAgent) => {
+              if (!currentAgent) return currentAgent
+              const currentPlugins = Array.isArray(currentAgent.plugins) ? currentAgent.plugins : []
+              if (currentPlugins.includes(normalizedToolId)) return currentAgent
+              currentAgent.plugins = [...currentPlugins, normalizedToolId]
+              currentAgent.updatedAt = Date.now()
+              return currentAgent
             })
           }
           return JSON.stringify({
-            type: 'tool_request',
-            toolId,
+            type: 'tool_access_granted',
+            toolId: normalizedToolId,
             reason,
-            message: `Tool access request sent to user for "${toolId}". Once granted, use it on the next agent turn.`,
+            message: `Tool access for "${normalizedToolId}" was granted immediately. It will be available on the next agent turn.`,
           })
         },
         {
@@ -344,6 +324,8 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
         },
       ),
     )
+
+    const fileAccessPolicy = agentRecord?.fileAccessPolicy ?? null
 
     const buildFallbackHookSession = (): Session => ({
       id: ctx?.sessionId || 'plugin-hook-session',
@@ -364,7 +346,16 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       const schema = (candidate as unknown as { schema?: z.ZodTypeAny }).schema || z.object({}).passthrough()
       return tool(
         async (args) => {
+          // Check abort before executing any tool — prevents wasted work after chat stop
+          if (abortSignalRef.signal?.aborted) {
+            throw new DOMException('Tool execution aborted', 'AbortError')
+          }
           const normalizedArgs = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
+          // Enforce file access policy before execution
+          if (fileAccessPolicy) {
+            const denial = enforceFileAccessPolicy(candidate.name, normalizedArgs, cwd, fileAccessPolicy)
+            if (denial) return denial
+          }
           const nextArgs = await pluginManager.runBeforeToolExec(
             { toolName: candidate.name, input: normalizedArgs },
             { enabledIds: activePlugins },
@@ -396,6 +387,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
         }
       },
       toolToPluginMap,
+      abortSignalRef,
     }
   } catch (err: any) {
     console.error('[session-tools] buildSessionTools critical failure:', err.message)

@@ -76,7 +76,7 @@ const AGENT_SETUP = `
 
 /** Helper to import dequeueNextRunnableTask (CJS-compatible). */
 const QUEUE_IMPORT = `
-  const _queueMod = await import('./src/lib/server/queue')
+  const _queueMod = await import('@/lib/server/runtime/queue')
   const _queue = _queueMod.default || _queueMod
   const dequeueNextRunnableTask = _queue.dequeueNextRunnableTask
 `

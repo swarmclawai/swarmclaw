@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { enqueueSessionRun, type SessionQueueMode } from '@/lib/server/session-run-manager'
+import { enqueueSessionRun, type SessionQueueMode } from '@/lib/server/runtime/session-run-manager'
 import { log } from '@/lib/server/logger'
 
 function normalizeQueueMode(raw: unknown, internal: boolean): SessionQueueMode {

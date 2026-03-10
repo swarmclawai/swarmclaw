@@ -2,12 +2,13 @@
 
 import { create } from 'zustand'
 import type { Message, DevServerStatus, SSEEvent, ChatTraceBlock } from '../types'
-import { streamChat } from '../lib/chat'
-import { mergeCompletedAssistantMessage } from '../lib/chat-streaming-state'
+import { streamChat } from '@/lib/chat/chat'
+import { mergeCompletedAssistantMessage } from '@/lib/chat/chat-streaming-state'
 import { speak } from '../lib/tts'
-import { getStoredAccessKey } from '../lib/api-client'
+import { getStoredAccessKey } from '@/lib/app/api-client'
 import { useAppStore } from './use-app-store'
-import { getSoundEnabled, setSoundEnabled, playStreamStart, playStreamEnd, playToolComplete, playError } from '../lib/notification-sounds'
+import { selectActiveSessionId } from './slices/session-slice'
+import { getSoundEnabled, setSoundEnabled, playStreamStart, playStreamEnd, playToolComplete, playError } from '@/lib/notifications/notification-sounds'
 
 export interface PendingFile {
   file: File
@@ -192,7 +193,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sendMessage: async (text: string) => {
     const { pendingFiles, replyingTo } = get()
     if ((!text.trim() && !pendingFiles.length) || get().streaming) return
-    const sessionId = useAppStore.getState().currentSessionId
+    const sessionId = selectActiveSessionId(useAppStore.getState())
     if (!sessionId) return
 
     // Primary image (backward compat)
@@ -449,7 +450,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   editAndResend: async (messageIndex: number, newText: string) => {
     if (get().streaming) return
-    const sessionId = useAppStore.getState().currentSessionId
+    const sessionId = selectActiveSessionId(useAppStore.getState())
     if (!sessionId) return
     try {
       const key = getStoredAccessKey()
@@ -479,7 +480,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   retryLastMessage: async () => {
     if (get().streaming) return
-    const sessionId = useAppStore.getState().currentSessionId
+    const sessionId = selectActiveSessionId(useAppStore.getState())
     if (!sessionId) return
     try {
       const key = getStoredAccessKey()
@@ -590,7 +591,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   clearContext: async () => {
-    const sessionId = useAppStore.getState().currentSessionId
+    const sessionId = selectActiveSessionId(useAppStore.getState())
     if (!sessionId || get().streaming) return
     const marker: Message = { role: 'user', text: '', kind: 'context-clear', time: Date.now() }
     set((s) => ({ messages: [...s.messages, marker] }))
@@ -612,7 +613,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadMoreMessages: async () => {
     const { messages, loadingMore, hasMoreMessages, totalMessages } = get()
     if (loadingMore || !hasMoreMessages) return
-    const sessionId = useAppStore.getState().currentSessionId
+    const sessionId = selectActiveSessionId(useAppStore.getState())
     if (!sessionId) return
     set({ loadingMore: true })
     try {
@@ -639,7 +640,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   stopStreaming: async () => {
-    const sessionId = useAppStore.getState().currentSessionId
+    const sessionId = selectActiveSessionId(useAppStore.getState())
     if (sessionId) {
       try {
         const key = getStoredAccessKey()

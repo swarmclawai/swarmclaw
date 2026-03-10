@@ -16,7 +16,7 @@ import {
   type OpenClawRemoteDeployTemplate,
   type OpenClawSshConfig,
   type OpenClawUseCaseTemplate,
-} from '@/lib/server/openclaw-deploy'
+} from '@/lib/server/openclaw/deploy'
 
 export const dynamic = 'force-dynamic'
 

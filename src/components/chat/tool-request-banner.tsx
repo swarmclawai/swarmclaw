@@ -2,8 +2,9 @@
 
 import { useState, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
+import { selectActiveSessionId } from '@/stores/slices/session-slice'
 import { useChatStore } from '@/stores/use-chat-store'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { TOOL_LABELS } from '@/lib/tool-definitions'
 
 interface Props {
@@ -13,24 +14,11 @@ interface Props {
 
 export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
   const loadSessions = useAppStore((s) => s.loadSessions)
-  const currentSessionId = useAppStore((s) => s.currentSessionId)
+  const currentSessionId = useAppStore(selectActiveSessionId)
   const sessions = useAppStore((s) => s.sessions)
-  const serverApprovals = useAppStore((s) => s.approvals)
-  const loadApprovals = useAppStore((s) => s.loadApprovals)
   const [granted, setGranted] = useState<Set<string>>(new Set())
   const [denied, setDenied] = useState<Set<string>>(new Set())
   const continueSentRef = useRef(false)
-
-  // Resolve matching server-side tool_access approval when user grants/denies inline
-  const resolveMatchingApproval = (toolId: string, approved: boolean) => {
-    const match = Object.values(serverApprovals).find(
-      (a) => a.status === 'pending' && a.category === 'tool_access'
-        && (a.data?.toolId === toolId || a.data?.pluginId === toolId)
-    )
-    if (match) {
-      api('POST', '/approvals', { id: match.id, approved }).then(() => loadApprovals()).catch(() => { /* best effort */ })
-    }
-  }
 
   const pluginRequests: { pluginId: string; reason: string }[] = []
   const seen = new Set<string>()
@@ -73,9 +61,6 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
     const newGranted = new Set(granted).add(toolId)
     setGranted(newGranted)
 
-    // Resolve matching server-side approval so approvals page stays in sync
-    resolveMatchingApproval(toolId, true)
-
     // Notify agent that access was granted with a precise message (not a vague "Continue")
     const allGranted = pluginRequests.every(
       (r) => newGranted.has(r.pluginId) || updated.includes(r.pluginId),
@@ -94,8 +79,6 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
 
   const handleDeny = (toolId: string) => {
     setDenied((prev) => new Set(prev).add(toolId))
-    // Resolve matching server-side approval
-    resolveMatchingApproval(toolId, false)
     const label = TOOL_LABELS[toolId] || toolId
     setTimeout(() => {
       const { streaming, sendMessage } = useChatStore.getState()

@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { ScheduleCard } from './schedule-card'
-import { SCHEDULE_TEMPLATES, FEATURED_TEMPLATE_IDS } from '@/lib/schedule-templates'
+import { SCHEDULE_TEMPLATES, FEATURED_TEMPLATE_IDS } from '@/lib/schedules/schedule-templates'
 import { Newspaper, HeartPulse, PenLine, FileText } from 'lucide-react'
+import { SearchInput } from '@/components/ui/search-input'
+import { Button } from '@/components/ui/button'
 
 const FEATURED_ICONS: Record<string, React.ComponentType<{ className?: string; size?: number }>> = {
   Newspaper, HeartPulse, PenLine, FileText,
@@ -51,15 +53,13 @@ export function ScheduleList({ inSidebar }: Props) {
         <p className="text-[13px] text-text-3/50">Automate tasks with cron or intervals</p>
         {!inSidebar && (
           <>
-            <button
+            <Button
+              variant="accent"
               onClick={() => setScheduleSheetOpen(true)}
-              className="mt-3 px-8 py-3 rounded-[14px] border-none bg-accent-bright text-white
-                text-[14px] font-600 cursor-pointer active:scale-95 transition-all duration-200
-                shadow-[0_4px_16px_rgba(99,102,241,0.2)]"
-              style={{ fontFamily: 'inherit' }}
+              className="mt-3 px-8 py-3 rounded-[14px] text-[14px] cursor-pointer active:scale-95 shadow-[0_4px_16px_rgba(99,102,241,0.2)]"
             >
               + New Schedule
-            </button>
+            </Button>
             <div className="mt-6 w-full max-w-lg">
               <p className="text-[12px] text-text-3/40 uppercase tracking-wider font-600 mb-3">Quick start</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -103,14 +103,12 @@ export function ScheduleList({ inSidebar }: Props) {
     <div className="flex-1 overflow-y-auto">
       {(filtered.length > 3 || search) && (
         <div className={inSidebar ? 'px-4 py-2.5' : 'px-5 py-2.5'}>
-          <input
-            type="text"
+          <SearchInput
+            size="sm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onClear={() => setSearch('')}
             placeholder="Search schedules..."
-            className="w-full px-4 py-2.5 rounded-[12px] border border-white/[0.04] bg-surface text-text
-              text-[13px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
-            style={{ fontFamily: 'inherit' }}
           />
         </div>
       )}

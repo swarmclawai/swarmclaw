@@ -101,6 +101,9 @@ main() {
   log "Bootstrapping local environment"
   npm run setup:easy -- --skip-install
 
+  log "Building SwarmClaw"
+  npm run build
+
   cat <<EOF
 
 SwarmClaw installed successfully.
@@ -110,10 +113,12 @@ Next steps:
 2. npm run dev
 3. Open http://localhost:3456
 
+Production bundle is already built, so you can also run:
+- npm run start
+
 For updates later:
 - npm run update:easy
 EOF
 }
 
 main "$@"
-

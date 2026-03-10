@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
 import type { ToolDefinition } from '@/lib/tool-definitions'
 import type { Session } from '@/types'

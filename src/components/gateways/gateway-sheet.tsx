@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { OpenClawDeployPanel } from '@/components/openclaw/openclaw-deploy-panel'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { toast } from 'sonner'
 import type {
   Credential,

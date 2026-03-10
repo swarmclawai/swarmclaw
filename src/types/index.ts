@@ -28,7 +28,7 @@ export interface Message {
   streaming?: boolean
 }
 
-export type SessionResetMode = 'idle' | 'daily'
+export type SessionResetMode = 'idle' | 'daily' | 'isolated'
 export type SessionResetType = 'direct' | 'group' | 'thread' | 'main'
 
 export interface IdentityContinuityState {
@@ -190,6 +190,12 @@ export interface Session {
   connectorGroupPolicy?: 'open' | 'mention' | 'reply-or-mention' | 'disabled' | null
   connectorIdleTimeoutSec?: number | null
   connectorMaxAgeSec?: number | null
+  /** Last heartbeat/cron delivery status */
+  lastDeliveryStatus?: 'ok' | 'error' | null
+  /** Timestamp of last heartbeat/cron delivery attempt */
+  lastDeliveredAt?: number | null
+  /** Error message from last failed delivery */
+  lastDeliveryError?: string | null
   mailbox?: MailboxEnvelope[] | null
   connectorContext?: {
     connectorId?: string | null
@@ -219,6 +225,7 @@ export interface Session {
     lastOutboundMessageId?: string | null
     lastResetAt?: number | null
     lastResetReason?: string | null
+    allKnownPeerIds?: string[] | null
   }
   lastAutoMemoryAt?: number | null
   lastHeartbeatText?: string | null
@@ -287,15 +294,6 @@ export interface ApprovalRequest {
   createdAt: number
   updatedAt: number
   status: 'pending' | 'approved' | 'rejected'
-  connectorNotification?: {
-    attemptedAt?: number | null
-    sentAt?: number | null
-    connectorId?: string | null
-    channelId?: string | null
-    threadId?: string | null
-    messageId?: string | null
-    lastError?: string | null
-  } | null
 }
 
 export type Approvals = Record<string, ApprovalRequest>
@@ -691,6 +689,24 @@ export interface Agent {
   dailyBudget?: number | null
   hourlyBudget?: number | null
   autoRecovery?: boolean
+  proactiveMemory?: boolean
+  /** Per-agent filesystem restrictions. Globs matched against resolved paths. */
+  fileAccessPolicy?: {
+    /** If set, only these paths (globs) are writable. Others are blocked. */
+    allowedPaths?: string[]
+    /** These paths (globs) are always blocked even if allowedPaths matches. */
+    blockedPaths?: string[]
+  } | null
+
+  /** Docker container sandbox for shell command execution. */
+  sandboxConfig?: {
+    enabled: boolean
+    image?: string               // default: 'node:22-slim'
+    network?: 'none' | 'bridge'  // default: 'none'
+    memoryMb?: number            // default: 512
+    cpus?: number                // default: 1.0
+    readonlyRoot?: boolean       // default: false
+  } | null
 
   budgetAction?: 'warn' | 'block'
   /** Runtime-enriched: current month's spend. Populated by GET /api/agents when monthlyBudget is set. */
@@ -808,10 +824,22 @@ export interface Schedule {
   description?: string
   frequency?: string
   cron?: string
+  /** Natural time expression e.g. "at 09:00" — resolved to cron on creation */
+  atTime?: string | null
   intervalMs?: number
   runAt?: number
   lastRunAt?: number
   nextRunAt?: number
+  /** IANA timezone for schedule evaluation (default: system local) */
+  timezone?: string | null
+  /** Random stagger window in seconds added to nextRunAt to avoid thundering herd */
+  staggerSec?: number | null
+  /** Last delivery status for this schedule */
+  lastDeliveryStatus?: 'ok' | 'error' | null
+  /** Timestamp of last delivery attempt */
+  lastDeliveredAt?: number | null
+  /** Error message from last failed delivery */
+  lastDeliveryError?: string | null
   status: ScheduleStatus
   linkedTaskId?: string | null
   runNumber?: number
@@ -1025,7 +1053,7 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human'
-export type AppView = 'home' | 'agents' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'approvals' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'wallets' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
+export type AppView = 'home' | 'agents' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'wallets' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
 
 // --- Chatrooms ---
 
@@ -1245,11 +1273,7 @@ export interface AppSettings {
   taskRetryBackoffSec?: number
   taskStallTimeoutMin?: number
   // Safety rails
-  approvalsEnabled?: boolean
   safetyRequireApprovalForOutbound?: boolean
-  approvalAutoApproveCategories?: ApprovalCategory[]
-  approvalConnectorNotifyEnabled?: boolean
-  approvalConnectorNotifyDelaySec?: number | null
   safetyMaxDailySpendUsd?: number | null
   safetyBlockedTools?: string[]
   capabilityPolicyMode?: 'permissive' | 'balanced' | 'strict'
@@ -1310,6 +1334,12 @@ export interface AppSettings {
   taskQualityGateRequireReport?: boolean
   // Integrity monitor
   integrityMonitorEnabled?: boolean
+  // Background daemon
+  daemonAutostartEnabled?: boolean
+  // Tool loop detection thresholds
+  toolLoopFrequencyWarn?: number
+  toolLoopFrequencyCritical?: number
+  toolLoopCircuitBreaker?: number
   // Per-plugin settings (keyed by pluginId)
   pluginSettings?: Record<string, Record<string, unknown>>
 }
@@ -1793,11 +1823,6 @@ export interface BoardTask {
     ok: boolean
     reasons: string[]
     checkedAt: number
-  } | null
-  pendingApproval?: {
-    toolName: string
-    args: Record<string, unknown>
-    threadId: string
   } | null
   // Task dependencies (DAG)
   blockedBy?: string[]

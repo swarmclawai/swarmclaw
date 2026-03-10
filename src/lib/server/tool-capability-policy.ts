@@ -90,6 +90,7 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   extract: { categories: ['filesystem', 'network'], concreteTools: ['extract', 'extract_structured'] },
   table: { categories: ['filesystem'], concreteTools: ['table', 'dataframe'] },
   crawl: { categories: ['network'], concreteTools: ['crawl', 'site_crawler'] },
+  google_workspace: { categories: ['network'], concreteTools: ['google_workspace', 'gws'] },
 }
 
 const CONCRETE_TOOL_TO_SESSION_TOOL = new Map<string, string>()

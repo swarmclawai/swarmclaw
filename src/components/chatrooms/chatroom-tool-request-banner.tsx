@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { TOOL_LABELS } from '@/lib/tool-definitions'
 
 interface Props {

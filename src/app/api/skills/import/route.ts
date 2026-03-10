@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { normalizeSkillPayload } from '@/lib/server/skills-normalize'
+import { normalizeSkillPayload } from '@/lib/server/skills/skills-normalize'
 
 const MAX_SKILL_BYTES = 2 * 1024 * 1024
 

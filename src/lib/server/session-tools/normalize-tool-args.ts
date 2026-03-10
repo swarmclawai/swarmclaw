@@ -1,5 +1,5 @@
 export type ToolArgsRecord = Record<string, unknown>
-const NESTED_WRAPPER_KEYS = ['input', 'args', 'arguments', 'payload', 'parameters'] as const
+const NESTED_WRAPPER_KEYS = ['input', 'args', 'arguments', 'payload', 'parameters', 'data'] as const
 
 function parseRecordCandidate(value: unknown): ToolArgsRecord | null {
   if (!value) return null

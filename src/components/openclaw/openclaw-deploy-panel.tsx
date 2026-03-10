@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
 
 type RemoteTemplate = 'docker' | 'render' | 'fly' | 'railway'

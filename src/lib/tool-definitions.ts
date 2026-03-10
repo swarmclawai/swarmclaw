@@ -29,6 +29,7 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
   { id: 'email', label: 'Email', description: 'Send emails via SMTP with plain text and HTML support' },
   { id: 'calendar', label: 'Calendar', description: 'Manage Google Calendar or Outlook events — list, create, update, delete' },
   { id: 'replicate', label: 'Replicate', description: 'Run any AI model on Replicate — image generation, LLMs, audio, video, and more' },
+  { id: 'google_workspace', label: 'Google Workspace', description: 'Run Google Workspace CLI (`gws`) commands for Drive, Docs, Sheets, Gmail, Calendar, Chat, and more' },
 ]
 
 /**

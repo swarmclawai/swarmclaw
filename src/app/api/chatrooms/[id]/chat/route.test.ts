@@ -13,7 +13,7 @@ test('chatroom route prevents duplicate chained replies when an already-queued a
     const storageMod = await import('./src/lib/server/storage')
     const providersMod = await import('@/lib/providers')
     const routeMod = await import('./src/app/api/chatrooms/[id]/chat/route')
-    const streamMod = await import('./src/lib/server/stream-agent-chat')
+    const streamMod = await import('@/lib/server/chat-execution/stream-agent-chat')
     const storage = storageMod.default || storageMod
     const providers = providersMod.default || providersMod
     const route = routeMod.default || routeMod
@@ -161,7 +161,7 @@ test('chatroom route forwards tool activity and records one reply per participat
     const storageMod = await import('./src/lib/server/storage')
     const providersMod = await import('@/lib/providers')
     const routeMod = await import('./src/app/api/chatrooms/[id]/chat/route')
-    const streamMod = await import('./src/lib/server/stream-agent-chat')
+    const streamMod = await import('@/lib/server/chat-execution/stream-agent-chat')
     const storage = storageMod.default || storageMod
     const providers = providersMod.default || providersMod
     const route = routeMod.default || routeMod

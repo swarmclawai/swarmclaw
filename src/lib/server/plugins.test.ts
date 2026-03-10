@@ -22,6 +22,7 @@ describe('plugin id canonicalization', () => {
     assert.equal(canonicalizePluginId('human_loop'), 'ask_human')
     assert.equal(canonicalizePluginId('dataframe'), 'table')
     assert.equal(canonicalizePluginId('extract_structured'), 'extract')
+    assert.equal(canonicalizePluginId('gws'), 'google_workspace')
   })
 
   it('expands aliases to include the canonical family id', () => {
@@ -32,6 +33,15 @@ describe('plugin id canonicalization', () => {
     assert.equal(expanded.includes('http'), true)
     assert.equal(expanded.includes('ask_human'), true)
     assert.equal(expanded.includes('human_loop'), true)
+  })
+
+  it('matches Google Workspace aliases across canonical and CLI-facing names', () => {
+    const expanded = expandPluginIds(['google_workspace'])
+    assert.equal(expanded.includes('google_workspace'), true)
+    assert.equal(expanded.includes('gws'), true)
+    assert.equal(expanded.includes('google-workspace'), true)
+    assert.equal(pluginIdMatches(['google_workspace'], 'gws'), true)
+    assert.equal(pluginIdMatches(['gws'], 'google-workspace'), true)
   })
 
   it('does not expand a specific platform tool back into manage_platform', () => {

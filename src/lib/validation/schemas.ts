@@ -30,7 +30,7 @@ export const AgentCreateSchema = z.object({
   routingStrategy: z.enum(['single', 'balanced', 'economy', 'premium', 'reasoning']).nullable().optional().default(null),
   routingTargets: z.array(AgentRoutingTargetSchema).optional().default([]),
   isOrchestrator: z.boolean().optional().default(false),
-  platformAssignScope: z.enum(['self', 'all']).optional().default('self'),
+  platformAssignScope: z.enum(['self', 'all']).optional().default('all'),
   subAgentIds: z.array(z.string()).optional().default([]),
   plugins: z.array(z.string()).optional().default([]),
   /** @deprecated Use plugins */

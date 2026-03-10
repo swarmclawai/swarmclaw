@@ -217,6 +217,12 @@ export function buildConnectorConversationKey(params: {
     scope = 'thread'
   }
 
+  // For WhatsApp, prefer the phone-format JID (@s.whatsapp.net) for peer key
+  // because it's the stable identifier — LID JIDs (@lid) vary per device.
+  const stablePeerId = connector.platform === 'whatsapp'
+    ? ([msg.senderId, msg.senderIdAlt].filter(Boolean).find((id) => id!.includes('@s.whatsapp.net')) || msg.senderId)
+    : msg.senderId
+
   const parts = [`connector:${connector.id}`, `agent:${normalizeKeyPart(agentId)}`]
   switch (scope) {
     case 'main':
@@ -226,10 +232,10 @@ export function buildConnectorConversationKey(params: {
       parts.push(`channel:${normalizeKeyPart(msg.channelId)}`)
       break
     case 'peer':
-      parts.push(`peer:${normalizeKeyPart(msg.senderId)}`)
+      parts.push(`peer:${normalizeKeyPart(stablePeerId)}`)
       break
     case 'channel-peer':
-      parts.push(`channel:${normalizeKeyPart(msg.channelId)}`, `peer:${normalizeKeyPart(msg.senderId)}`)
+      parts.push(`channel:${normalizeKeyPart(msg.channelId)}`, `peer:${normalizeKeyPart(stablePeerId)}`)
       break
     case 'thread':
       parts.push(

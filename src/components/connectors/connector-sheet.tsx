@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { useWs } from '@/hooks/use-ws'
 import { toast } from 'sonner'
 import type { Connector, ConnectorPlatform } from '@/types'

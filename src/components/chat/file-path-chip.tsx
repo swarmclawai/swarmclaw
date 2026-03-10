@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 
 export const FILE_PATH_RE = /^(\/[\w./-]+\.\w{1,10})$/
 export const DIR_PATH_RE = /^(\/[\w./-]+)\/?$/

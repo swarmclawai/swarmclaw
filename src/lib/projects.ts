@@ -1,4 +1,4 @@
-import { api } from './api-client'
+import { api } from './app/api-client'
 import type { Project } from '../types'
 
 export const fetchProjects = () => api<Record<string, Project>>('GET', '/projects')

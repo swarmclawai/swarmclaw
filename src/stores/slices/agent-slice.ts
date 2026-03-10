@@ -3,9 +3,8 @@ import { StateCreator } from 'zustand'
 import type { AppState } from '../use-app-store'
 import type { Session, Agent, ExternalAgentRuntime } from '../../types'
 import { fetchAgents } from '../../lib/agents'
-import { findLatestObservablePlatformSession, isLocalhostBrowser } from '../../lib/local-observability'
-import { api } from '../../lib/api-client'
-import { safeStorageRemove, safeStorageSet } from '../../lib/safe-storage'
+import { api } from '@/lib/app/api-client'
+import { safeStorageRemove, safeStorageSet } from '@/lib/app/safe-storage'
 import { setIfChanged, invalidateFingerprint } from '../set-if-changed'
 
 export interface AgentSlice {
@@ -28,20 +27,11 @@ export const createAgentSlice: StateCreator<AppState, [], [], AgentSlice> = (set
       safeStorageRemove('sc_agent')
       return
     }
-    const currentState = get()
-    const currentSession = currentState.currentSessionId ? currentState.sessions[currentState.currentSessionId] : null
-    if (currentState.currentAgentId === id && currentSession?.agentId === id) {
+    if (get().currentAgentId === id) {
       return
     }
     set({ currentAgentId: id })
     safeStorageSet('sc_agent', id)
-    if (isLocalhostBrowser()) {
-      const livePlatformSession = findLatestObservablePlatformSession(get().sessions, id)
-      if (livePlatformSession?.id) {
-        set({ currentSessionId: livePlatformSession.id })
-        return
-      }
-    }
 
     const existingLoad = inflightAgentThreadLoads.get(id)
     if (existingLoad) {
@@ -54,9 +44,13 @@ export const createAgentSlice: StateCreator<AppState, [], [], AgentSlice> = (set
         const user = get().currentUser || 'default'
         const session = await api<Session>('POST', `/agents/${id}/thread`, { user })
         if (session?.id) {
+          const agents = { ...get().agents }
+          if (agents[id]) {
+            agents[id] = { ...agents[id], threadSessionId: session.id }
+          }
           const sessions = { ...get().sessions, [session.id]: session }
           invalidateFingerprint('sessions')
-          set({ sessions, currentSessionId: session.id })
+          set({ sessions, agents })
         }
       } catch {
         // ignore — thread creation failed

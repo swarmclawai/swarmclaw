@@ -1,4 +1,4 @@
-import { api } from './api-client'
+import { api } from './app/api-client'
 import type { BoardTask } from '../types'
 
 export const fetchTasks = (includeArchived = false) =>

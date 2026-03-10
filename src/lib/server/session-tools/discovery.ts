@@ -3,30 +3,15 @@ import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { ToolBuildContext } from './context'
 import { getPluginManager, normalizeMarketplacePluginUrl } from '../plugins'
 import type { Plugin, PluginHooks, ClawHubSkill } from '@/types'
-import { searchClawHub } from '../clawhub-client'
+import { searchClawHub } from '@/lib/server/skills/clawhub-client'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { pluginIdMatches } from '../tool-aliases'
-import { loadSessions } from '../storage'
+import { loadSessions, patchAgent, patchSession } from '../storage'
 import { inferPluginPublisherSourceFromUrl } from '@/lib/plugin-sources'
 import { errorMessage } from '@/lib/shared-utils'
 
 function trimString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-function buildDiscoveryApprovalResumeInput(approval: import('@/types').ApprovalRequest): Record<string, unknown> | null {
-  if (approval.category !== 'plugin_install') return null
-  const url = trimString(approval.data.url)
-  if (!url) return null
-  const pluginId = trimString(approval.data.pluginId)
-  const reason = trimString(approval.data.reason)
-  return {
-    action: 'install_request',
-    url,
-    pluginId: pluginId || undefined,
-    reason: reason || `Approved install request for ${url}`,
-    approved: true,
-  }
 }
 
 /**
@@ -151,65 +136,63 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
             })
           }
         }
-        const { requestApprovalMaybeAutoApprove } = await import('../approvals')
-        const approval = await requestApprovalMaybeAutoApprove({
-          category: 'tool_access',
-          title: `Enable Plugin: ${pluginId}`,
-          description: reason || `Agent is requesting access to the "${pluginId}" plugin.`,
-          data: { toolId: pluginId, pluginId, requestedBy: bctx?.ctx?.agentId || 'unknown', reason: reason || '' },
-          agentId: bctx?.ctx?.agentId,
-          sessionId: bctx?.ctx?.sessionId,
-        })
-        if (approval.status === 'approved') {
-          return JSON.stringify({
-            alreadyGranted: true,
-            pluginId,
-            toolId: pluginId,
-            autoApproved: true,
-            message: `Access to "${pluginId}" was auto-approved and granted. It will be available on the next agent turn.`,
+        if (bctx?.ctx?.sessionId) {
+          patchSession(bctx.ctx.sessionId, (currentSession) => {
+            if (!currentSession) return currentSession
+            const currentPlugins = Array.isArray(currentSession.plugins) ? currentSession.plugins : []
+            if (currentPlugins.includes(pluginId)) return currentSession
+            currentSession.plugins = [...currentPlugins, pluginId]
+            currentSession.updatedAt = Date.now()
+            return currentSession
+          })
+        } else if (bctx?.ctx?.agentId) {
+          patchAgent(bctx.ctx.agentId, (currentAgent) => {
+            if (!currentAgent) return currentAgent
+            const currentPlugins = Array.isArray(currentAgent.plugins) ? currentAgent.plugins : []
+            if (currentPlugins.includes(pluginId)) return currentAgent
+            currentAgent.plugins = [...currentPlugins, pluginId]
+            currentAgent.updatedAt = Date.now()
+            return currentAgent
           })
         }
         return JSON.stringify({
-          type: 'plugin_request',
+          type: 'plugin_access_granted',
+          alreadyGranted: true,
           pluginId,
           toolId: pluginId,
           reason,
-          message: `Plugin access request sent to user for "${pluginId}". Once granted, I'll automatically continue.`,
+          message: `Access to "${pluginId}" was granted immediately. It will be available on the next agent turn.`,
         })
       }
       case 'install_request': {
         if (!url) {
           return JSON.stringify({ error: 'url is required for install_request.' })
         }
-        if (approved !== true) {
-          const { requestApprovalMaybeAutoApprove } = await import('../approvals')
-          const approval = await requestApprovalMaybeAutoApprove({
-            category: 'plugin_install',
-            title: `Install Plugin${pluginId ? `: ${pluginId}` : ' from URL'}`,
-            description: reason || `Agent wants to install a plugin${url ? ` from ${url}` : ''}.`,
-            data: { url, pluginId: pluginId || '', requestedBy: bctx?.ctx?.agentId || 'unknown', reason: reason || '' },
-            agentId: bctx?.ctx?.agentId,
-            sessionId: bctx?.ctx?.sessionId,
-          })
-          if (approval.status === 'approved') {
-            return JSON.stringify({
-              type: 'plugin_install_request',
-              url,
-              pluginId,
-              autoApproved: true,
-              message: `Plugin install from ${url} was auto-approved and has been applied.`,
-            })
-          }
-          return JSON.stringify({
-            type: 'plugin_install_request',
-            url,
-            pluginId,
-            reason,
-            message: `I'm requesting to install a new plugin from ${url}. This will add new capabilities to the platform.`
+        const safeName = (pluginId || url.split('/').pop() || 'plugin').replace(/[^a-zA-Z0-9._-]/g, '_')
+        const resolvedFilename = safeName.endsWith('.js') || safeName.endsWith('.mjs') ? safeName : `${safeName}.js`
+        const installed = await manager.installPluginFromUrl(url, resolvedFilename, {
+          createdByAgentId: bctx?.ctx?.agentId || undefined,
+          requestedByAgentId: bctx?.ctx?.agentId || undefined,
+          installReason: reason || '',
+          approved,
+        })
+        if (bctx?.ctx?.sessionId) {
+          patchSession(bctx.ctx.sessionId, (currentSession) => {
+            if (!currentSession) return currentSession
+            const currentPlugins = Array.isArray(currentSession.plugins) ? currentSession.plugins : []
+            if (currentPlugins.includes(installed.filename)) return currentSession
+            currentSession.plugins = [...currentPlugins, installed.filename]
+            currentSession.updatedAt = Date.now()
+            return currentSession
           })
         }
-        
-        return `Installation approved. Please go to the Plugins manager and install from: ${url}`
+        return JSON.stringify({
+          type: 'plugin_install_result',
+          pluginId: pluginId || installed.filename,
+          filename: installed.filename,
+          url: installed.sourceUrl,
+          message: `Installed plugin "${installed.filename}" from ${installed.sourceUrl}. It will be available on the next agent turn.`,
+        })
       }
       default:
         return `Error: Unknown action "${action}"`
@@ -227,32 +210,7 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
 const DiscoveryPlugin: Plugin = {
   name: 'Core Discovery',
   description: 'Discover available plugins, search marketplaces, request access, or suggest new installs.',
-  hooks: {
-    getApprovalGuidance: ({ approval, phase, approved }) => {
-      if (approval.category !== 'plugin_install') return null
-      if (phase === 'request') {
-        return [
-          'When this approval is granted, continue with `manage_capabilities` for the exact approved install request instead of asking again in prose.',
-          'Do not change the approved plugin URL or pluginId unless newer tool evidence proves the approved source is invalid.',
-        ]
-      }
-      if (phase === 'connector_reminder') {
-        return 'Approving this lets the agent resume the approved plugin install request without repeating marketplace research.'
-      }
-      if (approved !== true) {
-        return 'Do not retry the rejected install request unless the plugin source or requested capability materially changes.'
-      }
-      const resumeInput = buildDiscoveryApprovalResumeInput(approval)
-      const lines = [
-        'Resume immediately with `manage_capabilities` for the approved install request.',
-        'Do not repeat the same marketplace search or install request once approval has been granted.',
-      ]
-      if (resumeInput) {
-        lines.push(`Exact tool input: ${JSON.stringify(resumeInput)}`)
-      }
-      return lines
-    },
-  } as PluginHooks,
+  hooks: {} as PluginHooks,
   tools: [
     {
       name: 'manage_capabilities',

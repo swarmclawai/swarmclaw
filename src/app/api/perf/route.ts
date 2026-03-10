@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { perf } from '@/lib/server/perf'
+import { perf } from '@/lib/server/runtime/perf'
 
 export const dynamic = 'force-dynamic'
 

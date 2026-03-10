@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agent-availability'
-import { ensureAgentThreadSession } from '@/lib/server/agent-thread-session'
+import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
+import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
 import { loadAgents } from '@/lib/server/storage'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import type { AgentWallet, WalletAssetBalance, WalletPortfolioSummary, WalletChain } from '@/types'
 import { toast } from 'sonner'
@@ -12,7 +12,7 @@ import {
   getWalletBalanceAtomic,
   getWalletChainMeta,
   getWalletLimitAtomic,
-} from '@/lib/wallet'
+} from '@/lib/wallet/wallet'
 
 type SafeWallet = Omit<AgentWallet, 'encryptedPrivateKey'> & {
   balanceAtomic?: string

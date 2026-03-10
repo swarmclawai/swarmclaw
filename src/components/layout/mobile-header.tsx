@@ -1,16 +1,17 @@
 'use client'
 
 import { useAppStore } from '@/stores/use-app-store'
+import { selectActiveSessionId } from '@/stores/slices/session-slice'
 import { IconButton } from '@/components/shared/icon-button'
 import { NotificationCenter } from '@/components/shared/notification-center'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 
 export function MobileHeader() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
-  const currentSessionId = useAppStore((s) => s.currentSessionId)
+  const activeSessionId = useAppStore(selectActiveSessionId)
   const sessions = useAppStore((s) => s.sessions)
   const agents = useAppStore((s) => s.agents)
-  const session = currentSessionId ? sessions[currentSessionId] : null
+  const session = activeSessionId ? sessions[activeSessionId] : null
   const agent = session?.agentId ? agents[session.agentId] : null
   const title = agent?.name || session?.name || 'SwarmClaw'
   const subtitle = agent

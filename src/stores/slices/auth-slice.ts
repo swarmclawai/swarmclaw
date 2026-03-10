@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand'
 import type { AppState } from '../use-app-store'
-import { safeStorageGet, safeStorageRemove, safeStorageSet } from '../../lib/safe-storage'
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/app/safe-storage'
 
 export interface AuthSlice {
   currentUser: string | null

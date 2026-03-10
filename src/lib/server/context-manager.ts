@@ -1,5 +1,5 @@
 import type { Message } from '@/types'
-import { getMemoryDb } from './memory-db'
+import { getMemoryDb } from '@/lib/server/memory/memory-db'
 
 import { repairTranscriptConsistency } from './transcript-repair'
 
@@ -14,7 +14,9 @@ const MAX_FAILURE_CHARS = 240
 
 const MERGE_SUMMARIES_INSTRUCTIONS =
   'Merge these partial summaries into a single cohesive summary. Preserve decisions,' +
-  ' TODOs, open questions, and any constraints.'
+  ' TODOs, open questions, constraints, active tasks and their current status,' +
+  ' batch operation progress (e.g., "5/17 items completed"),' +
+  ' the last thing the user requested, and any commitments or follow-ups promised.'
 
 const IDENTIFIER_PRESERVATION_INSTRUCTIONS =
   'Preserve all opaque identifiers exactly as written (no shortening or reconstruction), ' +
@@ -112,6 +114,42 @@ export function estimateMessagesTokens(messages: Message[]): number {
     }
   }
   return total
+}
+
+// --- Context window guard ---
+
+/** Hard minimum: don't even attempt LLM calls below this */
+const CONTEXT_WINDOW_HARD_MIN_TOKENS = 16_000
+/** Warn the agent when remaining context is below this */
+const CONTEXT_WINDOW_WARN_BELOW_TOKENS = 32_000
+
+export interface ContextWindowGuardResult {
+  contextWindowTokens: number
+  shouldBlock: boolean
+  shouldWarn: boolean
+  message: string | null
+}
+
+/** Evaluate whether the context window is too small for useful execution */
+export function evaluateContextWindowGuard(provider: string, model: string): ContextWindowGuardResult {
+  const tokens = getContextWindowSize(provider, model)
+  if (tokens < CONTEXT_WINDOW_HARD_MIN_TOKENS) {
+    return {
+      contextWindowTokens: tokens,
+      shouldBlock: true,
+      shouldWarn: false,
+      message: `Context window too small (${tokens.toLocaleString()} tokens). Minimum required: ${CONTEXT_WINDOW_HARD_MIN_TOKENS.toLocaleString()} tokens.`,
+    }
+  }
+  if (tokens < CONTEXT_WINDOW_WARN_BELOW_TOKENS) {
+    return {
+      contextWindowTokens: tokens,
+      shouldBlock: false,
+      shouldWarn: true,
+      message: `Small context window (${tokens.toLocaleString()} tokens). Agent may struggle with complex tasks. Consider using a model with a larger context window.`,
+    }
+  }
+  return { contextWindowTokens: tokens, shouldBlock: false, shouldWarn: false, message: null }
 }
 
 // --- Context status ---
@@ -309,7 +347,29 @@ export function computeAdaptiveChunkRatio(messages: Message[], contextWindow: nu
   return BASE_CHUNK_RATIO
 }
 
-/** Summarize in hierarchical stages if context is very large */
+/** Retry an async function with exponential backoff */
+async function retryAsync<T>(fn: () => Promise<T>, maxAttempts = 3, baseMs = 500): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+      if (attempt < maxAttempts - 1) {
+        const delay = Math.min(baseMs * Math.pow(2, attempt) + Math.random() * 200, 5000)
+        await new Promise((r) => setTimeout(r, delay))
+      }
+    }
+  }
+  throw lastError
+}
+
+/** Check if a single message is too large for the summarization context */
+function isOversizedForSummary(msg: Message, maxChunkTokens: number): boolean {
+  return estimateMessagesTokens([msg]) > maxChunkTokens * 0.5
+}
+
+/** Summarize in hierarchical stages if context is very large, with retry and oversized message handling */
 export async function summarizeInStages(opts: {
   messages: Message[]
   contextWindow: number
@@ -320,26 +380,47 @@ export async function summarizeInStages(opts: {
   const totalTokens = estimateMessagesTokens(messages)
 
   if (totalTokens <= maxChunkTokens || messages.length < 4) {
-    return summarize(buildSummarizationPrompt(messages))
+    return retryAsync(() => summarize(buildSummarizationPrompt(messages)))
   }
 
-  const chunks = splitMessagesByTokenBudget(messages, maxChunkTokens)
-  if (chunks.length <= 1) {
-    return summarize(buildSummarizationPrompt(messages))
+  // Separate oversized messages that would blow a single chunk
+  const normalMessages: Message[] = []
+  const oversizedMessages: Message[] = []
+  for (const m of messages) {
+    if (isOversizedForSummary(m, maxChunkTokens)) {
+      oversizedMessages.push(m)
+    } else {
+      normalMessages.push(m)
+    }
+  }
+
+  const chunks = splitMessagesByTokenBudget(normalMessages, maxChunkTokens)
+  if (chunks.length <= 1 && oversizedMessages.length === 0) {
+    return retryAsync(() => summarize(buildSummarizationPrompt(messages)))
   }
 
   const partialSummaries: string[] = []
   for (const chunk of chunks) {
     try {
-      const partial = await summarize(buildSummarizationPrompt(chunk))
+      const partial = await retryAsync(() => summarize(buildSummarizationPrompt(chunk)))
       if (partial?.trim()) partialSummaries.push(partial.trim())
-    } catch { /* skip failed chunk */ }
+    } catch { /* skip failed chunk after retries */ }
+  }
+
+  // Note oversized messages that were excluded from summarization
+  if (oversizedMessages.length > 0) {
+    const notes = oversizedMessages.map((m) => {
+      const preview = m.text.slice(0, 200).replace(/\n/g, ' ')
+      const toolCount = m.toolEvents?.length || 0
+      return `- [${m.role}] (oversized, ~${estimateMessagesTokens([m])} tokens${toolCount ? `, ${toolCount} tool calls` : ''}): ${preview}...`
+    })
+    partialSummaries.push(`## Oversized Messages (excluded from detailed summarization)\n${notes.join('\n')}`)
   }
 
   if (partialSummaries.length === 0) return 'Summary unavailable.'
   if (partialSummaries.length === 1) return partialSummaries[0]
 
-  return summarize(buildMergePrompt(partialSummaries))
+  return retryAsync(() => summarize(buildMergePrompt(partialSummaries)))
 }
 
 /** Build an OpenClaw-aligned summarization prompt for a batch of messages */

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import type { GatewayCronJob } from '@/types'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 
 interface Props {
   agentId: string

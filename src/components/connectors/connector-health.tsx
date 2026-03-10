@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { useNow } from '@/hooks/use-now'
 import type { ConnectorHealthEvent, ConnectorHealthEventType } from '@/types'
 

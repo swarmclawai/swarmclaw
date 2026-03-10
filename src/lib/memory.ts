@@ -1,4 +1,4 @@
-import { api } from './api-client'
+import { api } from './app/api-client'
 import type { MemoryEntry } from '../types'
 
 interface MemoryQueryOptions {

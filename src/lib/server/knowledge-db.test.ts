@@ -105,7 +105,7 @@ function rowToEntry(row: Record<string, unknown>): MemoryEntry {
 }
 
 // ---- Knowledge helpers (re-exported from memory-db.ts) ----
-import { buildFtsQuery } from './memory-db'
+import { buildFtsQuery } from '@/lib/server/memory/memory-db'
 
 function addRawMemory(data: {
   agentId?: string | null

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import type { Agent } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 
 export function TrashList() {

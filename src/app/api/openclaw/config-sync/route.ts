@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { detectConfigIssues, repairConfigIssue } from '@/lib/server/openclaw-config-sync'
+import { detectConfigIssues, repairConfigIssue } from '@/lib/server/openclaw/config-sync'
 import { errorMessage } from '@/lib/shared-utils'
 
 /** GET — detect configuration issues */

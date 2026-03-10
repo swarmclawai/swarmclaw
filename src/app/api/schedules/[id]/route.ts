@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { deleteSchedule, loadAgents, loadSchedules, loadSessions, upsertSchedules } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { notFound } from '@/lib/server/collection-helpers'
-import { getScheduleClusterIds, prepareScheduleUpdate } from '@/lib/server/schedule-service'
+import { getScheduleClusterIds, prepareScheduleUpdate } from '@/lib/server/schedules/schedule-service'
 import { errorMessage } from '@/lib/shared-utils'
 import { notify } from '@/lib/server/ws-hub'
 

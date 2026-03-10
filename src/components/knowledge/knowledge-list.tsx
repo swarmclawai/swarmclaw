@@ -1,11 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { useAppStore } from '@/stores/use-app-store'
 import { Badge } from '@/components/ui/badge'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { EmptyState } from '@/components/shared/empty-state'
+import { SearchInput } from '@/components/ui/search-input'
 import type { MemoryEntry } from '@/types'
 
 export function KnowledgeList() {
@@ -83,14 +84,12 @@ export function KnowledgeList() {
       {/* Search — only show when there are entries */}
       {entries.length > 0 && (
         <div className="px-5 py-2 shrink-0" style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
-          <input
-            type="text"
+          <SearchInput
+            size="sm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onClear={() => setSearch('')}
             placeholder="Search knowledge..."
-            className="w-full px-3 py-2 rounded-[10px] border border-white/[0.04] bg-surface text-text
-              text-[12px] outline-none transition-all duration-200 placeholder:text-text-3/70 focus-glow"
-            style={{ fontFamily: 'inherit' }}
           />
         </div>
       )}

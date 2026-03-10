@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { updateAgent } from '@/lib/agents'
+import { useNavigate } from '@/lib/app/navigation'
 import { toast } from 'sonner'
 import type { Agent, BoardTask, Schedule } from '@/types'
 
@@ -103,8 +104,7 @@ export function ProjectDetail() {
   const loadSecrets = useAppStore((s) => s.loadSecrets)
   const setEditingProjectId = useAppStore((s) => s.setEditingProjectId)
   const setProjectSheetOpen = useAppStore((s) => s.setProjectSheetOpen)
-  const setActiveView = useAppStore((s) => s.setActiveView)
-  const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
+  const navigateTo = useNavigate()
   const setEditingTaskId = useAppStore((s) => s.setEditingTaskId)
   const setTaskSheetOpen = useAppStore((s) => s.setTaskSheetOpen)
   const setEditingScheduleId = useAppStore((s) => s.setEditingScheduleId)
@@ -177,8 +177,8 @@ export function ProjectDetail() {
     return items.sort((a, b) => b.time - a.time).slice(0, 12)
   }, [projectTasks, projectSchedules, projectAgents])
 
-  const approvalTasks = useMemo(
-    () => projectTasks.filter((task) => !!task.pendingApproval),
+  const failedTasks = useMemo(
+    () => projectTasks.filter((task) => task.status === 'failed'),
     [projectTasks],
   )
 
@@ -238,13 +238,13 @@ export function ProjectDetail() {
   const attentionItems = useMemo(() => {
     const seen = new Set<string>()
     const items: Array<{ id: string; label: string; detail: string; tone: string; onClick: () => void }> = []
-    for (const task of approvalTasks.slice(0, 2)) {
+    for (const task of failedTasks.slice(0, 2)) {
       seen.add(task.id)
       items.push({
-        id: `approval-${task.id}`,
+        id: `failed-${task.id}`,
         label: task.title,
-        detail: 'Awaiting tool approval',
-        tone: 'text-amber-400',
+        detail: 'Task run failed',
+        tone: 'text-orange-400',
         onClick: () => { setEditingTaskId(task.id); setTaskSheetOpen(true) },
       })
     }
@@ -279,7 +279,7 @@ export function ProjectDetail() {
       })
     }
     return items.slice(0, 5)
-  }, [approvalTasks, blockedTasks, overdueSchedules, setEditingScheduleId, setEditingTaskId, setScheduleSheetOpen, setTaskSheetOpen, staleTasks])
+  }, [blockedTasks, failedTasks, overdueSchedules, setEditingScheduleId, setEditingTaskId, setScheduleSheetOpen, setTaskSheetOpen, staleTasks])
 
   const handleUnassignAgent = async (agentId: string) => {
     await updateAgent(agentId, { projectId: undefined })
@@ -530,7 +530,7 @@ export function ProjectDetail() {
                 <p className="text-[12px] text-text-3/60 mt-1">Surface blockers and the next useful action before digging into the full history.</p>
               </div>
               <button
-                onClick={() => setActiveView('tasks')}
+                onClick={() => navigateTo('tasks')}
                 className="shrink-0 px-3 py-2 rounded-[10px] bg-white/[0.04] text-[12px] font-600 text-text-2 hover:bg-white/[0.08] transition-all cursor-pointer border-none"
                 style={{ fontFamily: 'inherit' }}
               >
@@ -540,7 +540,7 @@ export function ProjectDetail() {
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
-                { label: 'Awaiting Approval', value: approvalTasks.length, tone: 'text-amber-400', hint: 'Tasks paused on approval' },
+                { label: 'Failed', value: failedTasks.length, tone: 'text-orange-400', hint: 'Tasks that need repair' },
                 { label: 'Blocked', value: blockedTasks.length, tone: 'text-rose-400', hint: 'Tasks waiting on dependencies' },
                 { label: 'Overdue', value: overdueTasks.length + overdueSchedules.length, tone: 'text-red-400', hint: 'Tasks or schedules behind plan' },
                 { label: 'Stale Tasks', value: staleTasks.length, tone: 'text-sky-400', hint: 'No meaningful progress in 3+ days' },
@@ -556,7 +556,7 @@ export function ProjectDetail() {
             <div className="flex flex-wrap gap-2 mt-4">
               {busiestAgent?.agent && (
                 <button
-                  onClick={() => { setCurrentAgent(busiestAgent.agent.id); setActiveView('agents') }}
+                  onClick={() => navigateTo('agents', busiestAgent.agent.id)}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-[10px] bg-accent-soft text-[12px] font-600 text-accent-bright hover:bg-accent-bright/15 transition-all cursor-pointer border-none"
                   style={{ fontFamily: 'inherit' }}
                 >
@@ -564,10 +564,10 @@ export function ProjectDetail() {
                   Open busiest agent
                 </button>
               )}
-              {(approvalTasks[0] || blockedTasks[0] || overdueTasks[0]) && (
+              {(failedTasks[0] || blockedTasks[0] || overdueTasks[0]) && (
                 <button
                   onClick={() => {
-                    const nextTask = approvalTasks[0] || blockedTasks[0] || overdueTasks[0]
+                    const nextTask = failedTasks[0] || blockedTasks[0] || overdueTasks[0]
                     if (!nextTask) return
                     setEditingTaskId(nextTask.id)
                     setTaskSheetOpen(true)
@@ -713,7 +713,7 @@ export function ProjectDetail() {
                   className="group/agent flex items-center gap-3 px-4 py-3 rounded-[12px] border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.1] transition-all"
                 >
                   <button
-                    onClick={() => { setCurrentAgent(agent.id); setActiveView('agents') }}
+                    onClick={() => navigateTo('agents', agent.id)}
                     className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer bg-transparent border-none text-left p-0"
                     style={{ fontFamily: 'inherit' }}
                   >
@@ -796,7 +796,7 @@ export function ProjectDetail() {
               })}
               {projectTasks.length > 10 && (
                 <button
-                  onClick={() => setActiveView('tasks')}
+                  onClick={() => navigateTo('tasks')}
                   className="text-[11px] text-accent-bright/70 hover:text-accent-bright text-center py-2 cursor-pointer bg-transparent border-none transition-colors"
                   style={{ fontFamily: 'inherit' }}
                 >

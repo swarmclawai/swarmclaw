@@ -1,27 +1,18 @@
 'use client'
 
 import { useState } from 'react'
-import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/heartbeat-defaults'
+import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/runtime/heartbeat-defaults'
 import type { Session } from '@/types'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { useNow } from '@/hooks/use-now'
-import { getSessionLastAssistantAt, getSessionLastMessage } from '@/lib/session-summary'
+import { getSessionLastAssistantAt, getSessionLastMessage } from '@/lib/chat/session-summary'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { ConnectorPlatformBadge, getSessionConnector } from '@/components/shared/connector-platform-icon'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { timeAgoShort } from '@/lib/time-format'
 import { toast } from 'sonner'
-
-function timeAgo(ts: number, now: number | null): string {
-  if (!ts) return ''
-  if (!now) return 'recently'
-  const s = Math.floor((now - ts) / 1000)
-  if (s < 60) return 'now'
-  if (s < 3600) return Math.floor(s / 60) + 'm'
-  if (s < 86400) return Math.floor(s / 3600) + 'h'
-  return Math.floor(s / 86400) + 'd'
-}
 
 function shortPath(p: string): string {
   return (p || '').replace(/^\/Users\/\w+/, '~')
@@ -154,7 +145,7 @@ export function ChatCard({ session, active, onClick }: Props) {
           ) : null
         })()}
         <span className="text-[11px] text-text-3/70 shrink-0 tabular-nums font-mono">
-          {timeAgo(session.lastActiveAt, now)}
+          {timeAgoShort(session.lastActiveAt, now)}
         </span>
         <button
           onClick={handleDeleteClick}

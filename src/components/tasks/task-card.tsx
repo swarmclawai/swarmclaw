@@ -2,19 +2,13 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
-import { api } from '@/lib/api-client'
+import { useNavigate } from '@/lib/app/navigation'
 import { updateTask, archiveTask } from '@/lib/tasks'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { timeAgo } from '@/lib/time-format'
+import { InfoChip } from '@/components/ui/info-chip'
 import type { BoardTask } from '@/types'
-
-function timeAgo(ts: number, now: number) {
-  const diff = now - ts
-  if (diff < 60_000) return 'just now'
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
-  return `${Math.floor(diff / 86400_000)}d ago`
-}
 
 interface TaskCardProps {
   task: BoardTask
@@ -30,8 +24,8 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
   const setEditingTaskId = useAppStore((s) => s.setEditingTaskId)
   const setTaskSheetOpen = useAppStore((s) => s.setTaskSheetOpen)
   const loadTasks = useAppStore((s) => s.loadTasks)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
-  const setActiveView = useAppStore((s) => s.setActiveView)
+  const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
+  const navigateTo = useNavigate()
   const [dragging, setDragging] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
   const [allowDrag, setAllowDrag] = useState(false)
@@ -70,7 +64,6 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
   const isBlocked = Array.isArray(task.blockedBy) && task.blockedBy.length > 0
   const isOverdue = task.dueAt && task.dueAt < now && task.status !== 'completed' && task.status !== 'archived'
   const borderColor = isBlocked ? 'border-l-rose-500'
-    : task.pendingApproval ? 'border-l-amber-500'
     : task.status === 'running' ? 'border-l-emerald-500'
     : task.status === 'failed' ? 'border-l-red-500'
     : 'border-l-transparent'
@@ -89,9 +82,9 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
 
   const handleViewSession = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (task.sessionId) {
-      setCurrentSession(task.sessionId)
-      setActiveView('agents')
+    if (task.agentId) {
+      void setCurrentAgent(task.agentId)
+      navigateTo('agents')
     }
   }
 
@@ -222,25 +215,25 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
       {(creatorAgent || delegatorAgent || task.sourceType === 'schedule' || githubSource) && (
         <div className="flex flex-wrap gap-1.5 mb-3">
           {delegatorAgent && (
-            <span className="inline-flex items-center gap-1.5 rounded-[7px] bg-amber-500/10 px-2 py-1 text-[10px] font-600 text-amber-300">
+            <InfoChip tone="warning">
               <AgentAvatar seed={delegatorAgent.avatarSeed} avatarUrl={delegatorAgent.avatarUrl} name={delegatorAgent.name} size={14} />
               Delegated by {delegatorAgent.name}
-            </span>
+            </InfoChip>
           )}
           {creatorAgent && creatorAgent.id !== delegatorAgent?.id && (
-            <span className="inline-flex items-center gap-1.5 rounded-[7px] bg-white/[0.05] px-2 py-1 text-[10px] font-600 text-text-2">
+            <InfoChip tone="neutral">
               <AgentAvatar seed={creatorAgent.avatarSeed} avatarUrl={creatorAgent.avatarUrl} name={creatorAgent.name} size={14} />
               Created by {creatorAgent.name}
-            </span>
+            </InfoChip>
           )}
           {task.sourceType === 'schedule' && (
-            <span className="inline-flex items-center gap-1.5 rounded-[7px] bg-purple-500/10 px-2 py-1 text-[10px] font-600 text-purple-300">
+            <InfoChip tone="purple">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="12" cy="12" r="8" />
                 <path d="M12 8v4l3 2" />
               </svg>
               {task.sourceScheduleName ? `Scheduled via ${task.sourceScheduleName}` : 'Scheduled task'}
-            </span>
+            </InfoChip>
           )}
           {githubSource && (
             githubSource.url ? (
@@ -257,9 +250,9 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
                 {githubSource.repo ? `${githubSource.repo}#${githubSource.number}` : `GitHub #${githubSource.number ?? githubSource.id}`}
               </a>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-[7px] bg-sky-500/10 px-2 py-1 text-[10px] font-600 text-sky-300">
+              <InfoChip tone="info">
                 GitHub {githubSource.repo ? `${githubSource.repo}#${githubSource.number}` : `#${githubSource.number ?? githubSource.id}`}
-              </span>
+              </InfoChip>
             )
           )}
         </div>
@@ -332,47 +325,6 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
 
       {task.error && (
         <p className="mt-2 text-[11px] text-red-400/80 line-clamp-2">{task.error}</p>
-      )}
-
-      {/* Pending tool approval */}
-      {task.pendingApproval && (
-        <div className="mt-3 p-3 rounded-[10px] bg-amber-500/[0.08] border border-amber-500/20">
-          <div className="flex items-center gap-2 mb-2">
-            <svg className="w-3.5 h-3.5 text-amber-400" viewBox="0 0 16 16" fill="none">
-              <path d="M8 1l7 14H1L8 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-              <path d="M8 6v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            <span className="text-[11px] font-600 text-amber-400">Approval Required</span>
-          </div>
-          <p className="text-[12px] text-text-2 mb-1 font-600">{task.pendingApproval.toolName}</p>
-          <pre className="text-[10px] text-text-3 bg-black/20 rounded-[6px] px-2 py-1.5 mb-2 overflow-x-auto max-h-[80px] overflow-y-auto whitespace-pre-wrap break-all">
-            {JSON.stringify(task.pendingApproval.args, null, 2).slice(0, 500)}
-          </pre>
-          <div className="flex gap-2">
-            <button
-              onClick={async (e) => {
-                e.stopPropagation()
-                await api('POST', `/tasks/${task.id}/approve`, { approved: true })
-                await loadTasks()
-              }}
-              className="flex-1 px-3 py-1.5 rounded-[8px] text-[11px] font-600 bg-green-500/20 text-green-400 border-none cursor-pointer hover:bg-green-500/30 transition-colors"
-              style={{ fontFamily: 'inherit' }}
-            >
-              Approve
-            </button>
-            <button
-              onClick={async (e) => {
-                e.stopPropagation()
-                await api('POST', `/tasks/${task.id}/approve`, { approved: false })
-                await loadTasks()
-              }}
-              className="flex-1 px-3 py-1.5 rounded-[8px] text-[11px] font-600 bg-red-500/20 text-red-400 border-none cursor-pointer hover:bg-red-500/30 transition-colors"
-              style={{ fontFamily: 'inherit' }}
-            >
-              Reject
-            </button>
-          </div>
-        </div>
       )}
 
       {/* Inline comments — show latest 2 */}

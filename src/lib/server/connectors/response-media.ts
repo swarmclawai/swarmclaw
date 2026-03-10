@@ -195,7 +195,7 @@ const WHATSAPP_GROUP_JID_RE = /^[\d]+(-[\d]+)*@g\.us$/i
  * - User JIDs (`…@s.whatsapp.net`, `…@lid`) extract the phone number.
  * - Plain phone numbers are cleaned to digits and suffixed with `@s.whatsapp.net`.
  *
- * Works for all country codes — ported from OpenClaw's normalizeWhatsAppTarget.
+ * Works for all country codes.
  */
 export function normalizeWhatsappTarget(raw: string): string {
   const trimmed = raw.replace(/^whatsapp:/i, '').trim()

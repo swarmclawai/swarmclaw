@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { ensureGatewayConnected, getGateway, disconnectGateway, manualConnect } from '@/lib/server/openclaw-gateway'
+import { ensureGatewayConnected, getGateway, disconnectGateway, manualConnect } from '@/lib/server/openclaw/gateway'
 import { errorMessage } from '@/lib/shared-utils'
 
 /** POST — proxy an RPC call or perform gateway actions */

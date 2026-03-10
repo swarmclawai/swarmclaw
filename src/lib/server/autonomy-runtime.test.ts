@@ -124,7 +124,7 @@ describe('durable watch jobs', () => {
       import fs from 'node:fs'
       import path from 'node:path'
       const storage = (await import('./src/lib/server/storage')).default
-      const watchJobs = (await import('./src/lib/server/watch-jobs')).default
+      const watchJobs = (await import('@/lib/server/runtime/watch-jobs')).default
 
       const watchFile = path.join(process.env.DATA_DIR, 'watch.txt')
       fs.writeFileSync(watchFile, 'build succeeded')
@@ -205,8 +205,8 @@ describe('durable watch jobs', () => {
   it('triggers mailbox and approval waits from human-loop events', () => {
     const output = runWithTempDataDir(`
       const storage = (await import('./src/lib/server/storage')).default
-      const watchJobs = (await import('./src/lib/server/watch-jobs')).default
-      const mailboxMod = await import('./src/lib/server/session-mailbox')
+      const watchJobs = (await import('@/lib/server/runtime/watch-jobs')).default
+      const mailboxMod = await import('@/lib/server/chatrooms/session-mailbox')
       const approvalsMod = await import('./src/lib/server/approvals')
       const mailbox = mailboxMod.default || mailboxMod
       const approvals = approvalsMod.default || approvalsMod
@@ -237,7 +237,6 @@ describe('durable watch jobs', () => {
 
       const approval = approvals.requestApproval({
         category: 'human_loop',
-        sessionId: 'human',
         title: 'Approve deployment',
         data: { env: 'prod' },
       })
@@ -282,7 +281,7 @@ describe('durable watch jobs', () => {
 describe('delegation jobs', () => {
   it('preserves cancellation and recovers stale jobs', () => {
     const output = runWithTempDataDir(`
-      const delegationJobs = (await import('./src/lib/server/delegation-jobs')).default
+      const delegationJobs = (await import('@/lib/server/agents/delegation-jobs')).default
       const storage = (await import('./src/lib/server/storage')).default
 
       let cancelledCalls = 0

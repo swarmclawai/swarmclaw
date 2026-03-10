@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 import type { Agent } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
+import { useNavigate } from '@/lib/app/navigation'
 import { useWs } from '@/hooks/use-ws'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { deleteAgent } from '@/lib/agents'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import {
@@ -33,12 +34,12 @@ interface Props {
 
 export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, onSetDefault }: Props) {
   const mountedRef = useMountedRef()
+  const navigateTo = useNavigate()
   const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
   const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
   const loadSessions = useAppStore((s) => s.loadSessions)
   const loadAgents = useAppStore((s) => s.loadAgents)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
-  const setActiveView = useAppStore((s) => s.setActiveView)
+  const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
   const setMessages = useChatStore((s) => s.setMessages)
   const sendMessage = useChatStore((s) => s.sendMessage)
   const togglePinAgent = useAppStore((s) => s.togglePinAgent)
@@ -110,8 +111,8 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
       await loadSessions()
       if (!mountedRef.current) return
       setMessages([])
-      setCurrentSession(session.id)
-      setActiveView('agents')
+      void setCurrentAgent(agent.id)
+      navigateTo('agents')
       await sendMessage(task)
     } catch (err) {
       console.error('Agent task run failed:', err)

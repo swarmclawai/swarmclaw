@@ -3,13 +3,13 @@ import assert from 'node:assert/strict'
 import { AgentCreateSchema } from './schemas'
 
 describe('AgentCreateSchema', () => {
-  it('defaults platformAssignScope to self', () => {
+  it('defaults platformAssignScope to all', () => {
     const parsed = AgentCreateSchema.parse({
       name: 'Solo Agent',
       provider: 'openai',
     })
 
-    assert.equal(parsed.platformAssignScope, 'self')
+    assert.equal(parsed.platformAssignScope, 'all')
   })
 
   it('accepts explicit all-scope delegation without relying on legacy orchestrator flags', () => {

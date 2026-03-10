@@ -5,9 +5,10 @@ import { toast } from 'sonner'
 import { OpenClawDeployPanel } from '@/components/openclaw/openclaw-deploy-panel'
 import { useAppStore } from '@/stores/use-app-store'
 import { useWs } from '@/hooks/use-ws'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import type { Credential, GatewayProfile } from '@/types'
 import { dedup } from '@/lib/shared-utils'
+import { StatusDot } from '@/components/ui/status-dot'
 
 interface OpenClawDeployDraft {
   endpoint: string
@@ -324,8 +325,10 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
                     </button>
                   </>
                 )}
-                <span className={`w-2 h-2 rounded-full ${item.isConnected ? 'bg-emerald-400' : 'bg-white/10'}`}
-                  style={item.isConnected ? { animation: 'pulse-subtle 2s infinite' } : undefined} />
+                <StatusDot
+                  status={item.isConnected ? 'online' : 'idle'}
+                  pulse={item.isConnected}
+                />
               </div>
             </div>
             <div className="text-[12px] text-text-3/60 font-mono truncate">
@@ -418,15 +421,17 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
                 {gateway.isDefault && (
                   <span className="text-[10px] font-700 px-2 py-0.5 rounded-[5px] bg-accent-bright/10 text-accent-bright uppercase tracking-wider">Default</span>
                 )}
-                <span className={`w-2 h-2 rounded-full ${
-                  gateway.status === 'healthy'
-                    ? 'bg-emerald-400'
-                    : gateway.status === 'degraded'
-                      ? 'bg-amber-400'
-                      : gateway.status === 'offline'
-                        ? 'bg-red-400'
-                        : 'bg-white/10'
-                }`} />
+                <StatusDot
+                  status={
+                    gateway.status === 'healthy'
+                      ? 'online'
+                      : gateway.status === 'degraded'
+                        ? 'warning'
+                        : gateway.status === 'offline'
+                          ? 'offline'
+                          : 'idle'
+                  }
+                />
               </div>
             </div>
             <div className="text-[12px] text-text-3/70">

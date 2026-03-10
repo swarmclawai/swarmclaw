@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 import type { PendingExecApproval, ExecApprovalDecision } from '@/types'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { errorMessage } from '@/lib/shared-utils'
 
 interface ApprovalState {

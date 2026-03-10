@@ -25,6 +25,13 @@ const COMMAND_GROUPS = {
       login: { description: 'Validate an access key', method: 'POST', path: '/auth' },
     },
   },
+  approvals: {
+    description: 'List and resolve human-loop approvals',
+    commands: {
+      list: { description: 'List pending human-loop approvals', method: 'GET', path: '/approvals' },
+      resolve: { description: 'Resolve a human-loop approval', method: 'POST', path: '/approvals' },
+    },
+  },
   chatrooms: {
     description: 'Manage multi-agent chatrooms',
     commands: {
@@ -397,7 +404,6 @@ const COMMAND_GROUPS = {
       'messages-update': { description: 'Update chat message metadata (e.g. bookmark)', method: 'PUT', path: '/chats/:id/messages', params: ['id'] },
       'messages-send': { description: 'Append a user/system message to a chat', method: 'POST', path: '/chats/:id/messages', params: ['id'] },
       'messages-delete': { description: 'Delete a message from a chat', method: 'DELETE', path: '/chats/:id/messages', params: ['id'] },
-      fork: { description: 'Fork chat from a specific message index', method: 'POST', path: '/chats/:id/fork', params: ['id'] },
       'edit-resend': { description: 'Edit and resend from a specific message index', method: 'POST', path: '/chats/:id/edit-resend', params: ['id'] },
       chat: { description: 'Send chat message (SSE stream)', method: 'POST', path: '/chats/:id/chat', params: ['id'], stream: true, waitable: true },
       stop: { description: 'Cancel active/running chat work', method: 'POST', path: '/chats/:id/stop', params: ['id'] },

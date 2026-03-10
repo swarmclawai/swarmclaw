@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import type { GatewayReloadMode } from '@/types'
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected'

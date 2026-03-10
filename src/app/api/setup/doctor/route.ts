@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import { DATA_DIR } from '@/lib/server/data-dir'
 import { loadAgents, loadCredentials, loadSettings } from '@/lib/server/storage'
 import { dedup, errorMessage } from '@/lib/shared-utils'
+import { detectDocker } from '@/lib/server/sandbox/docker-detect'
 
 type CheckStatus = 'pass' | 'warn' | 'fail'
 
@@ -186,6 +187,7 @@ export async function GET(req: Request) {
     { id: 'claude-cli', label: 'Claude Code CLI', command: 'claude' },
     { id: 'codex-cli', label: 'OpenAI Codex CLI', command: 'codex' },
     { id: 'opencode-cli', label: 'OpenCode CLI', command: 'opencode' },
+    { id: 'google-workspace-cli', label: 'Google Workspace CLI', command: 'gws' },
   ]
 
   for (const binary of optionalBinaries) {
@@ -200,6 +202,43 @@ export async function GET(req: Request) {
         : `${binary.command} is not installed (optional, only needed for ${binary.label} provider).`,
     )
   }
+
+  const pluginSettings = (settings?.pluginSettings && typeof settings.pluginSettings === 'object')
+    ? settings.pluginSettings as Record<string, Record<string, unknown>>
+    : {}
+  const googleWorkspaceSettings = (
+    (pluginSettings.google_workspace && typeof pluginSettings.google_workspace === 'object')
+      ? pluginSettings.google_workspace
+      : null
+  ) as Record<string, unknown> | null
+  const googleWorkspaceConfigured = Boolean(
+    googleWorkspaceSettings
+    && (
+      typeof googleWorkspaceSettings.accessToken === 'object'
+      || typeof googleWorkspaceSettings.credentialsJson === 'object'
+      || (typeof googleWorkspaceSettings.credentialsFile === 'string' && googleWorkspaceSettings.credentialsFile.trim())
+    ),
+  )
+  pushCheck(
+    checks,
+    'google-workspace-auth',
+    'Google Workspace plugin auth',
+    googleWorkspaceConfigured ? 'pass' : 'warn',
+    googleWorkspaceConfigured
+      ? 'Google Workspace plugin settings include auth material.'
+      : 'Google Workspace plugin auth is not configured yet (optional unless you plan to use the Google Workspace CLI tool).',
+  )
+
+  const docker = detectDocker()
+  pushCheck(
+    checks,
+    'docker',
+    'Docker (sandbox runtime)',
+    docker.available ? 'pass' : 'warn',
+    docker.available
+      ? `Docker ${docker.version || ''} is available for agent sandbox execution.`.trim()
+      : 'Docker is not available. Agent sandbox execution requires Docker Desktop.',
+  )
 
   const gitRootCheck = run('git', ['rev-parse', '--is-inside-work-tree'], 4_000)
   let localSha: string | null = null
@@ -261,6 +300,10 @@ export async function GET(req: Request) {
     summary,
     checks,
     actions: dedup(actions),
+    docker: {
+      available: docker.available,
+      version: docker.version || null,
+    },
     git: {
       localSha,
       remoteSha,

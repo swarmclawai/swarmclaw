@@ -1,5 +1,5 @@
 /**
- * Tool loop detection — modelled after OpenClaw's approach.
+ * Tool loop detection.
  *
  * Four detectors run on every on_tool_end event:
  * 1. Generic repeat    — same (name, inputHash) seen N+ times
@@ -56,15 +56,15 @@ export interface LoopDetectionThresholds {
 }
 
 const DEFAULT_THRESHOLDS: LoopDetectionThresholds = {
-  repeatWarn: 6,
-  repeatCritical: 12,
-  pollWarn: 4,
-  pollCritical: 8,
-  pingPongWarn: 3,
-  pingPongCritical: 5,
-  circuitBreaker: 20,
-  toolFrequencyWarn: 3,
-  toolFrequencyCritical: 5,
+  repeatWarn: 20,
+  repeatCritical: 40,
+  pollWarn: 20,
+  pollCritical: 40,
+  pingPongWarn: 20,
+  pingPongCritical: 40,
+  circuitBreaker: 60,
+  toolFrequencyWarn: 150,
+  toolFrequencyCritical: 300,
 }
 
 // ---------------------------------------------------------------------------

@@ -7,10 +7,10 @@ import { describe, it, before, after } from 'node:test'
 // ── Temp-dir env isolation ────────────────────────────────────────────
 let tempDir: string
 let storage: typeof import('../storage')
-let dedupe: typeof import('../../schedule-dedupe')
-let origin: typeof import('../../schedule-origin')
-let scheduleName: typeof import('../../schedule-name')
-let normalization: typeof import('../schedule-normalization')
+let dedupe: typeof import('../../schedules/schedule-dedupe')
+let origin: typeof import('../../schedules/schedule-origin')
+let scheduleName: typeof import('../../schedules/schedule-name')
+let normalization: typeof import('@/lib/server/schedules/schedule-normalization')
 
 const originalEnv = {
   DATA_DIR: process.env.DATA_DIR,
@@ -30,10 +30,10 @@ before(async () => {
   delete process.env.SWARMCLAW_BUILD_MODE
 
   storage = await import('../storage')
-  dedupe = await import('../../schedule-dedupe')
-  origin = await import('../../schedule-origin')
-  scheduleName = await import('../../schedule-name')
-  normalization = await import('../schedule-normalization')
+  dedupe = await import('../../schedules/schedule-dedupe')
+  origin = await import('../../schedules/schedule-origin')
+  scheduleName = await import('../../schedules/schedule-name')
+  normalization = await import('@/lib/server/schedules/schedule-normalization')
 })
 
 after(() => {

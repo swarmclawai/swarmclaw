@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
+import { DashboardShell } from "@/components/layout/dashboard-shell"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -28,7 +29,9 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="antialiased" cz-shortcut-listen="true">
         <TooltipProvider>
-          {children}
+          <DashboardShell>
+            {children}
+          </DashboardShell>
           <Toaster />
         </TooltipProvider>
       </body>

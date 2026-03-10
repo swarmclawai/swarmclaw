@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { perf } from '@/lib/server/perf'
+import { perf } from '@/lib/server/runtime/perf'
 import { loadAgents, loadSessions, loadUsage, logActivity, upsertStoredItem } from '@/lib/server/storage'
-import { normalizeProviderEndpoint } from '@/lib/openclaw-endpoint'
+import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { notify } from '@/lib/server/ws-hub'
 import { getAgentSpendWindows } from '@/lib/server/cost'
 import { resolveAgentPluginSelection } from '@/lib/agent-default-tools'
@@ -11,7 +11,7 @@ import { z } from 'zod'
 export const dynamic = 'force-dynamic'
 
 async function ensureDaemonIfNeeded(source: string) {
-  const { ensureDaemonStarted } = await import('@/lib/server/daemon-state')
+  const { ensureDaemonStarted } = await import('@/lib/server/runtime/daemon-state')
   ensureDaemonStarted(source)
 }
 

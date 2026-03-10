@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { normalizeHeartbeatSettingFields } from '@/lib/heartbeat-defaults'
+import { normalizeHeartbeatSettingFields } from '@/lib/runtime/heartbeat-defaults'
 import { normalizeWhatsAppApprovedContacts } from '@/lib/server/connectors/pairing'
 import { loadPublicSettings, loadSettings, saveSettings } from '@/lib/server/storage'
-import { normalizeRuntimeSettingFields } from '@/lib/runtime-loop'
+import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
 export const dynamic = 'force-dynamic'
 
 
@@ -130,6 +130,7 @@ export async function PUT(req: Request) {
   settings.taskManagementEnabled = parseBoolSetting(settings.taskManagementEnabled, true)
   settings.projectManagementEnabled = parseBoolSetting(settings.projectManagementEnabled, true)
   settings.integrityMonitorEnabled = parseBoolSetting(settings.integrityMonitorEnabled, true)
+  settings.daemonAutostartEnabled = parseBoolSetting(settings.daemonAutostartEnabled, true)
   settings.sessionResetMode = settings.sessionResetMode === 'daily' ? 'daily' : settings.sessionResetMode === 'idle' ? 'idle' : null
   settings.whatsappApprovedContacts = normalizeWhatsAppApprovedContacts(settings.whatsappApprovedContacts)
   settings.sessionIdleTimeoutSec = parseIntSetting(
@@ -149,6 +150,12 @@ export async function PUT(req: Request) {
 
   saveSettings(settings)
 
+  if ('daemonAutostartEnabled' in sanitizedBody && settings.daemonAutostartEnabled) {
+    import('@/lib/server/runtime/daemon-state').then(({ startDaemon }) => {
+      startDaemon({ source: 'api/settings:put:daemon-autostart', manualStart: true })
+    }).catch(() => { /* daemon runtime may not be initialized yet */ })
+  }
+
   // Restart heartbeat service when heartbeat-related settings change
   const heartbeatKeys = [
     'heartbeatIntervalSec',
@@ -164,7 +171,7 @@ export async function PUT(req: Request) {
     'sessionResetTimezone',
   ]
   if (heartbeatKeys.some((k) => k in sanitizedBody)) {
-    import('@/lib/server/heartbeat-service').then(({ restartHeartbeatService }) => {
+    import('@/lib/server/runtime/heartbeat-service').then(({ restartHeartbeatService }) => {
       restartHeartbeatService()
     }).catch(() => { /* heartbeat service may not be initialized yet */ })
   }

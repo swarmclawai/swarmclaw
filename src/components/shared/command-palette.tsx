@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
-import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/local-observability'
+import { isLocalhostBrowser, isVisibleSessionForViewer } from '@/lib/observability/local-observability'
+import { useNavigate } from '@/lib/app/navigation'
 import { toast } from 'sonner'
 
 interface CommandItem {
@@ -26,20 +27,19 @@ export function CommandPalette() {
   const currentUser = useAppStore((s) => s.currentUser)
   const tasks = useAppStore((s) => s.tasks)
   const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
-  const setCurrentSession = useAppStore((s) => s.setCurrentSession)
-  const setActiveView = useAppStore((s) => s.setActiveView)
+  const navigateTo = useNavigate()
   const setEditingTaskId = useAppStore((s) => s.setEditingTaskId)
   const setTaskSheetOpen = useAppStore((s) => s.setTaskSheetOpen)
 
   const openSettingsSection = useCallback((tabId?: string, sectionId?: string) => {
-    setActiveView('settings')
+    navigateTo('settings')
     setOpen(false)
     window.setTimeout(() => {
       window.dispatchEvent(new CustomEvent('swarmclaw:settings-focus', {
         detail: { tabId, sectionId },
       }))
     }, 80)
-  }, [setActiveView])
+  }, [navigateTo])
 
   // Register keyboard shortcut
   useEffect(() => {
@@ -71,7 +71,7 @@ export function CommandPalette() {
     const views = [
       { id: 'home', label: 'Home', description: 'Overview and triage', keywords: ['dashboard', 'overview', 'activity'] },
       { id: 'agents', label: 'Agents', description: 'Agent chats and configuration', keywords: ['chat', 'assistant', 'default'] },
-      { id: 'tasks', label: 'Tasks', description: 'Task board and approvals', keywords: ['board', 'queue', 'backlog', 'approval'] },
+      { id: 'tasks', label: 'Tasks', description: 'Task board and execution queues', keywords: ['board', 'queue', 'backlog', 'execution'] },
       { id: 'projects', label: 'Projects', description: 'Scoped workspaces for agents and tasks', keywords: ['workspace', 'scope'] },
       { id: 'chatrooms', label: 'Chatrooms', description: 'Shared multi-agent conversations', keywords: ['group', 'room', 'mentions'] },
       { id: 'schedules', label: 'Schedules', description: 'Recurring and timed automations', keywords: ['cron', 'automation', 'interval'] },
@@ -89,7 +89,7 @@ export function CommandPalette() {
         description: view.description,
         keywords: [...view.keywords],
         category: 'nav',
-        onSelect: () => { setActiveView(view.id); setOpen(false) },
+        onSelect: () => { navigateTo(view.id); setOpen(false) },
       })
     }
 
@@ -137,13 +137,12 @@ export function CommandPalette() {
           : `Open ${agent.name}'s chat`,
         keywords: [agent.provider, agent.model, agent.description || ''].filter(Boolean),
         category: 'agent',
-        onSelect: async () => {
+        onSelect: () => {
           if (agent.disabled === true && !agent.threadSessionId) {
             toast.error(`${agent.name} is disabled. Re-enable it to start a new chat.`)
             return
           }
-          await setCurrentAgent(agent.id)
-          setActiveView('agents')
+          navigateTo('agents', agent.id)
           setOpen(false)
         },
       })
@@ -159,7 +158,7 @@ export function CommandPalette() {
         description: sessionAgent ? `Recent chat with ${sessionAgent.name}` : 'Direct model chat',
         keywords: [session.provider, session.model, sessionAgent?.name || ''].filter(Boolean),
         category: 'chat',
-        onSelect: () => { setCurrentSession(session.id); setActiveView('agents'); setOpen(false) },
+        onSelect: () => { if (session.agentId) void setCurrentAgent(session.agentId); navigateTo('agents'); setOpen(false) },
       })
     }
 
@@ -177,7 +176,7 @@ export function CommandPalette() {
     }
 
     return result
-  }, [agents, currentUser, openSettingsSection, sessions, setActiveView, setCurrentAgent, setCurrentSession, setEditingTaskId, setTaskSheetOpen, tasks])
+  }, [agents, currentUser, navigateTo, openSettingsSection, sessions, setCurrentAgent, setEditingTaskId, setTaskSheetOpen, tasks])
 
   const filtered = useMemo(() => {
     if (!query.trim()) return items.slice(0, 20)

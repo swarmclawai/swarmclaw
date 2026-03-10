@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
-import { api } from '@/lib/api-client'
+import { api } from '@/lib/app/api-client'
 import { toast } from 'sonner'
 
 interface Props {

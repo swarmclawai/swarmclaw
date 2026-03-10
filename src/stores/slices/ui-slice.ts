@@ -1,7 +1,7 @@
 import { StateCreator } from 'zustand'
 import type { AppState } from '../use-app-store'
 import type { AppView, FleetFilter } from '../../types'
-import { safeStorageGet, safeStorageSet } from '../../lib/safe-storage'
+import { safeStorageGet, safeStorageSet } from '@/lib/app/safe-storage'
 
 export interface UiSlice {
   sidebarOpen: boolean

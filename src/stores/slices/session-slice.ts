@@ -2,37 +2,33 @@ const inflightSessionRefreshes = new Map<string, Promise<void>>()
 import { StateCreator } from 'zustand'
 import type { AppState } from '../use-app-store'
 import type { Sessions, Session } from '../../types'
-import { fetchChat, fetchChats } from '../../lib/chats'
-import { api } from '../../lib/api-client'
-import { errorMessage } from '../../lib/shared-utils'
+import { api } from '@/lib/app/api-client'
+import { fetchChat, fetchChats } from '@/lib/chat/chats'
 import { setIfChanged, invalidateFingerprint } from '../set-if-changed'
+
+/** Derive the active session ID from the current agent — no stored `currentSessionId`. */
+export function selectActiveSessionId(s: AppState): string | null {
+  if (!s.currentAgentId) return null
+  const agent = s.agents[s.currentAgentId]
+  return agent?.threadSessionId ?? null
+}
 
 export interface SessionSlice {
   sessions: Sessions
-  currentSessionId: string | null
   loadSessions: () => Promise<void>
   refreshSession: (id: string) => Promise<void>
-  setCurrentSession: (id: string | null) => void
   removeSession: (id: string) => void
   clearSessions: (ids: string[]) => Promise<void>
   togglePinSession: (id: string) => void
   updateSessionInStore: (session: Session) => void
-  forkSession: (sessionId: string, messageIndex: number) => Promise<string | null>
 }
 
 export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = (set, get) => ({
   sessions: {},
-  currentSessionId: null,
   loadSessions: async () => {
     try {
       const sessions = await fetchChats()
-      const changed = setIfChanged<AppState>(set, 'sessions', sessions)
-      if (changed) {
-        const currentSessionId = get().currentSessionId
-        if (currentSessionId && !sessions[currentSessionId]) {
-          set({ currentSessionId: null })
-        }
-      }
+      setIfChanged<AppState>(set, 'sessions', sessions)
     } catch (err) {
       console.warn('Store error:', err)
     }
@@ -48,11 +44,9 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
     const refreshPromise = (async () => {
       try {
         const session = await fetchChat(id)
-        const currentSessionId = get().currentSessionId
         invalidateFingerprint('sessions')
         set({
           sessions: { ...get().sessions, [id]: session },
-          currentSessionId: currentSessionId && currentSessionId === id ? id : currentSessionId,
         })
       } catch (err) {
       console.warn('Store error:', err)
@@ -68,12 +62,16 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
       }
     }
   },
-  setCurrentSession: (id) => set({ currentSessionId: id }),
   removeSession: (id) => {
     const sessions = { ...get().sessions }
     delete sessions[id]
     invalidateFingerprint('sessions')
-    set({ sessions, currentSessionId: get().currentSessionId === id ? null : get().currentSessionId })
+    const activeSessionId = selectActiveSessionId(get())
+    if (activeSessionId === id) {
+      set({ sessions, currentAgentId: null })
+    } else {
+      set({ sessions })
+    }
   },
   clearSessions: async (ids) => {
     if (!ids.length) return
@@ -81,7 +79,12 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
     const sessions = { ...get().sessions }
     for (const id of ids) delete sessions[id]
     invalidateFingerprint('sessions')
-    set({ sessions, currentSessionId: ids.includes(get().currentSessionId!) ? null : get().currentSessionId })
+    const activeSessionId = selectActiveSessionId(get())
+    if (activeSessionId && ids.includes(activeSessionId)) {
+      set({ sessions, currentAgentId: null })
+    } else {
+      set({ sessions })
+    }
   },
   togglePinSession: (id) => {
     const sessions = { ...get().sessions }
@@ -96,17 +99,5 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
   updateSessionInStore: (session) => {
     invalidateFingerprint('sessions')
     set({ sessions: { ...get().sessions, [session.id]: session } })
-  },
-  forkSession: async (sessionId, messageIndex) => {
-    try {
-      const forked = await api<Session>('POST', `/chats/${sessionId}/fork`, { messageIndex })
-      if (!forked?.id) return null
-      await get().loadSessions()
-      set({ currentSessionId: forked.id })
-      return forked.id
-    } catch (err: unknown) {
-      console.error('Fork failed:', errorMessage(err))
-      return null
-    }
   }
 })

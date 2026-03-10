@@ -6,7 +6,7 @@ import {
   isPluginInstallCorsPath,
   resolvePluginInstallCorsOrigin,
 } from '@/lib/plugin-install-cors'
-import { isProductionRuntime } from '@/lib/runtime-env'
+import { isProductionRuntime } from '@/lib/runtime/runtime-env'
 import { hmrSingleton } from '@/lib/shared-utils'
 
 /* ------------------------------------------------------------------ */

@@ -16,11 +16,47 @@ export interface ToolContext {
   memoryScopeMode?: 'auto' | 'all' | 'global' | 'agent' | 'session' | 'project' | null
 }
 
+/**
+ * Mutable container for an AbortSignal, set after tool build.
+ * Allows stream-agent-chat to propagate cancellation to in-flight tools.
+ */
+export interface AbortSignalRef {
+  signal?: AbortSignal
+}
+
 export interface SessionToolsResult {
   tools: StructuredToolInterface[]
   cleanup: () => Promise<void>
   /** Maps tool name → plugin ID for attribution in usage tracking */
   toolToPluginMap: Record<string, string>
+  /** Set after build to propagate abort from the chat loop to tool executions */
+  abortSignalRef: AbortSignalRef
+}
+
+/**
+ * Compose a parent abort signal with a timeout, returning a signal that fires
+ * on whichever triggers first. Useful for tool-level fetch calls.
+ */
+export function composeAbortSignals(parentSignal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  if (!parentSignal) return AbortSignal.timeout(timeoutMs)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), timeoutMs)
+  const onParentAbort = () => {
+    clearTimeout(timer)
+    controller.abort(parentSignal.reason)
+  }
+  if (parentSignal.aborted) {
+    clearTimeout(timer)
+    controller.abort(parentSignal.reason)
+  } else {
+    parentSignal.addEventListener('abort', onParentAbort, { once: true })
+  }
+  // Clean up listener when our signal fires (from timeout)
+  controller.signal.addEventListener('abort', () => {
+    clearTimeout(timer)
+    parentSignal.removeEventListener('abort', onParentAbort)
+  }, { once: true })
+  return controller.signal
 }
 
 export interface ToolBuildContext {
@@ -37,6 +73,17 @@ export interface ToolBuildContext {
   readStoredDelegateResumeId: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini') => string | null
   resolveCurrentSession: () => any | null
   activePlugins: string[]
+  /** Agent's file access policy — passed to shell for command-level enforcement */
+  fileAccessPolicy?: { allowedPaths?: string[]; blockedPaths?: string[] } | null
+  /** Agent's Docker sandbox config — passed to shell for containerized execution */
+  sandboxConfig?: {
+    enabled: boolean
+    image?: string
+    network?: 'none' | 'bridge'
+    memoryMb?: number
+    cpus?: number
+    readonlyRoot?: boolean
+  } | null
 }
 
 function normalizeWorkspaceAlias(cwd: string, filePath: string): string {
