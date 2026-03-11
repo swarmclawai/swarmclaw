@@ -40,7 +40,7 @@ export function shouldAutoRouteHeartbeatAlerts(config?: {
 
 export function shouldPersistInboundUserMessage(internal: boolean, source: string): boolean {
   if (!internal) return true
-  return source === 'eval'
+  return source === 'eval' || source === 'subagent'
 }
 
 function escapeRegExp(value: string): string {

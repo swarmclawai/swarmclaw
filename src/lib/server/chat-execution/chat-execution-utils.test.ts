@@ -82,11 +82,12 @@ describe('shouldPersistInboundUserMessage', () => {
     assert.equal(shouldPersistInboundUserMessage(false, 'connector'), true)
   })
 
-  it('returns true for internal eval messages', () => {
+  it('returns true for internal eval and subagent messages', () => {
     assert.equal(shouldPersistInboundUserMessage(true, 'eval'), true)
+    assert.equal(shouldPersistInboundUserMessage(true, 'subagent'), true)
   })
 
-  it('returns false for internal non-eval messages', () => {
+  it('returns false for other internal messages', () => {
     assert.equal(shouldPersistInboundUserMessage(true, 'heartbeat'), false)
     assert.equal(shouldPersistInboundUserMessage(true, 'chat'), false)
     assert.equal(shouldPersistInboundUserMessage(true, 'daemon'), false)
