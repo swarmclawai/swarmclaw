@@ -8,6 +8,7 @@ import {
   normalizeWhatsAppAudioForSend,
   normalizeWhatsAppIdentifier,
   resolveWhatsAppAllowedIdentifiers,
+  sendWhatsAppTypingPresence,
 } from './whatsapp'
 import { normalizeE164, normalizeWhatsappTarget } from './response-media'
 
@@ -143,6 +144,29 @@ test('isWhatsAppSocketAlive keeps QR and active sessions marked live', () => {
     socket: { ws: { isOpen: true } },
     connectionState: 'open',
   }), true)
+})
+
+test('sendWhatsAppTypingPresence sends composing updates for the target jid', async () => {
+  const calls: Array<{ state: string; jid: string }> = []
+  await sendWhatsAppTypingPresence({
+    socket: {
+      sendPresenceUpdate: async (state, jid) => {
+        calls.push({ state, jid })
+      },
+    },
+    channelId: '15550001111@s.whatsapp.net',
+  })
+
+  assert.deepEqual(calls, [
+    { state: 'composing', jid: '15550001111@s.whatsapp.net' },
+  ])
+})
+
+test('sendWhatsAppTypingPresence ignores empty targets and missing sockets', async () => {
+  await sendWhatsAppTypingPresence({
+    socket: null,
+    channelId: '   ',
+  })
 })
 
 test('normalizeWhatsAppAudioForSend transcodes mp3 voice notes to Android-safe opus/ogg', () => {

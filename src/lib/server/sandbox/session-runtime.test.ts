@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { resolveSandboxRuntimeStatus, resolveSandboxWorkdir } from '@/lib/server/sandbox/session-runtime'
+import type { Session } from '@/types'
 
 test('resolveSandboxRuntimeStatus defaults enabled sandboxes to all sessions', () => {
   const status = resolveSandboxRuntimeStatus({
@@ -9,7 +10,7 @@ test('resolveSandboxRuntimeStatus defaults enabled sandboxes to all sessions', (
       id: 'session-1',
       agentId: 'agent-1',
       parentSessionId: 'parent-1',
-    } as any,
+    } as Session,
   })
 
   assert.equal(status.mode, 'all')
@@ -25,7 +26,7 @@ test('resolveSandboxRuntimeStatus skips the main session in non-main mode', () =
       id: 'main-session',
       agentId: 'agent-1',
       heartbeatEnabled: true,
-    } as any,
+    } as Session,
   })
 
   assert.equal(status.mode, 'non-main')
@@ -40,7 +41,7 @@ test('resolveSandboxRuntimeStatus sandboxes child sessions in non-main mode', ()
       id: 'child-session',
       agentId: 'agent-1',
       parentSessionId: 'main-session',
-    } as any,
+    } as Session,
   })
 
   assert.equal(status.sandboxed, true)

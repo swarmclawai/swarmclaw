@@ -244,17 +244,18 @@ function getCollectionRawCache(table: string): LRUMap<string, string> {
 }
 
 function loadCollectionWithNormalizationState(table: string): {
-  result: Record<string, any>
+  result: Record<string, StoredObject>
   normalizedCount: number
 } {
   const endPerf = perf.start('storage', 'loadCollection', { table })
   const raw = getCollectionRawCache(table)
-  const result: Record<string, any> = {}
+  const result: Record<string, StoredObject> = {}
   let normalizedCount = 0
   for (const [id, data] of raw.entries()) {
     try {
       const normalized = normalizeStoredRecord(table, JSON.parse(data))
-      result[id] = normalized
+      if (!normalized || typeof normalized !== 'object' || Array.isArray(normalized)) continue
+      result[id] = normalized as StoredObject
       if (JSON.stringify(normalized) !== data) normalizedCount += 1
     } catch {
       // Ignore malformed records instead of crashing list endpoints.
@@ -301,11 +302,11 @@ function normalizeStoredRecord(table: string, value: unknown): unknown {
   return session
 }
 
-function loadCollection(table: string): Record<string, any> {
+function loadCollection(table: string): Record<string, StoredObject> {
   return loadCollectionWithNormalizationState(table).result
 }
 
-function saveCollection(table: string, data: Record<string, any>) {
+function saveCollection(table: string, data: Record<string, unknown>) {
   const endPerf = perf.start('storage', 'saveCollection', { table })
   const current = getCollectionRawCache(table)
   const next = new Map<string, string>()

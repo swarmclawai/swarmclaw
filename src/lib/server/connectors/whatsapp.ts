@@ -41,6 +41,10 @@ type WhatsAppSocketState = {
   } | null
 } | null
 
+type WhatsAppPresenceSocket = {
+  sendPresenceUpdate?: (state: 'composing' | 'paused', jid: string) => Promise<unknown>
+} | null
+
 export function buildWhatsAppTextPayloads(text: string): Array<{ text: string; linkPreview: null }> {
   const chunks = text.length <= WHATSAPP_SINGLE_MESSAGE_MAX
     ? [text]
@@ -66,6 +70,17 @@ export function isWhatsAppSocketAlive(params: {
   // Treat an existing socket with no explicit close signal as live while QR/auth
   // negotiation is still in progress.
   return params.connectionState == null
+}
+
+export async function sendWhatsAppTypingPresence(params: {
+  socket: WhatsAppPresenceSocket
+  channelId: string
+}): Promise<void> {
+  const channelId = String(params.channelId || '').trim()
+  if (!channelId) return
+  const sendPresenceUpdate = params.socket?.sendPresenceUpdate
+  if (typeof sendPresenceUpdate !== 'function') return
+  await sendPresenceUpdate('composing', channelId)
 }
 
 function normalizeMimeType(mimeType?: string): string {
@@ -438,6 +453,9 @@ const whatsapp: PlatformConnector = {
         }
         return { messageId: lastMessageId }
       },
+      async sendTyping(channelId) {
+        await sendWhatsAppTypingPresence({ socket: sock as WhatsAppPresenceSocket, channelId })
+      },
       async stop() {
         stopped = true
         connectionState = 'close'
@@ -652,9 +670,7 @@ const whatsapp: PlatformConnector = {
           console.log(`[whatsapp] Message from ${inbound.senderName} (${jid}): ${inbound.text.slice(0, 80)}`)
 
           try {
-            await sock!.sendPresenceUpdate('composing', jid)
             const reply = await resolveConnectorIngressReply(onMessage, inbound)
-            await sock!.sendPresenceUpdate('paused', jid)
             if (!reply) continue
 
             const sent = await instance.sendMessage?.(jid, reply.visibleText)
