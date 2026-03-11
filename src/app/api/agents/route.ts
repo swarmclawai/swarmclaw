@@ -6,6 +6,7 @@ import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { notify } from '@/lib/server/ws-hub'
 import { getAgentSpendWindows } from '@/lib/server/cost'
 import { resolveAgentPluginSelection } from '@/lib/agent-default-tools'
+import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
 import { AgentCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
 export const dynamic = 'force-dynamic'
@@ -123,6 +124,7 @@ export async function POST(req: Request) {
     sessionMaxAgeSec: body.sessionMaxAgeSec ?? null,
     sessionDailyResetAt: body.sessionDailyResetAt ?? null,
     sessionResetTimezone: body.sessionResetTimezone ?? null,
+    sandboxConfig: normalizeAgentSandboxConfig(body.sandboxConfig),
     createdAt: now,
     updatedAt: now,
   }

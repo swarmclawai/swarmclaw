@@ -1,5 +1,42 @@
 import { z } from 'zod'
 
+const AgentSandboxBrowserSchema = z.object({
+  enabled: z.boolean().optional(),
+  image: z.string().optional(),
+  containerPrefix: z.string().optional(),
+  network: z.enum(['none', 'bridge']).optional(),
+  cdpPort: z.number().int().positive().optional(),
+  vncPort: z.number().int().positive().optional(),
+  noVncPort: z.number().int().positive().optional(),
+  headless: z.boolean().optional(),
+  enableNoVnc: z.boolean().optional(),
+  mountUploads: z.boolean().optional(),
+  autoStartTimeoutMs: z.number().int().positive().optional(),
+}).nullable().optional()
+
+const AgentSandboxPruneSchema = z.object({
+  idleHours: z.number().positive().optional(),
+  maxAgeDays: z.number().positive().optional(),
+}).nullable().optional()
+
+const AgentSandboxConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  mode: z.enum(['off', 'non-main', 'all']).optional(),
+  scope: z.enum(['session', 'agent']).optional(),
+  workspaceAccess: z.enum(['ro', 'rw']).optional(),
+  image: z.string().optional(),
+  network: z.enum(['none', 'bridge']).optional(),
+  memoryMb: z.number().int().positive().optional(),
+  cpus: z.number().positive().optional(),
+  readonlyRoot: z.boolean().optional(),
+  workdir: z.string().optional(),
+  containerPrefix: z.string().optional(),
+  pidsLimit: z.number().int().positive().optional(),
+  setupCommand: z.string().optional(),
+  browser: AgentSandboxBrowserSchema,
+  prune: AgentSandboxPruneSchema,
+}).nullable().optional()
+
 const AgentRoutingTargetSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
@@ -60,6 +97,7 @@ export const AgentCreateSchema = z.object({
   projectId: z.string().optional(),
   avatarSeed: z.string().optional(),
   avatarUrl: z.string().nullable().optional().default(null),
+  sandboxConfig: AgentSandboxConfigSchema,
   autoRecovery: z.boolean().optional().default(false),
   monthlyBudget: z.number().positive().nullable().optional().default(null),
   dailyBudget: z.number().positive().nullable().optional().default(null),

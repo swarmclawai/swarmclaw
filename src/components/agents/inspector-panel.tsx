@@ -14,6 +14,7 @@ import { SandboxEnvPanel } from './sandbox-env-panel'
 import { CronJobForm } from './cron-job-form'
 import { toast } from 'sonner'
 import { StatusDot } from '@/components/ui/status-dot'
+import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
 
 interface Props {
   agent: Agent
@@ -66,7 +67,7 @@ export function InspectorPanel({ agent, onEditAgent, onClearHistory, onDeleteAge
     if (!visibleTabs.find((t) => t.id === inspectorTab)) {
       setInspectorTab('overview')
     }
-  }, [isOpenClaw])  
+  }, [inspectorTab, setInspectorTab, visibleTabs])  
 
   // Close on Escape
   useEffect(() => {
@@ -442,7 +443,7 @@ function SandboxConfigSection({ agent }: { agent: Agent }) {
   const loadAgents = useAppStore((s) => s.loadAgents)
   const [saving, setSaving] = useState(false)
   const [dockerAvailable, setDockerAvailable] = useState<boolean | null>(null)
-  const config = agent.sandboxConfig ?? { enabled: false }
+  const config = normalizeAgentSandboxConfig(agent.sandboxConfig)
 
   useEffect(() => {
     api<{ docker?: { available: boolean; version?: string | null } }>('GET', '/setup/doctor')
@@ -466,9 +467,9 @@ function SandboxConfigSection({ agent }: { agent: Agent }) {
 
   return (
     <div className={panelCardClass('p-4')}>
-      <SectionLabel>Container Sandbox</SectionLabel>
+      <SectionLabel>Agent Sandbox</SectionLabel>
       <div className="flex items-center justify-between mb-3">
-        <span className="text-[12px] text-text-2">Sandbox shell commands in Docker</span>
+        <span className="text-[12px] text-text-2">Prefer Docker sandboxes for shell, browser, and code execution</span>
         <button
           onClick={() => update({ enabled: !config.enabled })}
           disabled={saving}
@@ -479,7 +480,7 @@ function SandboxConfigSection({ agent }: { agent: Agent }) {
       </div>
       {dockerAvailable === false && (
         <div className="text-[11px] text-amber-400/80 bg-amber-400/[0.06] rounded-[8px] px-2.5 py-2 mb-3 border border-amber-400/10">
-          Docker is not detected. Install Docker Desktop to use sandbox execution.
+          Docker is not detected. SwarmClaw will fall back to host execution until Docker Desktop is installed.
         </div>
       )}
       {dockerAvailable === true && (

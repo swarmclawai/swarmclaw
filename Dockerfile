@@ -31,10 +31,7 @@ RUN SWARMCLAW_BUILD_MODE=1 npm run build:ci
 # Production
 FROM node:22-slim AS runner
 
-RUN apt-get update && apt-get install -y git curl unzip && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL https://deno.land/install.sh | sh
-ENV DENO_INSTALL="/root/.deno"
-ENV PATH="$DENO_INSTALL/bin:$PATH"
+RUN apt-get update && apt-get install -y git curl unzip && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

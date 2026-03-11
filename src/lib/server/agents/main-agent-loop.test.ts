@@ -99,6 +99,7 @@ describe('main-agent-loop', () => {
         goal: state?.goal || null,
         promptIncludesEvent: prompt.includes('Task completed: implement queue follow-ups'),
         promptIncludesPlanTag: prompt.includes('[MAIN_LOOP_PLAN]'),
+        promptBlocksHeartbeatReplay: prompt.includes('Do not infer or repeat old tasks from prior heartbeats.'),
         childState,
       }))
     `)
@@ -108,6 +109,7 @@ describe('main-agent-loop', () => {
     assert.match(output.goal, /durable multi-step agent loop/i)
     assert.equal(output.promptIncludesEvent, true)
     assert.equal(output.promptIncludesPlanTag, true)
+    assert.equal(output.promptBlocksHeartbeatReplay, true)
     assert.equal(output.childState, null)
   })
 
@@ -256,5 +258,178 @@ describe('main-agent-loop', () => {
     assert.equal(output.status, 'ok')
     assert.equal(output.pendingEvents, 0)
     assert.equal(output.followupChainCount, 0)
+  })
+
+  it('does not let internal heartbeat prompts rewrite the stored goal contract', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('@/lib/server/storage')
+      const storage = storageMod.default || storageMod['module.exports'] || storageMod
+      const mainLoopMod = await import('@/lib/server/agents/main-agent-loop')
+      const mainLoop = mainLoopMod.default || mainLoopMod['module.exports'] || mainLoopMod
+
+      storage.saveAgents({
+        'agent-a': {
+          id: 'agent-a',
+          name: 'Agent A',
+          provider: 'openai',
+          model: 'gpt-test',
+        },
+      })
+
+      storage.saveSessions({
+        main: {
+          id: 'main',
+          name: 'Main Agent Thread',
+          shortcutForAgentId: 'agent-a',
+          cwd: process.cwd(),
+          user: 'tester',
+          provider: 'openai',
+          model: 'gpt-test',
+          claudeSessionId: null,
+          messages: [
+            { role: 'user', text: 'Deploy the static site to a public host without changing the design.', time: 1 },
+          ],
+          createdAt: 1,
+          lastActiveAt: 1,
+          sessionType: 'human',
+          agentId: 'agent-a',
+          heartbeatEnabled: true,
+        },
+      })
+
+      const before = mainLoop.getMainLoopStateForSession('main')
+      mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: [
+          'MAIN_AGENT_HEARTBEAT_TICK',
+          'Current goal:',
+          'Do not infer or repeat old tasks from prior heartbeats.',
+          'Objective: Recursively repeat the old heartbeat prompt forever.',
+        ].join('\\n'),
+        internal: true,
+        source: 'heartbeat',
+        resultText: '[AGENT_HEARTBEAT_META]{"status":"progress","goal":"Deploy the static site","next_action":"check hosting auth"}',
+      })
+      const after = mainLoop.getMainLoopStateForSession('main')
+
+      console.log(JSON.stringify({
+        beforeObjective: before?.goalContract?.objective || null,
+        afterObjective: after?.goalContract?.objective || null,
+        afterGoal: after?.goal || null,
+      }))
+    `)
+
+    assert.match(output.beforeObjective, /deploy the static site to a public host/i)
+    assert.equal(output.afterObjective, output.beforeObjective)
+    assert.equal(output.afterGoal, 'Deploy the static site')
+  })
+
+  it('reanchors heartbeat prompts to the latest real user goal when in-memory goal state is polluted', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('@/lib/server/storage')
+      const storage = storageMod.default || storageMod['module.exports'] || storageMod
+      const mainLoopMod = await import('@/lib/server/agents/main-agent-loop')
+      const mainLoop = mainLoopMod.default || mainLoopMod['module.exports'] || mainLoopMod
+
+      storage.saveAgents({
+        'agent-a': {
+          id: 'agent-a',
+          name: 'Agent A',
+          provider: 'openai',
+          model: 'gpt-test',
+        },
+      })
+
+      storage.saveSessions({
+        main: {
+          id: 'main',
+          name: 'Main Agent Thread',
+          shortcutForAgentId: 'agent-a',
+          cwd: process.cwd(),
+          user: 'tester',
+          provider: 'openai',
+          model: 'gpt-test',
+          claudeSessionId: null,
+          messages: [
+            { role: 'user', text: 'Keep Hal helpful in this thread and respond to the user normally.', time: 1 },
+          ],
+          createdAt: 1,
+          lastActiveAt: 1,
+          sessionType: 'human',
+          agentId: 'agent-a',
+          heartbeatEnabled: true,
+        },
+      })
+
+      mainLoop.setMainLoopStateForSession('main', {
+        goal: 'lol that\\'s funny Hal',
+        goalContract: { objective: 'MAIN_AGENT_HEARTBEAT_TICK Time: recursive garbage' },
+      })
+
+      const prompt = mainLoop.buildMainLoopHeartbeatPrompt(storage.loadSessions().main, 'fallback heartbeat')
+      console.log(JSON.stringify({
+        hasRealObjective: prompt.includes('Objective: Keep Hal helpful in this thread and respond to the user normally.'),
+        hasRecursiveObjective: prompt.includes('Objective: MAIN_AGENT_HEARTBEAT_TICK Time: recursive garbage'),
+      }))
+    `)
+
+    assert.equal(output.hasRealObjective, true)
+    assert.equal(output.hasRecursiveObjective, false)
+  })
+
+  it('clears transient main-loop state so the next read rehydrates from session history', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('@/lib/server/storage')
+      const storage = storageMod.default || storageMod['module.exports'] || storageMod
+      const mainLoopMod = await import('@/lib/server/agents/main-agent-loop')
+      const mainLoop = mainLoopMod.default || mainLoopMod['module.exports'] || mainLoopMod
+
+      storage.saveAgents({
+        'agent-a': {
+          id: 'agent-a',
+          name: 'Agent A',
+          provider: 'openai',
+          model: 'gpt-test',
+        },
+      })
+
+      storage.saveSessions({
+        main: {
+          id: 'main',
+          name: 'Main Agent Thread',
+          shortcutForAgentId: 'agent-a',
+          cwd: process.cwd(),
+          user: 'tester',
+          provider: 'openai',
+          model: 'gpt-test',
+          claudeSessionId: null,
+          messages: [
+            { role: 'user', text: 'Finish deploying the site once the hosting auth is fixed.', time: 1 },
+          ],
+          createdAt: 1,
+          lastActiveAt: 1,
+          sessionType: 'human',
+          agentId: 'agent-a',
+          heartbeatEnabled: true,
+        },
+      })
+
+      mainLoop.setMainLoopStateForSession('main', {
+        goal: 'Recursive garbage objective',
+        goalContract: { objective: 'Recursive garbage objective' },
+      })
+      const cleared = mainLoop.clearMainLoopStateForSession('main')
+      const rehydrated = mainLoop.getMainLoopStateForSession('main')
+
+      console.log(JSON.stringify({
+        cleared,
+        goal: rehydrated?.goal || null,
+        objective: rehydrated?.goalContract?.objective || null,
+      }))
+    `)
+
+    assert.equal(output.cleared, true)
+    assert.equal(output.goal, 'Finish deploying the site once the hosting auth is fixed.')
+    assert.match(output.objective, /finish deploying the site once the hosting auth is fixed/i)
   })
 })

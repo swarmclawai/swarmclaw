@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { after, afterEach, before, describe, it } from 'node:test'
+import { runWithTempDataDir } from '@/lib/server/test-utils/run-with-temp-data-dir'
 
 // Suppress unhandled rejections from background drainExecution() calls
 // that fail because executeSessionChatTurn has no real LLM provider.
@@ -27,6 +28,8 @@ type RuntimeState = {
   runs: Map<string, unknown>
   recentRunIds: string[]
   promises: Map<string, unknown>
+  deferredDrainTimers?: Map<string, ReturnType<typeof setTimeout>>
+  activityLeaseRenewTimers?: Map<string, ReturnType<typeof setInterval>>
 }
 
 /** Pending promises from fire-and-forget drain calls. We suppress their
@@ -35,6 +38,10 @@ type RuntimeState = {
 const pendingPromises: Promise<unknown>[] = []
 
 function resetState() {
+  if (mgr && 'resetSessionRunManagerForTests' in mgr && typeof mgr.resetSessionRunManagerForTests === 'function') {
+    mgr.resetSessionRunManagerForTests()
+    return
+  }
   const state = (globalThis as Record<string, unknown>)[globalKey] as RuntimeState | undefined
   if (state) {
     state.runningByExecution.clear()
@@ -42,6 +49,8 @@ function resetState() {
     state.runs.clear()
     state.recentRunIds.length = 0
     state.promises.clear()
+    state.deferredDrainTimers?.clear()
+    state.activityLeaseRenewTimers?.clear()
   }
 }
 
@@ -106,6 +115,30 @@ afterEach(async () => {
 })
 
 describe('session-run-manager', () => {
+  it('backfills missing timer maps when hot-reloading over an older singleton shape', () => {
+    const output = runWithTempDataDir<{ ok: boolean }>(`
+      globalThis.__swarmclaw_session_run_manager__ = {
+        runningByExecution: new Map(),
+        queueByExecution: new Map(),
+        runs: new Map(),
+        recentRunIds: [],
+        promises: new Map(),
+      }
+
+      const mgrMod = await import('./src/lib/server/runtime/session-run-manager.ts')
+      const mgr = mgrMod.default || mgrMod
+      const result = mgr.enqueueSessionRun({
+        sessionId: 'sess-hmr-backfill',
+        message: 'hello',
+      })
+      await result.promise.catch(() => {})
+
+      console.log(JSON.stringify({ ok: typeof result.runId === 'string' && result.runId.length > 0 }))
+    `, { prefix: 'swarmclaw-session-run-hmr-' })
+
+    assert.equal(output.ok, true)
+  })
+
   describe('enqueueSessionRun', () => {
     it('returns a run ID and queued position', () => {
       const result = enqueue({
@@ -356,6 +389,23 @@ describe('session-run-manager', () => {
       assert.equal(state.hasQueuedHeartbeat, true)
       assert.equal(state.hasQueuedNonHeartbeat, true)
     })
+
+    it('publishes a shared non-heartbeat activity lease for user work', () => {
+      enqueue({ sessionId: 'sess-lease', message: 'user work', source: 'chat' })
+
+      assert.equal(mgr.hasActiveNonHeartbeatSessionLease('sess-lease'), true)
+    })
+
+    it('does not publish the shared activity lease for heartbeat-only work', () => {
+      enqueue({
+        sessionId: 'sess-heartbeat-only',
+        message: 'hb',
+        internal: true,
+        source: 'heartbeat-wake',
+      })
+
+      assert.equal(mgr.hasActiveNonHeartbeatSessionLease('sess-heartbeat-only'), false)
+    })
   })
 
   describe('listRuns', () => {
@@ -576,6 +626,42 @@ describe('session-run-manager', () => {
         assert.ok(run.error, 'failed run should have an error message')
         assert.ok(run.endedAt, 'failed run should have endedAt timestamp')
       }
+    })
+
+    it('clears the shared activity lease after non-heartbeat work finishes', async () => {
+      seedSession('sess-lease-clear')
+      const result = enqueue({
+        sessionId: 'sess-lease-clear',
+        message: 'will fail in drain',
+      })
+
+      assert.equal(mgr.hasActiveNonHeartbeatSessionLease('sess-lease-clear'), true)
+      await result.promise.catch(() => {})
+      assert.equal(mgr.hasActiveNonHeartbeatSessionLease('sess-lease-clear'), false)
+    })
+
+    it('defers heartbeat runs while another worker advertises non-heartbeat activity', async () => {
+      seedSession('sess-remote-busy')
+      storage.tryAcquireRuntimeLock('session-non-heartbeat:sess-remote-busy', 'remote-worker', 60_000)
+
+      const heartbeat = enqueue({
+        sessionId: 'sess-remote-busy',
+        message: 'hb',
+        internal: true,
+        source: 'heartbeat-wake',
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      const queued = mgr.getRunById(heartbeat.runId)
+      assert.ok(queued)
+      assert.equal(queued.status, 'queued')
+
+      storage.releaseRuntimeLock('session-non-heartbeat:sess-remote-busy', 'remote-worker')
+      await heartbeat.promise.catch(() => {})
+
+      const finished = mgr.getRunById(heartbeat.runId)
+      assert.ok(finished)
+      assert.notEqual(finished.status, 'queued')
     })
   })
 

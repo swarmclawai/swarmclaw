@@ -389,16 +389,8 @@ function getOrCreateState(sessionId: string): MainLoopState | null {
 function summarizePendingEvents(events: MainLoopState['pendingEvents']): string {
   if (!events.length) return ''
   return events
-    .slice(-6)
+    .slice(-4)
     .map((event) => `- [${new Date(event.createdAt).toISOString()}] (${event.type}) ${event.text}`)
-    .join('\n')
-}
-
-function summarizeTimeline(items: MainLoopState['timeline']): string {
-  if (!items.length) return ''
-  return items
-    .slice(-6)
-    .map((entry) => `- [${new Date(entry.at).toISOString()}] ${entry.source}: ${entry.note}`)
     .join('\n')
 }
 
@@ -459,35 +451,40 @@ export function buildMainLoopHeartbeatPrompt(session: unknown, fallbackPrompt: s
   if (!candidate?.id) return fallbackPrompt
   const state = getOrCreateState(String(candidate.id))
   if (!state) return fallbackPrompt
+  const latestExternalGoal = extractLatestGoal(Array.isArray(candidate.messages) ? candidate.messages as Message[] : [])
+  const effectiveGoal = state.goal || latestExternalGoal.goal
+  const effectiveGoalContract = latestExternalGoal.goalContract
+    ? mergeGoalContracts(state.goalContract, latestExternalGoal.goalContract)
+    : state.goalContract
 
   const planLines = state.planSteps.length > 0
-    ? state.planSteps.map((step, index) => `${index + 1}. ${step}`).join('\n')
+    ? state.planSteps.slice(0, 5).map((step, index) => `${index + 1}. ${step}`).join('\n')
     : ''
+  const boundedFallbackPrompt = cleanMultiline(fallbackPrompt, 500)
+  const boundedSummary = cleanMultiline(state.summary, 500)
 
   return [
     'MAIN_AGENT_HEARTBEAT_TICK',
     `Time: ${new Date().toISOString()}`,
-    state.goal ? `Current goal:\n${state.goal}` : '',
-    formatGoalContract(state.goalContract),
-    `Autonomy mode: ${state.autonomyMode}`,
+    effectiveGoal ? `Current goal:\n${effectiveGoal}` : '',
+    formatGoalContract(effectiveGoalContract),
     `Current status: ${state.status}`,
-    state.summary ? `Latest summary:\n${state.summary}` : '',
     state.nextAction ? `Planned next action: ${state.nextAction}` : '',
     state.currentPlanStep ? `Current plan step: ${state.currentPlanStep}` : '',
     planLines ? `Plan:\n${planLines}` : '',
     state.pendingEvents.length > 0 ? `Pending external events:\n${summarizePendingEvents(state.pendingEvents)}` : '',
-    state.timeline.length > 0 ? `Recent timeline:\n${summarizeTimeline(state.timeline)}` : '',
-    state.workingMemoryNotes.length > 0 ? `Working memory:\n- ${state.workingMemoryNotes.join('\n- ')}` : '',
-    fallbackPrompt ? `Base heartbeat instructions:\n${fallbackPrompt}` : '',
+    boundedSummary ? `Latest summary:\n${boundedSummary}` : '',
+    boundedFallbackPrompt ? `Base heartbeat instructions:\n${boundedFallbackPrompt}` : '',
     '',
-    'You are the durable main mission thread for this agent.',
-    'Use the goal, plan, and pending events above to decide the highest-value next step.',
-    'Prefer acting with tools over restating the plan. Do not repeat completed work.',
+    'You are checking the durable main mission thread for this agent.',
+    'Use only the current goal, plan, next action, and pending external events shown above.',
+    'Do not infer or repeat old tasks from prior heartbeats.',
+    'Prefer taking the single highest-value next step over restating the plan. Do not repeat completed work.',
     'If you revise the plan, emit exactly one line like:',
     '[MAIN_LOOP_PLAN]{"steps":["step 1","step 2"],"current_step":"step 1"}',
     'After acting, emit exactly one review line like:',
     '[MAIN_LOOP_REVIEW]{"note":"what changed","confidence":0.72,"needs_replan":false}',
-    'If you are actively progressing, also emit [AGENT_HEARTBEAT_META] with goal/status/next_action.',
+    'If you are actively progressing or you changed the plan, also emit [AGENT_HEARTBEAT_META] with goal/status/next_action.',
     'Reply HEARTBEAT_OK only when nothing needs action right now.',
   ].filter(Boolean).join('\n')
 }
@@ -503,6 +500,10 @@ export function stripMainLoopMetaForPersistence(text: string): string {
 export function getMainLoopStateForSession(sessionId: string): MainLoopState | null {
   const state = getOrCreateState(sessionId)
   return state ? normalizeState(state) : null
+}
+
+export function clearMainLoopStateForSession(sessionId: string): boolean {
+  return stateMap.delete(sessionId)
 }
 
 /**
@@ -581,11 +582,12 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   const heartbeat = parseHeartbeatMeta(resultText)
   const plan = parseMainLoopPlan(resultText)
   const review = parseMainLoopReview(resultText)
-  const messageGoal = parseGoalContractFromText(input.message || '')
+  const shouldCaptureMessageGoal = !input.internal
+  const messageGoal = shouldCaptureMessageGoal ? parseGoalContractFromText(input.message || '') : null
   const nowTs = now()
 
-  state.goalContract = mergeGoalContracts(state.goalContract, messageGoal)
-  if (!state.goal) state.goal = cleanMultiline(input.message, 900)
+  if (messageGoal) state.goalContract = mergeGoalContracts(state.goalContract, messageGoal)
+  if (!state.goal && shouldCaptureMessageGoal) state.goal = cleanMultiline(input.message, 900)
   if (heartbeat?.goal) state.goal = heartbeat.goal
   if (heartbeat?.summary) state.summary = heartbeat.summary
   if (heartbeat?.nextAction) state.nextAction = heartbeat.nextAction

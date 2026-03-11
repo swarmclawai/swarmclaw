@@ -5,6 +5,7 @@ import path from 'node:path'
 import { describe, it } from 'node:test'
 import { formatWebSearchResults, inferWebActionFromArgs, normalizeBrowserActionParams, resolveBrowserNavigationTarget } from './web'
 import { UPLOAD_DIR } from '../storage'
+import { createSandboxFsBridge } from '@/lib/server/sandbox/fs-bridge'
 
 describe('inferWebActionFromArgs', () => {
   it('defaults to search when only query text is provided', () => {
@@ -125,6 +126,29 @@ describe('inferWebActionFromArgs', () => {
     try {
       const resolved = resolveBrowserNavigationTarget(cwd, './index.html')
       assert.match(resolved, /^file:\/\//i)
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it('maps local html bundles to sandbox file urls when a sandbox fs bridge is present', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'browser-sandbox-nav-'))
+    fs.mkdirSync(path.join(cwd, 'app'), { recursive: true })
+    fs.writeFileSync(path.join(cwd, 'app', 'index.html'), '<!doctype html><title>sandbox</title>')
+    const bridge = createSandboxFsBridge({
+      workspaceDir: cwd,
+      containerWorkdir: '/workspace',
+      workspaceAccess: 'rw',
+    })
+
+    try {
+      const resolved = resolveBrowserNavigationTarget(
+        path.join(cwd, 'app'),
+        './index.html',
+        bridge,
+      )
+
+      assert.equal(resolved, 'file:///workspace/app/index.html')
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true })
     }

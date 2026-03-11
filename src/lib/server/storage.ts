@@ -10,6 +10,7 @@ import { DATA_DIR, IS_BUILD_BOOTSTRAP, WORKSPACE_DIR } from './data-dir'
 import { safeJsonParseObject } from './json-utils'
 import { normalizeHeartbeatSettingFields } from '@/lib/runtime/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
+import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
 import type { AppNotification, BoardTask, ExternalAgentRuntime, GatewayProfile, Message, Session } from '@/types'
 import { dedup, hmrSingleton } from '@/lib/shared-utils'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
@@ -242,7 +243,40 @@ function getCollectionRawCache(table: string): LRUMap<string, string> {
   return loaded
 }
 
+function loadCollectionWithNormalizationState(table: string): {
+  result: Record<string, any>
+  normalizedCount: number
+} {
+  const endPerf = perf.start('storage', 'loadCollection', { table })
+  const raw = getCollectionRawCache(table)
+  const result: Record<string, any> = {}
+  let normalizedCount = 0
+  for (const [id, data] of raw.entries()) {
+    try {
+      const normalized = normalizeStoredRecord(table, JSON.parse(data))
+      result[id] = normalized
+      if (JSON.stringify(normalized) !== data) normalizedCount += 1
+    } catch {
+      // Ignore malformed records instead of crashing list endpoints.
+    }
+  }
+  endPerf({ count: raw.size, normalizedCount })
+  return { result, normalizedCount }
+}
+
 function normalizeStoredRecord(table: string, value: unknown): unknown {
+  if (table === 'agents') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+
+    const agent = value as StoredObject
+    if (Array.isArray(agent.tools) && !Array.isArray(agent.plugins)) {
+      agent.plugins = agent.tools
+      delete agent.tools
+    }
+    agent.sandboxConfig = normalizeAgentSandboxConfig(agent.sandboxConfig)
+    return agent
+  }
+
   if (table !== 'sessions') return value
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value
 
@@ -268,18 +302,7 @@ function normalizeStoredRecord(table: string, value: unknown): unknown {
 }
 
 function loadCollection(table: string): Record<string, any> {
-  const endPerf = perf.start('storage', 'loadCollection', { table })
-  const raw = getCollectionRawCache(table)
-  const result: Record<string, any> = {}
-  for (const [id, data] of raw.entries()) {
-    try {
-      result[id] = normalizeStoredRecord(table, JSON.parse(data))
-    } catch {
-      // Ignore malformed records instead of crashing list endpoints.
-    }
-  }
-  endPerf({ count: raw.size })
-  return result
+  return loadCollectionWithNormalizationState(table).result
 }
 
 function saveCollection(table: string, data: Record<string, any>) {
@@ -548,6 +571,23 @@ export function renewRuntimeLock(name: string, owner: string, ttlMs: number): bo
     WHERE name = ? AND owner = ?
   `).run(expiresAt, now, name, owner)
   return result.changes > 0
+}
+
+export function readRuntimeLock(name: string): { owner: string; expiresAt: number; updatedAt: number } | null {
+  const row = db.prepare('SELECT owner, expires_at, updated_at FROM runtime_locks WHERE name = ?').get(name) as
+    | { owner: string; expires_at: number; updated_at: number }
+    | undefined
+  if (!row) return null
+  return {
+    owner: row.owner,
+    expiresAt: row.expires_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function isRuntimeLockActive(name: string): boolean {
+  const row = readRuntimeLock(name)
+  return Boolean(row && row.expiresAt > Date.now())
 }
 
 export function releaseRuntimeLock(name: string, owner: string): void {
@@ -917,16 +957,14 @@ export function decryptKey(encrypted: string): string {
 
 // --- Agents ---
 
-/** Migrate legacy `tools` field → `plugins` on agent objects. */
-function migrateAgentPlugins(agents: Record<string, Record<string, unknown>>): boolean {
+function migrateAgents(agents: Record<string, Record<string, unknown>>): boolean {
   let changed = false
-  for (const agent of Object.values(agents)) {
+  for (const [id, agent] of Object.entries(agents)) {
     if (!agent || typeof agent !== 'object') continue
-    if (Array.isArray(agent.tools) && !Array.isArray(agent.plugins)) {
-      agent.plugins = agent.tools
-      delete agent.tools
-      changed = true
-    }
+    const before = JSON.stringify(agent)
+    const normalized = normalizeStoredRecord('agents', agent) as Record<string, unknown>
+    agents[id] = normalized
+    if (JSON.stringify(normalized) !== before) changed = true
   }
   return changed
 }
@@ -935,7 +973,7 @@ export function loadAgents(opts?: { includeTrashed?: boolean }): Record<string, 
   // Cache the full (non-trashed) agent set; includeTrashed bypasses cache
   if (opts?.includeTrashed) {
     const all = loadCollection('agents')
-    if (migrateAgentPlugins(all)) saveCollection('agents', all)
+    if (migrateAgents(all)) saveCollection('agents', all)
     return all
   }
 
@@ -944,7 +982,7 @@ export function loadAgents(opts?: { includeTrashed?: boolean }): Record<string, 
   if (cached) return structuredClone(cached) as Record<string, unknown>
 
   const all = loadCollection('agents')
-  if (migrateAgentPlugins(all)) saveCollection('agents', all)
+  if (migrateAgents(all)) saveCollection('agents', all)
   const result: Record<string, any> = {}
   for (const [id, agent] of Object.entries(all)) {
     if (!agent.trashedAt) result[id] = agent
@@ -970,8 +1008,11 @@ export function saveAgents(p: Record<string, any>) {
 export function loadAgent(id: string, opts?: { includeTrashed?: boolean }): Record<string, any> | null {
   const agent = loadCollectionItem('agents', id) as Record<string, any> | null
   if (!agent) return null
-  if (!opts?.includeTrashed && agent.trashedAt) return null
-  return agent
+  const before = JSON.stringify(agent)
+  const normalized = normalizeStoredRecord('agents', agent) as Record<string, any>
+  if (JSON.stringify(normalized) !== before) upsertCollectionItem('agents', id, normalized)
+  if (!opts?.includeTrashed && normalized.trashedAt) return null
+  return normalized
 }
 
 export function upsertAgent(id: string, agent: unknown) {

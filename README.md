@@ -116,7 +116,7 @@ Skill source and runbook: [`swarmclaw/SKILL.md`](swarmclaw/SKILL.md).
 - **OpenAI Codex CLI** (optional, for `codex-cli` provider) — [Install](https://github.com/openai/codex)
 - **OpenCode CLI** (optional, for `opencode-cli` provider) — [Install](https://github.com/opencode-ai/opencode)
 - **Gemini CLI** (optional, for `delegate` backend `gemini`) — install and authenticate `gemini` on your host
-- **Deno** (required for `sandbox_exec`) — auto-installed by `npm run quickstart` / `npm run setup:easy` when missing
+- **Docker Desktop** (optional, recommended) — enables container sandboxes for shell, browser, and `sandbox_exec`; without Docker, SwarmClaw falls back to host execution
 
 ## Quick Start
 
@@ -133,6 +133,9 @@ swarmclaw server
 ```
 
 `swarmclaw` by itself opens the CLI. `swarmclaw server` launches the packaged standalone server on `http://localhost:3456`.
+Global install runs `postinstall`, which rebuilds `better-sqlite3` and prepares the sandbox browser image when Docker is available.
+If Docker is not installed yet, SwarmClaw keeps running and falls back to host execution for shell, browser, and `sandbox_exec`.
+No Deno install is required for the local `sandbox_exec` path.
 
 ### One-off run
 
@@ -151,7 +154,8 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 
 The installer resolves the latest stable release tag and installs that version by default.
 It also builds the production bundle so `npm run start` is ready immediately after install.
-To pin a version: `SWARMCLAW_VERSION=v0.8.9 curl ... | bash`
+No Deno install is required; local sandbox execution is Docker-first with automatic host Node fallback.
+To pin a version: `SWARMCLAW_VERSION=v0.9.0 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -163,8 +167,8 @@ npm run quickstart
 
 `npm run quickstart` will:
 - Check Node/npm versions
-- Install Deno if the sandbox runtime is missing
 - Install dependencies
+- Prepare the Docker sandbox/browser runtime when Docker is available
 - Prepare `.env.local` and `data/`
 - Start the app at `http://localhost:3456`
 
@@ -182,7 +186,9 @@ yarn install && yarn dev
 bun install && bun run dev
 ```
 
-`postinstall` rebuilds `better-sqlite3` natively. If you install with `--ignore-scripts`, run `npm rebuild better-sqlite3` manually.
+`postinstall` rebuilds `better-sqlite3` natively and prepares the sandbox browser image when Docker is available.
+If Docker is missing, SwarmClaw falls back to host execution until Docker is installed.
+If you install with `--ignore-scripts`, run `npm rebuild better-sqlite3` manually and then `node ./scripts/ensure-sandbox-browser-image.mjs`.
 
 On first launch, SwarmClaw will:
 1. Generate an **access key** and display it in the terminal
@@ -383,7 +389,7 @@ Agents can use the following tools when enabled:
 | Image Generation | Generate images from prompts (`generate_image`) via OpenAI, Stability, Replicate, fal.ai, Together, Fireworks, BFL, or custom endpoints; saved to uploads |
 | Email | Send outbound email via SMTP (`email`) with `send`/`status` actions |
 | Calendar | Manage Google/Outlook events (`calendar`) with list/create/update/delete/status actions |
-| Sandbox | Run JS/TS in a Deno sandbox when custom code is necessary. If Deno is unavailable it fails closed with guidance; for simple API calls, prefer HTTP Request. |
+| Sandbox | Run JS/TS in a Docker-preferred Node.js sandbox when custom code is necessary. New and existing agents default to sandbox-enabled configs. If Docker is unavailable, SwarmClaw falls back to host execution; for simple API calls, prefer HTTP Request. |
 | MCP Servers | Connect to external Model Context Protocol servers. Tools from MCP servers are injected as first-class agent tools |
 
 ### Platform Tools
@@ -639,6 +645,7 @@ docker compose up -d
 ```
 
 Data is persisted in `data/` and `.env.local` via volume mounts. Updates: `git pull && docker compose up -d --build`.
+In Docker deployments, local shell, browser, and `sandbox_exec` execution fall back to host execution inside the app container unless you separately provide Docker access to that container.
 
 For prebuilt images (recommended for non-technical users after releases):
 
@@ -699,7 +706,7 @@ npm run dev:webpack
 ### First-Run Helpers
 
 ```bash
-npm run setup:easy      # setup only (installs Deno if missing; does not start server)
+npm run setup:easy      # setup only (prepares sandbox/browser runtime when Docker is available; does not start server)
 npm run quickstart      # setup + start dev server
 npm run quickstart:prod # setup + build + start production server
 npm run update:easy     # safe update helper for local installs
@@ -710,7 +717,7 @@ npm run update:easy     # safe update helper for local installs
 SwarmClaw uses tag-based releases (`vX.Y.Z`) as the stable channel.
 
 ```bash
-# example patch release (v0.8.9 style)
+# example release
 npm version patch
 git push origin main --follow-tags
 ```
@@ -720,15 +727,15 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.8.9 Release Readiness Notes
+#### v0.9.0 Release Readiness Notes
 
-Before shipping `v0.8.9`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.9.0`, confirm the following user-facing changes are reflected in docs:
 
-1. Install docs make it explicit that global npm installs use `swarmclaw server`, not the Next dev server, and that the curl installer prebuilds the production bundle.
-2. Update docs note that repository updates rebuild with `npm run build` and packaged installs can use `swarmclaw update` to rebuild the standalone server after upgrading.
-3. Site and README install/version strings are updated to `v0.8.9`, including install snippets, release notes index text, and sidebar/footer labels.
-4. Release notes mention the browser resilience changes and the installer/update build alignment, then absorb any final release bullets from the remaining in-flight work before tagging.
-5. The release branch and `main` stay aligned so the shipped tag points at the same commit users see on the default branch.
+1. Install docs make it explicit that global npm installs use `swarmclaw server`, and that package-manager installs plus the curl installer prepare the sandbox/browser runtime automatically when Docker is available.
+2. Sandbox docs say local `sandbox_exec` no longer requires Deno, defaults to sandbox-enabled agent configs, and falls back to host Node when Docker is unavailable.
+3. Release docs mention the OpenClaw-style sandbox/runtime refresh, heartbeat deferral improvements, and the HMR-safe live chat route fix.
+4. Site and README install/version strings are updated to `v0.9.0`, including pinned install snippets, release notes index text, and sidebar/footer labels.
+5. The release tag, npm package version, and generated GitHub release install snippet all agree on the non-prefixed npm version (`0.9.0`) versus the git tag (`v0.9.0`).
 
 ## CLI
 

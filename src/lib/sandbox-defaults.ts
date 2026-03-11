@@ -1,0 +1,17 @@
+export const DEFAULT_SANDBOX_IMAGE = 'node:22-slim'
+export const DEFAULT_SANDBOX_CONTAINER_PREFIX = 'swarmclaw-sb-'
+export const DEFAULT_SANDBOX_WORKDIR = '/workspace'
+
+export const DEFAULT_SANDBOX_BROWSER_IMAGE = 'swarmclaw-sandbox-browser:bookworm-slim'
+export const DEFAULT_SANDBOX_BROWSER_PREFIX = 'swarmclaw-sb-browser-'
+export const DEFAULT_SANDBOX_BROWSER_NETWORK = 'bridge'
+export const DEFAULT_SANDBOX_BROWSER_CDP_PORT = 9222
+export const DEFAULT_SANDBOX_BROWSER_VNC_PORT = 5900
+export const DEFAULT_SANDBOX_BROWSER_NOVNC_PORT = 6080
+export const DEFAULT_SANDBOX_BROWSER_AUTOSTART_TIMEOUT_MS = 12_000
+export const DEFAULT_SANDBOX_BROWSER_HEADLESS = true
+export const DEFAULT_SANDBOX_BROWSER_MOUNT_UPLOADS = true
+export const DEFAULT_SANDBOX_BROWSER_ENABLE_NOVNC = true
+
+export const DEFAULT_SANDBOX_PRUNE_IDLE_HOURS = 24
+export const DEFAULT_SANDBOX_PRUNE_MAX_AGE_DAYS = 7

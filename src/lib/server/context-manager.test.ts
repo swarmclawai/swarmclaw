@@ -115,6 +115,7 @@ describe('context-manager', () => {
       assert.ok(status.percentUsed < 70)
       assert.equal(status.contextWindow, 200_000)
       assert.equal(status.messageCount, 1)
+      assert.equal(status.effectiveTokens, status.estimatedTokens)
     })
 
     it('returns warning at 70%+ usage', () => {
@@ -130,6 +131,18 @@ describe('context-manager', () => {
       const msgs = [makeMsg('user', bigText)]
       const status = cm.getContextStatus(msgs, 0, 'anthropic', 'claude-opus-4-6')
       assert.equal(status.strategy, 'critical')
+    })
+
+    it('includes extra and reserve tokens in effective usage', () => {
+      const msgs = [makeMsg('user', 'hello')]
+      const status = cm.getContextStatus(msgs, 100, 'anthropic', 'claude-opus-4-6', {
+        extraTokens: 500,
+        reserveTokens: 20_000,
+      })
+      assert.equal(status.extraTokens, 500)
+      assert.equal(status.reserveTokens, 20_000)
+      assert.equal(status.effectiveTokens, status.estimatedTokens + 20_000)
+      assert.equal(status.remainingTokens, status.contextWindow - status.effectiveTokens)
     })
   })
 
@@ -177,8 +190,27 @@ describe('context-manager', () => {
     it('respects custom trigger percent', () => {
       const bigText = 'x'.repeat(400_000) // ~100k tokens -> 50% of 200k
       const msgs = [makeMsg('user', bigText)]
-      assert.equal(cm.shouldAutoCompact(msgs, 0, 'anthropic', 'claude-opus-4-6', 40), true)
-      assert.equal(cm.shouldAutoCompact(msgs, 0, 'anthropic', 'claude-opus-4-6', 60), false)
+      assert.equal(cm.shouldAutoCompact(msgs, 0, 'anthropic', 'claude-opus-4-6', 40, { reserveTokens: 0 }), true)
+      assert.equal(cm.shouldAutoCompact(msgs, 0, 'anthropic', 'claude-opus-4-6', 60, { reserveTokens: 0 }), false)
+    })
+
+    it('accounts for the pending message and reserve headroom', () => {
+      const msgs = [makeMsg('user', 'x'.repeat(480_000))] // ~120k tokens -> 60% of 200k
+      assert.equal(cm.shouldAutoCompact(msgs, 0, 'anthropic', 'claude-opus-4-6', 80), false)
+      assert.equal(cm.shouldAutoCompact(msgs, 0, 'anthropic', 'claude-opus-4-6', 80, {
+        extraTokens: 30_000,
+        reserveTokens: 20_000,
+      }), true)
+    })
+  })
+
+  describe('resolveCompactionReserveTokens', () => {
+    it('matches the OpenClaw-style floor on large windows', () => {
+      assert.equal(cm.resolveCompactionReserveTokens('anthropic', 'claude-opus-4-6'), 20_000)
+    })
+
+    it('scales reserve down for smaller windows', () => {
+      assert.equal(cm.resolveCompactionReserveTokens('ollama', 'glm-5:cloud'), Math.floor(32_768 * 0.2))
     })
   })
 

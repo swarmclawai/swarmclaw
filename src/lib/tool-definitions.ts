@@ -16,7 +16,7 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
   { id: 'delegate', label: 'Delegate', description: 'Delegate complex tasks to specialized backends (Claude Code, Codex, OpenCode)' },
   { id: 'browser', label: 'Browser', description: 'Playwright — browse, scrape, interact with web pages' },
   { id: 'memory', label: 'Memory', description: 'Store and retrieve long-term memories across conversations' },
-  { id: 'sandbox', label: 'Sandbox', description: 'Deno-based isolated JS/TS execution for cases where custom code is necessary' },
+  { id: 'sandbox', label: 'Sandbox', description: 'Docker-preferred Node.js execution for custom JS/TS tasks, with host fallback when Docker is unavailable' },
   { id: 'create_document', label: 'Create Document', description: 'Render markdown to PDF, HTML, or image' },
   { id: 'create_spreadsheet', label: 'Create Spreadsheet', description: 'Create Excel or CSV files from structured data' },
   { id: 'http_request', label: 'HTTP Request', description: 'Make direct HTTP API calls without generating throwaway code' },

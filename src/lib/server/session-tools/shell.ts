@@ -12,11 +12,11 @@ import {
   writeManagedProcessStdin,
   type SandboxOptions,
 } from '@/lib/server/runtime/process-manager'
-import { detectDocker } from '@/lib/server/sandbox/docker-detect'
+import { ensureSessionSandbox, resolveSandboxWorkdir, type AgentSandboxConfig } from '@/lib/server/sandbox/session-runtime'
 import type { ToolBuildContext } from './context'
 import { safePath, truncate, coerceEnvMap, MAX_OUTPUT } from './context'
 import { checkFileAccess } from './file-access-policy'
-import type { Plugin, PluginHooks } from '@/types'
+import type { Plugin, PluginHooks, Session } from '@/types'
 import { getPluginManager } from '../plugins'
 import { safeJsonParseObject } from '../json-utils'
 import { normalizeToolInputArgs } from './normalize-tool-args'
@@ -39,6 +39,12 @@ export function rewriteShellWorkspaceAliases(baseCwd: string, command: string): 
   let rewritten = command
   rewritten = rewritten.replace(/(^|[\s"'`(=;])\/workspace(?=\/|\b)/g, `$1${cwd}`)
   rewritten = rewritten.replace(/(^|[\s"'`(=;])workspace\//g, `$1${cwd}/`)
+  return rewritten
+}
+
+export function rewriteShellWorkspaceAliasesForSandbox(command: string): string {
+  let rewritten = command
+  rewritten = rewritten.replace(/(^|[\s"'`(=;])workspace\//g, '$1/workspace/')
   return rewritten
 }
 
@@ -163,25 +169,56 @@ function checkShellFileAccessPolicy(
   return null
 }
 
-/**
- * Unified Shell Execution Logic
- */
-function resolveSandboxOptions(
-  cwd: string,
-  config: { enabled: boolean; image?: string; network?: 'none' | 'bridge'; memoryMb?: number; cpus?: number; readonlyRoot?: boolean } | null | undefined,
-): SandboxOptions | undefined {
-  if (!config?.enabled) return undefined
-  const docker = detectDocker()
-  if (!docker.available) {
-    throw new Error('Sandbox is enabled but Docker is not available. Install Docker Desktop or disable the sandbox in agent settings.')
+async function resolveSandboxOptions(params: {
+  cwd: string
+  workdir?: string
+  session?: Session | null
+  agentId?: string | null
+  sessionId?: string | null
+  env: Record<string, string>
+  config?: AgentSandboxConfig | null
+}): Promise<{
+  sandbox?: SandboxOptions
+  hostWorkdir: string
+  workspaceEnv: string
+  sessionCwdEnv: string
+}> {
+  const hostWorkdir = resolveShellWorkdir(params.cwd, params.workdir)
+  const sandboxSession = await ensureSessionSandbox({
+    config: params.config,
+    session: params.session,
+    agentId: params.agentId,
+    sessionId: params.sessionId,
+    workspaceDir: params.cwd,
+  })
+
+  if (!sandboxSession) {
+    return {
+      hostWorkdir,
+      workspaceEnv: params.cwd,
+      sessionCwdEnv: hostWorkdir,
+    }
   }
+
+  const sandboxHostWorkdir = fs.existsSync(hostWorkdir) && fs.statSync(hostWorkdir).isDirectory()
+    ? hostWorkdir
+    : sandboxSession.workspaceDir
+  const resolved = resolveSandboxWorkdir({
+    workspaceDir: sandboxSession.workspaceDir,
+    hostWorkdir: sandboxHostWorkdir,
+    containerWorkdir: sandboxSession.containerWorkdir,
+  })
+
   return {
-    image: config.image || 'node:22-slim',
-    network: config.network || 'none',
-    memoryMb: config.memoryMb || 512,
-    cpus: config.cpus || 1.0,
-    readonlyRoot: config.readonlyRoot || false,
-    workspaceMounts: [{ hostPath: cwd, containerPath: '/workspace' }],
+    hostWorkdir: resolved.hostWorkdir,
+    workspaceEnv: sandboxSession.containerWorkdir,
+    sessionCwdEnv: resolved.containerWorkdir,
+    sandbox: {
+      kind: 'persistent',
+      containerName: sandboxSession.containerName,
+      containerWorkdir: resolved.containerWorkdir,
+      env: params.env,
+    },
   }
 }
 
@@ -191,8 +228,9 @@ async function executeShellAction(
     cwd: string
     agentId?: string | null
     sessionId?: string | null
+    resolveCurrentSession?: () => Session | null
     fileAccessPolicy?: { allowedPaths?: string[]; blockedPaths?: string[] } | null
-    sandboxConfig?: { enabled: boolean; image?: string; network?: 'none' | 'bridge'; memoryMb?: number; cpus?: number; readonlyRoot?: boolean } | null
+    sandboxConfig?: AgentSandboxConfig | null
   },
 ) {
   const normalized = normalizeShellArgs(args)
@@ -214,21 +252,42 @@ async function executeShellAction(
         // Enforce file access policy on shell command targets
         const policyDenial = checkShellFileAccessPolicy(command, bctx.cwd, bctx.fileAccessPolicy)
         if (policyDenial) return policyDenial
-        const rewrittenCommand = rewriteShellWorkspaceAliases(bctx.cwd, command)
-        const effectiveBackground = !!background || (typeof rewrittenCommand === 'string' && isLikelyServerCommand(rewrittenCommand))
-        const managedCommand = effectiveBackground ? stripManagedBackgroundSuffix(rewrittenCommand) : rewrittenCommand
         const envMap = coerceEnvMap(env) || {}
-        if (!envMap.WORKSPACE) envMap.WORKSPACE = bctx.cwd
-        if (!envMap.SESSION_CWD) envMap.SESSION_CWD = bctx.cwd
         let sandbox: SandboxOptions | undefined
+        let hostWorkdir = resolveShellWorkdir(bctx.cwd, workdir)
+        let commandForExecution = rewriteShellWorkspaceAliases(bctx.cwd, command)
+        let sandboxMode: 'container' | 'host' | 'host-fallback' = 'host'
         try {
-          sandbox = resolveSandboxOptions(bctx.cwd, bctx.sandboxConfig)
-        } catch (err: unknown) {
-          return `Error: ${errorMessage(err)}`
+          const resolved = await resolveSandboxOptions({
+            cwd: bctx.cwd,
+            workdir,
+            session: bctx.resolveCurrentSession?.() || null,
+            agentId: bctx.agentId || null,
+            sessionId: bctx.sessionId || null,
+            env: envMap,
+            config: bctx.sandboxConfig,
+          })
+          sandbox = resolved.sandbox
+          hostWorkdir = resolved.hostWorkdir
+          if (!envMap.WORKSPACE) envMap.WORKSPACE = resolved.workspaceEnv
+          if (!envMap.SESSION_CWD) envMap.SESSION_CWD = resolved.sessionCwdEnv
+          if (sandbox) {
+            commandForExecution = rewriteShellWorkspaceAliasesForSandbox(command)
+            if (!envMap.HOME) envMap.HOME = resolved.sessionCwdEnv
+            if (!envMap.TMPDIR) envMap.TMPDIR = '/tmp'
+            sandboxMode = 'container'
+          }
+        } catch {
+          sandboxMode = 'host-fallback'
         }
+        if (!envMap.WORKSPACE) envMap.WORKSPACE = bctx.cwd
+        if (!envMap.SESSION_CWD) envMap.SESSION_CWD = hostWorkdir
+        if (!envMap.SWARMCLAW_SANDBOX_MODE) envMap.SWARMCLAW_SANDBOX_MODE = sandboxMode
+        const effectiveBackground = !!background || (typeof commandForExecution === 'string' && isLikelyServerCommand(commandForExecution))
+        const managedCommand = effectiveBackground ? stripManagedBackgroundSuffix(commandForExecution) : commandForExecution
         const result = await startManagedProcess({
           command: managedCommand,
-          cwd: resolveShellWorkdir(bctx.cwd, workdir),
+          cwd: hostWorkdir,
           env: envMap,
           agentId: bctx.agentId || null,
           sessionId: bctx.sessionId || null,
@@ -291,7 +350,13 @@ export function buildShellTools(bctx: ToolBuildContext) {
   if (!bctx.hasPlugin('shell')) return []
   return [
     tool(
-      async (args) => executeShellAction(args, { ...bctx.ctx, cwd: bctx.cwd, fileAccessPolicy: bctx.fileAccessPolicy, sandboxConfig: bctx.sandboxConfig }),
+      async (args) => executeShellAction(args, {
+        ...bctx.ctx,
+        cwd: bctx.cwd,
+        resolveCurrentSession: bctx.resolveCurrentSession,
+        fileAccessPolicy: bctx.fileAccessPolicy,
+        sandboxConfig: bctx.sandboxConfig,
+      }),
       {
         name: 'shell',
         description: ShellPlugin.tools![0].description,

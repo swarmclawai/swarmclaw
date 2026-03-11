@@ -8,11 +8,11 @@ const toolsDir = path.dirname(thisFile)
 const serverDir = path.resolve(toolsDir, '..')
 
 function readToolSource(fileName: string): string {
-  return fs.readFileSync(path.join(toolsDir, fileName), 'utf-8')
+  return fs.readFileSync(path.join(toolsDir, `${fileName}.ts`), 'utf-8')
 }
 
 function readServerSource(fileName: string): string {
-  return fs.readFileSync(path.join(serverDir, fileName), 'utf-8')
+  return fs.readFileSync(path.join(serverDir, `${fileName}.ts`), 'utf-8')
 }
 
 describe('browser workflow surface', () => {
@@ -53,9 +53,11 @@ describe('durable wait surface', () => {
 })
 
 describe('sandbox surface', () => {
-  it('advertises a Deno-only sandbox and steers simple APIs to http_request', () => {
+  it('advertises a Docker-preferred Node sandbox and steers simple APIs to http_request', () => {
     const src = readToolSource('sandbox')
     assert.equal(src.includes("enum: ['javascript', 'typescript']"), true)
+    assert.equal(src.includes('Docker-backed Node.js sandbox'), true)
+    assert.equal(src.includes('host Node'), true)
     assert.equal(src.includes('http_request'), true)
     assert.equal(src.includes('plugin_creator'), true)
     assert.equal(src.includes('manage_schedules'), true)
@@ -65,9 +67,9 @@ describe('sandbox surface', () => {
 
 describe('delegation job handles', () => {
   it('exposes subagent control actions', () => {
-    const src = readToolSource('subagent')
+    const src = readToolSource('delegate')
     for (const action of ['status', 'list', 'wait', 'cancel']) {
-      assert.equal(src.includes(`action === '${action}'`), true, `subagent.ts should handle ${action}`)
+      assert.equal(src.includes(`action === '${action}'`), true, `delegate.ts should handle ${action}`)
     }
     assert.equal(src.includes('createDelegationJob'), true)
   })
@@ -80,8 +82,8 @@ describe('delegation job handles', () => {
   })
 
   it('scheduler and daemon recover the durable autonomy jobs', () => {
-    const schedulerSrc = readServerSource('scheduler')
-    const daemonSrc = readServerSource('daemon-state')
+    const schedulerSrc = fs.readFileSync(path.join(serverDir, 'runtime', 'scheduler.ts'), 'utf-8')
+    const daemonSrc = fs.readFileSync(path.join(serverDir, 'runtime', 'daemon-state.ts'), 'utf-8')
     assert.equal(schedulerSrc.includes('processDueWatchJobs'), true)
     assert.equal(daemonSrc.includes('recoverStaleDelegationJobs'), true)
   })

@@ -10,7 +10,7 @@ import { safePath, truncate, MAX_OUTPUT, findBinaryOnPath } from './context'
 import { getSearchProvider } from './search-providers'
 import { dedupeScreenshotMarkdownLines } from './web-output'
 import { withRetry } from '../tool-retry'
-import type { Plugin, PluginHooks } from '@/types'
+import type { BrowserObservation, Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { dedup, errorMessage, hmrSingleton, sleep } from '@/lib/shared-utils'
@@ -20,10 +20,17 @@ import {
   getBrowserProfileDir,
   loadBrowserSessionRecord,
   markBrowserSessionClosed,
+  markBrowserSessionIdle,
   recordBrowserObservation,
   removeBrowserSessionRecord,
   upsertBrowserSessionRecord,
 } from '../browser-state'
+import { ensureSessionSandbox } from '@/lib/server/sandbox/session-runtime'
+import {
+  destroySandboxBrowser,
+  ensureSandboxBrowser,
+  type SandboxBrowserContext,
+} from '@/lib/server/sandbox/browser-runtime'
 import {
   DEFAULT_BROWSER_MCP_CALL_TIMEOUT_MS,
   buildBrowserConnectionOptions,
@@ -49,12 +56,33 @@ export {
 }
 
 type BrowserRuntimeEntry = {
-  client: any
-  server: any
+  client: BrowserMcpClient
+  server: BrowserMcpTransport
   createdAt: number
   profileId: string
   profileDir: string
   refCount: number
+  runtime: 'host' | 'sandbox-browser'
+  sandbox: SandboxBrowserContext | null
+}
+
+type BrowserMcpTransport = {
+  close?: () => void | Promise<void>
+}
+
+type BrowserMcpToolResultContent =
+  | { type: 'image'; data?: string }
+  | { type: 'resource'; resource?: { blob?: string; mimeType?: string } }
+  | { type: string; text?: string; data?: string; resource?: { blob?: string; mimeType?: string } }
+
+type BrowserMcpToolResult = {
+  isError?: boolean
+  content?: BrowserMcpToolResultContent[]
+}
+
+type BrowserMcpClient = {
+  callTool: (params: { name: string; arguments?: Record<string, unknown> }) => Promise<BrowserMcpToolResult>
+  close?: () => void | Promise<void>
 }
 
 // Stored on globalThis to survive HMR reloads in dev mode —
@@ -84,19 +112,37 @@ export function sweepOrphanedBrowsers(maxAgeMs = 30 * 60 * 1000): number {
       try { entry.server?.close?.() } catch { /* ignore */ }
       pendingBrowserInitializations.delete(key)
       markBrowserSessionClosed(key, 'Browser was swept after inactivity.')
+      if (entry.sandbox?.scopeKey === `session:${key}`) {
+        void destroySandboxBrowser(entry.sandbox)
+      }
       activeBrowsers.delete(key); cleaned++
     }
   }
   return cleaned
 }
+
+function releaseSessionBrowser(sessionId: string): void {
+  const entry = activeBrowsers.get(sessionId)
+  if (!entry) return
+  try { entry.client?.close?.() } catch { /* ignore */ }
+  try { entry.server?.close?.() } catch { /* ignore */ }
+  activeBrowsers.delete(sessionId)
+  pendingBrowserInitializations.delete(sessionId)
+  markBrowserSessionIdle(sessionId)
+}
+
 export function cleanupSessionBrowser(sessionId: string): void {
   const entry = activeBrowsers.get(sessionId)
   if (entry) {
     try { entry.client?.close?.() } catch { /* ignore */ }
     try { entry.server?.close?.() } catch { /* ignore */ }
-    activeBrowsers.delete(sessionId)
-    pendingBrowserInitializations.delete(sessionId)
-    markBrowserSessionClosed(sessionId)
+  }
+  activeBrowsers.delete(sessionId)
+  pendingBrowserInitializations.delete(sessionId)
+  const current = loadBrowserSessionRecord(sessionId)
+  markBrowserSessionClosed(sessionId)
+  if (current?.sandbox?.scopeKey === `session:${sessionId}`) {
+    void destroySandboxBrowser(current.sandbox)
   }
 }
 export function getActiveBrowserCount(): number { return activeBrowsers.size }
@@ -216,10 +262,39 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       ? ensureSessionBrowserProfileId(sessionKey)
       : { profileId: sessionKey, inheritedFromSessionId: null as string | null }
     const profileDir = getBrowserProfileDir(profileInfo.profileId)
-    let mcpClient: any = null
-    let mcpServer: any = null
+    let mcpClient: BrowserMcpClient | null = null
+    let mcpServer: BrowserMcpTransport | null = null
     let mcpInitializing: Promise<void> | null = null
     let browserLeaseHeld = false
+    let sandboxRuntimePromise: Promise<SandboxBrowserContext | null> | null = null
+
+    const ensureSandboxRuntime = async (): Promise<SandboxBrowserContext | null> => {
+      if (!currentSession?.id) return null
+      if (sandboxRuntimePromise) return sandboxRuntimePromise
+      sandboxRuntimePromise = (async () => {
+        try {
+          const sandbox = await ensureSessionSandbox({
+            config: bctx.sandboxConfig,
+            session: currentSession,
+            agentId: currentSession.agentId ?? ctx?.agentId ?? null,
+            sessionId: currentSession.id,
+            workspaceDir: cwd,
+          })
+          return await ensureSandboxBrowser({
+            config: bctx.sandboxConfig,
+            sandbox,
+          })
+        } catch {
+          return null
+        }
+      })()
+      return await sandboxRuntimePromise
+    }
+
+    const resolveNavigationTarget = async (target: string): Promise<string> => {
+      const sandboxRuntime = await ensureSandboxRuntime()
+      return resolveBrowserNavigationTarget(cwd, target, sandboxRuntime?.fsBridge)
+    }
 
     upsertBrowserSessionRecord({
       sessionId: sessionKey,
@@ -257,7 +332,14 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
           const connectPromise = (async () => {
             const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
             const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js')
-            const transport = new StdioClientTransport(buildBrowserStdioServerParams(profileDir))
+            const sandboxRuntime = await ensureSandboxRuntime()
+            const transport = new StdioClientTransport(buildBrowserStdioServerParams(profileDir, sandboxRuntime
+              ? {
+                  cdpEndpoint: sandboxRuntime.cdpEndpoint,
+                  cdpHeaders: [`Authorization: Bearer ${sandboxRuntime.bridgeAuthToken}`],
+                  allowUnrestrictedFileAccess: true,
+                }
+              : undefined))
             const client = new Client({ name: 'swarmclaw', version: '1.0' })
             await client.connect(transport)
             return {
@@ -267,6 +349,8 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
               profileId: profileInfo.profileId,
               profileDir,
               refCount: 0,
+              runtime: sandboxRuntime ? 'sandbox-browser' as const : 'host' as const,
+              sandbox: sandboxRuntime,
             }
           })()
           pendingBrowserInitializations.set(sessionKey, connectPromise)
@@ -284,6 +368,15 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
                 profileDir,
                 inheritedFromSessionId: profileInfo.inheritedFromSessionId,
                 status: 'error',
+                runtime: entry.runtime,
+                sandbox: entry.sandbox ? {
+                  scopeKey: entry.sandbox.scopeKey,
+                  containerName: entry.sandbox.containerName,
+                  cdpEndpoint: entry.sandbox.cdpEndpoint,
+                  cdpPort: entry.sandbox.cdpPort,
+                  noVncPort: entry.sandbox.noVncPort,
+                  bridgeUrl: entry.sandbox.bridgeUrl,
+                } : null,
                 lastAction: 'browser_restore',
                 lastError: errorMessage(err),
               })
@@ -295,6 +388,15 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             profileDir,
             inheritedFromSessionId: profileInfo.inheritedFromSessionId,
             status: 'active',
+            runtime: entry.runtime,
+            sandbox: entry.sandbox ? {
+              scopeKey: entry.sandbox.scopeKey,
+              containerName: entry.sandbox.containerName,
+              cdpEndpoint: entry.sandbox.cdpEndpoint,
+              cdpPort: entry.sandbox.cdpPort,
+              noVncPort: entry.sandbox.noVncPort,
+              bridgeUrl: entry.sandbox.bridgeUrl,
+            } : null,
             lastAction: restoreUrl && restoreUrl !== 'about:blank' ? 'browser_restore' : 'browser_open',
           })
         } finally {
@@ -314,21 +416,19 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       if (ownsActiveEntry && browserLeaseHeld) {
         entry.refCount = Math.max(0, (entry.refCount || 1) - 1)
         if (entry.refCount === 0) {
-          try { entry.client?.close?.() } catch { /* ignore */ }
-          try { entry.server?.close?.() } catch { /* ignore */ }
-          activeBrowsers.delete(sessionKey)
-          markBrowserSessionClosed(sessionKey)
+          releaseSessionBrowser(sessionKey)
         } else {
           activeBrowsers.set(sessionKey, entry)
         }
       } else {
         try { mcpClient?.close?.() } catch { /* ignore */ }
         try { mcpServer?.close?.() } catch { /* ignore */ }
-        if (browserLeaseHeld) markBrowserSessionClosed(sessionKey)
+        if (browserLeaseHeld) markBrowserSessionIdle(sessionKey)
       }
       mcpClient = null
       mcpServer = null
       mcpInitializing = null
+      sandboxRuntimePromise = null
       browserLeaseHeld = false
     })
 
@@ -533,7 +633,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         const observation = {
           capturedAt: Date.now(),
           ...parsed,
-        } as any
+        } as BrowserObservation
         recordBrowserObservation(sessionKey, observation)
         return observation
       }
@@ -548,7 +648,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
     }
 
     const MCP_CALL_TIMEOUT_MS = DEFAULT_BROWSER_MCP_CALL_TIMEOUT_MS
-    const callMcpTool = async (toolName: string, args: Record<string, any>, options?: { saveTo?: string }): Promise<string> => {
+    const callMcpTool = async (toolName: string, args: Record<string, unknown>, options?: { saveTo?: string }): Promise<string> => {
       const rawCall = async (): Promise<string> => {
         try {
           await ensureMcp()
@@ -1146,7 +1246,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
     const completeWebTask = async (params: Record<string, unknown>) => {
       const steps: string[] = []
       if (typeof params.url === 'string' && params.url.trim()) {
-        const navigationTarget = resolveBrowserNavigationTarget(cwd, params.url.trim())
+        const navigationTarget = await resolveNavigationTarget(params.url.trim())
         await callMcpTool('browser_navigate', { url: navigationTarget })
         steps.push(`navigate:${navigationTarget}`)
         try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ }
@@ -1244,6 +1344,8 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
                 active: activeBrowsers.has(sessionKey),
                 profileId: state.profileId,
                 profileDir: state.profileDir,
+                runtime: state.runtime,
+                sandbox: state.sandbox,
                 inheritedFromSessionId: state.inheritedFromSessionId,
                 currentUrl: state.currentUrl,
                 pageTitle: state.pageTitle,
@@ -1267,7 +1369,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             if (action === 'read_page') {
               const target = pickBrowserTargetFromParams(params)
               if (target) {
-                await callMcpTool('browser_navigate', { url: resolveBrowserNavigationTarget(cwd, target) })
+                await callMcpTool('browser_navigate', { url: await resolveNavigationTarget(target) })
                 try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ }
               }
               return stringifyStructured(await captureStructuredObservation())
@@ -1337,7 +1439,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             if (!mcpTool) return `Unknown browser action: "${action}"`
             const rest = { ...params }
             delete rest.action
-            const args: Record<string, any> = {}
+            const args: Record<string, unknown> = {}
             for (const [k, v] of Object.entries(rest)) {
               if (v !== undefined && v !== null && v !== '') args[k] = v
             }
@@ -1345,7 +1447,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             if (action === 'navigate') {
               const target = pickBrowserTargetFromParams(params)
               if (!target) return 'Error: url or filePath is required for navigate.'
-              args.url = resolveBrowserNavigationTarget(cwd, target)
+              args.url = await resolveNavigationTarget(target)
               delete args.filePath
               delete args.path
               delete args.href
@@ -1372,7 +1474,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
             }
 
             if ((action === 'screenshot' || action === 'snapshot') && args.url) {
-              const navUrl = resolveBrowserNavigationTarget(cwd, String(args.url))
+              const navUrl = await resolveNavigationTarget(String(args.url))
               delete args.url
               await callMcpTool('browser_navigate', { url: navUrl })
               try { await dismissCookieBanners(callMcpTool) } catch { /* ignore */ }

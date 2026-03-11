@@ -1,6 +1,7 @@
 import { genId } from '@/lib/id'
 import { hmrSingleton, sleep } from '@/lib/shared-utils'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import { detectDocker } from '@/lib/server/sandbox/docker-detect'
 
 const MAX_LOG_CHARS = 200_000
 const DEFAULT_BACKGROUND_YIELD_MS = 10_000
@@ -16,6 +17,8 @@ export interface ProcessRecord {
   cwd: string
   agentId?: string | null
   sessionId?: string | null
+  sandboxMode?: 'ephemeral' | 'persistent' | null
+  sandboxContainerName?: string | null
   status: ProcessStatus
   pid: number | null
   startedAt: number
@@ -27,14 +30,26 @@ export interface ProcessRecord {
   timeoutAt: number | null
 }
 
-export interface SandboxOptions {
+export interface EphemeralSandboxOptions {
+  kind?: 'ephemeral'
   image: string
   network: 'none' | 'bridge'
   memoryMb: number
   cpus: number
   readonlyRoot: boolean
+  pidsLimit?: number
+  env?: Record<string, string>
   workspaceMounts: Array<{ hostPath: string; containerPath: string; readonly?: boolean }>
 }
+
+export interface PersistentSandboxOptions {
+  kind: 'persistent'
+  containerName: string
+  containerWorkdir: string
+  env?: Record<string, string>
+}
+
+export type SandboxOptions = EphemeralSandboxOptions | PersistentSandboxOptions
 
 export interface StartProcessOptions {
   command: string
@@ -95,14 +110,17 @@ function markEnded(id: string, patch: Partial<ProcessRecord>) {
   rec.endedAt = patch.endedAt ?? now()
   rec.exitCode = patch.exitCode ?? rec.exitCode
   rec.signal = patch.signal ?? rec.signal
-  // Best-effort cleanup of sandbox container (--rm handles normal exit, this catches orphans)
-  cleanupSandboxContainer(id)
+  if (rec.sandboxMode === 'ephemeral' && rec.sandboxContainerName) {
+    cleanupSandboxContainer(rec.sandboxContainerName)
+  }
 }
 
-function cleanupSandboxContainer(processId: string) {
-  const containerName = `swarmclaw-sb-${processId}`
+function cleanupSandboxContainer(containerName: string) {
+  if (!detectDocker().available) return
   try {
-    spawn('docker', ['rm', '-f', containerName], { stdio: 'ignore', detached: true }).unref()
+    const child = spawn('docker', ['rm', '-f', containerName], { stdio: 'ignore', detached: true })
+    child.on('error', () => { /* Docker may disappear between detect and cleanup */ })
+    child.unref()
   } catch { /* Docker may not be present or container already removed */ }
 }
 
@@ -110,10 +128,50 @@ function normalizeLines(text: string): string[] {
   return text.split('\n')
 }
 
+function appendDockerEnvArgs(args: string[], env?: Record<string, string>): string {
+  let prependPath = ''
+  for (const [key, value] of Object.entries(env || {})) {
+    if (key === 'PATH') {
+      if (value) args.push('-e', `SWARMCLAW_PREPEND_PATH=${value}`)
+      prependPath = value
+      continue
+    }
+    args.push('-e', `${key}=${value}`)
+  }
+  return prependPath
+    ? 'export PATH="${SWARMCLAW_PREPEND_PATH}:$PATH"; unset SWARMCLAW_PREPEND_PATH; '
+    : ''
+}
 
-function getShellCommand(command: string, processId?: string, sandbox?: SandboxOptions): { shell: string; args: string[] } {
+export function buildDockerExecArgs(params: {
+  containerName: string
+  command: string
+  workdir?: string
+  env?: Record<string, string>
+}): string[] {
+  const args = ['exec', '-i']
+  if (params.workdir) args.push('-w', params.workdir)
+  const pathExport = appendDockerEnvArgs(args, params.env)
+  args.push(params.containerName, '/bin/sh', '-lc', `${pathExport}${params.command}`)
+  return args
+}
+
+export function getShellCommand(command: string, processId?: string, sandbox?: SandboxOptions): { shell: string; args: string[]; containerName?: string } {
   if (!sandbox) {
     return { shell: '/bin/zsh', args: ['-lc', command] }
+  }
+
+  if (sandbox.kind === 'persistent') {
+    return {
+      shell: 'docker',
+      args: buildDockerExecArgs({
+        containerName: sandbox.containerName,
+        command,
+        workdir: sandbox.containerWorkdir,
+        env: sandbox.env,
+      }),
+      containerName: sandbox.containerName,
+    }
   }
 
   const containerName = `swarmclaw-sb-${processId || genId(6)}`
@@ -123,7 +181,7 @@ function getShellCommand(command: string, processId?: string, sandbox?: SandboxO
     `--network=${sandbox.network}`,
     `--memory=${sandbox.memoryMb}m`,
     `--cpus=${sandbox.cpus}`,
-    '--pids-limit=256',
+    `--pids-limit=${sandbox.pidsLimit || 256}`,
     '--security-opt=no-new-privileges',
   ]
 
@@ -142,9 +200,10 @@ function getShellCommand(command: string, processId?: string, sandbox?: SandboxO
     dockerArgs.push('-w', '/workspace')
   }
 
-  dockerArgs.push(sandbox.image, '/bin/sh', '-c', command)
+  const pathExport = appendDockerEnvArgs(dockerArgs, sandbox.env)
+  dockerArgs.push(sandbox.image, '/bin/sh', '-lc', `${pathExport}${command}`)
 
-  return { shell: 'docker', args: dockerArgs }
+  return { shell: 'docker', args: dockerArgs, containerName }
 }
 
 export async function startManagedProcess(opts: StartProcessOptions): Promise<StartProcessResult> {
@@ -160,6 +219,10 @@ export async function startManagedProcess(opts: StartProcessOptions): Promise<St
     cwd: opts.cwd,
     agentId: opts.agentId ?? null,
     sessionId: opts.sessionId ?? null,
+    sandboxMode: opts.sandbox ? (opts.sandbox.kind === 'persistent' ? 'persistent' : 'ephemeral') : null,
+    sandboxContainerName: opts.sandbox
+      ? (opts.sandbox.kind === 'persistent' ? opts.sandbox.containerName : `swarmclaw-sb-${id}`)
+      : null,
     status: 'running',
     pid: null,
     startedAt,
@@ -175,7 +238,7 @@ export async function startManagedProcess(opts: StartProcessOptions): Promise<St
   const { shell, args } = getShellCommand(opts.command, id, opts.sandbox)
   const child = spawn(shell, args, {
     cwd: opts.sandbox ? undefined : opts.cwd,
-    env: { ...process.env, ...(opts.env || {}) },
+    env: opts.sandbox ? process.env : { ...process.env, ...(opts.env || {}) },
     stdio: 'pipe',
   })
   state.children.set(id, child)

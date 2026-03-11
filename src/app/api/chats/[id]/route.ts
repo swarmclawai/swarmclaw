@@ -3,6 +3,7 @@ import { loadSession, upsertSession, deleteSession, active, loadAgents } from '@
 import { notFound } from '@/lib/server/collection-helpers'
 import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
+import { clearMainLoopStateForSession } from '@/lib/server/agents/main-agent-loop'
 import { getSessionRunState } from '@/lib/server/runtime/session-run-manager'
 import type { Session } from '@/types'
 
@@ -24,6 +25,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const updates = await req.json()
   const session = loadSession(id) as Record<string, unknown> | null
   if (!session) return notFound()
+
+  if (updates.resetMainLoopState === true) {
+    clearMainLoopStateForSession(id)
+  }
 
   const agentIdUpdateProvided = updates.agentId !== undefined
   let nextAgentId = session.agentId

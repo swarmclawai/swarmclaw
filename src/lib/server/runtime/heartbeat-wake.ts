@@ -13,7 +13,11 @@ import {
 } from '@/lib/server/runtime/heartbeat-service'
 import { buildMainLoopHeartbeatPrompt, isMainSession } from '@/lib/server/agents/main-agent-loop'
 import { loadSessions, loadAgents, loadSettings } from '@/lib/server/storage'
-import { enqueueSessionRun, getSessionExecutionState } from '@/lib/server/runtime/session-run-manager'
+import {
+  enqueueSessionRun,
+  getSessionExecutionState,
+  hasActiveNonHeartbeatSessionLease,
+} from '@/lib/server/runtime/session-run-manager'
 import { log } from '@/lib/server/logger'
 import { isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
@@ -298,7 +302,8 @@ function flushWakes(): void {
       if (!session) continue
 
       const execution = getSessionExecutionState(sessionId)
-      if (execution.hasRunning || execution.hasQueued) {
+      const sharedNonHeartbeatBusy = hasActiveNonHeartbeatSessionLease(sessionId)
+      if (execution.hasRunning || execution.hasQueued || sharedNonHeartbeatBusy) {
         queuePendingWakeRequest({
           ...wake,
           sessionId,
@@ -308,6 +313,7 @@ function flushWakes(): void {
         log.info('heartbeat-wake', `Wake delayed for busy session ${sessionId}`, {
           running: execution.hasRunning,
           queued: execution.queueLength,
+          sharedNonHeartbeatBusy,
         })
         continue
       }

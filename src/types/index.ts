@@ -701,11 +701,35 @@ export interface Agent {
   /** Docker container sandbox for shell command execution. */
   sandboxConfig?: {
     enabled: boolean
+    mode?: 'off' | 'non-main' | 'all' // default: 'all' when enabled, modeled after OpenClaw
+    scope?: 'session' | 'agent'       // default: 'session'
+    workspaceAccess?: 'ro' | 'rw'     // default: 'rw'
     image?: string               // default: 'node:22-slim'
     network?: 'none' | 'bridge'  // default: 'none'
     memoryMb?: number            // default: 512
     cpus?: number                // default: 1.0
     readonlyRoot?: boolean       // default: false
+    workdir?: string             // default: '/workspace'
+    containerPrefix?: string     // default: 'swarmclaw-sb-'
+    pidsLimit?: number           // default: 256
+    setupCommand?: string
+    browser?: {
+      enabled?: boolean
+      image?: string
+      containerPrefix?: string
+      network?: 'none' | 'bridge'
+      cdpPort?: number
+      vncPort?: number
+      noVncPort?: number
+      headless?: boolean
+      enableNoVnc?: boolean
+      mountUploads?: boolean
+      autoStartTimeoutMs?: number
+    } | null
+    prune?: {
+      idleHours?: number
+      maxAgeDays?: number
+    } | null
   } | null
 
   budgetAction?: 'warn' | 'block'
@@ -909,12 +933,23 @@ export interface BrowserObservation {
   errors?: string[]
 }
 
+export interface BrowserSandboxRuntimeInfo {
+  scopeKey?: string | null
+  containerName?: string | null
+  cdpEndpoint?: string | null
+  cdpPort?: number | null
+  noVncPort?: number | null
+  bridgeUrl?: string | null
+}
+
 export interface BrowserSessionRecord {
   id: string
   sessionId: string
   profileId: string
   profileDir: string
   status: BrowserSessionStatus
+  runtime?: 'host' | 'sandbox-browser' | null
+  sandbox?: BrowserSandboxRuntimeInfo | null
   inheritedFromSessionId?: string | null
   currentUrl?: string | null
   pageTitle?: string | null

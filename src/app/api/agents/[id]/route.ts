@@ -5,6 +5,7 @@ import { mutateItem, notFound, type CollectionOps } from '@/lib/server/collectio
 import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
 import { suspendAgentReferences } from '@/lib/server/agents/agent-cascade'
 import { notify } from '@/lib/server/ws-hub'
+import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ops: CollectionOps<any> = { load: () => loadAgents({ includeTrashed: true }), save: saveAgents, topic: 'agents', table: 'agents' }
@@ -29,6 +30,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         body.provider || agent.provider,
         body.apiEndpoint,
       )
+    }
+    if (body.sandboxConfig !== undefined) {
+      agent.sandboxConfig = normalizeAgentSandboxConfig(body.sandboxConfig)
     }
     if (body.preferredGatewayTags !== undefined) {
       agent.preferredGatewayTags = Array.isArray(body.preferredGatewayTags)

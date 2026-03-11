@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "0.8.9",
+  "version": "0.9.0",
   "description": "Self-hosted AI agent orchestration dashboard — manage LLM providers, orchestrate agent swarms, schedule tasks, and bridge agents to chat platforms.",
   "license": "MIT",
   "publishConfig": {
@@ -32,7 +32,12 @@
     "bundled-skills/",
     "src/",
     "public/",
+    "Dockerfile.sandbox-browser",
+    "scripts/easy-setup.mjs",
+    "scripts/easy-update.mjs",
+    "scripts/ensure-sandbox-browser-image.mjs",
     "scripts/postinstall.mjs",
+    "scripts/sandbox-browser-entrypoint.sh",
     "next.config.ts",
     "tsconfig.json",
     "postcss.config.mjs",
@@ -52,6 +57,7 @@
     "start:standalone": "node .next/standalone/server.js",
     "smoke:browser": "node ./scripts/browser-route-smoke.mjs",
     "smoke:browser:workbench": "node ./scripts/browser-workbench-smoke.mjs",
+    "sandbox:build:browser": "docker build -f Dockerfile.sandbox-browser -t swarmclaw-sandbox-browser:bookworm-slim .",
     "benchmark:autonomy": "node ./scripts/benchmark-autonomy-harness.mjs",
     "benchmark:agent-regression": "node --import tsx ./scripts/run-agent-regression-suite.ts",
     "lint": "eslint",

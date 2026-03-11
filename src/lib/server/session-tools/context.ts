@@ -1,4 +1,5 @@
 import type { StructuredToolInterface } from '@langchain/core/tools'
+import type { Agent } from '@/types'
 
 export const MAX_OUTPUT = 50 * 1024 // 50KB
 export const MAX_FILE = 100 * 1024 // 100KB
@@ -75,15 +76,8 @@ export interface ToolBuildContext {
   activePlugins: string[]
   /** Agent's file access policy — passed to shell for command-level enforcement */
   fileAccessPolicy?: { allowedPaths?: string[]; blockedPaths?: string[] } | null
-  /** Agent's Docker sandbox config — passed to shell for containerized execution */
-  sandboxConfig?: {
-    enabled: boolean
-    image?: string
-    network?: 'none' | 'bridge'
-    memoryMb?: number
-    cpus?: number
-    readonlyRoot?: boolean
-  } | null
+  /** Agent's sandbox config — passed to shell for session-scoped container execution */
+  sandboxConfig?: NonNullable<Agent['sandboxConfig']> | null
 }
 
 function normalizeWorkspaceAlias(cwd: string, filePath: string): string {

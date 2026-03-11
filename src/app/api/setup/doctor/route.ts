@@ -111,22 +111,6 @@ export async function GET(req: Request) {
     actions.push('Install npm and rerun `npm run setup:easy`.')
   }
 
-  const denoCheck = run('deno', ['--version'], 5_000)
-  if (denoCheck.ok) {
-    const denoVersion = denoCheck.output.split('\n').map((line) => line.trim()).find(Boolean) || denoCheck.output
-    pushCheck(checks, 'deno', 'Deno (sandbox runtime)', 'pass', `${denoVersion} is available.`, true)
-  } else {
-    pushCheck(
-      checks,
-      'deno',
-      'Deno (sandbox runtime)',
-      'fail',
-      denoCheck.error || 'Deno was not found in PATH.',
-      true,
-    )
-    actions.push('Run `npm run setup:easy` to install Deno automatically, or install Deno from https://deno.land/#installation.')
-  }
-
   const dataWrite = testDataWriteAccess(DATA_DIR)
   if (dataWrite.ok) {
     pushCheck(checks, 'data-dir', 'Data directory permissions', 'pass', `Writable: ${DATA_DIR}`, true)
@@ -236,9 +220,12 @@ export async function GET(req: Request) {
     'Docker (sandbox runtime)',
     docker.available ? 'pass' : 'warn',
     docker.available
-      ? `Docker ${docker.version || ''} is available for agent sandbox execution.`.trim()
-      : 'Docker is not available. Agent sandbox execution requires Docker Desktop.',
+      ? `Docker ${docker.version || ''} is available for container sandbox execution.`.trim()
+      : 'Docker is not available. SwarmClaw will fall back to host execution until Docker Desktop is installed.',
   )
+  if (!docker.available) {
+    actions.push('Install Docker Desktop if you want shell, browser, and code execution to stay inside containers by default.')
+  }
 
   const gitRootCheck = run('git', ['rev-parse', '--is-inside-work-tree'], 4_000)
   let localSha: string | null = null

@@ -1,6 +1,12 @@
 import { genId } from '@/lib/id'
 import type { SSEEvent } from '@/types'
-import { active, loadSession } from '@/lib/server/storage'
+import {
+  active,
+  isRuntimeLockActive,
+  loadSession,
+  releaseRuntimeLock,
+  tryAcquireRuntimeLock,
+} from '@/lib/server/storage'
 import { executeSessionChatTurn, type ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-execution'
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { log } from '@/lib/server/logger'
@@ -59,17 +65,34 @@ interface RuntimeState {
   runs: Map<string, SessionRunRecord>
   recentRunIds: string[]
   promises: Map<string, Promise<ExecuteChatTurnResult>>
+  deferredDrainTimers: Map<string, ReturnType<typeof setTimeout>>
+  activityLeaseRenewTimers: Map<string, ReturnType<typeof setInterval>>
 }
 
 const MAX_RECENT_RUNS = 500
 const COLLECT_COALESCE_WINDOW_MS = 1500
+const SHARED_ACTIVITY_LEASE_TTL_MS = 15_000
+const SHARED_ACTIVITY_LEASE_RENEW_MS = 5_000
+const HEARTBEAT_BUSY_RETRY_MS = 1_000
+const SHARED_ACTIVITY_LEASE_OWNER = `session-run:${process.pid}:${genId(6)}`
 const state: RuntimeState = hmrSingleton<RuntimeState>('__swarmclaw_session_run_manager__', () => ({
   runningByExecution: new Map<string, QueueEntry>(),
   queueByExecution: new Map<string, QueueEntry[]>(),
   runs: new Map<string, SessionRunRecord>(),
   recentRunIds: [],
   promises: new Map<string, Promise<ExecuteChatTurnResult>>(),
+  deferredDrainTimers: new Map<string, ReturnType<typeof setTimeout>>(),
+  activityLeaseRenewTimers: new Map<string, ReturnType<typeof setInterval>>(),
 }))
+
+// Backfill fields for hot-reloaded state objects created by older code versions.
+if (!state.runningByExecution) state.runningByExecution = new Map<string, QueueEntry>()
+if (!state.queueByExecution) state.queueByExecution = new Map<string, QueueEntry[]>()
+if (!state.runs) state.runs = new Map<string, SessionRunRecord>()
+if (!state.recentRunIds) state.recentRunIds = []
+if (!state.promises) state.promises = new Map<string, Promise<ExecuteChatTurnResult>>()
+if (!state.deferredDrainTimers) state.deferredDrainTimers = new Map<string, ReturnType<typeof setTimeout>>()
+if (!state.activityLeaseRenewTimers) state.activityLeaseRenewTimers = new Map<string, ReturnType<typeof setInterval>>()
 
 function now() {
   return Date.now()
@@ -152,6 +175,14 @@ function executionKeyForSession(sessionId: string): string {
   return `session:${sessionId}`
 }
 
+function nonHeartbeatActivityLeaseName(sessionId: string): string {
+  return `session-non-heartbeat:${sessionId}`
+}
+
+export function hasActiveNonHeartbeatSessionLease(sessionId: string): boolean {
+  return isRuntimeLockActive(nonHeartbeatActivityLeaseName(sessionId))
+}
+
 function queueForExecution(executionKey: string): QueueEntry[] {
   const existing = state.queueByExecution.get(executionKey)
   if (existing) return existing
@@ -163,6 +194,59 @@ function queueForExecution(executionKey: string): QueueEntry[] {
 function normalizeMode(mode: string | undefined, internal: boolean): SessionQueueMode {
   if (mode === 'steer' || mode === 'collect' || mode === 'followup') return mode
   return internal ? 'collect' : 'followup'
+}
+
+function hasLocalNonHeartbeatWork(sessionId: string): boolean {
+  const running = Array.from(state.runningByExecution.values())
+    .some((entry) => entry.run.sessionId === sessionId && !isInternalHeartbeatRun(entry.run.internal, entry.run.source))
+  if (running) return true
+  return Array.from(state.queueByExecution.values())
+    .flatMap((queue) => queue)
+    .some((entry) => entry.run.sessionId === sessionId && !isInternalHeartbeatRun(entry.run.internal, entry.run.source))
+}
+
+function clearDeferredDrain(executionKey: string): void {
+  const timer = state.deferredDrainTimers.get(executionKey)
+  if (!timer) return
+  clearTimeout(timer)
+  state.deferredDrainTimers.delete(executionKey)
+}
+
+function scheduleDeferredDrain(executionKey: string, delayMs = HEARTBEAT_BUSY_RETRY_MS): void {
+  if (state.deferredDrainTimers.has(executionKey)) return
+  const timer = setTimeout(() => {
+    state.deferredDrainTimers.delete(executionKey)
+    void drainExecution(executionKey)
+  }, delayMs)
+  state.deferredDrainTimers.set(executionKey, timer)
+}
+
+function stopSessionActivityLease(sessionId: string): void {
+  const timer = state.activityLeaseRenewTimers.get(sessionId)
+  if (timer) {
+    clearInterval(timer)
+    state.activityLeaseRenewTimers.delete(sessionId)
+  }
+  releaseRuntimeLock(nonHeartbeatActivityLeaseName(sessionId), SHARED_ACTIVITY_LEASE_OWNER)
+}
+
+function startSessionActivityLease(sessionId: string): void {
+  if (state.activityLeaseRenewTimers.has(sessionId)) return
+  const leaseName = nonHeartbeatActivityLeaseName(sessionId)
+  tryAcquireRuntimeLock(leaseName, SHARED_ACTIVITY_LEASE_OWNER, SHARED_ACTIVITY_LEASE_TTL_MS)
+  const timer = setInterval(() => {
+    if (!hasLocalNonHeartbeatWork(sessionId)) {
+      stopSessionActivityLease(sessionId)
+      return
+    }
+    tryAcquireRuntimeLock(leaseName, SHARED_ACTIVITY_LEASE_OWNER, SHARED_ACTIVITY_LEASE_TTL_MS)
+  }, SHARED_ACTIVITY_LEASE_RENEW_MS)
+  state.activityLeaseRenewTimers.set(sessionId, timer)
+}
+
+function reconcileSessionActivityLease(sessionId: string): void {
+  if (hasLocalNonHeartbeatWork(sessionId)) startSessionActivityLease(sessionId)
+  else stopSessionActivityLease(sessionId)
 }
 
 function cancelPendingForSession(sessionId: string, reason: string): number {
@@ -185,6 +269,7 @@ function cancelPendingForSession(sessionId: string, reason: string): number {
     if (keep.length > 0) state.queueByExecution.set(key, keep)
     else state.queueByExecution.delete(key)
   }
+  reconcileSessionActivityLease(sessionId)
   return cancelled
 }
 
@@ -229,8 +314,23 @@ async function drainExecution(executionKey: string): Promise<void> {
   // behind a user run, the user run takes priority.
   const userIdx = q.findIndex(e => !isInternalHeartbeatRun(e.run.internal, e.run.source))
   const next = userIdx >= 0 ? q.splice(userIdx, 1)[0] : q.shift()
-  if (!next) return
+  if (!next) {
+    clearDeferredDrain(executionKey)
+    return
+  }
 
+  if (isInternalHeartbeatRun(next.run.internal, next.run.source) && hasActiveNonHeartbeatSessionLease(next.run.sessionId)) {
+    q.unshift(next)
+    scheduleDeferredDrain(executionKey, HEARTBEAT_BUSY_RETRY_MS)
+    log.info('session-run', `Deferred heartbeat run ${next.run.id} for shared busy session`, {
+      sessionId: next.run.sessionId,
+      source: next.run.source,
+      leaseName: nonHeartbeatActivityLeaseName(next.run.sessionId),
+    })
+    return
+  }
+
+  clearDeferredDrain(executionKey)
   state.runningByExecution.set(executionKey, next)
   next.run.status = 'running'
   next.run.startedAt = now()
@@ -333,6 +433,7 @@ async function drainExecution(executionKey: string): Promise<void> {
   } finally {
     if (runtimeTimer) clearTimeout(runtimeTimer)
     state.runningByExecution.delete(executionKey)
+    reconcileSessionActivityLease(next.run.sessionId)
     void drainExecution(executionKey)
   }
 }
@@ -548,6 +649,7 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
   if (input.callerSignal) chainCallerSignal(input.callerSignal, entry.signalController)
 
   q.push(entry)
+  if (!isInternalHeartbeatRun(internal, source)) reconcileSessionActivityLease(input.sessionId)
   const position = (running ? 1 : 0) + q.length - 1
   emitRunMeta(entry, 'queued', { position })
   void drainExecution(executionKey)
@@ -647,7 +749,24 @@ export function cancelSessionRuns(sessionId: string, reason = 'Cancelled'): { ca
   if (running) {
     cancelledRunning = true
     abortSessionRuntime(running, reason)
+    state.runningByExecution.delete(running.executionKey)
   }
   const cancelledQueued = cancelPendingForSession(sessionId, reason)
+  reconcileSessionActivityLease(sessionId)
   return { cancelledQueued, cancelledRunning }
+}
+
+export function resetSessionRunManagerForTests(): void {
+  for (const timer of state.deferredDrainTimers.values()) clearTimeout(timer)
+  state.deferredDrainTimers.clear()
+  for (const [sessionId, timer] of state.activityLeaseRenewTimers.entries()) {
+    clearInterval(timer)
+    releaseRuntimeLock(nonHeartbeatActivityLeaseName(sessionId), SHARED_ACTIVITY_LEASE_OWNER)
+  }
+  state.activityLeaseRenewTimers.clear()
+  state.runningByExecution.clear()
+  state.queueByExecution.clear()
+  state.runs.clear()
+  state.recentRunIds.length = 0
+  state.promises.clear()
 }

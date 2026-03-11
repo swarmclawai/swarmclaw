@@ -4,6 +4,7 @@ import path from 'node:path'
 import { describe, it } from 'node:test'
 import type { MessageToolEvent } from '@/types'
 import {
+  buildToolAvailabilityLines,
   buildExternalWalletExecutionBlock,
   buildToolDisciplineLines,
   getExplicitRequiredToolNames,
@@ -28,10 +29,20 @@ const streamContinuationSource = fs.readFileSync(path.join(path.dirname(new URL(
 const streamSources = `${streamAgentChatSource}\n${streamContinuationSource}`
 
 describe('buildToolDisciplineLines', () => {
+  it('lists exact callable tool names for plugin families like sandbox and browser', () => {
+    const lines = buildToolAvailabilityLines(['sandbox', 'browser', 'manage_schedules'])
+
+    assert.equal(lines[0], 'Tool names are case-sensitive. Call tools exactly as listed.')
+    assert.ok(lines.includes('- `browser`'))
+    assert.ok(lines.includes('- `manage_schedules`'))
+    assert.ok(lines.includes('- `sandbox_exec`'))
+    assert.ok(lines.includes('- `sandbox_list_runtimes`'))
+  })
+
   it('tells the agent to use direct platform tools when manage_platform is absent', () => {
     const lines = buildToolDisciplineLines(['files', 'manage_schedules'])
 
-    assert.equal(lines[0], 'Enabled tools in this session: `files`, `manage_schedules`.')
+    assert.equal(lines[0], 'Enabled tools in this session: `files`, `manage_schedules`, `send_file`.')
     assert.ok(lines.some((line) => line.includes('Do not substitute `manage_platform`')))
     assert.ok(lines.some((line) => line.includes('Treat enabled tools as available now')))
     assert.ok(lines.some((line) => line.includes('try that tool before telling the user to do it themselves')))

@@ -75,7 +75,7 @@ describe('buildSessionTools signature', () => {
     assert.ok(buildSessionTools.length >= 2, 'buildSessionTools should accept at least 2 params')
   })
 
-  it('sandbox builder exposes only the local Deno sandbox tools', async () => {
+  it('sandbox builder exposes the local Node/Docker sandbox tools', async () => {
     const { buildSandboxTools } = await import('./sandbox')
     const bctx: import('./context').ToolBuildContext = {
       cwd: process.cwd(),
@@ -107,7 +107,7 @@ describe('memory tool knowledge actions (source verification)', () => {
   it('action enum in memory.ts includes the declared base actions', async () => {
     const fs = await import('fs')
     const src = fs.readFileSync(
-      new URL('./memory', import.meta.url).pathname,
+      new URL('./memory.ts', import.meta.url).pathname,
       'utf-8',
     )
 
@@ -127,7 +127,7 @@ describe('memory tool knowledge actions (source verification)', () => {
   it('action enum does not advertise removed knowledge actions', async () => {
     const fs = await import('fs')
     const src = fs.readFileSync(
-      new URL('./memory', import.meta.url).pathname,
+      new URL('./memory.ts', import.meta.url).pathname,
       'utf-8',
     )
 
@@ -142,7 +142,7 @@ describe('memory tool knowledge actions (source verification)', () => {
   it('declares the narrow OpenClaw-style memory tool names', async () => {
     const fs = await import('fs')
     const src = fs.readFileSync(
-      new URL('./memory', import.meta.url).pathname,
+      new URL('./memory.ts', import.meta.url).pathname,
       'utf-8',
     )
 
@@ -176,7 +176,7 @@ describe('MCP tool block type wiring', () => {
   it('index.ts source has MCP tool block gated on mcpServerIds', async () => {
     const fs = await import('fs')
     const src = fs.readFileSync(
-      new URL('./index', import.meta.url).pathname,
+      new URL('./index.ts', import.meta.url).pathname,
       'utf-8',
     )
     assert.ok(src.includes('mcpServerIds'), 'index.ts should reference mcpServerIds')

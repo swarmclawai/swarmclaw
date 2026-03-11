@@ -9,6 +9,8 @@ const BASE_CHUNK_RATIO = 0.4
 const MIN_CHUNK_RATIO = 0.15
 const COMPACTION_SAFETY_MARGIN = 1.2
 const COMPACTION_OVERHEAD_TOKENS = 4096
+const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 20_000
+const MIN_COMPACTION_RESERVE_TOKENS = 1_024
 const MAX_TOOL_FAILURES = 8
 const MAX_FAILURE_CHARS = 240
 
@@ -156,10 +158,28 @@ export function evaluateContextWindowGuard(provider: string, model: string): Con
 
 export interface ContextStatus {
   estimatedTokens: number
+  effectiveTokens: number
   contextWindow: number
   percentUsed: number
   messageCount: number
+  extraTokens: number
+  reserveTokens: number
+  remainingTokens: number
   strategy: 'ok' | 'warning' | 'critical'
+}
+
+export interface ContextStatusOptions {
+  extraTokens?: number
+  reserveTokens?: number
+}
+
+export function resolveCompactionReserveTokens(provider: string, model: string): number {
+  const contextWindow = getContextWindowSize(provider, model)
+  if (contextWindow <= 0) return MIN_COMPACTION_RESERVE_TOKENS
+  return Math.max(
+    MIN_COMPACTION_RESERVE_TOKENS,
+    Math.min(DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR, Math.floor(contextWindow * 0.2)),
+  )
 }
 
 export function getContextStatus(
@@ -167,16 +187,25 @@ export function getContextStatus(
   systemPromptTokens: number,
   provider: string,
   model: string,
+  options: ContextStatusOptions = {},
 ): ContextStatus {
   const contextWindow = getContextWindowSize(provider, model)
   const messageTokens = estimateMessagesTokens(messages)
-  const estimatedTokens = messageTokens + systemPromptTokens
-  const percentUsed = Math.round((estimatedTokens / contextWindow) * 100)
+  const extraTokens = Math.max(0, Math.trunc(options.extraTokens || 0))
+  const reserveTokens = Math.max(0, Math.trunc(options.reserveTokens || 0))
+  const estimatedTokens = messageTokens + systemPromptTokens + extraTokens
+  const effectiveTokens = estimatedTokens + reserveTokens
+  const percentUsed = Math.round((effectiveTokens / contextWindow) * 100)
+  const remainingTokens = Math.max(0, contextWindow - effectiveTokens)
   return {
     estimatedTokens,
+    effectiveTokens,
     contextWindow,
     percentUsed,
     messageCount: messages.length,
+    extraTokens,
+    reserveTokens,
+    remainingTokens,
     strategy: percentUsed >= 90 ? 'critical' : percentUsed >= 70 ? 'warning' : 'ok',
   }
 }
@@ -189,15 +218,16 @@ export function getContextDegradationWarning(
   systemPromptTokens: number,
   provider: string,
   model: string,
+  options: ContextStatusOptions = {},
 ): string | null {
-  const status = getContextStatus(messages, systemPromptTokens, provider, model)
+  const status = getContextStatus(messages, systemPromptTokens, provider, model, options)
   const pct = status.percentUsed
-  const remaining = status.contextWindow - status.estimatedTokens
+  const remaining = status.remainingTokens
   const estTurnsLeft = Math.max(0, Math.floor(remaining / 2000))
 
   if (pct >= 85) {
     return [
-      `[CONTEXT_WARNING] Context window is ${pct}% full (${status.estimatedTokens.toLocaleString()} / ${status.contextWindow.toLocaleString()} tokens).`,
+      `[CONTEXT_WARNING] Context window is ${pct}% full (${status.effectiveTokens.toLocaleString()} / ${status.contextWindow.toLocaleString()} effective tokens).`,
       `Estimated remaining capacity: ~${estTurnsLeft} turns.`,
       'CRITICAL: Save essential state to memory immediately. Summarize key findings, decisions, and next steps.',
       'Consider completing the current subtask and storing a checkpoint before context is exhausted.',
@@ -606,7 +636,11 @@ export function shouldAutoCompact(
   provider: string,
   model: string,
   triggerPercent = 80,
+  options: ContextStatusOptions = {},
 ): boolean {
-  const status = getContextStatus(messages, systemPromptTokens, provider, model)
+  const status = getContextStatus(messages, systemPromptTokens, provider, model, {
+    ...options,
+    reserveTokens: options.reserveTokens ?? resolveCompactionReserveTokens(provider, model),
+  })
   return status.percentUsed >= triggerPercent
 }

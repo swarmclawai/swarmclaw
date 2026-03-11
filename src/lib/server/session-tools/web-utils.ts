@@ -5,6 +5,7 @@ import { UPLOAD_DIR } from '../storage'
 import { safePath, truncate, MAX_OUTPUT } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import type { SearchResult } from './search-providers'
+import type { SandboxFsBridge } from '@/lib/server/sandbox/fs-bridge'
 
 function readBrowserTimeoutMs(envKey: string, fallbackMs: number, bounds: { min: number; max: number }): number {
   const raw = Number.parseInt(process.env[envKey] || '', 10)
@@ -93,7 +94,14 @@ export function buildBrowserConnectionOptions(profileDir: string) {
   }
 }
 
-export function buildBrowserStdioServerParams(profileDir: string) {
+export function buildBrowserStdioServerParams(
+  profileDir: string,
+  options?: {
+    cdpEndpoint?: string | null
+    cdpHeaders?: string[]
+    allowUnrestrictedFileAccess?: boolean
+  },
+) {
   const cliCandidates = [
     path.join(process.cwd(), 'node_modules', '@playwright', 'mcp', 'cli.js'),
     path.join(process.cwd(), '[project]', 'node_modules', '@playwright', 'mcp', 'cli.js'),
@@ -101,23 +109,46 @@ export function buildBrowserStdioServerParams(profileDir: string) {
   const cliPath = cliCandidates.find((candidate) => fs.existsSync(candidate)) || cliCandidates[0]
   const outputDir = path.join(profileDir, 'mcp-output')
   const env = sanitizePlaywrightMcpEnv()
-  return {
-    command: process.execPath,
-    args: [
-      cliPath,
+  const cdpEndpoint = typeof options?.cdpEndpoint === 'string' && options.cdpEndpoint.trim()
+    ? options.cdpEndpoint.trim()
+    : null
+  const args = [
+    cliPath,
+    '--output-dir', outputDir,
+    '--caps', 'vision,pdf',
+    '--image-responses', 'allow',
+    '--output-mode', 'file',
+    '--timeout-action', String(DEFAULT_BROWSER_ACTION_TIMEOUT_MS),
+    '--timeout-navigation', String(DEFAULT_BROWSER_NAVIGATION_TIMEOUT_MS),
+  ]
+
+  if (cdpEndpoint) {
+    args.push('--cdp-endpoint', cdpEndpoint)
+    for (const header of options?.cdpHeaders || []) {
+      if (typeof header === 'string' && header.trim()) {
+        args.push('--cdp-header', header.trim())
+      }
+    }
+    if (options?.allowUnrestrictedFileAccess) {
+      args.push('--allow-unrestricted-file-access')
+    }
+  } else {
+    args.push(
       '--headless',
       '--user-data-dir', profileDir,
-      '--output-dir', outputDir,
-      '--caps', 'vision,pdf',
-      '--image-responses', 'allow',
-      '--output-mode', 'file',
-      '--timeout-action', String(DEFAULT_BROWSER_ACTION_TIMEOUT_MS),
-      '--timeout-navigation', String(DEFAULT_BROWSER_NAVIGATION_TIMEOUT_MS),
-    ],
+    )
+  }
+
+  return {
+    command: process.execPath,
+    args,
     env: {
       ...env,
-      PLAYWRIGHT_MCP_USER_DATA_DIR: profileDir,
-      PLAYWRIGHT_MCP_HEADLESS: '1',
+      ...(cdpEndpoint ? { PLAYWRIGHT_MCP_CDP_ENDPOINT: cdpEndpoint } : {
+        PLAYWRIGHT_MCP_USER_DATA_DIR: profileDir,
+        PLAYWRIGHT_MCP_HEADLESS: '1',
+      }),
+      ...(options?.allowUnrestrictedFileAccess ? { PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1' } : {}),
       PLAYWRIGHT_MCP_IMAGE_RESPONSES: 'allow',
       PLAYWRIGHT_MCP_OUTPUT_DIR: outputDir,
       PLAYWRIGHT_MCP_OUTPUT_MODE: 'file',
@@ -332,10 +363,20 @@ function localHtmlFileToDataUrl(filePath: string): string | null {
   }
 }
 
-export function resolveBrowserNavigationTarget(cwd: string, target: string): string {
+export function resolveBrowserNavigationTarget(cwd: string, target: string, fsBridge?: SandboxFsBridge | null): string {
   const trimmed = target.trim()
   if (!trimmed) return trimmed
-  const localPath = tryResolveBrowserLocalPath(cwd, trimmed)
+  if (/^(?:https?:|about:|data:)/i.test(trimmed)) return trimmed.replace(/^sandbox:/, '')
+
+  const uploadPath = resolveUploadFilePath(trimmed)
+  const fileUrlPath = resolveBrowserFileUrlPath(trimmed)
+  const localPath = uploadPath || fileUrlPath || tryResolveBrowserLocalPath(cwd, trimmed)
+
+  if (fsBridge && localPath) {
+    const resolved = fsBridge.resolvePath({ filePath: localPath, cwd })
+    return pathToFileURL(resolved.containerPath).toString()
+  }
+
   if (localPath) return localHtmlFileToDataUrl(localPath) || pathToFileURL(localPath).toString()
   return trimmed.replace(/^sandbox:/, '')
 }

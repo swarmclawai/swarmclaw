@@ -49,7 +49,7 @@ import {
   buildContinuationPrompt,
 } from '@/lib/server/chat-execution/stream-continuation'
 import type { ContinuationType } from '@/lib/server/chat-execution/stream-continuation'
-import { errorMessage, sleep } from '@/lib/shared-utils'
+import { dedup, errorMessage, sleep } from '@/lib/shared-utils'
 import { perf } from '@/lib/server/runtime/perf'
 import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
 import {
@@ -103,6 +103,7 @@ interface StreamAgentChatOpts {
 // @langchain/langgraph 1.x, so keep the literal here instead of importing a
 // non-exported symbol that breaks Next compilation.
 const LANGGRAPH_CHECKPOINTER_CONFIG_KEY = '__pregel_checkpointer'
+const CONTEXT_WARNING_OVERHEAD_TOKENS = 192
 
 /** Extract HTTP status code and Retry-After from provider error objects (OpenAI SDK, etc.) */
 function extractProviderErrorInfo(err: unknown): { statusCode: number; retryAfterMs: number | null } {
@@ -134,9 +135,34 @@ function buildPluginCapabilityLines(enabledPlugins: string[], opts?: { platformA
   return lines
 }
 
+function buildExactToolNameList(enabledPlugins: string[]): string[] {
+  const planning = getEnabledToolPlanningView(enabledPlugins)
+  const pluginToolNames = getPluginManager()
+    .getTools(enabledPlugins)
+    .map(({ tool }) => tool.name)
+  const combined = [
+    ...planning.displayToolIds,
+    ...planning.entries.map((entry) => entry.toolName),
+    ...pluginToolNames,
+  ]
+  return dedup(combined.filter((toolName) => typeof toolName === 'string' && toolName.trim()))
+    .map((toolName) => toolName.trim())
+    .sort()
+}
+
+export function buildToolAvailabilityLines(enabledPlugins: string[]): string[] {
+  const toolNames = buildExactToolNameList(enabledPlugins)
+  if (toolNames.length === 0) return []
+
+  return [
+    'Tool names are case-sensitive. Call tools exactly as listed.',
+    ...toolNames.map((toolName) => `- \`${toolName}\``),
+  ]
+}
+
 export function buildToolDisciplineLines(enabledPlugins: string[]): string[] {
   const planning = getEnabledToolPlanningView(enabledPlugins)
-  const uniqueTools = planning.displayToolIds
+  const uniqueTools = buildExactToolNameList(enabledPlugins)
   if (uniqueTools.length === 0) return []
   const walletTools = getToolsForCapability(enabledPlugins, TOOL_CAPABILITY.walletInspect)
   const httpTools = getToolsForCapability(enabledPlugins, 'network.http')
@@ -892,9 +918,24 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   // so this only fires for sessions with very large individual messages.
   let effectiveHistory = recentHistory
   try {
-    const { shouldAutoCompact, llmCompact, estimateTokens } = await import('@/lib/server/context-manager')
+    const {
+      shouldAutoCompact,
+      llmCompact,
+      estimateTokens,
+      resolveCompactionReserveTokens,
+    } = await import('@/lib/server/context-manager')
     const systemPromptTokens = estimateTokens(prompt)
-    if (shouldAutoCompact(recentHistory, systemPromptTokens, session.provider, session.model)) {
+    const pendingInputTokens = estimateTokens([
+      message,
+      imagePath || '',
+      imageUrl || '',
+      ...(attachedFiles || []),
+    ].filter(Boolean).join('\n'))
+    const reserveTokens = resolveCompactionReserveTokens(session.provider, session.model)
+    if (shouldAutoCompact(recentHistory, systemPromptTokens, session.provider, session.model, 80, {
+      extraTokens: pendingInputTokens + CONTEXT_WARNING_OVERHEAD_TOKENS,
+      reserveTokens,
+    })) {
       const summarize = async (prompt: string): Promise<string> => {
         const response = await llm.invoke([new HumanMessage(prompt)])
         if (typeof response.content === 'string') return response.content
@@ -925,9 +966,28 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
 
   // Context degradation warning: prepend warning to system prompt when nearing limits
   try {
-    const { getContextDegradationWarning, estimateTokens: estTokens } = await import('@/lib/server/context-manager')
+    const {
+      getContextDegradationWarning,
+      estimateTokens: estTokens,
+      resolveCompactionReserveTokens,
+    } = await import('@/lib/server/context-manager')
     const sysTokens = estTokens(prompt)
-    const warning = getContextDegradationWarning(effectiveHistory, sysTokens, session.provider, session.model)
+    const pendingInputTokens = estTokens([
+      message,
+      imagePath || '',
+      imageUrl || '',
+      ...(attachedFiles || []),
+    ].filter(Boolean).join('\n'))
+    const warning = getContextDegradationWarning(
+      effectiveHistory,
+      sysTokens,
+      session.provider,
+      session.model,
+      {
+        extraTokens: pendingInputTokens + CONTEXT_WARNING_OVERHEAD_TOKENS,
+        reserveTokens: resolveCompactionReserveTokens(session.provider, session.model),
+      },
+    )
     if (warning) {
       promptParts.unshift(warning)
       prompt = promptParts.join('\n\n')

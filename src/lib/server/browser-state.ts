@@ -80,6 +80,8 @@ export function upsertBrowserSessionRecord(input: Partial<BrowserSessionRecord> 
     profileId: baseProfile,
     profileDir: input.profileDir || current?.profileDir || getBrowserProfileDir(baseProfile),
     status: input.status || current?.status || 'idle',
+    runtime: input.runtime ?? current?.runtime ?? null,
+    sandbox: input.sandbox ?? current?.sandbox ?? null,
     inheritedFromSessionId: input.inheritedFromSessionId ?? current?.inheritedFromSessionId ?? null,
     currentUrl: input.currentUrl ?? current?.currentUrl ?? null,
     pageTitle: input.pageTitle ?? current?.pageTitle ?? null,
@@ -115,6 +117,16 @@ export function markBrowserSessionClosed(sessionId: string, error?: string | nul
     sessionId,
     status: error ? 'error' : 'closed',
     lastError: error ?? null,
+  })
+}
+
+export function markBrowserSessionIdle(sessionId: string): BrowserSessionRecord | null {
+  const current = loadBrowserSessionRecord(sessionId)
+  if (!current) return null
+  return upsertBrowserSessionRecord({
+    sessionId,
+    status: 'idle',
+    lastError: null,
   })
 }
 

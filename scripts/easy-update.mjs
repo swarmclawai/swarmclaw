@@ -47,6 +47,20 @@ function runOrThrow(command, commandArgs, options = {}) {
   }
 }
 
+function runOptional(command, commandArgs, options = {}) {
+  log(`$ ${command} ${commandArgs.join(' ')}`.trim())
+  const result = spawnSync(command, commandArgs, {
+    cwd,
+    stdio: 'inherit',
+    ...options,
+  })
+  if (result.error || (result.status ?? 1) !== 0) {
+    log(`Optional step failed: ${command} ${commandArgs.join(' ')}`)
+    return false
+  }
+  return true
+}
+
 function getLatestStableTag() {
   const tagList = run('git', ['tag', '--list', 'v*', '--sort=-v:refname'])
   if (!tagList.ok) return null
@@ -123,6 +137,7 @@ function main() {
   }
 
   if (!skipBuild) {
+    runOptional('node', ['./scripts/ensure-sandbox-browser-image.mjs'])
     runOrThrow('npm', ['run', 'build'])
   } else {
     log('Skipping build step (--skip-build).')

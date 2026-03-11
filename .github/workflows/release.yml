@@ -128,7 +128,7 @@ jobs:
           BODY_PATH="$(mktemp)"
           if [ "${{ steps.npm_version.outputs.exists }}" = "true" ] || [ "${{ steps.npm_publish.outcome }}" = "success" ]; then
             echo "## Install" >> "$BODY_PATH"
-            echo "- \`npm install -g @swarmclawai/swarmclaw@${{ github.ref_name }}\`" >> "$BODY_PATH"
+            echo "- \`npm install -g @swarmclawai/swarmclaw@${{ steps.package_version.outputs.version }}\`" >> "$BODY_PATH"
           else
             echo "## Install" >> "$BODY_PATH"
             echo "- npm package publish is pending for \`${{ github.ref_name }}\`; rerun this workflow after restoring npm credentials or publish the version manually." >> "$BODY_PATH"

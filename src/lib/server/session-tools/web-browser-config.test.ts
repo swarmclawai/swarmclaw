@@ -27,6 +27,24 @@ describe('browser tool connection config', () => {
     assert.equal(params.env.PLAYWRIGHT_MCP_TIMEOUT_NAVIGATION, '90000')
   })
 
+  it('attaches Playwright MCP to a sandbox browser CDP endpoint when provided', () => {
+    const params = buildBrowserStdioServerParams('/tmp/swarmclaw-browser-profile', {
+      cdpEndpoint: 'http://127.0.0.1:44001',
+      cdpHeaders: ['Authorization: Bearer token-123'],
+      allowUnrestrictedFileAccess: true,
+    })
+
+    assert.equal(params.args.includes('--cdp-endpoint'), true)
+    assert.equal(params.args.includes('http://127.0.0.1:44001'), true)
+    assert.equal(params.args.includes('--cdp-header'), true)
+    assert.equal(params.args.includes('Authorization: Bearer token-123'), true)
+    assert.equal(params.args.includes('--allow-unrestricted-file-access'), true)
+    assert.equal(params.args.includes('--user-data-dir'), false)
+    assert.equal(params.env.PLAYWRIGHT_MCP_CDP_ENDPOINT, 'http://127.0.0.1:44001')
+    assert.equal(params.env.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS, '1')
+    assert.equal(params.env.PLAYWRIGHT_MCP_USER_DATA_DIR, undefined)
+  })
+
   it('strips host Playwright MCP env overrides before applying the local browser config', () => {
     const env = sanitizePlaywrightMcpEnv({
       NODE_ENV: 'test',
