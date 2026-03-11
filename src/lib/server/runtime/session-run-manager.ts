@@ -74,6 +74,7 @@ const COLLECT_COALESCE_WINDOW_MS = 1500
 const SHARED_ACTIVITY_LEASE_TTL_MS = 15_000
 const SHARED_ACTIVITY_LEASE_RENEW_MS = 5_000
 const HEARTBEAT_BUSY_RETRY_MS = 1_000
+const STALE_QUEUED_RUN_MS = 15_000
 const SHARED_ACTIVITY_LEASE_OWNER = `session-run:${process.pid}:${genId(6)}`
 const state: RuntimeState = hmrSingleton<RuntimeState>('__swarmclaw_session_run_manager__', () => ({
   runningByExecution: new Map<string, QueueEntry>(),
@@ -212,6 +213,13 @@ function clearDeferredDrain(executionKey: string): void {
   state.deferredDrainTimers.delete(executionKey)
 }
 
+function deleteQueueEntry(queue: QueueEntry[], target: QueueEntry): boolean {
+  const idx = queue.indexOf(target)
+  if (idx === -1) return false
+  queue.splice(idx, 1)
+  return true
+}
+
 function scheduleDeferredDrain(executionKey: string, delayMs = HEARTBEAT_BUSY_RETRY_MS): void {
   if (state.deferredDrainTimers.has(executionKey)) return
   const timer = setTimeout(() => {
@@ -247,6 +255,99 @@ function startSessionActivityLease(sessionId: string): void {
 function reconcileSessionActivityLease(sessionId: string): void {
   if (hasLocalNonHeartbeatWork(sessionId)) startSessionActivityLease(sessionId)
   else stopSessionActivityLease(sessionId)
+}
+
+function resolveRecoveredQueuedEntry(entry: QueueEntry, reason: string): void {
+  if (entry.run.status === 'completed' || entry.run.status === 'failed' || entry.run.status === 'cancelled') {
+    entry.run.endedAt = entry.run.endedAt || now()
+  } else {
+    entry.run.status = 'failed'
+    entry.run.endedAt = now()
+  }
+  entry.run.error = reason
+  emitToSubscribers(entry, { t: 'err', text: reason })
+  emitRunMeta(entry, 'failed', {
+    error: reason,
+    recovered: true,
+  })
+  entry.resolve({
+    runId: entry.run.id,
+    sessionId: entry.run.sessionId,
+    text: '',
+    persisted: false,
+    toolEvents: [],
+    error: reason,
+  })
+}
+
+export function repairSessionRunQueue(
+  sessionId: string,
+  opts?: {
+    executionKey?: string
+    maxQueuedAgeMs?: number
+    reason?: string
+  },
+): {
+  kickedExecutionKeys: number
+  recoveredQueuedRuns: number
+} {
+  const maxQueuedAgeMs = Math.max(1_000, opts?.maxQueuedAgeMs ?? STALE_QUEUED_RUN_MS)
+  const reason = opts?.reason || 'Recovered stale queued run'
+  const targetExecutionKey = typeof opts?.executionKey === 'string' && opts.executionKey.trim()
+    ? opts.executionKey.trim()
+    : null
+  const queuedNow = now()
+  let kickedExecutionKeys = 0
+  let recoveredQueuedRuns = 0
+
+  for (const [executionKey, queue] of state.queueByExecution.entries()) {
+    if (targetExecutionKey && executionKey !== targetExecutionKey) continue
+    if (!queue.length) {
+      clearDeferredDrain(executionKey)
+      state.queueByExecution.delete(executionKey)
+      continue
+    }
+    if (state.runningByExecution.has(executionKey)) continue
+
+    const matching = queue.filter((entry) => entry.run.sessionId === sessionId)
+    if (!matching.length) continue
+
+    for (const entry of [...matching]) {
+      const missingPromise = !state.promises.has(entry.run.id)
+      const previousStatus = entry.run.status
+      const nonQueued = previousStatus !== 'queued'
+      const ageMs = Math.max(0, queuedNow - (entry.run.queuedAt || 0))
+      const stale = nonQueued || missingPromise || ageMs >= maxQueuedAgeMs
+      if (!stale) continue
+      if (!deleteQueueEntry(queue, entry)) continue
+      clearDeferredDrain(executionKey)
+      resolveRecoveredQueuedEntry(entry, reason)
+      recoveredQueuedRuns += 1
+      log.warn('session-run', `Recovered stale queued run ${entry.run.id}`, {
+        sessionId: entry.run.sessionId,
+        executionKey,
+        source: entry.run.source,
+        ageMs,
+        missingPromise,
+        previousStatus,
+      })
+    }
+
+    if (!queue.length) {
+      clearDeferredDrain(executionKey)
+      state.queueByExecution.delete(executionKey)
+      continue
+    }
+
+    if (queue.some((entry) => entry.run.sessionId === sessionId)) {
+      clearDeferredDrain(executionKey)
+      kickedExecutionKeys += 1
+      void drainExecution(executionKey)
+    }
+  }
+
+  if (recoveredQueuedRuns > 0) reconcileSessionActivityLease(sessionId)
+  return { kickedExecutionKeys, recoveredQueuedRuns }
 }
 
 function cancelPendingForSession(sessionId: string, reason: string): number {
@@ -510,6 +611,10 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
   const executionKey = typeof input.executionGroupKey === 'string' && input.executionGroupKey.trim()
     ? input.executionGroupKey.trim()
     : executionKeyForSession(input.sessionId)
+  repairSessionRunQueue(input.sessionId, {
+    executionKey,
+    reason: 'Recovered stale queued run before enqueue',
+  })
   const runtime = loadRuntimeSettings()
   const defaultMaxRuntimeMs = runtime.ongoingLoopMaxRuntimeMs ?? (10 * 60_000)
   const sessionData = loadSession(input.sessionId) as SessionToolConfig | null

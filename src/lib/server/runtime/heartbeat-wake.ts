@@ -17,6 +17,7 @@ import {
   enqueueSessionRun,
   getSessionExecutionState,
   hasActiveNonHeartbeatSessionLease,
+  repairSessionRunQueue,
 } from '@/lib/server/runtime/session-run-manager'
 import { log } from '@/lib/server/logger'
 import { isAgentDisabled } from '@/lib/server/agents/agent-availability'
@@ -301,8 +302,16 @@ function flushWakes(): void {
       const session = (sessions[sessionId] || loadSessions()[sessionId]) as Record<string, unknown> | undefined
       if (!session) continue
 
-      const execution = getSessionExecutionState(sessionId)
+      let execution = getSessionExecutionState(sessionId)
       const sharedNonHeartbeatBusy = hasActiveNonHeartbeatSessionLease(sessionId)
+      if (execution.hasQueued && !execution.hasRunning && !sharedNonHeartbeatBusy) {
+        const repair = repairSessionRunQueue(sessionId, {
+          reason: 'Recovered stale queued run before heartbeat wake',
+        })
+        if (repair.recoveredQueuedRuns > 0 || repair.kickedExecutionKeys > 0) {
+          execution = getSessionExecutionState(sessionId)
+        }
+      }
       if (execution.hasRunning || execution.hasQueued || sharedNonHeartbeatBusy) {
         queuePendingWakeRequest({
           ...wake,

@@ -32,6 +32,29 @@ type RuntimeState = {
   activityLeaseRenewTimers?: Map<string, ReturnType<typeof setInterval>>
 }
 
+type ManualQueueEntry = {
+  executionKey: string
+  run: {
+    id: string
+    sessionId: string
+    source: string
+    internal: boolean
+    mode: 'followup' | 'steer' | 'collect'
+    status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+    messagePreview: string
+    queuedAt: number
+    startedAt?: number
+    endedAt?: number
+    error?: string
+  }
+  message: string
+  onEvents: Array<(event: unknown) => void>
+  signalController: AbortController
+  resolve: (value: unknown) => void
+  reject: (error: Error) => void
+  promise: Promise<unknown>
+}
+
 /** Pending promises from fire-and-forget drain calls. We suppress their
  *  rejections and await them in afterEach so node:test doesn't see
  *  "asynchronous activity after the test ended" warnings. */
@@ -52,6 +75,54 @@ function resetState() {
     state.deferredDrainTimers?.clear()
     state.activityLeaseRenewTimers?.clear()
   }
+}
+
+function getRuntimeState(): RuntimeState {
+  return (globalThis as Record<string, unknown>)[globalKey] as RuntimeState
+}
+
+function makeManualQueuedEntry(input: {
+  sessionId: string
+  runId: string
+  message: string
+  source?: string
+  internal?: boolean
+  queuedAt?: number
+}): { entry: ManualQueueEntry; promise: Promise<unknown> } {
+  let resolve!: (value: unknown) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<unknown>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  const entry: ManualQueueEntry = {
+    executionKey: `session:${input.sessionId}`,
+    run: {
+      id: input.runId,
+      sessionId: input.sessionId,
+      source: input.source || 'chat',
+      internal: input.internal === true,
+      mode: input.internal ? 'collect' : 'followup',
+      status: 'queued',
+      messagePreview: input.message,
+      queuedAt: input.queuedAt ?? Date.now(),
+    },
+    message: input.message,
+    onEvents: [],
+    signalController: new AbortController(),
+    resolve,
+    reject,
+    promise,
+  }
+  return { entry, promise }
+}
+
+function insertManualQueuedEntry(entry: ManualQueueEntry, promise: Promise<unknown>) {
+  const state = getRuntimeState()
+  state.queueByExecution.set(entry.executionKey, [entry as unknown])
+  state.runs.set(entry.run.id, entry.run)
+  state.recentRunIds.push(entry.run.id)
+  state.promises.set(entry.run.id, promise)
 }
 
 /** Wrapper around enqueueSessionRun that captures the run promise to
@@ -662,6 +733,66 @@ describe('session-run-manager', () => {
       const finished = mgr.getRunById(heartbeat.runId)
       assert.ok(finished)
       assert.notEqual(finished.status, 'queued')
+    })
+
+    it('re-kicks a recent queued entry when the execution lane is idle', async () => {
+      seedSession('sess-rekick')
+      const runId = 'manual-rekick'
+      const { entry, promise } = makeManualQueuedEntry({
+        sessionId: 'sess-rekick',
+        runId,
+        message: 'recover me',
+      })
+      insertManualQueuedEntry(entry, promise)
+
+      const repair = mgr.repairSessionRunQueue('sess-rekick')
+      assert.equal(repair.recoveredQueuedRuns, 0)
+      assert.equal(repair.kickedExecutionKeys, 1)
+
+      await promise.catch(() => {})
+
+      const run = mgr.getRunById(runId)
+      assert.ok(run)
+      assert.notEqual(run.status, 'queued')
+    })
+
+    it('recovers stale queued runs before a fresh enqueue can get wedged behind them', async () => {
+      seedSession('sess-stale-recover')
+      const staleRunId = 'manual-stale'
+      const { entry, promise } = makeManualQueuedEntry({
+        sessionId: 'sess-stale-recover',
+        runId: staleRunId,
+        message: 'ghost queued run',
+        queuedAt: Date.now() - 60_000,
+      })
+      insertManualQueuedEntry(entry, promise)
+
+      const fresh = enqueue({
+        sessionId: 'sess-stale-recover',
+        message: 'fresh message',
+      })
+
+      const staleResult = await promise
+      assert.deepEqual(staleResult, {
+        runId: staleRunId,
+        sessionId: 'sess-stale-recover',
+        text: '',
+        persisted: false,
+        toolEvents: [],
+        error: 'Recovered stale queued run before enqueue',
+      })
+
+      const staleRun = mgr.getRunById(staleRunId)
+      assert.ok(staleRun)
+      assert.equal(staleRun.status, 'failed')
+
+      const execution = mgr.getSessionExecutionState('sess-stale-recover')
+      assert.ok(execution.queueLength <= 1, `expected stale run to be cleared, got queueLength=${execution.queueLength}`)
+
+      await fresh.promise.catch(() => {})
+      const freshRun = mgr.getRunById(fresh.runId)
+      assert.ok(freshRun)
+      assert.notEqual(freshRun.status, 'queued')
     })
   })
 
