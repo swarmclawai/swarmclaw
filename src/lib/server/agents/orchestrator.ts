@@ -7,6 +7,7 @@ import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { loadRuntimeSettings, getLegacyOrchestratorMaxTurns } from '@/lib/server/runtime/runtime-settings'
 import { getMemoryDb } from '@/lib/server/memory/memory-db'
 import { buildCurrentDateTimePromptContext } from '@/lib/server/prompt-runtime-context'
+import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import { getProvider } from '@/lib/providers'
 import type { Agent } from '@/types'
 
@@ -125,13 +126,16 @@ async function executeOrchestratorLegacy(
   promptParts.push(buildCurrentDateTimePromptContext())
   if (orchestrator.soul) promptParts.push(orchestrator.soul)
   if (orchestrator.systemPrompt) promptParts.push(orchestrator.systemPrompt)
-  if (orchestrator.skillIds?.length) {
-    const allSkills = loadSkills()
-    for (const skillId of orchestrator.skillIds) {
-      const skill = allSkills[skillId]
-      if (skill?.content) promptParts.push(`## Skill: ${skill.name}\n${skill.content}`)
-    }
-  }
+  try {
+    const runtimeSkills = resolveRuntimeSkills({
+      cwd: session.cwd,
+      enabledPlugins: Array.isArray(orchestrator.plugins) ? orchestrator.plugins : [],
+      agentSkillIds: orchestrator.skillIds || [],
+      storedSkills: loadSkills(),
+      selectedSkillId: session.skillRuntimeState?.selectedSkillId || null,
+    })
+    promptParts.push(...buildRuntimeSkillPromptBlocks(runtimeSkills))
+  } catch { /* non-critical */ }
   const basePrompt = promptParts.join('\n\n')
 
   const systemPrompt = [

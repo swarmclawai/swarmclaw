@@ -1,5 +1,11 @@
 import path from 'path'
-import type { SkillInstallOption, SkillRequirements, SkillSecuritySummary } from '@/types'
+import type {
+  SkillCommandDispatch,
+  SkillInstallOption,
+  SkillInvocationConfig,
+  SkillRequirements,
+  SkillSecuritySummary,
+} from '@/types'
 import { dedup } from '@/lib/shared-utils'
 
 export type SkillSourceFormat = 'openclaw' | 'plain'
@@ -17,11 +23,15 @@ type NormalizeSkillInput = {
   homepage?: unknown
   primaryEnv?: unknown
   skillKey?: unknown
+  toolNames?: unknown
+  capabilities?: unknown
   always?: unknown
   installOptions?: unknown
   skillRequirements?: unknown
   detectedEnvVars?: unknown
   security?: unknown
+  invocation?: unknown
+  commandDispatch?: unknown
   frontmatter?: unknown
 }
 
@@ -38,11 +48,15 @@ export type NormalizedSkill = {
   homepage?: string
   primaryEnv?: string | null
   skillKey?: string | null
+  toolNames?: string[]
+  capabilities?: string[]
   always?: boolean
   installOptions?: SkillInstallOption[]
   skillRequirements?: SkillRequirements
   detectedEnvVars?: string[]
   security?: SkillSecuritySummary | null
+  invocation?: SkillInvocationConfig | null
+  commandDispatch?: SkillCommandDispatch | null
   frontmatter?: Record<string, unknown> | null
 }
 
@@ -279,6 +293,65 @@ function normalizeRequirements(value: unknown): SkillRequirements | undefined {
   return normalized
 }
 
+function normalizeInvocationConfig(value: unknown): SkillInvocationConfig | null {
+  const source = asObject(value)
+  if (!source) return null
+  const userInvocable = asBoolean(source.userInvocable ?? source.user_invocable)
+  if (userInvocable === undefined) return null
+  return { userInvocable }
+}
+
+function normalizeCommandDispatch(params: {
+  frontmatter?: Record<string, unknown> | null
+  runtimeMeta?: Record<string, unknown> | null
+  input?: NormalizeSkillInput
+}): SkillCommandDispatch | null {
+  const inputDispatch = asObject(params.input?.commandDispatch)
+  const inlineDispatch = asObject(params.frontmatter?.commandDispatch)
+    || asObject(params.frontmatter?.command_dispatch)
+    || asObject(params.runtimeMeta?.commandDispatch)
+    || asObject(params.runtimeMeta?.command_dispatch)
+
+  const kindRaw = asTrimmedString(
+    inputDispatch?.kind
+      ?? inlineDispatch?.kind
+      ?? params.frontmatter?.['command-dispatch']
+      ?? params.frontmatter?.command_dispatch
+      ?? params.runtimeMeta?.['command-dispatch']
+      ?? params.runtimeMeta?.command_dispatch,
+  )
+  if (!kindRaw || kindRaw.toLowerCase() !== 'tool') return null
+
+  const toolName = asTrimmedString(
+    inputDispatch?.toolName
+      ?? inputDispatch?.tool_name
+      ?? inlineDispatch?.toolName
+      ?? inlineDispatch?.tool_name
+      ?? params.frontmatter?.['command-tool']
+      ?? params.frontmatter?.command_tool
+      ?? params.runtimeMeta?.['command-tool']
+      ?? params.runtimeMeta?.command_tool,
+  )
+  if (!toolName) return null
+
+  const argModeRaw = asTrimmedString(
+    inputDispatch?.argMode
+      ?? inputDispatch?.arg_mode
+      ?? inlineDispatch?.argMode
+      ?? inlineDispatch?.arg_mode
+      ?? params.frontmatter?.['command-arg-mode']
+      ?? params.frontmatter?.command_arg_mode
+      ?? params.runtimeMeta?.['command-arg-mode']
+      ?? params.runtimeMeta?.command_arg_mode,
+  )
+
+  return {
+    kind: 'tool',
+    toolName,
+    argMode: argModeRaw && argModeRaw.toLowerCase() === 'raw' ? 'raw' : 'raw',
+  }
+}
+
 function pickRuntimeMetadata(frontmatter: Record<string, unknown>): Record<string, unknown> | null {
   const metadata = asObject(frontmatter.metadata)
   if (metadata) {
@@ -395,11 +468,26 @@ export function normalizeSkillPayload(input: NormalizeSkillInput): NormalizedSki
   const skillKey = asTrimmedString(runtimeMeta?.skillKey)
     || asTrimmedString(input.skillKey)
     || null
+  const toolNames = asStringArray(runtimeMeta?.toolNames)
+    || asStringArray(runtimeMeta?.tools)
+    || asStringArray(input.toolNames)
+    || undefined
+  const capabilities = asStringArray(runtimeMeta?.capabilities)
+    || asStringArray(input.capabilities)
+    || undefined
   const always = asBoolean(runtimeMeta?.always) ?? asBoolean(input.always)
   const installOptions = normalizeInstallOptions(runtimeMeta?.install)
     || normalizeInstallOptions(input.installOptions)
   const skillRequirements = normalizeRequirements(runtimeMeta)
     || normalizeRequirements(input.skillRequirements)
+  const invocation = normalizeInvocationConfig(input.invocation)
+    || normalizeInvocationConfig(frontmatter?.invocation)
+    || normalizeInvocationConfig(runtimeMeta?.invocation)
+  const commandDispatch = normalizeCommandDispatch({
+    frontmatter,
+    runtimeMeta,
+    input,
+  })
 
   const sourceUrl = asTrimmedString(input.sourceUrl) || undefined
   const initialFilename = asTrimmedString(input.filename)
@@ -467,11 +555,15 @@ export function normalizeSkillPayload(input: NormalizeSkillInput): NormalizedSki
     homepage: homepage || undefined,
     primaryEnv,
     skillKey,
+    toolNames,
+    capabilities,
     always,
     installOptions,
     skillRequirements,
     detectedEnvVars: detectedEnvVars.length ? detectedEnvVars : preservedDetectedEnvVars,
     security,
+    invocation,
+    commandDispatch,
     frontmatter,
   }
 }

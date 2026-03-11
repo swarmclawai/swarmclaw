@@ -45,6 +45,8 @@ export async function POST(req: Request) {
     homepage: normalized.homepage,
     primaryEnv: normalized.primaryEnv,
     skillKey: normalized.skillKey,
+    toolNames: normalized.toolNames,
+    capabilities: normalized.capabilities,
     always: normalized.always,
     installOptions: normalized.installOptions,
     skillRequirements: normalized.skillRequirements,

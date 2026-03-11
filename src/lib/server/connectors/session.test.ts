@@ -193,6 +193,110 @@ describe('connectors/session', () => {
       assert.ok(found)
       assert.equal(found!.id, created.session.id)
     })
+
+    it('returns null when multiple direct sessions match without a unique thread or sender match', () => {
+      const now = Date.now()
+      storage.saveSessions({
+        'sess-a': {
+          id: 'sess-a',
+          name: 'connector:discord:alice',
+          user: 'connector',
+          provider: 'anthropic',
+          model: 'claude-3',
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          agentId: 'agent-1',
+          connectorContext: {
+            connectorId: 'conn-1',
+            channelId: 'shared-channel',
+            senderId: 'alice-1',
+          },
+        },
+        'sess-b': {
+          id: 'sess-b',
+          name: 'connector:discord:bob',
+          user: 'connector',
+          provider: 'anthropic',
+          model: 'claude-3',
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          agentId: 'agent-1',
+          connectorContext: {
+            connectorId: 'conn-1',
+            channelId: 'shared-channel',
+            senderId: 'bob-1',
+          },
+        },
+      })
+
+      const connector = {
+        id: 'conn-1',
+        name: 'Test',
+        platform: 'discord' as const,
+        agentId: 'agent-1',
+        config: {},
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      } as unknown as Connector
+
+      const result = mod.findDirectSessionForInbound(connector, {
+        platform: 'discord',
+        channelId: 'shared-channel',
+        senderId: 'unknown-user',
+        senderName: 'Unknown',
+        text: 'hello',
+      })
+
+      assert.equal(result, null)
+    })
+
+    it('returns null when the inbound thread id does not match an existing direct thread session', () => {
+      const now = Date.now()
+      storage.saveSessions({
+        'sess-thread': {
+          id: 'sess-thread',
+          name: 'connector:discord:thread',
+          user: 'connector',
+          provider: 'anthropic',
+          model: 'claude-3',
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          agentId: 'agent-1',
+          connectorContext: {
+            connectorId: 'conn-1',
+            channelId: 'channel-1',
+            senderId: 'user-1',
+            threadId: 'thread-1',
+          },
+        },
+      })
+
+      const connector = {
+        id: 'conn-1',
+        name: 'Test',
+        platform: 'discord' as const,
+        agentId: 'agent-1',
+        config: {},
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      } as unknown as Connector
+
+      const result = mod.findDirectSessionForInbound(connector, {
+        platform: 'discord',
+        channelId: 'channel-1',
+        senderId: 'user-1',
+        senderName: 'User',
+        text: 'hello',
+        threadId: 'thread-2',
+      })
+
+      assert.equal(result, null)
+    })
   })
 
   // ---- updateSessionConnectorContext ----

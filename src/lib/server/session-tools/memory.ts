@@ -24,43 +24,32 @@ import {
   shouldAutoCaptureMemoryTurn,
   shouldInjectMemoryContext,
 } from '@/lib/server/memory/memory-policy'
+import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 
 /**
  * Advanced Database-Backed Memory logic.
  */
 
-/**
- * Lightweight in-memory cache for per-agent memory lookups (pinned + recent).
- * TTL-based with invalidation on any write operation.
- */
-const MEMORY_CACHE_TTL_MS = 30_000
-interface AgentMemoryCache {
+type DisabledAgentMemoryCacheEntry = {
   pinned: MemoryEntry[]
   allRecent: MemoryEntry[]
-  cachedAt: number
 }
-const agentMemoryCache = new Map<string, AgentMemoryCache>()
 
-function getCachedAgentMemories(agentId: string): AgentMemoryCache | null {
-  const cached = agentMemoryCache.get(agentId)
-  if (!cached) return null
-  if (Date.now() - cached.cachedAt > MEMORY_CACHE_TTL_MS) {
-    agentMemoryCache.delete(agentId)
-    return null
-  }
-  return cached
+function getCachedAgentMemories(agentId: string): DisabledAgentMemoryCacheEntry | null {
+  void agentId
+  return null
 }
 
 function setCachedAgentMemories(agentId: string, pinned: MemoryEntry[], allRecent: MemoryEntry[]): void {
-  agentMemoryCache.set(agentId, { pinned, allRecent, cachedAt: Date.now() })
+  void agentId
+  void pinned
+  void allRecent
+  // Intentionally disabled until we can prove memory reads stay complete and fresh.
 }
 
 function invalidateAgentMemoryCache(agentId?: string | null): void {
-  if (agentId) {
-    agentMemoryCache.delete(agentId)
-  } else {
-    agentMemoryCache.clear()
-  }
+  void agentId
+  // Intentionally disabled: the per-agent in-memory cache is not used.
 }
 type MemoryActionContext = Partial<Session> & {
   sessionId?: string | null
@@ -660,7 +649,7 @@ const MemoryPlugin: Plugin = {
 
       // QMD scope: identity/* memories and contact resolution are private (DM/peer only).
       // Group channels, threads, and shared "main" sessions don't see them.
-      const connCtx = ctx.session.connectorContext
+      const connCtx = isDirectConnectorSession(ctx.session) ? ctx.session.connectorContext : null
       const isPrivateContext = !connCtx || !connCtx.isGroup
 
       const memDb = getMemoryDb()

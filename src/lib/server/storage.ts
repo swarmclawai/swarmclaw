@@ -724,7 +724,7 @@ if (!IS_BUILD_BOOTSTRAP) {
 - **Providers** — Configure LLM backends in Settings → Providers: Claude Code CLI, OpenAI Codex CLI, OpenCode CLI, Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together AI, Mistral AI, xAI (Grok), Fireworks AI, Ollama, OpenClaw, or custom OpenAI-compatible endpoints.
 - **Tasks** — The Task Board tracks work items. Assign agents and they'll execute autonomously.
 - **Schedules** — Cron-based recurring jobs that run agents or tasks automatically.
-- **Skills** — Reusable markdown instruction files you attach to agents to specialize them.
+- **Skills** — Reusable markdown instruction files agents can discover and use by default; pin them to keep favorite workflows always-on.
 - **Connectors** — Bridge agents to Discord, Slack, Telegram, or WhatsApp.
 - **Secrets** — Encrypted vault for API keys (Settings → Secrets).
 

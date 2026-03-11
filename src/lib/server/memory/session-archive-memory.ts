@@ -5,6 +5,7 @@ import type { Agent, MemoryEntry, MemoryReference, Session } from '@/types'
 import { getMemoryDb } from '@/lib/server/memory/memory-db'
 import { loadAgents, loadSessions, saveSessions } from '@/lib/server/storage'
 import { DATA_DIR } from '@/lib/server/data-dir'
+import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 
 const MAX_ARCHIVE_MESSAGES = 36
 const MAX_ARCHIVE_LINE_CHARS = 320
@@ -16,7 +17,7 @@ function toOneLine(value: unknown, maxChars: number): string {
 
 function messageSpeaker(session: Session, agent: Partial<Agent> | null | undefined, message: Session['messages'][number]): string {
   if (message.role === 'assistant') return agent?.name || 'assistant'
-  return session.connectorContext?.senderName || session.user || 'user'
+  return (isDirectConnectorSession(session) ? session.connectorContext?.senderName : null) || session.user || 'user'
 }
 
 function slugifySegment(value: string, fallback: string): string {

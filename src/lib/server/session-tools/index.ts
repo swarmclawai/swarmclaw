@@ -45,6 +45,7 @@ import { buildExtractTools } from './extract'
 import { buildTableTools } from './table'
 import { buildCrawlTools } from './crawl'
 import { buildGoogleWorkspaceTools } from './google-workspace'
+import { buildSkillRuntimeTools } from './skill-runtime'
 import './connector'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { enforceFileAccessPolicy } from './file-access-policy'
@@ -172,6 +173,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       ['calendar', buildCalendarTools],
       ['replicate', buildReplicateTools],
       ['google_workspace', buildGoogleWorkspaceTools],
+      ['use_skill', buildSkillRuntimeTools],
       ['mailbox', buildMailboxTools],
       ['ask_human', buildHumanLoopTools],
       ['document', buildDocumentTools],

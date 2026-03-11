@@ -49,6 +49,15 @@ export interface SessionArchiveState {
   exportPath?: string | null
 }
 
+export interface SessionSkillRuntimeState {
+  selectedSkillId?: string | null
+  selectedSkillName?: string | null
+  selectedAt?: number | null
+  lastAction?: 'select' | 'load' | 'run' | null
+  lastRunAt?: number | null
+  lastRunToolName?: string | null
+}
+
 export interface CanvasMetricItem {
   label: string
   value: string
@@ -234,6 +243,7 @@ export interface Session {
   lastSessionResetReason?: string | null
   identityState?: IdentityContinuityState | null
   sessionArchiveState?: SessionArchiveState | null
+  skillRuntimeState?: SessionSkillRuntimeState | null
   pinned?: boolean
   file?: string | null
   queuedCount?: number
@@ -642,8 +652,8 @@ export interface Agent {
   plugins?: string[]             // e.g. ['browser', 'memory'] — enabled plugin IDs
   /** @deprecated Use `plugins` instead. Kept for backward compat with stored data. */
   tools?: string[]
-  skills?: string[]             // e.g. ['frontend-design'] — Claude Code skills to use
-  skillIds?: string[]           // IDs of uploaded skills from the Skills manager
+  skills?: string[]             // e.g. ['frontend-design'] — pinned Claude Code skills to mention explicitly
+  skillIds?: string[]           // IDs of pinned managed skills to keep always-on for this agent
   mcpServerIds?: string[]       // IDs of configured MCP servers to inject tools from
   mcpDisabledTools?: string[]   // MCP tool names disabled for this agent (denylist)
   capabilities?: string[]       // e.g. ['frontend', 'screenshots', 'research', 'devops']
@@ -1675,16 +1685,30 @@ export interface Skill {
   homepage?: string
   primaryEnv?: string | null
   skillKey?: string | null
+  toolNames?: string[]
+  capabilities?: string[]
   always?: boolean
   installOptions?: SkillInstallOption[]
   skillRequirements?: SkillRequirements
   detectedEnvVars?: string[]
   security?: SkillSecuritySummary | null
+  invocation?: SkillInvocationConfig | null
+  commandDispatch?: SkillCommandDispatch | null
   frontmatter?: Record<string, unknown> | null
   scope?: 'global' | 'agent'
   agentIds?: string[]
   createdAt: number
   updatedAt: number
+}
+
+export interface SkillInvocationConfig {
+  userInvocable?: boolean
+}
+
+export interface SkillCommandDispatch {
+  kind: 'tool'
+  toolName: string
+  argMode?: 'raw'
 }
 
 export interface SkillSecuritySummary {

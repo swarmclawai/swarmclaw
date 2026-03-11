@@ -46,6 +46,8 @@ import { safePath, findBinaryOnPath } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import type { BoardTask } from '@/types'
 import { dedup } from '@/lib/shared-utils'
+import { isDirectConnectorSession } from '../connectors/session-kind'
+import { buildManageSkillsDescription, executeManageSkillsAction } from './skills'
 
 // ---------------------------------------------------------------------------
 // Document helpers
@@ -258,8 +260,10 @@ function deriveScheduleFollowupTarget(sessionId: string | null | undefined): {
     }
   }
 
-  const contextTarget = pickSourceFields(session.connectorContext || undefined)
-  if (contextTarget.followupConnectorId && contextTarget.followupChannelId) return contextTarget
+  if (isDirectConnectorSession(session as { user?: string; name?: string })) {
+    const contextTarget = pickSourceFields(session.connectorContext || undefined)
+    if (contextTarget.followupConnectorId && contextTarget.followupChannelId) return contextTarget
+  }
 
   const messages = Array.isArray(session.messages) ? session.messages : []
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -447,12 +451,17 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
       if (ctx?.projectId) {
         description += `\n\nCurrent project context: "${ctx.projectName || ctx.projectId}" (projectId "${ctx.projectId}"). Omit "projectId" to link the secret to this active project.`
       }
+    } else if (toolKey === 'manage_skills') {
+      description = buildManageSkillsDescription()
     }
 
     tools.push(
       tool(
         async (rawArgs) => {
           const normalized = normalizeToolInputArgs((rawArgs ?? {}) as Record<string, unknown>)
+          if (toolKey === 'manage_skills') {
+            return executeManageSkillsAction(normalized, bctx)
+          }
           const action = normalized.action as string | undefined
           const id = normalized.id as string | undefined
           const data = normalized.data as string | undefined
@@ -881,11 +890,36 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
         {
           name: toolKey,
           description,
-          schema: z.object({
-            action: z.enum(['list', 'get', 'create', 'update', 'delete']).describe('The CRUD action to perform'),
-            id: z.string().optional().describe('Resource ID (required for get, update, delete)'),
-            data: z.string().optional().describe('JSON string of fields for create/update'),
-          }).passthrough(),
+          schema: toolKey === 'manage_skills'
+            ? z.object({
+                action: z.enum([
+                  'list',
+                  'get',
+                  'create',
+                  'update',
+                  'delete',
+                  'status',
+                  'search_available',
+                  'recommend_for_task',
+                  'attach',
+                  'install',
+                ]).describe('The manage_skills action to perform'),
+                id: z.string().optional().describe('Stored skill ID or runtime skill selector'),
+                skillId: z.string().optional().describe('Alternate skill selector'),
+                name: z.string().optional().describe('Skill name or marketplace name'),
+                query: z.string().optional().describe('Search query or task description'),
+                task: z.string().optional().describe('Task description for skill recommendation'),
+                url: z.string().optional().describe('Remote skill URL for install'),
+                approvalId: z.string().optional().describe('Approved install request id'),
+                attach: z.boolean().optional().describe('Attach the skill to the current agent after install'),
+                agentId: z.string().optional().describe('Target agent id for attach'),
+                data: z.string().optional().describe('JSON string of fields for create/update'),
+              }).passthrough()
+            : z.object({
+                action: z.enum(['list', 'get', 'create', 'update', 'delete']).describe('The CRUD action to perform'),
+                id: z.string().optional().describe('Resource ID (required for get, update, delete)'),
+                data: z.string().optional().describe('JSON string of fields for create/update'),
+              }).passthrough(),
         },
       ),
     )

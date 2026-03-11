@@ -4,6 +4,7 @@
  */
 import { loadSessions, loadSettings, saveSettings, upsertStoredItem } from '../storage'
 import type { Session } from '@/types'
+import { isDirectConnectorSession } from './session-kind'
 
 const MIGRATION_FLAG = '_migration_allKnownPeerIds'
 
@@ -17,6 +18,7 @@ export function backfillAllKnownPeerIds(): { migrated: number; skipped: boolean 
   let migrated = 0
 
   for (const session of Object.values(sessions)) {
+    if (!isDirectConnectorSession(session)) continue
     const ctx = session?.connectorContext
     if (!ctx?.connectorId) continue
     if (Array.isArray(ctx.allKnownPeerIds) && ctx.allKnownPeerIds.length > 0) continue

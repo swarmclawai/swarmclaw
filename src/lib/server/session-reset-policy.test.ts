@@ -28,8 +28,16 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 
 test('inferSessionResetType distinguishes direct, group, and thread sessions', () => {
   assert.equal(inferSessionResetType(makeSession()), 'direct')
-  assert.equal(inferSessionResetType(makeSession({ connectorContext: { isGroup: true } })), 'group')
-  assert.equal(inferSessionResetType(makeSession({ connectorContext: { threadId: 'thread-1' } })), 'thread')
+  assert.equal(inferSessionResetType(makeSession({
+    name: 'connector:group',
+    user: 'connector',
+    connectorContext: { isGroup: true },
+  })), 'group')
+  assert.equal(inferSessionResetType(makeSession({
+    name: 'connector:thread',
+    user: 'connector',
+    connectorContext: { threadId: 'thread-1' },
+  })), 'thread')
 })
 
 test('resolveSessionResetPolicy falls back to type defaults', () => {
@@ -37,7 +45,13 @@ test('resolveSessionResetPolicy falls back to type defaults', () => {
   assert.equal(direct.mode, 'idle')
   assert.equal(direct.idleTimeoutSec, 12 * 60 * 60)
 
-  const thread = resolveSessionResetPolicy({ session: makeSession({ connectorContext: { threadId: 'thread-1' } }) })
+  const thread = resolveSessionResetPolicy({
+    session: makeSession({
+      name: 'connector:thread',
+      user: 'connector',
+      connectorContext: { threadId: 'thread-1' },
+    }),
+  })
   assert.equal(thread.mode, 'idle')
   assert.equal(thread.idleTimeoutSec, 4 * 60 * 60)
 })

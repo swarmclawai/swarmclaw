@@ -13,6 +13,7 @@ import { normalizeToolInputArgs } from './normalize-tool-args'
 import { safeJsonParseObject } from '../json-utils'
 import { tryResolvePathWithinBaseDir } from '../path-utils'
 import { dedup, errorMessage } from '@/lib/shared-utils'
+import { isDirectConnectorSession } from '../connectors/session-kind'
 
 const CONNECTOR_ACTION_DEDUPE_TTL_MS = 30_000
 const CONNECTOR_TURN_SEND_TTL_MS = 180_000
@@ -341,11 +342,14 @@ function trimToString(value: unknown): string {
 
 function resolveSessionConnectorTargets(
   session: {
+    user?: string
+    name?: string
     connectorContext?: Record<string, unknown>
     messages?: Array<Record<string, unknown>>
   } | null | undefined,
   connectorId: string,
 ): Array<{ channelId: string; senderId?: string; senderName?: string }> {
+  if (!isDirectConnectorSession(session)) return []
   const targets: Array<{ channelId: string; senderId?: string; senderName?: string }> = []
   const seen = new Set<string>()
   const pushTarget = (target: { channelId: string; senderId?: string; senderName?: string } | null) => {
@@ -368,6 +372,7 @@ function resolveSessionConnectorTargets(
 
   const messages = Array.isArray(session?.messages) ? session.messages : []
   for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.historyExcluded === true) continue
     const source = messages[i]?.source as Record<string, unknown> | undefined
     if (!source || trimToString(source.connectorId) !== connectorId) continue
     const channelId = trimToString(source.channelId)
@@ -386,8 +391,9 @@ function pickChannelTarget(params: {
   connector: { config?: Record<string, string> }
   connectorId: string
   to?: string
-  recentChannelId: string | null
   currentSession?: {
+    user?: string
+    name?: string
     connectorContext?: Record<string, unknown>
     messages?: Array<Record<string, unknown>>
   } | null
@@ -420,9 +426,6 @@ function pickChannelTarget(params: {
   if (!channelId) {
     const outbound = connector.config?.outboundTarget?.trim()
     if (outbound) channelId = outbound
-  }
-  if (!channelId && params.recentChannelId) {
-    channelId = params.recentChannelId
   }
   if (!channelId) {
     const allowed = parseCsv(connector.config?.allowedJids)
@@ -562,7 +565,6 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
     const {
       listRunningConnectors,
       sendConnectorMessage,
-      getConnectorRecentChannelId,
       scheduleConnectorFollowUp,
       performConnectorMessageAction,
     } = await import('../connectors/manager')
@@ -646,6 +648,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
 
     const currentSession = bctx.resolveCurrentSession?.()
     const sessionId = bctx.ctx?.sessionId || currentSession?.id || undefined
+    const connectorScopedSessionId = isDirectConnectorSession(currentSession) ? sessionId : undefined
 
     if (actionName === 'send' || actionName === 'send_voice_note' || actionName === 'schedule_followup') {
       const settings = loadSettings()
@@ -662,7 +665,6 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
         connector,
         connectorId: selected.id,
         to,
-        recentChannelId: getConnectorRecentChannelId(selected.id),
         currentSession,
       })
       if (target.error) return target.error
@@ -728,7 +730,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
         const sent = await sendConnectorMessage({
           connectorId: selected.id, channelId, text: '', mediaPath: voicePath, mimeType: outboundMimeType,
           fileName: fileName?.trim() || 'voicenote.mp3', caption: caption?.trim() || undefined, ptt: ptt ?? true,
-          sessionId,
+          sessionId: connectorScopedSessionId,
           replyToMessageId: replyToMessageId?.trim() || undefined,
           threadId: threadId?.trim() || undefined,
         })
@@ -768,7 +770,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
           connectorId: selected.id,
           channelId,
           text: followupText,
-          sessionId,
+          sessionId: connectorScopedSessionId,
           delaySec: followupDelay,
           dedupeKey: dedupeKey?.trim() || undefined,
           imageUrl: media.imageUrl,
@@ -793,7 +795,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
 
       const sent = await sendConnectorMessage({
         connectorId: selected.id, channelId, text: message?.trim() || '',
-        sessionId,
+        sessionId: connectorScopedSessionId,
         imageUrl: media.imageUrl, fileUrl: media.fileUrl, mediaPath: media.mediaPath,
         mimeType: mimeType?.trim() || undefined, fileName: fileName?.trim() || undefined,
         caption: caption?.trim() || undefined,
@@ -815,7 +817,6 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
         connector: resolved.connector,
         connectorId: selected.id,
         to,
-        recentChannelId: getConnectorRecentChannelId(selected.id),
         currentSession,
       })
       if (target.error) return target.error

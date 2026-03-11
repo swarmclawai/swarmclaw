@@ -29,6 +29,7 @@ import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agent
 import { resolveSessionToolPolicy } from '@/lib/server/tool-capability-policy'
 import { buildCurrentDateTimePromptContext } from '@/lib/server/prompt-runtime-context'
 import { buildWorkspaceContext } from '@/lib/server/workspace-context'
+import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import { resolveImagePath } from '@/lib/server/resolve-image'
 import {
   applyContextClearBoundary,
@@ -67,6 +68,7 @@ import { evaluateSessionFreshness, resetSessionRuntime, resolveSessionResetPolic
 import { pruneStreamingAssistantArtifacts, upsertStreamingAssistantArtifact } from '@/lib/chat/chat-streaming-state'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/agents/assistant-control'
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
+import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 import { errorMessage as toErrorMessage } from '@/lib/shared-utils'
 import { listUniversalToolAccessPluginIds } from '@/lib/server/universal-tool-access'
 
@@ -109,6 +111,24 @@ export function buildEnabledToolsAutonomyGuidance(): string[] {
   ]
 }
 
+function resolveHeartbeatLastConnectorTarget(session: Session | null | undefined): {
+  connectorId?: string
+  channelId: string
+} | null {
+  if (!isDirectConnectorSession(session)) return null
+  const connectorId = typeof session?.connectorContext?.connectorId === 'string'
+    ? session.connectorContext.connectorId.trim()
+    : ''
+  const channelId = typeof session?.connectorContext?.channelId === 'string'
+    ? session.connectorContext.channelId.trim()
+    : ''
+  if (!channelId) return null
+  return {
+    connectorId: connectorId || undefined,
+    channelId,
+  }
+}
+
 interface SessionWithCredentials {
   credentialId?: string | null
 }
@@ -130,7 +150,14 @@ export interface ExecuteChatTurnInput {
   signal?: AbortSignal
   onEvent?: (event: SSEEvent) => void
   modelOverride?: string
-  heartbeatConfig?: { ackMaxChars: number; showOk: boolean; showAlerts: boolean; target: string | null; lightContext?: boolean }
+  heartbeatConfig?: {
+    ackMaxChars: number
+    showOk: boolean
+    showAlerts: boolean
+    target: string | null
+    lightContext?: boolean
+    deliveryMode?: 'default' | 'tool_only'
+  }
   replyToId?: string
 }
 
@@ -422,6 +449,10 @@ function syncSessionFromAgent(sessionId: string): void {
       session.openclawAgentId = desiredOpenClawAgentId
       changed = true
     }
+    if (session.connectorContext) {
+      session.connectorContext = undefined
+      changed = true
+    }
   }
 
   if (changed) {
@@ -496,13 +527,16 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
   if (agent.systemPrompt) parts.push(`## System Prompt\n${agent.systemPrompt}`)
 
   // 5. Skills (SwarmClaw Core)
-  if (agent.skillIds?.length) {
-    const allSkills = loadSkills()
-    for (const skillId of agent.skillIds) {
-      const skill = allSkills[skillId]
-      if (skill?.content) parts.push(`## Skill: ${skill.name}\n${skill.content}`)
-    }
-  }
+  try {
+    const runtimeSkills = resolveRuntimeSkills({
+      cwd: session.cwd,
+      enabledPlugins,
+      agentSkillIds: agent.skillIds || [],
+      storedSkills: loadSkills(),
+      selectedSkillId: session.skillRuntimeState?.selectedSkillId || null,
+    })
+    parts.push(...buildRuntimeSkillPromptBlocks(runtimeSkills))
+  } catch { /* non-critical */ }
 
   // 5b. Workspace context files (HEARTBEAT.md, IDENTITY.md, AGENTS.md, etc.)
   try {
@@ -1228,6 +1262,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const shouldPersistAssistant = !hiddenControlOnly
     && hasPersistableAssistantPayload(persistedText, thinkingText, persistedToolEvents)
     && heartbeatClassification !== 'suppress'
+    && !(isHeartbeatRun && heartbeatConfig?.deliveryMode === 'tool_only' && !isDirectConnectorSession(session))
 
   const normalizeResumeId = (value: unknown): string | null =>
     typeof value === 'string' && value.trim() ? value.trim() : null
@@ -1236,6 +1271,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const current = fresh[sessionId]
   if (current) {
     current.messages = Array.isArray(current.messages) ? current.messages : []
+    if (!isDirectConnectorSession(current) && current.connectorContext) {
+      current.connectorContext = undefined
+    }
     const currentAgent = current.agentId ? loadAgents()[current.agentId] : null
     pruneStreamingAssistantArtifacts(current.messages, {
       minIndex: runMessageStartIndex,
@@ -1309,18 +1347,22 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       }
 
       // Target routing for non-suppressed heartbeat alerts
-      if (isHeartbeatRun && heartbeatConfig?.target && heartbeatConfig.target !== 'none' && heartbeatConfig.showAlerts !== false) {
+      if (
+        isHeartbeatRun
+        && shouldAutoRouteHeartbeatAlerts(heartbeatConfig)
+        && heartbeatConfig?.target
+        && heartbeatConfig.target !== 'none'
+      ) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { listRunningConnectors, sendConnectorMessage } = require('../connectors/manager')
+          const { sendConnectorMessage } = require('../connectors/manager')
           let connectorId: string | undefined
           let channelId: string | undefined
           if (heartbeatConfig.target === 'last') {
-            const running = listRunningConnectors()
-            const first = running.find((c: { recentChannelId?: string }) => c.recentChannelId)
-            if (first) {
-              connectorId = first.id
-              channelId = first.recentChannelId
+            const lastTarget = resolveHeartbeatLastConnectorTarget(current)
+            if (lastTarget) {
+              connectorId = lastTarget.connectorId
+              channelId = lastTarget.channelId
             }
           } else if (heartbeatConfig.target.includes(':')) {
             const [cId, chId] = heartbeatConfig.target.split(':', 2)
@@ -1339,19 +1381,25 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
       // Auto-discover connectors linked to this agent when no explicit target is set
       // Skip if a real inbound message was handled recently — the agent just responded to it
-      if (isHeartbeatRun && !heartbeatConfig?.target && heartbeatConfig?.showAlerts !== false && session.agentId) {
-        const recentInbound = session.connectorContext?.lastInboundAt
-          && (Date.now() - session.connectorContext.lastInboundAt) < 60_000
-        if (!recentInbound) {
+      if (
+        isHeartbeatRun
+        && shouldAutoRouteHeartbeatAlerts(heartbeatConfig)
+        && !heartbeatConfig?.target
+        && isDirectConnectorSession(current)
+      ) {
+        const recentInbound = current.connectorContext?.lastInboundAt
+          && (Date.now() - current.connectorContext.lastInboundAt) < 60_000
+        const connectorId = typeof current.connectorContext?.connectorId === 'string'
+          ? current.connectorContext.connectorId.trim()
+          : ''
+        const channelId = typeof current.connectorContext?.channelId === 'string'
+          ? current.connectorContext.channelId.trim()
+          : ''
+        if (!recentInbound && channelId) {
           try {
             // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { listRunningConnectors: listRunning, sendConnectorMessage: sendMsg } = require('../connectors/manager')
-            const agentConnectors = listRunning().filter((c: { agentId: string | null; recentChannelId: string | null; supportsSend: boolean }) =>
-              c.agentId === session.agentId && c.recentChannelId && c.supportsSend
-            )
-            for (const conn of agentConnectors) {
-              sendMsg({ connectorId: conn.id, channelId: conn.recentChannelId, text: persistedText }).catch(() => {})
-            }
+            const { sendConnectorMessage: sendMsg } = require('../connectors/manager')
+            sendMsg({ connectorId: connectorId || undefined, channelId, text: persistedText }).catch(() => {})
           } catch {
             // Best effort — connector manager may not be loaded
           }

@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { BoardTask, Connector } from '@/types'
+import type { BoardTask, Connector, MessageToolEvent } from '@/types'
 import { normalizeWhatsappTarget } from '@/lib/server/connectors/response-media'
+import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { loadConnectors, loadSessions, UPLOAD_DIR } from '@/lib/server/storage'
 import { errorMessage } from '@/lib/shared-utils'
@@ -63,6 +64,8 @@ export interface ConnectorTaskFollowupTarget {
   channelId: string
   threadId?: string | null
 }
+
+const CONNECTOR_DELIVERY_STATUSES = new Set(['sent', 'voice_sent'])
 
 function isEnabledFlag(value: unknown): boolean {
   if (typeof value === 'boolean') return value
@@ -223,18 +226,20 @@ export function resolveTaskOriginConnectorFollowupTarget(params: {
   const sourceSession = sessions[sourceSessionId]
   if (!sourceSession) return null
 
-  const sessionContextTarget = normalizeTarget({
-    connectorId: typeof sourceSession.connectorContext?.connectorId === 'string'
-      ? sourceSession.connectorContext.connectorId
-      : null,
-    channelId: typeof sourceSession.connectorContext?.channelId === 'string'
-      ? sourceSession.connectorContext.channelId
-      : null,
-    threadId: typeof sourceSession.connectorContext?.threadId === 'string'
-      ? sourceSession.connectorContext.threadId
-      : null,
-  })
-  if (sessionContextTarget) return sessionContextTarget
+  if (isDirectConnectorSession(sourceSession)) {
+    const sessionContextTarget = normalizeTarget({
+      connectorId: typeof sourceSession.connectorContext?.connectorId === 'string'
+        ? sourceSession.connectorContext.connectorId
+        : null,
+      channelId: typeof sourceSession.connectorContext?.channelId === 'string'
+        ? sourceSession.connectorContext.channelId
+        : null,
+      threadId: typeof sourceSession.connectorContext?.threadId === 'string'
+        ? sourceSession.connectorContext.threadId
+        : null,
+    })
+    if (sessionContextTarget) return sessionContextTarget
+  }
 
   if (!Array.isArray(sourceSession.messages)) return null
 
@@ -312,6 +317,68 @@ export function collectTaskConnectorFollowupTargets(params: {
   return targets
 }
 
+function normalizeFollowupChannelForConnector(connector: Connector | undefined, channelId: string | null | undefined): string {
+  const raw = typeof channelId === 'string' ? channelId.trim() : ''
+  if (!raw) return ''
+  return connector?.platform === 'whatsapp' ? normalizeWhatsappTarget(raw) : raw
+}
+
+function extractDeliveredConnectorTarget(event: MessageToolEvent | null | undefined): {
+  connectorId: string
+  channelId: string
+} | null {
+  if (!event || event.name !== 'connector_message_tool' || event.error === true || !event.output) return null
+  try {
+    const parsed = JSON.parse(event.output) as Record<string, unknown>
+    const status = typeof parsed.status === 'string' ? parsed.status.trim().toLowerCase() : ''
+    const connectorId = typeof parsed.connectorId === 'string' ? parsed.connectorId.trim() : ''
+    const channelId = typeof parsed.to === 'string' ? parsed.to.trim() : ''
+    if (!CONNECTOR_DELIVERY_STATUSES.has(status) || !connectorId || !channelId) return null
+    return { connectorId, channelId }
+  } catch {
+    return null
+  }
+}
+
+export function taskAlreadyDeliveredToConnectorTarget(params: {
+  task: BoardTask
+  target: ConnectorTaskFollowupTarget
+  sessions: Record<string, SessionLike>
+  connectors: Record<string, Connector>
+}): boolean {
+  const taskRecord = params.task as BoardTask & {
+    checkpoint?: {
+      lastSessionId?: string | null
+    } | null
+  }
+  const taskSessionId = typeof taskRecord.sessionId === 'string' && taskRecord.sessionId.trim()
+    ? taskRecord.sessionId.trim()
+    : typeof taskRecord.checkpoint?.lastSessionId === 'string' && taskRecord.checkpoint.lastSessionId.trim()
+      ? taskRecord.checkpoint.lastSessionId.trim()
+      : ''
+  if (!taskSessionId) return false
+  const session = params.sessions[taskSessionId]
+  if (!session || !Array.isArray(session.messages)) return false
+
+  const connector = params.connectors[params.target.connectorId]
+  const normalizedTargetChannel = normalizeFollowupChannelForConnector(connector, params.target.channelId)
+  if (!normalizedTargetChannel) return false
+
+  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+    const message = session.messages[index]
+    if (!message || message.role !== 'assistant' || !Array.isArray(message.toolEvents)) continue
+    for (const event of message.toolEvents) {
+      const delivered = extractDeliveredConnectorTarget(event as MessageToolEvent)
+      if (!delivered) continue
+      if (delivered.connectorId !== params.target.connectorId) continue
+      const normalizedDeliveredChannel = normalizeFollowupChannelForConnector(connector, delivered.channelId)
+      if (normalizedDeliveredChannel === normalizedTargetChannel) return true
+    }
+  }
+
+  return false
+}
+
 export async function notifyConnectorTaskFollowups(params: {
   task: BoardTask
   statusLabel: string
@@ -347,6 +414,14 @@ export async function notifyConnectorTaskFollowups(params: {
   for (const target of targets) {
     const connector = connectors[target.connectorId]
     if (!connector) continue
+    if (taskAlreadyDeliveredToConnectorTarget({
+      task,
+      target,
+      sessions: sessions as Record<string, SessionLike>,
+      connectors: connectors as Record<string, Connector>,
+    })) {
+      continue
+    }
 
     const template = typeof (connector as any).config?.taskFollowupTemplate === 'string'
       ? (connector as any).config.taskFollowupTemplate.trim()

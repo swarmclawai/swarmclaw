@@ -485,26 +485,27 @@ describe('buildToolDisciplineLines advanced', () => {
     assert.ok(lines.some((line) => line.includes('Enabled tools')))
   })
 
-  it('includes schedule guidance when manage_schedules is enabled', () => {
+  it('includes direct platform guidance when manage_schedules is enabled without manage_platform', () => {
     const lines = buildToolDisciplineLines(['manage_schedules'])
-    assert.ok(lines.some((line) => line.includes('reuse or update matching agent-created schedules')))
+    assert.ok(lines.some((line) => line.includes('Use direct platform tools exactly as named (`manage_schedules`)')))
+    assert.ok(lines.some((line) => line.includes('Do not substitute `manage_platform` unless it is explicitly enabled.')))
   })
 
-  it('includes delegate local-first guidance when coding tools and delegate enabled', () => {
+  it('includes local files and shell guidance when coding tools and delegate enabled', () => {
     const lines = buildToolDisciplineLines(['delegate', 'shell', 'files'])
-    assert.ok(lines.some((line) => line.includes('prefer using them directly for straightforward coding')))
+    assert.ok(lines.some((line) => line.includes('{"action":"read","filePath":"path/to/file.md"}')))
+    assert.ok(lines.some((line) => line.includes('For `shell`, use `{"action":"execute","command":"..."}`')))
   })
 
-  it('tells research-capable agents to try another enabled acquisition path before manual fallback', () => {
+  it('tells research-capable agents to try another enabled acquisition path before giving up', () => {
     const lines = buildToolDisciplineLines(['web_search', 'web_fetch', 'http_request', 'shell'])
-    assert.ok(lines.some((line) => line.includes('try one other enabled acquisition path') && line.includes('`shell`') && line.includes('`http_request`')))
+    assert.ok(lines.some((line) => line.includes('If one research path is blocked, try another') && line.includes('`shell`') && line.includes('`http_request`')))
   })
 
-  it('adds direct drafting/file-save/swarm-id guidance when those tools are enabled', () => {
+  it('adds direct email and file action guidance when those tools are enabled', () => {
     const lines = buildToolDisciplineLines(['files', 'email', 'spawn_subagent'])
-    assert.ok(lines.some((line) => line.includes('draft, outline, critique, or revise email copy')))
-    assert.ok(lines.some((line) => line.includes('actual file-writing tool call')))
-    assert.ok(lines.some((line) => line.includes('returned `swarmId`')))
+    assert.ok(lines.some((line) => line.includes('For `email`, send mail with `{"action":"send","to":"user@example.com","subject":"...","body":"..."}`')))
+    assert.ok(lines.some((line) => line.includes('{"action":"write","files":[{"path":"path/to/file.md","content":"..."}]}')))
   })
 })
 

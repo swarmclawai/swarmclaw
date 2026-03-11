@@ -9,8 +9,7 @@ import { loadSettings, loadAgents, loadSkills, appendUsage } from '@/lib/server/
 import { estimateCost, buildPluginDefinitionCosts } from '@/lib/server/cost'
 import { getPluginManager } from '@/lib/server/plugins'
 import { loadRuntimeSettings, getAgentLoopRecursionLimit } from '@/lib/server/runtime/runtime-settings'
-import { buildSkillPromptText } from '@/lib/server/skills/skill-prompt-budget'
-import { buildDiscoveredSkillPromptText, collectPluginMatchedDiscoveredSkills } from '@/lib/server/skills/discovered-skill-prompt'
+import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 
 import { logExecution } from '@/lib/server/execution-log'
 import { buildCurrentDateTimePromptContext } from '@/lib/server/prompt-runtime-context'
@@ -22,6 +21,7 @@ import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { resolveActiveProjectContext } from '@/lib/server/project-context'
 import { resolveImagePath } from '@/lib/server/resolve-image'
 import { routeTaskIntent } from '@/lib/server/capability-router'
+import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 import {
   getEnabledToolPlanningView,
   getFirstToolForCapability,
@@ -95,6 +95,30 @@ export {
   shouldTerminateOnSuccessfulMemoryMutation,
   resolveFinalStreamResponseText,
   resolveContinuationAssistantText,
+}
+
+const TOOL_SUMMARY_SHORT_RESPONSE_EXEMPT_TOOLS = new Set([
+  'use_skill',
+])
+
+export function shouldSkipToolSummaryForShortResponse(params: {
+  fullText: string
+  toolEvents: MessageToolEvent[]
+  isConnectorSession?: boolean
+}): boolean {
+  if (params.isConnectorSession) return false
+  if (!params.fullText.trim()) return false
+  if (!Array.isArray(params.toolEvents) || params.toolEvents.length === 0) return false
+  const toolNames = Array.from(new Set(
+    params.toolEvents
+      .map((event) => canonicalizePluginId(event.name) || event.name)
+      .filter((name): name is string => typeof name === 'string' && name.trim().length > 0),
+  ))
+  if (toolNames.length === 0) return false
+  // Skill runtime tools load guidance into context rather than producing external
+  // evidence that needs a forced synthesis pass. A short exact answer after those
+  // calls can already be the correct completion.
+  return toolNames.every((toolName) => TOOL_SUMMARY_SHORT_RESPONSE_EXEMPT_TOOLS.has(toolName))
 }
 
 /** Extract a breadcrumb title from notable tool completions (task/schedule/agent creation). */
@@ -380,6 +404,21 @@ function buildAgenticExecutionPolicy(opts: {
       'Do not use `manage_tasks`, `manage_agents`, or `delegate` as a substitute for a direct memory write or recall step.',
     )
   }
+  if (hasTooling) {
+    parts.push(
+      '## Skill Runtime',
+      'When the skill runtime section lists a fitting reusable workflow, use `use_skill` to select it before falling back to generic exploration.',
+      'Prefer `use_skill` action `run` for executable skills and `use_skill` action `load` only when the skill is guidance-only.',
+    )
+  }
+  if (opts.enabledPlugins.some((toolId) => (canonicalizePluginId(toolId) || toolId) === 'manage_skills')) {
+    parts.push(
+      '## Skill Resolution',
+      'When you are blocked on a missing capability, binary, or environment setup, call `manage_skills` before repeating generic exploration.',
+      'Use `manage_skills` action `recommend_for_task` or `status` to find a fitting local skill. If a fitting skill needs installation, request the explicit install approval through `manage_skills` and stop retrying the same blocker.',
+      'Do not silently install skills during autonomous runs. Installation is explicit and approval-gated.',
+    )
+  }
   if (opts.hasAttachmentContext) {
     parts.push(
       '## Attachments',
@@ -492,7 +531,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAgentChatResult> {
   const startTs = Date.now()
   const { session, message, imagePath, imageUrl, attachedFiles, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
-  const isConnectorSession = !!session.connectorContext?.connectorId
+  const isConnectorSession = isDirectConnectorSession(session)
   const rawPlugins = Array.isArray(session.plugins) ? session.plugins : []
   const hasShellCapability = rawPlugins.some((toolId) => ['shell', 'execute_command'].includes(String(toolId)))
   const sessionPlugins = expandPluginIds([
@@ -582,27 +621,16 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       if (continuityBlock) promptParts.push(continuityBlock)
       if (agent?.soul) promptParts.push(agent.soul)
       if (agent?.systemPrompt) promptParts.push(agent.systemPrompt)
-      const allSkills = loadSkills()
-      if (agent?.skillIds?.length) {
-        const skillPromptText = buildSkillPromptText(allSkills, agent.skillIds)
-        if (skillPromptText) promptParts.push(skillPromptText)
-      }
-
-      // Auto-discover workspace/bundled skills. If one matches an enabled plugin,
-      // inject the full skill content so the agent can use that tool more precisely.
       try {
-        const { discoverSkills } = await import('@/lib/server/skills/skill-discovery')
-        const discovered = discoverSkills({ cwd: session.cwd })
-        if (discovered.length > 0) {
-          const { matched, remaining } = collectPluginMatchedDiscoveredSkills(discovered, sessionPlugins, allSkills)
-          const discoveredPromptText = buildDiscoveredSkillPromptText(matched)
-          if (discoveredPromptText) promptParts.push(discoveredPromptText)
-
-          const discoveredBlock = remaining
-            .map(s => `- **${s.name}**: ${(s.description || '').slice(0, 120)}`)
-            .join('\n')
-          if (discoveredBlock) promptParts.push(`## Available Skills\n${discoveredBlock}`)
-        }
+        const allSkills = loadSkills()
+        const runtimeSkills = resolveRuntimeSkills({
+          cwd: session.cwd,
+          enabledPlugins: sessionPlugins,
+          agentSkillIds: agent?.skillIds || [],
+          storedSkills: allSkills,
+          selectedSkillId: session.skillRuntimeState?.selectedSkillId || null,
+        })
+        promptParts.push(...buildRuntimeSkillPromptBlocks(runtimeSkills))
       } catch { /* non-critical */ }
     }
   }
@@ -1555,7 +1583,16 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       // However, if tools already produced results but the model has no/trivial text,
       // we attempt a tool_summary continuation instead of just erroring out.
       if (loopDetectionTriggered) {
-        const loopTextIsTrivial = !fullText.trim() || (fullText.trim().length < 150 && streamedToolEvents.length >= 2)
+        const skipToolSummaryForShortResponse = shouldSkipToolSummaryForShortResponse({
+          fullText,
+          toolEvents: streamedToolEvents,
+          isConnectorSession,
+        })
+        const loopTextIsTrivial = !fullText.trim() || (
+          !skipToolSummaryForShortResponse
+          && fullText.trim().length < 150
+          && streamedToolEvents.length >= 2
+        )
         if (loopTextIsTrivial && streamedToolEvents.length > 0 && toolSummaryRetryCount < MAX_TOOL_SUMMARY_RETRIES) {
           // Override: let the tool_summary check below handle it instead of breaking
           loopDetectionTriggered = null
@@ -1715,8 +1752,14 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       // Triggers when: (a) text is empty, or (b) text is trivially short (< 150 chars)
       // and multiple tools ran — the agent likely emitted a "I'll do X" preamble but
       // never synthesized the tool outputs into a real response.
+      const skipToolSummaryForShortResponse = shouldSkipToolSummaryForShortResponse({
+        fullText,
+        toolEvents: streamedToolEvents,
+        isConnectorSession,
+      })
       const textIsTrivial = !fullText.trim() || (
-        !isConnectorSession && fullText.trim().length < 150
+        !skipToolSummaryForShortResponse
+        && !isConnectorSession && fullText.trim().length < 150
         && (
           streamedToolEvents.length >= 2
           || likelyResearchSynthesisTask
@@ -1728,6 +1771,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
         && hasToolCalls
         && textIsTrivial
         && streamedToolEvents.length > 0
+        && !skipToolSummaryForShortResponse
         && toolSummaryRetryCount < MAX_TOOL_SUMMARY_RETRIES
       ) {
         shouldContinue = 'tool_summary'

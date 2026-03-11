@@ -64,7 +64,7 @@ The OpenClaw Control Plane in SwarmClaw adds:
 - Gateway import/export JSON, clone flows, and richer external runtime fleet visibility
 - Agent and route-target preferences for steering work toward OpenClaw gateways by tags or use case (`local-dev`, `single-vps`, `private-tailnet`, `browser-heavy`, `team-control`)
 
-The Agent Inspector Panel lets you edit OpenClaw files (`SOUL.md`, `IDENTITY.md`, `USER.md`), tune personality/system behavior, and manage OpenClaw-compatible skills. SwarmClaw also supports importing OpenClaw `SKILL.md` files from URL.
+The Agent Inspector Panel lets you edit OpenClaw files (`SOUL.md`, `IDENTITY.md`, `USER.md`), tune personality/system behavior, and manage OpenClaw-compatible skills. Skills are now discoverable by default, pinned skills stay always-on for an agent, and executable `SKILL.md` metadata can drive on-demand runtime skill selection. SwarmClaw also supports importing OpenClaw `SKILL.md` files from URL.
 
 To connect an agent to an OpenClaw gateway:
 
@@ -155,7 +155,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 The installer resolves the latest stable release tag and installs that version by default.
 It also builds the production bundle so `npm run start` is ready immediately after install.
 No Deno install is required; local sandbox execution is Docker-first with automatic host Node fallback.
-To pin a version: `SWARMCLAW_VERSION=v0.9.0 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.9.4 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -248,7 +248,7 @@ Notes:
 - **Connector bridge** - Discord, Slack, Telegram, WhatsApp, Teams, Matrix, OpenClaw, and others
 - **Memory + knowledge** - hybrid search, memory graph, shared knowledge store, and auto-journaling
 - **Operational guardrails** - capability policy, cost tracking, provider health, and credential failover
-- **Extensibility** - plugin hooks/tools/UI extensions plus reusable skills
+- **Extensibility** - plugin hooks/tools/UI extensions plus reusable skills with discovery-by-default runtime selection
 
 For the full feature matrix and per-capability details, see:
 - https://swarmclaw.ai/docs
@@ -363,6 +363,8 @@ Connector ingress now also supports optional pairing/allowlist policy:
 - `/pair` flow lets approved admins generate and approve pairing codes
 - `/think` command can set connector thread thinking level (`low`, `medium`, `high`)
 - Session overrides also support per-thread `/reply`, `/scope`, `/thread`, `/provider`, `/model`, `/idle`, `/maxage`, and `/reset` controls
+
+Direct connector sessions are now the only source of routable connector state. Main agent threads no longer inherit outbound connector targets from mirrored history, and tool-only heartbeats stay out of visible main-thread history.
 
 ## Agent Tools
 
@@ -727,15 +729,15 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.9.0 Release Readiness Notes
+#### v0.9.4 Release Readiness Notes
 
-Before shipping `v0.9.0`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.9.4`, confirm the following user-facing changes are reflected in docs:
 
-1. Install docs make it explicit that global npm installs use `swarmclaw server`, and that package-manager installs plus the curl installer prepare the sandbox/browser runtime automatically when Docker is available.
-2. Sandbox docs say local `sandbox_exec` no longer requires Deno, defaults to sandbox-enabled agent configs, and falls back to host Node when Docker is unavailable.
-3. Release docs mention the OpenClaw-style sandbox/runtime refresh, heartbeat deferral improvements, and the HMR-safe live chat route fix.
-4. Site and README install/version strings are updated to `v0.9.0`, including pinned install snippets, release notes index text, and sidebar/footer labels.
-5. The release tag, npm package version, and generated GitHub release install snippet all agree on the non-prefixed npm version (`0.9.0`) versus the git tag (`v0.9.0`).
+1. Skills docs explain that local skills are discoverable by default, while `skillIds` now mean pinned always-on skills for an agent.
+2. Runtime-skill docs mention executable skill metadata, on-demand selection, and the `use_skill` / `manage_skills` flow instead of implying every discovered skill is inlined into the prompt.
+3. Connector/heartbeat docs mention that routable connector state is kept on direct connector sessions only, sender quiet-boundary memories are enforced before reply generation, and tool-only heartbeats no longer pollute visible main-thread history.
+4. Site and README install/version strings are updated to `v0.9.4`, including pinned install snippets, release notes index text, and sidebar/footer labels.
+5. The release tag, npm package version, and generated GitHub release install snippet all agree on the non-prefixed npm version (`0.9.4`) versus the git tag (`v0.9.4`).
 
 ## CLI
 

@@ -9,6 +9,7 @@ import { getProvider } from '@/lib/providers'
 import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
+import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import type { Chatroom, ChatroomMember, Agent, Session, Message, ChatroomMessage } from '@/types'
 
 /** Resolve API key from an agent's credentialId */
@@ -324,7 +325,7 @@ export function appendSyntheticSessionMessage(
 }
 
 /** Build agent's system prompt including skills and identity context */
-export function buildAgentSystemPromptForChatroom(agent: Agent): string {
+export function buildAgentSystemPromptForChatroom(agent: Agent, cwd?: string | null): string {
   const settings = loadSettings()
   const parts: string[] = []
 
@@ -358,13 +359,15 @@ export function buildAgentSystemPromptForChatroom(agent: Agent): string {
   if (agent.systemPrompt) parts.push(`## System Prompt\n${agent.systemPrompt}`)
 
   // 5. Skills (SwarmClaw Core)
-  if (agent.skillIds?.length) {
-    const allSkills = loadSkills()
-    for (const skillId of agent.skillIds) {
-      const skill = allSkills[skillId]
-      if (skill?.content) parts.push(`## Skill: ${skill.name}\n${skill.content}`)
-    }
-  }
+  try {
+    const runtimeSkills = resolveRuntimeSkills({
+      cwd,
+      enabledPlugins: agent.plugins || agent.tools || [],
+      agentSkillIds: agent.skillIds || [],
+      storedSkills: loadSkills(),
+    })
+    parts.push(...buildRuntimeSkillPromptBlocks(runtimeSkills))
+  } catch { /* non-critical */ }
 
   // 6. Thinking & Output Format (OpenClaw Style)
   const thinkingHint = [

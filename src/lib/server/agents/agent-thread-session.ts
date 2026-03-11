@@ -64,7 +64,7 @@ function buildThreadSession(agent: Agent, sessionId: string, user: string, creat
     connectorIdleTimeoutSec: existing?.connectorIdleTimeoutSec || null,
     connectorMaxAgeSec: existing?.connectorMaxAgeSec || null,
     mailbox: existing?.mailbox || null,
-    connectorContext: existing?.connectorContext || undefined,
+    connectorContext: undefined,
     lastAutoMemoryAt: existing?.lastAutoMemoryAt || null,
     lastHeartbeatText: existing?.lastHeartbeatText || null,
     lastHeartbeatSentAt: existing?.lastHeartbeatSentAt || null,

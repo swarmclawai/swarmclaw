@@ -195,6 +195,83 @@ describe('main-agent-loop advanced', () => {
     assert.equal(output.followupOk, null, 'no followup on terminal ack')
   })
 
+  it('persists and upgrades a skill blocker across recommend/install steps', () => {
+    const output = runWithTempDataDir(`
+      ${sessionSetupScript()}
+
+      mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: 'Continue the Google Workspace automation.',
+        internal: true,
+        source: 'heartbeat',
+        resultText: 'Blocked: missing capability for Google Workspace CLI in this environment.',
+      })
+      const state1 = mainLoop.getMainLoopStateForSession('main')
+
+      mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: 'Continue the Google Workspace automation.',
+        internal: true,
+        source: 'heartbeat',
+        resultText: 'Checked local skills.',
+        toolEvents: [{
+          name: 'manage_skills',
+          input: JSON.stringify({ action: 'recommend_for_task', task: 'Google Workspace automation' }),
+          output: JSON.stringify({ local: [{ name: 'google-workspace', status: 'needs_install' }] }),
+        }],
+      })
+      const state2 = mainLoop.getMainLoopStateForSession('main')
+
+      mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: 'Continue the Google Workspace automation.',
+        internal: true,
+        source: 'heartbeat',
+        resultText: 'Install approval requested.',
+        toolEvents: [{
+          name: 'manage_skills',
+          input: JSON.stringify({ action: 'install', name: 'google-workspace' }),
+          output: JSON.stringify({
+            requiresApproval: true,
+            approval: { id: 'appr-123' },
+            skill: { name: 'google-workspace' },
+          }),
+        }],
+      })
+      const state3 = mainLoop.getMainLoopStateForSession('main')
+
+      const heartbeatPrompt = mainLoop.buildMainLoopHeartbeatPrompt({
+        id: 'main',
+        shortcutForAgentId: 'agent-a',
+        agentId: 'agent-a',
+        heartbeatEnabled: true,
+        messages: [{ role: 'user', text: 'Deploy the system.', time: 1 }],
+      }, 'Base prompt')
+
+      console.log(JSON.stringify({
+        firstStatus: state1?.skillBlocker?.status ?? null,
+        firstSummary: state1?.skillBlocker?.summary ?? null,
+        secondStatus: state2?.skillBlocker?.status ?? null,
+        secondCandidates: state2?.skillBlocker?.candidateSkills ?? [],
+        secondAttempts: state2?.skillBlocker?.attempts ?? -1,
+        thirdStatus: state3?.skillBlocker?.status ?? null,
+        thirdApprovalId: state3?.skillBlocker?.approvalId ?? null,
+        promptHasSkillBlocker: heartbeatPrompt.includes('Active skill blocker:'),
+        promptHasApproval: heartbeatPrompt.includes('Pending approval: appr-123'),
+      }))
+    `)
+
+    assert.equal(output.firstStatus, 'new')
+    assert.match(String(output.firstSummary), /missing capability/i)
+    assert.equal(output.secondStatus, 'recommended')
+    assert.deepEqual(output.secondCandidates, ['google-workspace'])
+    assert.equal(output.secondAttempts, 1)
+    assert.equal(output.thirdStatus, 'approval_requested')
+    assert.equal(output.thirdApprovalId, 'appr-123')
+    assert.equal(output.promptHasSkillBlocker, true)
+    assert.equal(output.promptHasApproval, true)
+  })
+
   it('resets metadata miss count when structured metadata returns and keeps terminal acks at zero', () => {
     const meta = heartbeatMetaLine('progress', 'deploy', 'continue')
     const output = runWithTempDataDir(`

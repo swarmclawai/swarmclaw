@@ -2213,7 +2213,7 @@ export function AgentSheet() {
       <div ref={(node) => { sectionRefs.current.tools = node }}>
       <SectionCard
         title="Tools & Delegation"
-        description="Enable plugins, skills, MCP tools, and delegation behavior for this agent."
+        description="Enable plugins, pin preferred skills, connect MCP tools, and configure delegation behavior for this agent."
       >
       {/* Plugins — hidden for providers that manage capabilities outside LangGraph */}
       {!hasNativeCapabilities && (
@@ -2281,7 +2281,7 @@ export function AgentSheet() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
             <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">
-              Skills <span className="normal-case tracking-normal font-normal text-text-3">(from ~/.claude/skills/)</span>
+              Pinned Claude Skills <span className="normal-case tracking-normal font-normal text-text-3">(from ~/.claude/skills/)</span>
             </label>
             <button
               onClick={loadClaudeSkills}
@@ -2297,7 +2297,7 @@ export function AgentSheet() {
               Refresh
             </button>
           </div>
-          <p className="text-[12px] text-text-3/60 mb-3">When delegated to, this agent will be instructed to use these skills.</p>
+          <p className="text-[12px] text-text-3/60 mb-3">Optional preference list. Pinned Claude skills are called out explicitly when this agent is delegated work.</p>
           {claudeSkills.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {claudeSkills.map((s) => {
@@ -2328,9 +2328,9 @@ export function AgentSheet() {
       {Object.keys(dynamicSkills).length > 0 && (
         <div className="mb-8">
           <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-            Custom Skills <span className="normal-case tracking-normal font-normal text-text-3">(from Skills manager)</span>
+            Pinned Skills <span className="normal-case tracking-normal font-normal text-text-3">(from Skills manager)</span>
           </label>
-          <p className="text-[12px] text-text-3/60 mb-3">Skill content is injected into the system prompt when this agent runs.</p>
+          <p className="text-[12px] text-text-3/60 mb-3">All ready local skills are discoverable by default. Pin skills here only when they should stay in this agent&apos;s prompt as always-on guidance.</p>
           <div className="flex flex-wrap gap-2">
             {Object.values(dynamicSkills).map((s) => {
               const active = skillIds.includes(s.id)

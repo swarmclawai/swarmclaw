@@ -12,6 +12,7 @@ import {
   looksLikeOpenEndedDeliverableTask,
   resolveContinuationAssistantText,
   resolveFinalStreamResponseText,
+  shouldSkipToolSummaryForShortResponse,
   shouldForceAttachmentFollowthrough,
   shouldForceRecoverableToolErrorFollowthrough,
   shouldTerminateOnSuccessfulMemoryMutation,
@@ -52,72 +53,66 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(lines.every((line) => !line.includes('Do not substitute `manage_platform`')))
   })
 
-  it('includes concrete files-tool examples for revision work', () => {
+  it('includes concrete files-tool examples for file work', () => {
     const lines = buildToolDisciplineLines(['files'])
 
     assert.ok(lines.some((line) => line.includes('{"action":"read","filePath":"path/to/file.md"}')))
-    assert.ok(lines.some((line) => line.includes('exactly N bullet points')))
-    assert.ok(lines.some((line) => line.includes('Lower-priority logistics belong in FYI')))
+    assert.ok(lines.some((line) => line.includes('{"action":"list","dirPath":"."}')))
+    assert.ok(lines.some((line) => line.includes('{"action":"write","files":[{"path":"path/to/file.md","content":"..."}]}')))
   })
 
-  it('adds schedule reuse and stop guidance when schedule tools are enabled', () => {
+  it('tells the agent to use direct schedule tools when manage_platform is absent', () => {
     const lines = buildToolDisciplineLines(['manage_schedules', 'schedule_wake'])
 
-    assert.ok(lines.some((line) => line.includes('reuse or update matching agent-created schedules')))
-    assert.ok(lines.some((line) => line.includes('pause or delete every matching schedule you created in this chat')))
-    assert.ok(lines.some((line) => line.includes('prefer `schedule_wake` over creating a recurring schedule')))
+    assert.ok(lines.some((line) => line.includes('Use direct platform tools exactly as named (`manage_schedules`)')))
+    assert.ok(lines.some((line) => line.includes('Do not substitute `manage_platform` unless it is explicitly enabled.')))
   })
 
-  it('warns browser tasks to use literal urls and the supported form schema', () => {
+  it('warns browser-capable sessions to use current supported tool inputs and sequencing', () => {
     const lines = buildToolDisciplineLines(['web_search', 'web_fetch', 'browser', 'manage_connectors', 'http_request', 'email', 'ask_human', 'manage_secrets'])
 
     assert.ok(lines.some((line) => line.includes('Do not invent placeholder URLs')))
     assert.ok(lines.some((line) => line.includes('A shorthand `form` object keyed by input id/name also works')))
-    assert.ok(lines.some((line) => line.includes('prefer `fill_form` and `submit_form`')))
     assert.ok(lines.some((line) => line.includes('For current events, breaking news, or "latest" requests, start with `web_search`')))
     assert.ok(lines.some((line) => line.includes('Use `browser` when the user asks for screenshots')))
-    assert.ok(lines.some((line) => line.includes('do not capture screenshots') && line.includes('`browser`')))
     assert.ok(lines.some((line) => line.includes('connector_message_tool') && line.includes('list_running')))
     assert.ok(lines.some((line) => line.includes('connector/channel setup is missing')))
-    assert.ok(lines.some((line) => line.includes('capture the artifact first with `browser`') && line.includes('`connector_message_tool`')))
     assert.ok(lines.some((line) => line.includes('Keep JSON request bodies as raw JSON strings')))
-    assert.ok(lines.some((line) => line.includes('try one other enabled acquisition path') && line.includes('`http_request`') && line.includes('`browser`')))
-    assert.ok(lines.some((line) => line.includes('browser or web timeout is not final')))
+    assert.ok(lines.some((line) => line.includes('gather sources first, then capture')))
+    assert.ok(lines.some((line) => line.includes('If one research path is blocked, try another') && line.includes('`http_request`') && line.includes('`browser`')))
     assert.ok(lines.some((line) => line.includes('{"action":"send","to":"user@example.com","subject":"...","body":"..."}')))
     assert.ok(lines.some((line) => line.includes('do not guess or keep re-submitting blank forms')))
-    assert.ok(lines.some((line) => line.includes('store it with `manage_secrets`') && line.includes('do not echo the raw value')))
-    assert.ok(lines.some((line) => line.includes('Use `manage_secrets` only for sensitive credentials or tokens')))
+    assert.ok(lines.some((line) => line.includes('Store secrets (passwords, API keys, tokens) with `manage_secrets`')))
   })
 
   it('adds bounded execution guidance for wallet-connected external-service tasks', () => {
     const lines = buildToolDisciplineLines(['wallet', 'browser', 'http_request', 'manage_capabilities'])
 
-    assert.ok(lines.some((line) => line.includes('inspect the available wallet first with `wallet_tool`')))
-    assert.ok(lines.some((line) => line.includes('use a bounded loop') && line.includes('Do not keep browsing once the blocker is clear')))
-    assert.ok(lines.some((line) => line.includes('do not shop across venues indefinitely')))
-    assert.ok(lines.some((line) => line.includes('If a direct tool for the job is already enabled in this session, call that tool immediately')))
+    assert.ok(lines.some((line) => line.includes('inspect the wallet first with `wallet_tool`')))
+    assert.ok(lines.some((line) => line.includes('Use a bounded loop: verify, attempt one reversible step, then execute or state the blocker.')))
+    assert.ok(lines.some((line) => line.includes('stop venue-shopping') && line.includes('call_contract')))
   })
 
-  it('tells agents to stay local when coding tools are already available', () => {
+  it('includes concrete local coding tool guidance when coding tools are already available', () => {
     const lines = buildToolDisciplineLines(['files', 'shell', 'delegate'])
 
-    assert.ok(lines.some((line) => line.includes('prefer using them directly for straightforward coding and verification')))
+    assert.ok(lines.some((line) => line.includes('{"action":"read","filePath":"path/to/file.md"}')))
+    assert.ok(lines.some((line) => line.includes('For `shell`, use `{"action":"execute","command":"..."}`')))
   })
 
-  it('adds explicit human-loop mailbox sequencing guidance when ask_human is enabled', () => {
+  it('adds explicit ask_human request and wait guidance when ask_human is enabled', () => {
     const lines = buildToolDisciplineLines(['browser', 'ask_human'])
 
-    assert.ok(lines.some((line) => line.includes('request_input') && line.includes('wait_for_reply') && line.includes('list_mailbox')))
-    assert.ok(lines.some((line) => line.includes('omit `envelopeId` to ack the newest unread human reply')))
-    assert.ok(lines.some((line) => line.includes('Do not loop on `status` without a `watchJobId`')))
+    assert.ok(lines.some((line) => line.includes('request_input') && line.includes('wait_for_reply') && line.includes('correlationId')))
+    assert.ok(lines.some((line) => line.includes('do not guess or keep re-submitting blank forms')))
   })
 
-  it('tells agents to draft email content directly and to use real file writes for named artifacts', () => {
+  it('tells agents how to send email and write files when those tools are enabled', () => {
     const lines = buildToolDisciplineLines(['files', 'email', 'spawn_subagent'])
 
-    assert.ok(lines.some((line) => line.includes('draft, outline, critique, or revise email copy')))
-    assert.ok(lines.some((line) => line.includes('make your first concrete step an actual file-writing tool call')))
-    assert.ok(lines.some((line) => line.includes('capture the returned `swarmId`')))
+    assert.ok(lines.some((line) => line.includes('For `email`, send mail with `{"action":"send","to":"user@example.com","subject":"...","body":"..."}`')))
+    assert.ok(lines.some((line) => line.includes('If delivery depends on SMTP setup, check `{"action":"status"}` before claiming success.')))
+    assert.ok(lines.some((line) => line.includes('{"action":"write","files":[{"path":"path/to/file.md","content":"..."}]}')))
   })
 
   it('does not force capability-inferred tools — trusts the LLM to select tools', () => {
@@ -183,7 +178,7 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(streamAgentChatSource.includes('If a task explicitly names an enabled tool, use that tool before declaring success.'))
     assert.ok(streamAgentChatSource.includes('collect required human input through the tool'))
     assert.ok(streamAgentChatSource.includes('## Attachments'))
-    assert.ok(streamAgentChatSource.includes('Do not claim you cannot use images, attachments, or external tools when those capabilities are available in this session.'))
+    assert.ok(streamSources.includes('Do not claim that you cannot use images, attachments, or external tools when they are available in this session.'))
     assert.ok(streamSources.includes('You have not yet completed the required explicit tool step(s):'))
     assert.ok(streamSources.includes('attachment_followthrough'))
     assert.ok(streamSources.includes('unfinished_tool_followthrough'))
@@ -259,6 +254,46 @@ describe('isWalletSimulationResult', () => {
     )
     assert.equal(
       isWalletSimulationResult('http_request', '{"status":"simulated"}'),
+      false,
+    )
+  })
+})
+
+describe('shouldSkipToolSummaryForShortResponse', () => {
+  it('skips forced tool-summary continuation for short responses after pure use_skill calls', () => {
+    assert.equal(
+      shouldSkipToolSummaryForShortResponse({
+        fullText: 'HAL2K_RELEASE_LIVE_OK',
+        toolEvents: [
+          { name: 'use_skill', input: '{"action":"list"}', output: '{"ok":true}' },
+          { name: 'use_skill', input: '{"action":"load"}', output: '{"loaded":true}' },
+        ],
+      }),
+      true,
+    )
+  })
+
+  it('does not skip tool-summary continuation when substantive tools also ran', () => {
+    assert.equal(
+      shouldSkipToolSummaryForShortResponse({
+        fullText: 'Done.',
+        toolEvents: [
+          { name: 'use_skill', input: '{"action":"load"}', output: '{"loaded":true}' },
+          { name: 'web', input: '{"q":"latest"}', output: 'results' },
+        ],
+      }),
+      false,
+    )
+  })
+
+  it('does not skip tool-summary continuation for empty text', () => {
+    assert.equal(
+      shouldSkipToolSummaryForShortResponse({
+        fullText: '',
+        toolEvents: [
+          { name: 'use_skill', input: '{"action":"load"}', output: '{"loaded":true}' },
+        ],
+      }),
       false,
     )
   })

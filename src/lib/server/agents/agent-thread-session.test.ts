@@ -174,4 +174,68 @@ describe('ensureAgentThreadSession', () => {
 
     assert.equal(output.session.openclawAgentId, 'main')
   })
+
+  it('clears stale connector routing state from an existing agent shortcut session', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('@/lib/server/storage')
+      const storage = storageMod.default || storageMod['module.exports'] || storageMod
+      const helperMod = await import('@/lib/server/agents/agent-thread-session')
+      const ensureAgentThreadSession = helperMod.ensureAgentThreadSession
+        || helperMod.default?.ensureAgentThreadSession
+        || helperMod['module.exports']?.ensureAgentThreadSession
+
+      const now = Date.now()
+      storage.saveAgents({
+        molly: {
+          id: 'molly',
+          name: 'Molly',
+          provider: 'openai',
+          model: 'gpt-test',
+          credentialId: null,
+          apiEndpoint: null,
+          fallbackCredentialIds: [],
+          heartbeatEnabled: true,
+          heartbeatIntervalSec: 600,
+          threadSessionId: 'agent-chat-molly-existing',
+          createdAt: now,
+          updatedAt: now,
+          plugins: ['memory'],
+        },
+      })
+      storage.saveSessions({
+        'agent-chat-molly-existing': {
+          id: 'agent-chat-molly-existing',
+          name: 'Molly',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'default',
+          provider: 'openai',
+          model: 'gpt-old',
+          claudeSessionId: null,
+          codexThreadId: null,
+          opencodeSessionId: null,
+          delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null },
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'molly',
+          plugins: ['memory'],
+          connectorContext: {
+            connectorId: 'conn-1',
+            channelId: 'wrong-chat',
+            senderId: 'wrong-user',
+          },
+        },
+      })
+
+      const session = ensureAgentThreadSession('molly')
+      const persisted = storage.loadSessions()[session.id]
+
+      console.log(JSON.stringify({
+        connectorContext: persisted.connectorContext || null,
+      }))
+    `)
+
+    assert.equal(output.connectorContext, null)
+  })
 })

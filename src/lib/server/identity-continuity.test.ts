@@ -32,9 +32,9 @@ test('buildIdentityContinuityContext merges agent and session continuity', () =>
 test('refreshSessionIdentityState derives fallback continuity fields', () => {
   const session = {
     id: 's1',
-    name: 'Checkout Bug',
+    name: 'connector:checkout-bug',
     cwd: process.cwd(),
-    user: 'Taylor',
+    user: 'connector',
     provider: 'openai',
     model: 'gpt-4.1',
     claudeSessionId: null,
@@ -61,7 +61,8 @@ test('refreshSessionIdentityState derives fallback continuity fields', () => {
 test('buildIdentityContinuityContext prefers thread persona labels from connector context', () => {
   const block = buildIdentityContinuityContext(
     {
-      name: 'Connector Session',
+      name: 'connector:session',
+      user: 'connector',
       connectorContext: {
         threadId: 'thread-9',
         threadPersonaLabel: 'Checkout Incident',

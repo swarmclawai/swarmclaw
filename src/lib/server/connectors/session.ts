@@ -12,6 +12,7 @@ import {
   resetConnectorSessionRuntime,
   resolveConnectorSessionPolicy,
 } from './policy'
+import { isDirectConnectorSession } from './session-kind'
 import { resolveThreadPersonaLabel } from './thread-context'
 import type { InboundMessage } from './types'
 
@@ -40,7 +41,8 @@ export function findDirectSessionForInbound(connector: Connector, msg: InboundMe
   const senderIds = new Set([msg.senderId, msg.senderIdAlt].filter(Boolean))
   const sessions = Object.values(loadSessions() as Record<string, ConnectorSession>)
   const candidates = sessions.filter((session) =>
-    session?.agentId === effectiveAgentId
+    isDirectConnectorSession(session)
+      && session?.agentId === effectiveAgentId
       && session?.connectorContext?.connectorId === connector.id
       && (
         channelIds.has(session?.connectorContext?.channelId || '')
@@ -51,6 +53,7 @@ export function findDirectSessionForInbound(connector: Connector, msg: InboundMe
   if (msg.threadId) {
     const threadExact = candidates.find((session) => session?.connectorContext?.threadId === msg.threadId)
     if (threadExact) return threadExact
+    return null
   }
   const senderExact = candidates.find((session) =>
     senderIds.has(session?.connectorContext?.senderId || '')
@@ -64,7 +67,7 @@ export function findDirectSessionForInbound(connector: Connector, msg: InboundMe
   )
   if (peerIdMatch) return peerIdMatch
 
-  return candidates[0] || null
+  return candidates.length === 1 ? candidates[0] : null
 }
 
 export function persistSessionRecord(session: ConnectorSession): void {

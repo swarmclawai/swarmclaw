@@ -11,6 +11,7 @@ import { buildChatModel } from '@/lib/server/build-llm'
 import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
 import { buildCurrentDateTimePromptContext } from '@/lib/server/prompt-runtime-context'
 import { getPluginManager } from '@/lib/server/plugins'
+import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import { buildBoardTask } from '@/lib/server/tasks/task-lifecycle'
 import '@/lib/server/builtin-plugins'
 import { genId } from '@/lib/id'
@@ -401,6 +402,7 @@ export async function executeLangGraphOrchestrator(
   taskId?: string,
 ): Promise<string> {
   const allAgents = loadAgents()
+  const orchestrationSession = loadSessions()[sessionId]
 
   // Build available agents list
   const agentIds = orchestrator.subAgentIds || []
@@ -461,14 +463,16 @@ export async function executeLangGraphOrchestrator(
   promptParts.push(buildCurrentDateTimePromptContext())
   if (orchestrator.soul) promptParts.push(orchestrator.soul)
   if (orchestrator.systemPrompt) promptParts.push(orchestrator.systemPrompt)
-  // Inject dynamic skills
-  if (orchestrator.skillIds?.length) {
-    const allSkills = loadSkills()
-    for (const skillId of orchestrator.skillIds) {
-      const skill = allSkills[skillId]
-      if (skill?.content) promptParts.push(`## Skill: ${skill.name}\n${skill.content}`)
-    }
-  }
+  try {
+    const runtimeSkills = resolveRuntimeSkills({
+      cwd: orchestrationSession?.cwd || WORKSPACE_DIR,
+      enabledPlugins: Array.isArray(orchestrator.plugins) ? orchestrator.plugins : [],
+      agentSkillIds: orchestrator.skillIds || [],
+      storedSkills: loadSkills(),
+      selectedSkillId: orchestrationSession?.skillRuntimeState?.selectedSkillId || null,
+    })
+    promptParts.push(...buildRuntimeSkillPromptBlocks(runtimeSkills))
+  } catch { /* non-critical */ }
   const basePrompt = promptParts.join('\n\n')
 
   const systemMessage = [

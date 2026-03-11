@@ -189,7 +189,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             syntheticSession.fallbackCredentialIds = route?.fallbackCredentialIds || syntheticSession.fallbackCredentialIds || []
             syntheticSession.gatewayProfileId = route?.gatewayProfileId ?? syntheticSession.gatewayProfileId ?? null
             syntheticSession.apiEndpoint = resolvedEndpoint
-            const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent)
+            const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent, syntheticSession.cwd)
             const chatroomContext = buildChatroomSystemPrompt(freshChatroom, agents, agent.id)
             const fullSystemPrompt = [agentSystemPrompt, chatroomContext].filter(Boolean).join('\n\n')
             const history = buildHistoryForAgent(freshChatroom, agent.id, imagePath, attachedFiles)

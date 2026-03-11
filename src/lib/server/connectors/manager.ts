@@ -30,6 +30,7 @@ import { markProviderFailure, markProviderSuccess } from '../provider-health'
 import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
 import { buildIdentityContinuityContext } from '../identity-continuity'
 import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
+import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import { getProvider } from '@/lib/providers'
 import type { Agent, Connector, MessageSource, Chatroom, ChatroomMessage, Session } from '@/types'
 import type { ConnectorInstance, InboundMessage } from './types'
@@ -57,6 +58,8 @@ import {
   textMentionsAlias,
 } from './policy'
 import { buildConnectorThreadContextBlock } from './thread-context'
+import { isDirectConnectorSession } from './session-kind'
+import { enforceSenderQuietBoundary } from './contact-boundaries'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/agents/assistant-control'
 import {
   buildInboundApprovalSubject as buildInboundApprovalSubjectHelper,
@@ -1198,7 +1201,7 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
     }
 
     const syntheticSession = ensureSyntheticSession(agent, chatroomId)
-    const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent)
+    const agentSystemPrompt = buildAgentSystemPromptForChatroom(agent, syntheticSession.cwd)
     const chatroomContext = buildChatroomSystemPrompt(freshChatroom, agents, agent.id)
     const fullSystemPrompt = [agentSystemPrompt, chatroomContext, threadContextBlock].filter(Boolean).join('\n\n')
     const history = buildHistoryForAgent(freshChatroom, agent.id)
@@ -1418,6 +1421,26 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     return NO_MESSAGE_SENTINEL
   }
 
+  const quietBoundary = enforceSenderQuietBoundary({
+    agent,
+    connector,
+    session,
+    msg,
+  })
+  if (quietBoundary.suppress) {
+    logExecution(session.id, 'decision', 'Connector inbound suppressed by sender quiet boundary', {
+      agentId: agent.id,
+      detail: {
+        platform: msg.platform,
+        channelId: msg.channelId,
+        senderId: msg.senderId,
+        senderName: msg.senderName,
+        memoryTitle: quietBoundary.memoryTitle || null,
+      },
+    })
+    return NO_MESSAGE_SENTINEL
+  }
+
   if (parsedCommand) {
     const commandResult = await handleConnectorCommand({
       command: parsedCommand,
@@ -1520,13 +1543,21 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   promptParts.push(buildCurrentDateTimePromptContext())
   if (agent.soul) promptParts.push(agent.soul)
   if (agent.systemPrompt) promptParts.push(agent.systemPrompt)
-  if (agent.skillIds?.length) {
-    const allSkills = loadSkills()
-    for (const skillId of agent.skillIds) {
-      const skill = allSkills[skillId]
-      if (skill?.content) promptParts.push(`## Skill: ${skill.name}\n${skill.content}`)
-    }
-  }
+  try {
+    const enabledPlugins = dedup([
+      ...(Array.isArray(session.plugins) ? session.plugins : []),
+      ...(Array.isArray(agent.plugins) ? agent.plugins : []),
+      ...(Array.isArray(agent.tools) ? agent.tools : []),
+    ])
+    const runtimeSkills = resolveRuntimeSkills({
+      cwd: session.cwd,
+      enabledPlugins,
+      agentSkillIds: agent.skillIds || [],
+      storedSkills: loadSkills(),
+      selectedSkillId: session.skillRuntimeState?.selectedSkillId || null,
+    })
+    promptParts.push(...buildRuntimeSkillPromptBlocks(runtimeSkills))
+  } catch { /* non-critical */ }
   const thinkLevel = resolveConnectorSessionPolicy(connector, msg, session).thinkingLevel || ''
   if (thinkLevel) {
     promptParts.push(`Connector thinking guidance: ${thinkLevel}. Keep responses concise and useful for chat.`)
@@ -2343,7 +2374,7 @@ export async function sendConnectorMessage(params: {
   if (params.sessionId) {
     const sessions = loadSessions()
     const session = sessions[params.sessionId]
-    if (session) {
+    if (session && isDirectConnectorSession(session)) {
       session.connectorContext = {
         ...(session.connectorContext || {}),
         connectorId,

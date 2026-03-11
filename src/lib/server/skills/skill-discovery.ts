@@ -24,6 +24,10 @@ const LEGACY_BUNDLED_SKILLS_DIR = path.join(DATA_DIR, 'skills')
 
 let cache: DiscoveryCache | null = null
 
+export function clearDiscoveredSkillsCache(): void {
+  cache = null
+}
+
 function buildCacheKey(cwd?: string): string {
   return `${cwd || ''}`
 }

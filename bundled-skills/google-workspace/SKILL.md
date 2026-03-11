@@ -4,6 +4,8 @@ description: Use Google Workspace CLI (`gws`) for Drive, Docs, Sheets, Gmail, Ca
 homepage: https://github.com/googleworkspace/cli
 metadata:
   openclaw:
+    toolNames: [google_workspace, gws]
+    capabilities: [google-workspace, google-docs, google-drive, google-sheets, gmail, google-calendar, google-chat]
     requires:
       bins: [gws]
 ---

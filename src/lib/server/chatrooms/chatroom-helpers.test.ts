@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Agent, Chatroom } from '@/types'
@@ -9,6 +12,7 @@ import {
   resolveChatroomWorkspaceDir,
   resolveAgentApiEndpoint,
   resolveReplyTargetAgentId,
+  buildAgentSystemPromptForChatroom,
 } from '@/lib/server/chatrooms/chatroom-helpers'
 
 function makeAgents(): Record<string, Agent> {
@@ -162,5 +166,27 @@ describe('chatroom-helpers', () => {
     const cwd = buildSyntheticSession(makeAgents().default, 'room-safe').cwd
     assert.equal(cwd, resolveChatroomWorkspaceDir('room-safe'))
     assert.match(cwd, /chatrooms[\/\\]room-safe$/)
+  })
+
+  it('includes discoverable local skills in chatroom prompts even when none are pinned', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-chatroom-skill-'))
+    try {
+      const skillDir = path.join(cwd, 'skills', 'chatroom-default-skill')
+      fs.mkdirSync(skillDir, { recursive: true })
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `---
+name: chatroom-default-skill
+description: Local chatroom skill.
+---
+# Chatroom Default Skill
+
+Prefer this chatroom workflow when it fits.
+`)
+
+      const prompt = buildAgentSystemPromptForChatroom(makeAgents().default, cwd)
+      assert.match(prompt, /discoverable by default/i)
+      assert.match(prompt, /chatroom-default-skill/i)
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true })
+    }
   })
 })

@@ -1,4 +1,5 @@
 import type { Agent, IdentityContinuityState, Session } from '@/types'
+import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 
 function normalizeText(value: unknown, maxChars: number): string | null {
   if (typeof value !== 'string') return null
@@ -49,11 +50,12 @@ function fallbackSelfSummary(agent?: Partial<Agent> | null): string | null {
 }
 
 function fallbackPersonaLabel(session?: Partial<Session> | null, agent?: Partial<Agent> | null): string | null {
-  const threadPersona = normalizeText(session?.connectorContext?.threadPersonaLabel, 120)
+  const connectorContext = isDirectConnectorSession(session) ? session?.connectorContext : null
+  const threadPersona = normalizeText(connectorContext?.threadPersonaLabel, 120)
   if (threadPersona) return threadPersona
-  const threadTitle = normalizeText(session?.connectorContext?.threadTitle, 120)
+  const threadTitle = normalizeText(connectorContext?.threadTitle, 120)
   if (threadTitle) return threadTitle
-  const threadId = normalizeText(session?.connectorContext?.threadId, 80)
+  const threadId = normalizeText(connectorContext?.threadId, 80)
   if (threadId) return `${agent?.name || 'Agent'} thread ${threadId}`
   const sessionName = normalizeText(session?.name, 120)
   if (sessionName && !/^new chat$/i.test(sessionName)) return sessionName
@@ -61,7 +63,9 @@ function fallbackPersonaLabel(session?: Partial<Session> | null, agent?: Partial
 }
 
 function fallbackRelationshipSummary(session?: Partial<Session> | null): string | null {
-  const sender = normalizeText(session?.connectorContext?.senderName, 80)
+  const sender = isDirectConnectorSession(session)
+    ? normalizeText(session?.connectorContext?.senderName, 80)
+    : null
   if (sender) return `Ongoing conversation with ${sender}.`
   const user = normalizeText(session?.user, 80)
   if (user && user !== 'user') return `Ongoing conversation with ${user}.`

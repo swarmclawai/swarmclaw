@@ -279,6 +279,8 @@ describe('task-followups', () => {
       const sessions = {
         'sess-1': {
           id: 'sess-1',
+          name: 'connector:slack:dm',
+          user: 'connector',
           connectorContext: {
             connectorId: 'conn-1',
             channelId: 'ch-ctx',
@@ -468,6 +470,128 @@ describe('task-followups', () => {
       })
 
       assert.equal(targets.length, 0)
+    })
+  })
+
+  describe('taskAlreadyDeliveredToConnectorTarget', () => {
+    it('returns true when the task session already delivered to the same connector target', () => {
+      const task = {
+        id: 'task-delivered',
+        title: 'Delivered task',
+        description: '',
+        agentId: 'agent-1',
+        sessionId: 'task-session',
+        status: 'completed' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      const sessions = {
+        'task-session': {
+          id: 'task-session',
+          messages: [
+            {
+              role: 'assistant',
+              text: 'Sent it.',
+              toolEvents: [
+                {
+                  name: 'connector_message_tool',
+                  input: '{}',
+                  output: JSON.stringify({
+                    status: 'voice_sent',
+                    connectorId: 'conn-wa',
+                    to: '447700900111@s.whatsapp.net',
+                    messageId: 'msg-1',
+                  }),
+                },
+              ],
+            },
+          ],
+        },
+      }
+      const connectors = {
+        'conn-wa': {
+          id: 'conn-wa',
+          name: 'WA',
+          platform: 'whatsapp' as const,
+          agentId: 'agent-1',
+          config: {},
+          enabled: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      }
+
+      const delivered = mod.taskAlreadyDeliveredToConnectorTarget({
+        task: task as import('@/types').BoardTask,
+        target: {
+          connectorId: 'conn-wa',
+          channelId: '+44 7700 900111',
+        },
+        sessions: sessions as Record<string, import('@/lib/server/tasks/task-followups').SessionLike>,
+        connectors: connectors as Record<string, import('@/types').Connector>,
+      })
+
+      assert.equal(delivered, true)
+    })
+
+    it('returns false when connector delivery was to a different target', () => {
+      const task = {
+        id: 'task-other-target',
+        title: 'Other target',
+        description: '',
+        agentId: 'agent-1',
+        sessionId: 'task-session',
+        status: 'completed' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      const sessions = {
+        'task-session': {
+          id: 'task-session',
+          messages: [
+            {
+              role: 'assistant',
+              text: 'Sent it.',
+              toolEvents: [
+                {
+                  name: 'connector_message_tool',
+                  input: '{}',
+                  output: JSON.stringify({
+                    status: 'sent',
+                    connectorId: 'conn-wa',
+                    to: '447700900222@s.whatsapp.net',
+                    messageId: 'msg-2',
+                  }),
+                },
+              ],
+            },
+          ],
+        },
+      }
+      const connectors = {
+        'conn-wa': {
+          id: 'conn-wa',
+          name: 'WA',
+          platform: 'whatsapp' as const,
+          agentId: 'agent-1',
+          config: {},
+          enabled: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      }
+
+      const delivered = mod.taskAlreadyDeliveredToConnectorTarget({
+        task: task as import('@/types').BoardTask,
+        target: {
+          connectorId: 'conn-wa',
+          channelId: '+44 7700 900111',
+        },
+        sessions: sessions as Record<string, import('@/lib/server/tasks/task-followups').SessionLike>,
+        connectors: connectors as Record<string, import('@/types').Connector>,
+      })
+
+      assert.equal(delivered, false)
     })
   })
 

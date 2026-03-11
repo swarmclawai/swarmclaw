@@ -44,6 +44,15 @@ export interface MainLoopState {
   followupChainCount: number
   metaMissCount: number
   workingMemoryNotes: string[]
+  skillBlocker: {
+    summary: string
+    query: string | null
+    status: 'new' | 'searched' | 'recommended' | 'approval_requested' | 'installed'
+    attempts: number
+    candidateSkills: string[]
+    approvalId: string | null
+    updatedAt: number
+  } | null
   lastMemoryNoteAt: number | null
   lastPlannedAt: number | null
   lastReviewedAt: number | null
@@ -139,6 +148,7 @@ function defaultState(): MainLoopState {
     followupChainCount: 0,
     metaMissCount: 0,
     workingMemoryNotes: [],
+    skillBlocker: null,
     lastMemoryNoteAt: null,
     lastPlannedAt: null,
     lastReviewedAt: null,
@@ -220,6 +230,42 @@ function normalizeTimeline(value: unknown): MainLoopState['timeline'] {
   return out
 }
 
+function normalizeSkillBlocker(value: unknown): MainLoopState['skillBlocker'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  const summary = cleanText(record.summary, 240)
+  if (!summary) return null
+  const status = record.status === 'new'
+    || record.status === 'searched'
+    || record.status === 'recommended'
+    || record.status === 'approval_requested'
+    || record.status === 'installed'
+    ? record.status
+    : 'new'
+  const query = cleanText(record.query, 240)
+  const candidateSkills = Array.isArray(record.candidateSkills)
+    ? uniqueStrings(record.candidateSkills.filter((entry): entry is string => typeof entry === 'string'), 6)
+    : []
+  const approvalId = typeof record.approvalId === 'string' && record.approvalId.trim()
+    ? record.approvalId.trim()
+    : null
+  const updatedAt = typeof record.updatedAt === 'number' && Number.isFinite(record.updatedAt)
+    ? Math.trunc(record.updatedAt)
+    : now()
+  const attempts = typeof record.attempts === 'number' && Number.isFinite(record.attempts)
+    ? Math.max(0, Math.min(6, Math.trunc(record.attempts)))
+    : 0
+  return {
+    summary,
+    query,
+    status,
+    attempts,
+    candidateSkills,
+    approvalId,
+    updatedAt,
+  }
+}
+
 function parseHeartbeatMeta(text: string): { goal?: string; status?: MainLoopState['status']; summary?: string; nextAction?: string } | null {
   const match = (text || '').match(HEARTBEAT_META_RE)
   if (!match) return null
@@ -257,6 +303,7 @@ function clampState(state: MainLoopState): MainLoopState {
   state.metaMissCount = Math.max(0, Math.min(100, Math.trunc(state.metaMissCount || 0)))
   state.missionTokens = Math.max(0, Math.trunc(state.missionTokens || 0))
   state.missionCostUsd = Math.max(0, Number.isFinite(state.missionCostUsd) ? Number(state.missionCostUsd) : 0)
+  state.skillBlocker = normalizeSkillBlocker(state.skillBlocker)
   state.updatedAt = typeof state.updatedAt === 'number' && Number.isFinite(state.updatedAt) ? Math.trunc(state.updatedAt) : now()
   return state
 }
@@ -286,6 +333,7 @@ function normalizeState(input?: Partial<MainLoopState> | null): MainLoopState {
     if (typeof input.followupChainCount === 'number') next.followupChainCount = input.followupChainCount
     if (typeof input.metaMissCount === 'number') next.metaMissCount = input.metaMissCount
     if (Array.isArray(input.workingMemoryNotes)) next.workingMemoryNotes = [...input.workingMemoryNotes]
+    if (input.skillBlocker === null || typeof input.skillBlocker === 'object') next.skillBlocker = input.skillBlocker
     if (typeof input.lastMemoryNoteAt === 'number' || input.lastMemoryNoteAt === null) next.lastMemoryNoteAt = input.lastMemoryNoteAt ?? null
     if (typeof input.lastPlannedAt === 'number' || input.lastPlannedAt === null) next.lastPlannedAt = input.lastPlannedAt ?? null
     if (typeof input.lastReviewedAt === 'number' || input.lastReviewedAt === null) next.lastReviewedAt = input.lastReviewedAt ?? null
@@ -404,6 +452,198 @@ function formatGoalContract(goalContract: GoalContract | null): string {
   return lines.join('\n')
 }
 
+function parseJsonRecord(value: string | undefined): Record<string, unknown> | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const parsed = JSON.parse(value)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    // ignore non-JSON outputs
+  }
+  return null
+}
+
+function summarizeSelectedSkillRuntime(session: MainSessionLike | null): string {
+  const runtimeState = session?.skillRuntimeState
+  if (!runtimeState || typeof runtimeState !== 'object') return ''
+  const state = runtimeState as Record<string, unknown>
+  const selectedSkillName = cleanText(state.selectedSkillName, 160)
+  if (!selectedSkillName) return ''
+  const lines = [`Selected skill: ${selectedSkillName}`]
+  const lastAction = typeof state.lastAction === 'string' ? state.lastAction.trim() : ''
+  const lastRunToolName = cleanText(state.lastRunToolName, 120)
+  if (lastAction) lines.push(`Last skill action: ${lastAction}`)
+  if (lastRunToolName) lines.push(`Last dispatched tool: ${lastRunToolName}`)
+  return lines.join('\n')
+}
+
+function summarizeUseSkillToolEvent(toolEvents: MessageToolEvent[]): string | null {
+  const event = [...toolEvents].reverse().find((entry) => entry.name === 'use_skill')
+  if (!event?.output) return null
+  const output = parseJsonRecord(event.output)
+  if (!output) return null
+  const skill = output.skill && typeof output.skill === 'object'
+    ? output.skill as Record<string, unknown>
+    : null
+  const skillName = typeof skill?.name === 'string' && skill.name.trim()
+    ? skill.name.trim()
+    : typeof output.selectedSkillName === 'string' && output.selectedSkillName.trim()
+      ? output.selectedSkillName.trim()
+      : ''
+  if (!skillName) return null
+  if (output.executed === true) {
+    const toolName = typeof output.dispatchedTool === 'string' ? output.dispatchedTool.trim() : ''
+    return toolName ? `Skill run: ${skillName} via ${toolName}` : `Skill run: ${skillName}`
+  }
+  if (output.loaded === true) return `Loaded skill guidance: ${skillName}`
+  if (output.selected === true) return `Selected skill: ${skillName}`
+  return `Skill context: ${skillName}`
+}
+
+function firstMatchingLine(text: string, pattern: RegExp): string | null {
+  for (const line of (text || '').split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed && pattern.test(trimmed)) return trimmed
+  }
+  return null
+}
+
+function deriveSkillBlockerFromToolEvents(params: {
+  toolEvents: MessageToolEvent[]
+  current: MainLoopState['skillBlocker']
+  query: string | null
+}): MainLoopState['skillBlocker'] {
+  const event = [...params.toolEvents].reverse().find((entry) => entry.name === 'manage_skills')
+  if (!event) return params.current
+  const input = parseJsonRecord(event.input)
+  const output = parseJsonRecord(event.output)
+  const action = typeof input?.action === 'string' ? input.action.trim().toLowerCase() : ''
+  const nowTs = now()
+
+  const candidateNames = (() => {
+    const local = Array.isArray(output?.local)
+      ? output?.local
+      : Array.isArray(output)
+        ? output
+        : []
+    return uniqueStrings(local.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return []
+      const record = entry as Record<string, unknown>
+      const nestedSkill = record.skill && typeof record.skill === 'object' ? record.skill as Record<string, unknown> : null
+      const name = typeof record.skillName === 'string'
+        ? record.skillName
+        : typeof record.name === 'string'
+          ? record.name
+          : typeof nestedSkill?.name === 'string'
+            ? nestedSkill.name
+            : ''
+      return name ? [name] : []
+    }), 4)
+  })()
+
+  const installSkillName = (() => {
+    if (typeof output?.skillName === 'string' && output.skillName.trim()) return output.skillName.trim()
+    if (output?.skill && typeof output.skill === 'object') {
+      const nested = output.skill as Record<string, unknown>
+      if (typeof nested.name === 'string' && nested.name.trim()) return nested.name.trim()
+    }
+    if (typeof input?.name === 'string' && input.name.trim()) return input.name.trim()
+    return candidateNames[0] || null
+  })()
+
+  if (action === 'install') {
+    if (output?.ok === true && output.installed === true) {
+      return normalizeSkillBlocker({
+        summary: installSkillName
+          ? `Installed skill "${installSkillName}". Use it on the next step instead of re-discovering skills.`
+          : 'Installed a skill for this blocker. Use it before re-running discovery.',
+        query: params.query,
+        status: 'installed',
+        attempts: (params.current?.attempts || 0) + 1,
+        candidateSkills: installSkillName ? [installSkillName] : candidateNames,
+        approvalId: null,
+        updatedAt: nowTs,
+      })
+    }
+    const approval = output?.approval && typeof output.approval === 'object'
+      ? output.approval as Record<string, unknown>
+      : null
+    const approvalId = typeof approval?.id === 'string' ? approval.id.trim() : ''
+    if (output?.requiresApproval === true || approvalId) {
+      return normalizeSkillBlocker({
+        summary: installSkillName
+          ? `Install approval is pending for skill "${installSkillName}". Wait for the approval instead of retrying discovery.`
+          : 'A skill install approval is pending. Wait for the approval instead of retrying discovery.',
+        query: params.query,
+        status: 'approval_requested',
+        attempts: (params.current?.attempts || 0) + 1,
+        candidateSkills: installSkillName ? [installSkillName] : candidateNames,
+        approvalId: approvalId || params.current?.approvalId || null,
+        updatedAt: nowTs,
+      })
+    }
+  }
+
+  if (action === 'recommend_for_task' || action === 'status' || action === 'search_available') {
+    return normalizeSkillBlocker({
+      summary: candidateNames.length > 0
+        ? `Skill candidates found: ${candidateNames.join(', ')}. Use one of them or request install approval once if needed.`
+        : 'Checked local skills for this blocker. Avoid repeating the same discovery loop without a materially different query.',
+      query: params.query,
+      status: candidateNames.length > 0 ? 'recommended' : 'searched',
+      attempts: (params.current?.attempts || 0) + 1,
+      candidateSkills: candidateNames,
+      approvalId: params.current?.approvalId || null,
+      updatedAt: nowTs,
+    })
+  }
+
+  return params.current
+}
+
+function deriveSkillBlockerFromText(params: {
+  text: string
+  current: MainLoopState['skillBlocker']
+  query: string | null
+}): MainLoopState['skillBlocker'] {
+  const blockerLine = firstMatchingLine(
+    params.text,
+    /\b(missing capability|missing (?:binary|binaries|env|tool|command)|not installed|install required|requires .* cli|requires .* binary)\b/i,
+  )
+  if (!blockerLine) return params.current
+  return normalizeSkillBlocker({
+    summary: blockerLine,
+    query: params.query,
+    status: params.current?.status === 'approval_requested' ? 'approval_requested' : 'new',
+    attempts: params.current?.attempts || 0,
+    candidateSkills: params.current?.candidateSkills || [],
+    approvalId: params.current?.approvalId || null,
+    updatedAt: now(),
+  })
+}
+
+function summarizeSkillBlocker(blocker: MainLoopState['skillBlocker']): string {
+  if (!blocker) return ''
+  const lines = [
+    `Summary: ${blocker.summary}`,
+    blocker.query ? `Current query: ${blocker.query}` : '',
+    blocker.candidateSkills.length > 0 ? `Candidate skills: ${blocker.candidateSkills.join(', ')}` : '',
+    blocker.approvalId ? `Pending approval: ${blocker.approvalId}` : '',
+    blocker.status === 'new'
+      ? 'Next action: use manage_skills once this turn to recommend or inspect a fitting skill for the blocker.'
+      : blocker.status === 'searched'
+        ? 'Next action: do not repeat the same discovery blindly. Either adjust the query materially or proceed with the explicit blocker.'
+        : blocker.status === 'recommended'
+          ? 'Next action: use one recommended skill now, or request one explicit install approval if the best fit is not yet installed.'
+          : blocker.status === 'approval_requested'
+            ? 'Next action: wait for the pending approval instead of repeating discovery or install requests.'
+            : 'Next action: use the installed skill before re-running generic exploration.',
+  ]
+  return lines.filter(Boolean).join('\n')
+}
+
 function extractWaitSignal(text: string, toolEvents: MessageToolEvent[]): boolean {
   const haystack = `${text}\n${toolEvents.map((event) => `${event.name} ${event.input || ''} ${event.output || ''}`).join('\n')}`
   return /\b(wait for|waiting for|approval|human reply|mailbox|watch job|pending approval)\b/i.test(haystack)
@@ -473,6 +713,8 @@ export function buildMainLoopHeartbeatPrompt(session: unknown, fallbackPrompt: s
     state.currentPlanStep ? `Current plan step: ${state.currentPlanStep}` : '',
     planLines ? `Plan:\n${planLines}` : '',
     state.pendingEvents.length > 0 ? `Pending external events:\n${summarizePendingEvents(state.pendingEvents)}` : '',
+    state.skillBlocker ? `Active skill blocker:\n${summarizeSkillBlocker(state.skillBlocker)}` : '',
+    summarizeSelectedSkillRuntime(candidate),
     boundedSummary ? `Latest summary:\n${boundedSummary}` : '',
     boundedFallbackPrompt ? `Base heartbeat instructions:\n${boundedFallbackPrompt}` : '',
     '',
@@ -627,7 +869,24 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   const cleanedResult = persistedText.trim()
   const waitingForExternal = extractWaitSignal(resultText, toolEvents)
   const gotTerminalAck = /^HEARTBEAT_OK$/i.test(cleanedResult) || /^NO_MESSAGE$/i.test(cleanedResult)
+  const selectedSkillNote = summarizeUseSkillToolEvent(toolEvents)
+  if (selectedSkillNote) appendWorkingMemory(state, selectedSkillNote)
   state.metaMissCount = heartbeat || plan || review || gotTerminalAck ? 0 : state.metaMissCount + 1
+  const skillQuery = cleanText(state.nextAction || input.message || state.goal, 240)
+  let skillBlocker = deriveSkillBlockerFromToolEvents({
+    toolEvents,
+    current: state.skillBlocker,
+    query: skillQuery,
+  })
+  skillBlocker = deriveSkillBlockerFromText({
+    text: `${resultText}\n${toolEvents.map((event) => event.output || '').join('\n')}`,
+    current: skillBlocker,
+    query: skillQuery,
+  })
+  if ((gotTerminalAck && state.status !== 'blocked') || (state.status === 'ok' && !waitingForExternal && !input.error)) {
+    skillBlocker = null
+  }
+  state.skillBlocker = skillBlocker
 
   if (input.internal) {
     state.pendingEvents = []

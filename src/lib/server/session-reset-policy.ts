@@ -1,4 +1,5 @@
 import type { Agent, AppSettings, Session, SessionResetMode, SessionResetType } from '@/types'
+import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 
 export interface ResolvedSessionResetPolicy {
   type: SessionResetType
@@ -140,9 +141,10 @@ export function inferSessionResetType(
   opts?: { isGroup?: boolean | null; threadId?: string | null },
 ): SessionResetType {
   if ((session?.sessionType as string | undefined) === 'orchestrated') return 'main'
-  const threadId = opts?.threadId ?? session?.connectorContext?.threadId ?? null
+  const connectorContext = isDirectConnectorSession(session) ? session?.connectorContext : null
+  const threadId = opts?.threadId ?? connectorContext?.threadId ?? null
   if (threadId) return 'thread'
-  const isGroup = opts?.isGroup ?? session?.connectorContext?.isGroup ?? false
+  const isGroup = opts?.isGroup ?? connectorContext?.isGroup ?? false
   return isGroup ? 'group' : 'direct'
 }
 
