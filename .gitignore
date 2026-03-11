@@ -64,6 +64,10 @@ next-env.d.ts
 todo.html
 IMPROVEMENTS.md
 /agent-harness.md
+/fix-*.js
+/rewrite-*.js
+/split-*.js
+/summarize-*.js
 
 # local scratch dir accidentally created by tooling
 /~/
