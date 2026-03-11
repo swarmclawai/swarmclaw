@@ -1,14 +1,11 @@
 import type { MessageToolEvent } from '@/types'
 import { canonicalizePluginId } from '@/lib/server/tool-aliases'
 import { extractSuggestions } from '@/lib/server/suggestions'
-import { isDirectMemoryWriteRequest } from '@/lib/server/memory/memory-policy'
 import {
-  isBroadGoal,
   looksLikeExternalWalletTask,
-  looksLikeOpenEndedDeliverableTask,
 } from '@/lib/server/chat-execution/stream-continuation'
 
-const EXPLICIT_ARTIFACT_OUTPUT_RE = /\b(?:save|write|output|export)\b[^.!?\n]{0,80}\b(?:to|as|at|in)\b[^.!?\n]{0,60}(\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|~\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|\.\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|[a-z0-9._/-]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)\b)/i
+const EXPLICIT_ARTIFACT_OUTPUT_RE = /\b(?:save|write|output|export|create|generate)\b[^.!?\n]{0,80}\b(?:to|as|at|in)\b[^.!?\n]{0,60}(\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|~\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|\.\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|[a-z0-9._/-]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)\b)/i
 
 export function isLikelyToolErrorOutput(output: string): boolean {
   const trimmed = String(output || '').trim()
@@ -168,37 +165,3 @@ export function compactThreadRecallText(text: string, maxChars = 180): string {
   return compact.length > maxChars ? `${compact.slice(0, maxChars - 3)}...` : compact
 }
 
-const DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE = /\b(?:then|and then|after that)?\s*(?:confirm|recap|repeat|summarize|tell me|say)\b[\s\S]{0,120}\b(?:stored|saved|updated|remembered|wrote|write)\b/i
-const DIRECT_MEMORY_WRITE_EXTRA_ACTION_RE = /\b(?:then|and then|after that|also)\b[\s\S]{0,160}\b(?:write|create|send|email|message|delegate|research|search|browse|open|edit|build|schedule|plan|review|analy[sz]e)\b/i
-
-export function isNarrowDirectMemoryWriteTurn(message: string): boolean {
-  const trimmed = String(message || '').trim()
-  if (!trimmed || !isDirectMemoryWriteRequest(trimmed)) return false
-  if (looksLikeOpenEndedDeliverableTask(trimmed)) return false
-  if (DIRECT_MEMORY_WRITE_EXTRA_ACTION_RE.test(trimmed) && !DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE.test(trimmed)) {
-    return false
-  }
-  return !isBroadGoal(trimmed) || DIRECT_MEMORY_WRITE_CONFIRMATION_ONLY_RE.test(trimmed) || !/[?]$/.test(trimmed)
-}
-
-const CURRENT_THREAD_RECALL_BLOCKED_TOOL_IDS = new Set([
-  'memory',
-  'manage_sessions',
-  'web',
-  'context_mgmt',
-])
-
-export function shouldAllowToolForCurrentThreadRecall(toolName: string): boolean {
-  const canonicalToolName = canonicalizePluginId(toolName) || toolName.trim().toLowerCase()
-  return !CURRENT_THREAD_RECALL_BLOCKED_TOOL_IDS.has(canonicalToolName)
-}
-
-const DIRECT_MEMORY_WRITE_ALLOWED_TOOL_IDS = new Set([
-  'memory_store',
-  'memory_update',
-])
-
-export function shouldAllowToolForDirectMemoryWrite(toolName: string): boolean {
-  const rawToolName = toolName.trim().toLowerCase()
-  return DIRECT_MEMORY_WRITE_ALLOWED_TOOL_IDS.has(rawToolName)
-}

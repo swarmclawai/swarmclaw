@@ -931,13 +931,13 @@ const DelegatePlugin: Plugin = {
   name: 'Core Delegate',
   description: 'Delegate complex multi-file tasks to specialized CLI backends or other agents.',
   hooks: {
-    getCapabilityDescription: () => 'I can hand off deep coding work to Claude Code, Codex, or Gemini CLI (`delegate`) for complex multi-file refactors and code generation. Resume IDs may come back via `[delegate_meta]`.',
-    getOperatingGuidance: () => ['CRITICAL: `execute_command` (not delegation) for running servers, installs, scripts. Delegation sessions end and kill processes.', 'Delegate only for deep multi-file code work: refactors, debugging, generation, test suites.'],
+    getCapabilityDescription: () => 'I can hand off coding work to Claude Code, Codex, OpenCode, or Gemini CLI (`delegate`) for file creation, refactoring, debugging, code generation, and multi-file edits. Resume IDs may come back via `[delegate_meta]`.',
+    getOperatingGuidance: () => ['CRITICAL: `execute_command` (not delegation) for running servers, installs, scripts. Delegation sessions end and kill processes.', 'Delegate for code tasks: writing/creating files, refactors, debugging, generation, test suites, data exports to files.'],
   } as PluginHooks,
   tools: [
     {
       name: 'delegate',
-      description: 'Delegate to a specialized backend (Claude, Codex, OpenCode, Gemini). Supports background jobs with action=status|list|wait|cancel.',
+      description: 'Delegate to a specialized backend (Claude, Codex, OpenCode, Gemini) for code tasks: writing files, refactoring, debugging, code generation, and multi-file edits. Supports background jobs with action=status|list|wait|cancel.',
       parameters: {
         type: 'object',
         properties: {

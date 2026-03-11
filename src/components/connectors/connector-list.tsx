@@ -14,6 +14,7 @@ import {
   resolveConnectorPlatformMeta,
 } from '@/components/shared/connector-platform-icon'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { PageLoader } from '@/components/ui/page-loader'
 import { StatusDot } from '@/components/ui/status-dot'
 
 function relativeTime(ts: number): string {
@@ -158,11 +159,7 @@ export function ConnectorList({ inSidebar }: { inSidebar?: boolean }) {
   }
 
   if (!loaded) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 text-center">
-        <p className="text-[13px] text-text-3">Loading connectors...</p>
-      </div>
-    )
+    return <PageLoader label="Loading connectors..." />
   }
 
   if (!list.length) {

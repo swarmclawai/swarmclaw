@@ -15,6 +15,8 @@ export interface RuntimeSettings {
   shellCommandTimeoutMs: number
   claudeCodeTimeoutMs: number
   cliProcessTimeoutMs: number
+  streamIdleStallMs: number
+  requiredToolKickoffMs: number
 }
 
 export function loadRuntimeSettings(): RuntimeSettings {
@@ -32,6 +34,8 @@ export function loadRuntimeSettings(): RuntimeSettings {
     shellCommandTimeoutMs: normalized.shellCommandTimeoutSec * 1000,
     claudeCodeTimeoutMs: normalized.claudeCodeTimeoutSec * 1000,
     cliProcessTimeoutMs: normalized.cliProcessTimeoutSec * 1000,
+    streamIdleStallMs: normalized.streamIdleStallSec * 1000,
+    requiredToolKickoffMs: normalized.requiredToolKickoffSec * 1000,
   }
 }
 

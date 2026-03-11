@@ -130,35 +130,6 @@ export function FullScreenLoader(props: {
         </div>
       ) : null}
 
-      {/* Loading animation keyframes */}
-      <style>{`
-        @keyframes sc-orbit {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        @keyframes sc-ring {
-          from { transform: rotate(0deg) scale(1); }
-          50% { transform: rotate(180deg) scale(1.02); }
-          to { transform: rotate(360deg) scale(1); }
-        }
-        @keyframes sc-breathe {
-          0%, 100% { transform: scale(1); opacity: 0.9; }
-          50% { transform: scale(1.06); opacity: 1; }
-        }
-        @keyframes sc-glow {
-          0%, 100% { opacity: 0.5; transform: scale(0.9); }
-          50% { opacity: 1; transform: scale(1.1); }
-        }
-        @keyframes sc-text-fade {
-          0% { opacity: 0.6; }
-          100% { opacity: 1; }
-        }
-        @keyframes sc-progress {
-          0% { width: 0; margin-left: 0; }
-          50% { width: 70%; margin-left: 15%; }
-          100% { width: 0; margin-left: 100%; }
-        }
-      `}</style>
     </div>
   )
 }

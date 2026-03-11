@@ -146,6 +146,7 @@ export interface HeartbeatConfig {
   showOk: boolean
   showAlerts: boolean
   target: string | null
+  lightContext: boolean
 }
 
 interface HeartbeatFileSession {
@@ -345,6 +346,7 @@ export function heartbeatConfigForSession(session: any, settings: Record<string,
   let showOk = resolveBool(settings, 'heartbeatShowOk', DEFAULT_HEARTBEAT_SHOW_OK)
   let showAlerts = resolveBool(settings, 'heartbeatShowAlerts', DEFAULT_HEARTBEAT_SHOW_ALERTS)
   let target: string | null = resolveStr(settings, 'heartbeatTarget', null)
+  let lightContext = resolveBool(settings, 'heartbeatLightContext', false)
 
   // Agent layer overrides
   if (session.agentId) {
@@ -361,6 +363,7 @@ export function heartbeatConfigForSession(session: any, settings: Record<string,
       showOk = resolveBool(agent, 'heartbeatShowOk', showOk)
       showAlerts = resolveBool(agent, 'heartbeatShowAlerts', showAlerts)
       target = resolveStr(agent, 'heartbeatTarget', target)
+      lightContext = resolveBool(agent, 'heartbeatLightContext', lightContext)
     }
   }
 
@@ -373,7 +376,7 @@ export function heartbeatConfigForSession(session: any, settings: Record<string,
   }
   target = resolveStr(session, 'heartbeatTarget', target)
 
-  return { enabled: enabled && intervalSec > 0, intervalSec, prompt, model, ackMaxChars, showOk, showAlerts, target }
+  return { enabled: enabled && intervalSec > 0, intervalSec, prompt, model, ackMaxChars, showOk, showAlerts, target, lightContext }
 }
 
 function lastUserMessageAt(session: any): number {
@@ -560,6 +563,7 @@ async function tickHeartbeats() {
         showOk: cfg.showOk,
         showAlerts: cfg.showAlerts,
         target: cfg.target,
+        lightContext: cfg.lightContext,
       },
     })
 

@@ -5,6 +5,7 @@ import { api } from '@/lib/app/api-client'
 import { useWs } from '@/hooks/use-ws'
 import { useAppStore } from '@/stores/use-app-store'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
+import { PageLoader } from '@/components/ui/page-loader'
 import { safeStorageGetJson, safeStorageSet } from '@/lib/app/safe-storage'
 
 interface LogEntry {
@@ -135,11 +136,7 @@ export function LogList() {
   }
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-text-3 text-[13px]">
-        Loading logs...
-      </div>
-    )
+    return <PageLoader label="Loading logs..." />
   }
 
   const agentList = Object.values(agents)

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-10T22:00:45.306Z",
-  "totalIssues": 527,
-  "uniqueIssues": 185,
+  "generatedAt": "2026-03-11T19:16:24.055Z",
+  "totalIssues": 507,
+  "uniqueIssues": 174,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -10,55 +10,6 @@
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
       "count": 4
-    },
-    {
-      "filePath": "fix-crud.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 1
-    },
-    {
-      "filePath": "fix-kdb-2.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 1
-    },
-    {
-      "filePath": "fix-memory-test.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 1
-    },
-    {
-      "filePath": "rewrite-execution.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 1
-    },
-    {
-      "filePath": "rewrite-layout.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 1
-    },
-    {
-      "filePath": "split-agent-sheet.js",
-      "ruleId": "@typescript-eslint/no-unused-vars",
-      "severity": 1,
-      "message": "'fs' is assigned a value but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "split-agent-sheet.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 1
     },
     {
       "filePath": "src/app/api/chats/[id]/deploy/route.ts",
@@ -345,13 +296,6 @@
       "ruleId": "react-hooks/exhaustive-deps",
       "severity": 1,
       "message": "React Hook useEffect has a missing dependency: 'loadAgents'. Either include it or remove the dependency array.",
-      "count": 1
-    },
-    {
-      "filePath": "src/components/agents/inspector-panel.tsx",
-      "ruleId": "react-hooks/exhaustive-deps",
-      "severity": 1,
-      "message": "React Hook useEffect has missing dependencies: 'inspectorTab', 'setInspectorTab', and 'visibleTabs'. Either include them or remove the dependency array.",
       "count": 1
     },
     {
@@ -716,6 +660,13 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'ApprovalCategory' is defined but never used.",
+      "count": 1
+    },
+    {
+      "filePath": "src/lib/server/chat-execution/stream-agent-chat.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'iterationSucceeded' is assigned a value but never used.",
       "count": 1
     },
     {
@@ -1139,13 +1090,6 @@
       "count": 2
     },
     {
-      "filePath": "src/lib/server/session-tools/sandbox.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
-    },
-    {
       "filePath": "src/lib/server/session-tools/schedule.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
@@ -1188,13 +1132,6 @@
       "count": 1
     },
     {
-      "filePath": "src/lib/server/session-tools/web.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 7
-    },
-    {
       "filePath": "src/lib/server/skills/skill-prompt-budget.test.ts",
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
@@ -1213,7 +1150,7 @@
       "ruleId": "@typescript-eslint/no-explicit-any",
       "severity": 2,
       "message": "Unexpected any. Specify a different type.",
-      "count": 28
+      "count": 26
     },
     {
       "filePath": "src/lib/server/tasks/task-followups.ts",
@@ -1283,20 +1220,6 @@
       "ruleId": "@typescript-eslint/no-unused-vars",
       "severity": 1,
       "message": "'appSettings' is defined but never used.",
-      "count": 1
-    },
-    {
-      "filePath": "summarize-eval.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
-      "count": 1
-    },
-    {
-      "filePath": "summarize-manager.js",
-      "ruleId": "@typescript-eslint/no-require-imports",
-      "severity": 2,
-      "message": "A `require()` style import is forbidden.",
       "count": 1
     }
   ]

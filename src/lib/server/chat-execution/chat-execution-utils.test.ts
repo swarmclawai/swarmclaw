@@ -10,6 +10,7 @@ import {
   getToolEventsSnapshotKey,
   hasPersistableAssistantPayload,
   parseUsdLimit,
+  pruneOldHeartbeatMessages,
   shouldAutoRouteHeartbeatAlerts,
   shouldPersistInboundUserMessage,
   shouldReplaceRecentAssistantMessage,
@@ -476,5 +477,60 @@ describe('estimateConversationTone', () => {
 
   it('returns neutral for empty string', () => {
     assert.equal(estimateConversationTone(''), 'neutral')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// pruneOldHeartbeatMessages
+// ---------------------------------------------------------------------------
+describe('pruneOldHeartbeatMessages', () => {
+  it('removes old heartbeat messages keeping only the most recent 2', () => {
+    const messages: Message[] = [
+      { role: 'user', text: 'hi', time: 1 },
+      { role: 'assistant', text: 'alert 1', time: 2, kind: 'heartbeat' },
+      { role: 'assistant', text: 'alert 2', time: 3, kind: 'heartbeat' },
+      { role: 'assistant', text: 'real reply', time: 4, kind: 'chat' },
+      { role: 'assistant', text: 'alert 3', time: 5, kind: 'heartbeat' },
+      { role: 'assistant', text: 'alert 4', time: 6, kind: 'heartbeat' },
+    ]
+    const removed = pruneOldHeartbeatMessages(messages)
+    assert.equal(removed, 2)
+    assert.equal(messages.length, 4)
+    // Only the last 2 heartbeat messages remain
+    const heartbeats = messages.filter((m) => m.kind === 'heartbeat')
+    assert.equal(heartbeats.length, 2)
+    assert.equal(heartbeats[0].text, 'alert 3')
+    assert.equal(heartbeats[1].text, 'alert 4')
+  })
+
+  it('does not remove anything when count is at or below maxKeep', () => {
+    const messages: Message[] = [
+      { role: 'assistant', text: 'alert 1', time: 1, kind: 'heartbeat' },
+      { role: 'user', text: 'hi', time: 2 },
+      { role: 'assistant', text: 'alert 2', time: 3, kind: 'heartbeat' },
+    ]
+    assert.equal(pruneOldHeartbeatMessages(messages), 0)
+    assert.equal(messages.length, 3)
+  })
+
+  it('respects custom maxKeep value', () => {
+    const messages: Message[] = [
+      { role: 'assistant', text: 'hb1', time: 1, kind: 'heartbeat' },
+      { role: 'assistant', text: 'hb2', time: 2, kind: 'heartbeat' },
+      { role: 'assistant', text: 'hb3', time: 3, kind: 'heartbeat' },
+    ]
+    assert.equal(pruneOldHeartbeatMessages(messages, 1), 2)
+    assert.equal(messages.length, 1)
+    assert.equal(messages[0].text, 'hb3')
+  })
+
+  it('does not touch non-heartbeat messages', () => {
+    const messages: Message[] = [
+      { role: 'user', text: 'a', time: 1 },
+      { role: 'assistant', text: 'b', time: 2, kind: 'chat' },
+      { role: 'assistant', text: 'c', time: 3 },
+    ]
+    assert.equal(pruneOldHeartbeatMessages(messages), 0)
+    assert.equal(messages.length, 3)
   })
 })

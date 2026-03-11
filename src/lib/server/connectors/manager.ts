@@ -1534,7 +1534,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   const threadContextBlock = buildConnectorThreadContextBlock(msg, { isFirstThreadTurn: wasCreated })
   if (threadContextBlock) promptParts.push(threadContextBlock)
   // Add connector context
-  promptParts.push(`\nYou are receiving messages via ${msg.platform}. The user "${msg.senderName}" is messaging from channel "${msg.channelName || msg.channelId}". Respond naturally and conversationally.
+  promptParts.push(`\nYou are receiving messages via ${msg.platform}. The user "${msg.senderName}" (ID: ${msg.senderId}) is messaging from channel "${msg.channelName || msg.channelId}". Respond naturally and conversationally.
 
 ## Response Style
 Be action-first and autonomous: when the user gives an instruction, execute it instead of asking routine follow-up questions.

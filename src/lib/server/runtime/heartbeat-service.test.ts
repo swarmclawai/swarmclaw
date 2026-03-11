@@ -404,3 +404,49 @@ describe('buildAgentHeartbeatPrompt', () => {
     assert.ok(result.includes('Another active task'))
   })
 })
+
+// ── lightContext config ─────────────────────────────────────────────────
+
+describe('heartbeatConfigForSession lightContext', () => {
+  it('defaults to false when not set', () => {
+    const cfg = mod.heartbeatConfigForSession(
+      { id: 's1' },
+      { heartbeatIntervalSec: 60 },
+      {},
+    )
+    assert.equal(cfg.lightContext, false)
+  })
+
+  it('inherits from global settings', () => {
+    const cfg = mod.heartbeatConfigForSession(
+      { id: 's1' },
+      { heartbeatIntervalSec: 60, heartbeatLightContext: true },
+      {},
+    )
+    assert.equal(cfg.lightContext, true)
+  })
+
+  it('agent overrides global', () => {
+    const agents: Record<string, Record<string, unknown>> = {
+      'a1': { heartbeatLightContext: true },
+    }
+    const cfg = mod.heartbeatConfigForSession(
+      { id: 's1', agentId: 'a1' },
+      { heartbeatIntervalSec: 60, heartbeatLightContext: false },
+      agents,
+    )
+    assert.equal(cfg.lightContext, true)
+  })
+
+  it('agent false overrides global true', () => {
+    const agents: Record<string, Record<string, unknown>> = {
+      'a1': { heartbeatLightContext: false },
+    }
+    const cfg = mod.heartbeatConfigForSession(
+      { id: 's1', agentId: 'a1' },
+      { heartbeatIntervalSec: 60, heartbeatLightContext: true },
+      agents,
+    )
+    assert.equal(cfg.lightContext, false)
+  })
+})

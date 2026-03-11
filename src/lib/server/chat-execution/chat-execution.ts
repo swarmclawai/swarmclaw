@@ -48,6 +48,7 @@ import {
   getTodaySpendUsd,
   classifyHeartbeatResponse,
   estimateConversationTone,
+  pruneOldHeartbeatMessages,
 } from '@/lib/server/chat-execution/chat-execution-utils'
 import { runPostLlmToolRouting } from '@/lib/server/chat-execution/chat-turn-tool-routing'
 import {
@@ -129,7 +130,7 @@ export interface ExecuteChatTurnInput {
   signal?: AbortSignal
   onEvent?: (event: SSEEvent) => void
   modelOverride?: string
-  heartbeatConfig?: { ackMaxChars: number; showOk: boolean; showAlerts: boolean; target: string | null }
+  heartbeatConfig?: { ackMaxChars: number; showOk: boolean; showAlerts: boolean; target: string | null; lightContext?: boolean }
   replyToId?: string
 }
 
@@ -429,6 +430,29 @@ function syncSessionFromAgent(sessionId: string): void {
   }
 }
 
+/**
+ * Build a minimal system prompt for lightweight heartbeat context.
+ * Strips conversation history, skills, tool discipline, and workspace context.
+ * Keeps identity, datetime, and heartbeat guidance for correct routing.
+ */
+function buildLightHeartbeatSystemPrompt(session: Session): string | undefined {
+  if (!session.agentId) return undefined
+  const agents = loadAgents()
+  const agent = agents[session.agentId]
+  if (!agent) return undefined
+
+  const parts: string[] = []
+  parts.push(`## Identity\nName: ${agent.name}`)
+  if (agent.description) parts.push(`Description: ${agent.description}`)
+  parts.push(buildCurrentDateTimePromptContext())
+  if (agent.soul) parts.push(`## Soul\n${agent.soul.slice(0, 300)}`)
+  parts.push([
+    '## Heartbeats',
+    'You run on an autonomous heartbeat. If you receive a heartbeat poll and nothing needs attention, reply exactly: HEARTBEAT_OK',
+  ].join('\n'))
+  return parts.join('\n\n')
+}
+
 function buildAgentSystemPrompt(session: Session): string | undefined {
   if (!session.agentId) return undefined
   const agents = loadAgents()
@@ -601,6 +625,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   )
   const isHeartbeatRun = isInternalHeartbeatRun(internal, source)
   const isAutonomousInternalRun = internal && source !== 'chat'
+  const heartbeatLightContext = isHeartbeatRun && !!input.heartbeatConfig?.lightContext
   const isAutoRunNoHistory = isHeartbeatRun
   const heartbeatStatusOnly = false
   if (shouldApplySessionFreshnessReset(source)) {
@@ -803,7 +828,10 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   // including identity, soul, skills, tool discipline, and execution policy.
   // Only build the standalone system prompt for the direct-provider (no LangGraph) path
   // to avoid duplicating tool discipline, operating guidance, and capability sections.
-  const systemPrompt = hasPlugins ? undefined : buildAgentSystemPrompt(session)
+  // lightContext mode uses a minimal prompt for both paths to reduce token cost.
+  const systemPrompt = heartbeatLightContext
+    ? buildLightHeartbeatSystemPrompt(session)
+    : (hasPlugins ? undefined : buildAgentSystemPrompt(session))
   const toolEvents: MessageToolEvent[] = []
   const streamErrors: string[] = []
   const accumulatedUsage = { inputTokens: 0, outputTokens: 0, estimatedCost: 0 }
@@ -967,8 +995,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     // Heartbeat runs get a small tail of recent messages so the agent can see
     // prior findings and avoid repeating the same searches. Full history is
     // skipped to avoid blowing the context window on long-lived sessions.
+    // lightContext mode skips history entirely for maximum token savings.
     const heartbeatHistory = isAutoRunNoHistory
-      ? getSessionMessages(sessionId).slice(-6)
+      ? (heartbeatLightContext ? [] : getSessionMessages(sessionId).slice(-6))
       : undefined
 
     console.log(`[chat-execution] provider=${providerType}, hasPlugins=${hasPlugins}, localOpenClawNative=${useLocalOpenClawNativeRuntime}, imagePath=${resolvedImagePath || 'none'}, attachedFiles=${attachedFiles?.length || 0}, plugins=${enabledSessionPlugins.length}`)
@@ -988,7 +1017,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       fullResponse = result.finalResponse || result.fullText
     } else {
       const directHistorySnapshot = isAutoRunNoHistory
-        ? getSessionMessages(sessionId).slice(-6)
+        ? (heartbeatLightContext ? [] : getSessionMessages(sessionId).slice(-6))
         : applyContextClearBoundary(getSessionMessages(sessionId))
       responseCacheInput = {
         provider: providerType,
@@ -1186,6 +1215,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         && (Date.now() - prevSentAt) < 24 * 60 * 60 * 1000
       if (isDuplicate) {
         heartbeatClassification = 'suppress'
+        log.info('heartbeat', `Duplicate heartbeat suppressed for session ${sessionId} (same text within 24h)`)
       }
     }
   }
@@ -1330,6 +1360,15 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
     if (isHeartbeatRun && heartbeatClassification === 'suppress') {
       pruneSuppressedHeartbeatStreamMessage(current.messages)
+    }
+
+    // P1: Prune old heartbeat messages to prevent context bloat.
+    // Long-running agents accumulate ~48 no-op messages/day; keep only the most recent 2.
+    if (isHeartbeatRun) {
+      const pruned = pruneOldHeartbeatMessages(current.messages)
+      if (pruned > 0) {
+        log.info('heartbeat', `Pruned ${pruned} old heartbeat message(s) from session ${sessionId}`)
+      }
     }
 
     // Fire afterChatTurn hook for all enabled plugins (memory auto-save, logging, etc.)

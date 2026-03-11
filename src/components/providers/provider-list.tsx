@@ -8,6 +8,7 @@ import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/app/api-client'
 import type { Credential, GatewayProfile } from '@/types'
 import { dedup } from '@/lib/shared-utils'
+import { PageLoader } from '@/components/ui/page-loader'
 import { StatusDot } from '@/components/ui/status-dot'
 
 interface OpenClawDeployDraft {
@@ -254,11 +255,7 @@ export function ProviderList({ inSidebar }: { inSidebar?: boolean }) {
   }, {})
 
   if (!loaded) {
-    return (
-      <div className={`flex-1 flex items-center justify-center ${inSidebar ? 'px-3 pb-4' : 'px-5'}`}>
-        <p className="text-[13px] text-text-3">Loading providers...</p>
-      </div>
-    )
+    return <PageLoader label="Loading providers..." />
   }
 
   return (

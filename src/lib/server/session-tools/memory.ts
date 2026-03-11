@@ -28,6 +28,40 @@ import {
 /**
  * Advanced Database-Backed Memory logic.
  */
+
+/**
+ * Lightweight in-memory cache for per-agent memory lookups (pinned + recent).
+ * TTL-based with invalidation on any write operation.
+ */
+const MEMORY_CACHE_TTL_MS = 30_000
+interface AgentMemoryCache {
+  pinned: MemoryEntry[]
+  allRecent: MemoryEntry[]
+  cachedAt: number
+}
+const agentMemoryCache = new Map<string, AgentMemoryCache>()
+
+function getCachedAgentMemories(agentId: string): AgentMemoryCache | null {
+  const cached = agentMemoryCache.get(agentId)
+  if (!cached) return null
+  if (Date.now() - cached.cachedAt > MEMORY_CACHE_TTL_MS) {
+    agentMemoryCache.delete(agentId)
+    return null
+  }
+  return cached
+}
+
+function setCachedAgentMemories(agentId: string, pinned: MemoryEntry[], allRecent: MemoryEntry[]): void {
+  agentMemoryCache.set(agentId, { pinned, allRecent, cachedAt: Date.now() })
+}
+
+function invalidateAgentMemoryCache(agentId?: string | null): void {
+  if (agentId) {
+    agentMemoryCache.delete(agentId)
+  } else {
+    agentMemoryCache.clear()
+  }
+}
 type MemoryActionContext = Partial<Session> & {
   sessionId?: string | null
   memoryScopeMode?: string | null
@@ -445,7 +479,7 @@ export async function executeMemoryAction(input: unknown, ctx: MemoryActionConte
       ? valueText
       : fallbackValueText
     if (!storedValueText.trim()) {
-      return 'Memory store requires a non-empty value.'
+      return 'Error: memory_store requires a non-empty value and is only for remembering user facts/preferences. If you need to create a file, write code, or export data, use the `files` tool instead: files({action:"write", files:[{path:"path/to/file", content:"..."}]})'
     }
     let storedImage: MemoryImage | null = null
     if (imagePath && fs.existsSync(imagePath)) {
@@ -470,6 +504,7 @@ export async function executeMemoryAction(input: unknown, ctx: MemoryActionConte
       })
       if (updated) {
         supersedeCompetingMemories(updated.id, memoryTitle, storedValueText, related)
+        invalidateAgentMemoryCache(currentAgentId)
         return `Stored memory "${updated.title}" (id: ${updated.id}) in ${normalizedCategory} by updating the canonical entry. No further memory lookup is needed unless the user asked you to verify.`
       }
     }
@@ -487,6 +522,7 @@ export async function executeMemoryAction(input: unknown, ctx: MemoryActionConte
       pinned: pinned === true,
       sharedWith: Array.isArray(sharedWith) ? sharedWith : undefined,
     })
+    invalidateAgentMemoryCache(currentAgentId)
     return `Stored memory "${entry.title}" (id: ${entry.id}) in ${normalizedCategory}. No further memory lookup is needed unless the user asked you to verify.`
   }
 
@@ -525,6 +561,7 @@ export async function executeMemoryAction(input: unknown, ctx: MemoryActionConte
     const found = memDb.get(memoryId)
     if (!found || !canMutateMemory(found)) return 'Memory not found or access denied.'
     memDb.delete(memoryId)
+    invalidateAgentMemoryCache(currentAgentId)
     return `Deleted memory "${memoryId}"`
   }
 
@@ -561,6 +598,7 @@ export async function executeMemoryAction(input: unknown, ctx: MemoryActionConte
         pinned: pinned === true,
         sharedWith: Array.isArray(sharedWith) ? sharedWith : undefined,
       })
+      invalidateAgentMemoryCache(currentAgentId)
       return `Updated memory "${created.title}" (id: ${created.id}) by creating a new canonical entry. No further memory lookup is needed unless the user asked you to verify.`
     }
     const nextTitle = typeof n.title === 'string' && n.title.trim() ? n.title.trim() : found.title
@@ -581,6 +619,7 @@ export async function executeMemoryAction(input: unknown, ctx: MemoryActionConte
     const updated = memDb.update(found.id, updates)
     if (!updated) return `Memory not found: ${memoryId}`
     supersedeCompetingMemories(updated.id, nextTitle, nextContent, related)
+    invalidateAgentMemoryCache(currentAgentId)
     return `Updated memory "${updated.title}" (id: ${updated.id}). No further memory lookup is needed unless the user asked you to verify.`
   }
 
@@ -596,6 +635,7 @@ export async function executeMemoryAction(input: unknown, ctx: MemoryActionConte
       ? memDb.link(memoryId, ids, true)
       : memDb.unlink(memoryId, ids, true)
     if (!updated) return `Memory not found: ${memoryId}`
+    invalidateAgentMemoryCache(currentAgentId)
     return `${resolvedAction === 'link' ? 'Linked' : 'Unlinked'} ${ids.length} memories for "${updated.title}" (id: ${updated.id})`
   }
 
@@ -617,17 +657,13 @@ const MemoryPlugin: Plugin = {
     getAgentContext: async (ctx) => {
       const agentId = ctx.session.agentId
       if (!agentId) return null
-      if (!shouldInjectMemoryContext(ctx.message || '')) return null
+
+      // QMD scope: identity/* memories and contact resolution are private (DM/peer only).
+      // Group channels, threads, and shared "main" sessions don't see them.
+      const connCtx = ctx.session.connectorContext
+      const isPrivateContext = !connCtx || !connCtx.isGroup
 
       const memDb = getMemoryDb()
-      const memoryQuerySeed = [
-        ctx.message,
-        ...ctx.history
-          .slice(-4)
-          .filter((h) => h.role === 'user')
-          .map((h) => h.text),
-      ].join('\n')
-
       const seen = new Set<string>()
       const formatMemoryLine = (m: { category?: string; title?: string; content?: string; pinned?: boolean }) => {
         const category = String(m.category || 'note')
@@ -636,45 +672,140 @@ const MemoryPlugin: Plugin = {
         const pin = m.pinned ? ' [pinned]' : ''
         return `- [${category}]${pin} ${title}: ${snippet}`
       }
+      const dedup = (m: MemoryEntry): boolean => {
+        if (!m?.id || seen.has(m.id)) return false
+        if (shouldHideFromDurableRecall(m)) return false
+        seen.add(m.id)
+        return true
+      }
 
-      const pinned = memDb.listPinned(agentId, 5)
-      const pinnedLines = pinned
-        .filter((m) => {
-          if (!m?.id || seen.has(m.id)) return false
-          if (shouldHideFromDurableRecall(m)) return false
-          seen.add(m.id)
-          return true
-        })
-        .map(formatMemoryLine)
+      // --- Always-on: pinned + identity memories (bypass shouldInjectMemoryContext gate) ---
+      const cached = getCachedAgentMemories(agentId)
+      const pinned = cached?.pinned ?? memDb.listPinned(agentId, 5)
+      const allRecent = cached?.allRecent ?? memDb.list(agentId, 100)
+      if (!cached) setCachedAgentMemories(agentId, pinned, allRecent)
 
-      const relevantSlice = Math.max(2, 6 - pinnedLines.length)
-      const relevantLookup = memDb.searchWithLinked(memoryQuerySeed, agentId, 1, 10, 14)
-      const recent = memDb.list(agentId, 12).slice(0, 6)
-      const relevantByTier = partitionMemoriesByTier(relevantLookup.entries)
-      const recentByTier = partitionMemoriesByTier(recent)
+      const pinnedLines = pinned.filter(dedup).map(formatMemoryLine)
 
-      const relevantLines = relevantByTier.durable
-        .filter((m) => {
-          if (!m?.id || seen.has(m.id)) return false
-          if (shouldHideFromDurableRecall(m)) return false
-          seen.add(m.id)
-          return true
-        })
-        .slice(0, relevantSlice)
-        .map(formatMemoryLine)
+      // Fetch identity/* category memories — only in private (DM/peer) contexts
+      const identityMemories = isPrivateContext
+        ? allRecent.filter((m) => m.category?.startsWith('identity/') && dedup(m))
+        : []
+      const identityLines = identityMemories.map(formatMemoryLine)
 
-      const recentLines = recentByTier.durable
-        .filter((m) => {
-          if (!m?.id || seen.has(m.id)) return false
-          if (shouldHideFromDurableRecall(m)) return false
-          seen.add(m.id)
-          return true
-        })
-        .map(formatMemoryLine)
+      // --- Contact resolution for connector messages (private contexts only) ---
+      const lastUserMsg = [...ctx.history].reverse().find((m) => m.role === 'user')
+      const senderName = lastUserMsg?.source?.senderName || connCtx?.senderName || null
+
+      let contactBlock = ''
+      let resolvedContactName: string | null = null
+      if (isPrivateContext && connCtx) {
+        // Collect all possible identifiers for the sender (senderId, senderIdAlt, channelId, etc.)
+        const rawSenderIds = [
+          lastUserMsg?.source?.senderId,
+          connCtx.senderId,
+          connCtx.senderIdAlt,
+          connCtx.channelId,
+          connCtx.channelIdAlt,
+          ...(connCtx.allKnownPeerIds || []),
+        ].filter((v): v is string => typeof v === 'string' && v.length > 0)
+
+        // Normalize a phone string to bare trailing digits for suffix matching.
+        // Handles: "+44 76 2422 8104", "076 2422 8104", "447624228104@s.whatsapp.net", LIDs, etc.
+        // UK local numbers starting with 0 are converted to 44 prefix.
+        const toDigits = (raw: string): string => {
+          const stripped = raw.replace(/@.*$/, '').replace(/[^\d]/g, '')
+          if (stripped.startsWith('0') && stripped.length >= 10) return '44' + stripped.slice(1)
+          return stripped
+        }
+
+        // Build a set of digit-strings from the sender's identifiers
+        const senderDigits = new Set(
+          rawSenderIds
+            .map(toDigits)
+            .filter((d) => d.length >= 6),
+        )
+
+        if (senderDigits.size > 0 || senderName) {
+          const extractPhoneDigits = (text: string): string[] => {
+            const matches = text.match(/(?:\+?\d[\d\s\-().]{6,}\d)/g) || []
+            return matches.map(toDigits).filter((d) => d.length >= 6)
+          }
+
+          const contactHits = allRecent.filter((m) => {
+            if (m.category !== 'identity/contacts' && m.category !== 'identity/relationships') return false
+            const content = (m.content || '').toLowerCase()
+            const title = (m.title || '').toLowerCase()
+            for (const rawId of rawSenderIds) {
+              const rid = rawId.toLowerCase()
+              if (content.includes(rid) || title.includes(rid)) return true
+            }
+            const memoryPhones = extractPhoneDigits(m.content || '')
+            const metaIds = (() => {
+              const meta = m.metadata as Record<string, unknown> | undefined
+              return Array.isArray(meta?.identifiers) ? (meta.identifiers as string[]).map(toDigits) : []
+            })()
+            const allMemDigits = [...memoryPhones, ...metaIds]
+            for (const memDigit of allMemDigits) {
+              for (const senderDigit of senderDigits) {
+                if (senderDigit.endsWith(memDigit) || memDigit.endsWith(senderDigit)) return true
+              }
+            }
+            return false
+          })
+          if (contactHits.length) {
+            const contact = contactHits[0]
+            const displayId = rawSenderIds[0] || senderName || 'unknown'
+            resolvedContactName = contact.title || null
+            contactBlock = [
+              '## Known Sender',
+              `The current sender (${displayId}${senderName ? `, name: ${senderName}` : ''}) is: ${contact.title}`,
+              contact.content || '',
+            ].join('\n')
+          }
+        }
+      }
+
+      // --- Relevance-based search (gated on message quality) ---
+      let relevantLines: string[] = []
+      let recentLines: string[] = []
+      if (shouldInjectMemoryContext(ctx.message || '')) {
+        // Prepend resolved contact name so person-specific memories rank higher
+        const contactQueryHint = resolvedContactName || senderName || ''
+        const memoryQuerySeed = [
+          contactQueryHint,
+          ctx.message,
+          ...ctx.history
+            .slice(-4)
+            .filter((h) => h.role === 'user')
+            .map((h) => h.text),
+        ].join('\n')
+
+        const relevantSlice = Math.max(2, 6 - pinnedLines.length)
+        const relevantLookup = memDb.searchWithLinked(memoryQuerySeed, agentId, 1, 10, 14)
+        const recent = memDb.list(agentId, 12).slice(0, 6)
+        const relevantByTier = partitionMemoriesByTier(relevantLookup.entries)
+        const recentByTier = partitionMemoriesByTier(recent)
+
+        relevantLines = relevantByTier.durable
+          .filter(dedup)
+          .slice(0, relevantSlice)
+          .map(formatMemoryLine)
+
+        recentLines = recentByTier.durable
+          .filter(dedup)
+          .map(formatMemoryLine)
+      }
 
       const parts: string[] = []
+      if (contactBlock) {
+        parts.push(contactBlock)
+      }
       if (pinnedLines.length) {
         parts.push(['## Pinned Memories', 'Always-loaded memories marked as important.', ...pinnedLines].join('\n'))
+      }
+      if (identityLines.length) {
+        parts.push(['## Identity & Preferences', 'Always-loaded identity memories (preferences, relationships, contacts).', ...identityLines].join('\n'))
       }
       if (relevantLines.length) {
         parts.push(['## Relevant Memory Hits', 'These memories were retrieved by relevance for the current objective.', ...relevantLines].join('\n'))
@@ -695,6 +826,7 @@ const MemoryPlugin: Plugin = {
         '- What I\'ve discovered about projects, codebases, or environments',
         '- Problems I\'ve hit and how I solved them',
         '- Who people are and how they relate to each other',
+        '- Contact details: phone numbers, emails, platform IDs — use category "contacts"',
         '- Configuration details and environment specifics that I\'ll need again',
         '',
         '**Not worth cluttering my memory with:**',
@@ -703,9 +835,26 @@ const MemoryPlugin: Plugin = {
         '- Things already in my system prompt',
         '- Something I\'ve already stored',
         '',
+        '**Categories** — pick the one that fits best when storing:',
+        '- `identity/preferences` — Likes, dislikes, style choices, timezone, pronouns',
+        '- `identity/relationships` — Who people are and how they relate to each other',
+        '- `identity/contacts` — Phone numbers, emails, platform IDs for matching senders',
+        '- `identity/routines` — Recurring patterns: "picks up kids at 3pm", "checks in every morning"',
+        '- `identity/goals` — What the user is working toward: "launch MVP by Q2", "learn Spanish"',
+        '- `identity/events` — Significant life events: illness, birth, wedding, promotion, loss',
+        '- `knowledge/instructions` — Standing directives: "always respond in English", "use metric units"',
+        '- `knowledge/facts` — General knowledge, references, documentation',
+        '- `projects/decisions` — Decisions made and why',
+        '- `projects/learnings` — Lessons learned, solved problems, post-mortems',
+        '- `projects/context` — Project details, milestones, roadmap',
+        '- `operations/environment` — Config, credentials, endpoints, infrastructure',
+        '- `working/scratch` — Temporary notes that\'ll change soon',
+        '',
         '**Good habits:**',
         '- Give memories clear titles ("User prefers dark mode" not "Note 1")',
-        '- Use categories: identity/preferences, identity/relationships, projects/decisions, projects/learnings, operations/environment, knowledge/facts',
+        '- For contacts, store identifiers (phone, email, platform IDs) in content so I can match senders automatically',
+        '- When storing something about a specific person, include their name in the title (e.g. "Wife prefers short replies") so it surfaces when they message',
+        '- Store behavioral rules about a person on their contact/relationship entry rather than as separate memories',
         '- Prefer durable memories first; only inspect session archives when transcript history is specifically needed',
         '- Check what I already know before storing something new',
         '- When I learn something that corrects old knowledge, update or remove the old memory',
@@ -784,7 +933,7 @@ const MemoryPlugin: Plugin = {
     },
     getCapabilityDescription: () => 'I have long-term memory (`memory_search`, `memory_get`, `memory_store`, `memory_update`, `memory_tool`) — I can remember things across conversations and recall them when needed.',
     getOperatingGuidance: () => [
-      'Memory: use narrow memory tools first. For past-conversation recall, prefer `memory_search` then `memory_get`. For direct writes or corrections, prefer `memory_store` or `memory_update`. Keep `memory_tool` for list/delete/link/doctor or when you truly need the generic surface.',
+      'Memory: use narrow memory tools first. For past-conversation recall, prefer `memory_search` then `memory_get`. For direct writes or corrections, prefer `memory_store` or `memory_update`. Keep `memory_tool` for list/delete/link/doctor or when you truly need the generic surface. NEVER use memory tools to create files, CSV data, code, or documents — always use the `files` tool for those.',
       'For info already in the current conversation, respond directly without calling any memory tool.',
       'For questions about prior work, decisions, dates, people, preferences, or todos from earlier conversations: start with one durable `memory_search`, then use `memory_get` only if you need a more targeted read. Only use archive/session history when the user explicitly needs transcript-level detail or the durable search is insufficient.',
       'When the user directly says to remember, store, or correct a fact, do one `memory_store` or `memory_update` call immediately. Treat the newest direct user statement as authoritative.',
@@ -868,7 +1017,7 @@ const MemoryPlugin: Plugin = {
     },
     {
       name: 'memory_store',
-      description: 'Store a durable fact, preference, decision, or correction from the user. Use this immediately when the user says to remember something. If several related facts arrive in one request, prefer one canonical write over many near-duplicate calls.',
+      description: 'Store a durable fact, preference, decision, or correction from the user. Use this immediately when the user says to remember something. If several related facts arrive in one request, prefer one canonical write over many near-duplicate calls. NOT for writing files, documents, code, or data exports — use the files tool for those.',
       parameters: {
         type: 'object',
         properties: {
@@ -888,7 +1037,30 @@ const MemoryPlugin: Plugin = {
           'If the user bundled multiple related facts into one remember request, store them together in one canonical write unless they asked for separate memories.',
         ],
       },
-      execute: async (args, context) => executeNamedMemoryAction('store', args, context),
+      execute: async (args, context) => {
+        // Guard: reject file-like content and redirect to the files tool.
+        // Weaker models often confuse memory_store with file creation.
+        const value = typeof args?.value === 'string' ? args.value : ''
+        const title = typeof args?.title === 'string' ? args.title : ''
+        const key = typeof args?.key === 'string' ? args.key : ''
+        const category = typeof args?.category === 'string' ? args.category : ''
+        const allText = `${title} ${key} ${category} ${value}`
+        const hasFileExtension = /\.\w{1,5}$/.test(title || key)
+        const hasFilePath = /(?:^|[\s"'/])(?:\/[\w.-]+){2,}\.[\w]{1,5}\b/.test(allText)
+        const mentionsFileOp = /\b(?:csv|file|refactor|code|script|document|spreadsheet|inventory)\b/i.test(allText)
+        const lineCount = (value.match(/\n/g) || []).length + 1
+        const looksLikeCode = /^(import |export |function |const |let |var |class |interface |type |def |from |#include|package |using )/m.test(value)
+        const looksLikeCsv = lineCount >= 3 && (value.match(/,/g) || []).length >= lineCount * 2
+        const looksLikeStructuredData = lineCount >= 5 && (/^\s*[\[{]/m.test(value) || looksLikeCsv)
+        const redirectMsg = 'Error: memory_store is only for remembering facts, preferences, and decisions — NOT for creating files, CSV data, code, or documents. To write a file, use the `files` tool: files({action:"write", files:[{path:"path/to/file", content:"..."}]})'
+        if (hasFileExtension || hasFilePath || (mentionsFileOp && (!value || value.length > 200))) {
+          return redirectMsg
+        }
+        if (value.length > 500 && (looksLikeCode || looksLikeStructuredData || looksLikeCsv)) {
+          return redirectMsg
+        }
+        return executeNamedMemoryAction('store', args, context)
+      },
     },
     {
       name: 'memory_update',

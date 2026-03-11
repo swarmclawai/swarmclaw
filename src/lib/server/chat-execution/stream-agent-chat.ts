@@ -1,6 +1,7 @@
 import fs from 'fs'
 import { HumanMessage, AIMessage } from '@langchain/core/messages'
 import { createReactAgent } from '@langchain/langgraph/prebuilt'
+import { MemorySaver } from '@langchain/langgraph'
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/runtime/heartbeat-defaults'
 import { buildSessionTools } from '@/lib/server/session-tools'
 import { buildChatModel } from '@/lib/server/build-llm'
@@ -51,31 +52,43 @@ import {
 import type { ContinuationType } from '@/lib/server/chat-execution/stream-continuation'
 import { dedup, errorMessage, sleep } from '@/lib/shared-utils'
 import { perf } from '@/lib/server/runtime/perf'
-import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
 import {
   compactThreadRecallText,
   getExplicitRequiredToolNames,
   getWalletApprovalBoundaryAction,
-  isNarrowDirectMemoryWriteTurn,
   isWalletSimulationResult,
   resolveToolAction,
-  shouldAllowToolForDirectMemoryWrite,
-  shouldAllowToolForCurrentThreadRecall,
   shouldForceExternalServiceSummary,
   shouldTerminateOnSuccessfulMemoryMutation,
   updateStreamedToolEvents,
 } from '@/lib/server/chat-execution/chat-streaming-utils'
 import { LangGraphToolEventTracker } from '@/lib/server/chat-execution/tool-event-tracker'
 
+// LangGraph's streamEvents leaves dangling internal promises when the for-await
+// loop exits early (break on tool loop detection, execution boundary, etc.).
+// These promises may later reject with GraphRecursionError or AbortError.
+// Register a permanent handler to prevent process crashes from these expected
+// background rejections.  Only LangGraph-specific errors (identified by
+// pregelTaskId or lc_error_code) are suppressed; all other rejections propagate
+// normally.
+process.on('unhandledRejection', (err: unknown) => {
+  if (
+    err && typeof err === 'object'
+    && ('pregelTaskId' in err
+      || (err instanceof Error && (err.name === 'AbortError' || err.name === 'GraphRecursionError'))
+      || (err as Record<string, unknown>).lc_error_code === 'GRAPH_RECURSION_LIMIT')
+  ) {
+    // Silently suppress — expected background rejection from LangGraph
+    return
+  }
+})
+
 // Re-export continuation functions so existing consumers don't need to change imports
 export {
   getExplicitRequiredToolNames,
-  isNarrowDirectMemoryWriteTurn,
   isWalletSimulationResult,
   looksLikeOpenEndedDeliverableTask,
   shouldForceRecoverableToolErrorFollowthrough,
-  shouldAllowToolForDirectMemoryWrite,
-  shouldAllowToolForCurrentThreadRecall,
   shouldForceExternalExecutionFollowthrough,
   shouldForceDeliverableFollowthrough,
   shouldForceExternalServiceSummary,
@@ -101,9 +114,6 @@ interface StreamAgentChatOpts {
 
 // LangGraph uses this internal configurable key to bypass subgraph lookup when
 // resolving state from a namespaced checkpoint. It is not exported publicly in
-// @langchain/langgraph 1.x, so keep the literal here instead of importing a
-// non-exported symbol that breaks Next compilation.
-const LANGGRAPH_CHECKPOINTER_CONFIG_KEY = '__pregel_checkpointer'
 const CONTEXT_WARNING_OVERHEAD_TOKENS = 192
 
 /** Extract HTTP status code and Retry-After from provider error objects (OpenAI SDK, etc.) */
@@ -341,7 +351,6 @@ function buildAgenticExecutionPolicy(opts: {
   const pluginLines = buildPluginCapabilityLines(opts.enabledPlugins, { platformAssignScope: opts.platformAssignScope })
   const toolDisciplineLines = buildToolDisciplineLines(opts.enabledPlugins)
   const hasMemoryTools = opts.enabledPlugins.some((toolId) => (canonicalizePluginId(toolId) || toolId) === 'memory')
-  const directMemoryWriteOnlyTurn = Boolean(opts.userMessage && isNarrowDirectMemoryWriteTurn(opts.userMessage))
 
   const parts: string[] = []
 
@@ -371,10 +380,6 @@ function buildAgenticExecutionPolicy(opts: {
       'Do not use `manage_tasks`, `manage_agents`, or `delegate` as a substitute for a direct memory write or recall step.',
     )
   }
-  if (hasMemoryTools && directMemoryWriteOnlyTurn) {
-    parts.push(buildDirectMemoryWriteBlock())
-  }
-
   if (opts.hasAttachmentContext) {
     parts.push(
       '## Attachments',
@@ -393,6 +398,7 @@ function buildAgenticExecutionPolicy(opts: {
     'Execute by default — only confirm on high-risk actions.',
     'If a tool errors, retry or explain the blocker. Never claim success without evidence.',
     'Keep responses concise. Bullet points over prose. After file operations, confirm the result briefly (path and status) without echoing the full file contents.',
+    'Do not end every reply with a question. Only ask when a specific missing detail blocks progress. When a task is done, state the result and stop.',
     opts.responseStyle === 'concise'
       ? `IMPORTANT: Be extremely concise.${opts.responseMaxChars ? ` Keep responses under ${opts.responseMaxChars} characters.` : ' Target under 500 characters.'} Lead with the answer, skip preamble.`
       : opts.responseStyle === 'detailed'
@@ -456,16 +462,6 @@ function buildCurrentThreadRecallBlock(history: Message[]): string {
     }
   }
   return lines.join('\n')
-}
-
-function buildDirectMemoryWriteBlock(): string {
-  return [
-    '## Direct Memory Write',
-    'This turn is a direct request to remember, store, or correct a durable fact.',
-    'Call `memory_store` or `memory_update` immediately, then confirm the stored value succinctly.',
-    'If the user bundled several related facts into one remember request, store them together in one canonical memory write unless they explicitly asked for separate entries.',
-    'Do not inspect skills, browse the workspace, request capabilities, manage tasks, manage agents, or delegate before the direct memory write is complete.',
-  ].join('\n')
 }
 
 export interface StreamAgentChatResult {
@@ -543,8 +539,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
 
   const promptParts: string[] = []
   const hasProvidedSystemPrompt = typeof systemPrompt === 'string' && systemPrompt.trim().length > 0
-  const directMemoryWriteOnlyTurn = isNarrowDirectMemoryWriteTurn(message)
-  const currentThreadRecallRequest = !directMemoryWriteOnlyTurn && isCurrentThreadRecallRequest(message)
+  const currentThreadRecallRequest = isCurrentThreadRecallRequest(message)
   const hasAttachmentContext = Boolean(
     imagePath
     || attachedFiles?.length
@@ -653,8 +648,8 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   try {
     const pluginContextParts = await getPluginManager().collectAgentContext(session, sessionPlugins, message, history)
     promptParts.push(...pluginContextParts)
-  } catch {
-    // Plugin context injection is non-critical
+  } catch (err: unknown) {
+    console.error('[stream-agent-chat] Plugin context injection failed:', err instanceof Error ? err.message : String(err))
   }
 
   if (!hasProvidedSystemPrompt && activeProjectContext.projectId) {
@@ -757,7 +752,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
 
   // Proactive memory recall: inject relevant memories into context before LLM invocation
   // Skips heartbeat polls, very short messages, and thread-recall requests (which use chat history instead)
-  if (session.agentId && !directMemoryWriteOnlyTurn && !currentThreadRecallRequest && message.length > 12) {
+  if (session.agentId && !currentThreadRecallRequest && message.length > 12) {
     try {
       const agents = loadAgents()
       const agentForMemory = agents[session.agentId]
@@ -794,23 +789,6 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     memoryScopeMode: agentMemoryScopeMode,
   })
   endToolBuildPerf({ toolCount: tools.length })
-  const toolsForTurn = currentThreadRecallRequest
-    ? tools.filter((tool) => {
-        const toolName = typeof (tool as { name?: unknown }).name === 'string'
-          ? String((tool as { name?: unknown }).name)
-          : ''
-        return shouldAllowToolForCurrentThreadRecall(toolName)
-      })
-    : directMemoryWriteOnlyTurn
-      ? tools.filter((tool) => {
-          const toolName = typeof (tool as { name?: unknown }).name === 'string'
-            ? String((tool as { name?: unknown }).name)
-            : ''
-          return shouldAllowToolForDirectMemoryWrite(toolName)
-        })
-      : tools
-  const checkpointNamespace = `chat:${startTs}`
-  const checkpointSaver = getCheckpointSaver()
   const recursionLimit = getAgentLoopRecursionLimit(runtime)
 
   // Build message history for context
@@ -997,11 +975,17 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     // Warning failure is non-critical
   }
 
+  // Use a fresh in-memory checkpointer instead of the SQLite one.  We manage
+  // conversation history externally via langchainMessages — each iteration
+  // receives full history, so no cross-iteration checkpoint state is needed.
+  // MemorySaver avoids the SQLite serde round-trip that dropped tool_call IDs
+  // or ToolMessages, causing OpenAI to reject with "tool_calls must be
+  // followed by tool messages" errors.
   const agent = createReactAgent({
     llm,
-    tools: toolsForTurn,
+    tools,
     prompt,
-    checkpointer: checkpointSaver,
+    checkpointer: new MemorySaver(),
   })
 
   const langchainMessages: Array<HumanMessage | AIMessage> = []
@@ -1018,7 +1002,6 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   const currentContent = await buildLangChainContent(message, imagePath, attachedFiles)
   langchainMessages.push(new HumanMessage({ content: currentContent }))
   let pendingGraphMessages = [...langchainMessages]
-  let currentCheckpointId: string | undefined
 
   let fullText = ''
   let lastSegment = ''
@@ -1073,7 +1056,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     MAX_TOOL_SUMMARY_RETRIES = 1
     MAX_UNFINISHED_TOOL_FOLLOWTHROUGHS = 1
   }
-  const REQUIRED_TOOL_KICKOFF_TIMEOUT_MS = 20_000
+  const REQUIRED_TOOL_KICKOFF_TIMEOUT_MS = runtime.requiredToolKickoffMs
   let autoContinueCount = 0
   let transientRetryCount = 0
   let pendingRetryAfterMs: number | null = null
@@ -1154,7 +1137,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
         idleTimer = setTimeout(() => {
           idleTimedOut = true
           iterationController.abort()
-        }, 90_000)
+        }, runtime.streamIdleStallMs)
       }
 
       const armRequiredToolKickoff = () => {
@@ -1175,23 +1158,21 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       const toolPerfEnds = new Map<string, (extra?: Record<string, unknown>) => number>()
       const iterationInputMessages = pendingGraphMessages
       let iterationSucceeded = false
+      const eventStream = agent.streamEvents(
+        { messages: iterationInputMessages },
+        {
+          version: 'v2',
+          recursionLimit,
+          signal: iterationController.signal,
+          configurable: {
+            thread_id: `${session.id}:${startTs}:${iteration}`,
+          },
+        },
+      )
 
       try {
         armIdleWatchdog()
         armRequiredToolKickoff()
-        const eventStream = agent.streamEvents(
-          { messages: iterationInputMessages },
-          {
-            version: 'v2',
-            recursionLimit,
-            signal: iterationController.signal,
-            configurable: {
-              thread_id: session.id,
-              checkpoint_ns: checkpointNamespace,
-              ...(currentCheckpointId ? { checkpoint_id: currentCheckpointId } : {}),
-            },
-          },
-        )
 
         for await (const event of eventStream) {
           const kind = event.event
@@ -1434,7 +1415,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       } catch (innerErr: unknown) {
         const errName = innerErr instanceof Error ? innerErr.constructor.name : ''
         const errMsg = idleTimedOut
-          ? 'Model stream stalled without emitting text or tool results for 90 seconds.'
+          ? `Model stream stalled without emitting text or tool results for ${Math.trunc(runtime.streamIdleStallMs / 1000)} seconds.`
           : requiredToolKickoffTimedOut
             ? `The turn did not start the required workspace tool step within ${Math.trunc(REQUIRED_TOOL_KICKOFF_TIMEOUT_MS / 1000)} seconds.`
           : errorMessage(innerErr)
@@ -1537,24 +1518,6 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
         clearIdleWatchdog()
         clearRequiredToolKickoff()
         abortController.signal.removeEventListener('abort', onParentAbort)
-      }
-
-      if (iterationSucceeded) {
-        try {
-          const state = await agent.getState({
-            configurable: {
-              thread_id: session.id,
-              checkpoint_ns: checkpointNamespace,
-              [LANGGRAPH_CHECKPOINTER_CONFIG_KEY]: checkpointSaver,
-            },
-          }) as { config?: { configurable?: { checkpoint_id?: unknown } } } | null
-          const latestCheckpointId = state?.config?.configurable?.checkpoint_id
-          if (typeof latestCheckpointId === 'string' && latestCheckpointId.trim()) {
-            currentCheckpointId = latestCheckpointId
-          }
-        } catch (checkpointErr) {
-          console.warn('[stream-agent-chat] Failed to refresh latest checkpoint state:', errorMessage(checkpointErr))
-        }
       }
 
       if (reachedExecutionBoundary) break
@@ -1808,7 +1771,9 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
         const promptMessage = new HumanMessage({ content: continuationPrompt })
         langchainMessages.push(promptMessage)
         continuationMessages.push(promptMessage)
-        pendingGraphMessages = continuationMessages
+        // Provide full conversation history since the agent has no checkpointer
+        // and each iteration starts with only the messages we explicitly pass.
+        pendingGraphMessages = [...langchainMessages]
         lastSegment = ''
       } else if (shouldContinue === 'transient') {
         // Exponential backoff before retrying transient errors; respect Retry-After if present
@@ -1896,7 +1861,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   const totalTokens = totalInputTokens + totalOutputTokens
   if (totalTokens > 0) {
     const cost = estimateCost(session.model, totalInputTokens, totalOutputTokens)
-    const pluginDefinitionCosts = buildPluginDefinitionCosts(toolsForTurn, toolToPluginMap)
+    const pluginDefinitionCosts = buildPluginDefinitionCosts(tools, toolToPluginMap)
     const usageRecord: UsageRecord = {
       sessionId: session.id,
       messageIndex: history.length,

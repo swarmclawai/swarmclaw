@@ -522,6 +522,30 @@ export function classifyHeartbeatResponse(text: string, ackMaxChars: number, had
   return stripped.length < cleaned.length ? 'strip' : 'keep'
 }
 
+/**
+ * Prune old heartbeat messages from the transcript to prevent context bloat.
+ * Keeps only the most recent `maxKeep` heartbeat assistant messages.
+ * Returns the number of messages removed.
+ */
+export function pruneOldHeartbeatMessages(messages: Message[], maxKeep = 2): number {
+  const heartbeatIndices: number[] = []
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === 'assistant' && messages[i].kind === 'heartbeat') {
+      heartbeatIndices.push(i)
+    }
+  }
+  if (heartbeatIndices.length <= maxKeep) return 0
+  const toRemove = new Set(heartbeatIndices.slice(0, heartbeatIndices.length - maxKeep))
+  let removed = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (toRemove.has(i)) {
+      messages.splice(i, 1)
+      removed++
+    }
+  }
+  return removed
+}
+
 export function estimateConversationTone(text: string): string {
   const t = text || ''
   if (/```/.test(t) || /\b(function|const|let|var|import|export|class|interface|async|await|return)\b/.test(t)) return 'technical'

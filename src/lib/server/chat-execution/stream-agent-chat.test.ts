@@ -8,13 +8,10 @@ import {
   buildExternalWalletExecutionBlock,
   buildToolDisciplineLines,
   getExplicitRequiredToolNames,
-  isNarrowDirectMemoryWriteTurn,
   isWalletSimulationResult,
   looksLikeOpenEndedDeliverableTask,
   resolveContinuationAssistantText,
   resolveFinalStreamResponseText,
-  shouldAllowToolForDirectMemoryWrite,
-  shouldAllowToolForCurrentThreadRecall,
   shouldForceAttachmentFollowthrough,
   shouldForceRecoverableToolErrorFollowthrough,
   shouldTerminateOnSuccessfulMemoryMutation,
@@ -208,55 +205,14 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(streamAgentChatSource.includes('did not start the required workspace tool step'))
   })
 
-  it('adds a dedicated current-thread recall block and removes long-term memory tools for those turns', () => {
+  it('adds current-thread recall guidance and immediate memory routes in the system prompt', () => {
     assert.ok(streamAgentChatSource.includes('## Current Thread Recall'))
     assert.ok(streamAgentChatSource.includes('## Immediate Memory Routes'))
-    assert.ok(streamAgentChatSource.includes('## Direct Memory Write'))
     assert.ok(streamAgentChatSource.includes('call `memory_store` or `memory_update` immediately before any planning, delegation, task creation, or agent management'))
-    assert.ok(streamAgentChatSource.includes('Do not inspect skills, browse the workspace, request capabilities, manage tasks, manage agents, or delegate before the direct memory write is complete.'))
     assert.ok(streamAgentChatSource.includes('Do NOT call memory tools, web search, or session-history tools'))
-    assert.ok(streamAgentChatSource.includes('const currentThreadRecallRequest = !directMemoryWriteOnlyTurn && isCurrentThreadRecallRequest(message)'))
-    assert.ok(streamAgentChatSource.includes('const directMemoryWriteOnlyTurn = isNarrowDirectMemoryWriteTurn(message)'))
-    assert.ok(streamAgentChatSource.includes('shouldAllowToolForDirectMemoryWrite(toolName)'))
-    assert.ok(streamAgentChatSource.includes('shouldAllowToolForCurrentThreadRecall(toolName)'))
+    assert.ok(streamAgentChatSource.includes('const currentThreadRecallRequest = isCurrentThreadRecallRequest(message)'))
     assert.ok(streamSources.includes('Preserve hard structural constraints from the original request'))
     assert.ok(streamAgentChatSource.includes('## Exact Structural Constraints'))
-  })
-
-  it('blocks memory, session-history, web, and context tools during same-thread recall turns', () => {
-    assert.equal(shouldAllowToolForCurrentThreadRecall('memory_tool'), false)
-    assert.equal(shouldAllowToolForCurrentThreadRecall('memory_search'), false)
-    assert.equal(shouldAllowToolForCurrentThreadRecall('memory_get'), false)
-    assert.equal(shouldAllowToolForCurrentThreadRecall('memory_store'), false)
-    assert.equal(shouldAllowToolForCurrentThreadRecall('memory_update'), false)
-    assert.equal(shouldAllowToolForCurrentThreadRecall('search_history_tool'), false)
-    assert.equal(shouldAllowToolForCurrentThreadRecall('sessions_tool'), false)
-    assert.equal(shouldAllowToolForCurrentThreadRecall('web_search'), false)
-    assert.equal(shouldAllowToolForCurrentThreadRecall('context_status'), false)
-    assert.equal(shouldAllowToolForCurrentThreadRecall('files'), true)
-  })
-
-  it('only allows direct memory write tools during pure remember/store turns', () => {
-    assert.equal(shouldAllowToolForDirectMemoryWrite('memory_store'), true)
-    assert.equal(shouldAllowToolForDirectMemoryWrite('memory_update'), true)
-    assert.equal(shouldAllowToolForDirectMemoryWrite('memory_tool'), false)
-    assert.equal(shouldAllowToolForDirectMemoryWrite('manage_capabilities'), false)
-    assert.equal(shouldAllowToolForDirectMemoryWrite('files'), false)
-  })
-
-  it('treats long remember-and-confirm turns as narrow direct memory writes', () => {
-    assert.equal(
-      isNarrowDirectMemoryWriteTurn('Remember that my favorite programming language is Rust and I prefer functional programming patterns. Then confirm what you just stored.'),
-      true,
-    )
-    assert.equal(
-      isNarrowDirectMemoryWriteTurn('Remember these facts for future conversations: My favorite programming language is Rust. My deploy target is Fly.io. My team size is 7 people. The project is codenamed "Neptune".'),
-      true,
-    )
-    assert.equal(
-      isNarrowDirectMemoryWriteTurn('Remember that my favorite programming language is Rust, then write a file summarizing it and send it to me.'),
-      false,
-    )
   })
 
   it('canonicalizes required tool names when checking completion', () => {

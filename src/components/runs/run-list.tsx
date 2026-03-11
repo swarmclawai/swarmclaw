@@ -6,6 +6,7 @@ import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
 import type { SessionRunRecord, SessionRunStatus } from '@/types'
+import { PageLoader } from '@/components/ui/page-loader'
 import { formatElapsed } from '@/lib/format-display'
 
 const STATUS_COLORS: Record<SessionRunStatus, { bg: string; text: string }> = {
@@ -55,12 +56,7 @@ export function RunList() {
   const filtered = statusFilter ? runs.filter((r) => r.status === statusFilter) : runs
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-text-3 text-[13px]">
-        <span className="w-4 h-4 rounded-full border-2 border-text-3/20 border-t-text-3/60 animate-spin mr-2" />
-        Loading runs...
-      </div>
-    )
+    return <PageLoader label="Loading runs..." />
   }
 
   return (

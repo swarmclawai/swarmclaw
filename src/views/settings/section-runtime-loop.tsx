@@ -10,6 +10,8 @@ import {
   DEFAULT_ONGOING_LOOP_MAX_RUNTIME_MINUTES,
   DEFAULT_ORCHESTRATOR_LOOP_RECURSION_LIMIT,
   DEFAULT_SHELL_COMMAND_TIMEOUT_SEC,
+  DEFAULT_STREAM_IDLE_STALL_SEC,
+  DEFAULT_REQUIRED_TOOL_KICKOFF_SEC,
 } from '@/lib/runtime/runtime-loop'
 import type { LoopMode } from '@/types'
 import type { SettingsSectionProps } from './types'
@@ -209,6 +211,42 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
               className={inputClass}
               style={{ fontFamily: 'inherit' }}
             />
+          </div>
+        </div>
+
+        <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mt-5 mb-3">Stream &amp; Kickoff Timeouts (Seconds) <HintTip text="Controls how long to wait for model output and required tool usage before aborting a turn" /></label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[11px] text-text-3 mb-2">Idle Stall Timeout</label>
+            <input
+              type="number"
+              min={30}
+              max={600}
+              value={appSettings.streamIdleStallSec ?? DEFAULT_STREAM_IDLE_STALL_SEC}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10)
+                patchSettings({ streamIdleStallSec: Number.isFinite(n) ? n : DEFAULT_STREAM_IDLE_STALL_SEC })
+              }}
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+            <p className="text-[11px] text-text-3/60 mt-2">Aborts a turn if no tokens arrive for this long. Raise for slow local models.</p>
+          </div>
+          <div>
+            <label className="block text-[11px] text-text-3 mb-2">Required Tool Kickoff</label>
+            <input
+              type="number"
+              min={10}
+              max={120}
+              value={appSettings.requiredToolKickoffSec ?? DEFAULT_REQUIRED_TOOL_KICKOFF_SEC}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10)
+                patchSettings({ requiredToolKickoffSec: Number.isFinite(n) ? n : DEFAULT_REQUIRED_TOOL_KICKOFF_SEC })
+              }}
+              className={inputClass}
+              style={{ fontFamily: 'inherit' }}
+            />
+            <p className="text-[11px] text-text-3/60 mt-2">Max wait for a required tool call before forcing a continuation.</p>
           </div>
         </div>
 

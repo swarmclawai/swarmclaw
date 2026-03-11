@@ -16,6 +16,7 @@ import { timeAgo, timeUntil } from '@/lib/time-format'
 import type { Agent, Session, ActivityEntry, BoardTask, AppNotification } from '@/types'
 import { HintTip } from '@/components/shared/hint-tip'
 import { MainContent } from '@/components/layout/main-content'
+import { PageLoader } from '@/components/ui/page-loader'
 import { SectionHeader } from '@/components/ui/section-header'
 import { StatCard } from '@/components/ui/stat-card'
 
@@ -77,6 +78,7 @@ export default function HomePage() {
   const [todayCost, setTodayCost] = useState(0)
   const [costTrend, setCostTrend] = useState<{ cost: number; bucket: string }[]>([])
   const [localhostBrowser, setLocalhostBrowser] = useState(false)
+  const [pageReady, setPageReady] = useState(false)
   const mountedRef = useMountedRef()
 
   useEffect(() => {
@@ -155,6 +157,7 @@ export default function HomePage() {
         setTodayCost(todayPt?.cost || 0)
       })
       .catch(() => {})
+      .finally(() => { if (!cancelled && mountedRef.current) setPageReady(true) })
     return () => {
       cancelled = true
       window.clearTimeout(connectorTimer)
@@ -186,6 +189,14 @@ export default function HomePage() {
       setTaskSheetOpen(true)
       navigateTo('tasks')
     }
+  }
+
+  if (!pageReady) {
+    return (
+      <MainContent>
+        <PageLoader label="Loading dashboard..." />
+      </MainContent>
+    )
   }
 
   return (

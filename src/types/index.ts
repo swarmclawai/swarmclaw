@@ -660,6 +660,7 @@ export interface Agent {
   heartbeatTarget?: 'last' | 'none' | string | null
   heartbeatGoal?: string | null
   heartbeatNextAction?: string | null
+  heartbeatLightContext?: boolean | null
   sessionResetMode?: SessionResetMode | null
   sessionIdleTimeoutSec?: number | null
   sessionMaxAgeSec?: number | null
@@ -1277,6 +1278,8 @@ export interface AppSettings {
   shellCommandTimeoutSec?: number
   claudeCodeTimeoutSec?: number
   cliProcessTimeoutSec?: number
+  streamIdleStallSec?: number
+  requiredToolKickoffSec?: number
   userAvatarSeed?: string
   elevenLabsEnabled?: boolean
   elevenLabsApiKey?: string | null
@@ -1298,6 +1301,7 @@ export interface AppSettings {
   heartbeatActiveStart?: string | null
   heartbeatActiveEnd?: string | null
   heartbeatTimezone?: string | null
+  heartbeatLightContext?: boolean | null
   sessionResetMode?: SessionResetMode | null
   sessionIdleTimeoutSec?: number | null
   sessionMaxAgeSec?: number | null

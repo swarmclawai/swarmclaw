@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { MainContent } from '@/components/layout/main-content'
+import { PageLoader } from '@/components/ui/page-loader'
 import { inputClass } from '@/views/settings/utils'
 import { UserPreferencesSection } from '@/views/settings/section-user-preferences'
 import { ThemeSection } from '@/views/settings/section-theme'
@@ -84,6 +85,7 @@ export default function SettingsRoute() {
   const loadSecrets = useAppStore((s) => s.loadSecrets)
   const loadAgents = useAppStore((s) => s.loadAgents)
   const credentials = useAppStore((s) => s.credentials)
+  const [pageReady, setPageReady] = useState(false)
   const [activeTab, setActiveTabRaw] = useState('general')
   const contentRef = useRef<HTMLDivElement>(null)
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -98,11 +100,8 @@ export default function SettingsRoute() {
   }, [])
 
   useEffect(() => {
-    loadProviders()
-    loadCredentials()
-    loadSettings()
-    loadSecrets()
-    loadAgents()
+    Promise.all([loadProviders(), loadCredentials(), loadSettings(), loadSecrets(), loadAgents()])
+      .finally(() => setPageReady(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -297,6 +296,14 @@ export default function SettingsRoute() {
   }, [focusSection, setActiveTab])
 
   const visibleSections = sectionsByTab.get(activeTab) || []
+
+  if (!pageReady) {
+    return (
+      <MainContent>
+        <PageLoader label="Loading settings..." />
+      </MainContent>
+    )
+  }
 
   return (
     <MainContent>

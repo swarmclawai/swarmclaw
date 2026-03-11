@@ -2,7 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   inferAutomaticMemoryCategory,
-  isDirectMemoryWriteRequest,
   isCurrentThreadRecallRequest,
   normalizeMemoryCategory,
   shouldAutoCaptureMemory,
@@ -42,17 +41,6 @@ test('isCurrentThreadRecallRequest detects same-thread recall without matching s
   )
 })
 
-test('isDirectMemoryWriteRequest detects remember-and-confirm turns without matching recall questions', () => {
-  assert.equal(
-    isDirectMemoryWriteRequest('Remember that my favorite programming language is Rust and I prefer functional programming patterns. Then confirm what you just stored.'),
-    true,
-  )
-  assert.equal(
-    isDirectMemoryWriteRequest('What preferences did I tell you earlier in this conversation?'),
-    false,
-  )
-})
-
 test('shouldAutoCaptureMemory filters noisy turns', () => {
   assert.equal(shouldAutoCaptureMemory({ message: 'thanks', response: 'Happy to help with that.' }), false)
   assert.equal(shouldAutoCaptureMemory({ message: 'Please save this to memory', response: 'Stored memory "note".' }), false)
@@ -63,13 +51,15 @@ test('shouldAutoCaptureMemory filters noisy turns', () => {
   }), true)
 })
 
-test('inferAutomaticMemoryCategory picks a stable automatic bucket', () => {
+test('inferAutomaticMemoryCategory falls back to knowledge/facts without content-sniffing', () => {
+  // Content-sniffing regex removed — the agent picks categories via guidance.
+  // inferAutomaticMemoryCategory (called with category "note") should fall through.
   assert.equal(
     inferAutomaticMemoryCategory('The user prefers direct status updates.', 'I will keep future updates terse and direct.'),
-    'identity/preferences',
+    'knowledge/facts',
   )
   assert.equal(
     inferAutomaticMemoryCategory('We decided to ship the GitHub import first.', 'Decision locked for the next milestone.'),
-    'projects/decisions',
+    'knowledge/facts',
   )
 })

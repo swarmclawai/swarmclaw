@@ -6,7 +6,7 @@ const MEMORY_META_RE = /\b(?:remember|memory|memorize|store this|save this|forge
 const LOW_SIGNAL_RESPONSE_RE = /^(?:HEARTBEAT_OK|NO_MESSAGE)\b/i
 const CURRENT_THREAD_RECALL_MARKER_RE = /\b(?:this conversation|this chat|this thread|current conversation|current chat|current thread|same thread|same chat|same conversation|earlier in (?:this )?(?:conversation|chat|thread)|from (?:this|our) (?:conversation|chat|thread)|you just stored|you just said|we just discussed|we just decided)\b/i
 const CURRENT_THREAD_RECALL_INTENT_RE = /\b(?:what|which|who|when|where|did|remind|recap|summarize|repeat|list|tell me|answer|confirm|recall|mention)\b/i
-const DIRECT_MEMORY_WRITE_MARKER_RE = /\b(?:remember|memorize|store|save|write to memory|add to memory|update.*memory|correct.*memory)\b/i
+const DIRECT_MEMORY_WRITE_MARKER_RE = /\b(?:remember|memorize|store (?:this|that|the fact|it)|save (?:this|that|the fact|it) (?:to|in) memory|write to memory|add to memory|update.*memory|correct.*memory)\b/i
 const DIRECT_MEMORY_WRITE_FOLLOWUP_RE = /\b(?:confirm|recap|repeat|summarize|what you just stored|what you saved|what you updated)\b/i
 
 function normalizeWhitespace(value: string): string {
@@ -36,16 +36,6 @@ export function isCurrentThreadRecallRequest(message: string): boolean {
   return CURRENT_THREAD_RECALL_INTENT_RE.test(trimmed) || /\?\s*$/.test(trimmed)
 }
 
-export function isDirectMemoryWriteRequest(message: string): boolean {
-  const trimmed = normalizeWhitespace(message)
-  if (!trimmed) return false
-  const directWriteLike = DIRECT_MEMORY_WRITE_MARKER_RE.test(trimmed)
-  if (!directWriteLike) return false
-  if (/\?\s*$/.test(trimmed) && !DIRECT_MEMORY_WRITE_FOLLOWUP_RE.test(trimmed)) return false
-  if (isCurrentThreadRecallRequest(trimmed) && !DIRECT_MEMORY_WRITE_FOLLOWUP_RE.test(trimmed)) return false
-  return true
-}
-
 export function shouldAutoCaptureMemoryTurn(message: string, response: string): boolean {
   const normalizedMessage = normalizeWhitespace(message)
   const normalizedResponse = normalizeWhitespace(response)
@@ -67,19 +57,20 @@ export function shouldAutoCaptureMemory(
   return shouldAutoCaptureMemoryTurn(input.message || '', input.response || '')
 }
 
-export function normalizeMemoryCategory(
-  input: string | null | undefined,
-  title: string | null | undefined,
-  content: string | null | undefined,
-): string {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function normalizeMemoryCategory(input: string | null | undefined, _title?: string | null, _content?: string | null): string {
   const explicit = lower(input)
-  const sample = `${lower(title)}\n${lower(content)}`
 
   const mapExplicit = (value: string): string | null => {
     if (!value || value === 'note' || value === 'notes') return null
     if (['preference', 'preferences', 'likes', 'dislikes'].includes(value)) return 'identity/preferences'
     if (['identity', 'profile', 'persona'].includes(value)) return 'identity/profile'
     if (['relationship', 'relationships', 'people'].includes(value)) return 'identity/relationships'
+    if (['contact', 'contacts'].includes(value)) return 'identity/contacts'
+    if (['routine', 'routines', 'schedule', 'habit', 'habits'].includes(value)) return 'identity/routines'
+    if (['event', 'events', 'life event', 'life events', 'significant', 'milestone'].includes(value)) return 'identity/events'
+    if (['goal', 'goals', 'objective', 'objectives', 'target', 'targets'].includes(value)) return 'identity/goals'
+    if (['instruction', 'instructions', 'directive', 'directives', 'standing order', 'rule', 'rules'].includes(value)) return 'knowledge/instructions'
     if (['decision', 'decisions', 'choice'].includes(value)) return 'projects/decisions'
     if (['learning', 'learnings', 'lesson', 'lessons'].includes(value)) return 'projects/learnings'
     if (['project', 'projects', 'task', 'tasks'].includes(value)) return 'projects/context'
@@ -94,30 +85,9 @@ export function normalizeMemoryCategory(
   const explicitMapped = mapExplicit(explicit)
   if (explicitMapped) return explicitMapped
 
-  if (/\b(?:prefer(?:s|ence)?|likes?|dislikes?|favorite|timezone|pronouns|call me)\b/.test(sample)) {
-    return 'identity/preferences'
-  }
-  if (/\b(?:wife|husband|partner|friend|manager|teammate|client|customer|relationship)\b/.test(sample)) {
-    return 'identity/relationships'
-  }
-  if (/\b(?:decided|decision|approved|picked|selected|going with|will use)\b/.test(sample)) {
-    return 'projects/decisions'
-  }
-  if (/\b(?:learned|lesson|fixed|solved|root cause|failure|bug|regression|postmortem)\b/.test(sample)) {
-    return 'projects/learnings'
-  }
-  if (/\b(?:error|incident|stack trace|exception|crash)\b/.test(sample)) {
-    return 'execution/errors'
-  }
-  if (/\b(?:project|repo|repository|ticket|task|milestone|deadline|roadmap)\b/.test(sample)) {
-    return 'projects/context'
-  }
-  if (/\b(?:config|credential|endpoint|workspace|path|env var|environment|docker|sandbox)\b/.test(sample)) {
-    return 'operations/environment'
-  }
-  if (/\b(?:fact|documentation|reference|api|schema)\b/.test(sample)) {
-    return 'knowledge/facts'
-  }
+  // No content-sniffing regex — the agent picks the category via the guidance
+  // in its memory policy block. We just normalize explicit aliases above and
+  // fall back to knowledge/facts for uncategorized entries.
   return explicit && explicit !== 'note' && explicit !== 'notes' ? explicit : 'knowledge/facts'
 }
 

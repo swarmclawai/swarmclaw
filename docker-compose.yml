@@ -1,5 +1,6 @@
 services:
   swarmclaw:
+    image: ghcr.io/swarmclawai/swarmclaw:latest
     build: .
     ports:
       - "3456:3456"

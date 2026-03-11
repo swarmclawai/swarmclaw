@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { getViewPath } from '@/lib/app/navigation'
 import { AgentChatList } from '@/components/agents/agent-chat-list'
+import { PageLoader } from '@/components/ui/page-loader'
 
 export default function AgentsPage() {
   const isDesktop = useMediaQuery('(min-width: 768px)')
@@ -30,5 +31,5 @@ export default function AgentsPage() {
   if (!isDesktop) return <AgentChatList />
 
   // Brief flash while redirecting, or no agents exist yet
-  return null
+  return <PageLoader />
 }

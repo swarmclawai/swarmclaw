@@ -21,6 +21,10 @@ export const CLAUDE_CODE_TIMEOUT_SEC_MIN = 5
 export const CLAUDE_CODE_TIMEOUT_SEC_MAX = 7200
 export const CLI_PROCESS_TIMEOUT_SEC_MIN = 10
 export const CLI_PROCESS_TIMEOUT_SEC_MAX = 7200
+export const STREAM_IDLE_STALL_SEC_MIN = 30
+export const STREAM_IDLE_STALL_SEC_MAX = 600
+export const REQUIRED_TOOL_KICKOFF_SEC_MIN = 10
+export const REQUIRED_TOOL_KICKOFF_SEC_MAX = 120
 
 export const DEFAULT_AGENT_LOOP_RECURSION_LIMIT = 300
 export const DEFAULT_ORCHESTRATOR_LOOP_RECURSION_LIMIT = 80
@@ -30,9 +34,11 @@ export const DEFAULT_ONGOING_LOOP_MAX_RUNTIME_MINUTES = 60
 export const DEFAULT_DELEGATION_MAX_DEPTH = 3
 
 // Tool/process timeouts
-export const DEFAULT_SHELL_COMMAND_TIMEOUT_SEC = 30
+export const DEFAULT_SHELL_COMMAND_TIMEOUT_SEC = 120
 export const DEFAULT_CLAUDE_CODE_TIMEOUT_SEC = 1800
 export const DEFAULT_CLI_PROCESS_TIMEOUT_SEC = 1800
+export const DEFAULT_STREAM_IDLE_STALL_SEC = 180
+export const DEFAULT_REQUIRED_TOOL_KICKOFF_SEC = 45
 
 function parseIntSetting(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === 'number'
@@ -55,6 +61,8 @@ export interface NormalizedRuntimeSettingFields {
   shellCommandTimeoutSec: number
   claudeCodeTimeoutSec: number
   cliProcessTimeoutSec: number
+  streamIdleStallSec: number
+  requiredToolKickoffSec: number
 }
 
 export function normalizeRuntimeSettingFields(settings: Record<string, unknown>): NormalizedRuntimeSettingFields {
@@ -113,6 +121,18 @@ export function normalizeRuntimeSettingFields(settings: Record<string, unknown>)
       DEFAULT_CLI_PROCESS_TIMEOUT_SEC,
       CLI_PROCESS_TIMEOUT_SEC_MIN,
       CLI_PROCESS_TIMEOUT_SEC_MAX,
+    ),
+    streamIdleStallSec: parseIntSetting(
+      settings.streamIdleStallSec,
+      DEFAULT_STREAM_IDLE_STALL_SEC,
+      STREAM_IDLE_STALL_SEC_MIN,
+      STREAM_IDLE_STALL_SEC_MAX,
+    ),
+    requiredToolKickoffSec: parseIntSetting(
+      settings.requiredToolKickoffSec,
+      DEFAULT_REQUIRED_TOOL_KICKOFF_SEC,
+      REQUIRED_TOOL_KICKOFF_SEC_MIN,
+      REQUIRED_TOOL_KICKOFF_SEC_MAX,
     ),
   }
 }

@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { ScheduleCard } from './schedule-card'
 import { SCHEDULE_TEMPLATES, FEATURED_TEMPLATE_IDS } from '@/lib/schedules/schedule-templates'
 import { Newspaper, HeartPulse, PenLine, FileText } from 'lucide-react'
+import { PageLoader } from '@/components/ui/page-loader'
 import { SearchInput } from '@/components/ui/search-input'
 import { Button } from '@/components/ui/button'
 
@@ -27,8 +28,9 @@ export function ScheduleList({ inSidebar }: Props) {
   const setTemplatePrefill = useAppStore((s) => s.setScheduleTemplatePrefill)
   const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
   const [search, setSearch] = useState('')
+  const [loaded, setLoaded] = useState(false)
 
-  useEffect(() => { loadSchedules() }, [])
+  useEffect(() => { loadSchedules().finally(() => setLoaded(true)) }, [])
 
   const filtered = useMemo(() => {
     return Object.values(schedules)
@@ -39,6 +41,10 @@ export function ScheduleList({ inSidebar }: Props) {
       })
       .sort((a, b) => b.createdAt - a.createdAt)
   }, [schedules, search, activeProjectFilter])
+
+  if (!loaded) {
+    return <PageLoader label="Loading schedules..." />
+  }
 
   if (!filtered.length && !search) {
     return (

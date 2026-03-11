@@ -52,6 +52,7 @@ interface QueueEntry {
     showAlerts: boolean
     target: string | null
     deliveryMode?: 'default' | 'tool_only'
+    lightContext?: boolean
   }
   replyToId?: string
   resolve: (value: ExecuteChatTurnResult) => void
@@ -567,6 +568,7 @@ export interface EnqueueSessionRunInput {
     showAlerts: boolean
     target: string | null
     deliveryMode?: 'default' | 'tool_only'
+    lightContext?: boolean
   }
   replyToId?: string
   /** Optional shared execution lane key. When set, multiple sessions can be serialized together. */
