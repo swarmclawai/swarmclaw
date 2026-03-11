@@ -74,6 +74,7 @@ IMPROVEMENTS.md
 
 # hidden local workbench for private harnesses, comparisons, and scratch artifacts
 /.workbench/
+/workbench/.tmp-*/
 
 # local-only imported skills and runtime scratch should never ship
 /data/skills/
