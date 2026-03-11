@@ -89,6 +89,7 @@ interface StreamAgentChatOpts {
   session: Session
   message: string
   imagePath?: string
+  imageUrl?: string
   attachedFiles?: string[]
   apiKey: string | null
   systemPrompt?: string
@@ -494,7 +495,7 @@ export async function streamAgentChat(opts: StreamAgentChatOpts): Promise<Stream
 
 async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAgentChatResult> {
   const startTs = Date.now()
-  const { session, message, imagePath, attachedFiles, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
+  const { session, message, imagePath, imageUrl, attachedFiles, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
   const isConnectorSession = !!session.connectorContext?.connectorId
   const rawPlugins = Array.isArray(session.plugins) ? session.plugins : []
   const hasShellCapability = rawPlugins.some((toolId) => ['shell', 'execute_command'].includes(String(toolId)))

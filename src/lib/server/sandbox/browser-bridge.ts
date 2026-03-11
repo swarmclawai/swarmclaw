@@ -90,7 +90,7 @@ async function proxyCdpRequest(req: IncomingMessage, res: ServerResponse, target
   headers.delete('host')
   headers.delete('authorization')
 
-  const body = req.method === 'GET' || req.method === 'HEAD'
+  const rawBody = req.method === 'GET' || req.method === 'HEAD'
     ? undefined
     : await new Promise<Buffer>((resolve, reject) => {
         const chunks: Buffer[] = []
@@ -98,13 +98,16 @@ async function proxyCdpRequest(req: IncomingMessage, res: ServerResponse, target
         req.on('end', () => resolve(Buffer.concat(chunks)))
         req.on('error', reject)
       })
+  const body = rawBody ? new Uint8Array(rawBody) : undefined
 
-  const upstream = await fetch(targetUrl, {
+  const requestInit: RequestInit & { duplex?: 'half' } = {
     method: req.method,
     headers,
     body,
-    duplex: body ? 'half' : undefined,
-  })
+  }
+  if (body) requestInit.duplex = 'half'
+
+  const upstream = await fetch(targetUrl, requestInit)
 
   res.statusCode = upstream.status
   upstream.headers.forEach((value, key) => res.setHeader(key, value))

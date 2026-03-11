@@ -70,10 +70,12 @@ type BrowserMcpTransport = {
   close?: () => void | Promise<void>
 }
 
-type BrowserMcpToolResultContent =
-  | { type: 'image'; data?: string }
-  | { type: 'resource'; resource?: { blob?: string; mimeType?: string } }
-  | { type: string; text?: string; data?: string; resource?: { blob?: string; mimeType?: string } }
+type BrowserMcpToolResultContent = {
+  type: string
+  text?: string
+  data?: string
+  resource?: { blob?: string; mimeType?: string }
+}
 
 type BrowserMcpToolResult = {
   isError?: boolean
@@ -340,8 +342,12 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
                   allowUnrestrictedFileAccess: true,
                 }
               : undefined))
-            const client = new Client({ name: 'swarmclaw', version: '1.0' })
-            await client.connect(transport)
+            const sdkClient = new Client({ name: 'swarmclaw', version: '1.0' })
+            await sdkClient.connect(transport)
+            const client: BrowserMcpClient = {
+              callTool: (params) => sdkClient.callTool(params) as Promise<BrowserMcpToolResult>,
+              close: () => sdkClient.close?.(),
+            }
             return {
               client,
               server: transport,
@@ -652,8 +658,10 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
       const rawCall = async (): Promise<string> => {
         try {
           await ensureMcp()
+          const client = mcpClient
+          if (!client) throw new Error('Browser MCP client failed to initialize.')
           const result = await Promise.race([
-            mcpClient.callTool({ name: toolName, arguments: args }),
+            client.callTool({ name: toolName, arguments: args }),
             new Promise<never>((_resolve, reject) =>
               setTimeout(() => reject(new Error(`Browser action "${toolName}" timed out after ${MCP_CALL_TIMEOUT_MS / 1000}s`)), MCP_CALL_TIMEOUT_MS),
             ),
@@ -1260,7 +1268,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
           maxScrolls: typeof params.maxScrolls === 'number' ? params.maxScrolls : undefined,
         })
         steps.push('scroll_until')
-        if (scroll.ok) initialPage = scroll.page
+        if (scroll.ok && scroll.page) initialPage = scroll.page
       }
 
       if ((Array.isArray(params.fields) && params.fields.length > 0) || (params.form && typeof params.form === 'object' && !Array.isArray(params.form))) {

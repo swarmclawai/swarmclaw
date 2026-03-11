@@ -194,15 +194,16 @@ async function executeSandboxExec(args: unknown, context: SandboxContext) {
   let sandboxDir: string | null = null
   try {
     sandboxDir = createSandboxDir(cwd, sessionId)
+    const sandboxRoot = sandboxDir
     const scriptFile = `script.${ext}`
-    fs.writeFileSync(path.join(sandboxDir, 'package.json'), JSON.stringify({ type: 'module' }), 'utf-8')
-    fs.writeFileSync(path.join(sandboxDir, scriptFile), code, 'utf-8')
+    fs.writeFileSync(path.join(sandboxRoot, 'package.json'), JSON.stringify({ type: 'module' }), 'utf-8')
+    fs.writeFileSync(path.join(sandboxRoot, scriptFile), code, 'utf-8')
 
     const warnings: string[] = []
     const docker = detectDocker()
     const runtimeResult = docker.available
       ? await executeContainerNode({
-          sandboxDir,
+          sandboxDir: sandboxRoot,
           language,
           scriptFile,
           timeout,
@@ -210,7 +211,7 @@ async function executeSandboxExec(args: unknown, context: SandboxContext) {
         }).catch((err: unknown) => {
           warnings.push(err instanceof Error ? err.message : 'Container sandbox unavailable; used host Node fallback.')
           return executeHostNode({
-            sandboxDir,
+            sandboxDir: sandboxRoot,
             language,
             scriptFile,
             timeout,
@@ -219,7 +220,7 @@ async function executeSandboxExec(args: unknown, context: SandboxContext) {
       : (() => {
           warnings.push('Docker is not available; used host Node fallback.')
           return executeHostNode({
-            sandboxDir,
+            sandboxDir: sandboxRoot,
             language,
             scriptFile,
             timeout,
@@ -227,7 +228,7 @@ async function executeSandboxExec(args: unknown, context: SandboxContext) {
         })()
 
     const artifacts = collectArtifacts({
-      sandboxDir,
+      sandboxDir: sandboxRoot,
       ignoredFiles: new Set([scriptFile, 'package.json']),
     })
 

@@ -977,6 +977,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         session: sessionForRun,
         message: effectiveMessage,
         imagePath: resolvedImagePath,
+        imageUrl,
         attachedFiles,
         apiKey,
         systemPrompt,
