@@ -986,6 +986,10 @@ export interface Schedule {
   agentId: string
   projectId?: string
   taskPrompt: string
+  /** 'task' (default) creates a board task; 'wake_only' just wakes the agent with a message */
+  taskMode?: 'task' | 'wake_only'
+  /** Wake message sent to agent when taskMode is 'wake_only' */
+  message?: string
   scheduleType: ScheduleType
   action?: string
   path?: string

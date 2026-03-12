@@ -24,7 +24,6 @@ const PLUGIN_ALIAS_GROUPS: string[][] = [
   ['sandbox', 'sandbox_exec', 'sandbox_list_runtimes'],
   ['wallet', 'wallet_tool'],
   ['monitor', 'monitor_tool'],
-  ['sample_ui', 'show_plugin_card'],
   ['context_mgmt', 'context_status', 'context_summarize'],
   ['openclaw_workspace'],
   ['openclaw_nodes'],

@@ -83,7 +83,6 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   spawn_subagent: { categories: ['delegation', 'platform'], concreteTools: ['spawn_subagent', 'delegate_to_agent'] },
   context_mgmt: { categories: ['memory'], concreteTools: ['context_mgmt', 'context_status', 'context_summarize'] },
   plugin_creator: { categories: ['filesystem', 'execution'], concreteTools: ['plugin_creator', 'plugin_creator_tool'] },
-  sample_ui: { categories: ['platform'], concreteTools: ['sample_ui', 'show_plugin_card'] },
   mailbox: { categories: ['network', 'platform', 'outbound'], concreteTools: ['mailbox', 'inbox'] },
   ask_human: { categories: ['platform'], concreteTools: ['ask_human', 'human_loop'] },
   document: { categories: ['filesystem', 'platform'], concreteTools: ['document', 'ocr_document', 'parse_document'] },

@@ -138,7 +138,7 @@ function runBuild() {
   // Run Next.js build
   log('Building Next.js application (this may take a minute)...')
   const nextCli = path.join(SWARMCLAW_HOME, 'node_modules', 'next', 'dist', 'bin', 'next')
-  execFileSync(process.execPath, [nextCli, 'build'], {
+  execFileSync(process.execPath, [nextCli, 'build', '--no-turbopack'], {
     cwd: SWARMCLAW_HOME,
     stdio: 'inherit',
     env: {

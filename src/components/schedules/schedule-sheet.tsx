@@ -104,6 +104,8 @@ export function ScheduleSheet() {
   const [cron, setCron] = useState('0 * * * *')
   const [intervalMs, setIntervalMs] = useState(3600000)
   const [status, setStatus] = useState<ScheduleStatus>('active')
+  const [taskMode, setTaskMode] = useState<'task' | 'wake_only'>('task')
+  const [message, setMessage] = useState('')
   const [customCron, setCustomCron] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -131,6 +133,8 @@ export function ScheduleSheet() {
         setCron(editing.cron || '0 * * * *')
         setIntervalMs(editing.intervalMs || 3600000)
         setStatus(editing.status)
+        setTaskMode(editing.taskMode === 'wake_only' ? 'wake_only' : 'task')
+        setMessage(editing.message || '')
         setCustomCron(!CRON_PRESETS.some((p) => p.cron === editing.cron))
       } else if (templatePrefill) {
         // Opened from a quick-start card with pre-filled values
@@ -155,6 +159,8 @@ export function ScheduleSheet() {
         setCron('0 * * * *')
         setIntervalMs(3600000)
         setStatus('active')
+        setTaskMode('task')
+        setMessage('')
         setCustomCron(false)
       }
     }
@@ -178,7 +184,9 @@ export function ScheduleSheet() {
     const data = {
       name: name.trim(),
       agentId,
-      taskPrompt,
+      taskPrompt: taskMode === 'wake_only' ? message : taskPrompt,
+      taskMode,
+      message: taskMode === 'wake_only' ? message : undefined,
       scheduleType,
       cron: scheduleType === 'cron' ? cron : undefined,
       intervalMs: scheduleType === 'interval' ? intervalMs : undefined,
@@ -217,7 +225,7 @@ export function ScheduleSheet() {
   }
 
   // Step validation
-  const step0Valid = name.trim().length > 0 && agentId.length > 0 && taskPrompt.trim().length > 0
+  const step0Valid = name.trim().length > 0 && agentId.length > 0 && (taskMode === 'wake_only' ? message.trim().length > 0 : taskPrompt.trim().length > 0)
   const step1Valid = scheduleType === 'cron' ? cron.trim().length > 0 : intervalMs > 0
 
   const selectedAgent = agentId ? agents[agentId] : null
@@ -333,16 +341,61 @@ export function ScheduleSheet() {
           </div>
 
           <div className="mb-8">
-            <SectionLabel>Task Prompt</SectionLabel>
-            <textarea
-              value={taskPrompt}
-              onChange={(e) => setTaskPrompt(e.target.value)}
-              placeholder="What should the agent do when triggered?"
-              rows={4}
-              className={`${inputClass} resize-y min-h-[100px]`}
-              style={{ fontFamily: 'inherit' }}
-            />
+            <div className="flex items-center gap-2 mb-3">
+              <SectionLabel className="mb-0">Task Mode</SectionLabel>
+              <HintTip text="Create task: creates a board task for the agent. Wake agent only: sends a message to the agent without creating a task." />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setTaskMode('task')}
+                className={`py-3 px-4 rounded-[14px] text-center cursor-pointer transition-all duration-200
+                  active:scale-[0.97] text-[14px] font-600 border
+                  ${taskMode === 'task'
+                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                    : 'bg-surface border-white/[0.06] text-text-2 hover:bg-surface-2'}`}
+                style={{ fontFamily: 'inherit' }}
+              >
+                Create task
+              </button>
+              <button
+                onClick={() => setTaskMode('wake_only')}
+                className={`py-3 px-4 rounded-[14px] text-center cursor-pointer transition-all duration-200
+                  active:scale-[0.97] text-[14px] font-600 border
+                  ${taskMode === 'wake_only'
+                    ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
+                    : 'bg-surface border-white/[0.06] text-text-2 hover:bg-surface-2'}`}
+                style={{ fontFamily: 'inherit' }}
+              >
+                Wake agent only
+              </button>
+            </div>
           </div>
+
+          {taskMode === 'wake_only' ? (
+            <div className="mb-8">
+              <SectionLabel>Wake Message</SectionLabel>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Message to send to the agent when woken"
+                rows={4}
+                className={`${inputClass} resize-y min-h-[100px]`}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+          ) : (
+            <div className="mb-8">
+              <SectionLabel>Task Prompt</SectionLabel>
+              <textarea
+                value={taskPrompt}
+                onChange={(e) => setTaskPrompt(e.target.value)}
+                placeholder="What should the agent do when triggered?"
+                rows={4}
+                className={`${inputClass} resize-y min-h-[100px]`}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -498,8 +551,12 @@ export function ScheduleSheet() {
               </div>
             )}
             <div>
-              <span className="text-[11px] text-text-3/50 uppercase tracking-wider font-600">Task</span>
-              <div className="text-[13px] text-text-2 mt-0.5 whitespace-pre-wrap">{taskPrompt}</div>
+              <span className="text-[11px] text-text-3/50 uppercase tracking-wider font-600">Mode</span>
+              <div className="text-[14px] text-text font-600 mt-0.5">{taskMode === 'wake_only' ? 'Wake agent only' : 'Create task'}</div>
+            </div>
+            <div>
+              <span className="text-[11px] text-text-3/50 uppercase tracking-wider font-600">{taskMode === 'wake_only' ? 'Wake Message' : 'Task'}</span>
+              <div className="text-[13px] text-text-2 mt-0.5 whitespace-pre-wrap">{taskMode === 'wake_only' ? message : taskPrompt}</div>
             </div>
             <div className="h-px bg-white/[0.06]" />
             <div>

@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { CronExpressionParser } from 'cron-parser'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 
 type SchedulePayload = Record<string, unknown>
@@ -212,11 +213,24 @@ export function normalizeSchedulePayload(payload: SchedulePayload, opts: Normali
   }
   normalized.agentId = agentId
 
-  const taskPrompt = deriveTaskPrompt(normalized)
-  if (!taskPrompt) {
-    return { ok: false, error: 'Error: schedules require a taskPrompt, command, or action/path payload.' }
+  // Preserve taskMode and message fields
+  const taskMode = normalized.taskMode === 'wake_only' ? 'wake_only' : 'task'
+  normalized.taskMode = taskMode
+  if (taskMode === 'wake_only') {
+    const message = trimString(normalized.message)
+    if (!message) {
+      return { ok: false, error: 'Error: wake_only schedules require a message.' }
+    }
+    normalized.message = message
+    // wake_only still needs a taskPrompt for display/logging — derive or use message
+    normalized.taskPrompt = normalized.taskPrompt ? trimString(normalized.taskPrompt) : message
+  } else {
+    const taskPrompt = deriveTaskPrompt(normalized)
+    if (!taskPrompt) {
+      return { ok: false, error: 'Error: schedules require a taskPrompt, command, or action/path payload.' }
+    }
+    normalized.taskPrompt = taskPrompt
   }
-  normalized.taskPrompt = taskPrompt
 
   const validationError = validateScheduleArtifacts(normalized, baseDir)
   if (validationError) return { ok: false, error: `Error: ${validationError}` }
@@ -228,6 +242,17 @@ export function normalizeSchedulePayload(payload: SchedulePayload, opts: Normali
     } else if (normalized.scheduleType === 'interval') {
       const intervalMs = normalizePositiveInt(normalized.intervalMs)
       if (intervalMs != null) normalized.nextRunAt = applyStagger(now + intervalMs, normalized.staggerSec as number | null)
+    } else if (normalized.scheduleType === 'cron' && normalized.cron) {
+      try {
+        const cronTimezone = trimString(normalized.timezone)
+        const interval = CronExpressionParser.parse(
+          normalized.cron as string,
+          cronTimezone ? { tz: cronTimezone } : undefined,
+        )
+        normalized.nextRunAt = applyStagger(interval.next().getTime(), normalized.staggerSec as number | null)
+      } catch {
+        return { ok: false, error: 'Error: invalid cron expression.' }
+      }
     }
   }
 

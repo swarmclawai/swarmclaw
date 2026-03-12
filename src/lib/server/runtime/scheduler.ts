@@ -40,6 +40,8 @@ interface SchedulerScheduleLike {
   followupThreadId?: string | null
   followupSenderId?: string | null
   followupSenderName?: string | null
+  taskMode?: 'task' | 'wake_only'
+  message?: string
 }
 
 export function startScheduler() {
@@ -67,7 +69,10 @@ function computeNextRuns() {
     if (schedule.status !== 'active') continue
     if (schedule.scheduleType === 'cron' && schedule.cron && !schedule.nextRunAt) {
       try {
-        const interval = CronExpressionParser.parse(schedule.cron)
+        const interval = CronExpressionParser.parse(
+          schedule.cron,
+          schedule.timezone ? { tz: schedule.timezone } : undefined,
+        )
         schedule.nextRunAt = interval.next().getTime()
         changedEntries.push([schedule.id, schedule])
       } catch (err) {
@@ -157,34 +162,57 @@ async function tick() {
     // Compute next run
     advanceSchedule(schedule)
 
-    const { taskId } = prepareScheduledTaskRun({
-      schedule,
-      tasks,
-      now,
-      scheduleSignature,
-    })
+    if (schedule.taskMode === 'wake_only') {
+      // Wake-only: no board task, just heartbeat the agent
+      upsertSchedule(schedule.id, schedule)
 
-    upsertTask(taskId, tasks[taskId])
-    upsertSchedule(schedule.id, schedule)
+      const wakeMessage = schedule.message || `Schedule triggered: ${schedule.name}`
+      pushMainLoopEventToMainSessions({
+        type: 'schedule_fired',
+        text: `Schedule fired (wake-only): "${schedule.name}" (${schedule.id}) run #${schedule.runNumber}`,
+      })
 
-    enqueueTask(taskId)
-    if (scheduleSignature) inFlightScheduleKeys.add(scheduleSignature)
-    pushMainLoopEventToMainSessions({
-      type: 'schedule_fired',
-      text: `Schedule fired: "${schedule.name}" (${schedule.id}) run #${schedule.runNumber} — task ${taskId}`,
-    })
+      if (schedule.createdInSessionId) {
+        enqueueSystemEvent(schedule.createdInSessionId, wakeMessage)
+      }
+      requestHeartbeatNow({
+        agentId: schedule.agentId,
+        eventId: `${schedule.id}:${schedule.runNumber}`,
+        reason: 'schedule',
+        source: `schedule:${schedule.id}`,
+        resumeMessage: wakeMessage,
+        detail: `Run #${schedule.runNumber} (wake-only).`,
+      })
+    } else {
+      // Default task mode: create a board task
+      const { taskId } = prepareScheduledTaskRun({
+        schedule,
+        tasks,
+        now,
+        scheduleSignature,
+      })
 
-    // Enqueue system event + heartbeat wake for the schedule's agent
-    if (schedule.createdInSessionId) {
-      enqueueSystemEvent(schedule.createdInSessionId, `Schedule triggered: ${schedule.name}`)
+      upsertTask(taskId, tasks[taskId])
+      upsertSchedule(schedule.id, schedule)
+
+      enqueueTask(taskId)
+      if (scheduleSignature) inFlightScheduleKeys.add(scheduleSignature)
+      pushMainLoopEventToMainSessions({
+        type: 'schedule_fired',
+        text: `Schedule fired: "${schedule.name}" (${schedule.id}) run #${schedule.runNumber} — task ${taskId}`,
+      })
+
+      if (schedule.createdInSessionId) {
+        enqueueSystemEvent(schedule.createdInSessionId, `Schedule triggered: ${schedule.name}`)
+      }
+      requestHeartbeatNow({
+        agentId: schedule.agentId,
+        eventId: `${schedule.id}:${schedule.runNumber}`,
+        reason: 'schedule',
+        source: `schedule:${schedule.id}`,
+        resumeMessage: `Schedule triggered: ${schedule.name}`,
+        detail: `Run #${schedule.runNumber} queued task ${taskId}.`,
+      })
     }
-    requestHeartbeatNow({
-      agentId: schedule.agentId,
-      eventId: `${schedule.id}:${schedule.runNumber}`,
-      reason: 'schedule',
-      source: `schedule:${schedule.id}`,
-      resumeMessage: `Schedule triggered: ${schedule.name}`,
-      detail: `Run #${schedule.runNumber} queued task ${taskId}.`,
-    })
   }
 }

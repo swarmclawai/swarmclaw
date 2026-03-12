@@ -34,7 +34,6 @@ const UNIVERSAL_CORE_PLUGIN_IDS = [
   'context_mgmt',
   'discovery',
   'plugin_creator',
-  'sample_ui',
   'image_gen',
   'email',
   'calendar',

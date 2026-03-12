@@ -32,7 +32,6 @@ import { buildOpenClawNodeTools } from './openclaw-nodes'
 import { buildContextTools } from './context-mgmt'
 import { buildDiscoveryTools } from './discovery'
 import { buildMonitorTools } from './monitor'
-import { buildSampleUITools } from './sample-ui'
 import { buildPluginCreatorTools } from './plugin-creator'
 import { buildImageGenTools } from './image-gen'
 import { buildEmailTools } from './email'
@@ -182,7 +181,6 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       ['context_mgmt', buildContextTools],
       ['discovery', buildDiscoveryTools],
       ['monitor', buildMonitorTools],
-      ['sample_ui', buildSampleUITools],
       ['plugin_creator', buildPluginCreatorTools],
       ['image_gen', buildImageGenTools],
       ['email', buildEmailTools],
