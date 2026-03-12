@@ -60,9 +60,9 @@ describe('data-dir resolution', () => {
 
     try {
       const env = { ...process.env, HOME: fakeHome, npm_lifecycle_event: 'build:ci' }
-      delete (env as any).DATA_DIR
-      delete (env as any).WORKSPACE_DIR
-      delete (env as any).BROWSER_PROFILES_DIR
+      delete env.DATA_DIR
+      delete env.WORKSPACE_DIR
+      delete env.BROWSER_PROFILES_DIR
 
       const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', `
         const modNs = await import('./src/lib/server/data-dir')
@@ -98,9 +98,9 @@ describe('data-dir resolution', () => {
 
     try {
       const env = { ...process.env, HOME: fakeHome, SWARMCLAW_HOME: swarmclawHome }
-      delete (env as any).DATA_DIR
-      delete (env as any).WORKSPACE_DIR
-      delete (env as any).BROWSER_PROFILES_DIR
+      delete env.DATA_DIR
+      delete env.WORKSPACE_DIR
+      delete env.BROWSER_PROFILES_DIR
 
       const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', `
         const modNs = await import('./src/lib/server/data-dir')

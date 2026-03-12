@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-12T21:09:32.809Z",
-  "totalIssues": 503,
-  "uniqueIssues": 173,
+  "generatedAt": "2026-03-12T22:19:04.598Z",
+  "totalIssues": 500,
+  "uniqueIssues": 172,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -829,13 +829,6 @@
       "severity": 2,
       "message": "React Hook \"useMultiFileAuthState\" is called in function \"start\" that is neither a React function component nor a custom React Hook function. React component names must start with an uppercase letter. React Hook names must start with the word \"use\".",
       "count": 1
-    },
-    {
-      "filePath": "src/lib/server/data-dir.test.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 3
     },
     {
       "filePath": "src/lib/server/embeddings.ts",
