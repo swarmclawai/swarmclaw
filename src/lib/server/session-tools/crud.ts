@@ -981,7 +981,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
 
             if (action === 'upload') {
               if (!filePath?.trim()) return 'Error: filePath is required for upload.'
-              const sourcePath = path.isAbsolute(filePath) ? filePath : safePath(cwd, filePath)
+              const sourcePath = path.isAbsolute(filePath) ? filePath : safePath(cwd, filePath, bctx.filesystemScope)
               if (!fs.existsSync(sourcePath)) return `Error: file not found: ${filePath}`
               const stat = fs.statSync(sourcePath)
               if (!stat.isFile()) return 'Error: upload expects a file path.'

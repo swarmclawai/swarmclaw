@@ -140,12 +140,12 @@ export function normalizeFileArgs(rawArgs: Record<string, unknown>): Record<stri
   }
 }
 
-function resolveFileToolPath(cwd: string, target: string): string {
+function resolveFileToolPath(cwd: string, target: string, scope?: 'workspace' | 'machine'): string {
   try {
-    return safePath(cwd, target)
+    return safePath(cwd, target, scope)
   } catch (err: unknown) {
     if (!path.isAbsolute(target)) throw err
-    return safePath(process.cwd(), target)
+    return safePath(process.cwd(), target, scope)
   }
 }
 
@@ -170,7 +170,7 @@ function isLikelyBinaryFile(resolvedPath: string, data: Buffer): boolean {
 /**
  * Unified File Execution Logic
  */
-export async function executeFileAction(args: Record<string, unknown>, bctx: { cwd: string }) {
+export async function executeFileAction(args: Record<string, unknown>, bctx: { cwd: string; filesystemScope?: 'workspace' | 'machine' }) {
   const normalized = normalizeFileArgs(args)
   const files = normalized.files as Array<Record<string, unknown>> | undefined
   const action = normalized.action as string | undefined
@@ -183,13 +183,14 @@ export async function executeFileAction(args: Record<string, unknown>, bctx: { c
   const overwrite = !!normalized.overwrite
   const recursive = !!normalized.recursive
   const force = !!normalized.force
+  const scope = bctx.filesystemScope
 
   try {
     switch (action) {
       case 'read': {
         const target = filePath || getFileEntryPath(files?.[0])
         if (!target) return 'Error: no filePath or path provided.'
-        const resolved = resolveFileToolPath(bctx.cwd, target)
+        const resolved = resolveFileToolPath(bctx.cwd, target, scope)
         const data = fs.readFileSync(resolved)
         if (isLikelyBinaryFile(resolved, data)) {
           return `Binary file: ${target} (${data.byteLength} bytes). I did not inline its contents. Use send_file with this path to share it.`
@@ -207,13 +208,13 @@ export async function executeFileAction(args: Record<string, unknown>, bctx: { c
           if (!targetPath) continue
           const fileContent = getFileEntryContent(file) ?? ''
           if (/[\\/]$/.test(targetPath)) {
-            const resolvedDir = resolveFileToolPath(bctx.cwd, targetPath)
+            const resolvedDir = resolveFileToolPath(bctx.cwd, targetPath, scope)
             fs.mkdirSync(resolvedDir, { recursive: true })
             results.push(`Created directory ${targetPath}`)
             continue
           }
 
-          const resolved = resolveFileToolPath(bctx.cwd, targetPath)
+          const resolved = resolveFileToolPath(bctx.cwd, targetPath, scope)
           fs.mkdirSync(path.dirname(resolved), { recursive: true })
 
           if (encoding === 'base64' && typeof fileContent === 'string') {
@@ -229,7 +230,7 @@ export async function executeFileAction(args: Record<string, unknown>, bctx: { c
       }
 
       case 'list': {
-        const resolved = resolveFileToolPath(bctx.cwd, dirPath || filePath || '.')
+        const resolved = resolveFileToolPath(bctx.cwd, dirPath || filePath || '.', scope)
         const tree = listDirRecursive(resolved, 0, 3)
         return tree.length ? tree.join('\n') : '(empty directory)'
       }
@@ -237,8 +238,8 @@ export async function executeFileAction(args: Record<string, unknown>, bctx: { c
       case 'copy': {
         if (!sourcePath) return 'Error: sourcePath is required for copy action.'
         if (!destinationPath) return 'Error: destinationPath is required for copy action.'
-        const src = resolveFileToolPath(bctx.cwd, sourcePath)
-        const dest = resolveFileToolPath(bctx.cwd, destinationPath)
+        const src = resolveFileToolPath(bctx.cwd, sourcePath, scope)
+        const dest = resolveFileToolPath(bctx.cwd, destinationPath, scope)
         if (fs.existsSync(dest) && !overwrite) return `Error: destination exists`
         fs.mkdirSync(path.dirname(dest), { recursive: true })
         fs.copyFileSync(src, dest)
@@ -248,8 +249,8 @@ export async function executeFileAction(args: Record<string, unknown>, bctx: { c
       case 'move': {
         if (!sourcePath) return 'Error: sourcePath is required for move action.'
         if (!destinationPath) return 'Error: destinationPath is required for move action.'
-        const src = resolveFileToolPath(bctx.cwd, sourcePath)
-        const dest = resolveFileToolPath(bctx.cwd, destinationPath)
+        const src = resolveFileToolPath(bctx.cwd, sourcePath, scope)
+        const dest = resolveFileToolPath(bctx.cwd, destinationPath, scope)
         if (fs.existsSync(dest) && !overwrite) return `Error: destination exists`
         fs.mkdirSync(path.dirname(dest), { recursive: true })
         if (fs.existsSync(dest) && overwrite) fs.unlinkSync(dest)
@@ -260,7 +261,7 @@ export async function executeFileAction(args: Record<string, unknown>, bctx: { c
       case 'delete': {
         const target = filePath || getFileEntryPath(files?.[0])
         if (!target) return 'Error: no filePath or path provided.'
-        const resolved = resolveFileToolPath(bctx.cwd, target)
+        const resolved = resolveFileToolPath(bctx.cwd, target, scope)
         if (resolved === path.resolve(bctx.cwd) || resolved === path.resolve(process.cwd())) return 'Error: cannot delete root'
         fs.rmSync(resolved, { recursive: !!recursive, force: !!force })
         return `Deleted ${target}`
@@ -386,7 +387,7 @@ export function findRecentSendFileFallbackPaths(cwd: string, maxAgeMs = 10 * 60 
   return dedup(candidates)
 }
 
-export function resolveSendFileSourcePath(cwd: string, rawPath: string): string {
+export function resolveSendFileSourcePath(cwd: string, rawPath: string, scope?: 'workspace' | 'machine'): string {
   const trimmed = rawPath.trim()
   const uploadMatch = trimmed.match(/^(?:sandbox:)?\/api\/uploads\/(.+)$/)
   if (uploadMatch) {
@@ -409,14 +410,14 @@ export function resolveSendFileSourcePath(cwd: string, rawPath: string): string 
     return path.resolve(WORKSPACE_DIR, relative)
   }
   try {
-    return safePath(cwd, trimmed)
+    return safePath(cwd, trimmed, scope)
   } catch (err: unknown) {
     if (path.isAbsolute(trimmed)) return trimmed
     throw err
   }
 }
 
-async function executeSendFile(args: Record<string, unknown>, bctx: { cwd: string }) {
+async function executeSendFile(args: Record<string, unknown>, bctx: { cwd: string; filesystemScope?: 'workspace' | 'machine' }) {
   try {
     const explicitPaths = normalizeSendFilePaths(args)
     const paths = explicitPaths.length > 0 ? explicitPaths : findRecentSendFileFallbackPaths(bctx.cwd)
@@ -430,7 +431,7 @@ async function executeSendFile(args: Record<string, unknown>, bctx: { cwd: strin
     const links: string[] = []
     const errors: string[] = []
     for (const rawPath of paths) {
-      const resolved = resolveSendFileSourcePath(bctx.cwd, rawPath)
+      const resolved = resolveSendFileSourcePath(bctx.cwd, rawPath, bctx.filesystemScope)
       if (!fs.existsSync(resolved)) {
         errors.push(`file not found: ${rawPath}`)
         continue
@@ -531,7 +532,7 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
 
   return [
     tool(
-      async (args) => executeFileAction(args, { cwd: bctx.cwd }),
+      async (args) => executeFileAction(args, { cwd: bctx.cwd, filesystemScope: bctx.filesystemScope }),
       {
         name: 'files',
         description: FilePlugin.tools![0].description,
@@ -539,7 +540,7 @@ export function buildFileTools(bctx: ToolBuildContext): StructuredToolInterface[
       }
     ),
     tool(
-      async (args) => executeSendFile(args, { cwd: bctx.cwd }),
+      async (args) => executeSendFile(args, { cwd: bctx.cwd, filesystemScope: bctx.filesystemScope }),
       {
         name: 'send_file',
         description: FilePlugin.tools![1].description,

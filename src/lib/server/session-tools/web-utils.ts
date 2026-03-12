@@ -315,7 +315,7 @@ function resolveBrowserFileUrlPath(target: string): string | null {
   }
 }
 
-function tryResolveBrowserLocalPath(cwd: string, target: string): string | null {
+function tryResolveBrowserLocalPath(cwd: string, target: string, scope?: 'workspace' | 'machine'): string | null {
   const uploadPath = resolveUploadFilePath(target)
   if (uploadPath) return uploadPath
 
@@ -334,7 +334,7 @@ function tryResolveBrowserLocalPath(cwd: string, target: string): string | null 
 
   const candidates = new Set<string>()
   if (path.isAbsolute(normalized)) candidates.add(normalized)
-  try { candidates.add(safePath(cwd, normalized)) } catch { /* ignore */ }
+  try { candidates.add(safePath(cwd, normalized, scope)) } catch { /* ignore */ }
   try { candidates.add(path.resolve(cwd, normalized)) } catch { /* ignore */ }
 
   for (const candidate of candidates) {
@@ -363,14 +363,14 @@ function localHtmlFileToDataUrl(filePath: string): string | null {
   }
 }
 
-export function resolveBrowserNavigationTarget(cwd: string, target: string, fsBridge?: SandboxFsBridge | null): string {
+export function resolveBrowserNavigationTarget(cwd: string, target: string, fsBridge?: SandboxFsBridge | null, scope?: 'workspace' | 'machine'): string {
   const trimmed = target.trim()
   if (!trimmed) return trimmed
   if (/^(?:https?:|about:|data:)/i.test(trimmed)) return trimmed.replace(/^sandbox:/, '')
 
   const uploadPath = resolveUploadFilePath(trimmed)
   const fileUrlPath = resolveBrowserFileUrlPath(trimmed)
-  const localPath = uploadPath || fileUrlPath || tryResolveBrowserLocalPath(cwd, trimmed)
+  const localPath = uploadPath || fileUrlPath || tryResolveBrowserLocalPath(cwd, trimmed, scope)
 
   if (fsBridge && localPath) {
     const resolved = fsBridge.resolvePath({ filePath: localPath, cwd })

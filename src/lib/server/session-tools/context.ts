@@ -92,6 +92,8 @@ export interface ToolBuildContext {
   fileAccessPolicy?: { allowedPaths?: string[]; blockedPaths?: string[] } | null
   /** Agent's sandbox config — passed to shell for session-scoped container execution */
   sandboxConfig?: NonNullable<Agent['sandboxConfig']> | null
+  /** Agent's filesystem scope — 'machine' allows file access outside the workspace */
+  filesystemScope?: 'workspace' | 'machine'
 }
 
 function normalizeWorkspaceAlias(cwd: string, filePath: string): string {
@@ -109,11 +111,13 @@ function normalizeWorkspaceAlias(cwd: string, filePath: string): string {
  */
 const ALLOWED_ABSOLUTE_PREFIXES = ['/tmp/', '/var/tmp/']
 
-export function safePath(cwd: string, filePath: string): string {
+export function safePath(cwd: string, filePath: string, scope?: 'workspace' | 'machine'): string {
   const path = require('path')
   const normalized = normalizeWorkspaceAlias(cwd, filePath)
   const resolvedRoot = path.resolve(cwd)
   const resolved = path.resolve(resolvedRoot, normalized)
+  // Machine scope: allow any resolved path (blockedPaths enforced separately)
+  if (scope === 'machine') return resolved
   // Allow workspace-relative paths
   if (resolved.startsWith(resolvedRoot)) return resolved
   // Allow explicitly safe absolute paths (e.g., /tmp/)

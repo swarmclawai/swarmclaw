@@ -833,6 +833,8 @@ export interface Agent {
   hourlyBudget?: number | null
   autoRecovery?: boolean
   proactiveMemory?: boolean
+  /** Controls whether file operations are confined to the workspace or allowed anywhere on the host. Default: 'workspace'. */
+  filesystemScope?: 'workspace' | 'machine' | null
   /** Per-agent filesystem restrictions. Globs matched against resolved paths. */
   fileAccessPolicy?: {
     /** If set, only these paths (globs) are writable. Others are blocked. */

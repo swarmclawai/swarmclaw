@@ -445,6 +445,24 @@ export function modelHistoryTail(
   return tail
 }
 
+/**
+ * Like `modelHistoryTail`, but prepends `[senderName]` to user messages
+ * so the model can distinguish who said what in multi-sender histories.
+ */
+export function modelHistoryTailWithAttribution(
+  messages: Session['messages'] | null | undefined,
+  limit = 20,
+  maxChars = 0,
+): Session['messages'] {
+  const tail = modelHistoryTail(messages, limit, maxChars)
+  return tail.map((m) => {
+    if (m.role !== 'user') return m
+    const name = m.source?.senderName
+    if (!name || m.text.startsWith(`[${name}]`)) return m
+    return { ...m, text: `[${name}] ${m.text}` }
+  })
+}
+
 export function persistSession(session: ConnectorSession): void {
   session.updatedAt = Date.now()
   upsertStoredItem('sessions', session.id, session)

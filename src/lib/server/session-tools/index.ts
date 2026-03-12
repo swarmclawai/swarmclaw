@@ -124,6 +124,21 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       })
     }
 
+    const filesystemScope = agentRecord?.filesystemScope === 'machine' ? 'machine' as const : 'workspace' as const
+
+    // Auto-inject default blocked paths for machine scope to prevent writes to sensitive locations
+    let effectiveFileAccessPolicy = agentRecord?.fileAccessPolicy ?? null
+    if (filesystemScope === 'machine' && !effectiveFileAccessPolicy?.blockedPaths?.length) {
+      effectiveFileAccessPolicy = {
+        ...effectiveFileAccessPolicy,
+        blockedPaths: [
+          ...(effectiveFileAccessPolicy?.blockedPaths ?? []),
+          '/System/**', '/usr/bin/**', '/sbin/**', '/boot/**',
+          '**/.ssh/id_*', '**/.env', '**/.env.local', '**/.gnupg/**',
+        ],
+      }
+    }
+
     const bctx: ToolBuildContext = {
       cwd,
       ctx,
@@ -137,8 +152,9 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       readStoredDelegateResumeId,
       resolveCurrentSession,
       activePlugins,
-      fileAccessPolicy: agentRecord?.fileAccessPolicy ?? null,
+      fileAccessPolicy: effectiveFileAccessPolicy,
       sandboxConfig: agentRecord?.sandboxConfig ?? null,
+      filesystemScope,
     }
 
     // 1. Build Native Bridge Tools (Legacy enablement)

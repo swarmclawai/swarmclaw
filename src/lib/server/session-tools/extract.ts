@@ -32,9 +32,9 @@ async function executeExtractAction(args: Record<string, unknown>, bctx: ToolBui
 
     const session = resolveSessionForExtraction(bctx)
     const filePath = typeof normalized.filePath === 'string' && normalized.filePath.trim()
-      ? (path.isAbsolute(normalized.filePath) ? path.resolve(normalized.filePath) : safePath(bctx.cwd, normalized.filePath))
+      ? (path.isAbsolute(normalized.filePath) ? path.resolve(normalized.filePath) : safePath(bctx.cwd, normalized.filePath, bctx.filesystemScope))
       : typeof normalized.path === 'string' && normalized.path.trim()
-        ? (path.isAbsolute(normalized.path) ? path.resolve(normalized.path) : safePath(bctx.cwd, normalized.path))
+        ? (path.isAbsolute(normalized.path) ? path.resolve(normalized.path) : safePath(bctx.cwd, normalized.path, bctx.filesystemScope))
         : null
     const schema = action === 'summarize' ? undefined : normalized.schema
     const instruction = typeof normalized.instruction === 'string'

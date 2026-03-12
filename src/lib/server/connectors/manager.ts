@@ -59,7 +59,7 @@ import {
 } from './policy'
 import { buildConnectorThreadContextBlock } from './thread-context'
 import { isDirectConnectorSession } from './session-kind'
-import { enforceSenderQuietBoundary } from './contact-boundaries'
+import { enforceSenderQuietBoundary, loadSenderBoundaryContext } from './contact-boundaries'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/agents/assistant-control'
 import {
   buildInboundApprovalSubject as buildInboundApprovalSubjectHelper,
@@ -70,7 +70,7 @@ import {
 import {
   describeSessionControls as describeSessionControlsCanonical,
   findDirectSessionForInbound as findDirectSessionForInboundHelper,
-  modelHistoryTail,
+  modelHistoryTailWithAttribution,
   persistSessionRecord as persistSessionRecordCanonical,
   pushSessionMessage as pushSessionMessageHelper,
   resolveDirectSession as resolveDirectSessionHelper,
@@ -1565,7 +1565,10 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   const threadContextBlock = buildConnectorThreadContextBlock(msg, { isFirstThreadTurn: wasCreated })
   if (threadContextBlock) promptParts.push(threadContextBlock)
   // Add connector context
-  promptParts.push(`\nYou are receiving messages via ${msg.platform}. The user "${msg.senderName}" (ID: ${msg.senderId}) is messaging from channel "${msg.channelName || msg.channelId}". Respond naturally and conversationally.
+  const groupCtx = msg.isGroup
+    ? `\nThis is a group chat. History messages are prefixed with [SenderName] to show who said what. Multiple people may be participating. Address the current sender "${msg.senderName}" by name when relevant.`
+    : ''
+  promptParts.push(`\nYou are receiving messages via ${msg.platform}. The user "${msg.senderName}" (ID: ${msg.senderId}) is messaging from channel "${msg.channelName || msg.channelId}". Respond naturally and conversationally.${groupCtx}
 
 ## Response Style
 Be action-first and autonomous: when the user gives an instruction, execute it instead of asking routine follow-up questions.
@@ -1589,6 +1592,8 @@ When the user asks to send media (image, screenshot, PDF, file, or voice note), 
 Do not claim "sent" unless a tool call succeeded.
 If voice note is requested, prefer connector_message_tool action=send_voice_note when available.
 If media sending fails, report the exact error and retry with a corrected path/target.`)
+  const boundaryContext = loadSenderBoundaryContext({ agent, connector, session, msg })
+  if (boundaryContext) promptParts.push(boundaryContext)
   const systemPrompt = promptParts.join('\n\n')
 
   // Add message to session
@@ -1672,7 +1677,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
             }
           }
         },
-        history: modelHistoryTail(session.messages, 50, 48_000),
+        history: modelHistoryTailWithAttribution(session.messages, 50, 48_000),
       })
       // Use finalResponse for connectors — strips intermediate planning/tool-use text
       fullText = result.finalResponse || result.fullText
@@ -1705,7 +1710,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
         }
       },
       active: new Map(),
-      loadHistory: () => modelHistoryTail(session.messages, 50, 48_000),
+      loadHistory: () => modelHistoryTailWithAttribution(session.messages, 50, 48_000),
     })
     mediaExtractionText = fullText
   }
