@@ -36,6 +36,7 @@ const LOG_FILE = path.join(SWARMCLAW_HOME, 'server.log')
 const DATA_DIR = path.join(SWARMCLAW_HOME, 'data')
 const WORKSPACE_DIR = path.join(SWARMCLAW_HOME, 'workspace')
 const BROWSER_PROFILES_DIR = path.join(SWARMCLAW_HOME, 'browser-profiles')
+const BUILD_WORKSPACES_DIR = path.join(SWARMCLAW_HOME, 'builds')
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -83,15 +84,112 @@ function getVersion() {
   return readPackageVersion(PKG_ROOT) || 'unknown'
 }
 
+function resolveInstalledNext(pkgRoot = PKG_ROOT) {
+  try {
+    const nextPackageJson = require.resolve('next/package.json', { paths: [pkgRoot] })
+    const nextPackageDir = path.dirname(nextPackageJson)
+    return {
+      nextCli: path.join(nextPackageDir, 'dist', 'bin', 'next'),
+      nodeModulesDir: path.dirname(nextPackageDir),
+    }
+  } catch {
+    return null
+  }
+}
+
 function ensurePackageDependencies(pkgRoot = PKG_ROOT) {
-  const nextCli = path.join(pkgRoot, 'node_modules', 'next', 'dist', 'bin', 'next')
-  if (fs.existsSync(nextCli)) return nextCli
+  const resolved = resolveInstalledNext(pkgRoot)
+  if (resolved && fs.existsSync(resolved.nextCli)) return resolved
 
   const packageManager = detectPackageManager(pkgRoot, process.env)
   const install = getInstallCommand(packageManager)
   log(`Installing dependencies with ${packageManager}...`)
   execFileSync(install.command, install.args, { cwd: pkgRoot, stdio: 'inherit' })
-  return nextCli
+
+  const installed = resolveInstalledNext(pkgRoot)
+  if (installed && fs.existsSync(installed.nextCli)) return installed
+
+  throw new Error('Next.js CLI was not found after installing dependencies.')
+}
+
+function resolvePackageBuildRoot(pkgRoot = PKG_ROOT) {
+  if (isGitCheckout(pkgRoot)) return pkgRoot
+  const version = readPackageVersion(pkgRoot) || 'unknown'
+  return path.join(BUILD_WORKSPACES_DIR, `package-${version}`)
+}
+
+function copyBuildWorkspaceContents(sourceRoot, targetRoot) {
+  const excluded = new Set([
+    '.git',
+    '.next',
+    'data',
+    'node_modules',
+  ])
+
+  ensureDir(targetRoot)
+
+  for (const entry of fs.readdirSync(sourceRoot, { withFileTypes: true })) {
+    if (excluded.has(entry.name)) continue
+
+    const sourcePath = path.join(sourceRoot, entry.name)
+    const targetPath = path.join(targetRoot, entry.name)
+    fs.rmSync(targetPath, { recursive: true, force: true })
+    fs.cpSync(sourcePath, targetPath, {
+      recursive: true,
+      force: true,
+      dereference: true,
+    })
+  }
+}
+
+function symlinkDir(targetPath, linkPath) {
+  fs.rmSync(linkPath, { recursive: true, force: true })
+  fs.symlinkSync(targetPath, linkPath, process.platform === 'win32' ? 'junction' : 'dir')
+}
+
+function prepareBuildWorkspace({ pkgRoot = PKG_ROOT, buildRoot = resolvePackageBuildRoot(pkgRoot), nodeModulesDir } = {}) {
+  copyBuildWorkspaceContents(pkgRoot, buildRoot)
+  symlinkDir(nodeModulesDir, path.join(buildRoot, 'node_modules'))
+  return buildRoot
+}
+
+function resolveStandaloneCandidateRoots(pkgRoot = PKG_ROOT) {
+  const roots = [pkgRoot]
+  const buildRoot = resolvePackageBuildRoot(pkgRoot)
+  if (buildRoot !== pkgRoot) roots.push(buildRoot)
+  return roots
+}
+
+function locateStandaloneServer({ pkgRoot = PKG_ROOT } = {}) {
+  for (const root of resolveStandaloneCandidateRoots(pkgRoot)) {
+    const standaloneBase = resolveStandaloneBase(root)
+    if (!fs.existsSync(standaloneBase)) continue
+
+    const direct = path.join(standaloneBase, 'server.js')
+    if (fs.existsSync(direct)) {
+      return { root, serverJs: direct }
+    }
+
+    function search(dir) {
+      const entries = fs.readdirSync(dir, { withFileTypes: true })
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name)
+        if (entry.isFile() && entry.name === 'server.js') return full
+        if (entry.isDirectory() && entry.name !== 'node_modules') {
+          const found = search(full)
+          if (found) return found
+        }
+      }
+      return null
+    }
+
+    const nested = search(standaloneBase)
+    if (nested) {
+      return { root, serverJs: nested }
+    }
+  }
+
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -108,11 +206,17 @@ function runBuild({ pkgRoot = PKG_ROOT } = {}) {
   ensureDir(SWARMCLAW_HOME)
   ensureDir(DATA_DIR)
 
-  const nextCli = ensurePackageDependencies(pkgRoot)
+  const { nextCli, nodeModulesDir } = ensurePackageDependencies(pkgRoot)
+  const buildRoot = resolvePackageBuildRoot(pkgRoot)
+
+  if (buildRoot !== pkgRoot) {
+    prepareBuildWorkspace({ pkgRoot, buildRoot, nodeModulesDir })
+    log(`Using build workspace: ${buildRoot}`)
+  }
 
   log('Building Next.js application (this may take a minute)...')
   execFileSync(process.execPath, [nextCli, 'build', '--webpack'], {
-    cwd: pkgRoot,
+    cwd: buildRoot,
     stdio: 'inherit',
     env: {
       ...process.env,
@@ -130,29 +234,7 @@ function runBuild({ pkgRoot = PKG_ROOT } = {}) {
 // ---------------------------------------------------------------------------
 
 function findStandaloneServer({ pkgRoot = PKG_ROOT } = {}) {
-  const standaloneBase = resolveStandaloneBase(pkgRoot)
-
-  if (!fs.existsSync(standaloneBase)) {
-    return null
-  }
-
-  const direct = path.join(standaloneBase, 'server.js')
-  if (fs.existsSync(direct)) return direct
-
-  function search(dir) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true })
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name)
-      if (entry.isFile() && entry.name === 'server.js') return full
-      if (entry.isDirectory() && entry.name !== 'node_modules') {
-        const found = search(full)
-        if (found) return found
-      }
-    }
-    return null
-  }
-
-  return search(standaloneBase)
+  return locateStandaloneServer({ pkgRoot })?.serverJs || null
 }
 
 // ---------------------------------------------------------------------------
@@ -160,11 +242,12 @@ function findStandaloneServer({ pkgRoot = PKG_ROOT } = {}) {
 // ---------------------------------------------------------------------------
 
 function startServer(opts, { pkgRoot = PKG_ROOT } = {}) {
-  const serverJs = findStandaloneServer({ pkgRoot })
-  if (!serverJs) {
+  const standalone = locateStandaloneServer({ pkgRoot })
+  if (!standalone) {
     logError('Standalone server.js not found in the installed package. Try running: swarmclaw server --build')
     process.exit(1)
   }
+  const { root: runtimeRoot, serverJs } = standalone
 
   ensureDir(SWARMCLAW_HOME)
   ensureDir(DATA_DIR)
@@ -186,13 +269,14 @@ function startServer(opts, { pkgRoot = PKG_ROOT } = {}) {
 
   log(`Starting server on ${host}:${port} (WebSocket: ${wsPort})...`)
   log(`Package root: ${pkgRoot}`)
+  log(`Runtime root: ${runtimeRoot}`)
   log(`Home: ${SWARMCLAW_HOME}`)
   log(`Data directory: ${DATA_DIR}`)
 
   if (opts.detach) {
     const logStream = fs.openSync(LOG_FILE, 'a')
     const child = spawn(process.execPath, [serverJs], {
-      cwd: pkgRoot,
+      cwd: runtimeRoot,
       detached: true,
       env,
       stdio: ['ignore', logStream, logStream],
@@ -205,7 +289,7 @@ function startServer(opts, { pkgRoot = PKG_ROOT } = {}) {
     process.exit(0)
   } else {
     const child = spawn(process.execPath, [serverJs], {
-      cwd: pkgRoot,
+      cwd: runtimeRoot,
       env,
       stdio: 'inherit',
     })
@@ -263,6 +347,7 @@ function showStatus() {
   }
 
   log(`Package: ${PKG_ROOT}`)
+  log(`Build workspace: ${resolvePackageBuildRoot()}`)
   log(`Home: ${SWARMCLAW_HOME}`)
   log(`Data: ${DATA_DIR}`)
   log(`Workspace: ${WORKSPACE_DIR}`)
@@ -370,6 +455,7 @@ if (require.main === module) {
 
 module.exports = {
   DATA_DIR,
+  BUILD_WORKSPACES_DIR,
   BROWSER_PROFILES_DIR,
   PKG_ROOT,
   SWARMCLAW_HOME,
@@ -377,8 +463,13 @@ module.exports = {
   findStandaloneServer,
   getVersion,
   isGitCheckout,
+  locateStandaloneServer,
   main,
   needsBuild,
+  prepareBuildWorkspace,
+  resolveInstalledNext,
+  resolvePackageBuildRoot,
+  resolveStandaloneCandidateRoots,
   resolveStandaloneBase,
   runBuild,
 }

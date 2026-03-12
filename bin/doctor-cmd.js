@@ -11,6 +11,8 @@ const {
   SWARMCLAW_HOME,
   findStandaloneServer,
   isGitCheckout,
+  resolvePackageBuildRoot,
+  resolveInstalledNext,
 } = require('./server-cmd.js')
 
 function readPid(pidFile) {
@@ -38,8 +40,10 @@ function buildDoctorReport(opts = {}) {
   const dataDir = path.join(homeDir, 'data')
   const workspaceDir = path.join(homeDir, 'workspace')
   const browserProfilesDir = path.join(homeDir, 'browser-profiles')
-  const nextCliPath = path.join(pkgRoot, 'node_modules', 'next', 'dist', 'bin', 'next')
+  const nextInstall = resolveInstalledNext(pkgRoot)
+  const nextCliPath = nextInstall?.nextCli || path.join(pkgRoot, 'node_modules', 'next', 'dist', 'bin', 'next')
   const standaloneServer = findStandaloneServer({ pkgRoot })
+  const buildRoot = resolvePackageBuildRoot(pkgRoot)
   const pid = readPid(pidFile)
   const running = pid ? isProcessRunning(pid) : false
 
@@ -64,6 +68,7 @@ function buildDoctorReport(opts = {}) {
   return {
     packageVersion: readPackageVersion(pkgRoot) || 'unknown',
     packageRoot: pkgRoot,
+    buildRoot,
     installKind: isGitCheckout(pkgRoot) ? 'git' : 'package',
     homeDir,
     dataDir,
@@ -96,6 +101,7 @@ function printHumanReport(report) {
     `Package version: ${report.packageVersion}`,
     `Install kind: ${report.installKind}`,
     `Package root: ${report.packageRoot}`,
+    `Build root: ${report.buildRoot}`,
     `Home: ${report.homeDir}`,
     `Data: ${report.dataDir}`,
     `Workspace: ${report.workspaceDir}`,

@@ -9,7 +9,7 @@ const {
   PKG_ROOT,
   SWARMCLAW_HOME,
   WORKSPACE_DIR,
-  findStandaloneServer,
+  locateStandaloneServer,
 } = require('./server-cmd.js')
 
 function printHelp() {
@@ -51,14 +51,15 @@ function main(args = process.argv.slice(3)) {
   console.log(`[swarmclaw] Workspace directory: ${WORKSPACE_DIR}`)
   console.log(`[swarmclaw] Browser profiles: ${BROWSER_PROFILES_DIR}`)
 
-  const serverJs = findStandaloneServer()
-  if (!serverJs) {
+  const standalone = locateStandaloneServer()
+  if (!standalone) {
     console.error('[swarmclaw] Standalone server.js not found in the installed package. Try running: swarmclaw server --build')
     process.exit(1)
   }
+  const { root: runtimeRoot, serverJs } = standalone
 
   const child = spawn(process.execPath, [serverJs], {
-    cwd: PKG_ROOT,
+    cwd: runtimeRoot,
     env: process.env,
     stdio: 'inherit',
   })

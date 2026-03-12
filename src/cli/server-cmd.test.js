@@ -58,3 +58,80 @@ test('findStandaloneServer recursively resolves nested standalone server paths',
   fs.rmSync(homeDir, { recursive: true, force: true })
   fs.rmSync(pkgRoot, { recursive: true, force: true })
 })
+
+test('resolvePackageBuildRoot uses a versioned workspace for registry installs', () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-server-home-'))
+  const pkgRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-server-pkg-'))
+  const serverCmd = loadServerCmdForHome(homeDir)
+
+  fs.writeFileSync(
+    path.join(pkgRoot, 'package.json'),
+    JSON.stringify({ name: '@swarmclawai/swarmclaw', version: '1.0.2' }),
+    'utf8',
+  )
+
+  assert.equal(
+    serverCmd.resolvePackageBuildRoot(pkgRoot),
+    path.join(homeDir, 'builds', 'package-1.0.2'),
+  )
+
+  fs.rmSync(homeDir, { recursive: true, force: true })
+  fs.rmSync(pkgRoot, { recursive: true, force: true })
+})
+
+test('findStandaloneServer falls back to the external build workspace for registry installs', () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-server-home-'))
+  const pkgRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-server-pkg-'))
+  const serverCmd = loadServerCmdForHome(homeDir)
+
+  fs.writeFileSync(
+    path.join(pkgRoot, 'package.json'),
+    JSON.stringify({ name: '@swarmclawai/swarmclaw', version: '1.0.2' }),
+    'utf8',
+  )
+
+  const nestedServer = path.join(
+    serverCmd.resolvePackageBuildRoot(pkgRoot),
+    '.next',
+    'standalone',
+    'Users',
+    'wayde',
+    'Dev',
+    'swarmclaw',
+    'server.js',
+  )
+  fs.mkdirSync(path.dirname(nestedServer), { recursive: true })
+  fs.writeFileSync(nestedServer, 'console.log("ok")\n', 'utf8')
+
+  assert.equal(serverCmd.findStandaloneServer({ pkgRoot }), nestedServer)
+
+  fs.rmSync(homeDir, { recursive: true, force: true })
+  fs.rmSync(pkgRoot, { recursive: true, force: true })
+})
+
+test('prepareBuildWorkspace copies the package tree and links node_modules outside node_modules paths', () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-server-home-'))
+  const pkgRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-server-pkg-'))
+  const externalNodeModules = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-node-modules-'))
+  const serverCmd = loadServerCmdForHome(homeDir)
+
+  fs.writeFileSync(
+    path.join(pkgRoot, 'package.json'),
+    JSON.stringify({ name: '@swarmclawai/swarmclaw', version: '1.0.2' }),
+    'utf8',
+  )
+  fs.mkdirSync(path.join(pkgRoot, 'src', 'app'), { recursive: true })
+  fs.writeFileSync(path.join(pkgRoot, 'src', 'app', 'page.tsx'), 'export default function Page() { return null }\n', 'utf8')
+
+  const buildRoot = serverCmd.resolvePackageBuildRoot(pkgRoot)
+  serverCmd.prepareBuildWorkspace({ pkgRoot, buildRoot, nodeModulesDir: externalNodeModules })
+
+  assert.equal(fs.readFileSync(path.join(buildRoot, 'package.json'), 'utf8'), fs.readFileSync(path.join(pkgRoot, 'package.json'), 'utf8'))
+  assert.equal(fs.readFileSync(path.join(buildRoot, 'src', 'app', 'page.tsx'), 'utf8'), 'export default function Page() { return null }\n')
+  assert.equal(fs.lstatSync(path.join(buildRoot, 'node_modules')).isSymbolicLink(), true)
+  assert.equal(fs.realpathSync(path.join(buildRoot, 'node_modules')), fs.realpathSync(externalNodeModules))
+
+  fs.rmSync(homeDir, { recursive: true, force: true })
+  fs.rmSync(pkgRoot, { recursive: true, force: true })
+  fs.rmSync(externalNodeModules, { recursive: true, force: true })
+})

@@ -136,6 +136,17 @@ Running `swarmclaw` with no arguments starts the server on `http://localhost:345
 Global install runs `postinstall`, which rebuilds `better-sqlite3` and prepares the sandbox browser image when Docker is available.
 If Docker is not installed yet, SwarmClaw keeps running and falls back to host execution for shell, browser, and `sandbox_exec`.
 No Deno install is required for the local `sandbox_exec` path.
+Runtime state defaults to `~/.swarmclaw` unless you set `SWARMCLAW_HOME`.
+If the standalone server bundle is missing, the first launch builds it under `<swarmclaw-home>/builds/package-<version>` before starting.
+
+### Local project install
+
+```bash
+npm i @swarmclawai/swarmclaw
+npx swarmclaw
+```
+
+Local installs keep runtime state in `<project>/.swarmclaw` by default. The same project-local install works with `pnpm`, `yarn`, or `bun`; use that package manager's exec command to launch the local binary, or run `./node_modules/.bin/swarmclaw` directly.
 
 ### One-off run
 
@@ -146,6 +157,8 @@ yarn dlx @swarmclawai/swarmclaw
 bunx @swarmclawai/swarmclaw
 ```
 
+One-off runs use the published package without keeping a project-local install. Runtime state defaults to `~/.swarmclaw` unless you set `SWARMCLAW_HOME`.
+
 ### Install script
 
 ```bash
@@ -155,7 +168,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 The installer resolves the latest stable release tag and installs that version by default.
 It also builds the production bundle so `npm run start` is ready immediately after install.
 No Deno install is required; local sandbox execution is Docker-first with automatic host Node fallback.
-To pin a version: `SWARMCLAW_VERSION=v0.9.6 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v1.0.3 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -603,7 +616,7 @@ A fuller step-by-step walkthrough lives at https://swarmclaw.ai/docs/plugin-tuto
 
 ### Browser, Watch, and Delegation Upgrades
 
-- **Persistent Browser Profiles**: The built-in `browser` plugin now keeps a reusable profile per chat/session, and subagents inherit the parent profile by default. Profiles live under `~/.swarmclaw/browser-profiles` unless you override `BROWSER_PROFILES_DIR`, so cookies, storage, and authenticated state survive longer-running work without polluting the project tree. Browser state is exposed at `GET /api/chats/[id]/browser`.
+- **Persistent Browser Profiles**: The built-in `browser` plugin now keeps a reusable profile per chat/session, and subagents inherit the parent profile by default. Profiles live under `<swarmclaw-home>/browser-profiles` by default (`~/.swarmclaw/browser-profiles` for global installs, `<project>/.swarmclaw/browser-profiles` for local installs) unless you override `BROWSER_PROFILES_DIR`, so cookies, storage, and authenticated state survive longer-running work without polluting the project tree. Browser state is exposed at `GET /api/chats/[id]/browser`.
 - **Higher-Level Browser Actions**: In addition to raw Playwright-style actions, `browser` supports workflow-oriented actions such as `read_page`, `extract_links`, `extract_form_fields`, `extract_table`, `fill_form`, `submit_form`, `scroll_until`, `download_file`, `complete_web_task`, `verify_text`, `verify_element`, `verify_list`, `verify_value`, `profile`, and `reset_profile`.
 - **Structured Browser State**: Browser sessions persist recent observations, tabs, artifacts (screenshots / PDFs / downloads), current URL, and last errors in `browser_sessions`, which makes autonomous browser tasks easier to resume, inspect, and hand off across turns.
 - **Durable Watches**: `schedule_wake` now uses persisted watch jobs instead of an in-memory timer, and `monitor_tool` supports `create_watch`, `list_watches`, `get_watch`, and `cancel_watch` across `time`, `http`, `file`, `task`, `webhook`, and `page` conditions. The same watch system also powers the new `mailbox`, session-mailbox, and approval waits used by human-loop flows. Watches support common checks like status/status sets, regex or text matches, content changes, existence checks, inbound mailbox correlation IDs, and webhook event filters.

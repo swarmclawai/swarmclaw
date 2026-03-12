@@ -61,6 +61,16 @@ const CHART_COLORS = [
   '#60A5FA', '#4ADE80',
 ]
 
+function numericChartValue(value: unknown): number {
+  if (Array.isArray(value)) return numericChartValue(value[0])
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
 
 function formatBucketLabel(bucket: string, range: Range): string {
   if (range === '24h') {
@@ -306,7 +316,7 @@ export default function UsagePage() {
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                       <XAxis dataKey="label" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={formatTokens} />
-                      <Tooltip {...tooltipStyle} formatter={(value: number | undefined) => [formatTokens(value ?? 0), 'Tokens']} />
+                      <Tooltip {...tooltipStyle} formatter={(value) => [formatTokens(numericChartValue(value)), 'Tokens']} />
                       <Line type="monotone" dataKey="tokens" stroke="#818CF8" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#818CF8' }} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -324,8 +334,8 @@ export default function UsagePage() {
                     <BarChart data={providerData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                       <XAxis dataKey="name" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${v}`} />
-                      <Tooltip {...tooltipStyle} formatter={(value: number | undefined) => [formatCost(value ?? 0), 'Cost']} />
+                      <YAxis tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value) => `$${numericChartValue(value)}`} />
+                      <Tooltip {...tooltipStyle} formatter={(value) => [formatCost(numericChartValue(value)), 'Cost']} />
                       <Bar dataKey="cost" radius={[4, 4, 0, 0]}>
                         {providerData.map((_entry, i) => (
                           <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
@@ -343,9 +353,9 @@ export default function UsagePage() {
                   <ResponsiveContainer width="100%" height={280}>
                     <BarChart data={agentData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
-                      <XAxis type="number" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${v}`} />
+                      <XAxis type="number" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value) => `$${numericChartValue(value)}`} />
                       <YAxis type="category" dataKey="name" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} width={100} />
-                      <Tooltip {...tooltipStyle} formatter={(value: number | undefined) => [formatCost(value ?? 0), 'Cost']} />
+                      <Tooltip {...tooltipStyle} formatter={(value) => [formatCost(numericChartValue(value)), 'Cost']} />
                       <Bar dataKey="cost" radius={[0, 4, 4, 0]}>
                         {agentData.map((_entry, i) => (
                           <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
@@ -370,9 +380,9 @@ export default function UsagePage() {
                       <YAxis type="category" dataKey="name" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} width={120} />
                       <Tooltip
                         {...tooltipStyle}
-                        formatter={(value: number | undefined, name?: string) => [
-                          formatTokens(value ?? 0),
-                          name === 'definitionTokens' ? 'Context (definitions)' : 'Invocations',
+                        formatter={(value, name) => [
+                          formatTokens(numericChartValue(value)),
+                          String(name) === 'definitionTokens' ? 'Context (definitions)' : 'Invocations',
                         ]}
                       />
                       <Bar dataKey="definitionTokens" fill="#818CF8" radius={[0, 0, 0, 0]} stackId="a" name="definitionTokens" />
@@ -381,9 +391,9 @@ export default function UsagePage() {
                         verticalAlign="bottom"
                         iconType="circle"
                         iconSize={8}
-                        formatter={(value: string) => (
+                        formatter={(value) => (
                           <span style={{ color: '#a0a0b0', fontSize: 11 }}>
-                            {value === 'definitionTokens' ? 'Context (definitions)' : 'Invocations'}
+                            {String(value) === 'definitionTokens' ? 'Context (definitions)' : 'Invocations'}
                           </span>
                         )}
                       />
@@ -431,7 +441,7 @@ export default function UsagePage() {
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                           <XAxis dataKey="label" tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} />
                           <YAxis tick={{ fill: '#888', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                          <Tooltip {...tooltipStyle} formatter={(value: number | undefined) => [value ?? 0, 'Completed']} />
+                          <Tooltip {...tooltipStyle} formatter={(value) => [numericChartValue(value), 'Completed']} />
                           <Bar dataKey="count" fill="#34D399" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -458,7 +468,7 @@ export default function UsagePage() {
                           <Bar dataKey="completed" fill="#34D399" radius={[4, 4, 0, 0]} stackId="a" name="Completed" />
                           <Bar dataKey="failed" fill="#F87171" radius={[4, 4, 0, 0]} stackId="a" name="Failed" />
                           <Legend verticalAlign="bottom" iconType="circle" iconSize={8}
-                            formatter={(value: string) => <span style={{ color: '#a0a0b0', fontSize: 11 }}>{value}</span>} />
+                            formatter={(value) => <span style={{ color: '#a0a0b0', fontSize: 11 }}>{String(value)}</span>} />
                         </BarChart>
                       </ResponsiveContainer>
                     ) : (
