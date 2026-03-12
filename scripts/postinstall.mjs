@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 const INSTALL_METADATA_FILE = '.swarmclaw-install.json'
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
@@ -48,7 +48,7 @@ function formatFailure(result) {
 }
 
 try {
-  writeFileSync(
+  fs.writeFileSync(
     new URL(`../${INSTALL_METADATA_FILE}`, import.meta.url),
     JSON.stringify({
       packageManager: installedWith,
@@ -72,18 +72,22 @@ if (result.error || (result.status ?? 0) !== 0) {
 }
 
 if (!process.env.CI) {
-  const sandboxImage = spawnSync(process.execPath, [ensureSandboxBrowserScript, '--quiet'], {
-    cwd: packageRoot,
-    encoding: 'utf8',
-    stdio: 'pipe',
-  })
-  if (sandboxImage.error || (sandboxImage.status ?? 0) !== 0) {
-    logWarn(`sandbox browser image setup failed: ${formatFailure(sandboxImage)}`)
-    logWarn('Retry manually with: node ./scripts/ensure-sandbox-browser-image.mjs')
-  }
+  if (!fs.existsSync(ensureSandboxBrowserScript)) {
+    logNote('Sandbox browser image helper is not present in this install context. Skipping setup.')
+  } else {
+    const sandboxImage = spawnSync(process.execPath, [ensureSandboxBrowserScript, '--quiet'], {
+      cwd: packageRoot,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    })
+    if (sandboxImage.error || (sandboxImage.status ?? 0) !== 0) {
+      logWarn(`sandbox browser image setup failed: ${formatFailure(sandboxImage)}`)
+      logWarn('Retry manually with: node ./scripts/ensure-sandbox-browser-image.mjs')
+    }
 
-  if (!commandExists('docker')) {
-    logNote('Docker was not found. Container sandboxes will fall back to host execution until Docker is installed.')
+    if (!commandExists('docker')) {
+      logNote('Docker was not found. Container sandboxes will fall back to host execution until Docker is installed.')
+    }
   }
 }
 

@@ -65,7 +65,7 @@
     "lint:baseline": "node ./scripts/lint-baseline.mjs check",
     "lint:baseline:update": "node ./scripts/lint-baseline.mjs update",
     "cli": "node ./bin/swarmclaw.js",
-    "test:cli": "node --test src/cli/*.test.js bin/*.test.js",
+    "test:cli": "node --test src/cli/*.test.js bin/*.test.js scripts/postinstall.test.mjs",
     "test:setup": "tsx --test src/app/api/setup/check-provider/route.test.ts src/lib/server/provider-model-discovery.test.ts src/components/auth/setup-wizard/utils.test.ts src/components/auth/setup-wizard/types.test.ts src/hooks/setup-done-detection.test.ts src/lib/setup-defaults.test.ts",
     "test:openclaw": "tsx --test src/lib/openclaw/openclaw-agent-id.test.ts src/lib/openclaw/openclaw-endpoint.test.ts src/lib/server/agents/agent-runtime-config.test.ts src/lib/server/build-llm.test.ts src/lib/server/connectors/connector-routing.test.ts src/lib/server/connectors/openclaw.test.ts src/lib/server/gateway/protocol.test.ts src/lib/server/llm-response-cache.test.ts src/lib/server/mcp-conformance.test.ts src/lib/server/openclaw/agent-resolver.test.ts src/lib/server/openclaw/deploy.test.ts src/lib/server/openclaw/skills-normalize.test.ts src/lib/server/session-tools/openclaw-nodes.test.ts src/lib/server/tasks/task-quality-gate.test.ts src/lib/server/tasks/task-validation.test.ts src/lib/server/tool-capability-policy.test.ts src/lib/providers/openclaw-exports.test.ts src/app/api/openclaw/dashboard-url/route.test.ts",
     "test:mcp:conformance": "node --import tsx ./scripts/mcp-conformance-check.ts",
