@@ -904,7 +904,7 @@ export interface AgentWallet {
   spendingLimitLamports?: number
   /** @deprecated Use dailyLimitAtomic */
   dailyLimitLamports?: number
-  requireApproval: boolean          // default true
+  requireApproval: boolean          // default true; can be globally overridden by app settings
   createdAt: number
   updatedAt: number
 }
@@ -1457,6 +1457,7 @@ export interface AppSettings {
   safetyRequireApprovalForOutbound?: boolean
   safetyMaxDailySpendUsd?: number | null
   safetyBlockedTools?: string[]
+  walletApprovalsEnabled?: boolean
   capabilityPolicyMode?: 'permissive' | 'balanced' | 'strict'
   capabilityBlockedTools?: string[]
   capabilityBlockedCategories?: string[]

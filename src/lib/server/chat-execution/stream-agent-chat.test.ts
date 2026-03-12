@@ -14,6 +14,7 @@ import {
   resolveFinalStreamResponseText,
   shouldSkipToolSummaryForShortResponse,
   shouldForceAttachmentFollowthrough,
+  shouldForceExternalExecutionKickoffFollowthrough,
   shouldForceRecoverableToolErrorFollowthrough,
   shouldTerminateOnSuccessfulMemoryMutation,
   shouldForceDeliverableFollowthrough,
@@ -207,6 +208,12 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(streamAgentChatSource.includes('REQUIRED_TOOL_KICKOFF_TIMEOUT_MS'))
     assert.ok(streamAgentChatSource.includes('tool_kickoff_timeout'))
     assert.ok(streamAgentChatSource.includes('did not start the required workspace tool step'))
+  })
+
+  it('wires a bounded execution-kickoff continuation for intent-only live task replies', () => {
+    assert.ok(streamSources.includes('execution_kickoff_followthrough'))
+    assert.ok(streamAgentChatSource.includes('shouldForceExternalExecutionKickoffFollowthrough'))
+    assert.ok(streamAgentChatSource.includes('externalExecutionKickoff'))
   })
 
   it('adds current-thread recall guidance and immediate memory routes in the system prompt', () => {
@@ -618,6 +625,41 @@ describe('shouldForceExternalExecutionFollowthrough', () => {
             output: '{"type":"plugin_wallet_action_request","status":"pending"}',
           },
         ],
+      }),
+      false,
+    )
+  })
+})
+
+describe('shouldForceExternalExecutionKickoffFollowthrough', () => {
+  it('forces a bounded continuation when an execution task stops at an intent-only kickoff', () => {
+    assert.equal(
+      shouldForceExternalExecutionKickoffFollowthrough({
+        userMessage: 'Try buy one NFT on Arbitrum and show me what happened.',
+        finalResponse: 'Let me try to interact directly with the NFT contract and see if I can mint one:',
+        hasToolCalls: false,
+        toolEvents: [],
+      }),
+      true,
+    )
+  })
+
+  it('does not force kickoff when the model already surfaced a real blocker or asked a blocking question', () => {
+    assert.equal(
+      shouldForceExternalExecutionKickoffFollowthrough({
+        userMessage: 'Try buy one NFT on Arbitrum and show me what happened.',
+        finalResponse: 'Exact blocker: this wallet cannot complete the required signature in the current runtime.',
+        hasToolCalls: false,
+        toolEvents: [],
+      }),
+      false,
+    )
+    assert.equal(
+      shouldForceExternalExecutionKickoffFollowthrough({
+        userMessage: 'Try buy one NFT on Arbitrum and show me what happened.',
+        finalResponse: 'Which collection do you want me to target?',
+        hasToolCalls: false,
+        toolEvents: [],
       }),
       false,
     )

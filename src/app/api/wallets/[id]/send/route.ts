@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server'
 import { genId } from '@/lib/id'
-import { loadWallets, upsertWalletTransaction } from '@/lib/server/storage'
+import { loadSettings, loadWallets, upsertWalletTransaction } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import type { AgentWallet, WalletTransaction } from '@/types'
 import {
   normalizeAtomicString,
 } from '@/lib/wallet/wallet'
-import { isValidWalletAddress, sendWalletNativeAsset, validateWalletSendLimits } from '@/lib/server/wallet/wallet-service'
+import {
+  isValidWalletAddress,
+  sendWalletNativeAsset,
+  validateWalletSendLimits,
+  walletRequiresApproval,
+} from '@/lib/server/wallet/wallet-service'
 import { errorMessage } from '@/lib/shared-utils'
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const wallets = loadWallets() as Record<string, AgentWallet>
   const wallet = wallets[id]
   if (!wallet) return NextResponse.json({ error: 'Wallet not found' }, { status: 404 })
+  const settings = loadSettings()
 
   const body = await req.json()
   const toAddress = typeof body.toAddress === 'string' ? body.toAddress.trim() : ''
@@ -32,8 +38,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const txId = genId(8)
   const now = Date.now()
 
-  // If requireApproval, create pending tx and return it
-  if (wallet.requireApproval) {
+  // When approvals are enabled globally and for this wallet, create a pending request instead of sending.
+  if (walletRequiresApproval(wallet, settings)) {
     const pendingTx: WalletTransaction = {
       id: txId,
       walletId: id,

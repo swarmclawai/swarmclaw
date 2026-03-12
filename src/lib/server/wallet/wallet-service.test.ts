@@ -3,7 +3,11 @@ import { describe, it } from 'node:test'
 
 import type { AgentWallet, WalletTransaction } from '@/types'
 
-import { validateWalletSendLimits } from '@/lib/server/wallet/wallet-service'
+import {
+  validateWalletSendLimits,
+  walletApprovalsGloballyEnabled,
+  walletRequiresApproval,
+} from '@/lib/server/wallet/wallet-service'
 
 function buildWallet(overrides: Partial<AgentWallet> = {}): AgentWallet {
   return {
@@ -53,5 +57,25 @@ describe('validateWalletSendLimits', () => {
     })
 
     assert.match(error || '', /Daily limit exceeded/)
+  })
+})
+
+describe('wallet approval helpers', () => {
+  it('treats missing app setting as globally enabled', () => {
+    assert.equal(walletApprovalsGloballyEnabled(undefined), true)
+    assert.equal(walletApprovalsGloballyEnabled({}), true)
+  })
+
+  it('lets the global setting disable approval even for approval-required wallets', () => {
+    const wallet = buildWallet({ requireApproval: true })
+
+    assert.equal(walletRequiresApproval(wallet, { walletApprovalsEnabled: true }), true)
+    assert.equal(walletRequiresApproval(wallet, { walletApprovalsEnabled: false }), false)
+  })
+
+  it('still respects the per-wallet toggle when global approvals remain enabled', () => {
+    const wallet = buildWallet({ requireApproval: false })
+
+    assert.equal(walletRequiresApproval(wallet, { walletApprovalsEnabled: true }), false)
   })
 })

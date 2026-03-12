@@ -20,6 +20,7 @@ export type ContinuationType =
   | 'transient'
   | 'required_tool'
   | 'attachment_followthrough'
+  | 'execution_kickoff_followthrough'
   | 'execution_followthrough'
   | 'deliverable_followthrough'
   | 'unfinished_tool_followthrough'
@@ -237,6 +238,28 @@ export function shouldForceExternalExecutionFollowthrough(params: {
   return /(let me|i'll|i will|trying|research|query|check|look|promising|now let me|good -|good,)/i.test(trimmed) || trimmed.length < 500
 }
 
+export function shouldForceExternalExecutionKickoffFollowthrough(params: {
+  userMessage: string
+  finalResponse: string
+  hasToolCalls: boolean
+  toolEvents: MessageToolEvent[]
+}): boolean {
+  if (!looksLikeBoundedExternalExecutionTask(params.userMessage)) return false
+  if (params.hasToolCalls || params.toolEvents.length > 0) return false
+
+  const trimmed = params.finalResponse.trim()
+  if (!trimmed) return true
+  if (/^(?:HEARTBEAT_OK|NO_MESSAGE)\b/i.test(trimmed)) return false
+  if (/\?\s*$/.test(trimmed)) return false
+  if (/\b(last reversible step|exact blocker|blocked|cannot|can't|missing capability|need approval|requires approval|approval boundary|requires human|ask_human|credential|authentication|login|2fa|mfa|captcha)\b/i.test(trimmed)) {
+    return false
+  }
+  if (/\b(done|completed|finished|sent|broadcast|minted|purchased|bought|swapped|claimed)\b/i.test(trimmed)) {
+    return false
+  }
+  return looksLikeIncompleteDeliverableResponse(trimmed) || trimmed.length < 220
+}
+
 export function shouldForceDeliverableFollowthrough(params: {
   userMessage: string
   finalResponse: string
@@ -357,6 +380,23 @@ function buildExternalExecutionFollowthroughPrompt(params: {
     `Current partial response:\n${params.fullText || '(none)'}`,
     '',
     `Recent tool evidence:\n${renderToolEvidence(params.toolEvents) || '(none)'}`,
+  ].join('\n')
+}
+
+function buildExternalExecutionKickoffPrompt(params: {
+  userMessage: string
+  fullText: string
+}): string {
+  return [
+    'The previous iteration stopped after an intent update before taking the first concrete execution step.',
+    'Do not send another preamble like "let me check", "I will try", or "I\'m going to".',
+    'Continue immediately from the same objective and take the first concrete reversible step now using the available tools.',
+    'If a real blocker appears before any safe action, state the exact blocker with evidence instead of narrating your plan.',
+    'Do not ask the user to repeat the task. Either act now or report the blocker.',
+    '',
+    `Objective:\n${params.userMessage}`,
+    '',
+    `Previous response:\n${params.fullText || '(none)'}`,
   ].join('\n')
 }
 
@@ -575,6 +615,12 @@ export function buildContinuationPrompt(params: {
     case 'attachment_followthrough':
       return buildAttachmentFollowthroughPrompt({
         message: params.message,
+        fullText: params.fullText,
+      })
+
+    case 'execution_kickoff_followthrough':
+      return buildExternalExecutionKickoffPrompt({
+        userMessage: params.message,
         fullText: params.fullText,
       })
 

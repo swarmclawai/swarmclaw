@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '@/lib/app/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { useAppStore } from '@/stores/use-app-store'
 import type { AgentWallet, WalletAssetBalance, WalletPortfolioSummary, WalletChain } from '@/types'
 import { toast } from 'sonner'
 import { errorMessage } from '@/lib/shared-utils'
@@ -32,6 +33,7 @@ interface WalletSectionProps {
 }
 
 export function WalletSection({ agentId, wallets, activeWalletId, onWalletCreated }: WalletSectionProps) {
+  const appSettings = useAppStore((s) => s.appSettings)
   const [creating, setCreating] = useState(false)
   const [activatingWalletId, setActivatingWalletId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -53,6 +55,7 @@ export function WalletSection({ agentId, wallets, activeWalletId, onWalletCreate
   )
 
   const [chain, setChain] = useState<WalletChain>(availableChains[0] || 'solana')
+  const walletApprovalsEnabled = appSettings.walletApprovalsEnabled !== false
 
   useEffect(() => {
     if (availableChains.length === 0) return
@@ -204,7 +207,7 @@ export function WalletSection({ agentId, wallets, activeWalletId, onWalletCreate
                 <div className="flex flex-wrap items-center gap-3 text-[10px] text-text-3/60">
                   <span>Limit: {perTxLimit} {walletMeta.symbol}/tx</span>
                   <span>Daily: {dailyLimit} {walletMeta.symbol}</span>
-                  <span>{wallet.requireApproval ? 'Approval required' : 'Auto-send'}</span>
+                  <span>{!walletApprovalsEnabled ? 'Approvals off globally' : (wallet.requireApproval ? 'Approval required' : 'Auto-send')}</span>
                   {wallet.portfolioSummary?.nonZeroAssets ? (
                     <span>{wallet.portfolioSummary.nonZeroAssets} asset{wallet.portfolioSummary.nonZeroAssets === 1 ? '' : 's'} detected</span>
                   ) : null}

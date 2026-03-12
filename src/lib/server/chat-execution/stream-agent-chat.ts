@@ -38,6 +38,7 @@ import {
   looksLikeBoundedExternalExecutionTask,
   looksLikeOpenEndedDeliverableTask,
   shouldForceRecoverableToolErrorFollowthrough,
+  shouldForceExternalExecutionKickoffFollowthrough,
   shouldForceExternalExecutionFollowthrough,
   shouldForceDeliverableFollowthrough,
   hasStateChangingWalletEvidence,
@@ -88,6 +89,7 @@ export {
   getExplicitRequiredToolNames,
   isWalletSimulationResult,
   looksLikeOpenEndedDeliverableTask,
+  shouldForceExternalExecutionKickoffFollowthrough,
   shouldForceRecoverableToolErrorFollowthrough,
   shouldForceExternalExecutionFollowthrough,
   shouldForceDeliverableFollowthrough,
@@ -1181,6 +1183,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   const MAX_TRANSIENT_RETRIES = 3
   const MAX_REQUIRED_TOOL_CONTINUES = 2
   let MAX_EXECUTION_FOLLOWTHROUGHS = 1
+  const MAX_EXECUTION_KICKOFF_FOLLOWTHROUGHS = 1
   let MAX_ATTACHMENT_FOLLOWTHROUGHS = 1
   let MAX_DELIVERABLE_FOLLOWTHROUGHS = 2
   let MAX_UNFINISHED_TOOL_FOLLOWTHROUGHS = 2
@@ -1202,6 +1205,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   let pendingRetryAfterMs: number | null = null
   let requiredToolContinueCount = 0
   let executionFollowthroughCount = 0
+  let executionKickoffFollowthroughCount = 0
   let attachmentFollowthroughCount = 0
   let deliverableFollowthroughCount = 0
   let unfinishedToolFollowthroughCount = 0
@@ -1215,7 +1219,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   let terminalToolResponse = ''
 
   try {
-  const maxIterations = MAX_AUTO_CONTINUES + MAX_TRANSIENT_RETRIES + MAX_REQUIRED_TOOL_CONTINUES + MAX_EXECUTION_FOLLOWTHROUGHS + MAX_DELIVERABLE_FOLLOWTHROUGHS + MAX_UNFINISHED_TOOL_FOLLOWTHROUGHS + MAX_TOOL_ERROR_FOLLOWTHROUGHS + MAX_TOOL_SUMMARY_RETRIES
+  const maxIterations = MAX_AUTO_CONTINUES + MAX_TRANSIENT_RETRIES + MAX_REQUIRED_TOOL_CONTINUES + MAX_EXECUTION_KICKOFF_FOLLOWTHROUGHS + MAX_EXECUTION_FOLLOWTHROUGHS + MAX_DELIVERABLE_FOLLOWTHROUGHS + MAX_UNFINISHED_TOOL_FOLLOWTHROUGHS + MAX_TOOL_ERROR_FOLLOWTHROUGHS + MAX_TOOL_SUMMARY_RETRIES
     for (let iteration = 0; iteration <= maxIterations; iteration++) {
       let shouldContinue: ContinuationType = false
       let requiredToolReminderNames: string[] = []
@@ -1762,6 +1766,31 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
           text: JSON.stringify({
             attachmentFollowthrough: attachmentFollowthroughCount,
             maxFollowthroughs: MAX_ATTACHMENT_FOLLOWTHROUGHS,
+          }),
+        })}\n\n`)
+      }
+
+      if (!shouldContinue
+        && executionKickoffFollowthroughCount < MAX_EXECUTION_KICKOFF_FOLLOWTHROUGHS
+        && shouldForceExternalExecutionKickoffFollowthrough({
+          userMessage: message,
+          finalResponse: resolveFinalStreamResponseText({
+            fullText,
+            lastSegment,
+            lastSettledSegment,
+            hasToolCalls,
+            toolEvents: streamedToolEvents,
+          }),
+          hasToolCalls,
+          toolEvents: streamedToolEvents,
+        })) {
+        shouldContinue = 'execution_kickoff_followthrough'
+        executionKickoffFollowthroughCount++
+        write(`data: ${JSON.stringify({
+          t: 'status',
+          text: JSON.stringify({
+            externalExecutionKickoff: executionKickoffFollowthroughCount,
+            maxFollowthroughs: MAX_EXECUTION_KICKOFF_FOLLOWTHROUGHS,
           }),
         })}\n\n`)
       }

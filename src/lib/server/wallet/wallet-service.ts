@@ -91,6 +91,19 @@ export function getWalletByAgentId(agentId: string, chain?: WalletChain | null):
   return wallets.find((wallet) => wallet.id === activeWalletId) ?? wallets[0] ?? null
 }
 
+export function walletApprovalsGloballyEnabled(
+  settings?: { walletApprovalsEnabled?: boolean | null } | null,
+): boolean {
+  return settings?.walletApprovalsEnabled !== false
+}
+
+export function walletRequiresApproval(
+  wallet: Pick<AgentWallet, 'requireApproval'>,
+  settings?: { walletApprovalsEnabled?: boolean | null } | null,
+): boolean {
+  return walletApprovalsGloballyEnabled(settings) && wallet.requireApproval !== false
+}
+
 export function createAgentWallet(input: {
   agentId: string
   chain?: WalletChain | string | null

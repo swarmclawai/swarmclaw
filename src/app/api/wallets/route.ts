@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadAgents, loadWallets } from '@/lib/server/storage'
+import { loadAgents, loadSettings, loadWallets } from '@/lib/server/storage'
 import { createAgentWallet, getAgentActiveWalletId, getWalletPortfolioSnapshot, stripWalletPrivateKey } from '@/lib/server/wallet/wallet-service'
 import { buildEmptyWalletPortfolio } from '@/lib/server/wallet/wallet-portfolio'
 import type { AgentWallet, WalletPortfolioSummary } from '@/types'
@@ -62,13 +62,16 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const body = await req.json()
+  const settings = loadSettings()
   try {
     const wallet = createAgentWallet({
       agentId: body.agentId,
       chain: body.chain,
       provider: body.provider,
       label: body.label,
-      requireApproval: body.requireApproval,
+      requireApproval: typeof body.requireApproval === 'boolean'
+        ? body.requireApproval
+        : settings.walletApprovalsEnabled !== false,
       spendingLimitAtomic: body.spendingLimitAtomic ?? body.spendingLimitLamports,
       dailyLimitAtomic: body.dailyLimitAtomic ?? body.dailyLimitLamports,
     })

@@ -195,6 +195,41 @@ describe('main-agent-loop advanced', () => {
     assert.equal(output.followupOk, null, 'no followup on terminal ack')
   })
 
+  it('allows a bounded followup for chat-originated runs when structured progress is still active', () => {
+    const progressMeta = heartbeatMetaLine('progress', 'buy nft', 'prepare the first safe wallet step')
+    const output = runWithTempDataDir(`
+      ${sessionSetupScript()}
+
+      const followup = mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: 'Try buy one NFT and show me what happened.',
+        internal: false,
+        source: 'chat',
+        resultText: \`I found the contract and I am moving to the first safe execution step.\\n${progressMeta}\`,
+        toolEvents: [{
+          name: 'wallet_tool',
+          input: '{"action":"balance"}',
+          output: '{"status":"ok"}',
+        }],
+      })
+      const state = mainLoop.getMainLoopStateForSession('main')
+
+      console.log(JSON.stringify({
+        hasFollowup: followup !== null,
+        followupMessage: followup?.message ?? null,
+        chain: state?.followupChainCount ?? -1,
+        status: state?.status ?? null,
+        nextAction: state?.nextAction ?? null,
+      }))
+    `)
+
+    assert.equal(output.hasFollowup, true, 'chat run should queue one bounded followup')
+    assert.equal(output.chain, 1, 'chat followup starts the chain at 1')
+    assert.equal(output.status, 'progress')
+    assert.equal(output.nextAction, 'prepare the first safe wallet step')
+    assert.match(String(output.followupMessage || ''), /Resume from this next action/)
+  })
+
   it('persists and upgrades a skill blocker across recommend/install steps', () => {
     const output = runWithTempDataDir(`
       ${sessionSetupScript()}

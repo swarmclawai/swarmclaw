@@ -155,7 +155,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 The installer resolves the latest stable release tag and installs that version by default.
 It also builds the production bundle so `npm run start` is ready immediately after install.
 No Deno install is required; local sandbox execution is Docker-first with automatic host Node fallback.
-To pin a version: `SWARMCLAW_VERSION=v0.9.5 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.9.6 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
@@ -729,15 +729,15 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.9.5 Release Readiness Notes
+#### v0.9.6 Release Readiness Notes
 
-Before shipping `v0.9.5`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.9.6`, confirm the following user-facing changes are reflected in docs:
 
-1. Plugin/runtime docs mention the new typed lifecycle hooks: `beforePromptBuild`, `beforeToolCall`, `beforeModelResolve`, `llmInput`, `llmOutput`, `toolResultPersist`, `beforeMessageWrite`, plus session and subagent lifecycle hooks.
-2. Connector/memory docs explain that quiet-boundary memories are matched by identifiers and agent aliases, with explicit boundary metadata support, rather than relying on hardcoded person-name fallbacks.
-3. Skills docs still explain that local skills are discoverable by default, pinned skills stay always-on, and `use_skill` is the runtime path for selection/loading/dispatch.
-4. Site and README install/version strings are updated to `v0.9.5`, including release notes index text and any pinned install snippets.
-5. The release tag, npm package version, and generated GitHub release install snippet all agree on the non-prefixed npm version (`0.9.5`) versus the git tag (`v0.9.5`).
+1. Wallet docs explain the new global wallet approval override in Settings/Wallets, and note that per-wallet approval toggles remain stored but are ignored when the global switch is off.
+2. Runtime/autonomy docs mention the continuation hardening for long-running tasks: intent-only kickoff replies now get one bounded followthrough, and chat-originated progress runs can schedule a bounded main-loop continuation without waiting for another user ping.
+3. Skills/runtime docs still explain that local skills are discoverable by default, pinned skills stay always-on, and `use_skill` is the runtime path for selection/loading/dispatch.
+4. Site and README install/version strings are updated to `v0.9.6`, including release notes index text and any pinned install snippets.
+5. The release tag, npm package version, and generated GitHub release install snippet all agree on the non-prefixed npm version (`0.9.6`) versus the git tag (`v0.9.6`).
 
 ## CLI
 

@@ -114,6 +114,7 @@ function suggestCreateChain(wallets: SafeWallet[], agentId?: string | null): Wal
 
 export function WalletPanel() {
   const agents = useAppStore((s) => s.agents)
+  const appSettings = useAppStore((s) => s.appSettings)
   const walletPanelAgentId = useAppStore((s) => s.walletPanelAgentId)
   const setWalletPanelAgentId = useAppStore((s) => s.setWalletPanelAgentId)
   const navigateTo = useNavigate()
@@ -354,6 +355,7 @@ export function WalletPanel() {
   })
   const selectedWalletMeta = selectedWallet ? getWalletChainMeta(selectedWallet.chain) : null
   const selectedWalletSymbol = selectedWallet ? getWalletAssetSymbol(selectedWallet.chain) : null
+  const walletApprovalsEnabled = appSettings.walletApprovalsEnabled !== false
   const selectedWalletBalance = selectedWallet ? walletBalanceLabel(selectedWallet) : null
   const selectedWalletAssets = (selectedWallet?.assets || []).filter((asset) => BigInt(asset.balanceAtomic) > BigInt(0))
   const selectedAgent = selectedWallet ? agents[selectedWallet.agentId] as Agent | undefined : undefined
@@ -807,6 +809,11 @@ export function WalletPanel() {
                   </button>
                   <span className="text-[11px] text-text-3">Require approval for sends</span>
                 </div>
+                {!walletApprovalsEnabled && (
+                  <p className="text-[10px] text-amber-300/80">
+                    Global wallet approvals are currently off in Settings, so this per-wallet toggle is ignored until they are turned back on.
+                  </p>
+                )}
                 <div className="flex gap-2 pt-1">
                   <button
                     type="button"
@@ -839,7 +846,11 @@ export function WalletPanel() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-text-3/70">Approval</span>
-                  <span className="text-text-2">{selectedWallet.requireApproval ? 'Required' : 'Auto-send'}</span>
+                  <span className="text-text-2">
+                    {!walletApprovalsEnabled
+                      ? 'Disabled globally'
+                      : (selectedWallet.requireApproval ? 'Required' : 'Auto-send')}
+                  </span>
                 </div>
               </div>
             )}

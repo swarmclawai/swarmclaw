@@ -894,9 +894,20 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
 
   const needsReplan = review?.needs_replan === true || ((review?.confidence ?? 1) < 0.45)
   const limit = followupLimit()
+  const allowChatOriginFollowup = !input.internal
+    && input.source === 'chat'
+    && !input.error
+    && !waitingForExternal
+    && !gotTerminalAck
+    && (
+      needsReplan
+      || heartbeat?.status === 'progress'
+      || !!heartbeat?.nextAction
+      || (!!plan?.current_step && toolNames.length > 0)
+    )
 
   let followup: MainLoopFollowupRequest | null = null
-  if (!input.internal || input.source === 'chat') {
+  if (!input.internal && !allowChatOriginFollowup) {
     state.followupChainCount = 0
   } else if (input.error || waitingForExternal || gotTerminalAck) {
     state.followupChainCount = 0
