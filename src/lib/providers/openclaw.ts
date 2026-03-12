@@ -321,7 +321,7 @@ export function buildOpenClawSessionKey(
   return `agent:${agentId}:swarm:${sessionId}`
 }
 
-async function rpcOnConnectedGateway(
+export async function rpcOnConnectedGateway(
   ws: InstanceType<typeof WebSocket>,
   method: string,
   params: unknown,

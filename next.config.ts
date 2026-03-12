@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { execSync } from "child_process";
+import { existsSync } from "fs";
 import { networkInterfaces } from "os";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -8,6 +9,7 @@ const PROJECT_ROOT = path.dirname(fileURLToPath(import.meta.url))
 
 function getGitSha(): string {
   try {
+    if (!existsSync(path.join(PROJECT_ROOT, '.git'))) return 'unknown'
     return execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim()
   } catch {
     return 'unknown'

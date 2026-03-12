@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 'use strict'
 
-const fs = require('node:fs')
-const path = require('node:path')
-const os = require('node:os')
 const { spawn } = require('node:child_process')
+
+const {
+  DATA_DIR,
+  PKG_ROOT,
+  SWARMCLAW_HOME,
+  findStandaloneServer,
+} = require('./server-cmd.js')
 
 function printHelp() {
   const help = `
@@ -32,27 +36,23 @@ function main() {
     }
   }
 
-  const SWARMCLAW_HOME = process.env.SWARMCLAW_HOME || path.join(os.homedir(), '.swarmclaw')
-  const DATA_DIR = path.join(SWARMCLAW_HOME, 'data')
-
   process.env.DATA_DIR = DATA_DIR
   process.env.SWARMCLAW_DAEMON_BACKGROUND_SERVICES = '1'
-  // Flag that tells Next.js NOT to start the HTTP/Websocket listener, just boot the daemon.
   process.env.SWARMCLAW_WORKER_ONLY = '1'
 
-  console.log(`[swarmclaw] Starting dedicated background worker...`)
+  console.log('[swarmclaw] Starting dedicated background worker...')
+  console.log(`[swarmclaw] Package root: ${PKG_ROOT}`)
+  console.log(`[swarmclaw] Home: ${SWARMCLAW_HOME}`)
   console.log(`[swarmclaw] Data directory: ${DATA_DIR}`)
 
-  // We reuse the built server.js but signal it to only run the daemon
-  const standaloneBase = path.join(SWARMCLAW_HOME, '.next', 'standalone')
-  let serverJs = path.join(standaloneBase, 'server.js')
-  
-  if (!fs.existsSync(serverJs)) {
-     console.error('Standalone server.js not found. Try running: swarmclaw server --build')
-     process.exit(1)
+  const serverJs = findStandaloneServer()
+  if (!serverJs) {
+    console.error('[swarmclaw] Standalone server.js not found in the installed package. Try running: swarmclaw server --build')
+    process.exit(1)
   }
 
   const child = spawn(process.execPath, [serverJs], {
+    cwd: PKG_ROOT,
     env: process.env,
     stdio: 'inherit',
   })

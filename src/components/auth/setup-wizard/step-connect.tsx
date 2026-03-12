@@ -200,6 +200,13 @@ export function StepConnect({
         resolvedProvider = customConfig.id as typeof provider
       }
 
+      // Build a tokenized dashboard URL for OpenClaw so step-agents can link to it
+      let dashboardUrl: string | null = null
+      if (provider === 'openclaw') {
+        const base = resolveOpenClawDashboardUrl(endpoint.trim() || selectedProvider.defaultEndpoint)
+        dashboardUrl = apiKey.trim() ? `${base}?token=${encodeURIComponent(apiKey.trim())}` : base
+      }
+
       const configured: ConfiguredProvider = {
         id: crypto.randomUUID(),
         provider: resolvedProvider,
@@ -212,6 +219,7 @@ export function StepConnect({
         tags: providerTags,
         deployment: providerDeployment,
         verified: checkState === 'ok',
+        dashboardUrl,
       }
 
       onSaveProvider(configured)

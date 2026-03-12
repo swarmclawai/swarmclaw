@@ -162,6 +162,8 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const sourceDropdownRef = useRef<HTMLDivElement>(null)
   const [syncingHistory, setSyncingHistory] = useState(false)
   const [syncResult, setSyncResult] = useState('')
+  const [openClawDashboardUrl, setOpenClawDashboardUrl] = useState<string | null>(null)
+  const [openClawDashboardLoading, setOpenClawDashboardLoading] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameDraft, setRenameDraft] = useState('')
   const [renameSaving, setRenameSaving] = useState(false)
@@ -494,6 +496,25 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     return () => clearTimeout(timer)
   }, [syncResult])
 
+  const loadOpenClawDashboardUrl = useCallback(async () => {
+    if (!session.agentId || openClawDashboardLoading) return
+    setOpenClawDashboardLoading(true)
+    try {
+      const result = await api<{ url: string }>('GET', `/openclaw/dashboard-url?agentId=${session.agentId}`)
+      if (result.url) setOpenClawDashboardUrl(result.url)
+    } catch {
+      // Fall back to agent endpoint
+      const ep = (agent?.apiEndpoint || 'http://localhost:18789').replace(/\/+$/, '')
+      setOpenClawDashboardUrl(/^https?:\/\//i.test(ep) ? ep : `http://${ep}`)
+    } finally {
+      setOpenClawDashboardLoading(false)
+    }
+  }, [session.agentId, agent?.apiEndpoint, openClawDashboardLoading])
+
+  useEffect(() => {
+    if (isOpenClawAgent && !openClawDashboardUrl) void loadOpenClawDashboardUrl()
+  }, [isOpenClawAgent, openClawDashboardUrl, loadOpenClawDashboardUrl])
+
   const startRename = () => {
     if (!agent) return
     setRenameDraft(agent.name)
@@ -751,7 +772,29 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 </HeaderChip>
               )
             })}
-            {modelName && (
+            {isOpenClawAgent ? (
+              <a
+                href={openClawDashboardUrl || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  if (openClawDashboardUrl) return
+                  e.preventDefault()
+                  if (!openClawDashboardLoading) void loadOpenClawDashboardUrl()
+                }}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-[9px] border border-white/[0.06] bg-white/[0.03] px-2.5 py-1 text-[10px] font-600 text-text-3/70 backdrop-blur-sm transition-colors hover:border-white/[0.1] hover:bg-white/[0.06] hover:text-accent-bright shrink-0"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                  <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" />
+                </svg>
+                <span className="truncate max-w-[min(42vw,220px)]">OpenClaw Dashboard</span>
+                <svg width="10" height="10" viewBox="0 0 14 14" fill="none" className="shrink-0 opacity-50">
+                  <path d="M5.5 3H3.5C3.22386 3 3 3.22386 3 3.5V10.5C3 10.7761 3.22386 11 3.5 11H10.5C10.7761 11 11 10.7761 11 10.5V8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                  <path d="M8 2H12V6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M12 2L7 7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+              </a>
+            ) : modelName ? (
               <div className="relative shrink-0" ref={modelSwitcherRef}>
                 <Tip label={`Switch model (${providerLabel})`}>
                 <button
@@ -803,7 +846,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                   </div>
                 )}
               </div>
-            )}
+            ) : null}
             {threadContextLabel && (
               <HeaderChip title={threadContextLabel}>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">

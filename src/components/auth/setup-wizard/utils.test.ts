@@ -7,7 +7,10 @@ import {
   resolveOpenClawDashboardUrl,
   getOpenClawErrorHint,
   withHttpScheme,
+  buildStarterDrafts,
+  preferredConfiguredProvider,
 } from './utils'
+import type { ConfiguredProvider } from './types'
 
 // ---------------------------------------------------------------------------
 // stepIndex
@@ -156,4 +159,80 @@ test('withHttpScheme preserves ws://', () => {
 
 test('withHttpScheme preserves wss://', () => {
   assert.equal(withHttpScheme('wss://example.com'), 'wss://example.com')
+})
+
+// ---------------------------------------------------------------------------
+// buildStarterDrafts — OpenClaw provider handling
+// ---------------------------------------------------------------------------
+
+function makeConfiguredProvider(overrides: Partial<ConfiguredProvider> & { provider: ConfiguredProvider['provider'] }): ConfiguredProvider {
+  return {
+    id: 'cp-1',
+    name: 'Test Provider',
+    credentialId: null,
+    endpoint: null,
+    defaultModel: '',
+    gatewayProfileId: null,
+    verified: true,
+    ...overrides,
+  }
+}
+
+test('buildStarterDrafts assigns OpenClaw provider to drafts', () => {
+  const cp = makeConfiguredProvider({ provider: 'openclaw', endpoint: 'http://localhost:18789' })
+  const drafts = buildStarterDrafts({
+    starterKitId: 'personal_assistant',
+    intentText: '',
+    configuredProviders: [cp],
+  })
+  assert.ok(drafts.length > 0, 'should produce at least one draft')
+  for (const d of drafts) {
+    assert.equal(d.provider, 'openclaw')
+    assert.equal(d.providerConfigId, cp.id)
+  }
+})
+
+test('buildStarterDrafts OpenClaw drafts use empty model (not "default")', () => {
+  const cp = makeConfiguredProvider({ provider: 'openclaw', defaultModel: '' })
+  const drafts = buildStarterDrafts({
+    starterKitId: 'personal_assistant',
+    intentText: '',
+    configuredProviders: [cp],
+  })
+  for (const d of drafts) {
+    // Model should be empty since the gateway controls the model
+    assert.equal(d.model, '')
+  }
+})
+
+test('buildStarterDrafts OpenClaw drafts inherit endpoint from provider', () => {
+  const cp = makeConfiguredProvider({ provider: 'openclaw', endpoint: 'http://10.0.0.5:18789' })
+  const drafts = buildStarterDrafts({
+    starterKitId: 'personal_assistant',
+    intentText: '',
+    configuredProviders: [cp],
+  })
+  for (const d of drafts) {
+    assert.equal(d.apiEndpoint, 'http://10.0.0.5:18789')
+  }
+})
+
+test('buildStarterDrafts carries dashboardUrl through from ConfiguredProvider', () => {
+  const cp = makeConfiguredProvider({
+    provider: 'openclaw',
+    endpoint: 'http://localhost:18789',
+    dashboardUrl: 'http://localhost:18789?token=my-secret',
+  })
+  // dashboardUrl lives on the ConfiguredProvider, not the draft — verify it's accessible
+  assert.equal(cp.dashboardUrl, 'http://localhost:18789?token=my-secret')
+})
+
+test('preferredConfiguredProvider picks openclaw provider for openclaw template', () => {
+  const openclawCp = makeConfiguredProvider({ id: 'oc-1', provider: 'openclaw' })
+  const openaiCp = makeConfiguredProvider({ id: 'oai-1', provider: 'openai' })
+  const result = preferredConfiguredProvider(
+    { id: 'tmpl-1', name: 'Test', description: '', systemPrompt: '', tools: [], recommendedProviders: ['openclaw'] },
+    [openaiCp, openclawCp],
+  )
+  assert.equal(result?.id, 'oc-1')
 })

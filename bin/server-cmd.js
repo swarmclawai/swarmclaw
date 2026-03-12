@@ -7,33 +7,27 @@ const path = require('node:path')
 const { spawn, execFileSync } = require('node:child_process')
 const os = require('node:os')
 const {
-  LOCKFILE_NAMES,
   detectPackageManager,
   getInstallCommand,
 } = require('./package-manager.js')
+const {
+  readPackageVersion,
+  resolvePackageRoot,
+} = require('./install-root.js')
 
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
 
 const SWARMCLAW_HOME = process.env.SWARMCLAW_HOME || path.join(os.homedir(), '.swarmclaw')
-const PKG_ROOT = path.resolve(__dirname, '..')
-const BUILT_MARKER = path.join(SWARMCLAW_HOME, '.built')
+const PKG_ROOT = resolvePackageRoot({
+  moduleDir: __dirname,
+  argv1: process.argv[1],
+  cwd: process.cwd(),
+})
 const PID_FILE = path.join(SWARMCLAW_HOME, 'server.pid')
 const LOG_FILE = path.join(SWARMCLAW_HOME, 'server.log')
 const DATA_DIR = path.join(SWARMCLAW_HOME, 'data')
-
-// Files/directories to copy from the npm package into SWARMCLAW_HOME
-const BUILD_COPY_ENTRIES = [
-  'src',
-  'public',
-  'scripts',
-  'next.config.ts',
-  'tsconfig.json',
-  'postcss.config.mjs',
-  'package.json',
-  ...LOCKFILE_NAMES,
-]
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,116 +63,69 @@ function isProcessRunning(pid) {
   }
 }
 
-function copyPath(src, dest, { dereference = true } = {}) {
-  fs.rmSync(dest, { recursive: true, force: true })
-  fs.cpSync(src, dest, { recursive: true, dereference })
+function resolveStandaloneBase(pkgRoot = PKG_ROOT) {
+  return path.join(pkgRoot, '.next', 'standalone')
 }
 
-function symlinkPath(src, dest) {
-  fs.rmSync(dest, { recursive: true, force: true })
-  fs.symlinkSync(src, dest)
+function getVersion() {
+  return readPackageVersion(PKG_ROOT) || 'unknown'
 }
 
-function readBuiltInfo() {
-  if (!fs.existsSync(BUILT_MARKER)) return null
-  try {
-    const raw = JSON.parse(fs.readFileSync(BUILT_MARKER, 'utf8'))
-    return raw && typeof raw === 'object' ? raw : null
-  } catch {
-    return null
-  }
+function ensurePackageDependencies(pkgRoot = PKG_ROOT) {
+  const nextCli = path.join(pkgRoot, 'node_modules', 'next', 'dist', 'bin', 'next')
+  if (fs.existsSync(nextCli)) return nextCli
+
+  const packageManager = detectPackageManager(pkgRoot, process.env)
+  const install = getInstallCommand(packageManager)
+  log(`Installing dependencies with ${packageManager}...`)
+  execFileSync(install.command, install.args, { cwd: pkgRoot, stdio: 'inherit' })
+  return nextCli
 }
 
 // ---------------------------------------------------------------------------
 // Build
 // ---------------------------------------------------------------------------
 
-function needsBuild(forceBuild) {
+function needsBuild(forceBuild, { pkgRoot = PKG_ROOT } = {}) {
   if (forceBuild) return true
-  const info = readBuiltInfo()
-  if (!info) return true
-  if (info.version !== getVersion()) return true
-  if (!findStandaloneServer()) return true
-  return false
+  return !findStandaloneServer({ pkgRoot })
 }
 
-function runBuild() {
+function runBuild({ pkgRoot = PKG_ROOT } = {}) {
   log('Preparing build environment...')
   ensureDir(SWARMCLAW_HOME)
   ensureDir(DATA_DIR)
 
-  // Copy source/config into SWARMCLAW_HOME. Turbopack build currently rejects
-  // app source symlinks that point outside the workspace root.
-  for (const entry of BUILD_COPY_ENTRIES) {
-    const src = path.join(PKG_ROOT, entry)
-    const dest = path.join(SWARMCLAW_HOME, entry)
+  const nextCli = ensurePackageDependencies(pkgRoot)
 
-    if (!fs.existsSync(src)) {
-      log(`Warning: ${entry} not found in package, skipping`)
-      continue
-    }
-
-    copyPath(src, dest)
-  }
-
-  // Reuse package dependencies via symlink to avoid multi-GB duplication in
-  // SWARMCLAW_HOME. Build runs with webpack mode for symlink compatibility.
-  const nmSrc = path.join(PKG_ROOT, 'node_modules')
-  const nmDest = path.join(SWARMCLAW_HOME, 'node_modules')
-  if (fs.existsSync(nmSrc)) {
-    symlinkPath(nmSrc, nmDest)
-  } else {
-    // If node_modules doesn't exist at PKG_ROOT, install
-    const packageManager = detectPackageManager(SWARMCLAW_HOME, process.env)
-    const install = getInstallCommand(packageManager)
-    log(`Installing dependencies with ${packageManager}...`)
-    execFileSync(install.command, install.args, { cwd: SWARMCLAW_HOME, stdio: 'inherit' })
-  }
-
-  // Run Next.js build
   log('Building Next.js application (this may take a minute)...')
-  const nextCli = path.join(SWARMCLAW_HOME, 'node_modules', 'next', 'dist', 'bin', 'next')
   execFileSync(process.execPath, [nextCli, 'build'], {
-    cwd: SWARMCLAW_HOME,
+    cwd: pkgRoot,
     stdio: 'inherit',
     env: {
       ...process.env,
+      DATA_DIR,
       SWARMCLAW_BUILD_MODE: '1',
     },
   })
 
-  // Write built marker
-  fs.writeFileSync(BUILT_MARKER, JSON.stringify({ builtAt: new Date().toISOString(), version: getVersion() }))
   log('Build complete.')
-}
-
-function getVersion() {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'))
-    return pkg.version || 'unknown'
-  } catch {
-    return 'unknown'
-  }
 }
 
 // ---------------------------------------------------------------------------
 // Find standalone server.js
 // ---------------------------------------------------------------------------
 
-function findStandaloneServer() {
-  // Next.js standalone output creates .next/standalone/ with server.js
-  // The path mirrors the build machine's directory structure
-  const standaloneBase = path.join(SWARMCLAW_HOME, '.next', 'standalone')
+function findStandaloneServer({ pkgRoot = PKG_ROOT } = {}) {
+  const standaloneBase = resolveStandaloneBase(pkgRoot)
 
   if (!fs.existsSync(standaloneBase)) {
     return null
   }
 
-  // Try direct server.js first
   const direct = path.join(standaloneBase, 'server.js')
   if (fs.existsSync(direct)) return direct
 
-  // Recursively search for server.js (handles nested paths from build machine)
   function search(dir) {
     const entries = fs.readdirSync(dir, { withFileTypes: true })
     for (const entry of entries) {
@@ -199,12 +146,15 @@ function findStandaloneServer() {
 // Start server
 // ---------------------------------------------------------------------------
 
-function startServer(opts) {
-  const serverJs = findStandaloneServer()
+function startServer(opts, { pkgRoot = PKG_ROOT } = {}) {
+  const serverJs = findStandaloneServer({ pkgRoot })
   if (!serverJs) {
-    logError('Standalone server.js not found. Try running: swarmclaw server --build')
+    logError('Standalone server.js not found in the installed package. Try running: swarmclaw server --build')
     process.exit(1)
   }
+
+  ensureDir(SWARMCLAW_HOME)
+  ensureDir(DATA_DIR)
 
   const port = opts.port || '3456'
   const wsPort = opts.wsPort || String(Number(port) + 1)
@@ -212,21 +162,22 @@ function startServer(opts) {
 
   const env = {
     ...process.env,
+    DATA_DIR,
+    HOSTNAME: host,
     PORT: port,
     WS_PORT: wsPort,
-    HOSTNAME: host,
-    DATA_DIR,
   }
 
   log(`Starting server on ${host}:${port} (WebSocket: ${wsPort})...`)
+  log(`Package root: ${pkgRoot}`)
   log(`Data directory: ${DATA_DIR}`)
 
   if (opts.detach) {
-    // Detached mode — run in background
     const logStream = fs.openSync(LOG_FILE, 'a')
     const child = spawn(process.execPath, [serverJs], {
-      env,
+      cwd: pkgRoot,
       detached: true,
+      env,
       stdio: ['ignore', logStream, logStream],
     })
 
@@ -236,8 +187,8 @@ function startServer(opts) {
     log(`Logs: ${LOG_FILE}`)
     process.exit(0)
   } else {
-    // Foreground mode
     const child = spawn(process.execPath, [serverJs], {
+      cwd: pkgRoot,
       env,
       stdio: 'inherit',
     })
@@ -246,7 +197,6 @@ function startServer(opts) {
       process.exit(code || 0)
     })
 
-    // Forward signals
     for (const sig of ['SIGINT', 'SIGTERM']) {
       process.on(sig, () => child.kill(sig))
     }
@@ -288,27 +238,21 @@ function showStatus() {
   const pid = readPid()
   if (!pid) {
     log('Server: not running (no PID file)')
-    return
-  }
-
-  if (isProcessRunning(pid)) {
+  } else if (isProcessRunning(pid)) {
     log(`Server: running (PID: ${pid})`)
   } else {
     log(`Server: not running (stale PID: ${pid})`)
     try { fs.unlinkSync(PID_FILE) } catch {}
   }
 
+  log(`Package: ${PKG_ROOT}`)
   log(`Home: ${SWARMCLAW_HOME}`)
   log(`Data: ${DATA_DIR}`)
   log(`WebSocket port: ${process.env.WS_PORT || '(PORT + 1)'}`)
 
-  if (fs.existsSync(BUILT_MARKER)) {
-    try {
-      const info = JSON.parse(fs.readFileSync(BUILT_MARKER, 'utf8'))
-      log(`Built: ${info.builtAt || 'unknown'} (v${info.version || '?'})`)
-    } catch {
-      log('Built: yes')
-    }
+  const serverJs = findStandaloneServer()
+  if (serverJs) {
+    log(`Built: yes (${serverJs})`)
   } else {
     log('Built: no')
   }
@@ -339,7 +283,7 @@ Options:
 }
 
 function main() {
-  const args = process.argv.slice(3) // skip node, bin, 'server'
+  const args = process.argv.slice(3)
   let command = 'start'
   let forceBuild = false
   let detach = false
@@ -385,7 +329,6 @@ function main() {
     return
   }
 
-  // command === 'start'
   if (needsBuild(forceBuild)) {
     runBuild()
   }
@@ -398,8 +341,13 @@ if (require.main === module) {
 }
 
 module.exports = {
+  DATA_DIR,
+  PKG_ROOT,
+  SWARMCLAW_HOME,
+  findStandaloneServer,
   getVersion,
   main,
   needsBuild,
-  readBuiltInfo,
+  resolveStandaloneBase,
+  runBuild,
 }

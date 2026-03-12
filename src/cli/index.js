@@ -412,6 +412,7 @@ const COMMAND_GROUPS = [
       cmd('skills-install', 'POST', '/openclaw/skills/install', 'Install OpenClaw skill dependencies', { expectsJsonBody: true }),
       cmd('skills-remove', 'POST', '/openclaw/skills/remove', 'Remove OpenClaw skill', { expectsJsonBody: true }),
       cmd('sync', 'POST', '/openclaw/sync', 'Run OpenClaw sync action', { expectsJsonBody: true }),
+      cmd('dashboard-url', 'GET', '/openclaw/dashboard-url', 'Get tokenized OpenClaw dashboard URL for an agent'),
       cmd('doctor', 'GET', '/openclaw/doctor', 'Run OpenClaw doctor check (read-only)'),
       cmd('doctor-fix', 'POST', '/openclaw/doctor', 'Run OpenClaw doctor with auto-fix', { expectsJsonBody: true }),
     ],

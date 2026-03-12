@@ -10,11 +10,19 @@ const {
   getGlobalUpdateSpec,
   getInstallCommand,
 } = require('./package-manager.js')
+const {
+  PACKAGE_NAME,
+  detectGlobalInstallManagerForRoot,
+  resolvePackageRoot,
+} = require('./install-root.js')
 
-const PKG_ROOT = path.resolve(__dirname, '..')
-const PACKAGE_NAME = '@swarmclawai/swarmclaw'
+const PKG_ROOT = resolvePackageRoot({
+  moduleDir: __dirname,
+  argv1: process.argv[1],
+  cwd: process.cwd(),
+})
 const RELEASE_TAG_RE = /^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/
-const PACKAGE_MANAGER = detectPackageManager(PKG_ROOT)
+const FALLBACK_PACKAGE_MANAGER = detectPackageManager(PKG_ROOT)
 
 function run(cmd) {
   return execSync(cmd, { encoding: 'utf-8', cwd: PKG_ROOT, timeout: 60_000 }).trim()
@@ -34,6 +42,12 @@ function getLatestStableTag() {
     .map((l) => l.trim())
     .filter(Boolean)
   return tags.find((t) => RELEASE_TAG_RE.test(t)) || null
+}
+
+function resolveRegistryPackageManager(execImpl = execFileSync) {
+  return detectGlobalInstallManagerForRoot(PKG_ROOT, execImpl, process.env)
+    || detectPackageManager(PKG_ROOT, process.env)
+    || FALLBACK_PACKAGE_MANAGER
 }
 
 function rebuildStandaloneServer(
@@ -58,7 +72,7 @@ function rebuildStandaloneServer(
 }
 
 function runRegistrySelfUpdate(
-  packageManager = PACKAGE_MANAGER,
+  packageManager = resolveRegistryPackageManager(),
   execImpl = execFileSync,
   logger = { log, logError },
   rebuildImpl = execFileSync,
@@ -92,16 +106,15 @@ function main() {
 Usage: swarmclaw update
 
 If running from a git checkout, pull the latest SwarmClaw release tag.
-If running from a registry install, update the global package with ${PACKAGE_MANAGER}.
+If running from a registry install, update the global package with its owning package manager.
 `.trim())
     process.exit(0)
   }
 
-  // Verify we're in a git repo
   try {
     run('git rev-parse --git-dir')
   } catch {
-    process.exit(runRegistrySelfUpdate(PACKAGE_MANAGER))
+    process.exit(runRegistrySelfUpdate())
   }
 
   const beforeRef = run('git rev-parse HEAD')
@@ -127,7 +140,6 @@ If running from a registry install, update the global package with ${PACKAGE_MAN
       process.exit(0)
     }
 
-    // Check for uncommitted changes
     const dirty = run('git status --porcelain')
     if (dirty) {
       logError('Local changes detected. Commit or stash them first, then retry.')
@@ -138,7 +150,6 @@ If running from a registry install, update the global package with ${PACKAGE_MAN
     run(`git checkout -B stable ${latestTag}^{commit}`)
     pullOutput = `Updated to stable release ${latestTag}.`
   } else {
-    // Fallback: pull from origin/main
     const behindCount = parseInt(run('git rev-list HEAD..origin/main --count'), 10) || 0
     if (behindCount === 0) {
       log(`Already up to date (${beforeSha}).`)
@@ -158,16 +169,21 @@ If running from a registry install, update the global package with ${PACKAGE_MAN
   const newSha = run('git rev-parse --short HEAD')
   log(pullOutput)
 
-  // Install deps if package files changed
   try {
     const diff = run(`git diff --name-only ${beforeSha}..HEAD`)
     if (dependenciesChanged(diff)) {
-      const install = getInstallCommand(PACKAGE_MANAGER, true)
-      log(`Package files changed — running ${PACKAGE_MANAGER} install...`)
+      const packageManager = detectPackageManager(PKG_ROOT, process.env)
+      const install = getInstallCommand(packageManager, true)
+      log(`Package files changed — running ${packageManager} install...`)
       execFileSync(install.command, install.args, { cwd: PKG_ROOT, stdio: 'inherit', timeout: 120_000 })
     }
   } catch {
-    // If diff fails, skip install check
+    // If diff fails, skip install check.
+  }
+
+  const rebuildExitCode = rebuildStandaloneServer()
+  if (rebuildExitCode !== 0) {
+    process.exit(rebuildExitCode)
   }
 
   log(`Done (${beforeSha} → ${newSha}, channel: ${channel}).`)
@@ -180,5 +196,7 @@ if (require.main === module) {
 
 module.exports = {
   main,
+  rebuildStandaloneServer,
+  resolveRegistryPackageManager,
   runRegistrySelfUpdate,
 }

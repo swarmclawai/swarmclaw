@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { loadCredentials, decryptKey } from '@/lib/server/storage'
-import { getDeviceId, wsConnect } from '@/lib/providers/openclaw'
+import { getDeviceId, wsConnect, rpcOnConnectedGateway } from '@/lib/providers/openclaw'
 import { OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
 import { resolveOllamaRuntimeConfig } from '@/lib/server/ollama-runtime'
 
@@ -242,19 +242,39 @@ export function normalizeOpenClawUrl(raw: string): { httpUrl: string; wsUrl: str
   return { httpUrl, wsUrl }
 }
 
-async function checkOpenClaw(apiKey: string, endpointRaw: string): Promise<{ ok: boolean; message: string; normalizedEndpoint: string; deviceId?: string; errorCode?: string }> {
+async function checkOpenClaw(apiKey: string, endpointRaw: string): Promise<{ ok: boolean; message: string; normalizedEndpoint: string; deviceId?: string; errorCode?: string; recommendedModel?: string }> {
   const { httpUrl: normalizedEndpoint, wsUrl } = normalizeOpenClawUrl(endpointRaw)
   const token = apiKey || undefined
   const deviceId = getDeviceId()
 
   const result = await wsConnect(wsUrl, token, true, 10_000)
-  // Close the WebSocket immediately — we only care about the handshake result
-  if (result.ws) try { result.ws.close() } catch {}
 
-  if (result.ok) {
-    return { ok: true, message: 'Connected to OpenClaw gateway.', normalizedEndpoint, deviceId }
+  if (!result.ok) {
+    if (result.ws) try { result.ws.close() } catch {}
+    return { ok: false, message: result.message, normalizedEndpoint, deviceId, errorCode: result.errorCode }
   }
-  return { ok: false, message: result.message, normalizedEndpoint, deviceId, errorCode: result.errorCode }
+
+  // Attempt model discovery via RPC before closing the connection
+  let recommendedModel: string | undefined
+  if (result.ws) {
+    try {
+      const payload = await rpcOnConnectedGateway(result.ws, 'models.list', {}, 8_000) as any
+      const models = Array.isArray(payload?.models) ? payload.models : Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : []
+      const first = models[0]
+      if (typeof first === 'string') {
+        recommendedModel = first
+      } else if (typeof first?.id === 'string') {
+        recommendedModel = first.id
+      } else if (typeof first?.name === 'string') {
+        recommendedModel = first.name
+      }
+    } catch {
+      // Model discovery is non-fatal — connection still counts as successful
+    }
+    try { result.ws.close() } catch {}
+  }
+
+  return { ok: true, message: 'Connected to OpenClaw gateway.', normalizedEndpoint, deviceId, recommendedModel }
 }
 
 export async function POST(req: Request) {

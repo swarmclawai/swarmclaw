@@ -101,3 +101,19 @@ test('parseErrorMessage extracts .message from JSON', async () => {
   const res = fakeResponse(JSON.stringify({ message: 'quota exceeded' }))
   assert.equal(await parseErrorMessage(res, 'fallback'), 'quota exceeded')
 })
+
+// ---------------------------------------------------------------------------
+// normalizeOpenClawUrl — additional edge cases
+// ---------------------------------------------------------------------------
+
+test('normalizeOpenClawUrl handles https:// endpoint correctly', () => {
+  const { httpUrl, wsUrl } = normalizeOpenClawUrl('https://gateway.tailnet.ts.net')
+  assert.equal(httpUrl, 'https://gateway.tailnet.ts.net')
+  assert.equal(wsUrl, 'wss://gateway.tailnet.ts.net')
+})
+
+test('normalizeOpenClawUrl handles bare IP:port', () => {
+  const { httpUrl, wsUrl } = normalizeOpenClawUrl('10.0.0.5:18789')
+  assert.equal(httpUrl, 'http://10.0.0.5:18789')
+  assert.equal(wsUrl, 'ws://10.0.0.5:18789')
+})

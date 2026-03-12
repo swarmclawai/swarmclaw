@@ -44,6 +44,8 @@ export interface ConfiguredProvider {
   tags?: string[]
   deployment?: GatewayProfile['deployment'] | null
   verified?: boolean
+  /** Pre-built dashboard URL (with token if available). Only set for OpenClaw. */
+  dashboardUrl?: string | null
 }
 
 export interface StarterDraftAgent {

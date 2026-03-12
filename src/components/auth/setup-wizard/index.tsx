@@ -339,6 +339,22 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           agentId = (await api<{ id: string }>('POST', '/agents', payload)).id
         }
 
+        // Push soul and identity files to the OpenClaw gateway (non-fatal)
+        if (draft.provider === 'openclaw') {
+          try {
+            if (draft.soul.trim()) {
+              await api('PUT', '/openclaw/agent-files', { agentId, filename: 'SOUL.md', content: draft.soul.trim() })
+            }
+            const identityLines = [`# ${draft.name.trim()}`, '']
+            if (draft.description.trim()) identityLines.push(draft.description.trim())
+            identityLines.push('')
+            if (draft.capabilities.length) identityLines.push(`- Capabilities: ${draft.capabilities.join(', ')}`)
+            await api('PUT', '/openclaw/agent-files', { agentId, filename: 'IDENTITY.md', content: identityLines.join('\n') })
+          } catch {
+            // Gateway file sync is best-effort during setup
+          }
+        }
+
         created.push({
           id: agentId,
           name: draft.name.trim(),

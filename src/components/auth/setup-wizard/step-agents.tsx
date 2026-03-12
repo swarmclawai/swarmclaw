@@ -422,34 +422,45 @@ export function StepAgents({
                         focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
                     />
                   </div>
-                  <div>
-                    <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Model</label>
-                    <ModelCombobox
-                      value={draft.model}
-                      provider={matchedProvider}
-                      endpointOverride={draft.apiEndpoint}
-                      onChange={(model) => onUpdateDraft(draft.id, { model })}
-                      modelLibraryUrl={matchedProvider ? SETUP_PROVIDERS.find((sp) => sp.id === matchedProvider.provider)?.modelLibraryUrl : null}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Mode</label>
-                    <select
-                      value={draft.platformAssignScope}
-                      onChange={(e) => onUpdateDraft(draft.id, { platformAssignScope: e.target.value as 'self' | 'all' })}
-                      className="w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-bg
-                        text-text text-[14px] outline-none transition-all duration-200
-                        focus:border-accent-bright/30 focus:shadow-[0_0_30px_rgba(99,102,241,0.1)]"
-                    >
-                      <option value="self">Focused agent</option>
-                      <option value="all">Delegating orchestrator</option>
-                    </select>
-                  </div>
+                  {matchedProvider?.provider === 'openclaw' ? (
+                    <div className="md:col-span-2">
+                      <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Model</label>
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-[12px] border border-white/[0.08] bg-bg">
+                        <span className="text-[13px] text-text-3">Configured on the OpenClaw gateway.</span>
+                        {matchedProvider.dashboardUrl && (
+                          <a
+                            href={matchedProvider.dashboardUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[13px] text-accent-bright hover:underline whitespace-nowrap"
+                          >
+                            Open Dashboard
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="md:col-span-2">
+                      <label className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Model</label>
+                      <ModelCombobox
+                        value={draft.model}
+                        provider={matchedProvider}
+                        endpointOverride={draft.apiEndpoint}
+                        onChange={(model) => onUpdateDraft(draft.id, { model })}
+                        modelLibraryUrl={matchedProvider ? SETUP_PROVIDERS.find((sp) => sp.id === matchedProvider.provider)?.modelLibraryUrl : null}
+                      />
+                    </div>
+                  )}
                   <div className="md:col-span-2">
                     <SoulPicker
                       value={draft.soul}
                       onChange={(soul) => onUpdateDraft(draft.id, { soul })}
                     />
+                    {matchedProvider?.provider === 'openclaw' && (
+                      <p className="mt-1.5 ml-1 text-[11px] text-text-3/70">
+                        Synced to the gateway as SOUL.md on save.
+                      </p>
+                    )}
                   </div>
                 </div>
 

@@ -629,7 +629,7 @@ export const DEFAULT_AGENTS: Record<SetupProvider, DefaultAgentConfig> = {
     name: 'OpenClaw Operator',
     description: 'A manager agent for talking to and coordinating OpenClaw instances.',
     systemPrompt: 'You are an operator focused on reliable execution, clear status updates, and task completion.',
-    model: 'default',
+    model: '',
     tools: STARTER_AGENT_TOOLS,
   },
   custom: {
