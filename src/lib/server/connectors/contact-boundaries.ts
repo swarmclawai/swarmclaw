@@ -139,7 +139,7 @@ export function enforceSenderQuietBoundary(params: {
   msg: InboundMessage
 }): { suppress: boolean; memoryTitle?: string } {
   const { agent, connector, session, msg } = params
-  if (!agent?.id || msg.isGroup) return { suppress: false }
+  if (!agent?.id) return { suppress: false }
 
   const senderIds = collectSenderIds(msg, session)
   const senderName = typeof msg.senderName === 'string' ? msg.senderName : ''
@@ -157,7 +157,54 @@ export function enforceSenderQuietBoundary(params: {
   const explicitlyAddressed = textMentionsAlias(msg.text || '', aliases)
     || isReplyToLastOutbound(msg, session)
 
-  return explicitlyAddressed
-    ? { suppress: false }
+  if (explicitlyAddressed) return { suppress: false }
+
+  // Groups: soft-suppress via prompt injection (agent keeps context but self-enforces silence)
+  // DMs: hard-suppress at routing level (no LLM call needed)
+  return msg.isGroup
+    ? { suppress: false, memoryTitle: matchedBoundary.title }
     : { suppress: true, memoryTitle: matchedBoundary.title }
+}
+
+/**
+ * Load sender-specific boundary context for prompt injection.
+ * Returns a formatted prompt block if boundary memories exist for the sender, '' otherwise.
+ */
+export function loadSenderBoundaryContext(params: {
+  agent?: Partial<Agent> | null
+  connector?: Partial<Connector> | null
+  session?: Partial<Session> | null
+  msg: InboundMessage
+}): string {
+  const { agent, connector, session, msg } = params
+  if (!agent?.id) return ''
+
+  const senderIds = collectSenderIds(msg, session)
+  const senderName = typeof msg.senderName === 'string' ? msg.senderName : ''
+  if (senderIds.length === 0 && !senderName.trim()) return ''
+
+  const memDb = getMemoryDb()
+  const aliases = buildDirectAddressAliases(agent, connector)
+  const memories = memDb.list(agent.id, 200).filter((entry) =>
+    entry.category?.startsWith('identity/')
+    && memoryMatchesSender(entry, senderIds, senderName),
+  )
+  if (memories.length === 0) return ''
+
+  const capped = memories.slice(0, 5)
+  const hasBoundary = capped.some((entry) => memoryDefinesQuietBoundary(entry, aliases))
+  const displayName = senderName || msg.senderId
+
+  const lines = ['## Contact-Specific Preferences', `The following stored preferences apply to the current sender "${displayName}":`]
+  for (const entry of capped) {
+    const summary = String(entry.content || '').slice(0, 500).split('\n')[0] || ''
+    lines.push(`- ${entry.title || 'Untitled'}: ${summary}`)
+  }
+
+  if (hasBoundary) {
+    lines.push('')
+    lines.push(`IMPORTANT: You have a stored boundary for ${displayName}. Do NOT respond to their messages unless they directly address you by name or reply to one of your messages. If this message is not directed at you, respond with exactly "NO_MESSAGE".`)
+  }
+
+  return lines.join('\n')
 }

@@ -241,7 +241,7 @@ getPluginManager().registerBuiltin('web', WebPlugin)
  */
 export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[] {
   const tools: StructuredToolInterface[] = []
-  const { cwd, ctx, cleanupFns } = bctx
+  const { cwd, ctx, cleanupFns, filesystemScope } = bctx
 
   if (bctx.hasPlugin('web')) {
     tools.push(
@@ -295,7 +295,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
 
     const resolveNavigationTarget = async (target: string): Promise<string> => {
       const sandboxRuntime = await ensureSandboxRuntime()
-      return resolveBrowserNavigationTarget(cwd, target, sandboxRuntime?.fsBridge)
+      return resolveBrowserNavigationTarget(cwd, target, sandboxRuntime?.fsBridge, filesystemScope)
     }
 
     upsertBrowserSessionRecord({
@@ -673,7 +673,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
           const saveArtifact = (buffer: Buffer, suggestedExt: string): void => {
             const rawSaveTo = options?.saveTo?.trim()
             if (!rawSaveTo) return
-            let resolved = safePath(cwd, rawSaveTo)
+            let resolved = safePath(cwd, rawSaveTo, filesystemScope)
             if (!path.extname(resolved) && suggestedExt) resolved = `${resolved}.${suggestedExt}`
             fs.mkdirSync(path.dirname(resolved), { recursive: true })
             fs.writeFileSync(resolved, buffer)
@@ -731,7 +731,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
                       const destPath = path.join(UPLOAD_DIR, filename)
                       fs.copyFileSync(srcPath, destPath)
                       if (options?.saveTo?.trim()) {
-                        let targetPath = safePath(cwd, options.saveTo.trim())
+                        let targetPath = safePath(cwd, options.saveTo.trim(), filesystemScope)
                         if (!path.extname(targetPath)) targetPath = `${targetPath}.${ext}`
                         fs.mkdirSync(path.dirname(targetPath), { recursive: true })
                         fs.copyFileSync(srcPath, targetPath)
@@ -1198,7 +1198,7 @@ export function buildWebTools(bctx: ToolBuildContext): StructuredToolInterface[]
         }
       })()
       const targetPath = typeof params.saveTo === 'string' && params.saveTo.trim()
-        ? safePath(cwd, params.saveTo.trim())
+        ? safePath(cwd, params.saveTo.trim(), filesystemScope)
         : path.join(UPLOAD_DIR, inferredName)
       fs.mkdirSync(path.dirname(targetPath), { recursive: true })
       fs.writeFileSync(targetPath, data)

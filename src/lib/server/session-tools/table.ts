@@ -45,18 +45,18 @@ function parseJsonValue<T>(value: unknown): T | null {
   return value as T
 }
 
-function resolveTablePath(cwd: string, value: unknown): string {
+function resolveTablePath(cwd: string, value: unknown, scope?: 'workspace' | 'machine'): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error('filePath is required.')
-  return path.isAbsolute(value) ? path.resolve(value) : safePath(cwd, value)
+  return path.isAbsolute(value) ? path.resolve(value) : safePath(cwd, value, scope)
 }
 
-async function loadPrimaryTable(normalized: Record<string, unknown>, cwd: string): Promise<StructuredTable> {
+async function loadPrimaryTable(normalized: Record<string, unknown>, cwd: string, scope?: 'workspace' | 'machine'): Promise<StructuredTable> {
   if (normalized.rows !== undefined) {
     const parsed = parseJsonValue<unknown[]>(normalized.rows) ?? normalized.rows
     return normalizeInlineRows(parsed)
   }
   const filePath = normalized.filePath ?? normalized.path
-  return loadTabularFile(resolveTablePath(cwd, filePath), {
+  return loadTabularFile(resolveTablePath(cwd, filePath, scope), {
     sheetName: typeof normalized.sheetName === 'string' ? normalized.sheetName : undefined,
   })
 }
@@ -65,6 +65,7 @@ async function loadJoinTable(
   normalized: Record<string, unknown>,
   cwd: string,
   side: 'left' | 'right',
+  scope?: 'workspace' | 'machine',
 ): Promise<StructuredTable> {
   const rowsKey = side === 'left' ? 'leftRows' : 'rightRows'
   const fileKey = side === 'left' ? 'leftFilePath' : 'rightFilePath'
@@ -83,7 +84,7 @@ async function loadJoinTable(
     : side === 'left'
       ? normalized.filePath ?? normalized.path
       : undefined
-  return loadTabularFile(resolveTablePath(cwd, fileSource), {
+  return loadTabularFile(resolveTablePath(cwd, fileSource, scope), {
     sheetName: typeof normalized[sheetKey] === 'string'
       ? normalized[sheetKey] as string
       : side === 'left' && typeof normalized.sheetName === 'string'
@@ -395,7 +396,7 @@ function pivotTable(
   }
 }
 
-async function maybePersistOutput(normalized: Record<string, unknown>, cwd: string, table: StructuredTable) {
+async function maybePersistOutput(normalized: Record<string, unknown>, cwd: string, table: StructuredTable, scope?: 'workspace' | 'machine') {
   const outputPath = typeof normalized.outputPath === 'string'
     ? normalized.outputPath
     : typeof normalized.saveTo === 'string'
@@ -404,11 +405,11 @@ async function maybePersistOutput(normalized: Record<string, unknown>, cwd: stri
         ? normalized.outputFilePath
       : null
   if (!outputPath) return null
-  const resolved = path.isAbsolute(outputPath) ? path.resolve(outputPath) : safePath(cwd, outputPath)
+  const resolved = path.isAbsolute(outputPath) ? path.resolve(outputPath) : safePath(cwd, outputPath, scope)
   return writeStructuredTable(resolved, table)
 }
 
-async function executeTableAction(args: Record<string, unknown>, bctx: { cwd: string }) {
+async function executeTableAction(args: Record<string, unknown>, bctx: { cwd: string; filesystemScope?: 'workspace' | 'machine' }) {
   const normalized = normalizeToolInputArgs(args)
   const action = String(normalized.action || 'read').trim().toLowerCase()
 
@@ -420,8 +421,8 @@ async function executeTableAction(args: Record<string, unknown>, bctx: { cwd: st
     }
 
     if (action === 'join') {
-      const left = await loadJoinTable(normalized, bctx.cwd, 'left')
-      const right = await loadJoinTable(normalized, bctx.cwd, 'right')
+      const left = await loadJoinTable(normalized, bctx.cwd, 'left', bctx.filesystemScope)
+      const right = await loadJoinTable(normalized, bctx.cwd, 'right', bctx.filesystemScope)
       const keys = Array.isArray(normalized.on)
         ? normalized.on.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
         : typeof normalized.on === 'string'
@@ -435,11 +436,11 @@ async function executeTableAction(args: Record<string, unknown>, bctx: { cwd: st
         normalized.joinType === 'left' ? 'left' : 'inner',
         typeof normalized.rightPrefix === 'string' && normalized.rightPrefix.trim() ? normalized.rightPrefix : 'right_',
       )
-      const persisted = await maybePersistOutput(normalized, bctx.cwd, joined)
+      const persisted = await maybePersistOutput(normalized, bctx.cwd, joined, bctx.filesystemScope)
       return JSON.stringify({ action, ...previewTable(joined), output: persisted })
     }
 
-    let table = await loadPrimaryTable(normalized, bctx.cwd)
+    let table = await loadPrimaryTable(normalized, bctx.cwd, bctx.filesystemScope)
 
     if (action === 'read' || action === 'load_csv' || action === 'load_xlsx') {
       return JSON.stringify({ action: 'read', ...previewTable(table) })
@@ -497,14 +498,14 @@ async function executeTableAction(args: Record<string, unknown>, bctx: { cwd: st
           : table.headers
       table = dedupeTable(table, keys, normalized.keep === 'last' ? 'last' : 'first')
     } else if (action === 'write') {
-      const persisted = await maybePersistOutput(normalized, bctx.cwd, table)
+      const persisted = await maybePersistOutput(normalized, bctx.cwd, table, bctx.filesystemScope)
       if (!persisted) return 'Error: outputPath or saveTo is required for write.'
       return JSON.stringify({ action: 'write', output: persisted, ...previewTable(table) })
     } else {
       return `Error: Unknown action "${action}".`
     }
 
-    const persisted = await maybePersistOutput(normalized, bctx.cwd, table)
+    const persisted = await maybePersistOutput(normalized, bctx.cwd, table, bctx.filesystemScope)
     return JSON.stringify({ action, ...previewTable(table), output: persisted })
   } catch (err: unknown) {
     return `Error: ${errorMessage(err)}`
@@ -577,7 +578,7 @@ export function buildTableTools(bctx: ToolBuildContext): StructuredToolInterface
   if (!bctx.hasPlugin('table')) return []
   return [
     tool(
-      async (args) => executeTableAction(args, { cwd: bctx.cwd }),
+      async (args) => executeTableAction(args, { cwd: bctx.cwd, filesystemScope: bctx.filesystemScope }),
       {
         name: 'table',
         description: TablePlugin.tools![0].description,
