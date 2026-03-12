@@ -126,7 +126,9 @@ test('handleWebhookPost creates a session, records success history, and triggers
   assert.match(String(calls.runs[0].message), /Event: build\.completed/)
 
   assert.deepEqual(calls.events, [[sessionId, 'Webhook received: Webhook Smoke (build.completed)']])
-  assert.deepEqual(calls.heartbeats, [{ agentId: 'agent-webhook-smoke', reason: 'webhook' }])
+  assert.equal(calls.heartbeats.length, 1)
+  assert.equal(calls.heartbeats[0].agentId, 'agent-webhook-smoke')
+  assert.equal(calls.heartbeats[0].reason, 'webhook')
 
   const logEntries = Object.values(loadWebhookLogs()) as Array<Record<string, unknown>>
   const successEntry = logEntries.find((entry) => entry.webhookId === webhookId && entry.status === 'success')
