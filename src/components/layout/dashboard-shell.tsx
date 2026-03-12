@@ -104,12 +104,18 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     window.location.assign('/')
   }, [])
 
-  // Auth gate redirects — skip for auth pages
+  // Auth gate redirects
   useEffect(() => {
-    if (isAuthPage) return
     if (!hydrated || !authChecked) return
+    if (isAuthPage) {
+      // Reverse redirect: already authenticated with user → leave auth pages
+      if (authenticated && currentUser && setupDone !== false) {
+        router.replace('/home')
+      }
+      return
+    }
     if (!authenticated) { router.replace('/login'); return }
-    if (!currentUser) { router.replace('/user'); return }
+    if (!currentUser) { router.replace('/setup'); return }
     if (setupDone === false) { router.replace('/setup'); return }
   }, [hydrated, authChecked, authenticated, currentUser, setupDone, router, isAuthPage])
 

@@ -7,7 +7,7 @@ import type { ProviderInfo, ProviderModelDiscoveryResult } from '@/types'
 
 type DiscoveryStrategy = 'openai-compatible' | 'anthropic' | 'google' | 'ollama' | 'openclaw'
 
-interface DiscoveryDescriptor {
+export interface DiscoveryDescriptor {
   providerId: string
   providerName: string
   strategy: DiscoveryStrategy
@@ -48,7 +48,7 @@ function normalizeEndpoint(raw: string | null | undefined, fallback = ''): strin
 }
 
 function supportsBuiltInModelDiscovery(providerId: string): boolean {
-  return !['claude-cli', 'codex-cli', 'opencode-cli', 'fireworks'].includes(providerId)
+  return !['claude-cli', 'codex-cli', 'opencode-cli'].includes(providerId)
 }
 
 function normalizeGoogleModelsEndpoint(raw: string | null | undefined): string {
@@ -63,7 +63,7 @@ function resolveProviderInfo(providerId: string): ProviderInfo | null {
   return getProviderList().find((provider) => provider.id === providerId) || null
 }
 
-function resolveDescriptor(input: DiscoverProviderModelsInput): DiscoveryDescriptor | null {
+export function resolveDescriptor(input: DiscoverProviderModelsInput): DiscoveryDescriptor | null {
   const providerId = clean(input.providerId)
   const provider = resolveProviderInfo(providerId)
   const requiresApiKeyOverride = typeof input.requiresApiKey === 'boolean' ? input.requiresApiKey : undefined
@@ -132,13 +132,15 @@ function resolveDescriptor(input: DiscoverProviderModelsInput): DiscoveryDescrip
   }
 
   if (providerId === 'ollama') {
+    const ollamaEndpoint = normalizeEndpoint(input.endpoint, provider.defaultEndpoint || 'http://localhost:11434')
+    const isCloud = /^https?:\/\/(?:www\.)?ollama\.com(?:\/|$)/i.test(ollamaEndpoint)
     return {
       providerId,
       providerName: provider.name,
-      strategy: 'ollama',
-      endpoint: normalizeEndpoint(input.endpoint, provider.defaultEndpoint || 'http://localhost:11434'),
-      requiresApiKey: requiresApiKeyOverride ?? provider.requiresApiKey,
-      optionalApiKey: Boolean(provider.optionalApiKey),
+      strategy: isCloud ? 'openai-compatible' : 'ollama',
+      endpoint: ollamaEndpoint,
+      requiresApiKey: requiresApiKeyOverride ?? (isCloud ? true : provider.requiresApiKey),
+      optionalApiKey: isCloud ? false : Boolean(provider.optionalApiKey),
       supportsDiscovery,
     }
   }
@@ -156,7 +158,7 @@ function resolveDescriptor(input: DiscoverProviderModelsInput): DiscoveryDescrip
   }
 }
 
-function parseErrorMessage(text: string, fallback: string): string {
+export function parseErrorMessage(text: string, fallback: string): string {
   const body = text.trim()
   if (!body) return fallback
   try {
@@ -189,7 +191,7 @@ function hashApiKey(apiKey: string | null): string {
   return crypto.createHash('sha1').update(apiKey).digest('hex').slice(0, 12)
 }
 
-function dedupeModels(models: string[]): string[] {
+export function dedupeModels(models: string[]): string[] {
   const seen = new Set<string>()
   const result: string[] = []
   for (const model of models) {
@@ -202,7 +204,7 @@ function dedupeModels(models: string[]): string[] {
   return result
 }
 
-function normalizeModelId(modelId: string, strategy: DiscoveryStrategy): string {
+export function normalizeModelId(modelId: string, strategy: DiscoveryStrategy): string {
   const trimmed = modelId.trim()
   if (!trimmed) return ''
   if (strategy === 'ollama') return trimmed.replace(/:latest$/i, '')
@@ -210,7 +212,7 @@ function normalizeModelId(modelId: string, strategy: DiscoveryStrategy): string 
   return trimmed
 }
 
-function looksLikeChatModel(providerId: string, modelId: string): boolean {
+export function looksLikeChatModel(providerId: string, modelId: string): boolean {
   const normalized = modelId.toLowerCase()
   if (!normalized) return false
 
@@ -242,7 +244,7 @@ function looksLikeChatModel(providerId: string, modelId: string): boolean {
   return true
 }
 
-function extractCandidateModelIds(payload: unknown, strategy: DiscoveryStrategy): string[] {
+export function extractCandidateModelIds(payload: unknown, strategy: DiscoveryStrategy): string[] {
   const source = payload as {
     data?: unknown[]
     models?: unknown[]
@@ -278,7 +280,7 @@ function extractCandidateModelIds(payload: unknown, strategy: DiscoveryStrategy)
   return dedupeModels(normalized)
 }
 
-function extractDiscoveredModels(
+export function extractDiscoveredModels(
   providerId: string,
   strategy: DiscoveryStrategy,
   payload: unknown,
@@ -293,7 +295,7 @@ function extractDiscoveredModels(
   }
 }
 
-function ttlForDescriptor(descriptor: DiscoveryDescriptor, ok: boolean): number {
+export function ttlForDescriptor(descriptor: DiscoveryDescriptor, ok: boolean): number {
   if (!ok) return ERROR_CACHE_TTL_MS
   if (descriptor.strategy === 'ollama' || descriptor.strategy === 'openclaw') return LOCAL_CACHE_TTL_MS
   return CLOUD_CACHE_TTL_MS

@@ -137,10 +137,8 @@ function runBuild() {
 
   // Run Next.js build
   log('Building Next.js application (this may take a minute)...')
-  // Use webpack for production build reliability in packaged/fresh-install
-  // environments (Turbopack has intermittently failed during prerender).
   const nextCli = path.join(SWARMCLAW_HOME, 'node_modules', 'next', 'dist', 'bin', 'next')
-  execFileSync(process.execPath, [nextCli, 'build', '--webpack'], {
+  execFileSync(process.execPath, [nextCli, 'build'], {
     cwd: SWARMCLAW_HOME,
     stdio: 'inherit',
     env: {

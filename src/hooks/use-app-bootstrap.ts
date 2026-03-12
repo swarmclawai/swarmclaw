@@ -7,6 +7,7 @@ import { fetchWithTimeout, isAbortError, isTimeoutError } from '@/lib/fetch-time
 import { isDevelopmentLikeRuntime } from '@/lib/runtime/runtime-env'
 import { useWs } from '@/hooks/use-ws'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
+import { resolveSetupDone } from '@/hooks/setup-done-detection'
 import type { Agent } from '@/types'
 
 const AUTH_CHECK_TIMEOUT_MS = isDevelopmentLikeRuntime() ? 20_000 : 8_000
@@ -107,8 +108,11 @@ export function useAppBootstrap() {
   useEffect(() => {
     if (!hydrated) return
     if (safeStorageGet('sc_setup_done') === '1') {
-      setSetupDone((current) => current ?? true)
+      setSetupDone(true)
     }
+    const handler = () => setSetupDone(true)
+    window.addEventListener('sc:setup-complete', handler)
+    return () => window.removeEventListener('sc:setup-complete', handler)
   }, [hydrated])
 
   useEffect(() => {
@@ -176,8 +180,7 @@ export function useAppBootstrap() {
         const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : {}
         const creds = credsResult.status === 'fulfilled' ? credsResult.value : {}
         const bothFailed = settingsResult.status === 'rejected' && credsResult.status === 'rejected'
-        const hasCreds = Object.keys(creds).length > 0
-        const done = bothFailed ? true : settings.setupCompleted === true || hasCreds
+        const done = resolveSetupDone(settings, creds, bothFailed)
         if (done) safeStorageSet('sc_setup_done', '1')
         if (!mountedRef.current) return
         setSetupDone(done)

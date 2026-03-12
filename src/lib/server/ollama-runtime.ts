@@ -12,7 +12,7 @@ function clean(value: string | null | undefined): string | null {
 function isOllamaCloudEndpoint(endpoint: string | null | undefined): boolean {
   const normalized = clean(endpoint)
   if (!normalized) return false
-  return /^https?:\/\/(?:www\.)?ollama\.com(?:\/|$)/i.test(normalized)
+  return /^https?:\/\/(?:www\.|api\.)?ollama\.com(?:\/|$)/i.test(normalized)
 }
 
 function hasExplicitEndpoint(endpoint: string | null | undefined): boolean {

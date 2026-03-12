@@ -110,6 +110,12 @@ async function main() {
   const argv = process.argv.slice(2)
   const top = argv[0]
 
+  // Default to 'server' when invoked with no arguments.
+  if (!top) {
+    require('./server-cmd.js').main()
+    return
+  }
+
   // Route 'server', 'worker', and 'update' subcommands to CJS scripts (no TS dependency).
   if (top === 'server') {
     require('./server-cmd.js').main()

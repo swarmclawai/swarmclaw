@@ -15,7 +15,7 @@ type WatchKind = 'time' | 'http' | 'file' | 'task' | 'webhook' | 'page'
 
 async function createDurableWatch(
   normalized: Record<string, unknown>,
-  bctx: { cwd: string; sessionId?: string; agentId?: string | null },
+  bctx: { cwd: string; sessionId?: string; agentId?: string | null; filesystemScope?: 'workspace' | 'machine' },
   explicitType?: WatchKind,
 ) {
   const watchType = (explicitType || String(normalized.watchType || normalized.type || '').trim().toLowerCase()) as WatchKind
@@ -47,7 +47,7 @@ async function createDurableWatch(
       ? normalized.timeoutAt
       : undefined
   const browserProfileId = sessionId ? ensureSessionBrowserProfileId(sessionId).profileId : null
-  const targetPath = watchType === 'file' && target ? safePath(bctx.cwd, target) : target
+  const targetPath = watchType === 'file' && target ? safePath(bctx.cwd, target, bctx.filesystemScope) : target
   const pageUrl = watchType === 'page' && !target && sessionId
     ? loadBrowserSessionRecord(sessionId)?.currentUrl || undefined
     : undefined
@@ -98,7 +98,7 @@ function getErrorMessage(err: unknown): string {
  */
 async function executeMonitorAction(
   args: Record<string, unknown> | undefined,
-  bctx: { cwd: string; sessionId?: string; agentId?: string | null },
+  bctx: { cwd: string; sessionId?: string; agentId?: string | null; filesystemScope?: 'workspace' | 'machine' },
 ) {
   const normalized = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
   const action = normalized.action as string | undefined
@@ -131,7 +131,7 @@ async function executeMonitorAction(
       }
 
       case 'watch_log': {
-        const resolved = safePath(bctx.cwd, target!)
+        const resolved = safePath(bctx.cwd, target!, bctx.filesystemScope)
         if (!fs.existsSync(resolved)) return `Error: File not found ${target}`
         
         const stats = fs.statSync(resolved)
@@ -266,6 +266,7 @@ export function buildMonitorTools(bctx: ToolBuildContext): StructuredToolInterfa
         cwd: bctx.cwd,
         sessionId: bctx.ctx?.sessionId || undefined,
         agentId: bctx.ctx?.agentId || undefined,
+        filesystemScope: bctx.filesystemScope,
       }),
       {
         name: 'monitor_tool',

@@ -129,10 +129,10 @@ npm i -g @swarmclawai/swarmclaw
 pnpm add -g @swarmclawai/swarmclaw
 yarn global add @swarmclawai/swarmclaw
 bun add -g @swarmclawai/swarmclaw
-swarmclaw server
+swarmclaw
 ```
 
-`swarmclaw` by itself opens the CLI. `swarmclaw server` launches the packaged standalone server on `http://localhost:3456`.
+Running `swarmclaw` with no arguments starts the server on `http://localhost:3456`. You can also use `swarmclaw server` explicitly, or pass a subcommand (e.g. `swarmclaw agents list`) to use the CLI.
 Global install runs `postinstall`, which rebuilds `better-sqlite3` and prepares the sandbox browser image when Docker is available.
 If Docker is not installed yet, SwarmClaw keeps running and falls back to host execution for shell, browser, and `sandbox_exec`.
 No Deno install is required for the local `sandbox_exec` path.
@@ -140,10 +140,10 @@ No Deno install is required for the local `sandbox_exec` path.
 ### One-off run
 
 ```bash
-npx @swarmclawai/swarmclaw server
-pnpm dlx @swarmclawai/swarmclaw server
-yarn dlx @swarmclawai/swarmclaw server
-bunx @swarmclawai/swarmclaw server
+npx @swarmclawai/swarmclaw
+pnpm dlx @swarmclawai/swarmclaw
+yarn dlx @swarmclawai/swarmclaw
+bunx @swarmclawai/swarmclaw
 ```
 
 ### Install script

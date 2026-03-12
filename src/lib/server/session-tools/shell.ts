@@ -22,14 +22,14 @@ import { safeJsonParseObject } from '../json-utils'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { errorMessage } from '@/lib/shared-utils'
 
-function resolveShellWorkdir(baseCwd: string, requestedWorkdir?: string): string {
+function resolveShellWorkdir(baseCwd: string, requestedWorkdir?: string, scope?: 'workspace' | 'machine'): string {
   const raw = typeof requestedWorkdir === 'string' ? requestedWorkdir.trim() : ''
   if (!raw) return baseCwd
   try {
-    const resolved = safePath(baseCwd, raw)
+    const resolved = safePath(baseCwd, raw, scope)
     if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) return resolved
   } catch { /* ignore */ }
-  return safePath(baseCwd, raw)
+  return safePath(baseCwd, raw, scope)
 }
 
 export function rewriteShellWorkspaceAliases(baseCwd: string, command: string): string {
@@ -177,13 +177,14 @@ async function resolveSandboxOptions(params: {
   sessionId?: string | null
   env: Record<string, string>
   config?: AgentSandboxConfig | null
+  filesystemScope?: 'workspace' | 'machine'
 }): Promise<{
   sandbox?: SandboxOptions
   hostWorkdir: string
   workspaceEnv: string
   sessionCwdEnv: string
 }> {
-  const hostWorkdir = resolveShellWorkdir(params.cwd, params.workdir)
+  const hostWorkdir = resolveShellWorkdir(params.cwd, params.workdir, params.filesystemScope)
   const sandboxSession = await ensureSessionSandbox({
     config: params.config,
     session: params.session,
@@ -231,6 +232,7 @@ async function executeShellAction(
     resolveCurrentSession?: () => Session | null
     fileAccessPolicy?: { allowedPaths?: string[]; blockedPaths?: string[] } | null
     sandboxConfig?: AgentSandboxConfig | null
+    filesystemScope?: 'workspace' | 'machine'
   },
 ) {
   const normalized = normalizeShellArgs(args)
@@ -254,7 +256,7 @@ async function executeShellAction(
         if (policyDenial) return policyDenial
         const envMap = coerceEnvMap(env) || {}
         let sandbox: SandboxOptions | undefined
-        let hostWorkdir = resolveShellWorkdir(bctx.cwd, workdir)
+        let hostWorkdir = resolveShellWorkdir(bctx.cwd, workdir, bctx.filesystemScope)
         let commandForExecution = rewriteShellWorkspaceAliases(bctx.cwd, command)
         let sandboxMode: 'container' | 'host' | 'host-fallback' = 'host'
         try {
@@ -266,6 +268,7 @@ async function executeShellAction(
             sessionId: bctx.sessionId || null,
             env: envMap,
             config: bctx.sandboxConfig,
+            filesystemScope: bctx.filesystemScope,
           })
           sandbox = resolved.sandbox
           hostWorkdir = resolved.hostWorkdir
@@ -356,6 +359,7 @@ export function buildShellTools(bctx: ToolBuildContext) {
         resolveCurrentSession: bctx.resolveCurrentSession,
         fileAccessPolicy: bctx.fileAccessPolicy,
         sandboxConfig: bctx.sandboxConfig,
+        filesystemScope: bctx.filesystemScope,
       }),
       {
         name: 'shell',

@@ -10,13 +10,13 @@ import { normalizeToolInputArgs } from './normalize-tool-args'
 /**
  * Core Edit File Execution Logic (Surgical Search and Replace)
  */
-async function executeEditFile(args: { filePath: string; oldString: string; newString: string }, context: { cwd: string }) {
+async function executeEditFile(args: { filePath: string; oldString: string; newString: string }, context: { cwd: string; filesystemScope?: 'workspace' | 'machine' }) {
   const normalized = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
   const filePath = (normalized.filePath ?? normalized.path) as string
   const oldString = normalized.oldString as string
   const newString = normalized.newString as string
   try {
-    const resolved = safePath(context.cwd, filePath)
+    const resolved = safePath(context.cwd, filePath, context.filesystemScope)
     if (!fs.existsSync(resolved)) return `Error: File not found: ${filePath}`
     
     const content = fs.readFileSync(resolved, 'utf-8')
@@ -73,7 +73,7 @@ export function buildEditFileTools(bctx: ToolBuildContext): StructuredToolInterf
   if (!bctx.hasPlugin('edit_file')) return []
   return [
     tool(
-      async (args) => executeEditFile(args as any, { cwd: bctx.cwd }),
+      async (args) => executeEditFile(args as any, { cwd: bctx.cwd, filesystemScope: bctx.filesystemScope }),
       {
         name: 'edit_file',
         description: EditFilePlugin.tools![0].description,

@@ -15,6 +15,7 @@ export type SetupProvider =
   | 'fireworks'
   | 'ollama'
   | 'openclaw'
+  | 'custom'
 
 export interface SetupProviderOption {
   id: SetupProvider
@@ -22,6 +23,7 @@ export interface SetupProviderOption {
   description: string
   requiresKey: boolean
   supportsEndpoint: boolean
+  /** @deprecated No longer used — each provider type can only be configured once */
   allowMultiple?: boolean
   defaultEndpoint?: string
   keyUrl?: string
@@ -30,6 +32,8 @@ export interface SetupProviderOption {
   optionalKey?: boolean
   badge?: string
   icon: string
+  modelLibraryUrl?: string
+  cloudEndpoint?: string
 }
 
 export const SETUP_PROVIDERS: SetupProviderOption[] = [
@@ -44,6 +48,7 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     keyLabel: 'platform.openai.com',
     badge: 'Recommended',
     icon: 'O',
+    modelLibraryUrl: 'https://platform.openai.com/docs/models',
   },
   {
     id: 'openclaw',
@@ -66,6 +71,7 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     keyUrl: 'https://console.anthropic.com/settings/keys',
     keyLabel: 'console.anthropic.com',
     icon: 'A',
+    modelLibraryUrl: 'https://docs.anthropic.com/en/docs/about-claude/models',
   },
   {
     id: 'google',
@@ -77,6 +83,7 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     keyLabel: 'aistudio.google.com',
     keyPlaceholder: 'AIza...',
     icon: 'G',
+    modelLibraryUrl: 'https://ai.google.dev/gemini-api/docs/models',
   },
   {
     id: 'deepseek',
@@ -87,6 +94,7 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     keyUrl: 'https://platform.deepseek.com/api_keys',
     keyLabel: 'platform.deepseek.com',
     icon: 'D',
+    modelLibraryUrl: 'https://api-docs.deepseek.com/quick_start/pricing',
   },
   {
     id: 'groq',
@@ -97,6 +105,7 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     keyUrl: 'https://console.groq.com/keys',
     keyLabel: 'console.groq.com',
     icon: 'G',
+    modelLibraryUrl: 'https://console.groq.com/docs/models',
   },
   {
     id: 'together',
@@ -107,6 +116,7 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     keyUrl: 'https://api.together.xyz/settings/api-keys',
     keyLabel: 'api.together.xyz',
     icon: 'T',
+    modelLibraryUrl: 'https://docs.together.ai/docs/chat-models',
   },
   {
     id: 'mistral',
@@ -117,6 +127,7 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     keyUrl: 'https://console.mistral.ai/api-keys/',
     keyLabel: 'console.mistral.ai',
     icon: 'M',
+    modelLibraryUrl: 'https://docs.mistral.ai/getting-started/models/models_overview/',
   },
   {
     id: 'xai',
@@ -127,6 +138,7 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     keyUrl: 'https://console.x.ai',
     keyLabel: 'console.x.ai',
     icon: 'X',
+    modelLibraryUrl: 'https://docs.x.ai/docs/models',
   },
   {
     id: 'fireworks',
@@ -137,16 +149,31 @@ export const SETUP_PROVIDERS: SetupProviderOption[] = [
     keyUrl: 'https://fireworks.ai/account/api-keys',
     keyLabel: 'fireworks.ai',
     icon: 'F',
+    modelLibraryUrl: 'https://fireworks.ai/models',
   },
   {
     id: 'ollama',
     name: 'Ollama',
-    description: 'Run local open-source models. No API key required.',
+    description: 'Run local open-source models or connect to Ollama Cloud.',
     requiresKey: false,
     supportsEndpoint: true,
+    allowMultiple: true,
     defaultEndpoint: 'http://localhost:11434',
-    badge: 'Local',
+    optionalKey: true,
+    badge: 'Local + Cloud',
     icon: 'L',
+    modelLibraryUrl: 'https://ollama.com/library',
+    cloudEndpoint: 'https://api.ollama.com',
+  },
+  {
+    id: 'custom',
+    name: 'Custom Provider',
+    description: 'Any OpenAI-compatible API endpoint (OpenRouter, LM Studio, vLLM, etc.).',
+    requiresKey: false,
+    supportsEndpoint: true,
+    allowMultiple: true,
+    optionalKey: true,
+    icon: '+',
   },
 ]
 
@@ -279,13 +306,6 @@ export const ONBOARDING_PATHS: OnboardingPathOption[] = [
     description: 'Provider first, one starter kit, fastest path into chat.',
     detail: 'Best when you already know which provider you want and want to get moving quickly.',
     badge: 'Fastest',
-  },
-  {
-    id: 'intent',
-    title: 'Intent Guided',
-    description: 'Start from what you want to do, then shape a starter workspace around it.',
-    detail: 'Best for open-ended use cases like research, building, writing, planning, or mixed personal work.',
-    badge: 'Recommended',
   },
   {
     id: 'manual',
@@ -610,6 +630,13 @@ export const DEFAULT_AGENTS: Record<SetupProvider, DefaultAgentConfig> = {
     description: 'A manager agent for talking to and coordinating OpenClaw instances.',
     systemPrompt: 'You are an operator focused on reliable execution, clear status updates, and task completion.',
     model: 'default',
+    tools: STARTER_AGENT_TOOLS,
+  },
+  custom: {
+    name: 'Custom Agent',
+    description: 'An assistant powered by a custom OpenAI-compatible provider.',
+    systemPrompt: SWARMCLAW_ASSISTANT_PROMPT,
+    model: '',
     tools: STARTER_AGENT_TOOLS,
   },
 }

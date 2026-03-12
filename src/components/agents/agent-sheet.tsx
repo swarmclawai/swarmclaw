@@ -224,6 +224,7 @@ export function AgentSheet() {
   const [proactiveMemory, setProactiveMemory] = useState(false)
   const [autoRecovery, setAutoRecovery] = useState(false)
   const [disabled, setDisabled] = useState(false)
+  const [filesystemScope, setFilesystemScope] = useState<'workspace' | 'machine'>('workspace')
   const [voiceId, setVoiceId] = useState('')
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(false)
   const [heartbeatIntervalSec, setHeartbeatIntervalSec] = useState('')  // '' = default (30m)
@@ -422,6 +423,7 @@ export function AgentSheet() {
         setProactiveMemory(editing.proactiveMemory || false)
         setAutoRecovery(editing.autoRecovery || false)
         setDisabled(editing.disabled === true)
+        setFilesystemScope(editing.filesystemScope === 'machine' ? 'machine' : 'workspace')
         setVoiceId(editing.elevenLabsVoiceId || '')
         setHeartbeatEnabled(editing.heartbeatEnabled || false)
         setHeartbeatIntervalSec(parseDurationToSec(editing.heartbeatInterval, editing.heartbeatIntervalSec))
@@ -674,6 +676,7 @@ export function AgentSheet() {
       proactiveMemory,
       autoRecovery,
       disabled,
+      filesystemScope: filesystemScope === 'machine' ? 'machine' as const : undefined,
       elevenLabsVoiceId: voiceId.trim() || null,
       heartbeatEnabled,
       heartbeatInterval: heartbeatIntervalSec ? formatHbDuration(Number(heartbeatIntervalSec)) : null,
@@ -2238,6 +2241,22 @@ export function AgentSheet() {
           </div>
         </div>
       )}
+
+      {/* Filesystem Access */}
+      <div className="mb-8">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Filesystem Access</label>
+        <select
+          value={filesystemScope}
+          onChange={(e) => setFilesystemScope(e.target.value as 'workspace' | 'machine')}
+          className="w-full h-10 px-3 rounded-[10px] bg-white/[0.04] border border-white/[0.06] text-[14px] text-text-2"
+        >
+          <option value="workspace">Workspace only</option>
+          <option value="machine">Full machine</option>
+        </select>
+        {filesystemScope === 'machine' && (
+          <p className="mt-2 text-[12px] text-amber-400/80">Agent can access any file your user account can reach. Sensitive paths (.ssh, .env, .gnupg) are blocked by default.</p>
+        )}
+      </div>
 
       {/* Platform — hidden for providers that manage capabilities outside LangGraph */}
       {!hasNativeCapabilities && (

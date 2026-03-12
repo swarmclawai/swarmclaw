@@ -25,9 +25,9 @@ function parseMetadataInput(value: unknown): Record<string, unknown> {
   return {}
 }
 
-function resolveFilePath(cwd: string, value: unknown): string {
+function resolveFilePath(cwd: string, value: unknown, scope?: 'workspace' | 'machine'): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error('filePath is required.')
-  return path.isAbsolute(value) ? path.resolve(value) : safePath(cwd, value)
+  return path.isAbsolute(value) ? path.resolve(value) : safePath(cwd, value, scope)
 }
 
 function previewTables(tables: Awaited<ReturnType<typeof extractDocumentArtifact>>['tables']) {
@@ -74,7 +74,7 @@ function searchStoredDocuments(documents: Record<string, DocumentEntry>, query: 
 
 async function executeDocumentAction(
   args: Record<string, unknown>,
-  bctx: { cwd: string; sessionId?: string | null; agentId?: string | null },
+  bctx: { cwd: string; sessionId?: string | null; agentId?: string | null; filesystemScope?: 'workspace' | 'machine' },
 ) {
   const normalized = normalizeToolInputArgs(args)
   const action = String(normalized.action || 'status').trim().toLowerCase()
@@ -141,7 +141,7 @@ async function executeDocumentAction(
       return JSON.stringify({ ok: true, id })
     }
 
-    const filePath = resolveFilePath(bctx.cwd, normalized.filePath ?? normalized.path)
+    const filePath = resolveFilePath(bctx.cwd, normalized.filePath ?? normalized.path, bctx.filesystemScope)
     const artifact = await extractDocumentArtifact(filePath, {
       preferOcr: action === 'ocr' || normalized.preferOcr === true,
       maxChars: typeof normalized.maxChars === 'number' ? Math.max(5_000, normalized.maxChars) : undefined,
@@ -273,6 +273,7 @@ export function buildDocumentTools(bctx: ToolBuildContext): StructuredToolInterf
         cwd: bctx.cwd,
         sessionId: bctx.ctx?.sessionId || null,
         agentId: bctx.ctx?.agentId || null,
+        filesystemScope: bctx.filesystemScope,
       }),
       {
         name: 'document',

@@ -19,7 +19,7 @@ const GIT_ACTIONS = [
 /**
  * Core Git Execution Logic
  */
-async function executeGitAction(args: Record<string, unknown>, bctx: { cwd: string }) {
+async function executeGitAction(args: Record<string, unknown>, bctx: { cwd: string; filesystemScope?: 'workspace' | 'machine' }) {
   const normalized = normalizeToolInputArgs(args)
   const action = typeof normalized.action === 'string' ? normalized.action : ''
   const cmdArgsRaw = (normalized.args ?? normalized.commandArgs ?? normalized.cmdArgs) as string[] | undefined
@@ -32,7 +32,7 @@ async function executeGitAction(args: Record<string, unknown>, bctx: { cwd: stri
   }
 
   try {
-    const cwd = repoPath ? safePath(bctx.cwd, repoPath) : bctx.cwd
+    const cwd = repoPath ? safePath(bctx.cwd, repoPath, bctx.filesystemScope) : bctx.cwd
     const timeout = Math.max(5, Math.min(timeoutSec ?? 60, 300)) * 1000
 
     if (action !== 'clone') {
@@ -100,7 +100,7 @@ export function buildGitTools(bctx: ToolBuildContext): StructuredToolInterface[]
   if (!bctx.hasPlugin('git')) return []
   return [
     tool(
-      async (args) => executeGitAction(args, { cwd: bctx.cwd }),
+      async (args) => executeGitAction(args, { cwd: bctx.cwd, filesystemScope: bctx.filesystemScope }),
       {
         name: 'git',
         description: GitPlugin.tools![0].description,

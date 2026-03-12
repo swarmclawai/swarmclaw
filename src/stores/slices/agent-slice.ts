@@ -28,7 +28,7 @@ export const createAgentSlice: StateCreator<AppState, [], [], AgentSlice> = (set
       safeStorageRemove('sc_agent')
       return
     }
-    if (get().currentAgentId === id) {
+    if (get().currentAgentId === id && get().agents[id]?.threadSessionId) {
       return
     }
     set({ currentAgentId: id })

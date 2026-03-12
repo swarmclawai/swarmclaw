@@ -10,6 +10,7 @@ export default function SetupPage() {
     <SetupWizard
       onComplete={() => {
         safeStorageSet('sc_setup_done', '1')
+        window.dispatchEvent(new Event('sc:setup-complete'))
         router.replace('/home')
       }}
     />

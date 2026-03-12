@@ -61,7 +61,7 @@ export function buildChatModel(opts: {
       : toOpenAiCompatibleBaseUrl(runtime.endpoint, OLLAMA_LOCAL_URL)
     return new ChatOpenAI({
       model: runtime.model || 'qwen3.5',
-      apiKey: runtime.useCloud ? runtime.apiKey || undefined : 'ollama',
+      apiKey: runtime.useCloud ? runtime.apiKey || undefined : runtime.apiKey || 'ollama',
       timeout: OPENAI_COMPAT_MODEL_TIMEOUT_MS,
       maxRetries: OPENAI_COMPAT_MODEL_MAX_RETRIES,
       configuration: { baseURL },
