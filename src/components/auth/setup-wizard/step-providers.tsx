@@ -5,7 +5,7 @@ import { api } from '@/lib/app/api-client'
 import { errorMessage } from '@/lib/shared-utils'
 import { SETUP_PROVIDERS } from '@/lib/setup-defaults'
 import type { StepProvidersProps, SetupDoctorResponse } from './types'
-import { StepShell, SkipLink, ConfiguredProviderChips } from './shared'
+import { StepShell, ConfiguredProviderChips } from './shared'
 
 export function StepProviders({
   configuredProviders,

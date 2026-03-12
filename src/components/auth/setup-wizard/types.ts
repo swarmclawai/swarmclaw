@@ -1,5 +1,5 @@
 import type { GatewayProfile } from '@/types'
-import type { SetupProvider, StarterKitAgentTemplate } from '@/lib/setup-defaults'
+import type { SetupProvider } from '@/lib/setup-defaults'
 
 export type SetupStep = 'profile' | 'providers' | 'connect' | 'agents' | 'next' | 'done'
 export type CheckState = 'idle' | 'checking' | 'ok' | 'error'

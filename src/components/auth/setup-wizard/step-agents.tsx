@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/app/api-client'
 import { SETUP_PROVIDERS } from '@/lib/setup-defaults'
-import { SOUL_LIBRARY, type SoulTemplate } from '@/lib/soul-library'
+import { SOUL_LIBRARY } from '@/lib/soul-library'
 import { randomSoul } from '@/lib/soul-suggestions'
 import type { StepAgentsProps, ConfiguredProvider } from './types'
 import type { ProviderModelDiscoveryResult } from '@/types'
