@@ -839,6 +839,19 @@ export function markSetupComplete(): void {
   if (fs.existsSync(SETUP_FLAG)) fs.unlinkSync(SETUP_FLAG)
 }
 
+/** Replace the access key in memory and in .env.local (first-time setup override). */
+export function replaceAccessKey(newKey: string): void {
+  const envPath = path.join(process.cwd(), '.env.local')
+  if (fs.existsSync(envPath)) {
+    const contents = fs.readFileSync(envPath, 'utf-8')
+    const updated = contents.replace(/^ACCESS_KEY=.*$/m, `ACCESS_KEY=${newKey}`)
+    fs.writeFileSync(envPath, updated)
+  } else {
+    fs.appendFileSync(envPath, `\nACCESS_KEY=${newKey}\n`)
+  }
+  process.env.ACCESS_KEY = newKey
+}
+
 // --- Sessions ---
 export function loadSessions(): Record<string, any> {
   const sessions = loadCollection('sessions')

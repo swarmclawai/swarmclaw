@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { validateAccessKey, isFirstTimeSetup, markSetupComplete } from '@/lib/server/storage'
+import { getAccessKey, validateAccessKey, isFirstTimeSetup, markSetupComplete, replaceAccessKey } from '@/lib/server/storage'
 import { AUTH_COOKIE_NAME, getCookieValue } from '@/lib/auth'
 import { isProductionRuntime } from '@/lib/runtime/runtime-env'
 import { hmrSingleton } from '@/lib/shared-utils'
@@ -51,12 +51,17 @@ function setAuthCookie(response: NextResponse, req: Request, key: string): NextR
   return response
 }
 
-/** GET /api/auth — returns setup state and whether the auth cookie is currently valid */
+/** GET /api/auth — returns setup state and whether the auth cookie is currently valid.
+ *  During first-time setup the generated access key is included so the UI can
+ *  display it with a copy button. Once setup completes the key is never exposed
+ *  over an unauthenticated endpoint again. */
 export async function GET(req: Request) {
   const cookieKey = getCookieValue(req.headers.get('cookie'), AUTH_COOKIE_NAME)
+  const firstTime = isFirstTimeSetup()
   return NextResponse.json({
-    firstTime: isFirstTimeSetup(),
+    firstTime,
     authenticated: !!cookieKey && validateAccessKey(cookieKey),
+    ...(firstTime ? { generatedKey: getAccessKey() } : {}),
   })
 }
 
@@ -73,7 +78,18 @@ export async function POST(req: Request) {
     ))
   }
 
-  const { key } = await req.json()
+  const { key, override } = await req.json()
+
+  // During first-time setup, allow the user to replace the generated key with their own
+  if (override && isFirstTimeSetup() && typeof key === 'string' && key.trim().length >= 8) {
+    replaceAccessKey(key.trim())
+    markSetupComplete()
+    if (rateLimitEnabled) authRateLimitMap.delete(clientIp)
+    const { ensureDaemonStarted } = await import('@/lib/server/runtime/daemon-state')
+    ensureDaemonStarted('api/auth:post')
+    return setAuthCookie(NextResponse.json({ ok: true }), req, key.trim())
+  }
+
   if (!key || !validateAccessKey(key)) {
     let remaining = MAX_ATTEMPTS
     if (rateLimitEnabled) {

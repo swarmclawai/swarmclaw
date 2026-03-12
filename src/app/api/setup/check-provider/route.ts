@@ -40,7 +40,7 @@ function parseBody(input: unknown): SetupCheckBody {
   return input as SetupCheckBody
 }
 
-async function parseErrorMessage(res: Response, fallback: string): Promise<string> {
+export async function parseErrorMessage(res: Response, fallback: string): Promise<string> {
   const text = await res.text().catch(() => '')
   if (!text) return fallback
   try {
@@ -60,24 +60,66 @@ async function checkOpenAiCompatible(
   apiKey: string,
   endpointRaw: string,
   defaultEndpoint: string,
+  modelHint?: string,
 ): Promise<{ ok: boolean; message: string; normalizedEndpoint: string }> {
   const normalizedEndpoint = (endpointRaw || defaultEndpoint).replace(/\/+$/, '')
-  const res = await fetch(`${normalizedEndpoint}/models`, {
+
+  // First, discover a model to test with (prefer the hint, fall back to the first available model)
+  let testModel = modelHint || ''
+  if (!testModel) {
+    try {
+      const modelsRes = await fetch(`${normalizedEndpoint}/models`, {
+        headers: { authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(8_000),
+        cache: 'no-store',
+      })
+      if (modelsRes.ok) {
+        const modelsPayload = await modelsRes.json().catch(() => ({} as any))
+        const first = Array.isArray(modelsPayload?.data) ? modelsPayload.data[0] : null
+        if (first?.id) testModel = String(first.id)
+      }
+    } catch {
+      // Model discovery failed — we'll still try the chat endpoint with the provider's default
+    }
+  }
+
+  // Fall back to a reasonable default per provider
+  if (!testModel) {
+    const fallbacks: Record<string, string> = {
+      OpenAI: 'gpt-4o-mini',
+      'Google Gemini': 'gemini-2.0-flash',
+      DeepSeek: 'deepseek-chat',
+      Groq: 'llama-3.3-70b-versatile',
+      'Together AI': 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+      'Mistral AI': 'mistral-small-latest',
+      'xAI (Grok)': 'grok-3-mini-fast',
+      'Fireworks AI': 'accounts/fireworks/models/llama4-scout-instruct-basic',
+    }
+    testModel = fallbacks[providerName] || 'gpt-4o-mini'
+  }
+
+  // Test the chat completions endpoint with a minimal request
+  const res = await fetch(`${normalizedEndpoint}/chat/completions`, {
+    method: 'POST',
     headers: {
       authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
     },
-    signal: AbortSignal.timeout(10_000),
+    body: JSON.stringify({
+      model: testModel,
+      max_tokens: 8,
+      messages: [{ role: 'user', content: 'Reply OK' }],
+    }),
+    signal: AbortSignal.timeout(15_000),
     cache: 'no-store',
   })
   if (!res.ok) {
     const detail = await parseErrorMessage(res, `${providerName} returned ${res.status}.`)
     return { ok: false, message: detail, normalizedEndpoint }
   }
-  const payload = await res.json().catch(() => ({} as any))
-  const count = Array.isArray(payload?.data) ? payload.data.length : 0
   return {
     ok: true,
-    message: count > 0 ? `Connected to ${providerName}. ${count} model(s) available.` : `Connected to ${providerName}.`,
+    message: `Connected to ${providerName}. Chat endpoint verified with ${testModel}.`,
     normalizedEndpoint,
   }
 }
@@ -119,8 +161,7 @@ async function checkOllama(params: {
     apiEndpoint: params.endpointRaw,
   })
   const normalizedEndpoint = normalizeOllamaSetupEndpoint(runtime.endpoint, runtime.useCloud)
-  const tagsPath = runtime.useCloud ? '/v1/models' : '/api/tags'
-  const headers = runtime.apiKey ? { authorization: `Bearer ${runtime.apiKey}` } : undefined
+  const headers: Record<string, string> = runtime.apiKey ? { authorization: `Bearer ${runtime.apiKey}` } : {}
   if (runtime.useCloud && !runtime.apiKey) {
     return {
       ok: false,
@@ -128,40 +169,72 @@ async function checkOllama(params: {
       normalizedEndpoint,
     }
   }
-  const res = await fetch(`${normalizedEndpoint}${tagsPath}`, {
-    headers,
-    signal: AbortSignal.timeout(8_000),
+
+  // Discover a model to test with
+  let testModel = params.modelRaw || ''
+  let recommendedModel: string | undefined
+  if (!testModel) {
+    try {
+      const tagsPath = runtime.useCloud ? '/v1/models' : '/api/tags'
+      const res = await fetch(`${normalizedEndpoint}${tagsPath}`, {
+        headers: headers.authorization ? headers : undefined,
+        signal: AbortSignal.timeout(8_000),
+        cache: 'no-store',
+      })
+      if (res.ok) {
+        const payload = await res.json().catch(() => ({} as any))
+        const models = runtime.useCloud
+          ? (Array.isArray(payload?.data) ? payload.data : [])
+          : (Array.isArray(payload?.models) ? payload.models : [])
+        const firstModel = runtime.useCloud
+          ? (typeof models[0]?.id === 'string' ? String(models[0].id) : undefined)
+          : (typeof models[0]?.name === 'string' ? String(models[0].name).replace(/:latest$/, '') : undefined)
+        if (firstModel) {
+          testModel = firstModel
+          recommendedModel = firstModel
+        }
+        if (models.length === 0) {
+          return {
+            ok: true,
+            message: runtime.useCloud
+              ? 'Connected to Ollama Cloud, but no models were returned.'
+              : 'Connected to Ollama, but no models are installed yet. Run `ollama pull <model>` to add one.',
+            normalizedEndpoint,
+          }
+        }
+      }
+    } catch {
+      // Model discovery failed — try chat anyway
+    }
+  }
+
+  if (!testModel) testModel = 'llama3.2'
+
+  // Test the chat endpoint
+  const label = runtime.useCloud ? 'Ollama Cloud' : 'Ollama'
+  const chatEndpoint = `${normalizedEndpoint}/v1/chat/completions`
+  const chatBody = JSON.stringify({ model: testModel, max_tokens: 8, messages: [{ role: 'user', content: 'Reply OK' }] })
+
+  const chatRes = await fetch(chatEndpoint, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: chatBody,
+    signal: AbortSignal.timeout(30_000),
     cache: 'no-store',
   })
-  if (!res.ok) {
-    const detail = await parseErrorMessage(res, `Ollama returned ${res.status}.`)
-    return { ok: false, message: detail, normalizedEndpoint }
-  }
-  const payload = await res.json().catch(() => ({} as any))
-  const models = runtime.useCloud
-    ? (Array.isArray(payload?.data) ? payload.data : [])
-    : (Array.isArray(payload?.models) ? payload.models : [])
-  const firstModel = runtime.useCloud
-    ? (typeof models[0]?.id === 'string' ? String(models[0].id) : undefined)
-    : (typeof models[0]?.name === 'string' ? String(models[0].name).replace(/:latest$/, '') : undefined)
-  if (models.length === 0) {
-    return {
-      ok: true,
-      message: runtime.useCloud
-        ? 'Connected to Ollama Cloud, but no models were returned.'
-        : 'Connected to Ollama, but no models are installed yet. Run `ollama pull <model>` to add one.',
-      normalizedEndpoint,
-    }
+  if (!chatRes.ok) {
+    const detail = await parseErrorMessage(chatRes, `${label} chat returned ${chatRes.status}.`)
+    return { ok: false, message: detail, normalizedEndpoint, recommendedModel }
   }
   return {
     ok: true,
-    message: `Connected to ${runtime.useCloud ? 'Ollama Cloud' : 'Ollama'}. ${models.length} model(s) available.`,
+    message: `Connected to ${label}. Chat verified with ${testModel}.`,
     normalizedEndpoint,
-    recommendedModel: firstModel,
+    recommendedModel: recommendedModel || testModel,
   }
 }
 
-function normalizeOpenClawUrl(raw: string): { httpUrl: string; wsUrl: string } {
+export function normalizeOpenClawUrl(raw: string): { httpUrl: string; wsUrl: string } {
   let url = (raw || 'http://localhost:18789').replace(/\/+$/, '')
   if (!/^(https?|wss?):\/\//i.test(url)) url = `http://${url}`
   const httpUrl = url.replace(/^ws:/i, 'http:').replace(/^wss:/i, 'https:')
@@ -214,7 +287,7 @@ export async function POST(req: Request) {
       case 'openai': {
         if (!apiKey) return NextResponse.json({ ok: false, message: 'OpenAI API key is required.' })
         const info = OPENAI_COMPATIBLE_DEFAULTS.openai
-        const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint)
+        const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
         return NextResponse.json(result)
       }
       case 'anthropic': {
@@ -231,7 +304,7 @@ export async function POST(req: Request) {
       case 'fireworks': {
         const info = OPENAI_COMPATIBLE_DEFAULTS[provider]
         if (!apiKey) return NextResponse.json({ ok: false, message: `${info.name} API key is required.` })
-        const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint)
+        const result = await checkOpenAiCompatible(info.name, apiKey, endpoint, info.defaultEndpoint, model)
         return NextResponse.json(result)
       }
       case 'ollama': {

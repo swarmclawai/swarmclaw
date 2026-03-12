@@ -66,6 +66,7 @@
     "lint:baseline:update": "node ./scripts/lint-baseline.mjs update",
     "cli": "node ./bin/swarmclaw.js",
     "test:cli": "node --test src/cli/*.test.js bin/*.test.js",
+    "test:setup": "tsx --test src/app/api/setup/check-provider/route.test.ts src/lib/server/provider-model-discovery.test.ts src/components/auth/setup-wizard/utils.test.ts src/components/auth/setup-wizard/types.test.ts src/hooks/setup-done-detection.test.ts",
     "test:openclaw": "tsx --test src/lib/openclaw/openclaw-agent-id.test.ts src/lib/openclaw/openclaw-endpoint.test.ts src/lib/server/agents/agent-runtime-config.test.ts src/lib/server/build-llm.test.ts src/lib/server/connectors/connector-routing.test.ts src/lib/server/connectors/openclaw.test.ts src/lib/server/gateway/protocol.test.ts src/lib/server/llm-response-cache.test.ts src/lib/server/mcp-conformance.test.ts src/lib/server/openclaw/agent-resolver.test.ts src/lib/server/openclaw/deploy.test.ts src/lib/server/openclaw/skills-normalize.test.ts src/lib/server/session-tools/openclaw-nodes.test.ts src/lib/server/tasks/task-quality-gate.test.ts src/lib/server/tasks/task-validation.test.ts src/lib/server/tool-capability-policy.test.ts",
     "test:mcp:conformance": "node --import tsx ./scripts/mcp-conformance-check.ts",
     "postinstall": "node ./scripts/postinstall.mjs"
@@ -74,6 +75,7 @@
     "@huggingface/transformers": "^3.8.1",
     "@langchain/anthropic": "^1.3.18",
     "@langchain/core": "^1.1.31",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@langchain/langgraph": "^1.2.2",
     "@langchain/openai": "^1.2.8",
     "@multiavatar/multiavatar": "^1.0.7",
