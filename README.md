@@ -155,7 +155,7 @@ curl -fsSL https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/install.
 The installer resolves the latest stable release tag and installs that version by default.
 It also builds the production bundle so `npm run start` is ready immediately after install.
 No Deno install is required; local sandbox execution is Docker-first with automatic host Node fallback.
-To pin a version: `SWARMCLAW_VERSION=v0.9.4 curl ... | bash`
+To pin a version: `SWARMCLAW_VERSION=v0.9.5 curl ... | bash`
 
 Or run locally from the repo (friendly for non-technical users):
 
