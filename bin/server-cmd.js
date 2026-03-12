@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 
 const fs = require('node:fs')
+const http = require('node:http')
 const path = require('node:path')
 const { spawn, execFileSync } = require('node:child_process')
 const {
@@ -70,6 +71,62 @@ function isProcessRunning(pid) {
   } catch {
     return false
   }
+}
+
+function resolveReadyCheckHost(host) {
+  if (host === '0.0.0.0') return '127.0.0.1'
+  if (host === '::') return '::1'
+  return host
+}
+
+function probeHttpReady(host, port, timeoutMs = 1_000) {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        host,
+        port: Number(port),
+        path: '/api/auth',
+        method: 'GET',
+        timeout: timeoutMs,
+      },
+      (res) => {
+        res.resume()
+        resolve(res.statusCode >= 200 && res.statusCode < 500)
+      },
+    )
+
+    req.once('timeout', () => {
+      req.destroy()
+      resolve(false)
+    })
+    req.once('error', () => resolve(false))
+    req.end()
+  })
+}
+
+async function waitForPortReady({
+  host,
+  port,
+  timeoutMs = 30_000,
+  intervalMs = 250,
+  pid = null,
+  isProcessRunningFn = isProcessRunning,
+  probeFn = probeHttpReady,
+} = {}) {
+  const readyHost = resolveReadyCheckHost(host)
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    if (pid && !isProcessRunningFn(pid)) {
+      throw new Error(`Detached server process ${pid} exited before becoming ready.`)
+    }
+
+    if (await probeFn(readyHost, port)) return
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+
+  throw new Error(`Timed out waiting for ${readyHost}:${port} to become ready.`)
 }
 
 function resolveStandaloneBase(pkgRoot = PKG_ROOT) {
@@ -241,7 +298,7 @@ function findStandaloneServer({ pkgRoot = PKG_ROOT } = {}) {
 // Start server
 // ---------------------------------------------------------------------------
 
-function startServer(opts, { pkgRoot = PKG_ROOT } = {}) {
+async function startServer(opts, { pkgRoot = PKG_ROOT } = {}) {
   const standalone = locateStandaloneServer({ pkgRoot })
   if (!standalone) {
     logError('Standalone server.js not found in the installed package. Try running: swarmclaw server --build')
@@ -282,11 +339,22 @@ function startServer(opts, { pkgRoot = PKG_ROOT } = {}) {
       stdio: ['ignore', logStream, logStream],
     })
 
-    child.unref()
     fs.writeFileSync(PID_FILE, String(child.pid))
-    log(`Server started in background (PID: ${child.pid})`)
-    log(`Logs: ${LOG_FILE}`)
-    process.exit(0)
+    try {
+      await waitForPortReady({ host, port, pid: child.pid })
+      child.unref()
+      log(`Server started in background (PID: ${child.pid})`)
+      log(`Logs: ${LOG_FILE}`)
+      process.exit(0)
+    } catch (err) {
+      try {
+        if (isProcessRunning(child.pid)) process.kill(child.pid, 'SIGTERM')
+      } catch {}
+      try { fs.unlinkSync(PID_FILE) } catch {}
+      logError(`Detached start failed: ${err.message}`)
+      logError(`Check logs: ${LOG_FILE}`)
+      process.exit(1)
+    }
   } else {
     const child = spawn(process.execPath, [serverJs], {
       cwd: runtimeRoot,
@@ -386,7 +454,7 @@ Options:
   console.log(help)
 }
 
-function main(args = process.argv.slice(3)) {
+async function main(args = process.argv.slice(3)) {
   let command = 'start'
   let forceBuild = false
   let detach = false
@@ -446,11 +514,14 @@ function main(args = process.argv.slice(3)) {
     }
   }
 
-  startServer({ port, wsPort, host, detach })
+  await startServer({ port, wsPort, host, detach })
 }
 
 if (require.main === module) {
-  main()
+  void main().catch((err) => {
+    logError(err?.message || String(err))
+    process.exit(1)
+  })
 }
 
 module.exports = {
@@ -469,7 +540,9 @@ module.exports = {
   prepareBuildWorkspace,
   resolveInstalledNext,
   resolvePackageBuildRoot,
+  resolveReadyCheckHost,
   resolveStandaloneCandidateRoots,
   resolveStandaloneBase,
   runBuild,
+  waitForPortReady,
 }

@@ -135,3 +135,56 @@ test('prepareBuildWorkspace copies the package tree and links node_modules outsi
   fs.rmSync(pkgRoot, { recursive: true, force: true })
   fs.rmSync(externalNodeModules, { recursive: true, force: true })
 })
+
+test('resolveReadyCheckHost maps wildcard bind hosts to loopback', () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-server-home-'))
+  const serverCmd = loadServerCmdForHome(homeDir)
+
+  assert.equal(serverCmd.resolveReadyCheckHost('0.0.0.0'), '127.0.0.1')
+  assert.equal(serverCmd.resolveReadyCheckHost('::'), '::1')
+  assert.equal(serverCmd.resolveReadyCheckHost('127.0.0.1'), '127.0.0.1')
+
+  fs.rmSync(homeDir, { recursive: true, force: true })
+})
+
+test('waitForPortReady resolves once the readiness probe succeeds', async () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-server-home-'))
+  const serverCmd = loadServerCmdForHome(homeDir)
+  const calls = []
+  let attempts = 0
+
+  await serverCmd.waitForPortReady({
+    host: '0.0.0.0',
+    port: 3456,
+    timeoutMs: 1_000,
+    intervalMs: 10,
+    probeFn: async (host, port) => {
+      calls.push({ host, port })
+      attempts += 1
+      return attempts >= 3
+    },
+  })
+
+  assert.deepEqual(calls[0], { host: '127.0.0.1', port: 3456 })
+  assert.equal(calls.length, 3)
+  fs.rmSync(homeDir, { recursive: true, force: true })
+})
+
+test('waitForPortReady fails fast when the detached process exits before readiness', async () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-server-home-'))
+  const serverCmd = loadServerCmdForHome(homeDir)
+
+  await assert.rejects(
+    serverCmd.waitForPortReady({
+      host: '127.0.0.1',
+      port: 6553,
+      pid: 4242,
+      timeoutMs: 500,
+      intervalMs: 25,
+      isProcessRunningFn: () => false,
+    }),
+    /exited before becoming ready/,
+  )
+
+  fs.rmSync(homeDir, { recursive: true, force: true })
+})

@@ -128,7 +128,7 @@ async function runHelp(argv) {
   }
 
   if (target === 'run' || target === 'start' || target === 'stop' || target === 'status' || target === 'server') {
-    require('./server-cmd.js').main(['--help'])
+    await require('./server-cmd.js').main(['--help'])
     return
   }
   if (target === 'worker') {
@@ -164,7 +164,7 @@ async function main() {
 
   // Default to 'server' when invoked with no arguments.
   if (!top) {
-    require('./server-cmd.js').main([])
+    await require('./server-cmd.js').main([])
     return
   }
 
@@ -185,15 +185,15 @@ async function main() {
 
   // Route local lifecycle/maintenance commands to CJS scripts (no TS dependency).
   if (top === 'server') {
-    require('./server-cmd.js').main(argv.slice(1))
+    await require('./server-cmd.js').main(argv.slice(1))
     return
   }
   if (top === 'run' || top === 'start') {
-    require('./server-cmd.js').main(argv.slice(1))
+    await require('./server-cmd.js').main(argv.slice(1))
     return
   }
   if (top === 'status' || top === 'stop') {
-    require('./server-cmd.js').main([top, ...argv.slice(1)])
+    await require('./server-cmd.js').main([top, ...argv.slice(1)])
     return
   }
   if (top === 'worker') {
@@ -217,7 +217,10 @@ async function main() {
 }
 
 if (require.main === module) {
-  void main()
+  void main().catch((err) => {
+    process.stderr.write(`${err?.message || String(err)}\n`)
+    process.exit(1)
+  })
 }
 
 module.exports = {
