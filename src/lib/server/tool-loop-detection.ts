@@ -120,6 +120,24 @@ export class ToolLoopTracker {
       ?? null
   }
 
+  /**
+   * Preview whether the next tool call should be warned or blocked before it executes.
+   * Pre-call checks only use detectors that do not depend on tool output.
+   */
+  preview(name: string, input: unknown): LoopDetectionResult | null {
+    const current: ToolCallRecord = {
+      name,
+      inputHash: hashToolInput(input),
+      outputHash: '',
+      outputPreview: '',
+      timestamp: Date.now(),
+    }
+    return this.checkCircuitBreakerPreview(current)
+      ?? this.checkToolFrequencyPreview(current)
+      ?? this.checkGenericRepeatPreview(current)
+      ?? null
+  }
+
   /** Get the full call history (for diagnostics). */
   getHistory(): ReadonlyArray<ToolCallRecord> {
     return this.history
@@ -156,6 +174,28 @@ export class ToolLoopTracker {
     return null
   }
 
+  private checkToolFrequencyPreview(current: ToolCallRecord): LoopDetectionResult | null {
+    let count = 1
+    for (const r of this.history) {
+      if (r.name === current.name) count++
+    }
+    if (count >= this.thresholds.toolFrequencyCritical) {
+      return {
+        severity: 'critical',
+        detector: 'tool_frequency',
+        message: `Tool "${current.name}" would be called ${count} times this turn. Excessive repetition — wrap up with available results.`,
+      }
+    }
+    if (count >= this.thresholds.toolFrequencyWarn) {
+      return {
+        severity: 'warning',
+        detector: 'tool_frequency',
+        message: `Tool "${current.name}" is nearing overuse (${count} calls this turn). Consider whether another call is needed.`,
+      }
+    }
+    return null
+  }
+
   private checkCircuitBreaker(current: ToolCallRecord): LoopDetectionResult | null {
     const key = `${current.name}:${current.inputHash}`
     let count = 0
@@ -167,6 +207,22 @@ export class ToolLoopTracker {
         severity: 'critical',
         detector: 'circuit_breaker',
         message: `Circuit breaker: "${current.name}" called ${count} times with identical input. Halting to prevent runaway.`,
+      }
+    }
+    return null
+  }
+
+  private checkCircuitBreakerPreview(current: ToolCallRecord): LoopDetectionResult | null {
+    const key = `${current.name}:${current.inputHash}`
+    let count = 1
+    for (const r of this.history) {
+      if (`${r.name}:${r.inputHash}` === key) count++
+    }
+    if (count >= this.thresholds.circuitBreaker) {
+      return {
+        severity: 'critical',
+        detector: 'circuit_breaker',
+        message: `Circuit breaker: "${current.name}" would be called ${count} times with identical input. Halting before another runaway call.`,
       }
     }
     return null
@@ -190,6 +246,29 @@ export class ToolLoopTracker {
         severity: 'warning',
         detector: 'generic_repeat',
         message: `Tool "${current.name}" has been called ${count} times with the same input. Consider a different approach.`,
+      }
+    }
+    return null
+  }
+
+  private checkGenericRepeatPreview(current: ToolCallRecord): LoopDetectionResult | null {
+    const key = `${current.name}:${current.inputHash}`
+    let count = 1
+    for (const r of this.history) {
+      if (`${r.name}:${r.inputHash}` === key) count++
+    }
+    if (count >= this.thresholds.repeatCritical) {
+      return {
+        severity: 'critical',
+        detector: 'generic_repeat',
+        message: `Tool "${current.name}" would repeat the same input ${count} times. Blocking before it becomes a stuck loop.`,
+      }
+    }
+    if (count >= this.thresholds.repeatWarn) {
+      return {
+        severity: 'warning',
+        detector: 'generic_repeat',
+        message: `Tool "${current.name}" is about to repeat the same input ${count} times. Consider a different approach.`,
       }
     }
     return null

@@ -91,6 +91,27 @@ describe('ToolLoopTracker', () => {
     assert.equal(warn.severity, 'warning')
     assert.equal(warn.detector, 'tool_frequency')
   })
+
+  it('previews critical repeats before another identical tool call executes', () => {
+    const tracker = new ToolLoopTracker({ repeatWarn: 2, repeatCritical: 3, toolFrequencyWarn: 100, toolFrequencyCritical: 100 })
+    tracker.record('web_search', { query: 'same' }, 'result 1')
+    tracker.record('web_search', { query: 'same' }, 'result 2')
+
+    const preview = tracker.preview('web_search', { query: 'same' })
+    assert.ok(preview)
+    assert.equal(preview?.severity, 'critical')
+    assert.equal(preview?.detector, 'generic_repeat')
+  })
+
+  it('previews tool overuse by frequency before the next call executes', () => {
+    const tracker = new ToolLoopTracker({ toolFrequencyWarn: 2, toolFrequencyCritical: 4 })
+    tracker.record('browser', { action: 'open', url: 'https://a.example' }, 'ok')
+
+    const preview = tracker.preview('browser', { action: 'open', url: 'https://b.example' })
+    assert.ok(preview)
+    assert.equal(preview?.severity, 'warning')
+    assert.equal(preview?.detector, 'tool_frequency')
+  })
 })
 
 describe('hash helpers', () => {

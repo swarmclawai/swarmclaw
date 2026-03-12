@@ -354,12 +354,144 @@ export interface UsageRecord {
 
 // --- Plugin System ---
 
+export interface PluginPromptBuildResult {
+  systemPrompt?: string
+  prependContext?: string
+  prependSystemContext?: string
+  appendSystemContext?: string
+}
+
+export interface PluginModelResolveResult {
+  providerOverride?: ProviderType
+  modelOverride?: string
+  apiEndpointOverride?: string | null
+}
+
+export interface PluginToolCallResult {
+  input?: Record<string, unknown> | null
+  params?: Record<string, unknown>
+  block?: boolean
+  blockReason?: string
+  warning?: string
+}
+
+export interface PluginMessagePersistResult {
+  message?: Message
+}
+
+export interface PluginBeforeMessageWriteResult extends PluginMessagePersistResult {
+  block?: boolean
+}
+
+export interface PluginSubagentSpawningResult {
+  status: 'ok' | 'error'
+  error?: string
+}
+
 export interface PluginHooks {
   beforeAgentStart?: (ctx: { session: Session; message: string }) => Promise<void> | void
   afterAgentComplete?: (ctx: { session: Session; response: string }) => Promise<void> | void
+  beforeModelResolve?: (ctx: {
+    session: Session
+    prompt: string
+    message: string
+    provider: ProviderType
+    model: string
+    apiEndpoint?: string | null
+  }) => Promise<PluginModelResolveResult | void> | PluginModelResolveResult | void
   beforeToolExec?: (ctx: { toolName: string; input: Record<string, unknown> | null }) => Promise<Record<string, unknown> | void> | Record<string, unknown> | void
+  beforePromptBuild?: (ctx: {
+    session: Session
+    prompt: string
+    message: string
+    history: Message[]
+    messages: Message[]
+  }) => Promise<PluginPromptBuildResult | void> | PluginPromptBuildResult | void
+  beforeToolCall?: (ctx: {
+    session: Session
+    toolName: string
+    input: Record<string, unknown> | null
+    runId?: string
+    toolCallId?: string
+  }) => Promise<PluginToolCallResult | Record<string, unknown> | void> | PluginToolCallResult | Record<string, unknown> | void
+  llmInput?: (ctx: {
+    session: Session
+    runId: string
+    provider: ProviderType
+    model: string
+    systemPrompt?: string
+    prompt: string
+    historyMessages: Message[]
+    imagesCount: number
+  }) => Promise<void> | void
+  llmOutput?: (ctx: {
+    session: Session
+    runId: string
+    provider: ProviderType
+    model: string
+    assistantTexts: string[]
+    response: string
+    usage?: {
+      input?: number
+      output?: number
+      total?: number
+      estimatedCost?: number
+    }
+  }) => Promise<void> | void
+  toolResultPersist?: (ctx: {
+    session: Session
+    message: Message
+    toolName?: string
+    toolCallId?: string
+    isSynthetic?: boolean
+  }) => Promise<PluginMessagePersistResult | Message | void> | PluginMessagePersistResult | Message | void
+  beforeMessageWrite?: (ctx: {
+    session: Session
+    message: Message
+    phase?: 'user' | 'system' | 'assistant_partial' | 'assistant_final' | 'heartbeat'
+    runId?: string
+  }) => Promise<PluginBeforeMessageWriteResult | Message | void> | PluginBeforeMessageWriteResult | Message | void
   afterToolExec?: (ctx: { session: Session; toolName: string; input: Record<string, unknown> | null; output: string }) => Promise<void> | void
   onMessage?: (ctx: { session: Session; message: Message }) => Promise<void> | void
+  sessionStart?: (ctx: {
+    session: Session
+    resumedFrom?: string | null
+  }) => Promise<void> | void
+  sessionEnd?: (ctx: {
+    sessionId: string
+    session?: Session | null
+    messageCount: number
+    durationMs?: number
+    reason?: string | null
+  }) => Promise<void> | void
+  subagentSpawning?: (ctx: {
+    parentSessionId?: string | null
+    agentId: string
+    agentName: string
+    message: string
+    cwd: string
+    mode: 'run' | 'session'
+    threadRequested: boolean
+  }) => Promise<PluginSubagentSpawningResult | void> | PluginSubagentSpawningResult | void
+  subagentSpawned?: (ctx: {
+    parentSessionId?: string | null
+    childSessionId: string
+    agentId: string
+    agentName: string
+    runId: string
+    mode: 'run' | 'session'
+    threadRequested: boolean
+  }) => Promise<void> | void
+  subagentEnded?: (ctx: {
+    parentSessionId?: string | null
+    childSessionId: string
+    agentId: string
+    agentName: string
+    status: 'completed' | 'failed' | 'cancelled' | 'timed_out'
+    response?: string | null
+    error?: string | null
+    durationMs?: number
+  }) => Promise<void> | void
 
   // Post-turn hook — fires after a full chat exchange (user message → agent response)
   afterChatTurn?: (ctx: {

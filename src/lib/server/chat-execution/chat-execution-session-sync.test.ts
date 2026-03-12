@@ -230,3 +230,115 @@ test('executeSessionChatTurn keeps tool-only heartbeats off the visible main-thr
   assert.equal(output.lastMessageText, 'seed user message')
   assert.equal(output.heartbeatKinds, 0)
 })
+
+test('executeSessionChatTurn applies lifecycle hooks for model resolution and message persistence', () => {
+  const output = runWithTempDataDir(`
+    const storageMod = await import('@/lib/server/storage')
+    const providersMod = await import('@/lib/providers/index')
+    const pluginsMod = await import('@/lib/server/plugins')
+    const execMod = await import('@/lib/server/chat-execution/chat-execution')
+    const storage = storageMod.default || storageMod['module.exports'] || storageMod
+    const executeSessionChatTurn = execMod.executeSessionChatTurn
+      || execMod.default?.executeSessionChatTurn
+      || execMod['module.exports']?.executeSessionChatTurn
+    const providers = providersMod.PROVIDERS
+      || providersMod.default?.PROVIDERS
+      || providersMod['module.exports']?.PROVIDERS
+    const pluginManager = pluginsMod.getPluginManager
+      ? pluginsMod.getPluginManager()
+      : pluginsMod.default?.getPluginManager?.()
+
+    const lifecycleMarks = []
+    pluginManager.registerBuiltin('lifecycle_hooks_test', {
+      name: 'Lifecycle Hooks Test',
+      hooks: {
+        beforeModelResolve: () => ({
+          providerOverride: 'claude-cli',
+          modelOverride: 'resolved-model',
+        }),
+        beforeMessageWrite: ({ message, phase }) => {
+          lifecycleMarks.push(phase || 'unknown')
+          return {
+            message: {
+              ...message,
+              text: message.role === 'assistant' ? message.text + ' [stored]' : message.text,
+            },
+          }
+        },
+        sessionStart: () => {
+          lifecycleMarks.push('session_start')
+        },
+      },
+    })
+
+    providers['claude-cli'] = {
+      id: 'claude-cli',
+      name: 'Resolved Provider',
+      models: ['resolved-model'],
+      requiresApiKey: false,
+      requiresEndpoint: false,
+      handler: {
+        async streamChat(opts) {
+          lifecycleMarks.push('provider:' + opts.session.provider + ':' + opts.session.model)
+          return 'resolved response'
+        },
+      },
+    }
+
+    const now = Date.now()
+    storage.saveAgents({
+      lifecycle: {
+        id: 'lifecycle',
+        name: 'Lifecycle Agent',
+        description: 'Lifecycle hook integration test',
+        provider: 'openai',
+        model: 'seed-model',
+        credentialId: null,
+        apiEndpoint: null,
+        fallbackCredentialIds: [],
+        disabled: false,
+        heartbeatEnabled: false,
+        heartbeatIntervalSec: null,
+        plugins: ['lifecycle_hooks_test'],
+        createdAt: now,
+        updatedAt: now,
+      },
+    })
+    storage.saveSessions({
+      lifecycle_session: {
+        id: 'lifecycle_session',
+        name: 'Lifecycle Session',
+        cwd: process.env.WORKSPACE_DIR,
+        user: 'default',
+        provider: 'openai',
+        model: 'seed-model',
+        claudeSessionId: null,
+        messages: [],
+        createdAt: now,
+        lastActiveAt: now,
+        sessionType: 'human',
+        agentId: 'lifecycle',
+        plugins: ['lifecycle_hooks_test'],
+      },
+    })
+
+    await executeSessionChatTurn({
+      sessionId: 'lifecycle_session',
+      message: 'hello lifecycle',
+      runId: 'run-lifecycle-hooks',
+    })
+
+    const persisted = storage.loadSession('lifecycle_session')
+    console.log(JSON.stringify({
+      lastMessageText: persisted?.messages?.at(-1)?.text || null,
+      marks: lifecycleMarks,
+    }))
+  `)
+
+  assert.equal(output.lastMessageText.startsWith('resolved response'), true)
+  assert.equal(output.lastMessageText.endsWith('[stored]'), true)
+  assert.equal(output.marks.includes('session_start'), true)
+  assert.equal(output.marks.includes('provider:claude-cli:resolved-model'), true)
+  assert.equal(output.marks.includes('user'), true)
+  assert.equal(output.marks.includes('assistant_final'), true)
+})

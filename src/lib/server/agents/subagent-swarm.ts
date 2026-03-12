@@ -169,10 +169,10 @@ function notifySwarmChanged() {
  *
  *   const aggregate = await swarm.allSettled
  */
-export function spawnSwarm(
+export async function spawnSwarm(
   input: BatchSpawnInput,
   context: SubagentContext,
-): SwarmHandle {
+): Promise<SwarmHandle> {
   const swarmId = genId(10)
   const createdAt = Date.now()
   const members: SwarmMember[] = []
@@ -190,7 +190,7 @@ export function spawnSwarm(
   for (let i = 0; i < input.tasks.length; i++) {
     const task = input.tasks[i]
     try {
-      const handle = spawnSubagent(
+      const handle = await spawnSubagent(
         {
           agentId: task.agentId,
           message: task.message,

@@ -129,6 +129,49 @@ function resolveHeartbeatLastConnectorTarget(session: Session | null | undefined
   }
 }
 
+type PersistPhase = 'user' | 'system' | 'assistant_partial' | 'assistant_final' | 'heartbeat'
+
+async function applyMessageLifecycleHooks(params: {
+  session: Session
+  message: Message
+  enabledIds: string[]
+  phase: PersistPhase
+  runId?: string
+  isSynthetic?: boolean
+}): Promise<Message | null> {
+  const pluginManager = getPluginManager()
+  let currentMessage = params.message
+  const toolEvents = Array.isArray(currentMessage.toolEvents)
+    ? currentMessage.toolEvents.filter((event) => typeof event.output === 'string' || event.error === true)
+    : []
+
+  for (const event of toolEvents) {
+    currentMessage = await pluginManager.runToolResultPersist(
+      {
+        session: params.session,
+        message: currentMessage,
+        toolName: event.name,
+        toolCallId: event.toolCallId,
+        isSynthetic: params.isSynthetic,
+      },
+      { enabledIds: params.enabledIds },
+    )
+  }
+
+  const writeResult = await pluginManager.runBeforeMessageWrite(
+    {
+      session: params.session,
+      message: currentMessage,
+      phase: params.phase,
+      runId: params.runId,
+    },
+    { enabledIds: params.enabledIds },
+  )
+
+  if (writeResult.block) return null
+  return writeResult.message
+}
+
 interface SessionWithCredentials {
   credentialId?: string | null
 }
@@ -512,7 +555,7 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
   // 2. Runtime & Capabilities
   const runtimeLines = [
     '## Runtime',
-    `os=${process.platform} | host=${os.hostname()} | agent=${agent.id} | provider=${agent.provider} | model=${agent.model}`,
+    `os=${process.platform} | host=${os.hostname()} | agent=${agent.id} | provider=${session.provider} | model=${session.model}`,
     `capabilities=${buildAgentRuntimeCapabilities(enabledPlugins).join(',')}`,
     'tool_access=universal',
   ]
@@ -627,6 +670,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const runMessageStartIndex = session.messages.length
 
   const appSettings = loadSettings()
+  const pluginManager = getPluginManager()
+  const lifecycleRunId = runId || `${sessionId}:${runStartedAt}`
   const agentForSession = session.agentId ? loadAgents()[session.agentId] : null
   if (isAgentDisabled(agentForSession)) {
     const disabledError = buildAgentDisabledMessage(agentForSession, 'run chats')
@@ -634,14 +679,24 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
     let persisted = false
     if (!internal) {
-      session.messages.push({
-        role: 'assistant',
-        text: disabledError,
-        time: Date.now(),
+      const disabledMessage = await applyMessageLifecycleHooks({
+        session,
+        message: {
+          role: 'assistant',
+          text: disabledError,
+          time: Date.now(),
+        },
+        enabledIds: Array.isArray(session.plugins) ? session.plugins : [],
+        phase: 'assistant_final',
+        runId: lifecycleRunId,
+        isSynthetic: true,
       })
-      session.lastActiveAt = Date.now()
-      saveSessions(sessions)
-      persisted = true
+      if (disabledMessage) {
+        session.messages.push(disabledMessage)
+        session.lastActiveAt = Date.now()
+        saveSessions(sessions)
+        persisted = true
+      }
     }
 
     return {
@@ -673,6 +728,19 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     })
     if (!freshness.fresh) {
       try { syncSessionArchiveMemory(session, { agent: agentForSession }) } catch { /* archive sync is best-effort */ }
+      await pluginManager.runHook(
+        'sessionEnd',
+        {
+          sessionId: session.id,
+          session,
+          messageCount: Array.isArray(session.messages) ? session.messages.length : 0,
+          durationMs: Date.now() - (session.createdAt || runStartedAt),
+          reason: freshness.reason || 'session_reset',
+        },
+        {
+          enabledIds: Array.isArray(session.plugins) ? session.plugins : [],
+        },
+      )
       resetSessionRuntime(session, freshness.reason || 'session_reset')
       onEvent?.({ t: 'status', text: JSON.stringify({ sessionReset: freshness.reason || 'session_reset' }) })
       sessions[sessionId] = session
@@ -683,6 +751,16 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     try { syncSessionArchiveMemory(session, { agent: agentForSession }) } catch { /* archive sync is best-effort */ }
   }
   const pluginsForRun = heartbeatStatusOnly ? [] : toolPolicy.enabledPlugins
+  if (runMessageStartIndex === 0) {
+    await pluginManager.runHook(
+      'sessionStart',
+      {
+        session,
+        resumedFrom: session.parentSessionId || null,
+      },
+      { enabledIds: pluginsForRun },
+    )
+  }
   let sessionForRun = pluginsForRun === session.plugins
     ? session
     : { ...session, plugins: pluginsForRun }
@@ -714,6 +792,31 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     sessionForRun = { ...sessionForRun, model: input.modelOverride }
   }
 
+  if (pluginsForRun.length > 0) {
+    const modelResolvePrompt = heartbeatLightContext
+      ? (buildLightHeartbeatSystemPrompt(sessionForRun) || '')
+      : (buildAgentSystemPrompt(sessionForRun) || '')
+    const modelResolve = await pluginManager.runBeforeModelResolve(
+      {
+        session: sessionForRun,
+        prompt: modelResolvePrompt,
+        message: effectiveMessage,
+        provider: sessionForRun.provider,
+        model: sessionForRun.model,
+        apiEndpoint: sessionForRun.apiEndpoint || null,
+      },
+      { enabledIds: pluginsForRun },
+    )
+    if (modelResolve) {
+      sessionForRun = {
+        ...sessionForRun,
+        provider: modelResolve.providerOverride ?? sessionForRun.provider,
+        model: modelResolve.modelOverride ?? sessionForRun.model,
+        ...(modelResolve.apiEndpointOverride !== undefined ? { apiEndpoint: modelResolve.apiEndpointOverride } : {}),
+      }
+    }
+  }
+
   if (!heartbeatStatusOnly && toolPolicy.blockedPlugins.length > 0) {
     const blockedSummary = toolPolicy.blockedPlugins
       .map((entry) => `${entry.tool} (${entry.reason})`)
@@ -736,14 +839,24 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
           let persisted = false
           if (!internal) {
-            session.messages.push({
-              role: 'assistant',
-              text: budgetError,
-              time: Date.now(),
+            const budgetMessage = await applyMessageLifecycleHooks({
+              session,
+              message: {
+                role: 'assistant',
+                text: budgetError,
+                time: Date.now(),
+              },
+              enabledIds: Array.isArray(session.plugins) ? session.plugins : [],
+              phase: 'assistant_final',
+              runId: lifecycleRunId,
+              isSynthetic: true,
             })
-            session.lastActiveAt = Date.now()
-            saveSessions(sessions)
-            persisted = true
+            if (budgetMessage) {
+              session.messages.push(budgetMessage)
+              session.lastActiveAt = Date.now()
+              saveSessions(sessions)
+              persisted = true
+            }
           }
 
           return {
@@ -773,14 +886,24 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
       let persisted = false
       if (!internal) {
-        session.messages.push({
-          role: 'assistant',
-          text: spendError,
-          time: Date.now(),
+        const spendMessage = await applyMessageLifecycleHooks({
+          session,
+          message: {
+            role: 'assistant',
+            text: spendError,
+            time: Date.now(),
+          },
+          enabledIds: Array.isArray(session.plugins) ? session.plugins : [],
+          phase: 'assistant_final',
+          runId: lifecycleRunId,
+          isSynthetic: true,
         })
-        session.lastActiveAt = Date.now()
-        saveSessions(sessions)
-        persisted = true
+        if (spendMessage) {
+          session.messages.push(spendMessage)
+          session.lastActiveAt = Date.now()
+          saveSessions(sessions)
+          persisted = true
+        }
       }
 
       return {
@@ -821,30 +944,48 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const shouldPersistUserMessage = shouldPersistInboundUserMessage(internal, source)
   if (shouldPersistUserMessage) {
     const linkAnalysis = !internal ? await runLinkUnderstanding(message) : []
-    const nextUserMessage: Message = {
-      role: 'user',
-      text: message,
-      time: Date.now(),
-      imagePath: imagePath || undefined,
-      imageUrl: imageUrl || undefined,
-      attachedFiles: attachedFiles?.length ? attachedFiles : undefined,
-      replyToId: input.replyToId || undefined,
-    }
-    session.messages.push(nextUserMessage)
-    if (linkAnalysis.length > 0) {
-      session.messages.push({
-        role: 'assistant',
-        kind: 'system',
-        text: `[Automated Link Analysis]\n${linkAnalysis.join('\n\n')}`,
+    const nextUserMessage = await applyMessageLifecycleHooks({
+      session,
+      message: {
+        role: 'user',
+        text: message,
         time: Date.now(),
-      })
-    }
-    session.lastActiveAt = Date.now()
-    saveSessions(sessions)
-    if (!internal) {
-      try {
-        await getPluginManager().runHook('onMessage', { session, message: nextUserMessage }, { enabledIds: pluginsForRun })
-      } catch { /* onMessage hooks are non-critical */ }
+        imagePath: imagePath || undefined,
+        imageUrl: imageUrl || undefined,
+        attachedFiles: attachedFiles?.length ? attachedFiles : undefined,
+        replyToId: input.replyToId || undefined,
+      },
+      enabledIds: pluginsForRun,
+      phase: 'user',
+      runId: lifecycleRunId,
+    })
+    if (nextUserMessage) {
+      session.messages.push(nextUserMessage)
+      if (linkAnalysis.length > 0) {
+        const linkAnalysisMessage = await applyMessageLifecycleHooks({
+          session,
+          message: {
+            role: 'assistant',
+            kind: 'system',
+            text: `[Automated Link Analysis]\n${linkAnalysis.join('\n\n')}`,
+            time: Date.now(),
+          },
+          enabledIds: pluginsForRun,
+          phase: 'system',
+          runId: lifecycleRunId,
+          isSynthetic: true,
+        })
+        if (linkAnalysisMessage) {
+          session.messages.push(linkAnalysisMessage)
+        }
+      }
+      session.lastActiveAt = Date.now()
+      saveSessions(sessions)
+      if (!internal) {
+        try {
+          await pluginManager.runHook('onMessage', { session, message: nextUserMessage }, { enabledIds: pluginsForRun })
+        } catch { /* onMessage hooks are non-critical */ }
+      }
     }
   }
 
@@ -864,8 +1005,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   // to avoid duplicating tool discipline, operating guidance, and capability sections.
   // lightContext mode uses a minimal prompt for both paths to reduce token cost.
   const systemPrompt = heartbeatLightContext
-    ? buildLightHeartbeatSystemPrompt(session)
-    : (hasPlugins ? undefined : buildAgentSystemPrompt(session))
+    ? buildLightHeartbeatSystemPrompt(sessionForRun)
+    : (hasPlugins ? undefined : buildAgentSystemPrompt(sessionForRun))
   const toolEvents: MessageToolEvent[] = []
   const streamErrors: string[] = []
   const accumulatedUsage = { inputTokens: 0, outputTokens: 0, estimatedCost: 0 }
@@ -876,6 +1017,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   let lastPartialSnapshotKey = ''
   let partialSaveTimeout: ReturnType<typeof setTimeout> | null = null
   let partialPersistenceClosed = false
+  let partialPersistChain: Promise<void> = Promise.resolve()
 
   const stopPartialAssistantPersistence = () => {
     partialPersistenceClosed = true
@@ -885,35 +1027,41 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     }
   }
 
-  const persistStreamingAssistantArtifact = () => {
+  const persistStreamingAssistantArtifact = async () => {
     partialSaveTimeout = null
     if (partialPersistenceClosed) return
     const persistedToolEvents = toolEvents.length ? dedupeConsecutiveToolEvents([...toolEvents]) : []
     if (!hasPersistableAssistantPayload(streamingPartialText, thinkingText, persistedToolEvents)) return
-
-    const snapshotKey = JSON.stringify([
-      streamingPartialText,
-      thinkingText,
-      getToolEventsSnapshotKey(persistedToolEvents),
-    ])
-    if (snapshotKey === lastPartialSnapshotKey) return
-
-    lastPartialSnapshotKey = snapshotKey
-    lastPartialSaveAt = Date.now()
 
     try {
       const fresh = loadSessions()
       const current = fresh[sessionId]
       if (!current) return
       current.messages = Array.isArray(current.messages) ? current.messages : []
-      const partialMsg: Message = {
-        role: 'assistant',
-        text: streamingPartialText,
-        time: Date.now(),
-        streaming: true,
-        thinking: thinkingText || undefined,
-        toolEvents: persistedToolEvents.length ? persistedToolEvents : undefined,
-      }
+      const partialMsg = await applyMessageLifecycleHooks({
+        session: current,
+        message: {
+          role: 'assistant',
+          text: streamingPartialText,
+          time: Date.now(),
+          streaming: true,
+          thinking: thinkingText || undefined,
+          toolEvents: persistedToolEvents.length ? persistedToolEvents : undefined,
+        },
+        enabledIds: pluginsForRun,
+        phase: 'assistant_partial',
+        runId: lifecycleRunId,
+        isSynthetic: true,
+      })
+      if (!partialMsg) return
+      const snapshotKey = JSON.stringify([
+        partialMsg.text,
+        partialMsg.thinking || '',
+        getToolEventsSnapshotKey(partialMsg.toolEvents || []),
+      ])
+      if (snapshotKey === lastPartialSnapshotKey) return
+      lastPartialSnapshotKey = snapshotKey
+      lastPartialSaveAt = Date.now()
       upsertStreamingAssistantArtifact(current.messages, partialMsg, {
         minIndex: runMessageStartIndex,
         minTime: runStartedAt,
@@ -922,6 +1070,14 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       saveSessions(fresh)
       notify(`messages:${sessionId}`)
     } catch { /* partial save is best-effort */ }
+  }
+
+  const triggerPartialAssistantPersist = () => {
+    partialPersistChain = partialPersistChain
+      .catch(() => {})
+      .then(async () => {
+        await persistStreamingAssistantArtifact()
+      })
   }
 
   const queuePartialAssistantPersist = (immediate = false) => {
@@ -933,12 +1089,12 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         clearTimeout(partialSaveTimeout)
         partialSaveTimeout = null
       }
-      persistStreamingAssistantArtifact()
+      triggerPartialAssistantPersist()
       return
     }
     if (partialSaveTimeout) return
     partialSaveTimeout = setTimeout(() => {
-      persistStreamingAssistantArtifact()
+      triggerPartialAssistantPersist()
     }, minIntervalMs - (now - lastPartialSaveAt))
   }
 
@@ -1084,6 +1240,20 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         })
         emit({ t: 'd', text: cached.text })
       } else {
+        await pluginManager.runHook(
+          'llmInput',
+          {
+            session: sessionForRun,
+            runId: lifecycleRunId,
+            provider: providerType,
+            model: sessionForRun.model,
+            systemPrompt,
+            prompt: effectiveMessage,
+            historyMessages: directHistorySnapshot,
+            imagesCount: resolvedImagePath ? 1 : 0,
+          },
+          { enabledIds: pluginsForRun },
+        )
         fullResponse = await provider.handler.streamChat({
           session: sessionForRun,
           message: effectiveMessage,
@@ -1101,6 +1271,26 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           onUsage: (u) => { directUsage.inputTokens = u.inputTokens; directUsage.outputTokens = u.outputTokens; directUsage.received = true },
           signal: abortController.signal,
         })
+        await pluginManager.runHook(
+          'llmOutput',
+          {
+            session: sessionForRun,
+            runId: lifecycleRunId,
+            provider: providerType,
+            model: sessionForRun.model,
+            assistantTexts: fullResponse ? [fullResponse] : [],
+            response: fullResponse,
+            usage: directUsage.received
+              ? {
+                  input: directUsage.inputTokens,
+                  output: directUsage.outputTokens,
+                  total: directUsage.inputTokens + directUsage.outputTokens,
+                  estimatedCost: estimateCost(sessionForRun.model, directUsage.inputTokens, directUsage.outputTokens),
+                }
+              : undefined,
+          },
+          { enabledIds: pluginsForRun },
+        )
         if (canUseResponseCache && responseCacheInput && fullResponse) {
           setCachedLlmResponse(responseCacheInput, fullResponse, responseCacheConfig)
         }
@@ -1127,6 +1317,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     notify('sessions')
     if (signal) signal.removeEventListener('abort', abortFromOutside)
   }
+  await partialPersistChain.catch(() => {})
 
   if (!errorMessage) {
     markProviderSuccess(providerType)
@@ -1228,6 +1419,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const hiddenControlOnly = shouldSuppressHiddenControlText(rawTextForPersistence)
   const textForPersistence = stripHiddenControlTokens(rawTextForPersistence)
   const persistedText = getPersistedAssistantText(textForPersistence, persistedToolEvents)
+  let persistedResponseForHooks = textForPersistence
 
   if (isHeartbeatRun && rawTextForPersistence) {
     const heartbeatStatus = extractHeartbeatStatus(rawTextForPersistence)
@@ -1269,6 +1461,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   const fresh = loadSessions()
   const current = fresh[sessionId]
+  let assistantPersisted = false
   if (current) {
     current.messages = Array.isArray(current.messages) ? current.messages : []
     if (!isDirectConnectorSession(current) && current.connectorContext) {
@@ -1311,97 +1504,109 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     if (shouldPersistAssistant) {
       const persistedKind = isHeartbeatRun ? 'heartbeat' : 'chat'
       const nowTs = Date.now()
-      const nextAssistantMessage: Message = {
-        role: 'assistant',
-        text: persistedText,
-        time: nowTs,
-        thinking: thinkingText || undefined,
-        toolEvents: persistedToolEvents.length ? persistedToolEvents : undefined,
-        kind: persistedKind,
-      }
-      const previous = current.messages.at(-1)
-      if (previous?.streaming || shouldReplaceRecentAssistantMessage({
-        previous,
-        nextToolEvents: persistedToolEvents,
-        nextKind: persistedKind,
-        now: nowTs,
-      })) {
-        current.messages[current.messages.length - 1] = nextAssistantMessage
-      } else {
-        current.messages.push(nextAssistantMessage)
-      }
-      if (isHeartbeatRun) {
-        current.lastHeartbeatText = persistedText
-        current.lastHeartbeatSentAt = nowTs
-      }
-      try {
-        await getPluginManager().runHook('onMessage', { session: current, message: nextAssistantMessage }, { enabledIds: pluginsForRun })
-      } catch { /* onMessage hooks are non-critical */ }
-
-      // Conversation tone detection
-      if (!internal) {
-        const tone = estimateConversationTone(persistedText)
-        if (tone !== current.conversationTone) {
-          current.conversationTone = tone
+      const nextAssistantMessage = await applyMessageLifecycleHooks({
+        session: current,
+        message: {
+          role: 'assistant',
+          text: persistedText,
+          time: nowTs,
+          thinking: thinkingText || undefined,
+          toolEvents: persistedToolEvents.length ? persistedToolEvents : undefined,
+          kind: persistedKind,
+        },
+        enabledIds: pluginsForRun,
+        phase: isHeartbeatRun ? 'heartbeat' : 'assistant_final',
+        runId: lifecycleRunId,
+      })
+      if (nextAssistantMessage) {
+        const previous = current.messages.at(-1)
+        const nextToolEvents = nextAssistantMessage.toolEvents || []
+        const nextKind = nextAssistantMessage.kind || persistedKind
+        if (previous?.streaming || shouldReplaceRecentAssistantMessage({
+          previous,
+          nextToolEvents,
+          nextKind,
+          now: nowTs,
+        })) {
+          current.messages[current.messages.length - 1] = nextAssistantMessage
+        } else {
+          current.messages.push(nextAssistantMessage)
         }
-      }
-
-      // Target routing for non-suppressed heartbeat alerts
-      if (
-        isHeartbeatRun
-        && shouldAutoRouteHeartbeatAlerts(heartbeatConfig)
-        && heartbeatConfig?.target
-        && heartbeatConfig.target !== 'none'
-      ) {
+        assistantPersisted = true
+        persistedResponseForHooks = nextAssistantMessage.text
+        if (isHeartbeatRun) {
+          current.lastHeartbeatText = nextAssistantMessage.text
+          current.lastHeartbeatSentAt = nowTs
+        }
         try {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { sendConnectorMessage } = require('../connectors/manager')
-          let connectorId: string | undefined
-          let channelId: string | undefined
-          if (heartbeatConfig.target === 'last') {
-            const lastTarget = resolveHeartbeatLastConnectorTarget(current)
-            if (lastTarget) {
-              connectorId = lastTarget.connectorId
-              channelId = lastTarget.channelId
-            }
-          } else if (heartbeatConfig.target.includes(':')) {
-            const [cId, chId] = heartbeatConfig.target.split(':', 2)
-            connectorId = cId
-            channelId = chId
-          } else {
-            channelId = heartbeatConfig.target
-          }
-          if (channelId) {
-            sendConnectorMessage({ connectorId, channelId, text: persistedText }).catch(() => {})
-          }
-        } catch {
-          // Best effort — connector manager may not be loaded
-        }
-      }
+          await pluginManager.runHook('onMessage', { session: current, message: nextAssistantMessage }, { enabledIds: pluginsForRun })
+        } catch { /* onMessage hooks are non-critical */ }
 
-      // Auto-discover connectors linked to this agent when no explicit target is set
-      // Skip if a real inbound message was handled recently — the agent just responded to it
-      if (
-        isHeartbeatRun
-        && shouldAutoRouteHeartbeatAlerts(heartbeatConfig)
-        && !heartbeatConfig?.target
-        && isDirectConnectorSession(current)
-      ) {
-        const recentInbound = current.connectorContext?.lastInboundAt
-          && (Date.now() - current.connectorContext.lastInboundAt) < 60_000
-        const connectorId = typeof current.connectorContext?.connectorId === 'string'
-          ? current.connectorContext.connectorId.trim()
-          : ''
-        const channelId = typeof current.connectorContext?.channelId === 'string'
-          ? current.connectorContext.channelId.trim()
-          : ''
-        if (!recentInbound && channelId) {
+        // Conversation tone detection
+        if (!internal) {
+          const tone = estimateConversationTone(nextAssistantMessage.text)
+          if (tone !== current.conversationTone) {
+            current.conversationTone = tone
+          }
+        }
+
+        // Target routing for non-suppressed heartbeat alerts
+        if (
+          isHeartbeatRun
+          && shouldAutoRouteHeartbeatAlerts(heartbeatConfig)
+          && heartbeatConfig?.target
+          && heartbeatConfig.target !== 'none'
+        ) {
           try {
             // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { sendConnectorMessage: sendMsg } = require('../connectors/manager')
-            sendMsg({ connectorId: connectorId || undefined, channelId, text: persistedText }).catch(() => {})
+            const { sendConnectorMessage } = require('../connectors/manager')
+            let connectorId: string | undefined
+            let channelId: string | undefined
+            if (heartbeatConfig.target === 'last') {
+              const lastTarget = resolveHeartbeatLastConnectorTarget(current)
+              if (lastTarget) {
+                connectorId = lastTarget.connectorId
+                channelId = lastTarget.channelId
+              }
+            } else if (heartbeatConfig.target.includes(':')) {
+              const [cId, chId] = heartbeatConfig.target.split(':', 2)
+              connectorId = cId
+              channelId = chId
+            } else {
+              channelId = heartbeatConfig.target
+            }
+            if (channelId) {
+              sendConnectorMessage({ connectorId, channelId, text: nextAssistantMessage.text }).catch(() => {})
+            }
           } catch {
             // Best effort — connector manager may not be loaded
+          }
+        }
+
+        // Auto-discover connectors linked to this agent when no explicit target is set
+        // Skip if a real inbound message was handled recently — the agent just responded to it
+        if (
+          isHeartbeatRun
+          && shouldAutoRouteHeartbeatAlerts(heartbeatConfig)
+          && !heartbeatConfig?.target
+          && isDirectConnectorSession(current)
+        ) {
+          const recentInbound = current.connectorContext?.lastInboundAt
+            && (Date.now() - current.connectorContext.lastInboundAt) < 60_000
+          const connectorId = typeof current.connectorContext?.connectorId === 'string'
+            ? current.connectorContext.connectorId.trim()
+            : ''
+          const channelId = typeof current.connectorContext?.channelId === 'string'
+            ? current.connectorContext.channelId.trim()
+            : ''
+          if (!recentInbound && channelId) {
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const { sendConnectorMessage: sendMsg } = require('../connectors/manager')
+              sendMsg({ connectorId: connectorId || undefined, channelId, text: nextAssistantMessage.text }).catch(() => {})
+            } catch {
+              // Best effort — connector manager may not be loaded
+            }
           }
         }
       }
@@ -1424,7 +1629,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       await getPluginManager().runHook('afterChatTurn', {
         session: current,
         message,
-        response: textForPersistence,
+        response: persistedResponseForHooks,
         source,
         internal,
         toolEvents: persistedToolEvents,
@@ -1458,7 +1663,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     runId,
     sessionId,
     text: hiddenControlOnly ? '' : textForPersistence,
-    persisted: shouldPersistAssistant,
+    persisted: assistantPersisted,
     toolEvents: persistedToolEvents,
     error: errorMessage,
     inputTokens: accumulatedUsage.inputTokens || undefined,

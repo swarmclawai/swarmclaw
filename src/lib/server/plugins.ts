@@ -3,7 +3,24 @@ import path from 'path'
 import crypto from 'crypto'
 import { createRequire } from 'module'
 import { spawn } from 'child_process'
-import type { Plugin, PluginHooks, PluginMeta, PluginToolDef, PluginUIExtension, PluginProviderExtension, PluginConnectorExtension, Session, PluginPackageManager, PluginDependencyInstallStatus } from '@/types'
+import type {
+  Plugin,
+  PluginHooks,
+  PluginMeta,
+  PluginToolDef,
+  PluginUIExtension,
+  PluginProviderExtension,
+  PluginConnectorExtension,
+  Session,
+  PluginPackageManager,
+  PluginDependencyInstallStatus,
+  PluginPromptBuildResult,
+  PluginToolCallResult,
+  PluginModelResolveResult,
+  PluginBeforeMessageWriteResult,
+  PluginSubagentSpawningResult,
+  Message,
+} from '@/types'
 import {
   inferPluginInstallSourceFromUrl,
   inferPluginPublisherSourceFromUrl,
@@ -101,6 +118,9 @@ interface PluginLogger {
 type HookRegistrar = {
   onAgentStart?: (fn: (...args: unknown[]) => unknown) => void
   onAgentComplete?: (fn: (...args: unknown[]) => unknown) => void
+  onBeforeModelResolve?: (fn: (...args: unknown[]) => unknown) => void
+  onBeforePromptBuild?: (fn: (...args: unknown[]) => unknown) => void
+  onBeforeToolCall?: (fn: (...args: unknown[]) => unknown) => void
   onToolCall?: (fn: (...args: unknown[]) => unknown) => void
   onToolResult?: (fn: (...args: unknown[]) => unknown) => void
   onMessage?: (fn: (...args: unknown[]) => unknown) => void
@@ -149,6 +169,69 @@ function isPluginSecretSettingValue(value: unknown): value is PluginSecretSettin
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const rec = value as Record<string, unknown>
   return rec.__pluginSecret === true && typeof rec.encrypted === 'string'
+}
+
+function concatOptionalTextSegments(...segments: Array<string | null | undefined>): string | undefined {
+  const normalized = segments
+    .map((segment) => (typeof segment === 'string' ? segment.trim() : ''))
+    .filter(Boolean)
+  return normalized.length > 0 ? normalized.join('\n\n') : undefined
+}
+
+function mergePromptBuildResults(
+  current: PluginPromptBuildResult | undefined,
+  next: PluginPromptBuildResult,
+): PluginPromptBuildResult {
+  return {
+    systemPrompt: current?.systemPrompt ?? next.systemPrompt,
+    prependContext: concatOptionalTextSegments(current?.prependContext, next.prependContext),
+    prependSystemContext: concatOptionalTextSegments(current?.prependSystemContext, next.prependSystemContext),
+    appendSystemContext: concatOptionalTextSegments(current?.appendSystemContext, next.appendSystemContext),
+  }
+}
+
+function mergeModelResolveResults(
+  current: PluginModelResolveResult | undefined,
+  next: PluginModelResolveResult,
+): PluginModelResolveResult {
+  return {
+    providerOverride: next.providerOverride ?? current?.providerOverride,
+    modelOverride: next.modelOverride ?? current?.modelOverride,
+    apiEndpointOverride: next.apiEndpointOverride ?? current?.apiEndpointOverride,
+  }
+}
+
+function isToolCallControlResult(value: unknown): value is PluginToolCallResult {
+  if (!isRecord(value)) return false
+  return 'input' in value || 'params' in value || 'block' in value || 'blockReason' in value || 'warning' in value
+}
+
+function isMessageLike(value: unknown): value is Message {
+  return isRecord(value)
+    && (value.role === 'user' || value.role === 'assistant')
+    && typeof value.text === 'string'
+    && typeof value.time === 'number'
+}
+
+function isBeforeMessageWriteResult(value: unknown): value is PluginBeforeMessageWriteResult {
+  if (!isRecord(value)) return false
+  return 'message' in value || 'block' in value
+}
+
+function isSubagentSpawningResult(value: unknown): value is PluginSubagentSpawningResult {
+  return isRecord(value) && (value.status === 'ok' || value.status === 'error')
+}
+
+function mergeToolCallInput(
+  currentInput: Record<string, unknown> | null,
+  nextInput: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (nextInput === undefined) return currentInput
+  if (nextInput === null) return null
+  if (currentInput && typeof currentInput === 'object') {
+    return { ...currentInput, ...nextInput }
+  }
+  return nextInput
 }
 
 function hashPluginSource(content: string): string {
@@ -404,6 +487,18 @@ function normalizePlugin(mod: unknown): Plugin | null {
     const tools: PluginToolDef[] = []
 
     const hookEventMap: Record<string, keyof PluginHooks> = {
+      'before_model_resolve': 'beforeModelResolve',
+      'before_prompt_build': 'beforePromptBuild',
+      'before_tool_call': 'beforeToolCall',
+      'llm_input': 'llmInput',
+      'llm_output': 'llmOutput',
+      'tool_result_persist': 'toolResultPersist',
+      'before_message_write': 'beforeMessageWrite',
+      'session_start': 'sessionStart',
+      'session_end': 'sessionEnd',
+      'subagent_spawning': 'subagentSpawning',
+      'subagent_spawned': 'subagentSpawned',
+      'subagent_ended': 'subagentEnded',
       'agent:start': 'beforeAgentStart',
       'agent:complete': 'afterAgentComplete',
       'tool:call': 'beforeToolExec',
@@ -484,6 +579,8 @@ function normalizePlugin(mod: unknown): Plugin | null {
     const registrar = {
       onAgentStart: (fn: (...args: unknown[]) => unknown) => { hooks.beforeAgentStart = fn as PluginHooks['beforeAgentStart'] },
       onAgentComplete: (fn: (...args: unknown[]) => unknown) => { hooks.afterAgentComplete = fn as PluginHooks['afterAgentComplete'] },
+      onBeforePromptBuild: (fn: (...args: unknown[]) => unknown) => { hooks.beforePromptBuild = fn as PluginHooks['beforePromptBuild'] },
+      onBeforeToolCall: (fn: (...args: unknown[]) => unknown) => { hooks.beforeToolCall = fn as PluginHooks['beforeToolCall'] },
       onToolCall: (fn: (...args: unknown[]) => unknown) => { hooks.beforeToolExec = fn as PluginHooks['beforeToolExec'] },
       onToolResult: (fn: (...args: unknown[]) => unknown) => { hooks.afterToolExec = fn as PluginHooks['afterToolExec'] },
       onMessage: (fn: (...args: unknown[]) => unknown) => { hooks.onMessage = fn as PluginHooks['onMessage'] },
@@ -1048,22 +1145,154 @@ class PluginManager {
     }
   }
 
-  async runBeforeToolExec(
-    params: { toolName: string; input: Record<string, unknown> | null },
+  async runBeforePromptBuild(
+    params: {
+      session: Session
+      prompt: string
+      message: string
+      history: import('@/types').Message[]
+      messages: import('@/types').Message[]
+    },
     options?: HookExecutionOptions,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<PluginPromptBuildResult | null> {
     this.load()
     const filterIds = this.resolveEnabledFilter(options?.enabledIds, options?.includeAllWhenEmpty === true)
-    let currentInput = params.input
+    let result: PluginPromptBuildResult | undefined
 
     for (const [id, p] of this.plugins.entries()) {
       if (filterIds !== null && !filterIds.has(id)) continue
-      const hook = p.hooks.beforeToolExec
+      const hook = p.hooks.beforePromptBuild
       if (!hook) continue
       try {
-        const result = await hook({ toolName: params.toolName, input: currentInput })
-        if (result && typeof result === 'object' && !Array.isArray(result)) {
-          currentInput = result as Record<string, unknown>
+        const next = await hook(params)
+        if (next && typeof next === 'object' && !Array.isArray(next)) {
+          result = mergePromptBuildResults(result, next as PluginPromptBuildResult)
+        }
+        this.markPluginSuccess(id)
+      } catch (err: unknown) {
+        log.error('plugins', 'beforePromptBuild hook failed', {
+          pluginId: id,
+          pluginName: p.meta.name,
+          error: errorMessage(err),
+        })
+        this.markPluginFailure(id, 'hook.beforePromptBuild', err, true)
+      }
+    }
+
+    return result || null
+  }
+
+  async runBeforeModelResolve(
+    params: {
+      session: Session
+      prompt: string
+      message: string
+      provider: Session['provider']
+      model: string
+      apiEndpoint?: string | null
+    },
+    options?: HookExecutionOptions,
+  ): Promise<PluginModelResolveResult | null> {
+    this.load()
+    const filterIds = this.resolveEnabledFilter(options?.enabledIds, options?.includeAllWhenEmpty === true)
+    let result: PluginModelResolveResult | undefined
+
+    for (const [id, p] of this.plugins.entries()) {
+      if (filterIds !== null && !filterIds.has(id)) continue
+      const hook = p.hooks.beforeModelResolve
+      if (!hook) continue
+      try {
+        const next = await hook(params)
+        if (next && typeof next === 'object' && !Array.isArray(next)) {
+          result = mergeModelResolveResults(result, next as PluginModelResolveResult)
+        }
+        this.markPluginSuccess(id)
+      } catch (err: unknown) {
+        log.error('plugins', 'beforeModelResolve hook failed', {
+          pluginId: id,
+          pluginName: p.meta.name,
+          error: errorMessage(err),
+        })
+        this.markPluginFailure(id, 'hook.beforeModelResolve', err, true)
+      }
+    }
+
+    return result || null
+  }
+
+  async runBeforeToolCall(
+    params: {
+      session: Session
+      toolName: string
+      input: Record<string, unknown> | null
+      runId?: string
+      toolCallId?: string
+    },
+    options?: HookExecutionOptions,
+  ): Promise<{ input: Record<string, unknown> | null; blockReason: string | null; warning: string | null }> {
+    this.load()
+    const filterIds = this.resolveEnabledFilter(options?.enabledIds, options?.includeAllWhenEmpty === true)
+    let currentInput = params.input
+    let blockReason: string | null = null
+    let warning: string | null = null
+
+    for (const [id, p] of this.plugins.entries()) {
+      if (filterIds !== null && !filterIds.has(id)) continue
+
+      const beforeToolCall = p.hooks.beforeToolCall
+      if (beforeToolCall) {
+        try {
+          const result = await beforeToolCall({
+            session: params.session,
+            toolName: params.toolName,
+            input: currentInput,
+            runId: params.runId,
+            toolCallId: params.toolCallId,
+          })
+
+          if (isToolCallControlResult(result)) {
+            if (result.block === true) {
+              blockReason = typeof result.blockReason === 'string' && result.blockReason.trim()
+                ? result.blockReason.trim()
+                : 'Tool call blocked by plugin hook'
+            }
+            if (typeof result.warning === 'string' && result.warning.trim()) {
+              warning = result.warning.trim()
+            }
+            currentInput = mergeToolCallInput(
+              currentInput,
+              isRecord(result.params)
+                ? result.params
+                : isRecord(result.input)
+                  ? result.input
+                  : result.input === null
+                    ? null
+                    : undefined,
+            )
+          } else if (result && typeof result === 'object' && !Array.isArray(result)) {
+            currentInput = result as Record<string, unknown>
+          }
+          this.markPluginSuccess(id)
+        } catch (err: unknown) {
+          log.error('plugins', 'beforeToolCall hook failed', {
+            pluginId: id,
+            pluginName: p.meta.name,
+            toolName: params.toolName,
+            error: errorMessage(err),
+          })
+          this.markPluginFailure(id, 'hook.beforeToolCall', err, true)
+        }
+      }
+
+      const beforeToolExec = p.hooks.beforeToolExec
+      if (blockReason) break
+      if (!beforeToolExec) {
+        continue
+      }
+      try {
+        const legacyResult = await beforeToolExec({ toolName: params.toolName, input: currentInput })
+        if (legacyResult && typeof legacyResult === 'object' && !Array.isArray(legacyResult)) {
+          currentInput = legacyResult as Record<string, unknown>
         }
         this.markPluginSuccess(id)
       } catch (err: unknown) {
@@ -1075,9 +1304,176 @@ class PluginManager {
         })
         this.markPluginFailure(id, 'hook.beforeToolExec', err, true)
       }
+
+      if (blockReason) break
     }
 
-    return currentInput
+    return { input: currentInput, blockReason, warning }
+  }
+
+  async runToolResultPersist(
+    params: {
+      session: Session
+      message: Message
+      toolName?: string
+      toolCallId?: string
+      isSynthetic?: boolean
+    },
+    options?: HookExecutionOptions,
+  ): Promise<Message> {
+    this.load()
+    const filterIds = this.resolveEnabledFilter(options?.enabledIds, options?.includeAllWhenEmpty === true)
+    let currentMessage = params.message
+
+    for (const [id, p] of this.plugins.entries()) {
+      if (filterIds !== null && !filterIds.has(id)) continue
+      const hook = p.hooks.toolResultPersist
+      if (!hook) continue
+      try {
+        const result = await hook({
+          session: params.session,
+          message: currentMessage,
+          toolName: params.toolName,
+          toolCallId: params.toolCallId,
+          isSynthetic: params.isSynthetic,
+        })
+        if (isMessageLike(result)) {
+          currentMessage = result
+        } else if (isRecord(result) && isMessageLike(result.message)) {
+          currentMessage = result.message
+        }
+        this.markPluginSuccess(id)
+      } catch (err: unknown) {
+        log.error('plugins', 'toolResultPersist hook failed', {
+          pluginId: id,
+          pluginName: p.meta.name,
+          error: errorMessage(err),
+        })
+        this.markPluginFailure(id, 'hook.toolResultPersist', err, true)
+      }
+    }
+
+    return currentMessage
+  }
+
+  async runBeforeMessageWrite(
+    params: {
+      session: Session
+      message: Message
+      phase?: 'user' | 'system' | 'assistant_partial' | 'assistant_final' | 'heartbeat'
+      runId?: string
+    },
+    options?: HookExecutionOptions,
+  ): Promise<{ message: Message; block: boolean }> {
+    this.load()
+    const filterIds = this.resolveEnabledFilter(options?.enabledIds, options?.includeAllWhenEmpty === true)
+    let currentMessage = params.message
+    let block = false
+
+    for (const [id, p] of this.plugins.entries()) {
+      if (filterIds !== null && !filterIds.has(id)) continue
+      const hook = p.hooks.beforeMessageWrite
+      if (!hook) continue
+      try {
+        const result = await hook({
+          session: params.session,
+          message: currentMessage,
+          phase: params.phase,
+          runId: params.runId,
+        })
+        if (isMessageLike(result)) {
+          currentMessage = result
+        } else if (isBeforeMessageWriteResult(result)) {
+          if (isMessageLike(result.message)) currentMessage = result.message
+          if (result.block === true) {
+            block = true
+            this.markPluginSuccess(id)
+            break
+          }
+        }
+        this.markPluginSuccess(id)
+      } catch (err: unknown) {
+        log.error('plugins', 'beforeMessageWrite hook failed', {
+          pluginId: id,
+          pluginName: p.meta.name,
+          error: errorMessage(err),
+        })
+        this.markPluginFailure(id, 'hook.beforeMessageWrite', err, true)
+      }
+    }
+
+    return { message: currentMessage, block }
+  }
+
+  async runSubagentSpawning(
+    params: {
+      parentSessionId?: string | null
+      agentId: string
+      agentName: string
+      message: string
+      cwd: string
+      mode: 'run' | 'session'
+      threadRequested: boolean
+    },
+    options?: HookExecutionOptions,
+  ): Promise<PluginSubagentSpawningResult> {
+    this.load()
+    const filterIds = this.resolveEnabledFilter(options?.enabledIds, options?.includeAllWhenEmpty === true)
+
+    for (const [id, p] of this.plugins.entries()) {
+      if (filterIds !== null && !filterIds.has(id)) continue
+      const hook = p.hooks.subagentSpawning
+      if (!hook) continue
+      try {
+        const result = await hook(params)
+        if (isSubagentSpawningResult(result) && result.status === 'error') {
+          this.markPluginSuccess(id)
+          return {
+            status: 'error',
+            error: typeof result.error === 'string' && result.error.trim()
+              ? result.error.trim()
+              : 'Subagent spawn blocked by plugin hook',
+          }
+        }
+        this.markPluginSuccess(id)
+      } catch (err: unknown) {
+        log.error('plugins', 'subagentSpawning hook failed', {
+          pluginId: id,
+          pluginName: p.meta.name,
+          error: errorMessage(err),
+        })
+        this.markPluginFailure(id, 'hook.subagentSpawning', err, true)
+      }
+    }
+
+    return { status: 'ok' }
+  }
+
+  async runBeforeToolExec(
+    params: { toolName: string; input: Record<string, unknown> | null },
+    options?: HookExecutionOptions,
+  ): Promise<Record<string, unknown> | null> {
+    const result = await this.runBeforeToolCall(
+      {
+        session: {
+          id: 'plugin-hook-session',
+          name: 'Plugin Hook Session',
+          cwd: process.cwd(),
+          user: 'system',
+          // Synthetic fallback used only when no real session context is available.
+          provider: 'openai',
+          model: 'synthetic-hook-context',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: Date.now(),
+          lastActiveAt: Date.now(),
+        },
+        toolName: params.toolName,
+        input: params.input,
+      },
+      options,
+    )
+    return result.input
   }
 
   async transformText(

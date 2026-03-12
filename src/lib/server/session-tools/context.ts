@@ -1,5 +1,5 @@
 import type { StructuredToolInterface } from '@langchain/core/tools'
-import type { Agent } from '@/types'
+import type { Agent, Session } from '@/types'
 
 export const MAX_OUTPUT = 50 * 1024 // 50KB
 export const MAX_FILE = 100 * 1024 // 100KB
@@ -7,6 +7,7 @@ export const MAX_FILE = 100 * 1024 // 100KB
 export interface ToolContext {
   agentId?: string | null
   sessionId?: string | null
+  runId?: string | null
   platformAssignScope?: 'self' | 'all'
   mcpServerIds?: string[]
   mcpDisabledTools?: string[]
@@ -15,6 +16,19 @@ export interface ToolContext {
   projectName?: string | null
   projectDescription?: string | null
   memoryScopeMode?: 'auto' | 'all' | 'global' | 'agent' | 'session' | 'project' | null
+  beforeToolCall?: (params: {
+    session: Session
+    toolName: string
+    input: Record<string, unknown> | null
+    runId?: string | null
+  }) => Promise<ToolCallGuardResult | void> | ToolCallGuardResult | void
+  onToolCallWarning?: (params: { toolName: string; message: string }) => void
+}
+
+export interface ToolCallGuardResult {
+  input?: Record<string, unknown> | null
+  blockReason?: string | null
+  warning?: string | null
 }
 
 /**

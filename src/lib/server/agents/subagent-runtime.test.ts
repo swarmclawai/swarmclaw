@@ -15,6 +15,10 @@ let runtime: typeof import('@/lib/server/agents/subagent-runtime')
 let lineage: typeof import('@/lib/server/agents/subagent-lineage')
 let delegationJobs: typeof import('@/lib/server/agents/delegation-jobs')
 let storage: typeof import('@/lib/server/storage')
+let pluginManager: {
+  registerBuiltin: (id: string, plugin: Record<string, unknown>) => void
+}
+let providers: Record<string, unknown>
 
 before(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-subagent-runtime-'))
@@ -26,6 +30,9 @@ before(async () => {
   delegationJobs = await import('@/lib/server/agents/delegation-jobs')
   lineage = await import('@/lib/server/agents/subagent-lineage')
   runtime = await import('@/lib/server/agents/subagent-runtime')
+  pluginManager = (await import('@/lib/server/plugins')).getPluginManager()
+  const providersMod = await import('@/lib/providers/index')
+  providers = providersMod.PROVIDERS
 })
 
 after(() => {
@@ -57,9 +64,9 @@ describe('subagent-runtime', () => {
   })
 
   describe('spawnSubagent', () => {
-    it('throws for unknown agent', () => {
+    it('throws for unknown agent', async () => {
       lineage._clearLineage()
-      assert.throws(
+      await assert.rejects(
         () => runtime.spawnSubagent(
           { agentId: 'nonexistent', message: 'hello' },
           { cwd: tempDir },
@@ -68,7 +75,7 @@ describe('subagent-runtime', () => {
       )
     })
 
-    it('throws when max depth is exceeded', () => {
+    it('throws when max depth is exceeded', async () => {
       lineage._clearLineage()
       seedAgent('depth-agent', 'Depth Agent')
 
@@ -80,7 +87,7 @@ describe('subagent-runtime', () => {
       sessions['depth-s3'] = { id: 'depth-s3', parentSessionId: 'depth-s2', cwd: tempDir }
       storage.saveSessions(sessions)
 
-      assert.throws(
+      await assert.rejects(
         () => runtime.spawnSubagent(
           { agentId: 'depth-agent', message: 'too deep' },
           { sessionId: 'depth-s3', cwd: tempDir },
@@ -89,13 +96,13 @@ describe('subagent-runtime', () => {
       )
     })
 
-    it('creates session, lineage node, and delegation job', () => {
+    it('creates session, lineage node, and delegation job', async () => {
       lineage._clearLineage()
       seedAgent('spawn-agent', 'Spawn Agent')
 
-      let handle: ReturnType<typeof runtime.spawnSubagent> | null = null
+      let handle: Awaited<ReturnType<typeof runtime.spawnSubagent>> | null = null
       try {
-        handle = runtime.spawnSubagent(
+        handle = await runtime.spawnSubagent(
           { agentId: 'spawn-agent', message: 'test task', waitForCompletion: false },
           { sessionId: undefined, cwd: tempDir },
         )
@@ -132,7 +139,7 @@ describe('subagent-runtime', () => {
       }
     })
 
-    it('tracks parent-child lineage correctly', () => {
+    it('tracks parent-child lineage correctly', async () => {
       lineage._clearLineage()
       seedAgent('parent-agent', 'Parent')
       seedAgent('child-agent', 'Child')
@@ -155,9 +162,9 @@ describe('subagent-runtime', () => {
         task: 'Parent task',
       })
 
-      let handle: ReturnType<typeof runtime.spawnSubagent> | null = null
+      let handle: Awaited<ReturnType<typeof runtime.spawnSubagent>> | null = null
       try {
-        handle = runtime.spawnSubagent(
+        handle = await runtime.spawnSubagent(
           { agentId: 'child-agent', message: 'child task', waitForCompletion: false },
           { sessionId: 'parent-session', cwd: tempDir },
         )
@@ -183,6 +190,82 @@ describe('subagent-runtime', () => {
         assert.equal(ancestors.length, 1)
         assert.equal(ancestors[0].sessionId, 'parent-session')
       }
+    })
+
+    it('fires subagent lifecycle hooks through the native runtime', async () => {
+      lineage._clearLineage()
+      seedAgent('parent-hook-agent', 'Parent Hook Agent', ['subagent_lifecycle_test'])
+      seedAgent('child-hook-agent', 'Child Hook Agent')
+
+      const marks: string[] = []
+      pluginManager.registerBuiltin('subagent_lifecycle_test', {
+        name: 'Subagent Lifecycle Test',
+        hooks: {
+          subagentSpawning: ({ agentId }) => {
+            marks.push(`spawning:${agentId}`)
+            return { status: 'ok' }
+          },
+          subagentSpawned: ({ childSessionId }) => {
+            marks.push(`spawned:${childSessionId}`)
+          },
+          subagentEnded: ({ status }) => {
+            marks.push(`ended:${status}`)
+          },
+          sessionEnd: ({ reason }) => {
+            marks.push(`session_end:${reason}`)
+          },
+        },
+      })
+
+      providers['subagent-test-provider'] = {
+        id: 'subagent-test-provider',
+        name: 'Subagent Test Provider',
+        models: ['unit'],
+        requiresApiKey: false,
+        requiresEndpoint: false,
+        handler: {
+          async streamChat() {
+            return 'subagent finished'
+          },
+        },
+      }
+
+      const agents = storage.loadAgents()
+      agents['child-hook-agent'] = {
+        id: 'child-hook-agent',
+        name: 'Child Hook Agent',
+        provider: 'subagent-test-provider',
+        model: 'unit',
+        systemPrompt: 'Child runtime test',
+      }
+      storage.saveAgents(agents)
+
+      const sessions = storage.loadSessions()
+      sessions['hook-parent-session'] = {
+        id: 'hook-parent-session',
+        cwd: tempDir,
+        parentSessionId: null,
+        agentId: 'parent-hook-agent',
+        provider: 'subagent-test-provider',
+        model: 'unit',
+        plugins: ['subagent_lifecycle_test'],
+        messages: [],
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+      }
+      storage.saveSessions(sessions)
+
+      const handle = await runtime.spawnSubagent(
+        { agentId: 'child-hook-agent', message: 'finish the task', waitForCompletion: false },
+        { sessionId: 'hook-parent-session', cwd: tempDir },
+      )
+      const result = await handle.promise
+
+      assert.equal(result.status, 'completed')
+      assert.equal(marks.includes('spawning:child-hook-agent'), true)
+      assert.equal(marks.some((mark) => mark.startsWith('spawned:')), true)
+      assert.equal(marks.includes('ended:completed'), true)
+      assert.equal(marks.includes('session_end:completed'), true)
     })
   })
 
@@ -230,7 +313,7 @@ describe('subagent-runtime', () => {
   })
 
   describe('plugin inheritance in spawnSubagent', () => {
-    it('child session inherits parent plugins merged with agent plugins', () => {
+    it('child session inherits parent plugins merged with agent plugins', async () => {
       lineage._clearLineage()
       seedAgent('inherit-agent', 'Inherit Agent', ['shell', 'memory'])
 
@@ -244,9 +327,9 @@ describe('subagent-runtime', () => {
       }
       storage.saveSessions(sessions)
 
-      let handle: ReturnType<typeof runtime.spawnSubagent> | null = null
+      let handle: Awaited<ReturnType<typeof runtime.spawnSubagent>> | null = null
       try {
-        handle = runtime.spawnSubagent(
+        handle = await runtime.spawnSubagent(
           { agentId: 'inherit-agent', message: 'test inheritance', waitForCompletion: false },
           { sessionId: 'inherit-parent', cwd: tempDir },
         )
@@ -265,7 +348,7 @@ describe('subagent-runtime', () => {
       }
     })
 
-    it('child session does not inherit when inheritPlugins is false', () => {
+    it('child session does not inherit when inheritPlugins is false', async () => {
       lineage._clearLineage()
       seedAgent('no-inherit-agent', 'No Inherit Agent', ['shell'])
 
@@ -278,9 +361,9 @@ describe('subagent-runtime', () => {
       }
       storage.saveSessions(sessions)
 
-      let handle: ReturnType<typeof runtime.spawnSubagent> | null = null
+      let handle: Awaited<ReturnType<typeof runtime.spawnSubagent>> | null = null
       try {
-        handle = runtime.spawnSubagent(
+        handle = await runtime.spawnSubagent(
           { agentId: 'no-inherit-agent', message: 'no inherit', inheritPlugins: false, waitForCompletion: false },
           { sessionId: 'no-inherit-parent', cwd: tempDir },
         )

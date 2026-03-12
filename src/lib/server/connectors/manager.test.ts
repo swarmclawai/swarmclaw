@@ -994,7 +994,7 @@ describe('sanitizeConnectorOutboundContent', () => {
       storage.saveAgents({
         agent_1: {
           id: 'agent_1',
-          name: 'Hal',
+          name: 'Nova',
           provider: 'test-provider',
           model: 'test-model',
           plugins: [],
@@ -1020,7 +1020,7 @@ describe('sanitizeConnectorOutboundContent', () => {
       storage.saveSessions({
         agent_thread: {
           id: 'agent_thread',
-          name: 'Hal',
+          name: 'Nova',
           cwd: process.env.WORKSPACE_DIR,
           user: 'default',
           provider: 'test-provider',
@@ -1040,16 +1040,16 @@ describe('sanitizeConnectorOutboundContent', () => {
         sessionId: null,
         category: 'identity/preferences',
         title: 'Wife communication rule',
-        content: 'Wayde\\'s wife (+44 7958 047282): Do NOT respond unless she addresses Hal directly or mentions Hal directly. If unsure, verify whether the message is for Wayde or Hal before responding.',
+        content: 'Riley\\'s partner (+44 7700 900111): Do NOT respond unless she addresses Nova directly or mentions Nova directly. If unsure, verify whether the message is meant for the agent before responding.',
       })
 
       const connector = storage.loadConnectors().conn_1
       const response = await manager.routeConnectorMessageForTest(connector, {
         platform: 'whatsapp',
-        channelId: '447958047282@s.whatsapp.net',
-        senderId: '447958047282@s.whatsapp.net',
-        senderName: 'Wayde Wife',
-        text: 'Dinner is ready for Wayde.',
+        channelId: '447700900111@s.whatsapp.net',
+        senderId: '447700900111@s.whatsapp.net',
+        senderName: 'Riley Partner',
+        text: 'Dinner is ready for Riley.',
         messageId: 'in-quiet-1',
         isGroup: false,
       })
@@ -1068,6 +1068,128 @@ describe('sanitizeConnectorOutboundContent', () => {
     assert.equal(output.providerCalls, 0)
     assert.equal(output.directSessionMessageCount, 0)
     assert.equal(output.mainThreadMessageCount, 0)
+  })
+
+  it('does not suppress other senders just because their name appears inside the matched quiet-boundary memory', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
+      const pluginsMod = await import('./src/lib/server/plugins')
+      const memoryDbMod = await import('./src/lib/server/memory/memory-db')
+      const storage = storageMod.default || storageMod
+      const manager = managerMod.default || managerMod
+      const providers = providersMod.default || providersMod
+      const plugins = pluginsMod.default || pluginsMod
+      const memoryDbApi = memoryDbMod.default || memoryDbMod
+      const memoryDb = memoryDbApi.getMemoryDb()
+
+      let providerCalls = 0
+      const now = Date.now()
+      providers.PROVIDERS['test-provider'] = {
+        id: 'test-provider',
+        name: 'Test Provider',
+        models: ['test-model'],
+        requiresApiKey: false,
+        requiresEndpoint: false,
+        handler: {
+          streamChat: async (opts) => {
+            providerCalls += 1
+            opts.write('data: ' + JSON.stringify({ t: 'r', text: 'Replying to Riley normally' }) + '\\n')
+            return ''
+          },
+        },
+      }
+
+      plugins.getPluginManager().registerBuiltin('test-quiet-boundary-connector-plugin-allow-riley', {
+        name: 'Test Quiet Boundary Connector Plugin Allow Riley',
+        connectors: [{
+          id: 'test-quiet-allow-riley',
+          name: 'Test Quiet Allow Riley',
+          description: 'Quiet boundary false-positive test connector',
+          startListener: async () => async () => {},
+          sendMessage: async () => ({ messageId: 'unused' }),
+        }],
+      })
+
+      storage.saveSettings({})
+      storage.saveAgents({
+        agent_1: {
+          id: 'agent_1',
+          name: 'Nova',
+          provider: 'test-provider',
+          model: 'test-model',
+          plugins: [],
+          threadSessionId: 'agent_thread',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveConnectors({
+        conn_1: {
+          id: 'conn_1',
+          name: 'WhatsApp',
+          platform: 'test-quiet-allow-riley',
+          agentId: 'agent_1',
+          credentialId: null,
+          config: { inboundDebounceMs: 0 },
+          isEnabled: true,
+          status: 'stopped',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveSessions({
+        agent_thread: {
+          id: 'agent_thread',
+          name: 'Nova',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'default',
+          provider: 'test-provider',
+          model: 'test-model',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'agent_1',
+          plugins: [],
+        },
+      })
+
+      memoryDb.add({
+        agentId: 'agent_1',
+        sessionId: null,
+        category: 'identity/preferences',
+        title: 'Wife communication rule',
+        content: 'Riley\\'s partner (+44 7700 900111): Do NOT respond unless she addresses Nova directly or mentions Nova directly. If unsure, verify whether the message is meant for the agent before responding.',
+      })
+
+      const connector = storage.loadConnectors().conn_1
+      const response = await manager.routeConnectorMessageForTest(connector, {
+        platform: 'whatsapp',
+        channelId: '447700900123@s.whatsapp.net',
+        senderId: '447700900123@s.whatsapp.net',
+        senderName: 'Riley',
+        text: 'Did you see the last update?',
+        messageId: 'in-quiet-riley-1',
+        isGroup: false,
+      })
+
+      const sessions = storage.loadSessions()
+      const directSession = Object.values(sessions).find((entry) => entry.id !== 'agent_thread')
+      console.log(JSON.stringify({
+        response,
+        providerCalls,
+        directSessionMessageCount: directSession?.messages?.length || 0,
+        mainThreadMessageCount: sessions.agent_thread?.messages?.length || 0,
+      }))
+    `)
+
+    assert.equal(output.response, 'Replying to Riley normally')
+    assert.equal(output.providerCalls, 1)
+    assert.equal(output.directSessionMessageCount, 2)
+    assert.equal(output.mainThreadMessageCount, 2)
   })
 
   it('requires an explicit target when a shared thread only has mirrored connector history', () => {

@@ -13,6 +13,7 @@ import { enqueueSessionRun, type EnqueueSessionRunResult } from '@/lib/server/ru
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { resolveSubagentBrowserProfileId } from '@/lib/server/session-tools/subagent'
+import { getPluginManager } from '@/lib/server/plugins'
 import {
   appendDelegationCheckpoint,
   completeDelegationJob,
@@ -179,7 +180,14 @@ export function getSessionDepth(
 export function spawnSubagent(
   input: SpawnSubagentInput,
   context: SubagentContext,
-): SubagentHandle {
+): Promise<SubagentHandle> {
+  return spawnSubagentImpl(input, context)
+}
+
+async function spawnSubagentImpl(
+  input: SpawnSubagentInput,
+  context: SubagentContext,
+): Promise<SubagentHandle> {
   const runtime = loadRuntimeSettings()
   const maxDepth = runtime.delegationMaxDepth || DEFAULT_DELEGATION_MAX_DEPTH
   const agents = loadAgents()
@@ -195,6 +203,28 @@ export function spawnSubagent(
   if (depth >= maxDepth) {
     throw new Error(`Max subagent depth (${maxDepth}) reached.`)
   }
+  const parent = context.sessionId ? sessions[context.sessionId] : null
+  const parentPlugins = (
+    Array.isArray(parent?.plugins) ? parent.plugins
+    : Array.isArray(parent?.tools) ? parent.tools
+    : []
+  ) as string[]
+  const pluginManager = getPluginManager()
+  const spawningResult = await pluginManager.runSubagentSpawning(
+    {
+      parentSessionId: context.sessionId || null,
+      agentId: input.agentId,
+      agentName: agent.name,
+      message: input.message,
+      cwd: input.cwd || context.cwd,
+      mode: 'run',
+      threadRequested: false,
+    },
+    { enabledIds: parentPlugins },
+  )
+  if (spawningResult.status === 'error') {
+    throw new Error(spawningResult.error || 'Subagent spawn blocked by plugin hook')
+  }
 
   // 1. Create delegation job
   const job = createDelegationJob({
@@ -209,7 +239,6 @@ export function spawnSubagent(
   // 2. Create child session
   const sid = genId()
   const now = Date.now()
-  const parent = context.sessionId ? sessions[context.sessionId] : null
   const browserProfileId = resolveSubagentBrowserProfileId(
     parent,
     sid,
@@ -276,6 +305,19 @@ export function spawnSubagent(
     mode: 'followup',
     executionGroupKey: input.executionGroupKey,
   })
+  await pluginManager.runHook(
+    'subagentSpawned',
+    {
+      parentSessionId: context.sessionId || null,
+      childSessionId: sid,
+      agentId: agent.id,
+      agentName: agent.name,
+      runId: run.runId,
+      mode: 'run',
+      threadRequested: false,
+    },
+    { enabledIds: parentPlugins },
+  )
 
   // 8. Register runtime handle for cancellation
   registerDelegationRuntime(job.id, {
@@ -290,33 +332,87 @@ export function spawnSubagent(
 
   // 9. Build result promise
   const resultPromise = run.promise
-    .then((result): SubagentResult => {
+    .then(async (result): Promise<SubagentResult> => {
       const latest = getDelegationJob(job.id)
       const node = getLineageNode(lineageNode.id)
+      let subagentResult: SubagentResult
       if (latest?.status === 'cancelled' || node?.status === 'cancelled') {
-        return buildResult(job.id, sid, lineageNode, agent, 'cancelled', null, null)
+        subagentResult = buildResult(job.id, sid, lineageNode, agent, 'cancelled', null, null)
+      } else {
+        const responseText = (result.text || '').slice(0, 32_000)
+        completeLineageNode(lineageNode.id, responseText.slice(0, 1000))
+        appendDelegationCheckpoint(job.id, 'Child session completed', 'completed')
+        completeDelegationJob(job.id, responseText, { childSessionId: sid })
+
+        subagentResult = buildResult(job.id, sid, lineageNode, agent, 'completed', responseText, null)
       }
-
-      const responseText = (result.text || '').slice(0, 32_000)
-      completeLineageNode(lineageNode.id, responseText.slice(0, 1000))
-      appendDelegationCheckpoint(job.id, 'Child session completed', 'completed')
-      completeDelegationJob(job.id, responseText, { childSessionId: sid })
-
-      return buildResult(job.id, sid, lineageNode, agent, 'completed', responseText, null)
+      await pluginManager.runHook(
+        'subagentEnded',
+        {
+          parentSessionId: context.sessionId || null,
+          childSessionId: sid,
+          agentId: agent.id,
+          agentName: agent.name,
+          status: subagentResult.status,
+          response: subagentResult.response,
+          error: subagentResult.error,
+          durationMs: subagentResult.durationMs,
+        },
+        { enabledIds: parentPlugins },
+      )
+      await pluginManager.runHook(
+        'sessionEnd',
+        {
+          sessionId: sid,
+          session: loadSessions()[sid] || null,
+          messageCount: Array.isArray(loadSessions()[sid]?.messages) ? loadSessions()[sid].messages.length : 0,
+          durationMs: subagentResult.durationMs,
+          reason: subagentResult.status,
+        },
+        { enabledIds: parentPlugins },
+      )
+      return subagentResult
     })
-    .catch((err: unknown): SubagentResult => {
+    .catch(async (err: unknown): Promise<SubagentResult> => {
       const message = errorMessage(err)
       const latest = getDelegationJob(job.id)
       const node = getLineageNode(lineageNode.id)
+      let subagentResult: SubagentResult
       if (latest?.status === 'cancelled' || node?.status === 'cancelled') {
-        return buildResult(job.id, sid, lineageNode, agent, 'cancelled', null, null)
+        subagentResult = buildResult(job.id, sid, lineageNode, agent, 'cancelled', null, null)
+      } else {
+        failLineageNode(lineageNode.id, message)
+        appendDelegationCheckpoint(job.id, `Child session failed: ${message}`, 'failed')
+        failDelegationJob(job.id, message, { childSessionId: sid })
+
+        subagentResult = buildResult(job.id, sid, lineageNode, agent, 'failed', null, message)
       }
-
-      failLineageNode(lineageNode.id, message)
-      appendDelegationCheckpoint(job.id, `Child session failed: ${message}`, 'failed')
-      failDelegationJob(job.id, message, { childSessionId: sid })
-
-      return buildResult(job.id, sid, lineageNode, agent, 'failed', null, message)
+      await pluginManager.runHook(
+        'subagentEnded',
+        {
+          parentSessionId: context.sessionId || null,
+          childSessionId: sid,
+          agentId: agent.id,
+          agentName: agent.name,
+          status: subagentResult.status,
+          response: subagentResult.response,
+          error: subagentResult.error,
+          durationMs: subagentResult.durationMs,
+        },
+        { enabledIds: parentPlugins },
+      )
+      await pluginManager.runHook(
+        'sessionEnd',
+        {
+          sessionId: sid,
+          session: loadSessions()[sid] || null,
+          messageCount: Array.isArray(loadSessions()[sid]?.messages) ? loadSessions()[sid].messages.length : 0,
+          durationMs: subagentResult.durationMs,
+          reason: subagentResult.status,
+        },
+        { enabledIds: parentPlugins },
+      )
+      return subagentResult
     })
 
   const handle: SubagentHandle = {

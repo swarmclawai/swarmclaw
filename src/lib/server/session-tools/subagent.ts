@@ -245,7 +245,7 @@ async function handleBatch(args: Record<string, unknown>, ctx: ActionContext): P
     : 'auto'
 
   // Use spawnSwarm internally — batch is a simplified interface
-  const swarm = spawnSwarm({ tasks, executionMode }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
+  const swarm = await spawnSwarm({ tasks, executionMode }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
   const jobIds = swarm.members
     .filter((m) => !m.spawnError && m.handle)
     .map((m) => m.handle.jobId)
@@ -303,7 +303,7 @@ async function handleSwarm(args: Record<string, unknown>, ctx: ActionContext): P
     ? args.executionMode
     : 'auto'
 
-  const swarm = spawnSwarm({ tasks, executionMode }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
+  const swarm = await spawnSwarm({ tasks, executionMode }, { sessionId: ctx.sessionId, cwd: ctx.cwd })
   if (!waitForCompletion) {
     const snapshot = getSwarmSnapshot(swarm.swarmId)
     return JSON.stringify({
@@ -361,7 +361,7 @@ async function handleStart(args: Record<string, unknown>, ctx: ActionContext): P
   const shareBrowserProfile = args.shareBrowserProfile === true || args.share_browser_profile === true
   const waitForCompletion = args.waitForCompletion !== false && args.background !== true
 
-  const handle = spawnSubagent(
+  const handle = await spawnSubagent(
     { agentId, message, cwd, shareBrowserProfile, waitForCompletion },
     { sessionId: ctx.sessionId, cwd: ctx.cwd },
   )

@@ -334,8 +334,9 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       name: 'Plugin Hook Session',
       cwd,
       user: 'system',
+      // Synthetic fallback used only for hook execution when no persisted session exists.
       provider: 'openai',
-      model: 'unknown',
+      model: 'synthetic-hook-context',
       claudeSessionId: null,
       messages: [],
       createdAt: Date.now(),
@@ -353,19 +354,54 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
             throw new DOMException('Tool execution aborted', 'AbortError')
           }
           const normalizedArgs = normalizeToolInputArgs((args ?? {}) as Record<string, unknown>)
+          const hookSession = resolveCurrentSession() || buildFallbackHookSession()
           // Enforce file access policy before execution
           if (fileAccessPolicy) {
             const denial = enforceFileAccessPolicy(candidate.name, normalizedArgs, cwd, fileAccessPolicy)
             if (denial) return denial
           }
-          const nextArgs = await pluginManager.runBeforeToolExec(
-            { toolName: candidate.name, input: normalizedArgs },
+          let guardedArgs: Record<string, unknown> | null = normalizedArgs
+          if (ctx?.beforeToolCall) {
+            const guardResult = await ctx.beforeToolCall({
+              session: hookSession,
+              toolName: candidate.name,
+              input: guardedArgs,
+              runId: ctx.runId,
+            })
+            if (guardResult?.warning) {
+              ctx.onToolCallWarning?.({
+                toolName: candidate.name,
+                message: guardResult.warning,
+              })
+            }
+            if (typeof guardResult?.blockReason === 'string' && guardResult.blockReason.trim()) {
+              throw new Error(guardResult.blockReason.trim())
+            }
+            if (guardResult && 'input' in guardResult) {
+              guardedArgs = guardResult.input === undefined ? guardedArgs : guardResult.input ?? null
+            }
+          }
+          const hookResult = await pluginManager.runBeforeToolCall(
+            {
+              session: hookSession,
+              toolName: candidate.name,
+              input: guardedArgs,
+              runId: ctx?.runId || undefined,
+            },
             { enabledIds: activePlugins },
           )
-          const effectiveArgs = nextArgs ?? normalizedArgs
-          const result = await candidate.invoke(effectiveArgs)
+          if (hookResult.warning) {
+            ctx?.onToolCallWarning?.({
+              toolName: candidate.name,
+              message: hookResult.warning,
+            })
+          }
+          if (hookResult.blockReason) {
+            throw new Error(hookResult.blockReason)
+          }
+          const effectiveArgs = hookResult.input ?? guardedArgs
+          const result = await candidate.invoke(effectiveArgs ?? {})
           const outputText = typeof result === 'string' ? result : JSON.stringify(result)
-          const hookSession = resolveCurrentSession() || buildFallbackHookSession()
           await pluginManager.runHook(
             'afterToolExec',
             { session: hookSession, toolName: candidate.name, input: effectiveArgs, output: outputText },

@@ -23,10 +23,52 @@ function collectSenderIds(
   ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0))
 }
 
+function normalizeFreeText(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function extractMemoryLabels(entry: MemoryEntry): string[] {
+  const content = String(entry.content || '').trim()
+  const firstLine = content.split('\n', 1)[0]?.trim() || ''
+  const prefix = firstLine.includes(':') ? firstLine.split(':', 1)[0]?.trim() || '' : firstLine
+  return dedup([
+    String(entry.title || '').trim(),
+    prefix,
+  ].filter((value) => value.length > 0))
+}
+
+function labelMatchesSenderName(label: string, senderName: string): boolean {
+  const normalizedLabel = normalizeFreeText(label)
+  const normalizedSenderName = normalizeFreeText(senderName)
+  if (!normalizedLabel || !normalizedSenderName) return false
+  if (normalizedLabel === normalizedSenderName) return true
+  if (!normalizedLabel.startsWith(normalizedSenderName)) return false
+  const suffix = normalizedLabel.slice(normalizedSenderName.length).trim()
+  if (!suffix) return true
+  return /^[\s,.:;()+\-_/0-9@]+$/.test(suffix)
+}
+
+function extractExplicitMemoryIdentifiers(entry: MemoryEntry): string[] {
+  const metadata = entry.metadata as Record<string, unknown> | undefined
+  const metadataIdentifiers = Array.isArray(metadata?.identifiers)
+    ? metadata.identifiers.filter((value): value is string => typeof value === 'string')
+    : []
+  const text = `${entry.title || ''}\n${entry.content || ''}`
+  const jidLikeIdentifiers = text.match(/[0-9a-z_.:+-]+@[0-9a-z_.:-]+/gi) || []
+  return dedup([
+    ...metadataIdentifiers,
+    ...jidLikeIdentifiers,
+  ].map((value) => value.trim().toLowerCase()).filter(Boolean))
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function memoryMatchesSender(entry: MemoryEntry, senderIds: string[], senderName: string): boolean {
   const title = String(entry.title || '').toLowerCase()
   const content = String(entry.content || '').toLowerCase()
-  const normalizedSenderName = senderName.trim().toLowerCase()
+  const normalizedSenderName = normalizeFreeText(senderName)
 
   for (const rawId of senderIds) {
     const lowered = rawId.toLowerCase()
@@ -42,6 +84,7 @@ function memoryMatchesSender(entry: MemoryEntry, senderIds: string[], senderName
         .map(toDigits)
       : []),
   ].filter((value) => value.length >= 6)
+  const explicitMemoryIdentifiers = extractExplicitMemoryIdentifiers(entry)
 
   for (const memoryDigit of memoryDigits) {
     for (const senderDigit of senderDigits) {
@@ -49,16 +92,34 @@ function memoryMatchesSender(entry: MemoryEntry, senderIds: string[], senderName
     }
   }
 
+  if (explicitMemoryIdentifiers.length > 0 || memoryDigits.length > 0) {
+    return false
+  }
+
   if (!normalizedSenderName) return false
-  return title.includes(normalizedSenderName) || content.includes(normalizedSenderName)
+  return extractMemoryLabels(entry).some((label) => labelMatchesSenderName(label, normalizedSenderName))
 }
 
-function memoryDefinesQuietBoundary(entry: MemoryEntry): boolean {
+function memoryDefinesQuietBoundary(
+  entry: MemoryEntry,
+  aliases: string[],
+): boolean {
+  const metadata = entry.metadata as Record<string, unknown> | undefined
+  if (metadata?.boundaryType === 'quiet_until_directly_addressed') return true
+  if (metadata?.directAddressRequired === true && metadata?.suppressReplies === true) return true
+
   const text = `${entry.title || ''}\n${entry.content || ''}`.toLowerCase()
   const boundaryRule = /\b(?:do not respond|do not reply|don't respond|don't reply|no replies|stay quiet|stay silent|remain quiet|be quiet)\b[\s\S]{0,140}\bunless\b/i
-  const directAddressRule = /\b(?:address(?:es|ed)?|mention(?:s|ed)?|refer(?:s|red)?|talk(?:ing)? to)\b[\s\S]{0,80}\bhal\b/i
-  const verifyRule = /\bverify whether\b[\s\S]{0,80}\b(?:wayde|hal)\b/i
-  return boundaryRule.test(text) && (directAddressRule.test(text) || verifyRule.test(text))
+  const aliasPattern = dedup(aliases.map((alias) => normalizeFreeText(alias)).filter(Boolean))
+    .map((alias) => escapeRegExp(alias))
+    .join('|')
+  const aliasTargetRule = aliasPattern
+    ? new RegExp(`\\b(?:address(?:es|ed)?|mention(?:s|ed)?|refer(?:s|red)?|talk(?:ing)? to)\\b[\\s\\S]{0,80}\\b(?:${aliasPattern})\\b`, 'i')
+    : null
+  const genericTargetRule = /\b(?:address(?:es|ed)?|mention(?:s|ed)?|refer(?:s|red)?|talk(?:ing)? to)\b[\s\S]{0,80}\b(?:you|the agent|assistant|bot)\b/i
+  const verifyRule = /\bverify whether\b[\s\S]{0,120}\b(?:message|reply|response|it)\b[\s\S]{0,80}\b(?:is for|is meant for|was intended for|is addressed to)\b[\s\S]{0,80}\b(?:you|the agent|assistant|bot)\b/i
+  const directAddressRule = (aliasTargetRule ? aliasTargetRule.test(text) : false) || genericTargetRule.test(text)
+  return boundaryRule.test(text) && (directAddressRule || verifyRule.test(text))
 }
 
 function buildDirectAddressAliases(agent: Partial<Agent> | null | undefined, connector: Partial<Connector> | null | undefined): string[] {
@@ -85,14 +146,15 @@ export function enforceSenderQuietBoundary(params: {
   if (senderIds.length === 0 && !senderName.trim()) return { suppress: false }
 
   const memDb = getMemoryDb()
+  const aliases = buildDirectAddressAliases(agent, connector)
   const memories = memDb.list(agent.id, 200).filter((entry) =>
     entry.category?.startsWith('identity/')
     && memoryMatchesSender(entry, senderIds, senderName),
   )
-  const matchedBoundary = memories.find(memoryDefinesQuietBoundary)
+  const matchedBoundary = memories.find((entry) => memoryDefinesQuietBoundary(entry, aliases))
   if (!matchedBoundary) return { suppress: false }
 
-  const explicitlyAddressed = textMentionsAlias(msg.text || '', buildDirectAddressAliases(agent, connector))
+  const explicitlyAddressed = textMentionsAlias(msg.text || '', aliases)
     || isReplyToLastOutbound(msg, session)
 
   return explicitlyAddressed

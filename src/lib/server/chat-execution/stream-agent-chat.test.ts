@@ -193,6 +193,15 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(!streamAgentChatSource.includes('langchainMessages.push(new AIMessage({ content: fullText }))'))
   })
 
+  it('wires prompt-build hooks and pre-tool loop guards into the runtime path', () => {
+    assert.ok(streamAgentChatSource.includes('runBeforePromptBuild'))
+    assert.ok(streamAgentChatSource.includes('applyBeforePromptBuildResult'))
+    assert.ok(streamAgentChatSource.includes('beforeToolCall: ({ toolName, input }) =>'))
+    assert.ok(streamAgentChatSource.includes("phase: 'before_tool_call'"))
+    assert.ok(streamAgentChatSource.includes('loopTracker.preview(toolName, input)'))
+    assert.ok(streamAgentChatSource.includes('runId,'))
+  })
+
   it('forces early workspace-tool kickoff for explicit saved-artifact deliverables', () => {
     assert.ok(streamAgentChatSource.includes('shouldEnforceEarlyRequiredToolKickoff'))
     assert.ok(streamAgentChatSource.includes('REQUIRED_TOOL_KICKOFF_TIMEOUT_MS'))

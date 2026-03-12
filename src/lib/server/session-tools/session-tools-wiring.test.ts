@@ -75,6 +75,56 @@ describe('buildSessionTools signature', () => {
     assert.ok(buildSessionTools.length >= 2, 'buildSessionTools should accept at least 2 params')
   })
 
+  it('runs beforeToolCall hooks before invoking plugin tools', async () => {
+    const { buildSessionTools } = await import('./index')
+    const { getPluginManager } = await import('../plugins')
+    const pluginId = `tool_wrapper_${Date.now()}`
+    const toolName = `${pluginId}_echo`
+
+    getPluginManager().registerBuiltin(pluginId, {
+      name: 'Tool Wrapper Hook Test',
+      hooks: {
+        beforeToolCall: ({ input }) => {
+          if (input?.message === 'blocked') {
+            return { block: true, blockReason: 'blocked before invoke' }
+          }
+          return { params: { message: `${String(input?.message || '')}:patched` } }
+        },
+      },
+      tools: [
+        {
+          name: toolName,
+          description: 'Echo the message',
+          parameters: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+            },
+          },
+          execute: async (args) => String(args.message || ''),
+        },
+      ],
+    })
+
+    const built = await buildSessionTools(process.cwd(), [pluginId], {
+      agentId: 'agent-test',
+      sessionId: 'session-test',
+      runId: 'run-test',
+    })
+    const wrapped = built.tools.find((entry) => entry.name === toolName)
+    assert.ok(wrapped, 'plugin tool should be built')
+
+    const ok = await wrapped!.invoke({ message: 'hello' })
+    assert.equal(ok, 'hello:patched')
+
+    await assert.rejects(
+      () => wrapped!.invoke({ message: 'blocked' }),
+      /blocked before invoke/,
+    )
+
+    await built.cleanup()
+  })
+
   it('sandbox builder exposes the local Node/Docker sandbox tools', async () => {
     const { buildSandboxTools } = await import('./sandbox')
     const bctx: import('./context').ToolBuildContext = {

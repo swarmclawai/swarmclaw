@@ -14,7 +14,7 @@ import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/serve
 import { logExecution } from '@/lib/server/execution-log'
 import { buildCurrentDateTimePromptContext } from '@/lib/server/prompt-runtime-context'
 import { canonicalizePluginId, expandPluginIds, pluginIdMatches } from '@/lib/server/tool-aliases'
-import type { Session, Message, UsageRecord, PluginInvocationRecord, MessageToolEvent } from '@/types'
+import type { Session, Message, UsageRecord, PluginInvocationRecord, MessageToolEvent, PluginPromptBuildResult } from '@/types'
 import { extractSuggestions } from '@/lib/server/suggestions'
 import { buildIdentityContinuityContext } from '@/lib/server/identity-continuity'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
@@ -503,6 +503,32 @@ function buildCurrentThreadRecallBlock(history: Message[]): string {
   return lines.join('\n')
 }
 
+function joinPromptSegments(...segments: Array<string | null | undefined>): string {
+  return segments
+    .map((segment) => (typeof segment === 'string' ? segment.trim() : ''))
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function applyBeforePromptBuildResult(
+  basePrompt: string,
+  hookResult: PluginPromptBuildResult | null | undefined,
+): string {
+  if (!hookResult) return basePrompt
+
+  const baseSystemPrompt = typeof hookResult.systemPrompt === 'string' && hookResult.systemPrompt.trim()
+    ? hookResult.systemPrompt.trim()
+    : basePrompt
+
+  const systemPromptWithContext = joinPromptSegments(
+    hookResult.prependSystemContext,
+    baseSystemPrompt,
+    hookResult.appendSystemContext,
+  ) || baseSystemPrompt
+
+  return joinPromptSegments(hookResult.prependContext, systemPromptWithContext) || systemPromptWithContext
+}
+
 export interface StreamAgentChatResult {
   /** All text accumulated across every LLM turn (for SSE / web UI history). */
   fullText: string
@@ -802,21 +828,13 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   }
 
   let prompt = promptParts.join('\n\n')
-
-  const endToolBuildPerf = perf.start('stream-agent-chat', 'buildSessionTools', { sessionId: session.id })
-  const { tools, cleanup, toolToPluginMap, abortSignalRef } = await buildSessionTools(session.cwd, sessionPlugins, {
-    agentId: session.agentId,
-    sessionId: session.id,
-    platformAssignScope: agentPlatformAssignScope,
-    mcpServerIds: agentMcpServerIds,
-    mcpDisabledTools: agentMcpDisabledTools,
-    projectId: activeProjectContext.projectId,
-    projectRoot: activeProjectContext.projectRoot,
-    projectName: activeProjectContext.project?.name || null,
-    projectDescription: activeProjectContext.project?.description || null,
-    memoryScopeMode: agentMemoryScopeMode,
+  const runId = `${session.id}:${startTs}`
+  const loopTracker = new ToolLoopTracker({
+    ...(typeof settings.toolLoopFrequencyWarn === 'number' && { toolFrequencyWarn: settings.toolLoopFrequencyWarn }),
+    ...(typeof settings.toolLoopFrequencyCritical === 'number' && { toolFrequencyCritical: settings.toolLoopFrequencyCritical }),
+    ...(typeof settings.toolLoopCircuitBreaker === 'number' && { circuitBreaker: settings.toolLoopCircuitBreaker }),
   })
-  endToolBuildPerf({ toolCount: tools.length })
+  const emittedPreToolWarnings = new Set<string>()
   const recursionLimit = getAgentLoopRecursionLimit(runtime)
 
   // Build message history for context
@@ -971,6 +989,43 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     // Context manager failure — continue with recent history
   }
 
+  const langchainMessages: Array<HumanMessage | AIMessage> = []
+  for (const m of effectiveHistory) {
+    if (m.role === 'user') {
+      const resolvedImg = resolveImagePath(m.imagePath, m.imageUrl)
+      langchainMessages.push(new HumanMessage({ content: await buildLangChainContent(m.text, resolvedImg ?? undefined, m.attachedFiles) }))
+    } else {
+      langchainMessages.push(new AIMessage({ content: m.text }))
+    }
+  }
+
+  // Add current message
+  const currentContent = await buildLangChainContent(message, imagePath, attachedFiles)
+  langchainMessages.push(new HumanMessage({ content: currentContent }))
+
+  const pluginMgr = getPluginManager()
+  const promptHookResult = await pluginMgr.runBeforePromptBuild(
+    {
+      session,
+      prompt,
+      message,
+      history,
+      messages: [
+        ...effectiveHistory,
+        {
+          role: 'user',
+          text: message,
+          time: Date.now(),
+          ...(imagePath ? { imagePath } : {}),
+          ...(imageUrl ? { imageUrl } : {}),
+          ...(attachedFiles?.length ? { attachedFiles } : {}),
+        },
+      ],
+    },
+    { enabledIds: sessionPlugins },
+  )
+  prompt = applyBeforePromptBuildResult(prompt, promptHookResult)
+
   // Context degradation warning: prepend warning to system prompt when nearing limits
   try {
     const {
@@ -996,12 +1051,84 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       },
     )
     if (warning) {
-      promptParts.unshift(warning)
-      prompt = promptParts.join('\n\n')
+      prompt = joinPromptSegments(warning, prompt)
     }
   } catch {
     // Warning failure is non-critical
   }
+
+  await pluginMgr.runHook(
+    'llmInput',
+    {
+      session,
+      runId,
+      provider: session.provider,
+      model: session.model,
+      systemPrompt: prompt,
+      prompt: message,
+      historyMessages: effectiveHistory,
+      imagesCount: imagePath ? 1 : 0,
+    },
+    { enabledIds: sessionPlugins },
+  )
+
+  const endToolBuildPerf = perf.start('stream-agent-chat', 'buildSessionTools', { sessionId: session.id })
+  const { tools, cleanup, toolToPluginMap, abortSignalRef } = await buildSessionTools(session.cwd, sessionPlugins, {
+    agentId: session.agentId,
+    sessionId: session.id,
+    runId,
+    platformAssignScope: agentPlatformAssignScope,
+    mcpServerIds: agentMcpServerIds,
+    mcpDisabledTools: agentMcpDisabledTools,
+    projectId: activeProjectContext.projectId,
+    projectRoot: activeProjectContext.projectRoot,
+    projectName: activeProjectContext.project?.name || null,
+    projectDescription: activeProjectContext.project?.description || null,
+    memoryScopeMode: agentMemoryScopeMode,
+    beforeToolCall: ({ toolName, input }) => {
+      const preview = loopTracker.preview(toolName, input)
+      if (!preview) return undefined
+      const previewKey = `${preview.severity}:${preview.detector}:${toolName}`
+      if (preview.severity === 'warning' && emittedPreToolWarnings.has(previewKey)) {
+        return undefined
+      }
+      if (preview.severity === 'warning') emittedPreToolWarnings.add(previewKey)
+      logExecution(session.id, 'loop_detection', preview.message, {
+        agentId: session.agentId,
+        detail: {
+          detector: preview.detector,
+          severity: preview.severity,
+          toolName,
+          phase: 'before_tool_call',
+        },
+      })
+      if (preview.severity === 'critical') {
+        write(`data: ${JSON.stringify({
+          t: 'status',
+          text: JSON.stringify({
+            loopDetection: preview.detector,
+            severity: 'critical',
+            message: preview.message,
+            phase: 'before_tool_call',
+          }),
+        })}\n\n`)
+        return { blockReason: preview.message }
+      }
+      return { warning: preview.message }
+    },
+    onToolCallWarning: ({ toolName, message }) => {
+      write(`data: ${JSON.stringify({
+        t: 'status',
+        text: JSON.stringify({
+          toolWarning: toolName,
+          severity: 'warning',
+          message,
+          phase: 'before_tool_call',
+        }),
+      })}\n\n`)
+    },
+  })
+  endToolBuildPerf({ toolCount: tools.length })
 
   // Use a fresh in-memory checkpointer instead of the SQLite one.  We manage
   // conversation history externally via langchainMessages — each iteration
@@ -1015,20 +1142,6 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     prompt,
     checkpointer: new MemorySaver(),
   })
-
-  const langchainMessages: Array<HumanMessage | AIMessage> = []
-  for (const m of effectiveHistory) {
-    if (m.role === 'user') {
-      const resolvedImg = resolveImagePath(m.imagePath, m.imageUrl)
-      langchainMessages.push(new HumanMessage({ content: await buildLangChainContent(m.text, resolvedImg ?? undefined, m.attachedFiles) }))
-    } else {
-      langchainMessages.push(new AIMessage({ content: m.text }))
-    }
-  }
-
-  // Add current message
-  const currentContent = await buildLangChainContent(message, imagePath, attachedFiles)
-  langchainMessages.push(new HumanMessage({ content: currentContent }))
   let pendingGraphMessages = [...langchainMessages]
 
   let fullText = ''
@@ -1047,7 +1160,6 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   const likelyResearchSynthesisTask = routingDecision.intent === 'research' || routingDecision.intent === 'browsing'
 
   // Plugin hooks: beforeAgentStart
-  const pluginMgr = getPluginManager()
   await pluginMgr.runHook('beforeAgentStart', { session, message }, { enabledIds: sessionPlugins })
 
   const abortController = new AbortController()
@@ -1099,11 +1211,6 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   const shouldEnforceEarlyRequiredToolKickoff = explicitRequiredToolNames.length > 0
     && looksLikeOpenEndedDeliverableTask(message)
   const usedToolNames = new Set<string>()
-  const loopTracker = new ToolLoopTracker({
-    ...(typeof settings.toolLoopFrequencyWarn === 'number' && { toolFrequencyWarn: settings.toolLoopFrequencyWarn }),
-    ...(typeof settings.toolLoopFrequencyCritical === 'number' && { toolFrequencyCritical: settings.toolLoopFrequencyCritical }),
-    ...(typeof settings.toolLoopCircuitBreaker === 'number' && { circuitBreaker: settings.toolLoopCircuitBreaker }),
-  })
   let loopDetectionTriggered: LoopDetectionResult | null = null
   let terminalToolResponse = ''
 
@@ -1852,6 +1959,30 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     if (signal) signal.removeEventListener('abort', abortFromSignal)
   }
 
+  const emitLlmOutputHook = async (response: string) => {
+    const total = totalInputTokens + totalOutputTokens
+    await pluginMgr.runHook(
+      'llmOutput',
+      {
+        session,
+        runId,
+        provider: session.provider,
+        model: session.model,
+        assistantTexts: response ? [response] : [],
+        response,
+        usage: total > 0
+          ? {
+              input: totalInputTokens,
+              output: totalOutputTokens,
+              total,
+              estimatedCost: estimateCost(session.model, totalInputTokens, totalOutputTokens),
+            }
+          : undefined,
+      },
+      { enabledIds: sessionPlugins },
+    )
+  }
+
   // Skip post-stream work if the client disconnected mid-stream
   if (signal?.aborted) {
     let finalResponse = resolveFinalStreamResponseText({
@@ -1878,6 +2009,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
         finalResponse = forcedSummary
       }
     }
+    await emitLlmOutputHook(finalResponse)
     await cleanup()
     return { fullText, finalResponse }
   }
@@ -1956,6 +2088,8 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       finalResponse = forcedSummary
     }
   }
+
+  await emitLlmOutputHook(finalResponse)
 
   // Plugin hooks: afterAgentComplete
   await pluginMgr.runHook('afterAgentComplete', { session, response: fullText }, { enabledIds: sessionPlugins })

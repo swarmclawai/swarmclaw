@@ -90,6 +90,269 @@ describe('plugin manager hook execution', () => {
     assert.deepEqual(withEnable, { original: true, patched: true })
   })
 
+  it('merges beforePromptBuild context and preserves first system prompt override', async () => {
+    const pluginA = uniquePluginId('before_prompt_build_a')
+    const pluginB = uniquePluginId('before_prompt_build_b')
+    const session = {
+      id: 'prompt-hook-session',
+      name: 'Prompt Hook Session',
+      cwd: process.cwd(),
+      user: 'tester',
+      provider: 'openai',
+      model: 'gpt-test',
+      claudeSessionId: null,
+      messages: [],
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      plugins: [pluginA, pluginB],
+    }
+
+    getPluginManager().registerBuiltin(pluginA, {
+      name: 'Before Prompt Build A',
+      hooks: {
+        beforePromptBuild: () => ({
+          systemPrompt: 'system A',
+          prependContext: 'context A',
+          prependSystemContext: 'prepend A',
+        }),
+      },
+    })
+    getPluginManager().registerBuiltin(pluginB, {
+      name: 'Before Prompt Build B',
+      hooks: {
+        beforePromptBuild: () => ({
+          systemPrompt: 'system B',
+          prependContext: 'context B',
+          appendSystemContext: 'append B',
+        }),
+      },
+    })
+
+    const result = await getPluginManager().runBeforePromptBuild(
+      {
+        session,
+        prompt: 'base prompt',
+        message: 'hello',
+        history: [],
+        messages: [],
+      },
+      { enabledIds: [pluginA, pluginB] },
+    )
+
+    assert.deepEqual(result, {
+      systemPrompt: 'system A',
+      prependContext: 'context A\n\ncontext B',
+      prependSystemContext: 'prepend A',
+      appendSystemContext: 'append B',
+    })
+  })
+
+  it('applies beforeToolCall params merges and block results before legacy beforeToolExec', async () => {
+    const pluginA = uniquePluginId('before_tool_call_a')
+    const pluginB = uniquePluginId('before_tool_call_b')
+    const session = {
+      id: 'tool-hook-session',
+      name: 'Tool Hook Session',
+      cwd: process.cwd(),
+      user: 'tester',
+      provider: 'openai',
+      model: 'gpt-test',
+      claudeSessionId: null,
+      messages: [],
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      plugins: [pluginA, pluginB],
+    }
+
+    getPluginManager().registerBuiltin(pluginA, {
+      name: 'Before Tool Call A',
+      hooks: {
+        beforeToolCall: () => ({
+          params: { patched: true },
+          warning: 'tool warning',
+        }),
+      },
+    })
+    getPluginManager().registerBuiltin(pluginB, {
+      name: 'Before Tool Call B',
+      hooks: {
+        beforeToolCall: ({ input }) => ({
+          block: true,
+          blockReason: `blocked with patched=${String(input?.patched)}`,
+        }),
+        beforeToolExec: () => ({ shouldNotRun: true }),
+      },
+    })
+
+    const result = await getPluginManager().runBeforeToolCall(
+      {
+        session,
+        toolName: 'shell',
+        input: { original: true },
+        runId: 'run-1',
+      },
+      { enabledIds: [pluginA, pluginB] },
+    )
+
+    assert.deepEqual(result, {
+      input: { original: true, patched: true },
+      blockReason: 'blocked with patched=true',
+      warning: 'tool warning',
+    })
+  })
+
+  it('applies beforeModelResolve overrides in plugin order', async () => {
+    const pluginA = uniquePluginId('before_model_resolve_a')
+    const pluginB = uniquePluginId('before_model_resolve_b')
+    const session = {
+      id: 'model-resolve-session',
+      name: 'Model Resolve Session',
+      cwd: process.cwd(),
+      user: 'tester',
+      provider: 'openai',
+      model: 'gpt-test',
+      claudeSessionId: null,
+      messages: [],
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      plugins: [pluginA, pluginB],
+    }
+
+    getPluginManager().registerBuiltin(pluginA, {
+      name: 'Before Model Resolve A',
+      hooks: {
+        beforeModelResolve: () => ({
+          providerOverride: 'ollama',
+          modelOverride: 'llama-a',
+        }),
+      },
+    })
+    getPluginManager().registerBuiltin(pluginB, {
+      name: 'Before Model Resolve B',
+      hooks: {
+        beforeModelResolve: () => ({
+          modelOverride: 'llama-b',
+          apiEndpointOverride: 'http://127.0.0.1:11434',
+        }),
+      },
+    })
+
+    const result = await getPluginManager().runBeforeModelResolve(
+      {
+        session,
+        prompt: 'base prompt',
+        message: 'hello',
+        provider: session.provider,
+        model: session.model,
+        apiEndpoint: null,
+      },
+      { enabledIds: [pluginA, pluginB] },
+    )
+
+    assert.deepEqual(result, {
+      providerOverride: 'ollama',
+      modelOverride: 'llama-b',
+      apiEndpointOverride: 'http://127.0.0.1:11434',
+    })
+  })
+
+  it('chains toolResultPersist and beforeMessageWrite hooks', async () => {
+    const pluginA = uniquePluginId('tool_result_persist_a')
+    const pluginB = uniquePluginId('before_message_write_b')
+    const session = {
+      id: 'message-write-session',
+      name: 'Message Write Session',
+      cwd: process.cwd(),
+      user: 'tester',
+      provider: 'openai',
+      model: 'gpt-test',
+      claudeSessionId: null,
+      messages: [],
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      plugins: [pluginA, pluginB],
+    }
+
+    getPluginManager().registerBuiltin(pluginA, {
+      name: 'Tool Result Persist A',
+      hooks: {
+        toolResultPersist: ({ message, toolName }) => ({
+          ...message,
+          text: `${message.text} [tool:${toolName}]`,
+        }),
+      },
+    })
+    getPluginManager().registerBuiltin(pluginB, {
+      name: 'Before Message Write B',
+      hooks: {
+        beforeMessageWrite: ({ message }) => ({
+          message: {
+            ...message,
+            text: `${message.text} [persisted]`,
+          },
+        }),
+      },
+    })
+
+    const persisted = await getPluginManager().runToolResultPersist(
+      {
+        session,
+        message: {
+          role: 'assistant',
+          text: 'tool output',
+          time: Date.now(),
+        },
+        toolName: 'shell',
+        toolCallId: 'call-1',
+      },
+      { enabledIds: [pluginA, pluginB] },
+    )
+    const writeResult = await getPluginManager().runBeforeMessageWrite(
+      {
+        session,
+        message: persisted,
+        phase: 'assistant_final',
+        runId: 'run-1',
+      },
+      { enabledIds: [pluginA, pluginB] },
+    )
+
+    assert.equal(writeResult.block, false)
+    assert.equal(writeResult.message.text, 'tool output [tool:shell] [persisted]')
+  })
+
+  it('blocks subagent spawning when a plugin hook rejects it', async () => {
+    const pluginId = uniquePluginId('subagent_spawning')
+
+    getPluginManager().registerBuiltin(pluginId, {
+      name: 'Subagent Spawning Hook',
+      hooks: {
+        subagentSpawning: () => ({
+          status: 'error',
+          error: 'blocked by lifecycle hook',
+        }),
+      },
+    })
+
+    const result = await getPluginManager().runSubagentSpawning(
+      {
+        parentSessionId: 'parent-1',
+        agentId: 'agent-1',
+        agentName: 'Agent One',
+        message: 'do the work',
+        cwd: process.cwd(),
+        mode: 'run',
+        threadRequested: false,
+      },
+      { enabledIds: [pluginId] },
+    )
+
+    assert.deepEqual(result, {
+      status: 'error',
+      error: 'blocked by lifecycle hook',
+    })
+  })
+
   it('chains text transforms in plugin order', async () => {
     const pluginA = uniquePluginId('transform_a')
     const pluginB = uniquePluginId('transform_b')

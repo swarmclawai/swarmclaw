@@ -729,15 +729,15 @@ On `v*` tags, GitHub Actions will:
 2. Create a GitHub Release
 3. Build and publish Docker images to `ghcr.io/swarmclawai/swarmclaw` (`:vX.Y.Z`, `:latest`, `:sha-*`)
 
-#### v0.9.4 Release Readiness Notes
+#### v0.9.5 Release Readiness Notes
 
-Before shipping `v0.9.4`, confirm the following user-facing changes are reflected in docs:
+Before shipping `v0.9.5`, confirm the following user-facing changes are reflected in docs:
 
-1. Skills docs explain that local skills are discoverable by default, while `skillIds` now mean pinned always-on skills for an agent.
-2. Runtime-skill docs mention executable skill metadata, on-demand selection, and the `use_skill` / `manage_skills` flow instead of implying every discovered skill is inlined into the prompt.
-3. Connector/heartbeat docs mention that routable connector state is kept on direct connector sessions only, sender quiet-boundary memories are enforced before reply generation, and tool-only heartbeats no longer pollute visible main-thread history.
-4. Site and README install/version strings are updated to `v0.9.4`, including pinned install snippets, release notes index text, and sidebar/footer labels.
-5. The release tag, npm package version, and generated GitHub release install snippet all agree on the non-prefixed npm version (`0.9.4`) versus the git tag (`v0.9.4`).
+1. Plugin/runtime docs mention the new typed lifecycle hooks: `beforePromptBuild`, `beforeToolCall`, `beforeModelResolve`, `llmInput`, `llmOutput`, `toolResultPersist`, `beforeMessageWrite`, plus session and subagent lifecycle hooks.
+2. Connector/memory docs explain that quiet-boundary memories are matched by identifiers and agent aliases, with explicit boundary metadata support, rather than relying on hardcoded person-name fallbacks.
+3. Skills docs still explain that local skills are discoverable by default, pinned skills stay always-on, and `use_skill` is the runtime path for selection/loading/dispatch.
+4. Site and README install/version strings are updated to `v0.9.5`, including release notes index text and any pinned install snippets.
+5. The release tag, npm package version, and generated GitHub release install snippet all agree on the non-prefixed npm version (`0.9.5`) versus the git tag (`v0.9.5`).
 
 ## CLI
 
