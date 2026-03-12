@@ -1,15 +1,15 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-11T19:16:24.055Z",
-  "totalIssues": 507,
-  "uniqueIssues": 174,
+  "generatedAt": "2026-03-12T21:09:32.809Z",
+  "totalIssues": 503,
+  "uniqueIssues": 173,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
       "ruleId": "@typescript-eslint/no-require-imports",
       "severity": 2,
       "message": "A `require()` style import is forbidden.",
-      "count": 4
+      "count": 2
     },
     {
       "filePath": "src/app/api/chats/[id]/deploy/route.ts",
@@ -1081,13 +1081,6 @@
       "severity": 1,
       "message": "'sessionMailbox' is assigned a value but never used.",
       "count": 1
-    },
-    {
-      "filePath": "src/lib/server/session-tools/sample-ui.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
     },
     {
       "filePath": "src/lib/server/session-tools/schedule.ts",

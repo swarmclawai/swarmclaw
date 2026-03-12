@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 
-import { persistGatewayHealthResult } from './[id]/health/route'
+import { persistGatewayHealthResult } from '@/lib/server/openclaw/health'
 import { loadGatewayProfiles, saveGatewayProfiles } from '@/lib/server/storage'
 
 const originalGateways = loadGatewayProfiles()

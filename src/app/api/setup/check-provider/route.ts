@@ -3,6 +3,7 @@ import { loadCredentials, decryptKey } from '@/lib/server/storage'
 import { getDeviceId, wsConnect, rpcOnConnectedGateway } from '@/lib/providers/openclaw'
 import { OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
 import { resolveOllamaRuntimeConfig } from '@/lib/server/ollama-runtime'
+import { normalizeOllamaSetupEndpoint, normalizeOpenClawUrl, parseErrorMessage } from './helpers'
 
 type SetupProvider =
   | 'openai'
@@ -29,30 +30,9 @@ function clean(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export function normalizeOllamaSetupEndpoint(endpoint: string, useCloud: boolean): string {
-  const normalized = endpoint.replace(/\/+$/, '')
-  if (useCloud) return normalized
-  return normalized.replace(/\/v1$/i, '')
-}
-
 function parseBody(input: unknown): SetupCheckBody {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {}
   return input as SetupCheckBody
-}
-
-export async function parseErrorMessage(res: Response, fallback: string): Promise<string> {
-  const text = await res.text().catch(() => '')
-  if (!text) return fallback
-  try {
-    const parsed = JSON.parse(text)
-    if (typeof parsed?.error?.message === 'string' && parsed.error.message.trim()) return parsed.error.message.trim()
-    if (typeof parsed?.error === 'string' && parsed.error.trim()) return parsed.error.trim()
-    if (typeof parsed?.message === 'string' && parsed.message.trim()) return parsed.message.trim()
-    if (typeof parsed?.detail === 'string' && parsed.detail.trim()) return parsed.detail.trim()
-  } catch {
-    // Non-JSON response body.
-  }
-  return text.slice(0, 300).trim() || fallback
 }
 
 async function checkOpenAiCompatible(
@@ -234,14 +214,6 @@ async function checkOllama(params: {
   }
 }
 
-export function normalizeOpenClawUrl(raw: string): { httpUrl: string; wsUrl: string } {
-  let url = (raw || 'http://localhost:18789').replace(/\/+$/, '')
-  if (!/^(https?|wss?):\/\//i.test(url)) url = `http://${url}`
-  const httpUrl = url.replace(/^ws:/i, 'http:').replace(/^wss:/i, 'https:')
-  const wsUrl = httpUrl.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:')
-  return { httpUrl, wsUrl }
-}
-
 async function checkOpenClaw(apiKey: string, endpointRaw: string): Promise<{ ok: boolean; message: string; normalizedEndpoint: string; deviceId?: string; errorCode?: string; recommendedModel?: string }> {
   const { httpUrl: normalizedEndpoint, wsUrl } = normalizeOpenClawUrl(endpointRaw)
   const token = apiKey || undefined
@@ -258,9 +230,10 @@ async function checkOpenClaw(apiKey: string, endpointRaw: string): Promise<{ ok:
   let recommendedModel: string | undefined
   if (result.ws) {
     try {
-      const payload = await rpcOnConnectedGateway(result.ws, 'models.list', {}, 8_000) as any
-      const models = Array.isArray(payload?.models) ? payload.models : Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : []
-      const first = models[0]
+      const payload = await rpcOnConnectedGateway(result.ws, 'models.list', {}, 8_000) as Record<string, unknown> | unknown[] | undefined
+      const p = payload as Record<string, unknown> | undefined
+      const models: unknown[] = Array.isArray(p?.models) ? p.models as unknown[] : Array.isArray(p?.data) ? p.data as unknown[] : Array.isArray(payload) ? payload : []
+      const first = models[0] as Record<string, unknown> | string | undefined
       if (typeof first === 'string') {
         recommendedModel = first
       } else if (typeof first?.id === 'string') {

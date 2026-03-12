@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { normalizeOllamaSetupEndpoint, normalizeOpenClawUrl, parseErrorMessage } from './route'
+import { normalizeOllamaSetupEndpoint, normalizeOpenClawUrl, parseErrorMessage } from './helpers'
 
 test('normalizeOllamaSetupEndpoint strips local /v1 suffixes but preserves cloud endpoints', () => {
   assert.equal(

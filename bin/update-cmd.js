@@ -75,7 +75,6 @@ function runRegistrySelfUpdate(
   packageManager = resolveRegistryPackageManager(),
   execImpl = execFileSync,
   logger = { log, logError },
-  rebuildImpl = execFileSync,
 ) {
   const update = getGlobalUpdateSpec(packageManager, PACKAGE_NAME)
   logger.log(`No git checkout detected. Updating the global ${PACKAGE_NAME} install via ${packageManager}...`)
@@ -91,9 +90,6 @@ function runRegistrySelfUpdate(
     logger.logError(`Retry manually with: ${update.display}`)
     return 1
   }
-
-  const rebuildExitCode = rebuildStandaloneServer(rebuildImpl, logger)
-  if (rebuildExitCode !== 0) return rebuildExitCode
 
   logger.log('Restart the server to apply changes: swarmclaw server stop && swarmclaw server start')
   return 0

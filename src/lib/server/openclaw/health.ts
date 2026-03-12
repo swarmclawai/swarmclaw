@@ -1,6 +1,8 @@
 import { deriveOpenClawWsUrl, normalizeOpenClawEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { wsConnect } from '@/lib/providers/openclaw'
-import { decryptKey, loadCredentials } from '../storage'
+import { decryptKey, loadCredentials, loadGatewayProfiles, saveGatewayProfiles } from '../storage'
+import { notify } from '../ws-hub'
+import type { GatewayProfile } from '@/types'
 
 export interface OpenClawHealthInput {
   endpoint?: string | null
@@ -410,4 +412,31 @@ export async function probeOpenClawHealth(input: OpenClawHealthInput): Promise<O
     warning: http.warning,
     hint: http.hint,
   }
+}
+
+export function persistGatewayHealthResult(
+  id: string,
+  result: OpenClawHealthResult,
+  now = Date.now(),
+): GatewayProfile | null {
+  const gateways = loadGatewayProfiles()
+  const gateway = gateways[id]
+  if (!gateway) return null
+
+  gateway.status = result.ok ? 'healthy' : (result.authProvided ? 'degraded' : 'offline')
+  gateway.lastCheckedAt = now
+  gateway.lastError = result.ok ? null : (result.error || result.hint || 'Gateway health check failed.')
+  gateway.lastModelCount = Array.isArray(result.models) ? result.models.length : 0
+  gateway.deployment = {
+    ...(gateway.deployment || {}),
+    lastVerifiedAt: now,
+    lastVerifiedOk: result.ok,
+    lastVerifiedMessage: result.ok
+      ? result.message
+      : (result.error || result.hint || 'Gateway health check failed.'),
+  }
+  gateway.updatedAt = now
+  saveGatewayProfiles(gateways)
+  notify('gateways')
+  return gateway
 }

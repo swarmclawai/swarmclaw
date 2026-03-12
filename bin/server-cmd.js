@@ -67,6 +67,10 @@ function resolveStandaloneBase(pkgRoot = PKG_ROOT) {
   return path.join(pkgRoot, '.next', 'standalone')
 }
 
+function isGitCheckout(pkgRoot = PKG_ROOT) {
+  return fs.existsSync(path.join(pkgRoot, '.git'))
+}
+
 function getVersion() {
   return readPackageVersion(PKG_ROOT) || 'unknown'
 }
@@ -99,7 +103,7 @@ function runBuild({ pkgRoot = PKG_ROOT } = {}) {
   const nextCli = ensurePackageDependencies(pkgRoot)
 
   log('Building Next.js application (this may take a minute)...')
-  execFileSync(process.execPath, [nextCli, 'build'], {
+  execFileSync(process.execPath, [nextCli, 'build', '--webpack'], {
     cwd: pkgRoot,
     stdio: 'inherit',
     env: {
@@ -330,6 +334,11 @@ function main() {
   }
 
   if (needsBuild(forceBuild)) {
+    if (!forceBuild && !isGitCheckout()) {
+      logError('Prebuilt standalone server bundle not found in this installed package.')
+      logError('This package version is incomplete for global installs. Update once a fixed npm release is published.')
+      process.exit(1)
+    }
     runBuild()
   }
 
@@ -346,6 +355,7 @@ module.exports = {
   SWARMCLAW_HOME,
   findStandaloneServer,
   getVersion,
+  isGitCheckout,
   main,
   needsBuild,
   resolveStandaloneBase,

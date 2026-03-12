@@ -5,7 +5,7 @@ import {
   buildGitHubIssueTaskTags,
   buildGitHubIssueTaskTitle,
   parseGitHubRepoInput,
-} from './route'
+} from './helpers'
 
 test('parseGitHubRepoInput accepts repo slugs and GitHub URLs', () => {
   assert.deepEqual(parseGitHubRepoInput('swarmclawai/swarmclaw'), {

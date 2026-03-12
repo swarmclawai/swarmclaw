@@ -28,6 +28,8 @@
     "swarmclaw": "./bin/swarmclaw.js"
   },
   "files": [
+    ".next/standalone/",
+    ".next/static/",
     "bin/",
     "bundled-skills/",
     "src/",
@@ -51,8 +53,8 @@
     "dev": "next dev --turbopack --hostname 0.0.0.0 -p 3456",
     "dev:webpack": "next dev --webpack --hostname 0.0.0.0 -p 3456",
     "dev:clean": "rm -rf .next && next dev --turbopack --hostname 0.0.0.0 -p 3456",
-    "build": "next build",
-    "build:ci": "NEXT_DISABLE_ESLINT=1 next build",
+    "build": "next build --webpack",
+    "build:ci": "NEXT_DISABLE_ESLINT=1 next build --webpack",
     "start": "node .next/standalone/server.js",
     "start:standalone": "node .next/standalone/server.js",
     "smoke:browser": "node ./scripts/browser-route-smoke.mjs",
@@ -69,6 +71,7 @@
     "test:setup": "tsx --test src/app/api/setup/check-provider/route.test.ts src/lib/server/provider-model-discovery.test.ts src/components/auth/setup-wizard/utils.test.ts src/components/auth/setup-wizard/types.test.ts src/hooks/setup-done-detection.test.ts src/lib/setup-defaults.test.ts",
     "test:openclaw": "tsx --test src/lib/openclaw/openclaw-agent-id.test.ts src/lib/openclaw/openclaw-endpoint.test.ts src/lib/server/agents/agent-runtime-config.test.ts src/lib/server/build-llm.test.ts src/lib/server/connectors/connector-routing.test.ts src/lib/server/connectors/openclaw.test.ts src/lib/server/gateway/protocol.test.ts src/lib/server/llm-response-cache.test.ts src/lib/server/mcp-conformance.test.ts src/lib/server/openclaw/agent-resolver.test.ts src/lib/server/openclaw/deploy.test.ts src/lib/server/openclaw/skills-normalize.test.ts src/lib/server/session-tools/openclaw-nodes.test.ts src/lib/server/tasks/task-quality-gate.test.ts src/lib/server/tasks/task-validation.test.ts src/lib/server/tool-capability-policy.test.ts src/lib/providers/openclaw-exports.test.ts src/app/api/openclaw/dashboard-url/route.test.ts",
     "test:mcp:conformance": "node --import tsx ./scripts/mcp-conformance-check.ts",
+    "prepack": "npm run build:ci",
     "postinstall": "node ./scripts/postinstall.mjs"
   },
   "dependencies": {

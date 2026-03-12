@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test, { afterEach } from 'node:test'
 
 import { GET as getWebhookHistory } from './[id]/history/route'
-import { handleWebhookPost } from './[id]/route'
+import { handleWebhookPost } from './[id]/helpers'
 import {
   loadAgents,
   loadSessions,
