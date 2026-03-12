@@ -95,8 +95,7 @@ function runRegistrySelfUpdate(
   return 0
 }
 
-function main() {
-  const args = process.argv.slice(3)
+function main(args = process.argv.slice(3)) {
   if (args.includes('-h') || args.includes('--help')) {
     console.log(`
 Usage: swarmclaw update

@@ -1183,6 +1183,9 @@ function renderGeneralHelp() {
     'SwarmClaw CLI',
     '',
     'Usage:',
+    '  swarmclaw',
+    '  swarmclaw help [command]',
+    '  swarmclaw run|start|stop|status|doctor|update|version',
     '  swarmclaw <group> <command> [args] [options]',
     '',
     'Global options:',
@@ -1199,6 +1202,15 @@ function renderGeneralHelp() {
     '  --help                 Show help',
     '  --version              Show package version',
     '',
+    'Top-level commands:',
+    '  run, start             Start the SwarmClaw server',
+    '  stop                   Stop the detached SwarmClaw server',
+    '  status                 Show local server status',
+    '  doctor                 Show local install/build diagnostics',
+    '  help                   Show root or command help',
+    '  update                 Update this SwarmClaw installation',
+    '  version                Show package version',
+    '',
     'Groups:',
   ]
 
@@ -1210,7 +1222,7 @@ function renderGeneralHelp() {
     }
   }
 
-  lines.push('', 'Use "swarmclaw <group> --help" for group commands.')
+  lines.push('', 'Use "swarmclaw help <command>" or "swarmclaw <group> --help" for more detail.')
   return lines.join('\n')
 }
 

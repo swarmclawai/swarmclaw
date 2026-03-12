@@ -4,9 +4,11 @@
 const { spawn } = require('node:child_process')
 
 const {
+  BROWSER_PROFILES_DIR,
   DATA_DIR,
   PKG_ROOT,
   SWARMCLAW_HOME,
+  WORKSPACE_DIR,
   findStandaloneServer,
 } = require('./server-cmd.js')
 
@@ -23,8 +25,7 @@ Options:
   console.log(help)
 }
 
-function main() {
-  const args = process.argv.slice(3)
+function main(args = process.argv.slice(3)) {
   for (const arg of args) {
     if (arg === '-h' || arg === '--help') {
       printHelp()
@@ -36,7 +37,10 @@ function main() {
     }
   }
 
+  process.env.SWARMCLAW_HOME = SWARMCLAW_HOME
   process.env.DATA_DIR = DATA_DIR
+  process.env.WORKSPACE_DIR = WORKSPACE_DIR
+  process.env.BROWSER_PROFILES_DIR = BROWSER_PROFILES_DIR
   process.env.SWARMCLAW_DAEMON_BACKGROUND_SERVICES = '1'
   process.env.SWARMCLAW_WORKER_ONLY = '1'
 
@@ -44,6 +48,8 @@ function main() {
   console.log(`[swarmclaw] Package root: ${PKG_ROOT}`)
   console.log(`[swarmclaw] Home: ${SWARMCLAW_HOME}`)
   console.log(`[swarmclaw] Data directory: ${DATA_DIR}`)
+  console.log(`[swarmclaw] Workspace directory: ${WORKSPACE_DIR}`)
+  console.log(`[swarmclaw] Browser profiles: ${BROWSER_PROFILES_DIR}`)
 
   const serverJs = findStandaloneServer()
   if (!serverJs) {

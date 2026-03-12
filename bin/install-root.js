@@ -144,13 +144,51 @@ function detectGlobalInstallManagerForRoot(pkgRoot, execImpl = execFileSync, env
   return null
 }
 
+function findLocalInstallProjectRoot(pkgRoot) {
+  const normalized = normalizeDir(pkgRoot)
+  if (!normalized) return null
+
+  const marker = `${path.sep}node_modules${path.sep}`
+  const idx = normalized.indexOf(marker)
+  if (idx === -1) return null
+
+  const projectRoot = normalized.slice(0, idx)
+  return projectRoot ? path.resolve(projectRoot) : path.parse(normalized).root
+}
+
+function resolveStateHome(opts = {}) {
+  const env = opts.env || process.env
+  const explicitHome = normalizeDir(env.SWARMCLAW_HOME)
+  if (explicitHome) return explicitHome
+
+  const pkgRoot = normalizeDir(opts.pkgRoot)
+    || resolvePackageRoot({
+      moduleDir: opts.moduleDir,
+      argv1: opts.argv1,
+      cwd: opts.cwd,
+    })
+  if (!pkgRoot) return path.join(os.homedir(), '.swarmclaw')
+
+  const execImpl = opts.execImpl || execFileSync
+  if (detectGlobalInstallManagerForRoot(pkgRoot, execImpl, env)) {
+    return path.join(os.homedir(), '.swarmclaw')
+  }
+
+  const projectRoot = findLocalInstallProjectRoot(pkgRoot)
+  if (projectRoot) return path.join(projectRoot, '.swarmclaw')
+
+  return path.join(os.homedir(), '.swarmclaw')
+}
+
 module.exports = {
   PACKAGE_NAME,
   candidateDirsFromArgv1,
   detectGlobalInstallManagerForRoot,
   findPackageRoot,
+  findLocalInstallProjectRoot,
   readPackageName,
   readPackageVersion,
   resolveGlobalRoot,
   resolvePackageRoot,
+  resolveStateHome,
 }

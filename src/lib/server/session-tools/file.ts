@@ -1,10 +1,9 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
-import os from 'os'
 import path from 'path'
 import { UPLOAD_DIR } from '../storage'
-import { WORKSPACE_DIR } from '../data-dir'
+import { BROWSER_PROFILES_DIR, WORKSPACE_DIR } from '../data-dir'
 import type { ToolBuildContext } from './context'
 import { safePath, truncate, listDirRecursive, MAX_FILE } from './context'
 import type { Plugin, PluginHooks } from '@/types'
@@ -387,19 +386,24 @@ export function findRecentSendFileFallbackPaths(cwd: string, maxAgeMs = 10 * 60 
   return dedup(candidates)
 }
 
+function getBrowserProfilesDir(): string {
+  return process.env.BROWSER_PROFILES_DIR || BROWSER_PROFILES_DIR
+}
+
 export function resolveSendFileSourcePath(cwd: string, rawPath: string, scope?: 'workspace' | 'machine'): string {
   const trimmed = rawPath.trim()
   const uploadMatch = trimmed.match(/^(?:sandbox:)?\/api\/uploads\/(.+)$/)
   if (uploadMatch) {
     return path.join(UPLOAD_DIR, path.basename(uploadMatch[1]))
   }
-  const browserProfileIdx = trimmed.lastIndexOf('.swarmclaw/browser-profiles/')
-  if (browserProfileIdx !== -1) {
-    const relative = trimmed.slice(browserProfileIdx)
-    return path.join(os.homedir(), relative)
+  const browserProfileMatch = trimmed
+    .replaceAll('\\', '/')
+    .match(/(?:^|\/)\.swarmclaw\/browser-profiles\/(.+)$/)
+  if (browserProfileMatch) {
+    return path.join(getBrowserProfilesDir(), browserProfileMatch[1])
   }
   if (trimmed.startsWith('browser-profiles/')) {
-    const candidate = path.join(os.homedir(), '.swarmclaw', trimmed)
+    const candidate = path.join(getBrowserProfilesDir(), trimmed.slice('browser-profiles/'.length))
     if (fs.existsSync(candidate)) return candidate
   }
   if (trimmed === '/workspace' || trimmed === 'workspace') return cwd

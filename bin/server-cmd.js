@@ -5,7 +5,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawn, execFileSync } = require('node:child_process')
-const os = require('node:os')
 const {
   detectPackageManager,
   getInstallCommand,
@@ -13,21 +12,30 @@ const {
 const {
   readPackageVersion,
   resolvePackageRoot,
+  resolveStateHome,
 } = require('./install-root.js')
 
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
 
-const SWARMCLAW_HOME = process.env.SWARMCLAW_HOME || path.join(os.homedir(), '.swarmclaw')
 const PKG_ROOT = resolvePackageRoot({
   moduleDir: __dirname,
   argv1: process.argv[1],
   cwd: process.cwd(),
 })
+const SWARMCLAW_HOME = resolveStateHome({
+  pkgRoot: PKG_ROOT,
+  moduleDir: __dirname,
+  argv1: process.argv[1],
+  cwd: process.cwd(),
+  env: process.env,
+})
 const PID_FILE = path.join(SWARMCLAW_HOME, 'server.pid')
 const LOG_FILE = path.join(SWARMCLAW_HOME, 'server.log')
 const DATA_DIR = path.join(SWARMCLAW_HOME, 'data')
+const WORKSPACE_DIR = path.join(SWARMCLAW_HOME, 'workspace')
+const BROWSER_PROFILES_DIR = path.join(SWARMCLAW_HOME, 'browser-profiles')
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -108,6 +116,7 @@ function runBuild({ pkgRoot = PKG_ROOT } = {}) {
     stdio: 'inherit',
     env: {
       ...process.env,
+      SWARMCLAW_HOME,
       DATA_DIR,
       SWARMCLAW_BUILD_MODE: '1',
     },
@@ -166,7 +175,10 @@ function startServer(opts, { pkgRoot = PKG_ROOT } = {}) {
 
   const env = {
     ...process.env,
+    SWARMCLAW_HOME,
     DATA_DIR,
+    WORKSPACE_DIR,
+    BROWSER_PROFILES_DIR,
     HOSTNAME: host,
     PORT: port,
     WS_PORT: wsPort,
@@ -174,6 +186,7 @@ function startServer(opts, { pkgRoot = PKG_ROOT } = {}) {
 
   log(`Starting server on ${host}:${port} (WebSocket: ${wsPort})...`)
   log(`Package root: ${pkgRoot}`)
+  log(`Home: ${SWARMCLAW_HOME}`)
   log(`Data directory: ${DATA_DIR}`)
 
   if (opts.detach) {
@@ -252,6 +265,8 @@ function showStatus() {
   log(`Package: ${PKG_ROOT}`)
   log(`Home: ${SWARMCLAW_HOME}`)
   log(`Data: ${DATA_DIR}`)
+  log(`Workspace: ${WORKSPACE_DIR}`)
+  log(`Browser profiles: ${BROWSER_PROFILES_DIR}`)
   log(`WebSocket port: ${process.env.WS_PORT || '(PORT + 1)'}`)
 
   const serverJs = findStandaloneServer()
@@ -286,8 +301,7 @@ Options:
   console.log(help)
 }
 
-function main() {
-  const args = process.argv.slice(3)
+function main(args = process.argv.slice(3)) {
   let command = 'start'
   let forceBuild = false
   let detach = false
@@ -334,12 +348,17 @@ function main() {
   }
 
   if (needsBuild(forceBuild)) {
-    if (!forceBuild && !isGitCheckout()) {
-      logError('Prebuilt standalone server bundle not found in this installed package.')
-      logError('This package version is incomplete for global installs. Update once a fixed npm release is published.')
+    if (!forceBuild) {
+      const installKind = isGitCheckout() ? 'checkout' : 'installed package'
+      log(`Standalone server bundle not found in this ${installKind}. Building locally...`)
+    }
+    try {
+      runBuild()
+    } catch (err) {
+      logError(`Build failed: ${err.message}`)
+      logError('Retry manually with: swarmclaw server --build')
       process.exit(1)
     }
-    runBuild()
   }
 
   startServer({ port, wsPort, host, detach })
@@ -351,8 +370,10 @@ if (require.main === module) {
 
 module.exports = {
   DATA_DIR,
+  BROWSER_PROFILES_DIR,
   PKG_ROOT,
   SWARMCLAW_HOME,
+  WORKSPACE_DIR,
   findStandaloneServer,
   getVersion,
   isGitCheckout,

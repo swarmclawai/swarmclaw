@@ -90,4 +90,39 @@ describe('data-dir resolution', () => {
       fs.rmSync(tempDir, { recursive: true, force: true })
     }
   })
+
+  it('derives runtime directories from SWARMCLAW_HOME when set', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-data-dir-home-'))
+    const fakeHome = path.join(tempDir, 'home')
+    const swarmclawHome = path.join(tempDir, 'project', '.swarmclaw')
+
+    try {
+      const env = { ...process.env, HOME: fakeHome, SWARMCLAW_HOME: swarmclawHome }
+      delete (env as any).DATA_DIR
+      delete (env as any).WORKSPACE_DIR
+      delete (env as any).BROWSER_PROFILES_DIR
+
+      const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', `
+        const modNs = await import('./src/lib/server/data-dir')
+        const mod = modNs.default || modNs['module.exports'] || modNs
+        console.log(JSON.stringify({
+          dataDir: mod.DATA_DIR,
+          workspaceDir: mod.WORKSPACE_DIR,
+          browserProfilesDir: mod.BROWSER_PROFILES_DIR,
+        }))
+      `], {
+        cwd: repoRoot,
+        env,
+        encoding: 'utf-8',
+      })
+
+      assert.equal(result.status, 0, result.stderr || result.stdout || 'subprocess failed')
+      const payload = extractLastJson(result.stdout || '')
+      assert.equal(payload.dataDir, path.join(swarmclawHome, 'data'))
+      assert.equal(payload.workspaceDir, path.join(swarmclawHome, 'workspace'))
+      assert.equal(payload.browserProfilesDir, path.join(swarmclawHome, 'browser-profiles'))
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
 })

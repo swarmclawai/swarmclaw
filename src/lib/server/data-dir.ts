@@ -13,9 +13,16 @@ function isBuildBootstrapEnv(env: NodeJS.ProcessEnv = process.env, argv: string[
 
 export const IS_BUILD_BOOTSTRAP = isBuildBootstrapEnv()
 
+function resolveSwarmclawHome(): string | null {
+  const configured = process.env.SWARMCLAW_HOME?.trim()
+  return configured ? path.resolve(configured) : null
+}
+
 function resolveDataDir(): string {
   if (process.env.DATA_DIR) return process.env.DATA_DIR
   if (IS_BUILD_BOOTSTRAP) return path.join(os.tmpdir(), 'swarmclaw-build-data')
+  const appHome = resolveSwarmclawHome()
+  if (appHome) return path.join(appHome, 'data')
   return path.join(process.cwd(), 'data')
 }
 
@@ -41,6 +48,8 @@ function supportsChildWrites(dir: string): boolean {
 function resolveWorkspaceDir(): string {
   if (process.env.WORKSPACE_DIR) return process.env.WORKSPACE_DIR
   if (IS_BUILD_BOOTSTRAP) return path.join(DATA_DIR, 'workspace')
+  const appHome = resolveSwarmclawHome()
+  if (appHome) return path.join(appHome, 'workspace')
   const external = path.join(os.homedir(), '.swarmclaw', 'workspace')
   if (supportsChildWrites(external)) {
     return external
@@ -53,6 +62,8 @@ export const WORKSPACE_DIR = resolveWorkspaceDir()
 function resolveBrowserProfilesDir(): string {
   if (process.env.BROWSER_PROFILES_DIR) return process.env.BROWSER_PROFILES_DIR
   if (IS_BUILD_BOOTSTRAP) return path.join(DATA_DIR, 'browser-profiles')
+  const appHome = resolveSwarmclawHome()
+  if (appHome) return path.join(appHome, 'browser-profiles')
   const external = path.join(os.homedir(), '.swarmclaw', 'browser-profiles')
   if (supportsChildWrites(external)) {
     return external

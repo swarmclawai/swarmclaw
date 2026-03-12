@@ -119,6 +119,51 @@ test('binary server help exits successfully', () => {
   assert.match(result.stdout, /Usage: swarmclaw server/i)
 })
 
+test('binary run alias routes to server help', () => {
+  const result = runBinary(['run', '--help'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Usage: swarmclaw server/i)
+})
+
+test('binary help command shows root help', () => {
+  const result = runBinary(['help'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /SwarmClaw CLI/i)
+  assert.match(result.stdout, /swarmclaw help \[command\]/i)
+})
+
+test('binary help command shows command help for run alias', () => {
+  const result = runBinary(['help', 'run'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Usage: swarmclaw server/i)
+})
+
+test('binary help command shows command help for doctor alias', () => {
+  const result = runBinary(['help', 'doctor'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Usage: swarmclaw doctor/i)
+})
+
+test('binary status alias routes to local server status', () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-binary-status-'))
+  const result = runBinary(['status'], {
+    env: {
+      SWARMCLAW_HOME: homeDir,
+    },
+  })
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Server: not running/i)
+
+  fs.rmSync(homeDir, { recursive: true, force: true })
+})
+
+test('binary doctor help exits successfully', () => {
+  const result = runBinary(['doctor', '--help'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Usage: swarmclaw doctor/i)
+})
+
 test('binary update help exits successfully', () => {
   const result = runBinary(['update', '--help'])
   assert.equal(result.status, 0, result.stderr)
@@ -127,6 +172,18 @@ test('binary update help exits successfully', () => {
 
 test('binary version output matches package version', () => {
   const result = runBinary(['--version'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), `${PACKAGE_JSON.name} ${PACKAGE_JSON.version}`)
+})
+
+test('binary bare version alias output matches package version', () => {
+  const result = runBinary(['version'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), `${PACKAGE_JSON.name} ${PACKAGE_JSON.version}`)
+})
+
+test('binary -v alias output matches package version', () => {
+  const result = runBinary(['-v'])
   assert.equal(result.status, 0, result.stderr)
   assert.equal(result.stdout.trim(), `${PACKAGE_JSON.name} ${PACKAGE_JSON.version}`)
 })

@@ -96,6 +96,19 @@ function normalizeLegacyCliEnv(env) {
   return nextEnv
 }
 
+function printPackageVersion() {
+  const pkg = require('../package.json')
+  process.stdout.write(`${pkg.name || 'swarmclaw'} ${pkg.version || '0.0.0'}\n`)
+}
+
+function printVersionHelp() {
+  process.stdout.write(`
+Usage: swarmclaw version
+
+Show the installed SwarmClaw package version.
+`.trim() + '\n')
+}
+
 async function runMappedCli(argv) {
   const cliPath = path.join(__dirname, '..', 'src', 'cli', 'index.js')
   const cliModule = await import(cliPath)
@@ -106,23 +119,89 @@ async function runMappedCli(argv) {
   return runCli(argv)
 }
 
+async function runHelp(argv) {
+  const [target, ...rest] = argv
+  if (!target) {
+    const code = await runMappedCli(['--help'])
+    process.exitCode = typeof code === 'number' ? code : 1
+    return
+  }
+
+  if (target === 'run' || target === 'start' || target === 'stop' || target === 'status' || target === 'server') {
+    require('./server-cmd.js').main(['--help'])
+    return
+  }
+  if (target === 'worker') {
+    require('./worker-cmd.js').main(['--help'])
+    return
+  }
+  if (target === 'doctor') {
+    require('./doctor-cmd.js').main(['--help'])
+    return
+  }
+  if (target === 'update') {
+    require('./update-cmd.js').main(['--help'])
+    return
+  }
+  if (target === 'version') {
+    printVersionHelp()
+    return
+  }
+
+  const forwarded = rest.includes('--help') || rest.includes('-h')
+    ? [target, ...rest]
+    : [target, ...rest, '--help']
+  const code = shouldUseLegacyTsCli(forwarded)
+    ? runLegacyTsCli(forwarded)
+    : await runMappedCli(forwarded)
+
+  process.exitCode = typeof code === 'number' ? code : 1
+}
+
 async function main() {
   const argv = process.argv.slice(2)
   const top = argv[0]
 
   // Default to 'server' when invoked with no arguments.
   if (!top) {
-    require('./server-cmd.js').main()
+    require('./server-cmd.js').main([])
     return
   }
 
-  // Route 'server', 'worker', and 'update' subcommands to CJS scripts (no TS dependency).
+  if (top === '-v') {
+    printPackageVersion()
+    return
+  }
+
+  if (top === 'version' && argv.length === 1) {
+    printPackageVersion()
+    return
+  }
+
+  if (top === 'help') {
+    await runHelp(argv.slice(1))
+    return
+  }
+
+  // Route local lifecycle/maintenance commands to CJS scripts (no TS dependency).
   if (top === 'server') {
-    require('./server-cmd.js').main()
+    require('./server-cmd.js').main(argv.slice(1))
+    return
+  }
+  if (top === 'run' || top === 'start') {
+    require('./server-cmd.js').main(argv.slice(1))
+    return
+  }
+  if (top === 'status' || top === 'stop') {
+    require('./server-cmd.js').main([top, ...argv.slice(1)])
     return
   }
   if (top === 'worker') {
     require('./worker-cmd.js').main()
+    return
+  }
+  if (top === 'doctor') {
+    require('./doctor-cmd.js').main(argv.slice(1))
     return
   }
   if (top === 'update') {
@@ -146,6 +225,7 @@ module.exports = {
   hasTsxRuntime,
   TS_CLI_ACTIONS,
   normalizeLegacyCliEnv,
+  printPackageVersion,
   supportsStripTypes,
   shouldUseLegacyTsCli,
 }

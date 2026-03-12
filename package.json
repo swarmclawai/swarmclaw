@@ -1,7 +1,7 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "1.0.1",
-  "description": "Self-hosted AI agent orchestration dashboard — manage LLM providers, orchestrate agent swarms, schedule tasks, and bridge agents to chat platforms.",
+  "version": "1.0.2",
+  "description": "Self-hosted AI agent orchestration dashboard with OpenClaw integration, multi-provider support, LangGraph workflows, and chat platform connectors.",
   "license": "MIT",
   "publishConfig": {
     "access": "public",
@@ -28,8 +28,6 @@
     "swarmclaw": "./bin/swarmclaw.js"
   },
   "files": [
-    ".next/standalone/",
-    ".next/static/",
     "bin/",
     "bundled-skills/",
     "src/",

@@ -29,7 +29,12 @@ export function clearDiscoveredSkillsCache(): void {
 }
 
 function buildCacheKey(cwd?: string): string {
-  return `${cwd || ''}`
+  return `${cwd || ''}|${resolveWorkspaceSkillsDir()}`
+}
+
+function resolveWorkspaceSkillsDir(): string {
+  const swarmclawHome = process.env.SWARMCLAW_HOME || path.join(os.homedir(), '.swarmclaw')
+  return path.join(swarmclawHome, 'skills')
 }
 
 function scanLayer(
@@ -81,7 +86,7 @@ function scanLayer(
  * Discover skills from three layers:
  *   1. Bundled: `bundled-skills/` (tracked with the app)
  *      Legacy fallback: `data/skills/`
- *   2. Workspace: `~/.swarmclaw/skills/` (user-installed)
+ *   2. Workspace: `<swarmclaw-home>/skills/` (user-installed)
  *   3. Project: `<cwd>/skills/` (project-local)
  *
  * Results are cached with a 5-second TTL. Later layers override
@@ -102,8 +107,8 @@ export function discoverSkills(opts?: { cwd?: string }): DiscoveredSkill[] {
     ...scanLayer(BUNDLED_SKILLS_DIR, 'bundled'),
   ]
 
-  // Layer 2: Workspace skills (~/.swarmclaw/skills/)
-  const workspaceDir = path.join(os.homedir(), '.swarmclaw', 'skills')
+  // Layer 2: Workspace skills (<swarmclaw-home>/skills/)
+  const workspaceDir = resolveWorkspaceSkillsDir()
   const workspace = scanLayer(workspaceDir, 'workspace')
 
   // Layer 3: Project-local skills (<cwd>/skills/)

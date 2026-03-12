@@ -113,10 +113,26 @@ describe('normalizeSendFilePaths', () => {
     fs.rmSync(cwd, { recursive: true, force: true })
   })
 
-  it('resolves browser profile screenshot paths back into the agent home directory', () => {
+  it('resolves browser profile screenshot paths into the configured browser profiles directory', () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'send-file-browser-profile-'))
     const resolved = resolveSendFileSourcePath(cwd, '../../../.swarmclaw/browser-profiles/example/mcp-output/page.png')
-    assert.match(resolved, new RegExp(`\\.swarmclaw[\\\\/]browser-profiles[\\\\/]example[\\\\/]mcp-output[\\\\/]page\\.png$`))
+    assert.match(resolved, new RegExp(`browser-profiles[\\\\/]example[\\\\/]mcp-output[\\\\/]page\\.png$`))
     fs.rmSync(cwd, { recursive: true, force: true })
+  })
+
+  it('resolves browser profile screenshot paths from BROWSER_PROFILES_DIR when set', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'send-file-browser-profile-env-'))
+    const browserProfilesDir = path.join(cwd, '.swarmclaw', 'browser-profiles')
+    const previousDir = process.env.BROWSER_PROFILES_DIR
+
+    try {
+      process.env.BROWSER_PROFILES_DIR = browserProfilesDir
+      const resolved = resolveSendFileSourcePath(cwd, '../../../.swarmclaw/browser-profiles/example/mcp-output/page.png')
+      assert.equal(resolved, path.join(browserProfilesDir, 'example', 'mcp-output', 'page.png'))
+    } finally {
+      if (previousDir === undefined) delete process.env.BROWSER_PROFILES_DIR
+      else process.env.BROWSER_PROFILES_DIR = previousDir
+      fs.rmSync(cwd, { recursive: true, force: true })
+    }
   })
 })
