@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { notFound } from '@/lib/server/collection-helpers'
-import { loadSchedule, loadAgents, loadTasks, upsertSchedule, upsertTask } from '@/lib/server/storage'
+import { loadSchedule, loadAgents, loadTasks, logActivity, upsertSchedule, upsertTask } from '@/lib/server/storage'
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import { enqueueTask } from '@/lib/server/runtime/queue'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
 import { getScheduleSignatureKey } from '@/lib/schedules/schedule-dedupe'
 import { prepareScheduledTaskRun } from '@/lib/server/tasks/task-lifecycle'
+import type { Schedule } from '@/types'
 
 type InFlightTask = {
   status?: string
@@ -14,8 +15,11 @@ type InFlightTask = {
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const schedule = loadSchedule(id)
+  const schedule = loadSchedule(id) as Schedule | null
   if (!schedule) return notFound()
+  if (schedule.status === 'archived') {
+    return NextResponse.json({ error: 'Archived schedules must be restored before they can run.' }, { status: 409 })
+  }
 
   const agents = loadAgents()
   const agent = agents[schedule.agentId]
@@ -56,6 +60,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   schedule.lastRunAt = now
   upsertSchedule(schedule.id, schedule)
+  logActivity({
+    entityType: 'schedule',
+    entityId: schedule.id,
+    action: 'started',
+    actor: 'user',
+    summary: `Schedule run started: "${schedule.name}"`,
+    detail: { taskId, runNumber: schedule.runNumber },
+  })
 
   return NextResponse.json({ ok: true, queued: true, taskId, runNumber: schedule.runNumber })
 }

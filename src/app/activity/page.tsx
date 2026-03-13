@@ -21,6 +21,8 @@ const ACTION_COLORS: Record<string, string> = {
   queued: 'bg-amber-500/15 text-amber-400',
   completed: 'bg-emerald-500/15 text-emerald-400',
   failed: 'bg-red-500/15 text-red-400',
+  archived: 'bg-white/[0.06] text-text-3',
+  restored: 'bg-sky-500/15 text-sky-400',
   approved: 'bg-green-500/15 text-green-400',
   rejected: 'bg-red-500/15 text-red-400',
 }

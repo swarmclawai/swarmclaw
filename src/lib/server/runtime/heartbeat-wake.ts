@@ -210,6 +210,13 @@ function scheduleFlush(delayMs: number, kind: WakeTimerKind = 'normal'): void {
   }, delay)
 }
 
+function isScheduleLikeWake(wake: WakeRequest): boolean {
+  return wake.events.some((event) => {
+    const reason = event.reason.toLowerCase()
+    return reason.includes('schedule')
+  })
+}
+
 export function buildWakeTriggerContext(events: WakeEvent[], nowIso?: string): string {
   const lines = [
     '## Wake Trigger Context',
@@ -267,6 +274,13 @@ function resolveWakeSessionId(
 ): string | undefined {
   if (wake.sessionId) return wake.sessionId
   if (!wake.agentId) return undefined
+  if (isScheduleLikeWake(wake)) {
+    for (const session of Object.values(sessions)) {
+      if (session.agentId !== wake.agentId) continue
+      if (isMainSession(session)) return String(session.id)
+    }
+    return ensureAgentThreadSession(wake.agentId)?.id
+  }
 
   let bestSession: { id: string; lastActiveAt: number } | null = null
   for (const session of Object.values(sessions)) {
@@ -278,6 +292,13 @@ function resolveWakeSessionId(
   }
   if (bestSession?.id) return bestSession.id
   return ensureAgentThreadSession(wake.agentId)?.id
+}
+
+export function resolveWakeSessionIdForTests(
+  wake: WakeRequest,
+  sessions: Record<string, Record<string, unknown>>,
+): string | undefined {
+  return resolveWakeSessionId(wake, sessions)
 }
 
 function flushWakes(): void {

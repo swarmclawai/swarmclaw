@@ -13,6 +13,7 @@ import {
   pruneIncompleteToolEvents,
   resolveContinuationAssistantText,
   resolveFinalStreamResponseText,
+  resolveSuccessfulTerminalToolBoundary,
   shouldSkipToolSummaryForShortResponse,
   shouldForceAttachmentFollowthrough,
   shouldForceExternalExecutionKickoffFollowthrough,
@@ -533,6 +534,35 @@ describe('shouldTerminateOnSuccessfulMemoryMutation', () => {
         toolOutput: 'Memory not found or access denied.',
       }),
       false,
+    )
+  })
+})
+
+describe('resolveSuccessfulTerminalToolBoundary', () => {
+  it('treats durable ask_human waits as terminal boundaries', () => {
+    assert.deepEqual(
+      resolveSuccessfulTerminalToolBoundary({
+        toolName: 'ask_human',
+        toolInput: { action: 'wait_for_reply', correlationId: 'corr_123' },
+        toolOutput: JSON.stringify({
+          id: 'watch_123',
+          type: 'mailbox',
+          status: 'active',
+          message: 'Durable wait registered.',
+        }),
+      }),
+      { kind: 'durable_wait' },
+    )
+  })
+
+  it('treats successful context compaction as a terminal boundary', () => {
+    assert.deepEqual(
+      resolveSuccessfulTerminalToolBoundary({
+        toolName: 'context_summarize',
+        toolInput: { keepLastN: 8 },
+        toolOutput: '{"status":"compacted","remaining":9}',
+      }),
+      { kind: 'context_compaction' },
     )
   })
 })

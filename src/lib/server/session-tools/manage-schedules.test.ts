@@ -168,6 +168,147 @@ describe('manage_schedules tool', () => {
     assert.equal(output.schedule.followupSenderName, 'Wayde')
   })
 
+  it('uses the current owner connector context for schedules created from the main session instead of historical sender messages', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
+      const storage = storageMod.default || storageMod
+      const crud = crudMod.default || crudMod
+
+      const now = Date.now()
+      storage.saveAgents({
+        default: {
+          id: 'default',
+          name: 'Hal',
+          description: '',
+          systemPrompt: '',
+          provider: 'openai',
+          model: 'gpt-test',
+          threadSessionId: 'session-main',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveSessions({
+        'session-main': {
+          id: 'session-main',
+          name: 'Hal',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'default',
+          provider: 'openai',
+          model: 'gpt-test',
+          credentialId: null,
+          apiEndpoint: null,
+          claudeSessionId: null,
+          codexThreadId: null,
+          opencodeSessionId: null,
+          delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null },
+          messages: [
+            {
+              role: 'user',
+              text: 'Tell Carmen something earlier',
+              source: {
+                connectorId: 'conn-wa',
+                channelId: '447700900222@s.whatsapp.net',
+                senderId: '447700900222@s.whatsapp.net',
+                senderName: 'Carmen',
+              },
+            },
+          ],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'default',
+          plugins: [],
+          connectorContext: {
+            connectorId: 'conn-wa',
+            platform: 'whatsapp',
+            channelId: '447700900111@s.whatsapp.net',
+            senderId: '447700900111@s.whatsapp.net',
+            senderName: 'Wayde',
+            isOwnerConversation: true,
+          },
+        },
+      })
+
+      const tools = crud.buildCrudTools({
+        cwd: process.env.WORKSPACE_DIR,
+        ctx: { sessionId: 'session-main', agentId: 'default', platformAssignScope: 'self' },
+        hasPlugin: (name) => name === 'manage_schedules',
+      })
+      const tool = tools.find((entry) => entry.name === 'manage_schedules')
+      await tool.invoke({
+        action: 'create',
+        data: JSON.stringify({
+          name: 'Owner reminder',
+          scheduleType: 'once',
+          runAt: now + 60_000,
+          taskPrompt: 'Remind me in an hour.',
+        }),
+      })
+
+      const schedule = Object.values(storage.loadSchedules())[0]
+      console.log(JSON.stringify({ schedule }))
+    `)
+
+    assert.equal(output.schedule.followupConnectorId, 'conn-wa')
+    assert.equal(output.schedule.followupChannelId, '447700900111@s.whatsapp.net')
+    assert.equal(output.schedule.followupSenderName, 'Wayde')
+  })
+
+  it('archives schedules on delete instead of hard-deleting them', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage')
+      const crudMod = await import('./src/lib/server/session-tools/crud')
+      const storage = storageMod.default || storageMod
+      const crud = crudMod.default || crudMod
+
+      const now = Date.now()
+      storage.saveAgents({
+        default: {
+          id: 'default',
+          name: 'Hal',
+          description: '',
+          systemPrompt: '',
+          provider: 'openai',
+          model: 'gpt-test',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+
+      const tools = crud.buildCrudTools({
+        cwd: process.env.WORKSPACE_DIR,
+        ctx: { sessionId: 'session-main', agentId: 'default', platformAssignScope: 'self' },
+        hasPlugin: (name) => name === 'manage_schedules',
+      })
+      const tool = tools.find((entry) => entry.name === 'manage_schedules')
+      const createdRaw = await tool.invoke({
+        action: 'create',
+        data: JSON.stringify({
+          name: 'Archive Me',
+          scheduleType: 'interval',
+          intervalMs: 60000,
+          taskPrompt: 'Archive this later.',
+        }),
+      })
+      const created = JSON.parse(createdRaw)
+      const deletedRaw = await tool.invoke({
+        action: 'delete',
+        id: created.id,
+      })
+
+      console.log(JSON.stringify({
+        deleted: JSON.parse(deletedRaw),
+        schedule: storage.loadSchedules()[created.id],
+      }))
+    `)
+
+    assert.equal(output.deleted.archived, output.schedule.id)
+    assert.equal(output.schedule.status, 'archived')
+    assert.equal(output.schedule.archivedFromStatus, 'active')
+  })
+
   it('rejects schedules whose referenced script path does not exist', () => {
     const output = runWithTempDataDir(`
       const storageMod = await import('./src/lib/server/storage')
@@ -414,7 +555,10 @@ describe('manage_schedules tool', () => {
     `)
 
     const parsed = JSON.parse(String(output.raw))
-    assert.deepEqual(new Set(parsed.deletedIds), new Set(['one', 'two']))
-    assert.deepEqual(output.schedules, {})
+    assert.deepEqual(new Set(parsed.archivedIds), new Set(['one', 'two']))
+    assert.deepEqual(
+      Object.fromEntries(Object.entries(output.schedules).map(([id, schedule]) => [id, schedule.status])),
+      { one: 'archived', two: 'archived' },
+    )
   })
 })

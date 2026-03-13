@@ -11,6 +11,7 @@ import { safeJsonParseObject } from './json-utils'
 import { normalizeHeartbeatSettingFields } from '@/lib/runtime/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
 import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
+import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 import type {
   AppNotification,
   BoardTask,
@@ -291,6 +292,10 @@ function normalizeStoredRecord(table: string, value: unknown): unknown {
     return agent
   }
 
+  if (table === 'schedules') {
+    return normalizeStoredScheduleRecord(value)
+  }
+
   if (table !== 'sessions') return value
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value
 
@@ -313,6 +318,197 @@ function normalizeStoredRecord(table: string, value: unknown): unknown {
   }
   if ('mainLoopState' in session) delete session.mainLoopState
   return session
+}
+
+const VALID_SCHEDULE_STATUSES = new Set(['active', 'paused', 'completed', 'failed', 'archived'])
+
+function normalizeStoredScheduleType(primary: unknown, legacy: unknown): 'cron' | 'interval' | 'once' {
+  const explicit = primary === 'cron' || primary === 'interval' || primary === 'once'
+    ? primary
+    : null
+  const legacyValue = legacy === 'cron' || legacy === 'interval' || legacy === 'once'
+    ? legacy
+    : null
+  if (!explicit && legacyValue) return legacyValue
+  if (explicit === 'interval' && legacyValue && legacyValue !== 'interval') return legacyValue
+  return explicit || legacyValue || 'interval'
+}
+
+function normalizeStoredScheduleTimestamp(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const intValue = Math.trunc(value)
+    return intValue > 0 ? intValue : null
+  }
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (/^\d+$/.test(trimmed)) {
+    const parsed = Number.parseInt(trimmed, 10)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+  }
+  const parsedTime = Date.parse(trimmed)
+  if (!Number.isFinite(parsedTime) || parsedTime <= 0) return null
+  return Math.trunc(parsedTime)
+}
+
+function normalizeStoredSchedulePositiveInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const intValue = Math.trunc(value)
+    return intValue > 0 ? intValue : null
+  }
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null
+  const parsed = Number.parseInt(trimmed, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function normalizeStoredConnectorChannelId(platform: unknown, raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  if (platform !== 'whatsapp') return trimmed
+  const withoutPrefix = trimmed.replace(/^whatsapp:/i, '').trim()
+  if (!withoutPrefix) return null
+  if (/^[\d]+(-[\d]+)*@g\.us$/i.test(withoutPrefix)) return withoutPrefix
+  const userMatch = withoutPrefix.match(/^(\d+)(?::\d+)?@s\.whatsapp\.net$/i)
+  if (userMatch) return `${userMatch[1]}@s.whatsapp.net`
+  const lidMatch = withoutPrefix.match(/^(\d+)(?::\d+)?@lid$/i)
+  if (lidMatch) return withoutPrefix
+  if (withoutPrefix.includes('@')) return withoutPrefix
+  const digits = withoutPrefix.replace(/[^\d+]/g, '')
+  const cleaned = digits.startsWith('+') ? digits.slice(1) : digits
+  return cleaned ? `${cleaned}@s.whatsapp.net` : null
+}
+
+function resolveStoredOwnerFollowupTarget(schedule: StoredObject): {
+  connectorId: string
+  channelId: string
+  senderId: string | null
+  senderName: string | null
+} | null {
+  const createdInSessionId = typeof schedule.createdInSessionId === 'string' ? schedule.createdInSessionId.trim() : ''
+  const agentId = typeof schedule.agentId === 'string' ? schedule.agentId.trim() : ''
+  if (!createdInSessionId || !agentId) return null
+
+  const sourceSession = loadCollectionItem('sessions', createdInSessionId) as StoredObject | null
+  if (!sourceSession || isDirectConnectorSession(sourceSession)) return null
+
+  const agent = loadCollectionItem('agents', agentId) as StoredObject | null
+  const threadSessionId = typeof agent?.threadSessionId === 'string' ? agent.threadSessionId.trim() : ''
+  if (threadSessionId && createdInSessionId !== threadSessionId) return null
+
+  const sessionConnectorContext = sourceSession.connectorContext && typeof sourceSession.connectorContext === 'object'
+    ? sourceSession.connectorContext as StoredObject
+    : null
+  const contextIsOwnerConversation = sessionConnectorContext?.isOwnerConversation === true
+  const contextConnectorId = typeof sessionConnectorContext?.connectorId === 'string' ? sessionConnectorContext.connectorId.trim() : ''
+  const contextChannelId = normalizeStoredConnectorChannelId(sessionConnectorContext?.platform, sessionConnectorContext?.channelId)
+  if (contextIsOwnerConversation && contextConnectorId && contextChannelId) {
+    const contextSenderId = typeof sessionConnectorContext?.senderId === 'string' ? sessionConnectorContext.senderId.trim() : ''
+    const contextSenderName = typeof sessionConnectorContext?.senderName === 'string' ? sessionConnectorContext.senderName.trim() : ''
+    return {
+      connectorId: contextConnectorId,
+      channelId: contextChannelId,
+      senderId: contextSenderId || null,
+      senderName: contextSenderName || null,
+    }
+  }
+
+  const connectorId = typeof schedule.followupConnectorId === 'string' ? schedule.followupConnectorId.trim() : ''
+  if (!connectorId) return null
+  const connector = loadCollectionItem('connectors', connectorId) as StoredObject | null
+  if (!connector) return null
+  const connectorAgentId = typeof connector.agentId === 'string' ? connector.agentId.trim() : ''
+  if (connectorAgentId && connectorAgentId !== agentId) return null
+
+  const connectorConfig = connector.config && typeof connector.config === 'object'
+    ? connector.config as Record<string, unknown>
+    : {}
+  const ownerSenderId = typeof connectorConfig.ownerSenderId === 'string' ? connectorConfig.ownerSenderId.trim() : ''
+  const ownerChannelId = normalizeStoredConnectorChannelId(
+    connector.platform,
+    ownerSenderId || connectorConfig.outboundJid || connectorConfig.outboundTarget,
+  )
+  if (!ownerChannelId) return null
+
+  return {
+    connectorId,
+    channelId: ownerChannelId,
+    senderId: ownerSenderId || null,
+    senderName: null,
+  }
+}
+
+function normalizeStoredScheduleRecord(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+
+  const schedule = value as StoredObject
+  schedule.scheduleType = normalizeStoredScheduleType(schedule.scheduleType, schedule.type)
+  if ('type' in schedule) delete schedule.type
+
+  const status = typeof schedule.status === 'string' ? schedule.status.trim().toLowerCase() : ''
+  schedule.status = VALID_SCHEDULE_STATUSES.has(status) ? status : 'active'
+
+  const intervalMs = normalizeStoredSchedulePositiveInt(schedule.intervalMs)
+  if (intervalMs != null) schedule.intervalMs = intervalMs
+  else delete schedule.intervalMs
+
+  const staggerSec = normalizeStoredSchedulePositiveInt(schedule.staggerSec)
+  if (staggerSec != null) schedule.staggerSec = staggerSec
+  else delete schedule.staggerSec
+
+  const runAt = normalizeStoredScheduleTimestamp(schedule.runAt)
+  if (runAt != null) schedule.runAt = runAt
+  else delete schedule.runAt
+
+  const lastRunAt = normalizeStoredScheduleTimestamp(schedule.lastRunAt)
+  if (lastRunAt != null) schedule.lastRunAt = lastRunAt
+  else delete schedule.lastRunAt
+
+  const nextRunAt = normalizeStoredScheduleTimestamp(schedule.nextRunAt)
+  if (nextRunAt != null) schedule.nextRunAt = nextRunAt
+  else delete schedule.nextRunAt
+
+  const archivedAt = normalizeStoredScheduleTimestamp(schedule.archivedAt)
+  if (archivedAt != null) schedule.archivedAt = archivedAt
+  else delete schedule.archivedAt
+
+  const archivedFromStatus = typeof schedule.archivedFromStatus === 'string'
+    ? schedule.archivedFromStatus.trim().toLowerCase()
+    : ''
+  if (archivedFromStatus === 'active' || archivedFromStatus === 'paused' || archivedFromStatus === 'completed' || archivedFromStatus === 'failed') {
+    schedule.archivedFromStatus = archivedFromStatus
+  } else {
+    delete schedule.archivedFromStatus
+  }
+
+  if (schedule.status === 'archived') {
+    delete schedule.nextRunAt
+  } else if (schedule.scheduleType === 'once') {
+    if (typeof schedule.runAt === 'number') {
+      if (schedule.status === 'completed' || schedule.status === 'failed') {
+        delete schedule.nextRunAt
+      } else if (typeof schedule.nextRunAt !== 'number' || schedule.nextRunAt !== schedule.runAt) {
+        schedule.nextRunAt = schedule.runAt
+      }
+    }
+  } else if (schedule.scheduleType === 'cron') {
+    if (!schedule.cron) delete schedule.nextRunAt
+  }
+
+  const ownerTarget = resolveStoredOwnerFollowupTarget(schedule)
+  if (ownerTarget) {
+    schedule.followupConnectorId = ownerTarget.connectorId
+    schedule.followupChannelId = ownerTarget.channelId
+    if (ownerTarget.senderId) schedule.followupSenderId = ownerTarget.senderId
+    else delete schedule.followupSenderId
+    if (ownerTarget.senderName) schedule.followupSenderName = ownerTarget.senderName
+    else delete schedule.followupSenderName
+    delete schedule.followupThreadId
+  }
+
+  return schedule
 }
 
 function loadCollection(table: string): Record<string, StoredObject> {
@@ -1063,9 +1259,18 @@ export function patchAgent(
 
 // --- Schedules ---
 const schedulesStore = createCollectionStore('schedules')
-export const loadSchedules = schedulesStore.load
+export function loadSchedules(): Record<string, any> {
+  const { result, normalizedCount } = loadCollectionWithNormalizationState('schedules')
+  if (normalizedCount > 0) saveCollection('schedules', result)
+  return result
+}
 export const saveSchedules = schedulesStore.save
-export const loadSchedule = schedulesStore.loadItem
+export function loadSchedule(id: string): Record<string, any> | null {
+  const schedule = loadCollectionItem('schedules', id) as Record<string, any> | null
+  if (!schedule) return null
+  upsertCollectionItem('schedules', id, schedule)
+  return schedule
+}
 export const upsertSchedule = schedulesStore.upsert
 export const upsertSchedules = schedulesStore.upsertMany
 

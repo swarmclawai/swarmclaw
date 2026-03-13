@@ -62,10 +62,16 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
   const prio = task.priority && priorityConfig[task.priority]
 
   const isBlocked = Array.isArray(task.blockedBy) && task.blockedBy.length > 0
-  const isOverdue = task.dueAt && task.dueAt < now && task.status !== 'completed' && task.status !== 'archived'
+  const isOverdue = task.dueAt
+    && task.dueAt < now
+    && task.status !== 'completed'
+    && task.status !== 'failed'
+    && task.status !== 'cancelled'
+    && task.status !== 'archived'
   const borderColor = isBlocked ? 'border-l-rose-500'
     : task.status === 'running' ? 'border-l-emerald-500'
     : task.status === 'failed' ? 'border-l-red-500'
+    : task.status === 'cancelled' ? 'border-l-white/15'
     : 'border-l-transparent'
 
   const handleQueue = async (e: React.MouseEvent) => {
@@ -299,7 +305,7 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
           </button>
         )}
 
-        {task.sessionId && (task.status === 'running' || task.status === 'completed') && (
+        {task.sessionId && (task.status === 'running' || task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') && (
           <button
             onClick={handleViewSession}
             className="ml-auto px-2.5 py-1 rounded-[8px] text-[11px] font-600 bg-white/[0.06] text-text-2 border-none cursor-pointer
@@ -310,7 +316,7 @@ export function TaskCard({ task, selectionMode, selected, onToggleSelect, index 
           </button>
         )}
 
-        {(task.status === 'completed' || task.status === 'failed') && !task.sessionId && (
+        {(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') && !task.sessionId && (
           <button
             onClick={(e) => { e.stopPropagation(); setConfirmArchive(true) }}
             aria-label="Archive task"

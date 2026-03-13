@@ -4,7 +4,12 @@ import type { Plugin, PluginHooks } from '@/types'
 import type { ToolBuildContext } from './context'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
-import { ackMailboxEnvelope, listMailbox, sendMailboxEnvelope } from '@/lib/server/chatrooms/session-mailbox'
+import {
+  ackMailboxEnvelope,
+  findPendingHumanRequestEnvelope,
+  listMailbox,
+  sendMailboxEnvelope,
+} from '@/lib/server/chatrooms/session-mailbox'
 import { loadApprovals } from '../storage'
 import { requestApproval } from '../approvals'
 import { createWatchJob, getWatchJob } from '@/lib/server/runtime/watch-jobs'
@@ -24,9 +29,21 @@ async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { ses
       const options = Array.isArray(normalized.options)
         ? normalized.options.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         : []
-      const envelope = sendMailboxEnvelope({
+      const requestType = typeof normalized.type === 'string' ? normalized.type : 'human_request'
+      const existing = requestType === 'human_request'
+        ? findPendingHumanRequestEnvelope({
+            sessionId: toSessionId,
+            question,
+            options,
+            expectedFormat: typeof normalized.expectedFormat === 'string' ? normalized.expectedFormat : null,
+            notes: typeof normalized.notes === 'string' ? normalized.notes : null,
+            fromSessionId: bctx.sessionId || null,
+            fromAgentId: bctx.agentId || null,
+          })
+        : null
+      const envelope = existing || sendMailboxEnvelope({
         toSessionId,
-        type: typeof normalized.type === 'string' ? normalized.type : 'human_request',
+        type: requestType,
         payload: JSON.stringify({
           question,
           options,
@@ -38,11 +55,13 @@ async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { ses
         correlationId,
         ttlSec: typeof normalized.ttlSec === 'number' ? normalized.ttlSec : null,
       })
+      const effectiveCorrelationId = envelope.correlationId || correlationId
       return JSON.stringify({
         ok: true,
         envelope,
-        correlationId,
-        hint: `A human can answer via POST /api/chats/${toSessionId}/mailbox with action="send", type="human_reply", correlationId="${correlationId}", and payload set to the response.`,
+        correlationId: effectiveCorrelationId,
+        reused: existing ? true : undefined,
+        hint: `A human can answer via POST /api/chats/${toSessionId}/mailbox with action="send", type="human_reply", correlationId="${effectiveCorrelationId}", and payload set to the response.`,
       })
     }
 

@@ -982,7 +982,7 @@ export interface ClaudeSkill {
 }
 
 export type ScheduleType = 'cron' | 'interval' | 'once'
-export type ScheduleStatus = 'active' | 'paused' | 'completed' | 'failed'
+export type ScheduleStatus = 'active' | 'paused' | 'completed' | 'failed' | 'archived'
 
 export interface Schedule {
   id: string
@@ -1018,6 +1018,8 @@ export interface Schedule {
   /** Error message from last failed delivery */
   lastDeliveryError?: string | null
   status: ScheduleStatus
+  archivedAt?: number | null
+  archivedFromStatus?: Exclude<ScheduleStatus, 'archived'> | null
   linkedTaskId?: string | null
   runNumber?: number
   createdByAgentId?: string | null
@@ -1303,7 +1305,7 @@ export interface ActivityEntry {
   id: string
   entityType: 'agent' | 'task' | 'connector' | 'session' | 'webhook' | 'schedule'
   entityId: string
-  action: 'created' | 'updated' | 'deleted' | 'started' | 'stopped' | 'queued' | 'completed' | 'failed' | 'approved' | 'rejected'
+  action: 'created' | 'updated' | 'deleted' | 'started' | 'stopped' | 'queued' | 'completed' | 'failed' | 'archived' | 'restored' | 'approved' | 'rejected'
   actor: 'user' | 'agent' | 'system' | 'daemon'
   actorId?: string
   summary: string
@@ -1617,7 +1619,7 @@ export interface OrchestratorSecret {
 
 // --- Task Board ---
 
-export type BoardTaskStatus = 'backlog' | 'queued' | 'running' | 'completed' | 'failed' | 'archived'
+export type BoardTaskStatus = 'backlog' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'archived'
 
 export interface TaskComment {
   id: string

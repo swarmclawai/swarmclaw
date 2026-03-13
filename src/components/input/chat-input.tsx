@@ -9,6 +9,7 @@ import { useAutoResize } from '@/hooks/use-auto-resize'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { FilePreview } from '@/components/shared/file-preview'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { listQueuedMessagesForSession } from '@/lib/chat/queued-message-queue'
 import { toast } from 'sonner'
 import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/app/safe-storage'
 import { errorMessage } from '@/lib/shared-utils'
@@ -40,6 +41,7 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
   const queuedMessages = useChatStore((s) => s.queuedMessages)
   const addQueuedMessage = useChatStore((s) => s.addQueuedMessage)
   const removeQueuedMessage = useChatStore((s) => s.removeQueuedMessage)
+  const visibleQueuedMessages = listQueuedMessagesForSession(queuedMessages, sessionId)
 
   useEffect(() => {
     if (!extrasOpen) return
@@ -80,8 +82,8 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
         toast.error('Wait for the current reply to finish before sending files.')
         return
       }
-      if (text) {
-        addQueuedMessage(text)
+      if (text && sessionId) {
+        addQueuedMessage(sessionId, text)
         setValue('')
         if (textareaRef.current) textareaRef.current.style.height = 'auto'
       }
@@ -175,15 +177,15 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
           </div>
         )}
 
-        {queuedMessages.length > 0 && (
+        {visibleQueuedMessages.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
             <span className="label-mono text-amber-400/70">Sending next</span>
-            {queuedMessages.map((msg, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-amber-500/10 border border-amber-500/15 text-[12px] text-amber-300 font-mono max-w-[200px]">
-                <span className="truncate">{msg}</span>
+            {visibleQueuedMessages.map((item) => (
+              <span key={item.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-amber-500/10 border border-amber-500/15 text-[12px] text-amber-300 font-mono max-w-[200px]">
+                <span className="truncate">{item.text}</span>
                 <button
                   type="button"
-                  onClick={() => removeQueuedMessage(i)}
+                  onClick={() => removeQueuedMessage(item.id)}
                   className="shrink-0 text-amber-400/60 hover:text-amber-300 border-none bg-transparent cursor-pointer p-0"
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

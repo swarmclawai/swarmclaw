@@ -1,13 +1,23 @@
 import { NextResponse } from 'next/server'
-import { loadAgents, loadSchedules, upsertSchedule, upsertSchedules } from '@/lib/server/storage'
+import { loadAgents, loadSchedules, logActivity, upsertSchedule, upsertSchedules } from '@/lib/server/storage'
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { prepareScheduleCreate } from '@/lib/server/schedules/schedule-service'
 import { notify } from '@/lib/server/ws-hub'
 export const dynamic = 'force-dynamic'
 
-export async function GET(_req: Request) {
-  return NextResponse.json(loadSchedules())
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const includeArchived = searchParams.get('includeArchived') === 'true'
+  const schedules = loadSchedules()
+  if (includeArchived) return NextResponse.json(schedules)
+
+  const filtered: typeof schedules = {}
+  for (const [id, schedule] of Object.entries(schedules)) {
+    if (schedule.status === 'archived') continue
+    filtered[id] = schedule
+  }
+  return NextResponse.json(filtered)
 }
 
 export async function POST(req: Request) {
@@ -40,6 +50,13 @@ export async function POST(req: Request) {
   }
 
   upsertSchedule(prepared.scheduleId, prepared.schedule)
+  logActivity({
+    entityType: 'schedule',
+    entityId: prepared.scheduleId,
+    action: 'created',
+    actor: 'user',
+    summary: `Schedule created: "${prepared.schedule.name}"`,
+  })
   notify('schedules')
   return NextResponse.json(prepared.schedule)
 }

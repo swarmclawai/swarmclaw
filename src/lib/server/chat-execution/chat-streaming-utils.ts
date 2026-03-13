@@ -116,6 +116,59 @@ export function shouldTerminateOnSuccessfulMemoryMutation(params: {
   return /no further memory lookup is needed unless the user asked you to verify/i.test(output)
 }
 
+export type TerminalToolBoundary =
+  | { kind: 'memory_write'; responseText?: string }
+  | { kind: 'durable_wait' }
+  | { kind: 'context_compaction' }
+
+function tryParseJsonObject(text: string): Record<string, unknown> | null {
+  const trimmed = String(text || '').trim()
+  if (!trimmed.startsWith('{')) return null
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+export function resolveSuccessfulTerminalToolBoundary(params: {
+  toolName: string
+  toolInput: unknown
+  toolOutput: string
+}): TerminalToolBoundary | null {
+  if (shouldTerminateOnSuccessfulMemoryMutation(params)) {
+    const responseText = extractSuggestions(params.toolOutput || '').clean.trim()
+    return {
+      kind: 'memory_write',
+      responseText: responseText || undefined,
+    }
+  }
+
+  const canonicalToolName = canonicalizePluginId(params.toolName) || params.toolName
+  const exactToolName = String(params.toolName || '').trim().toLowerCase()
+  const action = resolveToolAction(params.toolInput)
+  const parsedOutput = tryParseJsonObject(extractSuggestions(params.toolOutput || '').clean)
+
+  if (
+    canonicalToolName === 'ask_human'
+    && (action === 'wait_for_reply' || action === 'wait_for_approval')
+    && typeof parsedOutput?.id === 'string'
+    && parsedOutput.status === 'active'
+  ) {
+    return { kind: 'durable_wait' }
+  }
+
+  if (
+    (exactToolName === 'context_summarize' || canonicalToolName === 'context_summarize')
+    && parsedOutput?.status === 'compacted'
+  ) {
+    return { kind: 'context_compaction' }
+  }
+
+  return null
+}
+
 export function getWalletApprovalBoundaryAction(output: string): string | null {
   if (!output.includes('plugin_wallet_')) return null
   if (/"type":"plugin_wallet_transfer_request"/.test(output)) return 'send'

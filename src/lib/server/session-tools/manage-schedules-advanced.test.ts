@@ -117,6 +117,76 @@ describe('schedule normalization', () => {
       assert.equal(result.value.scheduleType, 'interval')
     }
   })
+
+  it('4b. storage repair prefers the owner route for main-thread schedule followups', () => {
+    const now = Date.now()
+    storage.saveAgents({
+      'agent-1': {
+        id: 'agent-1',
+        name: 'Hal',
+        provider: 'openai',
+        model: 'gpt-test',
+        threadSessionId: 'thread-main',
+        createdAt: now,
+        updatedAt: now,
+      },
+    })
+    storage.saveConnectors({
+      'conn-wa': {
+        id: 'conn-wa',
+        name: 'WhatsApp',
+        platform: 'whatsapp',
+        agentId: 'agent-1',
+        config: {
+          ownerSenderId: '447700900111',
+        },
+        isEnabled: true,
+        status: 'running',
+        createdAt: now,
+        updatedAt: now,
+      },
+    })
+    storage.saveSessions({
+      'thread-main': {
+        id: 'thread-main',
+        name: 'Hal',
+        cwd: process.env.WORKSPACE_DIR,
+        user: 'default',
+        provider: 'openai',
+        model: 'gpt-test',
+        claudeSessionId: null,
+        codexThreadId: null,
+        opencodeSessionId: null,
+        delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null },
+        messages: [],
+        createdAt: now,
+        lastActiveAt: now,
+        sessionType: 'human',
+        agentId: 'agent-1',
+        plugins: [],
+      },
+    })
+
+    const malformedSchedules = {
+      'sched-owner': makeSchedule({
+        id: 'sched-owner',
+        scheduleType: 'interval',
+        type: 'once',
+        runAt: '2026-03-12T09:00:00.000Z',
+        nextRunAt: '2026-03-12T09:00:00.000Z',
+        createdInSessionId: 'thread-main',
+        followupConnectorId: 'conn-wa',
+        followupChannelId: '447700900222@s.whatsapp.net',
+      }),
+    }
+    storage.saveSchedules(malformedSchedules)
+
+    const loaded = storage.loadSchedules()
+    assert.equal(loaded['sched-owner'].scheduleType, 'once')
+    assert.equal(loaded['sched-owner'].followupChannelId, '447700900111@s.whatsapp.net')
+    assert.equal(loaded['sched-owner'].runAt, Date.parse('2026-03-12T09:00:00.000Z'))
+    assert.equal(loaded['sched-owner'].nextRunAt, Date.parse('2026-03-12T09:00:00.000Z'))
+  })
 })
 
 // ══════════════════════════════════════════════════════════════════════
@@ -468,15 +538,14 @@ describe('additional scenarios', () => {
     assert.equal(key, '')
   })
 
-  it('38. cron schedule normalization does not set nextRunAt (no interval fallback)', () => {
+  it('38. cron schedule normalization computes the next run time', () => {
     const result = normalization.normalizeSchedulePayload(
       { scheduleType: 'cron', cron: '0 9 * * *', agentId: 'a1', taskPrompt: 'daily task' },
       { now: Date.now() },
     )
     assert.equal(result.ok, true)
     if (result.ok) {
-      // cron nextRunAt is not set by normalizeSchedulePayload (calculated by the scheduler)
-      assert.equal(result.value.nextRunAt, undefined)
+      assert.equal(typeof result.value.nextRunAt, 'number')
     }
   })
 

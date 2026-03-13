@@ -1069,6 +1069,132 @@ describe('sanitizeConnectorOutboundContent', () => {
     assert.equal(output.second.deduped, true)
   })
 
+  it('does not replay a wrapped same-turn send result across different recipients', () => {
+    const output = runWithTempDataDir(`
+      const fs = await import('node:fs')
+      const path = await import('node:path')
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const pluginsMod = await import('./src/lib/server/plugins')
+      const toolsMod = await import('./src/lib/server/session-tools/index')
+      const storage = storageMod.default || storageMod
+      const manager = managerMod.default || managerMod
+      const plugins = pluginsMod.default || pluginsMod
+      const toolsApi = toolsMod.default || toolsMod
+
+      const now = Date.now()
+      const sent = []
+      plugins.getPluginManager().registerBuiltin('test-cross-recipient-wrap-connector-plugin', {
+        name: 'Test Cross Recipient Wrap Connector Plugin',
+        connectors: [{
+          id: 'test-cross-recipient-wrap',
+          name: 'Test Cross Recipient Wrap',
+          description: 'Test connector for wrapped same-turn send routing',
+          startListener: async () => async () => {},
+          sendMessage: async (channelId, text, options) => {
+            sent.push({ channelId, text, options })
+            return { messageId: 'wrapped-' + sent.length }
+          },
+        }],
+      })
+
+      storage.saveSettings({})
+      storage.saveAgents({
+        agent_1: {
+          id: 'agent_1',
+          name: 'Hal2k',
+          provider: 'anthropic',
+          model: 'claude-test',
+          plugins: ['manage_connectors'],
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveConnectors({
+        conn_cross_wrap: {
+          id: 'conn_cross_wrap',
+          name: 'Cross Wrap Connector',
+          platform: 'test-cross-recipient-wrap',
+          agentId: 'agent_1',
+          credentialId: null,
+          config: { botToken: 'test-token', outboundJid: '185216370999415@lid' },
+          isEnabled: true,
+          status: 'stopped',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveSessions({
+        session_1: {
+          id: 'session_1',
+          name: 'Hal2k',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'wayde',
+          provider: 'anthropic',
+          model: 'claude-test',
+          claudeSessionId: null,
+          messages: [{
+            role: 'user',
+            text: 'Run the scheduled follow-ups now.',
+            time: now,
+          }],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'agent_1',
+          plugins: ['manage_connectors'],
+        },
+      })
+
+      const voicePath = path.join(process.env.DATA_DIR, 'cross-wrap.mp3')
+      fs.writeFileSync(voicePath, Buffer.from('fake-mp3'))
+
+      await manager.startConnector('conn_cross_wrap')
+      try {
+        const entry = plugins.getPluginManager()
+          .getTools(['manage_connectors'])
+          .find((tool) => tool.tool.name === 'connector_message_tool')
+        const session = storage.loadSessions().session_1
+        const ctx = { session, message: 'Run the scheduled follow-ups now.' }
+        const first = JSON.parse(String(await entry.tool.execute({
+          input: JSON.stringify({
+            action: 'send_voice_note',
+            connectorId: 'conn_cross_wrap',
+            to: '48172353241206@lid',
+            mediaPath: voicePath,
+          }),
+        }, ctx)))
+        const second = JSON.parse(String(await entry.tool.execute({
+          input: JSON.stringify({
+            action: 'send',
+            connectorId: 'conn_cross_wrap',
+            to: '185216370999415@lid',
+            text: 'Wayde ferry update',
+          }),
+        }, ctx)))
+        const third = JSON.parse(String(await entry.tool.execute({
+          input: JSON.stringify({
+            action: 'send_voice_note',
+            connectorId: 'conn_cross_wrap',
+            to: '185216370999415@lid',
+            mediaPath: voicePath,
+          }),
+        }, ctx)))
+        console.log(JSON.stringify({ first, second, third, sent }))
+      } finally {
+        await manager.stopConnector('conn_cross_wrap')
+      }
+    `)
+
+    assert.equal(output.sent.length, 3)
+    assert.equal(output.first.to, '48172353241206@lid')
+    assert.equal(output.second.to, '185216370999415@lid')
+    assert.equal(output.third.to, '185216370999415@lid')
+    assert.equal(output.first.messageId, 'wrapped-1')
+    assert.equal(output.second.messageId, 'wrapped-2')
+    assert.equal(output.third.messageId, 'wrapped-3')
+  })
+
   it('dedupes same-turn repeated start actions for the same connector and target', () => {
     const output = runWithTempDataDir(`
       const storageMod = await import('./src/lib/server/storage')

@@ -30,11 +30,14 @@ export function ScheduleList({ inSidebar }: Props) {
   const [search, setSearch] = useState('')
   const [loaded, setLoaded] = useState(false)
 
-  useEffect(() => { loadSchedules().finally(() => setLoaded(true)) }, [])
+  useEffect(() => {
+    loadSchedules().finally(() => setLoaded(true))
+  }, [loadSchedules])
 
   const filtered = useMemo(() => {
     return Object.values(schedules)
       .filter((s) => {
+        if (s.status === 'archived') return false
         if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false
         if (activeProjectFilter && s.projectId !== activeProjectFilter) return false
         return true

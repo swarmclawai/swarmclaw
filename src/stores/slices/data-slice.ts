@@ -94,7 +94,7 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
   schedules: {},
   loadSchedules: async () => {
     try {
-      const schedules = await fetchSchedules()
+      const schedules = await fetchSchedules(true)
       setIfChanged<AppState>(set, 'schedules', schedules)
     } catch (err) {
       console.warn('Store error:', err)

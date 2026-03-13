@@ -15,13 +15,19 @@ import type { BoardTask, BoardTaskStatus } from '@/types'
 import { dedup } from '@/lib/shared-utils'
 import { toast } from 'sonner'
 
-const ACTIVE_COLUMNS: BoardTaskStatus[] = ['backlog', 'queued', 'running', 'completed', 'failed']
+const ACTIVE_COLUMNS: BoardTaskStatus[] = ['backlog', 'queued', 'running', 'completed', 'failed', 'cancelled']
 type BoardViewMode = 'board' | 'list'
 type AttentionFilter = 'all' | 'needs-attention' | 'blocked' | 'overdue' | 'failed'
 type TaskScopeFilter = 'user-facing' | 'all' | 'agent'
 
 function isTaskOverdue(task: BoardTask, now: number | null): boolean {
-  return !!now && !!task.dueAt && task.dueAt < now && task.status !== 'completed' && task.status !== 'archived'
+  return !!now
+    && !!task.dueAt
+    && task.dueAt < now
+    && task.status !== 'completed'
+    && task.status !== 'failed'
+    && task.status !== 'cancelled'
+    && task.status !== 'archived'
 }
 
 function isInternalAgentTask(task: BoardTask): boolean {

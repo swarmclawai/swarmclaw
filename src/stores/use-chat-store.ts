@@ -4,6 +4,13 @@ import { create } from 'zustand'
 import type { Message, DevServerStatus, SSEEvent, ChatTraceBlock } from '../types'
 import { streamChat } from '@/lib/chat/chat'
 import { mergeCompletedAssistantMessage } from '@/lib/chat/chat-streaming-state'
+import {
+  clearQueuedMessagesForSession,
+  nextQueuedMessageId,
+  removeQueuedMessageById,
+  shiftQueuedMessageForSession,
+  type QueuedSessionMessage,
+} from '@/lib/chat/queued-message-queue'
 import { speak } from '../lib/tts'
 import { getStoredAccessKey } from '@/lib/app/api-client'
 import { useAppStore } from './use-app-store'
@@ -83,7 +90,7 @@ interface ChatState {
   debugOpen: boolean
   setDebugOpen: (open: boolean) => void
 
-  sendMessage: (text: string) => Promise<void>
+  sendMessage: (text: string, options?: { sessionId?: string; fromQueue?: boolean }) => Promise<void>
   editAndResend: (messageIndex: number, newText: string) => Promise<void>
   retryLastMessage: () => Promise<void>
   sendHeartbeat: (sessionId: string) => Promise<void>
@@ -101,10 +108,11 @@ interface ChatState {
   onStreamEvent: ((event: { t: string; text?: string }) => void) | null
 
   // Message queue (send while streaming)
-  queuedMessages: string[]
-  addQueuedMessage: (text: string) => void
-  removeQueuedMessage: (index: number) => void
-  shiftQueuedMessage: () => string | undefined
+  queuedMessages: QueuedSessionMessage[]
+  addQueuedMessage: (sessionId: string, text: string) => void
+  removeQueuedMessage: (id: string) => void
+  clearQueuedMessagesForSession: (sessionId: string) => void
+  shiftQueuedMessageForSession: (sessionId: string) => QueuedSessionMessage | undefined
 
   // Context clearing
   clearContext: () => Promise<void>
@@ -159,14 +167,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
   voiceConversationActive: false,
   onStreamEvent: null,
   queuedMessages: [],
-  addQueuedMessage: (text) => set((s) => ({ queuedMessages: [...s.queuedMessages, text] })),
-  removeQueuedMessage: (index) => set((s) => ({ queuedMessages: s.queuedMessages.filter((_, i) => i !== index) })),
-  shiftQueuedMessage: () => {
-    const q = get().queuedMessages
-    if (!q.length) return undefined
-    const next = q[0]
-    set({ queuedMessages: q.slice(1) })
-    return next
+  addQueuedMessage: (sessionId, text) => set((s) => ({
+    queuedMessages: [
+      ...s.queuedMessages,
+      { id: nextQueuedMessageId(), sessionId, text },
+    ],
+  })),
+  removeQueuedMessage: (id) => set((s) => ({ queuedMessages: removeQueuedMessageById(s.queuedMessages, id) })),
+  clearQueuedMessagesForSession: (sessionId) => set((s) => ({
+    queuedMessages: clearQueuedMessagesForSession(s.queuedMessages, sessionId),
+  })),
+  shiftQueuedMessageForSession: (sessionId) => {
+    const shifted = shiftQueuedMessageForSession(get().queuedMessages, sessionId)
+    if (!shifted.next) return undefined
+    set({ queuedMessages: shifted.queue })
+    return shifted.next
   },
 
   pendingFiles: [],
@@ -190,20 +205,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
   debugOpen: false,
   setDebugOpen: (open) => set({ debugOpen: open }),
 
-  sendMessage: async (text: string) => {
+  sendMessage: async (text: string, options) => {
+    const fromQueue = options?.fromQueue === true
+    const targetSessionId = options?.sessionId || selectActiveSessionId(useAppStore.getState())
     const { pendingFiles, replyingTo } = get()
-    if ((!text.trim() && !pendingFiles.length) || get().streaming) return
-    const sessionId = selectActiveSessionId(useAppStore.getState())
+    const filesForSend = fromQueue ? [] : pendingFiles
+    const replyForSend = fromQueue ? null : replyingTo
+    if ((!text.trim() && !filesForSend.length) || get().streaming) return
+    const sessionId = targetSessionId
     if (!sessionId) return
 
     // Primary image (backward compat)
-    const imagePath = pendingFiles[0]?.path
-    const imageUrl = pendingFiles[0]?.url
+    const imagePath = filesForSend[0]?.path
+    const imageUrl = filesForSend[0]?.url
     // All attached file paths
-    const attachedFiles = pendingFiles.length > 1
-      ? pendingFiles.map((f) => f.path)
+    const attachedFiles = filesForSend.length > 1
+      ? filesForSend.map((f) => f.path)
       : undefined
-    const replyToId = replyingTo?.message?.replyToId ? undefined : replyingTo?.message ? `msg-${replyingTo.index}` : undefined
+    const replyToId = replyForSend?.message?.replyToId ? undefined : replyForSend?.message ? `msg-${replyForSend.index}` : undefined
 
     const userMsg: Message = {
       role: 'user',
@@ -226,8 +245,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       thinkingText: '',
       thinkingStartTime: Date.now(),
       messages: [...s.messages, userMsg],
-      pendingFiles: [],
-      replyingTo: null,
+      pendingFiles: fromQueue ? s.pendingFiles : [],
+      replyingTo: fromQueue ? s.replyingTo : null,
       toolEvents: [],
       lastUsage: null,
     }))
@@ -241,6 +260,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let suggestions: string[] | null = null
     let toolCallCounter = 0
     let soundFiredStart = false
+    let streamCompleted = false
     const shouldIgnoreTransientError = (msg: string) =>
       /cancelled by steer mode|stopped by user/i.test(msg || '')
 
@@ -434,16 +454,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     void useAppStore.getState().refreshSession(sessionId)
 
-    // Auto-dequeue: if there are queued messages, send the next one
-    const nextQueued = get().shiftQueuedMessage()
-    if (nextQueued) {
-      setTimeout(() => get().sendMessage(nextQueued), 100)
+    streamCompleted = true
+
+    // Auto-dequeue only within the originating session to avoid cross-session leakage.
+    if (selectActiveSessionId(useAppStore.getState()) === sessionId) {
+      const nextQueued = get().shiftQueuedMessageForSession(sessionId)
+      if (nextQueued) {
+        setTimeout(() => {
+          void get().sendMessage(nextQueued.text, { sessionId, fromQueue: true })
+        }, 100)
+      }
     }
     } finally {
       // Guarantee cadence interval is cleared even if streamChat throws
       clearCadence()
       if (get().streaming) {
         set({ streaming: false, streamingSessionId: null, streamText: '', displayText: '', streamPhase: 'thinking' as const, streamToolName: '', thinkingText: '', thinkingStartTime: 0 })
+      }
+      if (!streamCompleted) {
+        get().clearQueuedMessagesForSession(sessionId)
       }
     }
   },

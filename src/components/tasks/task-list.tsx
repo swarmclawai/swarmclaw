@@ -14,6 +14,7 @@ const STATUS_DOT: Record<BoardTaskStatus, string> = {
   running: 'bg-blue-400 animate-pulse',
   completed: 'bg-emerald-400',
   failed: 'bg-red-400',
+  cancelled: 'bg-white/20',
   archived: 'bg-white/10',
 }
 
@@ -49,7 +50,7 @@ export function TaskList({ inSidebar }: { inSidebar?: boolean }) {
   }, [sorted, search, agents])
 
   const doneCount = useMemo(() =>
-    sorted.filter((t) => t.status === 'completed' || t.status === 'failed').length,
+    sorted.filter((t) => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled').length,
     [sorted],
   )
 
@@ -81,7 +82,7 @@ export function TaskList({ inSidebar }: { inSidebar?: boolean }) {
               className="w-full py-1.5 rounded-[8px] border border-white/[0.06] bg-transparent text-text-3 text-[11px] font-600 cursor-pointer hover:text-red-400 hover:border-red-400/20 hover:bg-red-400/[0.04] disabled:opacity-40 transition-all"
               style={{ fontFamily: 'inherit' }}
             >
-              {clearing ? 'Clearing...' : `Clear ${doneCount} completed/failed`}
+              {clearing ? 'Clearing...' : `Clear ${doneCount} finished`}
             </button>
           )}
         </div>

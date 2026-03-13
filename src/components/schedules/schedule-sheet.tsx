@@ -213,7 +213,7 @@ export function ScheduleSheet() {
     setDeleting(true)
     try {
       await deleteSchedule(editing.id)
-      toast.success('Schedule deleted')
+      toast.success('Schedule archived')
       await loadSchedules()
       setConfirmDelete(false)
       onClose()
@@ -586,7 +586,7 @@ export function ScheduleSheet() {
       <div className="flex gap-3 pt-2 border-t border-white/[0.04]">
         {editing && step === 0 && (
           <button onClick={() => setConfirmDelete(true)} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
-            Delete
+            Archive
           </button>
         )}
         {step > (isCreating ? templateStep : 0) && step !== templateStep && (
@@ -637,9 +637,9 @@ export function ScheduleSheet() {
       </div>
       <ConfirmDialog
         open={confirmDelete}
-        title="Delete Schedule?"
-        message={editing ? `Delete "${editing.name}"? This will remove the schedule from the app.` : 'Delete this schedule?'}
-        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        title="Archive Schedule?"
+        message={editing ? `Archive "${editing.name}"? Future runs will stop and any in-flight scheduled task will be cancelled.` : 'Archive this schedule?'}
+        confirmLabel={deleting ? 'Archiving...' : 'Archive'}
         confirmDisabled={deleting}
         cancelDisabled={deleting}
         danger

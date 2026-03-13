@@ -35,6 +35,7 @@ import {
   prepareScheduleCreate,
   prepareScheduleUpdate,
 } from '@/lib/server/schedules/schedule-service'
+import { archiveScheduleCluster } from '@/lib/server/schedules/schedule-lifecycle'
 import {
   applyTaskContinuationDefaults,
   applyTaskPatch,
@@ -48,6 +49,7 @@ import type { BoardTask } from '@/types'
 import { dedup } from '@/lib/shared-utils'
 import { isDirectConnectorSession } from '../connectors/session-kind'
 import { buildManageSkillsDescription, executeManageSkillsAction } from './skills'
+import { isMainSession } from '@/lib/server/agents/main-agent-loop'
 
 // ---------------------------------------------------------------------------
 // Document helpers
@@ -264,6 +266,12 @@ function deriveScheduleFollowupTarget(sessionId: string | null | undefined): {
     const contextTarget = pickSourceFields(session.connectorContext || undefined)
     if (contextTarget.followupConnectorId && contextTarget.followupChannelId) return contextTarget
   }
+  if (session.connectorContext?.isOwnerConversation === true) {
+    const ownerTarget = pickSourceFields(session.connectorContext || undefined)
+    if (ownerTarget.followupConnectorId && ownerTarget.followupChannelId) return ownerTarget
+  }
+
+  if (isMainSession(session)) return {}
 
   const messages = Array.isArray(session.messages) ? session.messages : []
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -851,6 +859,18 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
               if (!all[effectiveId]) return `Not found: ${res.label} "${effectiveId}"`
               if (toolKey === 'manage_secrets' && !canAccessSecret(all[effectiveId])) {
                 return 'Error: you do not have access to this secret.'
+              }
+              if (toolKey === 'manage_schedules') {
+                const archived = archiveScheduleCluster(effectiveId, {
+                  actor: { actor: ctx?.agentId ? 'agent' : 'user', actorId: ctx?.agentId || undefined },
+                })
+                if (!archived.ok) return `Error: failed to archive schedule "${effectiveId}".`
+                return JSON.stringify({
+                  archived: effectiveId,
+                  archivedIds: archived.archivedIds,
+                  cancelledTaskIds: archived.cancelledTaskIds,
+                  abortedRunSessionIds: archived.abortedRunSessionIds,
+                })
               }
               const deletedIds = toolKey === 'manage_schedules'
                 ? getScheduleClusterIds(all as Record<string, ScheduleLike>, all[effectiveId])

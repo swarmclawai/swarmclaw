@@ -75,6 +75,7 @@ import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/
 import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 import { errorMessage as toErrorMessage } from '@/lib/shared-utils'
 import { listUniversalToolAccessPluginIds } from '@/lib/server/universal-tool-access'
+import { bridgeHumanReplyFromChat } from '@/lib/server/chatrooms/session-mailbox'
 
 export {
   shouldApplySessionFreshnessReset,
@@ -936,6 +937,16 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       }
       session.lastActiveAt = Date.now()
       saveSessions(sessions)
+      if (!internal && source === 'chat') {
+        try {
+          bridgeHumanReplyFromChat({
+            sessionId,
+            payload: nextUserMessage.text,
+          })
+        } catch {
+          // Best-effort bridge only — normal chat persistence must not fail on mailbox cleanup.
+        }
+      }
       if (!internal) {
         try {
           await pluginManager.runHook('onMessage', { session, message: nextUserMessage }, { enabledIds: pluginsForRun })

@@ -27,7 +27,6 @@ import {
 import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
 import { cascadeUnblock } from '@/lib/server/dag-validation'
 import { performGuardianRollback } from '@/lib/server/agents/guardian'
-import { shouldAutoDeleteScheduleAfterTerminalRun } from '@/lib/schedules/schedule-origin'
 import type { Agent, BoardTask, Message, Session } from '@/types'
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import {
@@ -488,6 +487,10 @@ function queueContains(queue: string[], id: string): boolean {
   return queue.includes(id)
 }
 
+function isCancelledTask(task: Partial<BoardTask> | null | undefined): boolean {
+  return task?.status === 'cancelled'
+}
+
 function pushQueueUnique(queue: string[], id: string): void {
   if (!queueContains(queue, id)) queue.push(id)
 }
@@ -541,7 +544,7 @@ function queueTaskAutonomyObservation(input: {
   sessionId: string
   taskId: string
   agentId: string
-  status: 'completed' | 'failed'
+  status: 'completed' | 'failed' | 'cancelled'
   resultText?: string | null
   error?: string | null
   toolEvents?: ExecuteChatTurnResult['toolEvents']
@@ -850,19 +853,7 @@ function notifyMainChatScheduleResult(task: BoardTask): void {
 }
 
 function cleanupTerminalOneOffSchedule(task: BoardTask): void {
-  const scheduleTask = task as ScheduleTaskMeta
-  const sourceType = typeof scheduleTask.sourceType === 'string' ? scheduleTask.sourceType : ''
-  if (sourceType !== 'schedule') return
-  const scheduleId = typeof scheduleTask.sourceScheduleId === 'string' ? scheduleTask.sourceScheduleId : ''
-  if (!scheduleId) return
-
-  const schedules = loadSchedules()
-  const schedule = schedules[scheduleId]
-  if (!shouldAutoDeleteScheduleAfterTerminalRun(schedule as any)) return
-
-  delete schedules[scheduleId]
-  saveSchedules(schedules)
-  notify('schedules')
+  void task
 }
 
 /**
@@ -1105,6 +1096,12 @@ export function validateCompletedTasksQueue() {
 }
 
 function scheduleRetryOrDeadLetter(task: BoardTask, reason: string): 'retry' | 'dead_lettered' {
+  if (isCancelledTask(task)) {
+    task.retryScheduledAt = null
+    task.deadLetteredAt = null
+    task.updatedAt = Date.now()
+    return 'dead_lettered'
+  }
   applyTaskPolicyDefaults(task)
   const now = Date.now()
   task.attempts = (task.attempts || 0) + 1
@@ -1219,7 +1216,8 @@ export async function processNext() {
       const taskId = dequeueNextRunnableTask(queue, tasks as Record<string, BoardTask>)
       saveQueue(queue)
       if (!taskId) break
-      const task = tasks[taskId] as BoardTask | undefined
+      const latestTasks = loadTasks() as Record<string, BoardTask>
+      let task = latestTasks[taskId] as BoardTask | undefined
 
       if (!task || task.status !== 'queued') {
         continue
@@ -1229,7 +1227,7 @@ export async function processNext() {
       const blockers = Array.isArray(task.blockedBy) ? task.blockedBy as string[] : []
       if (blockers.length > 0) {
         const allBlockersDone = blockers.every((bid) => {
-          const blocker = tasks[bid] as BoardTask | undefined
+          const blocker = latestTasks[bid] as BoardTask | undefined
           return blocker?.status === 'completed'
         })
         if (!allBlockersDone) {
@@ -1248,7 +1246,7 @@ export async function processNext() {
         task.deadLetteredAt = Date.now()
         task.error = `Agent ${task.agentId} not found`
         task.updatedAt = Date.now()
-        saveTasks(tasks)
+        saveTasks(latestTasks)
         pushMainLoopEventToMainSessions({
           type: 'task_failed',
           text: `Task failed: "${task.title}" (${task.id}) — agent not found.`,
@@ -1260,7 +1258,7 @@ export async function processNext() {
         task.retryScheduledAt = now + DISABLED_AGENT_RETRY_MS
         task.updatedAt = now
         task.error = buildAgentDisabledMessage(agent, 'process queued tasks')
-        saveTasks(tasks)
+        saveTasks(latestTasks)
         notify('tasks')
         pushQueueUnique(queue, taskId)
         saveQueue(queue)
@@ -1268,6 +1266,12 @@ export async function processNext() {
           type: 'task_deferred',
           text: `Task deferred: "${task.title}" (${task.id}) — agent ${task.agentId} is disabled.`,
         })
+        continue
+      }
+
+      const beforeStartTasks = loadTasks() as Record<string, BoardTask>
+      task = beforeStartTasks[taskId] as BoardTask | undefined
+      if (!task || task.status !== 'queued') {
         continue
       }
 
@@ -1291,8 +1295,8 @@ export async function processNext() {
       const sourceScheduleId = typeof scheduleTask.sourceScheduleId === 'string'
         ? scheduleTask.sourceScheduleId
         : ''
-      const reusableTaskSessionId = resolveReusableTaskSessionId(task, tasks as Record<string, BoardTask>, sessionsForCwd)
-      const resumeContext = resolveTaskResumeContext(task, tasks as Record<string, BoardTask>, sessionsForCwd as Record<string, SessionLike | Session>)
+      const reusableTaskSessionId = resolveReusableTaskSessionId(task, beforeStartTasks, sessionsForCwd)
+      const resumeContext = resolveTaskResumeContext(task, beforeStartTasks, sessionsForCwd as Record<string, SessionLike | Session>)
 
       // Resolve the agent's persistent thread session to use as parentSessionId
       const agentThreadSessionId = agent.threadSessionId || null
@@ -1382,7 +1386,7 @@ export async function processNext() {
         note: `Attempt ${(task.attempts || 0) + 1}/${task.maxAttempts || '?'} started${continuationBits.length ? ` (${continuationBits.join('; ')})` : ''}`,
         updatedAt: Date.now(),
       }
-      saveTasks(tasks)
+      saveTasks(beforeStartTasks)
       pushMainLoopEventToMainSessions({
         type: 'task_running',
         text: `Task running: "${task.title}" (${task.id}) with ${agent.name}`,
@@ -1422,6 +1426,23 @@ export async function processNext() {
           : taskRun.text
         const t2 = loadTasks()
         const settings = loadSettings()
+        if (isCancelledTask(t2[taskId])) {
+          disableSessionHeartbeat(t2[taskId].sessionId)
+          notify('tasks')
+          notify('runs')
+          queueTaskAutonomyObservation({
+            runId: taskRunId,
+            sessionId,
+            taskId,
+            agentId: agent.id,
+            status: 'cancelled',
+            error: t2[taskId].error || 'Task cancelled',
+            toolEvents: taskRun.toolEvents,
+            sourceMessage: task.description || task.title,
+          })
+          console.warn(`[queue] Task "${task.title}" cancelled during execution`)
+          continue
+        }
         if (t2[taskId]) {
           applyTaskPolicyDefaults(t2[taskId])
           // Structured extraction: Zod-validated result with typed artifacts
@@ -1524,7 +1545,11 @@ export async function processNext() {
           sessionId,
           taskId,
           agentId: agent.id,
-          status: doneTask?.status === 'completed' ? 'completed' : 'failed',
+          status: doneTask?.status === 'completed'
+            ? 'completed'
+            : doneTask?.status === 'cancelled'
+              ? 'cancelled'
+              : 'failed',
           resultText: doneTask?.result || result || null,
           error: doneTask?.status === 'completed' ? null : (doneTask?.error || taskRun.error || null),
           toolEvents: taskRun.toolEvents,
@@ -1554,6 +1579,8 @@ export async function processNext() {
             notify('tasks')
           }
           console.log(`[queue] Task "${task.title}" completed`)
+        } else if (doneTask?.status === 'cancelled') {
+          console.warn(`[queue] Task "${task.title}" cancelled during execution`)
         } else {
           if (doneTask?.status === 'queued') {
             console.warn(`[queue] Task "${task.title}" scheduled for retry`)
@@ -1575,6 +1602,22 @@ export async function processNext() {
         console.error(`[queue] Task "${task.title}" failed:`, errMsg)
         const taskRunId = `${taskId}:attempt-${(task.attempts || 0) + 1}`
         const t2 = loadTasks()
+        if (isCancelledTask(t2[taskId])) {
+          disableSessionHeartbeat(t2[taskId].sessionId)
+          notify('tasks')
+          notify('runs')
+          queueTaskAutonomyObservation({
+            runId: taskRunId,
+            sessionId,
+            taskId,
+            agentId: agent.id,
+            status: 'cancelled',
+            error: t2[taskId].error || errMsg,
+            sourceMessage: task.description || task.title,
+          })
+          console.warn(`[queue] Task "${task.title}" aborted because it was cancelled`)
+          continue
+        }
         if (t2[taskId]) {
           applyTaskPolicyDefaults(t2[taskId])
           const retryState = scheduleRetryOrDeadLetter(t2[taskId], errMsg.slice(0, 500) || 'Unknown error')
@@ -1617,6 +1660,8 @@ export async function processNext() {
         const latest = loadTasks()[taskId] as BoardTask | undefined
         if (latest?.status === 'queued') {
           console.warn(`[queue] Task "${task.title}" queued for retry after error`)
+        } else if (latest?.status === 'cancelled') {
+          console.warn(`[queue] Task "${task.title}" stayed cancelled after abort`)
         } else {
           pushMainLoopEventToMainSessions({
             type: 'task_failed',
@@ -1641,13 +1686,13 @@ export async function processNext() {
   }
 }
 
-/** On boot, disable heartbeat on sessions whose tasks are already completed/failed. */
+/** On boot, disable heartbeat on sessions whose tasks are already terminal. */
 export function cleanupFinishedTaskSessions() {
   const tasks = loadTasks()
   const sessions = loadSessions()
   let cleaned = 0
   for (const task of Object.values(tasks) as BoardTask[]) {
-    if ((task.status === 'completed' || task.status === 'failed') && task.sessionId) {
+    if ((task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') && task.sessionId) {
       const session = sessions[task.sessionId]
       if (session && session.heartbeatEnabled !== false) {
         session.heartbeatEnabled = false

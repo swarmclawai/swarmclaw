@@ -61,6 +61,37 @@ function notifyWatchJobsChanged() {
   notify('watch_jobs')
 }
 
+function normalizeStringValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeStringArray(values: unknown): string[] {
+  return Array.isArray(values)
+    ? values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).sort()
+    : []
+}
+
+function findReusableWatchJob(input: CreateWatchJobInput): WatchJob | null {
+  if (input.type !== 'mailbox' && input.type !== 'approval') return null
+  const jobs = Object.values(loadWatchJobs())
+    .filter((job): job is WatchJob => !!job && typeof job === 'object')
+    .filter((job) => job.status === 'active' && job.type === input.type)
+  return jobs.find((job) => {
+    if ((job.sessionId || null) !== (input.sessionId || null)) return false
+    if ((job.agentId || null) !== (input.agentId || null)) return false
+    if ((job.createdByAgentId || null) !== (input.createdByAgentId || null)) return false
+    if (input.type === 'mailbox') {
+      return normalizeStringValue(job.target?.sessionId) === normalizeStringValue(input.target?.sessionId)
+        && normalizeStringValue(job.condition?.type || 'human_reply') === normalizeStringValue(input.condition?.type || 'human_reply')
+        && normalizeStringValue(job.condition?.correlationId) === normalizeStringValue(input.condition?.correlationId)
+        && normalizeStringValue(job.condition?.fromSessionId) === normalizeStringValue(input.condition?.fromSessionId)
+        && normalizeStringValue(job.condition?.containsText) === normalizeStringValue(input.condition?.containsText)
+    }
+    return normalizeStringValue(job.target?.approvalId) === normalizeStringValue(input.target?.approvalId)
+      && JSON.stringify(normalizeStringArray(job.condition?.statusIn)) === JSON.stringify(normalizeStringArray(input.condition?.statusIn))
+  }) || null
+}
+
 function finalizeWatchJob(job: WatchJob, status: WatchJob['status'], result?: Record<string, unknown> | null, error?: string | null): WatchJob {
   const updated: WatchJob = {
     ...job,
@@ -129,6 +160,8 @@ export async function createWatchJob(input: CreateWatchJobInput): Promise<WatchJ
   if (input.type === 'approval' && typeof input.target?.approvalId !== 'string') {
     throw new Error('Approval watches require an approvalId target.')
   }
+  const existing = findReusableWatchJob(input)
+  if (existing) return existing
   const createdAt = now()
   const job: WatchJob = {
     id: genId(10),

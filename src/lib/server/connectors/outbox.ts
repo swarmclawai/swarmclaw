@@ -200,7 +200,11 @@ async function processEntry(id: string, now: number): Promise<ConnectorOutboxEnt
   try {
     const { sendConnectorMessage } = await import('./manager')
     // Outbox entries always have channelId+text from enqueueConnectorOutbox
-    const result = await sendConnectorMessage(claimed as ConnectorOutboxEntry & { channelId: string; text: string })
+    const sendParams = {
+      ...claimed,
+      dedupeKey: claimed.dedupeKey || undefined,
+    } as ConnectorOutboxEntry & { channelId: string; text: string; dedupeKey?: string }
+    const result = await sendConnectorMessage(sendParams)
     const deliveredAt = Date.now()
     const next: ConnectorOutboxEntry = {
       ...claimed,

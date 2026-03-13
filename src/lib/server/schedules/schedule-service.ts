@@ -77,6 +77,7 @@ function normalizeScheduleStatus(value: unknown): ScheduleStatus | '' {
     || normalized === 'paused'
     || normalized === 'completed'
     || normalized === 'failed'
+    || normalized === 'archived'
     ? normalized
     : ''
 }
@@ -237,7 +238,7 @@ export function prepareScheduleUpdate(options: PrepareScheduleUpdateOptions): Pr
 
   const entries: Array<[string, ScheduleLike]> = [[options.id, nextSchedule]]
   const nextStatus = normalizeScheduleStatus(nextSchedule.status)
-  if (options.propagateEquivalentStatuses && (nextStatus === 'paused' || nextStatus === 'completed' || nextStatus === 'failed')) {
+  if (options.propagateEquivalentStatuses && (nextStatus === 'paused' || nextStatus === 'completed' || nextStatus === 'failed' || nextStatus === 'archived')) {
     const relatedIds = findRelatedScheduleIds(
       options.schedules,
       options.propagationSource || options.current,

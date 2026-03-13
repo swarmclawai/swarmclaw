@@ -242,6 +242,58 @@ describe('task-followups', () => {
       assert.equal(target!.channelId, '447123456789@s.whatsapp.net')
     })
 
+    it('repairs explicit main-session followups back to the owner route', () => {
+      const task = {
+        id: 'task-owner-fix',
+        title: 'Owner reminder',
+        description: '',
+        agentId: 'agent-1',
+        status: 'completed' as const,
+        priority: 'medium' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        createdInSessionId: 'session-main',
+        followupConnectorId: 'conn-wa',
+        followupChannelId: '447700900222@s.whatsapp.net',
+      }
+      const sessions = {
+        'session-main': {
+          id: 'session-main',
+          name: 'Hal',
+          user: 'default',
+          agentId: 'agent-1',
+          shortcutForAgentId: 'agent-1',
+          messages: [],
+        },
+      }
+      const connectors = {
+        'conn-wa': {
+          id: 'conn-wa',
+          name: 'WA',
+          platform: 'whatsapp' as const,
+          agentId: 'agent-1',
+          config: {
+            ownerSenderId: '447700900111',
+          },
+          enabled: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      }
+
+      const target = mod.resolveTaskOriginConnectorFollowupTarget({
+        task,
+        sessions: sessions as Record<string, import('@/lib/server/tasks/task-followups').SessionLike>,
+        connectors: connectors as Record<string, import('@/types').Connector>,
+        running: [],
+      })
+
+      assert.deepEqual(target, {
+        connectorId: 'conn-wa',
+        channelId: '447700900111@s.whatsapp.net',
+      })
+    })
+
     it('returns null when no origin can be resolved', () => {
       const task = {
         id: 'task-2',
@@ -319,6 +371,68 @@ describe('task-followups', () => {
       assert.ok(target)
       assert.equal(target!.connectorId, 'conn-1')
       assert.equal(target!.channelId, 'ch-ctx')
+    })
+
+    it('uses owner main-session connectorContext when available', () => {
+      const task = {
+        id: 'task-owner-main',
+        title: 'Owner session fallback',
+        description: '',
+        agentId: 'agent-1',
+        status: 'completed' as const,
+        priority: 'medium' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        createdInSessionId: 'session-main',
+      }
+      const sessions = {
+        'session-main': {
+          id: 'session-main',
+          name: 'Hal',
+          user: 'default',
+          agentId: 'agent-1',
+          shortcutForAgentId: 'agent-1',
+          connectorContext: {
+            connectorId: 'conn-wa',
+            channelId: '447700900111@s.whatsapp.net',
+            isOwnerConversation: true,
+          },
+          messages: [
+            {
+              role: 'user',
+              text: 'old mirrored sender',
+              source: {
+                connectorId: 'conn-wa',
+                channelId: '447700900222@s.whatsapp.net',
+              },
+            },
+          ],
+        },
+      }
+      const connectors = {
+        'conn-wa': {
+          id: 'conn-wa',
+          name: 'WA',
+          platform: 'whatsapp' as const,
+          agentId: 'agent-1',
+          config: {},
+          enabled: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      }
+
+      const target = mod.resolveTaskOriginConnectorFollowupTarget({
+        task,
+        sessions: sessions as Record<string, import('@/lib/server/tasks/task-followups').SessionLike>,
+        connectors: connectors as Record<string, import('@/types').Connector>,
+        running: [],
+      })
+
+      assert.deepEqual(target, {
+        connectorId: 'conn-wa',
+        channelId: '447700900111@s.whatsapp.net',
+      })
     })
 
     it('rejects connector owned by different agent', () => {

@@ -63,6 +63,7 @@ import {
   getWalletApprovalBoundaryAction,
   isWalletSimulationResult,
   pruneIncompleteToolEvents,
+  resolveSuccessfulTerminalToolBoundary,
   resolveToolAction,
   shouldForceExternalServiceSummary,
   shouldTerminateOnSuccessfulMemoryMutation,
@@ -100,6 +101,7 @@ export {
   shouldForceExternalExecutionFollowthrough,
   shouldForceDeliverableFollowthrough,
   shouldForceExternalServiceSummary,
+  resolveSuccessfulTerminalToolBoundary,
   shouldTerminateOnSuccessfulMemoryMutation,
   resolveFinalStreamResponseText,
   resolveContinuationAssistantText,
@@ -1222,6 +1224,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     && looksLikeOpenEndedDeliverableTask(message)
   const usedToolNames = new Set<string>()
   let loopDetectionTriggered: LoopDetectionResult | null = null
+  let terminalToolBoundary: 'memory_write' | 'durable_wait' | 'context_compaction' | null = null
   let terminalToolResponse = ''
 
   try {
@@ -1499,23 +1502,25 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
               output: outputStr,
               toolCallId: event.run_id,
             })
-            if (shouldTerminateOnSuccessfulMemoryMutation({
+            const toolBoundary = resolveSuccessfulTerminalToolBoundary({
               toolName,
               toolInput: event.data?.input,
               toolOutput: outputStr || '',
-            })) {
-              terminalToolResponse = extractSuggestions(outputStr || '').clean.trim()
+            })
+            if (toolBoundary) {
+              terminalToolBoundary = toolBoundary.kind
+              terminalToolResponse = toolBoundary.responseText || ''
               if (terminalToolResponse) {
                 lastSegment = terminalToolResponse
                 lastSettledSegment = terminalToolResponse
               }
-              logExecution(session.id, 'decision', 'Successful memory write is terminal for this turn.', {
+              logExecution(session.id, 'decision', `Terminal tool boundary reached: ${toolBoundary.kind}.`, {
                 agentId: session.agentId,
-                detail: { toolName, action: resolveToolAction(event.data?.input) || null },
+                detail: { toolName, action: resolveToolAction(event.data?.input) || null, boundary: toolBoundary.kind },
               })
               write(`data: ${JSON.stringify({
                 t: 'status',
-                text: JSON.stringify({ terminalToolResult: 'memory_write' }),
+                text: JSON.stringify({ terminalToolResult: toolBoundary.kind }),
               })}\n\n`)
               break
             }
@@ -1665,7 +1670,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
 
       if (reachedExecutionBoundary) break
 
-      if (terminalToolResponse) {
+      if (terminalToolBoundary) {
         const completedToolEvents = pruneIncompleteToolEvents(streamedToolEvents)
         streamedToolEvents.length = 0
         streamedToolEvents.push(...completedToolEvents)

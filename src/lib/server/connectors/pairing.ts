@@ -125,7 +125,7 @@ function loadStore(): PairingStore {
       const senderAddressingOverrides = dedupeSenderAddressingOverrides(
         Array.isArray(state.senderAddressingOverrides)
           ? state.senderAddressingOverrides
-            .filter((entry): entry is Partial<SenderAddressingOverride> => !!entry && typeof entry === 'object')
+            .filter((entry) => !!entry && typeof entry === 'object')
             .map((entry) => ({
               senderId: String(entry.senderId || ''),
               dmAddressingMode: parseDmAddressingMode(entry.dmAddressingMode, 'open'),

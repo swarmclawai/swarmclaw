@@ -8,6 +8,7 @@ import {
   hasPendingHeartbeatWake,
   mergeHeartbeatWakeRequest,
   requestHeartbeatNow,
+  resolveWakeSessionIdForTests,
   resetHeartbeatWakeStateForTests,
   snapshotPendingHeartbeatWakesForTests,
 } from '@/lib/server/runtime/heartbeat-wake'
@@ -127,5 +128,30 @@ describe('heartbeat-wake helpers', () => {
 
     assert.equal(deriveHeartbeatWakeDeliveryMode(connectorWake.events), 'tool_only')
     assert.equal(deriveHeartbeatWakeDeliveryMode(scheduleWake.events), 'default')
+  })
+
+  it('does not resolve schedule wakes to the most recently active session when sessionId is missing', () => {
+    const wake = mergeHeartbeatWakeRequest(undefined, {
+      agentId: 'agent-1',
+      reason: 'schedule',
+      source: 'schedule:daily',
+      requestedAt: 1,
+    })
+    const resolved = resolveWakeSessionIdForTests(wake, {
+      direct_latest: {
+        id: 'direct_latest',
+        agentId: 'agent-1',
+        lastActiveAt: 2_000,
+      },
+      main_thread: {
+        id: 'main_thread',
+        agentId: 'agent-1',
+        name: 'Molly',
+        shortcutForAgentId: 'agent-1',
+        lastActiveAt: 1_000,
+      },
+    })
+
+    assert.equal(resolved, 'main_thread')
   })
 })

@@ -188,4 +188,65 @@ describe('session-mailbox', () => {
     })
     assert.equal(env.type, 'message')
   })
+
+  it('reuses a matching pending human request envelope', () => {
+    createTestSession('mb-human-request')
+    const first = mailbox.sendMailboxEnvelope({
+      toSessionId: 'mb-human-request',
+      type: 'human_request',
+      payload: JSON.stringify({
+        question: 'What is Brendon\'s phone number?',
+        options: [],
+        expectedFormat: null,
+        notes: 'Use digits only',
+      }),
+      fromSessionId: 'agent-chat',
+      fromAgentId: 'agent-1',
+      correlationId: 'corr-1',
+    })
+
+    const found = mailbox.findPendingHumanRequestEnvelope({
+      sessionId: 'mb-human-request',
+      question: '  what is   brendon\'s phone number? ',
+      options: [],
+      expectedFormat: null,
+      notes: 'use digits only',
+      fromSessionId: 'agent-chat',
+      fromAgentId: 'agent-1',
+    })
+
+    assert.equal(found?.id, first.id)
+    assert.equal(found?.correlationId, 'corr-1')
+  })
+
+  it('bridges a plain chat reply into a mailbox human_reply envelope', () => {
+    createTestSession('mb-bridge')
+    const request = mailbox.sendMailboxEnvelope({
+      toSessionId: 'mb-bridge',
+      type: 'human_request',
+      payload: JSON.stringify({
+        question: 'What is Brendon\'s phone number?',
+        options: [],
+        expectedFormat: null,
+        notes: null,
+      }),
+      fromSessionId: 'agent-chat',
+      fromAgentId: 'agent-1',
+      correlationId: 'corr-bridge',
+    })
+
+    const reply = mailbox.bridgeHumanReplyFromChat({
+      sessionId: 'mb-bridge',
+      payload: '447700900123',
+    })
+
+    assert.ok(reply)
+    assert.equal(reply?.type, 'human_reply')
+    assert.equal(reply?.payload, '447700900123')
+    assert.equal(reply?.correlationId, 'corr-bridge')
+
+    const all = mailbox.listMailbox('mb-bridge', { includeAcked: true })
+    const ackedRequest = all.find((item) => item.id === request.id)
+    assert.equal(ackedRequest?.status, 'ack')
+  })
 })

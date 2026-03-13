@@ -78,6 +78,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     })
   }
 
+  if (prevStatus !== tasks[id].status && tasks[id].status === 'cancelled') {
+    disableSessionHeartbeat(tasks[id].sessionId)
+    notify('tasks')
+    return NextResponse.json(tasks[id])
+  }
+
   // If task is manually transitioned to a terminal status, disable session heartbeat.
   if (prevStatus !== tasks[id].status && (tasks[id].status === 'completed' || tasks[id].status === 'failed')) {
     disableSessionHeartbeat(tasks[id].sessionId)

@@ -1,7 +1,7 @@
 'use client'
 
 import { useAppStore } from '@/stores/use-app-store'
-import { ScheduleList } from '@/components/schedules/schedule-list'
+import { ScheduleConsole } from '@/components/schedules/schedule-console'
 
 export default function SchedulesPage() {
   return (
@@ -21,7 +21,7 @@ export default function SchedulesPage() {
           Schedule
         </button>
       </div>
-      <ScheduleList />
+      <ScheduleConsole />
     </div>
   )
 }

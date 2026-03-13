@@ -170,4 +170,28 @@ describe('watch-jobs', () => {
     assert.equal(watchJobs.getWatchJob(mailboxJob.id)?.result?.correlationId, 'corr_1')
     assert.equal(watchJobs.getWatchJob(approvalJob.id)?.result?.status, 'approved')
   })
+
+  it('reuses an existing active mailbox watch for the same wait condition', async () => {
+    const first = await watchJobs.createWatchJob({
+      type: 'mailbox',
+      sessionId: 'session_dup',
+      agentId: 'agent_dup',
+      createdByAgentId: 'agent_dup',
+      resumeMessage: 'human replied',
+      target: { sessionId: 'session_dup' },
+      condition: { type: 'human_reply', correlationId: 'corr_dup' },
+    })
+    const second = await watchJobs.createWatchJob({
+      type: 'mailbox',
+      sessionId: 'session_dup',
+      agentId: 'agent_dup',
+      createdByAgentId: 'agent_dup',
+      resumeMessage: 'human replied again',
+      target: { sessionId: 'session_dup' },
+      condition: { type: 'human_reply', correlationId: 'corr_dup' },
+    })
+
+    assert.equal(second.id, first.id)
+    assert.equal(watchJobs.listWatchJobs({ sessionId: 'session_dup', status: 'active' }).length, 1)
+  })
 })

@@ -16,6 +16,7 @@ const TASK_STATUS_VALUES = new Set([
   'running',
   'completed',
   'failed',
+  'cancelled',
   'archived',
 ])
 

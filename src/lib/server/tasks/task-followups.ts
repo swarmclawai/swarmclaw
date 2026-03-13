@@ -6,6 +6,7 @@ import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { loadConnectors, loadSessions, UPLOAD_DIR } from '@/lib/server/storage'
 import { errorMessage } from '@/lib/shared-utils'
+import { isMainSession } from '@/lib/server/agents/main-agent-loop'
 
 export { normalizeWhatsappTarget }
 
@@ -38,6 +39,7 @@ export interface SessionLike {
     threadId?: string | null
     senderId?: string | null
     senderName?: string | null
+    isOwnerConversation?: boolean | null
   }
   lastActiveAt?: number
   heartbeatEnabled?: boolean | null
@@ -215,12 +217,55 @@ export function resolveTaskOriginConnectorFollowupTarget(params: {
     }
   }
 
+  const resolveMainSessionOwnerTarget = (preferredConnectorId?: string | null): ConnectorTaskFollowupTarget | null => {
+    if (!sourceSessionId) return null
+    const sourceSession = sessions[sourceSessionId]
+    if (!sourceSession || isDirectConnectorSession(sourceSession)) return null
+    if (!isMainSession(sourceSession)) return null
+
+    const ownerSessionTarget = normalizeTarget({
+      connectorId: typeof sourceSession.connectorContext?.connectorId === 'string'
+        ? sourceSession.connectorContext.connectorId
+        : null,
+      channelId: typeof sourceSession.connectorContext?.channelId === 'string'
+        ? sourceSession.connectorContext.channelId
+        : null,
+      threadId: typeof sourceSession.connectorContext?.threadId === 'string'
+        ? sourceSession.connectorContext.threadId
+        : null,
+    })
+    if (sourceSession.connectorContext?.isOwnerConversation === true && ownerSessionTarget) {
+      return ownerSessionTarget
+    }
+
+    const connectorId = typeof preferredConnectorId === 'string' ? preferredConnectorId.trim() : ''
+    if (!connectorId) return null
+    const connector = connectors[connectorId]
+    if (!connector) return null
+
+    const ownerChannelIdRaw = typeof connector.config?.ownerSenderId === 'string' && connector.config.ownerSenderId.trim()
+      ? connector.config.ownerSenderId.trim()
+      : typeof connector.config?.outboundJid === 'string' && connector.config.outboundJid.trim()
+        ? connector.config.outboundJid.trim()
+        : typeof connector.config?.outboundTarget === 'string' && connector.config.outboundTarget.trim()
+          ? connector.config.outboundTarget.trim()
+          : ''
+    if (!ownerChannelIdRaw) return null
+
+    return normalizeTarget({
+      connectorId,
+      channelId: ownerChannelIdRaw,
+    })
+  }
+
   const explicitTarget = normalizeTarget({
     connectorId: typeof metaTask.followupConnectorId === 'string' ? metaTask.followupConnectorId : null,
     channelId: typeof metaTask.followupChannelId === 'string' ? metaTask.followupChannelId : null,
     threadId: typeof metaTask.followupThreadId === 'string' ? metaTask.followupThreadId : null,
   })
-  if (explicitTarget) return explicitTarget
+  if (explicitTarget) {
+    return resolveMainSessionOwnerTarget(explicitTarget.connectorId) || explicitTarget
+  }
 
   if (!sourceSessionId) return null
   const sourceSession = sessions[sourceSessionId]
@@ -240,36 +285,38 @@ export function resolveTaskOriginConnectorFollowupTarget(params: {
     })
     if (sessionContextTarget) return sessionContextTarget
   }
+  const ownerSessionTarget = resolveMainSessionOwnerTarget()
+  if (ownerSessionTarget) return ownerSessionTarget
 
-  if (!Array.isArray(sourceSession.messages)) return null
+  if (!isMainSession(sourceSession) && Array.isArray(sourceSession.messages)) {
+    for (let index = sourceSession.messages.length - 1; index >= 0; index -= 1) {
+      const message = sourceSession.messages[index]
+      if (!message || message.role !== 'user') continue
+      if (message.historyExcluded === true) continue
 
-  for (let index = sourceSession.messages.length - 1; index >= 0; index -= 1) {
-    const message = sourceSession.messages[index]
-    if (!message || message.role !== 'user') continue
-    if (message.historyExcluded === true) continue
+      const connectorId = typeof message.source?.connectorId === 'string'
+        ? message.source.connectorId.trim()
+        : ''
+      if (!connectorId) continue
 
-    const connectorId = typeof message.source?.connectorId === 'string'
-      ? message.source.connectorId.trim()
-      : ''
-    if (!connectorId) continue
-
-    const connector = connectors[connectorId]
-    if (!connector) continue
-    const runtime = runningById.get(connectorId)
-    const sourceChannel = typeof message.source?.channelId === 'string'
-      ? message.source.channelId.trim()
-      : ''
-    const fallbackChannel = runtime?.recentChannelId
-      || runtime?.configuredTargets?.[0]
-      || connector.config?.outboundJid
-      || connector.config?.outboundTarget
-      || ''
-    const target = normalizeTarget({
-      connectorId,
-      channelId: sourceChannel || fallbackChannel,
-      threadId: typeof message.source?.threadId === 'string' ? message.source.threadId : null,
-    })
-    if (target) return target
+      const connector = connectors[connectorId]
+      if (!connector) continue
+      const runtime = runningById.get(connectorId)
+      const sourceChannel = typeof message.source?.channelId === 'string'
+        ? message.source.channelId.trim()
+        : ''
+      const fallbackChannel = runtime?.recentChannelId
+        || runtime?.configuredTargets?.[0]
+        || connector.config?.outboundJid
+        || connector.config?.outboundTarget
+        || ''
+      const target = normalizeTarget({
+        connectorId,
+        channelId: sourceChannel || fallbackChannel,
+        threadId: typeof message.source?.threadId === 'string' ? message.source.threadId : null,
+      })
+      if (target) return target
+    }
   }
 
   return null

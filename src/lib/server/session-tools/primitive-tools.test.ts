@@ -20,7 +20,6 @@ let buildMailboxTools: typeof import('./mailbox').buildMailboxTools
 let buildHumanLoopTools: typeof import('./human-loop').buildHumanLoopTools
 let buildCrawlTools: typeof import('./crawl').buildCrawlTools
 let coerceSubagentActionArgs: typeof import('./subagent').coerceSubagentActionArgs
-let sessionMailbox: typeof import('@/lib/server/chatrooms/session-mailbox')
 let watchJobs: typeof import('@/lib/server/runtime/watch-jobs')
 let storage: typeof import('../storage')
 
@@ -82,7 +81,6 @@ before(async () => {
   ;({ buildHumanLoopTools } = await import('./human-loop'))
   ;({ buildCrawlTools } = await import('./crawl'))
   ;({ coerceSubagentActionArgs } = await import('./subagent'))
-  sessionMailbox = await import('@/lib/server/chatrooms/session-mailbox')
   watchJobs = await import('@/lib/server/runtime/watch-jobs')
   storage = await import('../storage')
 })
@@ -164,12 +162,24 @@ describe('primitive tools', () => {
       correlationId: 'corr_123',
     })))
     assert.equal(requestInput.ok, true)
+    const duplicateRequestInput = JSON.parse(String(await humanTool.invoke({
+      action: 'request_input',
+      question: '  ship it? ',
+      correlationId: 'corr_456',
+    })))
+    assert.equal(duplicateRequestInput.envelope.id, requestInput.envelope.id)
+    assert.equal(duplicateRequestInput.correlationId, requestInput.correlationId)
 
     const replyWatch = JSON.parse(String(await humanTool.invoke({
       action: 'wait_for_reply',
       correlationId: 'corr_123',
     })))
     assert.equal(watchJobs.getWatchJob(replyWatch.id)?.status, 'active')
+    const duplicateReplyWatch = JSON.parse(String(await humanTool.invoke({
+      action: 'wait_for_reply',
+      correlationId: 'corr_123',
+    })))
+    assert.equal(duplicateReplyWatch.id, replyWatch.id)
     const replyEnvelope = {
       id: 'env_reply_1',
       type: 'human_reply',

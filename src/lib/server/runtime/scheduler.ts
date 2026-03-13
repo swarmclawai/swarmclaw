@@ -8,6 +8,7 @@ import { requestHeartbeatNow } from '@/lib/server/runtime/heartbeat-wake'
 import { processDueWatchJobs } from '@/lib/server/runtime/watch-jobs'
 import { isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import { prepareScheduledTaskRun } from '@/lib/server/tasks/task-lifecycle'
+import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
 
 const TICK_INTERVAL = 60_000 // 60 seconds
 let intervalId: ReturnType<typeof setInterval> | null = null
@@ -28,7 +29,7 @@ interface SchedulerScheduleLike {
   runAt?: number
   lastRunAt?: number
   nextRunAt?: number
-  status: 'active' | 'paused' | 'completed' | 'failed'
+  status: 'active' | 'paused' | 'completed' | 'failed' | 'archived'
   timezone?: string | null
   staggerSec?: number | null
   linkedTaskId?: string | null
@@ -42,6 +43,22 @@ interface SchedulerScheduleLike {
   followupSenderName?: string | null
   taskMode?: 'task' | 'wake_only'
   message?: string
+}
+
+function resolveScheduleWakeSessionId(schedule: SchedulerScheduleLike, agents: Record<string, unknown>): string | undefined {
+  const createdInSessionId = typeof schedule.createdInSessionId === 'string'
+    ? schedule.createdInSessionId.trim()
+    : ''
+  if (createdInSessionId) return createdInSessionId
+
+  const agent = agents[schedule.agentId] as { threadSessionId?: string | null } | undefined
+  const threadSessionId = typeof agent?.threadSessionId === 'string' ? agent.threadSessionId.trim() : ''
+  if (threadSessionId) return threadSessionId
+  return ensureAgentThreadSession(schedule.agentId)?.id
+}
+
+function shouldWakeScheduleSession(schedule: SchedulerScheduleLike): boolean {
+  return schedule.taskMode === 'wake_only'
 }
 
 export function startScheduler() {
@@ -158,13 +175,13 @@ async function tick() {
     console.log(`[scheduler] Firing schedule "${schedule.name}" (${schedule.id})`)
     schedule.lastRunAt = now
     schedule.runNumber = (schedule.runNumber || 0) + 1
-
     // Compute next run
     advanceSchedule(schedule)
 
-    if (schedule.taskMode === 'wake_only') {
+    if (shouldWakeScheduleSession(schedule)) {
       // Wake-only: no board task, just heartbeat the agent
       upsertSchedule(schedule.id, schedule)
+      const wakeSessionId = resolveScheduleWakeSessionId(schedule, agents as Record<string, unknown>)
 
       const wakeMessage = schedule.message || `Schedule triggered: ${schedule.name}`
       pushMainLoopEventToMainSessions({
@@ -177,6 +194,7 @@ async function tick() {
       }
       requestHeartbeatNow({
         agentId: schedule.agentId,
+        ...(wakeSessionId ? { sessionId: wakeSessionId } : {}),
         eventId: `${schedule.id}:${schedule.runNumber}`,
         reason: 'schedule',
         source: `schedule:${schedule.id}`,
@@ -201,18 +219,17 @@ async function tick() {
         type: 'schedule_fired',
         text: `Schedule fired: "${schedule.name}" (${schedule.id}) run #${schedule.runNumber} — task ${taskId}`,
       })
-
-      if (schedule.createdInSessionId) {
-        enqueueSystemEvent(schedule.createdInSessionId, `Schedule triggered: ${schedule.name}`)
-      }
-      requestHeartbeatNow({
-        agentId: schedule.agentId,
-        eventId: `${schedule.id}:${schedule.runNumber}`,
-        reason: 'schedule',
-        source: `schedule:${schedule.id}`,
-        resumeMessage: `Schedule triggered: ${schedule.name}`,
-        detail: `Run #${schedule.runNumber} queued task ${taskId}.`,
-      })
     }
   }
+}
+
+export function resolveScheduleWakeSessionIdForTests(
+  schedule: SchedulerScheduleLike,
+  agents: Record<string, unknown>,
+): string | undefined {
+  return resolveScheduleWakeSessionId(schedule, agents)
+}
+
+export function shouldWakeScheduleSessionForTests(schedule: SchedulerScheduleLike): boolean {
+  return shouldWakeScheduleSession(schedule)
 }

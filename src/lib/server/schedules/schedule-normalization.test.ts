@@ -139,6 +139,22 @@ describe('normalizeSchedulePayload', () => {
     if (result.ok) assert.equal(result.value.scheduleType, 'interval')
   })
 
+  it('prefers a valid legacy type when scheduleType is stuck at interval', () => {
+    const result = mod.normalizeSchedulePayload({
+      agentId: 'agent-1',
+      taskPrompt: 'test',
+      scheduleType: 'interval',
+      type: 'once',
+      runAt: '2026-03-12T09:00:00.000Z',
+    })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.value.scheduleType, 'once')
+      assert.equal('type' in result.value, false)
+      assert.equal(typeof result.value.runAt, 'number')
+    }
+  })
+
   it('normalizes status to active for unknown values', () => {
     const result = mod.normalizeSchedulePayload({
       agentId: 'agent-1',
@@ -150,7 +166,7 @@ describe('normalizeSchedulePayload', () => {
   })
 
   it('preserves valid status values', () => {
-    for (const s of ['active', 'paused', 'completed', 'failed']) {
+    for (const s of ['active', 'paused', 'completed', 'failed', 'archived']) {
       const result = mod.normalizeSchedulePayload({
         agentId: 'agent-1',
         taskPrompt: 'test',
@@ -178,6 +194,24 @@ describe('normalizeSchedulePayload', () => {
     )
     assert.equal(result.ok, true)
     if (result.ok) assert.equal(result.value.nextRunAt, 9_999_999)
+  })
+
+  it('parses ISO runAt timestamps for once schedules', () => {
+    const result = mod.normalizeSchedulePayload(
+      {
+        agentId: 'agent-1',
+        taskPrompt: 'test',
+        scheduleType: 'once',
+        runAt: '2026-03-12T09:00:00.000Z',
+      },
+      { now: 1_000_000 },
+    )
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      const expected = Date.parse('2026-03-12T09:00:00.000Z')
+      assert.equal(result.value.runAt, expected)
+      assert.equal(result.value.nextRunAt, expected)
+    }
   })
 
   it('does not overwrite existing nextRunAt', () => {
