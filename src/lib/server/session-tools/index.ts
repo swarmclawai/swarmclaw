@@ -55,6 +55,16 @@ import { jsonSchemaToZod } from '../mcp-client'
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
 
+const DELEGATION_TOOL_NAMES = new Set([
+  'delegate',
+  'spawn_subagent',
+  'delegate_to_agent',
+  'delegate_to_claude_code',
+  'delegate_to_codex_cli',
+  'delegate_to_opencode_cli',
+  'delegate_to_gemini_cli',
+])
+
 export async function buildSessionTools(cwd: string, enabledPlugins: string[], ctx?: ToolContext): Promise<SessionToolsResult> {
   const tools: StructuredToolInterface[] = []
   const cleanupFns: (() => Promise<void>)[] = []
@@ -217,6 +227,9 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       
       for (const entry of pluginTools) {
         const pt = entry.tool
+        if (!ctx?.delegationEnabled && DELEGATION_TOOL_NAMES.has(pt.name)) {
+          continue
+        }
         if (existingNames.has(pt.name)) {
           log.warn('session-tools', 'Skipping plugin tool due to duplicate name', {
             toolName: pt.name,

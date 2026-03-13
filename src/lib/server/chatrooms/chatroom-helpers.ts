@@ -66,7 +66,7 @@ function truncateText(text: string, max: number): string {
   return `${compact.slice(0, Math.max(0, max - 3))}...`
 }
 
-import { isImplicitlyMentioned } from '@/lib/server/chatrooms/chatroom-orchestration'
+import { isImplicitlyMentioned } from '@/lib/server/chatrooms/chatroom-agent-signals'
 
 /** Parse @mentions from message text, returns matching agentIds */
 export function parseMentions(

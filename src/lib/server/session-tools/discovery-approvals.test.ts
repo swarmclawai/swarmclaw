@@ -62,7 +62,9 @@ describe('discovery tool access flows', () => {
       const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, [], {
         sessionId: 'session_tools',
         agentId: 'default',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
+        delegationTargetMode: 'all',
+        delegationTargetAgentIds: [],
       })
       const tool = built.tools.find((entry) => entry.name === 'request_tool_access')
       const raw = await tool.invoke({ toolId: 'shell', reason: 'Need terminal access.' })
@@ -109,7 +111,9 @@ describe('discovery tool access flows', () => {
       const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, [], {
         sessionId: 'session_caps',
         agentId: 'default',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
+        delegationTargetMode: 'all',
+        delegationTargetAgentIds: [],
       })
       const tool = built.tools.find((entry) => entry.name === 'manage_capabilities')
       const raw = await tool.invoke({ action: 'request_access', query: 'shell', reason: 'Need terminal access.' })
@@ -153,7 +157,9 @@ describe('discovery tool access flows', () => {
       const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, ['memory'], {
         sessionId: 'session_memory',
         agentId: 'default',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
+        delegationTargetMode: 'all',
+        delegationTargetAgentIds: [],
       })
       const tool = built.tools.find((entry) => entry.name === 'manage_capabilities')
       const raw = await tool.invoke({ action: 'request_access', query: 'memory_store', reason: 'Need to remember a user preference.' })
@@ -193,7 +199,9 @@ describe('discovery tool access flows', () => {
       const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, ['email'], {
         sessionId: 'session_email',
         agentId: 'default',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
+        delegationTargetMode: 'all',
+        delegationTargetAgentIds: [],
       })
       console.log(JSON.stringify({
         toolNames: built.tools.map((entry) => entry.name).sort(),
@@ -232,7 +240,9 @@ describe('discovery tool access flows', () => {
       const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, ['email'], {
         sessionId: 'session_discover_email',
         agentId: 'default',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
+        delegationTargetMode: 'all',
+        delegationTargetAgentIds: [],
       })
       const tool = built.tools.find((entry) => entry.name === 'manage_capabilities')
       const raw = await tool.invoke({ action: 'discover', reason: 'Check runtime tool availability.' })

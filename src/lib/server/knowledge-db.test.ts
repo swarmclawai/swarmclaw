@@ -322,7 +322,7 @@ describe('searchKnowledge', () => {
   })
 
   it('no results for non-matching query', () => {
-    const results = searchKnowledge('xylophone orchestration symphony')
+    const results = searchKnowledge('xylophone arrangement symphony')
     assert.equal(results.length, 0)
   })
 })

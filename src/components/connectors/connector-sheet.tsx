@@ -23,6 +23,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { ConnectorHealth } from '@/components/connectors/connector-health'
 import { ConnectorAccessPanel } from '@/components/connectors/connector-access-panel'
+import { AdvancedSettingsSection } from '@/components/shared/advanced-settings-section'
 import { errorMessage } from '@/lib/shared-utils'
 
 /** Auto-detect URLs in text and make them clickable links that open in a new tab */
@@ -75,6 +76,7 @@ interface ConnectorConfigField {
   type?: 'text' | 'select' | 'tags'
   options?: ConnectorConfigOption[]
   emptyLabel?: string
+  section?: 'basic' | 'advanced'
 }
 
 const FIELD_HINTS: Record<string, string> = {
@@ -170,7 +172,7 @@ const PLATFORMS: {
     tokenLabel: 'Bot Token',
     tokenHelp: 'From Discord Developer Portal > Your App > Bot > Token',
     configFields: [
-      { key: 'channelIds', label: 'Channel IDs', placeholder: '123456789,987654321', help: 'Leave empty to listen in all channels the bot can see', type: 'tags' },
+      { key: 'channelIds', label: 'Channel IDs', placeholder: '123456789,987654321', help: 'Leave empty to listen in all channels the bot can see', type: 'tags', section: 'advanced' },
     ],
   },
   {
@@ -185,7 +187,7 @@ const PLATFORMS: {
     tokenLabel: 'Bot Token',
     tokenHelp: 'From @BotFather after creating your bot',
     configFields: [
-      { key: 'chatIds', label: 'Chat IDs', placeholder: '-100123456789', help: 'Leave empty to respond in all chats. Use negative IDs for groups.', type: 'tags' },
+      { key: 'chatIds', label: 'Chat IDs', placeholder: '-100123456789', help: 'Leave empty to respond in all chats. Use negative IDs for groups.', type: 'tags', section: 'advanced' },
     ],
   },
   {
@@ -203,8 +205,8 @@ const PLATFORMS: {
     tokenLabel: 'Bot Token (xoxb-...)',
     tokenHelp: 'From Slack App > OAuth & Permissions > Bot User OAuth Token',
     configFields: [
-      { key: 'appToken', label: 'App-Level Token (xapp-...)', placeholder: 'xapp-1-...', help: 'Required for Socket Mode. From Slack App > Basic Information > App-Level Tokens' },
-      { key: 'channelIds', label: 'Channel IDs', placeholder: 'C0123456789', help: 'Leave empty to listen in all channels the bot is in', type: 'tags' },
+      { key: 'appToken', label: 'App-Level Token (xapp-...)', placeholder: 'xapp-1-...', help: 'Required for Socket Mode. From Slack App > Basic Information > App-Level Tokens', section: 'basic' },
+      { key: 'channelIds', label: 'Channel IDs', placeholder: 'C0123456789', help: 'Leave empty to listen in all channels the bot is in', type: 'tags', section: 'advanced' },
     ],
   },
   {
@@ -220,8 +222,8 @@ const PLATFORMS: {
     tokenLabel: '',
     tokenHelp: '',
     configFields: [
-      { key: 'allowedJids', label: 'Allowed Numbers/Groups', placeholder: '1234567890,MyGroup', help: 'Leave empty to respond to all messages', type: 'tags' },
-      { key: 'outboundJid', label: 'Default Outbound Recipient', placeholder: '15551234567 or 15551234567@s.whatsapp.net', help: 'Used by connector_message_tool when the agent sends proactive WhatsApp updates without an explicit "to" value' },
+      { key: 'allowedJids', label: 'Allowed Numbers/Groups', placeholder: '1234567890,MyGroup', help: 'Leave empty to respond to all messages', type: 'tags', section: 'advanced' },
+      { key: 'outboundJid', label: 'Default Outbound Recipient', placeholder: '15551234567 or 15551234567@s.whatsapp.net', help: 'Used by connector_message_tool when the agent sends proactive WhatsApp updates without an explicit "to" value', section: 'advanced' },
     ],
   },
   {
@@ -236,13 +238,13 @@ const PLATFORMS: {
     tokenLabel: 'Gateway Token',
     tokenHelp: 'Required when your OpenClaw gateway is auth-protected',
     configFields: [
-      { key: 'wsUrl', label: 'WebSocket URL', placeholder: 'ws://localhost:18789', help: 'OpenClaw gateway WebSocket endpoint (root URL, not /ws)' },
-      { key: 'sessionKey', label: 'Chat Key Filter', placeholder: 'main', help: 'Optional. If set, only inbound events for this OpenClaw chat are processed.' },
-      { key: 'nodeId', label: 'Client Label', placeholder: 'swarmclaw', help: 'Optional display label shown in OpenClaw presence metadata.' },
-      { key: 'role', label: 'Gateway Role', placeholder: 'operator', help: 'Optional role claim for connect handshake. Default is operator.' },
-      { key: 'scopes', label: 'Scopes (CSV)', placeholder: 'operator.read,operator.write', help: 'Optional comma-separated scopes for OpenClaw connect.', type: 'tags' },
-      { key: 'tickWatchdog', label: 'Tick Watchdog', placeholder: 'true', help: 'Enable or disable stale-tick reconnect watchdog.', type: 'select', options: BOOLEAN_SELECT_OPTIONS, emptyLabel: 'Not set (default: enabled)' },
-      { key: 'tickIntervalMs', label: 'Tick Interval Override (ms)', placeholder: '30000', help: 'Optional watchdog interval override when policy tick is unavailable.' },
+      { key: 'wsUrl', label: 'WebSocket URL', placeholder: 'ws://localhost:18789', help: 'OpenClaw gateway WebSocket endpoint (root URL, not /ws)', section: 'basic' },
+      { key: 'sessionKey', label: 'Chat Key Filter', placeholder: 'main', help: 'Optional. If set, only inbound events for this OpenClaw chat are processed.', section: 'advanced' },
+      { key: 'nodeId', label: 'Client Label', placeholder: 'swarmclaw', help: 'Optional display label shown in OpenClaw presence metadata.', section: 'advanced' },
+      { key: 'role', label: 'Gateway Role', placeholder: 'operator', help: 'Optional role claim for connect handshake. Default is operator.', section: 'advanced' },
+      { key: 'scopes', label: 'Scopes (CSV)', placeholder: 'operator.read,operator.write', help: 'Optional comma-separated scopes for OpenClaw connect.', type: 'tags', section: 'advanced' },
+      { key: 'tickWatchdog', label: 'Tick Watchdog', placeholder: 'true', help: 'Enable or disable stale-tick reconnect watchdog.', type: 'select', options: BOOLEAN_SELECT_OPTIONS, emptyLabel: 'Not set (default: enabled)', section: 'advanced' },
+      { key: 'tickIntervalMs', label: 'Tick Interval Override (ms)', placeholder: '30000', help: 'Optional watchdog interval override when policy tick is unavailable.', section: 'advanced' },
     ],
   },
   {
@@ -258,11 +260,11 @@ const PLATFORMS: {
     tokenLabel: 'BlueBubbles Password',
     tokenHelp: 'Server password used for /api/v1/ping and /api/v1/message/text',
     configFields: [
-      { key: 'serverUrl', label: 'Server URL', placeholder: 'http://127.0.0.1:1234', help: 'BlueBubbles server URL (no trailing /api path needed)' },
-      { key: 'chatIds', label: 'Allowed Chat IDs', placeholder: 'iMessage;-;+15551234567', help: 'Optional comma-separated chat IDs/guid fragments. Leave empty for all chats.', type: 'tags' },
-      { key: 'outboundTarget', label: 'Default Outbound Target', placeholder: 'iMessage;-;+15551234567', help: 'Used when proactive sends omit "to".' },
-      { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)' },
-      { key: 'timeoutMs', label: 'Request Timeout (ms)', placeholder: '10000', help: 'Optional BlueBubbles API timeout in milliseconds.' },
+      { key: 'serverUrl', label: 'Server URL', placeholder: 'http://127.0.0.1:1234', help: 'BlueBubbles server URL (no trailing /api path needed)', section: 'basic' },
+      { key: 'chatIds', label: 'Allowed Chat IDs', placeholder: 'iMessage;-;+15551234567', help: 'Optional comma-separated chat IDs/guid fragments. Leave empty for all chats.', type: 'tags', section: 'advanced' },
+      { key: 'outboundTarget', label: 'Default Outbound Target', placeholder: 'iMessage;-;+15551234567', help: 'Used when proactive sends omit "to".', section: 'advanced' },
+      { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)', section: 'advanced' },
+      { key: 'timeoutMs', label: 'Request Timeout (ms)', placeholder: '10000', help: 'Optional BlueBubbles API timeout in milliseconds.', section: 'advanced' },
     ],
   },
   {
@@ -278,8 +280,8 @@ const PLATFORMS: {
     tokenLabel: 'Access Token',
     tokenHelp: 'Matrix access token for the bot user',
     configFields: [
-      { key: 'homeserverUrl', label: 'Homeserver URL', placeholder: 'https://matrix.org', help: 'The Matrix homeserver URL' },
-      { key: 'roomIds', label: 'Room IDs', placeholder: '!abc123:matrix.org', help: 'Comma-separated room IDs. Leave empty for all rooms.', type: 'tags' },
+      { key: 'homeserverUrl', label: 'Homeserver URL', placeholder: 'https://matrix.org', help: 'The Matrix homeserver URL', section: 'basic' },
+      { key: 'roomIds', label: 'Room IDs', placeholder: '!abc123:matrix.org', help: 'Comma-separated room IDs. Leave empty for all rooms.', type: 'tags', section: 'advanced' },
     ],
   },
   {
@@ -295,8 +297,8 @@ const PLATFORMS: {
     tokenLabel: 'Service Account JSON',
     tokenHelp: 'Paste the full service account JSON key file contents',
     configFields: [
-      { key: 'spaceIds', label: 'Space IDs', placeholder: 'spaces/AAAA123', help: 'Comma-separated Google Chat space IDs', type: 'tags' },
-      { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)' },
+      { key: 'spaceIds', label: 'Space IDs', placeholder: 'spaces/AAAA123', help: 'Comma-separated Google Chat space IDs', type: 'tags', section: 'advanced' },
+      { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)', section: 'advanced' },
     ],
   },
   {
@@ -312,9 +314,9 @@ const PLATFORMS: {
     tokenLabel: 'App Secret',
     tokenHelp: 'Microsoft App Secret from Azure Bot registration',
     configFields: [
-      { key: 'appId', label: 'Microsoft App ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', help: 'Azure Bot Framework App ID' },
-      { key: 'notifyUrl', label: 'Notify URL', placeholder: 'https://your-server.com/api/connectors/<id>/webhook', help: 'Public HTTPS endpoint for receiving messages (informational)' },
-      { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)' },
+      { key: 'appId', label: 'Microsoft App ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', help: 'Azure Bot Framework App ID', section: 'basic' },
+      { key: 'notifyUrl', label: 'Notify URL', placeholder: 'https://your-server.com/api/connectors/<id>/webhook', help: 'Public HTTPS endpoint for receiving messages (informational)', section: 'advanced' },
+      { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)', section: 'advanced' },
     ],
   },
   {
@@ -330,10 +332,10 @@ const PLATFORMS: {
     tokenLabel: '',
     tokenHelp: '',
     configFields: [
-      { key: 'phoneNumber', label: 'Phone Number', placeholder: '+1234567890', help: 'Pre-registered Signal phone number' },
-      { key: 'signalCliPath', label: 'signal-cli Path', placeholder: 'signal-cli', help: 'Path to signal-cli binary (defaults to signal-cli)' },
-      { key: 'signalCliMode', label: 'Mode', placeholder: 'stdio', help: 'How SwarmClaw talks to signal-cli.', type: 'select', options: [{ value: 'stdio', label: 'stdio' }, { value: 'http', label: 'HTTP API' }], emptyLabel: 'Not set (default: stdio)' },
-      { key: 'signalCliHttpUrl', label: 'HTTP API URL', placeholder: 'http://localhost:8080', help: 'Only needed for http mode' },
+      { key: 'phoneNumber', label: 'Phone Number', placeholder: '+1234567890', help: 'Pre-registered Signal phone number', section: 'basic' },
+      { key: 'signalCliPath', label: 'signal-cli Path', placeholder: 'signal-cli', help: 'Path to signal-cli binary (defaults to signal-cli)', section: 'advanced' },
+      { key: 'signalCliMode', label: 'Mode', placeholder: 'stdio', help: 'How SwarmClaw talks to signal-cli.', type: 'select', options: [{ value: 'stdio', label: 'stdio' }, { value: 'http', label: 'HTTP API' }], emptyLabel: 'Not set (default: stdio)', section: 'advanced' },
+      { key: 'signalCliHttpUrl', label: 'HTTP API URL', placeholder: 'http://localhost:8080', help: 'Only needed for http mode', section: 'advanced' },
     ],
   },
 ]
@@ -347,18 +349,21 @@ const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: THINKING_LEVEL_OPTIONS,
     emptyLabel: 'Not set (agent default)',
+    section: 'advanced',
   },
   {
     key: 'providerOverride',
     label: 'Provider Override',
     placeholder: 'openai | anthropic | openclaw | ...',
     help: 'Optional direct-session provider override. Useful for connector-specific routing or cheaper autonomy lanes.',
+    section: 'advanced',
   },
   {
     key: 'modelOverride',
     label: 'Model Override',
     placeholder: 'gpt-4.1-mini',
     help: 'Optional direct-session model override. Defaults to the assigned agent model when empty.',
+    section: 'advanced',
   },
   {
     key: 'sessionScope',
@@ -368,6 +373,7 @@ const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: SESSION_SCOPE_OPTIONS,
     emptyLabel: 'Not set (platform default)',
+    section: 'advanced',
   },
   {
     key: 'replyMode',
@@ -377,6 +383,7 @@ const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: REPLY_MODE_OPTIONS,
     emptyLabel: 'Not set (platform default)',
+    section: 'advanced',
   },
   {
     key: 'threadBinding',
@@ -386,6 +393,7 @@ const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: THREAD_BINDING_OPTIONS,
     emptyLabel: 'Not set (platform default)',
+    section: 'advanced',
   },
   {
     key: 'groupPolicy',
@@ -395,18 +403,21 @@ const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: GROUP_POLICY_OPTIONS,
     emptyLabel: 'Not set (platform default)',
+    section: 'advanced',
   },
   {
     key: 'idleTimeoutSec',
     label: 'Idle Timeout (sec)',
     placeholder: '43200',
     help: 'If exceeded, the connector session is reset before the next inbound turn.',
+    section: 'advanced',
   },
   {
     key: 'maxAgeSec',
     label: 'Max Age (sec)',
     placeholder: '604800',
     help: 'Absolute maximum age of a connector session before it is reset.',
+    section: 'advanced',
   },
   {
     key: 'sessionResetMode',
@@ -416,24 +427,28 @@ const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: RESET_MODE_OPTIONS,
     emptyLabel: 'Not set (default: idle)',
+    section: 'advanced',
   },
   {
     key: 'sessionDailyResetAt',
     label: 'Daily Reset Time',
     placeholder: '04:00',
     help: 'Used only when Reset Mode is daily. Format: HH:MM.',
+    section: 'advanced',
   },
   {
     key: 'sessionResetTimezone',
     label: 'Reset Timezone',
     placeholder: 'UTC or Europe/Isle_of_Man',
     help: 'Optional timezone for daily reset boundaries. Defaults to the server timezone.',
+    section: 'advanced',
   },
   {
     key: 'inboundDebounceMs',
     label: 'Inbound Debounce (ms)',
     placeholder: '700',
     help: 'Coalesces rapid inbound bursts from the same sender before starting a run.',
+    section: 'advanced',
   },
   {
     key: 'statusReactions',
@@ -443,6 +458,7 @@ const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: BOOLEAN_SELECT_OPTIONS,
     emptyLabel: 'Not set (default: enabled)',
+    section: 'advanced',
   },
   {
     key: 'typingIndicators',
@@ -452,6 +468,7 @@ const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: BOOLEAN_SELECT_OPTIONS,
     emptyLabel: 'Not set (default: enabled)',
+    section: 'advanced',
   },
   {
     key: 'taskFollowups',
@@ -461,12 +478,14 @@ const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: BOOLEAN_SELECT_OPTIONS,
     emptyLabel: 'Not set (default: enabled)',
+    section: 'advanced',
   },
   {
     key: 'taskFollowupTemplate',
     label: 'Task Follow-up Template',
     placeholder: 'Task {status}: {title}\\n\\n{summary}',
     help: 'Optional placeholders: {status}, {title}, {summary}, {taskId}.',
+    section: 'advanced',
   },
 ]
 
@@ -479,6 +498,7 @@ const ACCESS_CONTROL_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: DM_POLICY_OPTIONS,
     emptyLabel: 'Not set (default: open)',
+    section: 'basic',
   },
   {
     key: 'dmAddressingMode',
@@ -488,6 +508,7 @@ const ACCESS_CONTROL_FIELDS: ConnectorConfigField[] = [
     type: 'select',
     options: DM_ADDRESSING_OPTIONS,
     emptyLabel: 'Not set (default: reply to any DM)',
+    section: 'basic',
   },
   {
     key: 'allowFrom',
@@ -495,6 +516,7 @@ const ACCESS_CONTROL_FIELDS: ConnectorConfigField[] = [
     placeholder: '15551234567,447700900123',
     help: 'Connector-specific sender IDs that are always approved.',
     type: 'tags',
+    section: 'advanced',
   },
   {
     key: 'denyFrom',
@@ -502,12 +524,14 @@ const ACCESS_CONTROL_FIELDS: ConnectorConfigField[] = [
     placeholder: '15551234567,447700900123',
     help: 'Blocked sender IDs. These are rejected before pairing or reply generation.',
     type: 'tags',
+    section: 'advanced',
   },
   {
     key: 'ownerSenderId',
     label: 'Owner Sender ID',
     placeholder: '15551234567@s.whatsapp.net',
     help: 'Optional direct-message sender ID that should route into the main owner thread.',
+    section: 'basic',
   },
 ]
 
@@ -578,6 +602,7 @@ export function ConnectorSheet() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmWhatsAppAction, setConfirmWhatsAppAction] = useState<'unlink' | 'repair' | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
   const localAllowlistCount = config.allowFrom ? config.allowFrom.split(',').map((entry) => entry.trim()).filter(Boolean).length : 0
   const localBlocklistCount = config.denyFrom ? config.denyFrom.split(',').map((entry) => entry.trim()).filter(Boolean).length : 0
   const globalWhatsAppAllowlistCount = platform === 'whatsapp' && Array.isArray(appSettings.whatsappApprovedContacts)
@@ -593,6 +618,7 @@ export function ConnectorSheet() {
       loadCredentials()
       loadChatrooms()
       setShowSetup(false)
+      setShowAdvancedSettings(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -852,6 +878,29 @@ export function ConnectorSheet() {
   const platformConfig = ALL_PLATFORMS.find((p) => p.id === platform) || ALL_PLATFORMS[0]
   const agentList = Object.values(agents).sort((a, b) => a.name.localeCompare(b.name))
   const credList = Object.values(credentials)
+  const basicPlatformFields = platformConfig.configFields.filter((field) => field.section !== 'advanced')
+  const advancedPlatformFields = platformConfig.configFields.filter((field) => field.section === 'advanced')
+  const basicAccessFields = ACCESS_CONTROL_FIELDS.filter((field) => field.section !== 'advanced')
+  const advancedAccessFields = ACCESS_CONTROL_FIELDS.filter((field) => field.section === 'advanced')
+  const hasConfiguredValue = useCallback((key: string) => Boolean(config[key]?.trim()), [config])
+  const connectorAdvancedBadges = useMemo(() => {
+    const badges: string[] = []
+    if (advancedPlatformFields.some((field) => hasConfiguredValue(field.key))) badges.push('Platform overrides')
+    if (advancedAccessFields.some((field) => hasConfiguredValue(field.key)) || accessSnapshot?.pendingPairingRequests.length || accessSnapshot?.storedAllowedSenderIds.length) badges.push('Access lists')
+    if (COMMON_CONFIG_FIELDS.some((field) => hasConfiguredValue(field.key))) badges.push('Runtime policy')
+    if (doctorWarnings.length > 0 || editing?.lastError) badges.push('Diagnostics')
+    return Array.from(new Set(badges))
+  }, [accessSnapshot?.pendingPairingRequests.length, accessSnapshot?.storedAllowedSenderIds.length, advancedAccessFields, advancedPlatformFields, doctorWarnings.length, editing?.lastError, hasConfiguredValue])
+  const configuredAdvancedCount = useMemo(() => {
+    const advancedKeys = new Set([
+      ...advancedPlatformFields.map((field) => field.key),
+      ...advancedAccessFields.map((field) => field.key),
+      ...COMMON_CONFIG_FIELDS.map((field) => field.key),
+    ])
+    const populated = Object.entries(config).filter(([key, value]) => advancedKeys.has(key) && value.trim()).length
+    return populated + (doctorWarnings.length > 0 ? 1 : 0)
+  }, [advancedAccessFields, advancedPlatformFields, config, doctorWarnings.length])
+  const advancedSummary = configuredAdvancedCount > 0 ? `${configuredAdvancedCount} configured` : 'Defaults only'
 
   const inputClass = "w-full px-4 py-3 rounded-[12px] border border-white/[0.08] bg-surface text-text text-[14px] outline-none transition-all placeholder:text-text-3/50 focus:border-white/[0.15]"
 
@@ -975,7 +1024,7 @@ export function ConnectorSheet() {
         <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
           {editing ? 'Edit Connector' : 'New Connector'}
         </h2>
-        <p className="text-[14px] text-text-3">Bridge a chat platform to an AI agent</p>
+        <p className="text-[14px] text-text-3">Start with the connection basics, then expand advanced settings for routing and policy overrides.</p>
       </div>
 
       {/* Platform selector (only for new) */}
@@ -1095,7 +1144,7 @@ export function ConnectorSheet() {
               agents={agentList}
               selected={agentId}
               onSelect={(id) => setAgentId(id)}
-              showOrchBadge={true}
+              showDelegationBadge={true}
             />
           </>
         ) : (
@@ -1212,51 +1261,30 @@ export function ConnectorSheet() {
       )}
 
       {/* Platform-specific config */}
-      {platformConfig.configFields.length > 0 && (
+      {basicPlatformFields.length > 0 && (
         <div className="mb-2">
           <SectionLabel>Platform Settings</SectionLabel>
           <p className="text-[12px] text-text-3/60 mb-4">
             Settings specific to {platformConfig.label}. Leave optional values unset unless you need to override the defaults.
           </p>
-          {platformConfig.configFields.map((field) => renderConfigField(field))}
+          {basicPlatformFields.map((field) => renderConfigField(field))}
         </div>
       )}
 
       {supportsAccessControls && (
         <div className="mb-2">
-          <SectionLabel>Access &amp; Ownership</SectionLabel>
+          <SectionLabel>Behavior</SectionLabel>
           <p className="text-[12px] text-text-3/60 mb-4">
-            Configure who can DM this connector, who is blocked, and which sender should be treated as the connector owner.
+            Keep the everyday DM policy and owner routing visible. Detailed lists and live access actions stay in advanced settings.
           </p>
-          {ACCESS_CONTROL_FIELDS.map((field) => renderConfigField(field))}
+          {basicAccessFields.map((field) => renderConfigField(field))}
           {platform === 'whatsapp' && (
             <div className="mb-6 rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-[12px] text-text-3">
-              Global WhatsApp approved contacts are shown in the access panel below and still managed from Settings.
-            </div>
-          )}
-          {editing && (
-            <div className="mb-6">
-              <ConnectorAccessPanel
-                connector={editing}
-                snapshot={accessSnapshot}
-                loading={accessLoading}
-                error={accessError}
-                pending={accessPending}
-                onAction={handleAccessAction}
-                description="Live pairing store and owner controls for this connector. Form fields above edit saved config; actions here manage paired senders and pending requests immediately."
-              />
+              Global WhatsApp approved contacts still live in Settings. Use advanced settings for per-connector allow and block lists.
             </div>
           )}
         </div>
       )}
-
-      <div className="mb-2">
-        <SectionLabel>Routing &amp; Autonomy</SectionLabel>
-        <p className="text-[12px] text-text-3/60 mb-4">
-          Conversation identity, reply behavior, reset policy, and other connector runtime overrides.
-        </p>
-        {COMMON_CONFIG_FIELDS.map((field) => renderConfigField(field))}
-      </div>
 
       {/* Start/Stop controls for editing */}
       {editing && (() => {
@@ -1298,73 +1326,6 @@ export function ConnectorSheet() {
         </div>
         )
       })()}
-
-      <div className="mb-6 p-4 rounded-[14px] border border-white/[0.06] bg-white/[0.01]">
-        <div className="flex items-center justify-between gap-3 mb-2">
-          <div>
-            <div className="text-[13px] font-600 text-text-2">Connector Doctor</div>
-            <div className="text-[12px] text-text-3/70">
-              Live autonomy and safety preview for the current connector settings.
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => void loadDoctorPreview()}
-            disabled={doctorLoading}
-            className="px-3 py-1.5 rounded-[9px] border border-white/[0.08] bg-transparent text-[12px] font-600 text-text-3 hover:text-text-2 hover:bg-white/[0.04] transition-all cursor-pointer disabled:opacity-50"
-            style={{ fontFamily: 'inherit' }}
-          >
-            {doctorLoading ? 'Checking...' : 'Refresh'}
-          </button>
-        </div>
-        {doctorPolicy && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
-            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
-              Scope: <span className="text-text-2">{doctorPolicy.scope || 'channel-peer'}</span>{' '}
-              · Reply: <span className="text-text-2">{doctorPolicy.replyMode || 'first'}</span>{' '}
-              · Thread: <span className="text-text-2">{doctorPolicy.threadBinding || 'prefer'}</span>
-            </div>
-            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
-              DMs: <span className="text-text-2">{config.dmPolicy || 'open'}</span>{' '}
-              · Group: <span className="text-text-2">{doctorPolicy.groupPolicy || 'reply-or-mention'}</span>{' '}
-              · Debounce: <span className="text-text-2">{doctorPolicy.inboundDebounceMs ?? 700}ms</span>
-            </div>
-            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
-              Allowlist: <span className="text-text-2">{localAllowlistCount + globalWhatsAppAllowlistCount}</span>{' '}
-              · Blocked: <span className="text-text-2">{localBlocklistCount}</span>{' '}
-              · Reactions: <span className="text-text-2">{doctorPolicy.statusReactions === false ? 'off' : 'on'}</span>{' '}
-              · Typing: <span className="text-text-2">{doctorPolicy.typingIndicators === false ? 'off' : 'on'}</span>
-            </div>
-            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
-              Reset: <span className="text-text-2">{doctorPolicy.resetMode || 'idle'}</span>{' '}
-              {doctorPolicy.resetMode === 'daily'
-                ? `at ${doctorPolicy.dailyResetAt || 'unset'} (${doctorPolicy.resetTimezone || 'server timezone'})`
-                : `idle ${doctorPolicy.idleTimeoutSec ?? 0}s / max ${doctorPolicy.maxAgeSec ?? 0}s`}
-            </div>
-            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
-              Runtime: <span className="text-text-2">{doctorPolicy.thinkingLevel || 'inherit'}</span>{' '}
-              · Provider: <span className="text-text-2">{doctorPolicy.providerOverride || 'agent default'}</span>{' '}
-              · Model: <span className="text-text-2">{doctorPolicy.modelOverride || 'agent default'}</span>
-            </div>
-          </div>
-        )}
-        {doctorWarnings.length > 0 ? (
-          <div className="space-y-2">
-            {doctorWarnings.map((warning, index) => (
-              <div key={`${index}:${warning}`} className="rounded-[10px] border border-amber-400/15 bg-amber-500/8 px-3 py-2 text-[12px] text-amber-200/85 leading-[1.5]">
-                {warning}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-[12px] text-emerald-300/85">
-            {doctorLoading ? 'Running checks…' : 'No autonomy or safety warnings detected for the current form values.'}
-          </div>
-        )}
-        <p className="text-[11px] text-text-3/55 mt-2">
-          This preview updates from the form directly, so you can catch risky connector policy changes before saving.
-        </p>
-      </div>
 
       {/* WhatsApp QR code */}
       {editing && editing.platform === 'whatsapp' && (editing.status === 'running' || waConnecting) && qrDataUrl && (
@@ -1433,12 +1394,131 @@ export function ConnectorSheet() {
         </div>
       )}
 
-      {/* Health timeline (existing connectors only) */}
-      {editing && (
-        <div className="mb-6">
-          <ConnectorHealth connectorId={editing.id} />
+      <AdvancedSettingsSection
+        open={showAdvancedSettings}
+        onToggle={() => setShowAdvancedSettings((current) => !current)}
+        summary={advancedSummary}
+        badges={connectorAdvancedBadges}
+      >
+        {advancedPlatformFields.length > 0 && (
+          <div className="mb-8">
+            <SectionLabel>Platform Overrides</SectionLabel>
+            <p className="text-[12px] text-text-3/60 mb-4">
+              Optional targeting and platform-specific overrides for {platformConfig.label}.
+            </p>
+            {advancedPlatformFields.map((field) => renderConfigField(field))}
+          </div>
+        )}
+
+        {supportsAccessControls && (
+          <div className="mb-8">
+            <SectionLabel>Access Lists</SectionLabel>
+            <p className="text-[12px] text-text-3/60 mb-4">
+              Manage connector-specific allow and deny lists, plus any live pairing state for this connector.
+            </p>
+            {advancedAccessFields.map((field) => renderConfigField(field))}
+            {platform === 'whatsapp' && (
+              <div className="mb-6 rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-[12px] text-text-3">
+                Global WhatsApp approved contacts: {globalWhatsAppAllowlistCount}. They remain managed in Settings.
+              </div>
+            )}
+            {editing && (
+              <div className="mb-2">
+                <ConnectorAccessPanel
+                  connector={editing}
+                  snapshot={accessSnapshot}
+                  loading={accessLoading}
+                  error={accessError}
+                  pending={accessPending}
+                  onAction={handleAccessAction}
+                  description="Live pairing store and owner controls for this connector. Form fields above edit saved config; actions here manage paired senders and pending requests immediately."
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="mb-8">
+          <SectionLabel>Runtime Policy</SectionLabel>
+          <p className="text-[12px] text-text-3/60 mb-4">
+            Conversation identity, reply behavior, reset policy, and other connector runtime overrides.
+          </p>
+          {COMMON_CONFIG_FIELDS.map((field) => renderConfigField(field))}
         </div>
-      )}
+
+        <div className="mb-8 p-4 rounded-[14px] border border-white/[0.06] bg-white/[0.01]">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div>
+              <div className="text-[13px] font-600 text-text-2">Connector Doctor</div>
+              <div className="text-[12px] text-text-3/70">
+                Live autonomy and safety preview for the current connector settings.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadDoctorPreview()}
+              disabled={doctorLoading}
+              className="px-3 py-1.5 rounded-[9px] border border-white/[0.08] bg-transparent text-[12px] font-600 text-text-3 hover:text-text-2 hover:bg-white/[0.04] transition-all cursor-pointer disabled:opacity-50"
+              style={{ fontFamily: 'inherit' }}
+            >
+              {doctorLoading ? 'Checking...' : 'Refresh'}
+            </button>
+          </div>
+          {doctorPolicy && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+              <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
+                Scope: <span className="text-text-2">{doctorPolicy.scope || 'channel-peer'}</span>{' '}
+                · Reply: <span className="text-text-2">{doctorPolicy.replyMode || 'first'}</span>{' '}
+                · Thread: <span className="text-text-2">{doctorPolicy.threadBinding || 'prefer'}</span>
+              </div>
+              <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
+                DMs: <span className="text-text-2">{config.dmPolicy || 'open'}</span>{' '}
+                · Group: <span className="text-text-2">{doctorPolicy.groupPolicy || 'reply-or-mention'}</span>{' '}
+                · Debounce: <span className="text-text-2">{doctorPolicy.inboundDebounceMs ?? 700}ms</span>
+              </div>
+              <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
+                Allowlist: <span className="text-text-2">{localAllowlistCount + globalWhatsAppAllowlistCount}</span>{' '}
+                · Blocked: <span className="text-text-2">{localBlocklistCount}</span>{' '}
+                · Reactions: <span className="text-text-2">{doctorPolicy.statusReactions === false ? 'off' : 'on'}</span>{' '}
+                · Typing: <span className="text-text-2">{doctorPolicy.typingIndicators === false ? 'off' : 'on'}</span>
+              </div>
+              <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
+                Reset: <span className="text-text-2">{doctorPolicy.resetMode || 'idle'}</span>{' '}
+                {doctorPolicy.resetMode === 'daily'
+                  ? `at ${doctorPolicy.dailyResetAt || 'unset'} (${doctorPolicy.resetTimezone || 'server timezone'})`
+                  : `idle ${doctorPolicy.idleTimeoutSec ?? 0}s / max ${doctorPolicy.maxAgeSec ?? 0}s`}
+              </div>
+              <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
+                Runtime: <span className="text-text-2">{doctorPolicy.thinkingLevel || 'inherit'}</span>{' '}
+                · Provider: <span className="text-text-2">{doctorPolicy.providerOverride || 'agent default'}</span>{' '}
+                · Model: <span className="text-text-2">{doctorPolicy.modelOverride || 'agent default'}</span>
+              </div>
+            </div>
+          )}
+          {doctorWarnings.length > 0 ? (
+            <div className="space-y-2">
+              {doctorWarnings.map((warning, index) => (
+                <div key={`${index}:${warning}`} className="rounded-[10px] border border-amber-400/15 bg-amber-500/8 px-3 py-2 text-[12px] text-amber-200/85 leading-[1.5]">
+                  {warning}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-[12px] text-emerald-300/85">
+              {doctorLoading ? 'Running checks…' : 'No autonomy or safety warnings detected for the current form values.'}
+            </div>
+          )}
+          <p className="text-[11px] text-text-3/55 mt-2">
+            This preview updates from the form directly, so you can catch risky connector policy changes before saving.
+          </p>
+        </div>
+
+        {editing && (
+          <div className="mb-0">
+            <ConnectorHealth connectorId={editing.id} />
+          </div>
+        )}
+      </AdvancedSettingsSection>
 
       {/* Actions */}
       <SheetFooter

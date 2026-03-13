@@ -41,7 +41,9 @@ before(async () => {
     model: 'glm-5:cloud',
     plugins: ['manage_agents'],
     tools: ['manage_agents'],
-    platformAssignScope: 'self',
+    delegationEnabled: false,
+    delegationTargetMode: 'all',
+    delegationTargetAgentIds: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   }
@@ -62,7 +64,7 @@ describe('manage_agents soul validation', () => {
   it('rejects non-string soul payloads so preferences do not leak into agent config', async () => {
     const tools = buildCrudTools({
       cwd: process.cwd(),
-      ctx: { agentId: 'agent-soul-test', platformAssignScope: 'self' },
+      ctx: { agentId: 'agent-soul-test', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
       hasPlugin: (name) => name === 'manage_agents',
       hasTool: (name) => name === 'manage_agents',
       cleanupFns: [],
@@ -97,7 +99,7 @@ describe('manage_agents soul validation', () => {
   it('deduplicates repeated manage_agents create calls in the same session', async () => {
     const tools = buildCrudTools({
       cwd: process.cwd(),
-      ctx: { sessionId: 'agent-dedupe-session', agentId: 'agent-soul-test', platformAssignScope: 'all' },
+      ctx: { sessionId: 'agent-dedupe-session', agentId: 'agent-soul-test', delegationEnabled: true, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
       hasPlugin: (name) => name === 'manage_agents',
       hasTool: (name) => name === 'manage_agents',
       cleanupFns: [],

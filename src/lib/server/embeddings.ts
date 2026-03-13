@@ -40,7 +40,7 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
     } else if (provider === 'openai') {
       return await openaiEmbed(text, model, apiKey)
     } else if (provider === 'ollama') {
-      return await ollamaEmbed(text, model, settings.langGraphEndpoint)
+      return await ollamaEmbed(text, model, settings.embeddingEndpoint)
     }
   } catch (err: any) {
     console.error(`[embeddings] Error computing embedding:`, err.message)

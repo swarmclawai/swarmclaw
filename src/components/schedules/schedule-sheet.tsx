@@ -336,7 +336,7 @@ export function ScheduleSheet() {
               agents={agentList}
               selected={agentId}
               onSelect={(id) => setAgentId(id)}
-              showOrchBadge={true}
+              showDelegationBadge={true}
             />
           </div>
 

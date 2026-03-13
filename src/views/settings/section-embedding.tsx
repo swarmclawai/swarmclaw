@@ -37,7 +37,7 @@ export function EmbeddingSection({ appSettings, patchSettings, inputClass, credL
           ].map((p) => (
             <button
               key={String(p.id)}
-              onClick={() => patchSettings({ embeddingProvider: p.id, embeddingModel: null, embeddingCredentialId: null })}
+              onClick={() => patchSettings({ embeddingProvider: p.id, embeddingModel: null, embeddingCredentialId: null, embeddingEndpoint: null })}
               className={`py-3 px-3 rounded-[12px] text-center cursor-pointer transition-all text-[13px] font-600 border
                 ${(appSettings.embeddingProvider || null) === p.id
                   ? 'bg-accent-soft border-accent-bright/25 text-accent-bright'
@@ -116,17 +116,30 @@ export function EmbeddingSection({ appSettings, patchSettings, inputClass, credL
         )}
 
         {appSettings.embeddingProvider === 'ollama' && (
-          <div>
-            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Model</label>
-            <input
-              type="text"
-              value={appSettings.embeddingModel || 'nomic-embed-text'}
-              onChange={(e) => patchSettings({ embeddingModel: e.target.value })}
-              placeholder="nomic-embed-text"
-              className={inputClass}
-              style={{ fontFamily: 'inherit' }}
-            />
-            <p className="text-[11px] text-text-3/60 mt-2">Uses your local Ollama instance for embeddings</p>
+          <div className="space-y-5">
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Model</label>
+              <input
+                type="text"
+                value={appSettings.embeddingModel || 'nomic-embed-text'}
+                onChange={(e) => patchSettings({ embeddingModel: e.target.value })}
+                placeholder="nomic-embed-text"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+            <div>
+              <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Endpoint Override</label>
+              <input
+                type="text"
+                value={appSettings.embeddingEndpoint || ''}
+                onChange={(e) => patchSettings({ embeddingEndpoint: e.target.value || null })}
+                placeholder="http://localhost:11434"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+              <p className="text-[11px] text-text-3/60 mt-2">Leave empty to use the local Ollama default.</p>
+            </div>
           </div>
         )}
       </div>

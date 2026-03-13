@@ -1,15 +1,43 @@
 import { ChatAnthropic } from '@langchain/anthropic'
 import { ChatOpenAI } from '@langchain/openai'
-import { loadCredentials, decryptKey, loadAgents, loadSettings } from './storage'
+import { loadCredentials, decryptKey, loadAgents, loadSessions } from './storage'
 import { getProviderList } from '../providers'
 import { normalizeOpenClawEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '../provider-sets'
 import { resolveOllamaRuntimeConfig } from './ollama-runtime'
+import type { Agent } from '@/types'
 
 const OLLAMA_CLOUD_URL = 'https://ollama.com/v1'
 const OLLAMA_LOCAL_URL = 'http://localhost:11434/v1'
 export const OPENAI_COMPAT_MODEL_TIMEOUT_MS = 180_000
 export const OPENAI_COMPAT_MODEL_MAX_RETRIES = 0
+
+export interface GenerationModelPreference {
+  provider?: string | null
+  model?: string | null
+  credentialId?: string | null
+  apiEndpoint?: string | null
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high' | null
+}
+
+interface ResolvedGenerationModelConfig {
+  provider: string
+  model: string
+  apiKey: string | null
+  apiEndpoint: string | null
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
+}
+
+type OpenAiReasoningEffort = 'low' | 'medium' | 'high'
+type ChatOpenAiConfig = ConstructorParameters<typeof ChatOpenAI>[0] & {
+  modelKwargs?: {
+    reasoning_effort?: OpenAiReasoningEffort
+  }
+  configuration?: {
+    baseURL?: string
+    defaultHeaders?: Record<string, string>
+  }
+}
 
 function toOpenAiCompatibleBaseUrl(endpoint: string | null | undefined, fallback: string): string {
   const normalized = (endpoint || fallback).replace(/\/+$/, '')
@@ -69,7 +97,7 @@ export function buildChatModel(opts: {
   }
 
   // All other providers — OpenAI-compatible with their registered endpoint
-  const config: any = {
+  const config: ChatOpenAiConfig = {
     model: model || 'gpt-4o',
     apiKey: apiKey || undefined,
     timeout: OPENAI_COMPAT_MODEL_TIMEOUT_MS,
@@ -77,7 +105,12 @@ export function buildChatModel(opts: {
   }
   // Map thinking level to reasoning_effort for OpenAI o-series models
   if (thinkingLevel && provider === 'openai' && /^o\d/.test(model || '')) {
-    const effortMap = { minimal: 'low', low: 'low', medium: 'medium', high: 'high' }
+    const effortMap: Record<NonNullable<typeof thinkingLevel>, OpenAiReasoningEffort> = {
+      minimal: 'low',
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+    }
     config.modelKwargs = { reasoning_effort: effortMap[thinkingLevel] }
   }
   if (endpoint) {
@@ -104,82 +137,101 @@ function resolveApiKeyFromCredential(credentialId: string | null | undefined): s
   }
 }
 
-/**
- * Build a LangChain LLM for generation tasks.
- * Priority:
- * 1) Settings -> Orchestrator Engine (if non-CLI provider configured)
- * 2) Default agent (must be non-CLI)
- */
-export async function buildLLM() {
-  const providers = getProviderList()
-  const settings = loadSettings()
+function normalizePreferenceValue(value: string | null | undefined): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
 
-  const configuredProvider = typeof settings.langGraphProvider === 'string'
-    ? settings.langGraphProvider.trim()
-    : ''
-  const hasConfiguredProvider = configuredProvider.length > 0 && !NON_LANGGRAPH_PROVIDER_IDS.has(configuredProvider)
+function getAgentGenerationPreferences(agent: Agent | null | undefined): GenerationModelPreference[] {
+  if (!agent) return []
+  const preferences: GenerationModelPreference[] = [{
+    provider: agent.provider,
+    model: agent.model,
+    credentialId: agent.credentialId || null,
+    apiEndpoint: agent.apiEndpoint || null,
+    thinkingLevel: agent.thinkingLevel || null,
+  }]
+  const routingTargets = Array.isArray(agent.routingTargets)
+    ? [...agent.routingTargets].sort((a, b) => (a.priority || Number.MAX_SAFE_INTEGER) - (b.priority || Number.MAX_SAFE_INTEGER))
+    : []
+  for (const target of routingTargets) {
+    preferences.push({
+      provider: target.provider,
+      model: target.model,
+      credentialId: target.credentialId || null,
+      apiEndpoint: target.apiEndpoint || null,
+      thinkingLevel: agent.thinkingLevel || null,
+    })
+  }
+  return preferences
+}
 
-  if (hasConfiguredProvider) {
-    const providerInfo = providers.find((p) => p.id === configuredProvider)
-    const model = (typeof settings.langGraphModel === 'string' && settings.langGraphModel.trim())
-      ? settings.langGraphModel.trim()
-      : providerInfo?.models?.[0] || ''
-    const apiKey = resolveApiKeyFromCredential(settings.langGraphCredentialId)
-    const apiEndpoint = (typeof settings.langGraphEndpoint === 'string' && settings.langGraphEndpoint.trim())
-      ? settings.langGraphEndpoint.trim()
-      : providerInfo?.defaultEndpoint || null
-
-    if (providerInfo?.requiresApiKey && !apiKey) {
-      throw new Error(`Orchestrator Engine provider "${providerInfo.name}" requires an API key. Configure one in Settings.`)
-    }
-
+function resolvePreferredGenerationConfig(
+  providers: ReturnType<typeof getProviderList>,
+  preferred: GenerationModelPreference | GenerationModelPreference[] | undefined,
+): ResolvedGenerationModelConfig | null {
+  const candidates = Array.isArray(preferred) ? preferred : preferred ? [preferred] : []
+  for (const candidate of candidates) {
+    const provider = normalizePreferenceValue(candidate.provider)
+    if (!provider || NON_LANGGRAPH_PROVIDER_IDS.has(provider)) continue
+    const providerInfo = providers.find((entry) => entry.id === provider)
+    const model = normalizePreferenceValue(candidate.model) || providerInfo?.models?.[0] || ''
+    const apiKey = resolveApiKeyFromCredential(candidate.credentialId)
+    const apiEndpoint = normalizePreferenceValue(candidate.apiEndpoint) || providerInfo?.defaultEndpoint || null
+    if (providerInfo?.requiresApiKey && !apiKey) continue
     return {
-      llm: buildChatModel({
-        provider: configuredProvider,
-        model,
-        apiKey,
-        apiEndpoint,
-      }),
-      provider: configuredProvider,
-      model,
-    }
-  }
-
-  const agents = loadAgents()
-  const agent = agents.default as {
-    provider?: string
-    model?: string
-    credentialId?: string | null
-    apiEndpoint?: string | null
-  } | undefined
-
-  if (!agent) {
-    throw new Error('Default agent not found. Configure Orchestrator Engine in Settings.')
-  }
-
-  if (!agent.provider || NON_LANGGRAPH_PROVIDER_IDS.has(agent.provider)) {
-    throw new Error('Generate with AI requires a non-CLI provider. Configure Orchestrator Engine in Settings.')
-  }
-
-  const providerInfo = providers.find((p) => p.id === agent.provider)
-  const model = (typeof agent.model === 'string' && agent.model.trim())
-    ? agent.model.trim()
-    : providerInfo?.models?.[0] || ''
-  const apiKey = resolveApiKeyFromCredential(agent.credentialId)
-  const apiEndpoint = agent.apiEndpoint || providerInfo?.defaultEndpoint || null
-
-  if (providerInfo?.requiresApiKey && !apiKey) {
-    throw new Error(`Default agent provider "${providerInfo.name}" requires an API key.`)
-  }
-
-  return {
-    llm: buildChatModel({
-      provider: agent.provider,
+      provider,
       model,
       apiKey,
-      apiEndpoint: agent.apiEndpoint,
-    }),
-    provider: agent.provider as string,
-    model,
+      apiEndpoint,
+      thinkingLevel: candidate.thinkingLevel || undefined,
+    }
+  }
+  return null
+}
+
+export function resolveGenerationModelConfig(options?: {
+  preferred?: GenerationModelPreference | GenerationModelPreference[]
+  sessionId?: string | null
+  agentId?: string | null
+}): ResolvedGenerationModelConfig {
+  const providers = getProviderList()
+  const agents = loadAgents()
+  const sessions = loadSessions()
+  const session = options?.sessionId ? sessions[options.sessionId] : null
+  const sessionAgent = session?.agentId ? agents[session.agentId] as Agent | undefined : null
+  const directAgent = options?.agentId ? agents[options.agentId] as Agent | undefined : null
+  const resolved = resolvePreferredGenerationConfig(providers, [
+    ...(Array.isArray(options?.preferred) ? options?.preferred : options?.preferred ? [options.preferred] : []),
+    ...(session ? [{
+      provider: session.provider,
+      model: session.model,
+      credentialId: session.credentialId || null,
+      apiEndpoint: session.apiEndpoint || null,
+      thinkingLevel: session.thinkingLevel || null,
+    }] : []),
+    ...getAgentGenerationPreferences(sessionAgent),
+    ...getAgentGenerationPreferences(directAgent),
+  ])
+  if (resolved) return resolved
+
+  const sessionLabel = options?.sessionId ? `session "${options.sessionId}"` : null
+  const agentLabel = options?.agentId ? `agent "${options.agentId}"` : null
+  const label = [sessionLabel, agentLabel].filter(Boolean).join(' / ') || 'this request'
+  throw new Error(`No generation-compatible model is configured for ${label}. Use a non-CLI provider or add a routed model target to the owning agent.`)
+}
+
+/**
+ * Build a LangChain LLM for generation tasks from explicit session/agent-owned configuration.
+ */
+export async function buildLLM(options?: {
+  preferred?: GenerationModelPreference | GenerationModelPreference[]
+  sessionId?: string | null
+  agentId?: string | null
+}) {
+  const resolved = resolveGenerationModelConfig(options)
+  return {
+    llm: buildChatModel(resolved),
+    provider: resolved.provider,
+    model: resolved.model,
   }
 }

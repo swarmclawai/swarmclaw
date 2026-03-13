@@ -62,7 +62,7 @@ describe('manage_schedules tool', () => {
 
       const tools = crud.buildCrudTools({
         cwd,
-        ctx: { sessionId: 'session-1', agentId: 'default', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-1', agentId: 'default', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'manage_schedules',
       })
       const tool = tools.find((entry) => entry.name === 'manage_schedules')
@@ -144,7 +144,7 @@ describe('manage_schedules tool', () => {
 
       const tools = crud.buildCrudTools({
         cwd: process.env.WORKSPACE_DIR,
-        ctx: { sessionId: 'session-wa', agentId: 'default', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-wa', agentId: 'default', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'manage_schedules',
       })
       const tool = tools.find((entry) => entry.name === 'manage_schedules')
@@ -233,7 +233,7 @@ describe('manage_schedules tool', () => {
 
       const tools = crud.buildCrudTools({
         cwd: process.env.WORKSPACE_DIR,
-        ctx: { sessionId: 'session-main', agentId: 'default', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-main', agentId: 'default', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'manage_schedules',
       })
       const tool = tools.find((entry) => entry.name === 'manage_schedules')
@@ -279,7 +279,7 @@ describe('manage_schedules tool', () => {
 
       const tools = crud.buildCrudTools({
         cwd: process.env.WORKSPACE_DIR,
-        ctx: { sessionId: 'session-main', agentId: 'default', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-main', agentId: 'default', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'manage_schedules',
       })
       const tool = tools.find((entry) => entry.name === 'manage_schedules')
@@ -332,7 +332,7 @@ describe('manage_schedules tool', () => {
 
       const tools = crud.buildCrudTools({
         cwd: process.env.WORKSPACE_DIR,
-        ctx: { sessionId: 'session-2', agentId: 'default', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-2', agentId: 'default', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'manage_schedules',
       })
       const tool = tools.find((entry) => entry.name === 'manage_schedules')
@@ -376,7 +376,7 @@ describe('manage_schedules tool', () => {
 
       const tools = crud.buildCrudTools({
         cwd: process.env.WORKSPACE_DIR,
-        ctx: { sessionId: 'session-reminder', agentId: 'default', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-reminder', agentId: 'default', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'manage_schedules',
       })
       const tool = tools.find((entry) => entry.name === 'manage_schedules')
@@ -465,7 +465,7 @@ describe('manage_schedules tool', () => {
 
       const tools = crud.buildCrudTools({
         cwd: process.env.WORKSPACE_DIR,
-        ctx: { sessionId: 'session-reminder', agentId: 'default', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-reminder', agentId: 'default', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'manage_schedules',
       })
       const tool = tools.find((entry) => entry.name === 'manage_schedules')
@@ -539,7 +539,7 @@ describe('manage_schedules tool', () => {
 
       const tools = crud.buildCrudTools({
         cwd: process.env.WORKSPACE_DIR,
-        ctx: { sessionId: 'session-reminder', agentId: 'default', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-reminder', agentId: 'default', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'manage_schedules',
       })
       const tool = tools.find((entry) => entry.name === 'manage_schedules')

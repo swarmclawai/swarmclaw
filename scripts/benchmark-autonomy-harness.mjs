@@ -1908,7 +1908,9 @@ async function main() {
     credentialId: defaultAgent.credentialId || null,
     apiEndpoint: defaultAgent.apiEndpoint || null,
     tools: profile.tools,
-    platformAssignScope: 'all',
+    delegationEnabled: true,
+    delegationTargetMode: 'all',
+    delegationTargetAgentIds: [],
     memoryScopeMode: profile.hasProjectContext ? 'project' : 'auto',
     projectId: workspaceFixture.project?.id || undefined,
   })

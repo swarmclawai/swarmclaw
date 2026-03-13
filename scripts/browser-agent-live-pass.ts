@@ -34,6 +34,22 @@ const HUMAN_REPLY_TIMEOUT_MS = Number.parseInt(process.env.SWARMCLAW_LIVE_HUMAN_
 const SCHEDULE_FIRE_TIMEOUT_MS = Number.parseInt(process.env.SWARMCLAW_LIVE_SCHEDULE_TIMEOUT_MS || '180000', 10)
 const POLL_INTERVAL_MS = 1000
 
+interface LivePassSummary {
+  ok: boolean
+  baseUrl: string
+  sourceAgentId: string
+  consoleErrors: unknown[]
+  pageErrors: unknown[]
+  requestFailures: unknown[]
+  badResponses: unknown[]
+  steps: Array<Record<string, unknown>>
+  screenshots: Record<string, string>
+  fixture?: { agentId?: string | null; sessionId?: string | null } | null
+  error?: string
+  failureUrl?: string
+  failureText?: string
+}
+
 function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)))
 }
@@ -54,8 +70,9 @@ function buildClonePayload(source: Agent, suffix: string) {
     preferredGatewayUseCase: source.preferredGatewayUseCase ?? null,
     routingStrategy: source.routingStrategy ?? null,
     routingTargets: source.routingTargets || [],
-    platformAssignScope: source.platformAssignScope || 'self',
-    subAgentIds: source.subAgentIds || [],
+    delegationEnabled: source.delegationEnabled ?? false,
+    delegationTargetMode: source.delegationTargetMode || 'all',
+    delegationTargetAgentIds: source.delegationTargetMode === 'selected' ? (source.delegationTargetAgentIds || []) : [],
     plugins: dedupeStrings([...(source.plugins || source.tools || []), 'ask_human']),
     skills: source.skills || [],
     skillIds: source.skillIds || [],
@@ -123,7 +140,7 @@ function countAssistantMessagesContaining(sessionId: string, token: string): num
 
 async function waitFor<T>(
   label: string,
-  fn: () => T | Promise<T>,
+  fn: () => T | null | undefined | Promise<T | null | undefined>,
   timeoutMs: number,
   page: import('playwright').Page,
 ): Promise<T> {
@@ -172,7 +189,7 @@ async function cleanupFixture(fixture: { agentId?: string | null; sessionId?: st
 }
 
 async function main() {
-  const summary: Record<string, unknown> = {
+  const summary: LivePassSummary = {
     ok: false,
     baseUrl: BASE_URL,
     sourceAgentId: SOURCE_AGENT_ID,
@@ -213,14 +230,14 @@ async function main() {
   })
   fixture = { agentId: clonedAgent.id, sessionId: thread.id }
   summary.fixture = fixture
-  ;(summary.steps as Array<Record<string, unknown>>).push({ name: 'create-fixture', ok: true, agentId: clonedAgent.id, sessionId: thread.id })
+  summary.steps.push({ name: 'create-fixture', ok: true, agentId: clonedAgent.id, sessionId: thread.id })
 
   await page.goto(new URL('/', BASE_URL).toString(), {
     waitUntil: 'domcontentloaded',
     timeout: 30_000,
   })
   await maybeAuthenticate(page, accessKey)
-  await page.evaluate((agentId) => {
+  await page.evaluate((agentId: string) => {
     window.localStorage.setItem('sc_agent', agentId)
   }, clonedAgent.id)
   await page.goto(new URL(`/agents/${clonedAgent.id}`, BASE_URL).toString(), {
@@ -229,9 +246,9 @@ async function main() {
   })
   await page.waitForSelector('[data-testid="chat-area"]', { timeout: 30_000 })
   await page.waitForSelector('[data-testid="chat-input"]', { timeout: 30_000 })
-  ;(summary.screenshots as Record<string, unknown>).chatLoaded = path.join(OUTPUT_DIR, 'chat-loaded.png')
-  await page.screenshot({ path: summary.screenshots.chatLoaded as string, fullPage: true })
-  ;(summary.steps as Array<Record<string, unknown>>).push({ name: 'open-chat', ok: true })
+  summary.screenshots.chatLoaded = path.join(OUTPUT_DIR, 'chat-loaded.png')
+  await page.screenshot({ path: summary.screenshots.chatLoaded, fullPage: true })
+  summary.steps.push({ name: 'open-chat', ok: true })
 
   const askHumanPrompt = [
     'Use the ask_human tool exactly once.',
@@ -240,7 +257,11 @@ async function main() {
   ].join(' ')
   const beforeAskHumanCount = getSession(thread.id).messages.length
   await sendChatMessage(page, askHumanPrompt)
-  const humanLoopState = await waitFor(
+  const humanLoopState = await waitFor<{
+    pendingHumanRequests: MailboxEnvelope[]
+    activeMailboxWatchJobs: WatchJob[]
+    latestAssistantText: string
+  }>(
     'human-loop registration',
     () => {
       const pendingHumanRequests = listPendingHumanRequests(thread.id)
@@ -257,7 +278,7 @@ async function main() {
     HUMAN_REPLY_TIMEOUT_MS,
     page,
   )
-  ;(summary.steps as Array<Record<string, unknown>>).push({
+  summary.steps.push({
     name: 'human-loop-request',
     ok: true,
     pendingHumanRequests: humanLoopState.pendingHumanRequests.length,
@@ -266,7 +287,9 @@ async function main() {
 
   await sendChatMessage(page, 'OAK')
   const afterReplyCount = getSession(thread.id).messages.length
-  const replyResolvedState = await waitFor(
+  const replyResolvedState = await waitFor<{
+    latestAssistantText: string
+  }>(
     'human-loop reply resolution',
     () => {
       const pendingHumanRequests = listPendingHumanRequests(thread.id)
@@ -283,7 +306,7 @@ async function main() {
     HUMAN_REPLY_TIMEOUT_MS,
     page,
   )
-  ;(summary.steps as Array<Record<string, unknown>>).push({
+  summary.steps.push({
     name: 'human-loop-reply',
     ok: true,
     latestAssistantText: replyResolvedState.latestAssistantText,
@@ -297,7 +320,7 @@ async function main() {
   ].join(' ')
   const scheduleStart = Date.now()
   await sendChatMessage(page, schedulePrompt)
-  const createdSchedule = await waitFor(
+  const createdSchedule = await waitFor<Schedule>(
     'schedule creation',
     () => {
       const schedules = listFixtureSchedules(clonedAgent.id, thread.id, scheduleStart - 5_000)
@@ -307,7 +330,7 @@ async function main() {
     HUMAN_REPLY_TIMEOUT_MS,
     page,
   )
-  ;(summary.steps as Array<Record<string, unknown>>).push({
+  summary.steps.push({
     name: 'schedule-created',
     ok: true,
     scheduleId: createdSchedule.id,
@@ -315,7 +338,7 @@ async function main() {
     nextRunAt: createdSchedule.nextRunAt ?? null,
   })
 
-  const scheduleFireCount = await waitFor(
+  const scheduleFireCount = await waitFor<number>(
     'schedule fire',
     () => {
       const count = countAssistantMessagesContaining(thread.id, scheduleToken)
@@ -327,21 +350,21 @@ async function main() {
   if (scheduleFireCount !== 1) {
     throw new Error(`Expected exactly one schedule-fire message, saw ${scheduleFireCount}.`)
   }
-  ;(summary.steps as Array<Record<string, unknown>>).push({
+  summary.steps.push({
     name: 'schedule-fired',
     ok: true,
     token: scheduleToken,
   })
 
-  ;(summary.screenshots as Record<string, unknown>).chatComplete = path.join(OUTPUT_DIR, 'chat-complete.png')
-  await page.screenshot({ path: summary.screenshots.chatComplete as string, fullPage: true })
+  summary.screenshots.chatComplete = path.join(OUTPUT_DIR, 'chat-complete.png')
+  await page.screenshot({ path: summary.screenshots.chatComplete, fullPage: true })
 
   summary.ok =
-    (summary.steps as Array<Record<string, unknown>>).every((step) => step.ok === true)
-    && (summary.consoleErrors as unknown[]).length === 0
-    && (summary.pageErrors as unknown[]).length === 0
-    && (summary.requestFailures as unknown[]).length === 0
-    && (summary.badResponses as unknown[]).length === 0
+    summary.steps.every((step) => step.ok === true)
+    && summary.consoleErrors.length === 0
+    && summary.pageErrors.length === 0
+    && summary.requestFailures.length === 0
+    && summary.badResponses.length === 0
   } catch (error) {
     summary.ok = false
     summary.error = error instanceof Error ? error.message : String(error)

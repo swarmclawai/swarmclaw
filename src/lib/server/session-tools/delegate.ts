@@ -36,7 +36,13 @@ interface DelegateContext {
   claudeTimeoutMs?: number
   readStoredDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini') => string | null
   persistDelegateResumeId?: (key: 'claudeCode' | 'codex' | 'opencode' | 'gemini', id: string | null | undefined) => void
-  ctx?: { platformAssignScope?: string; agentId?: string | null; sessionId?: string | null }
+  ctx?: {
+    delegationEnabled?: boolean
+    delegationTargetMode?: 'all' | 'selected'
+    delegationTargetAgentIds?: string[]
+    agentId?: string | null
+    sessionId?: string | null
+  }
   hasPlugin?: (name: string) => boolean
   /** @deprecated Use hasPlugin */
   hasTool?: (name: string) => boolean
@@ -99,7 +105,13 @@ function buildDelegateContextFromSessionish(session: unknown): DelegateContext {
       ? record.sessionId
       : null
   const agentId = typeof record.agentId === 'string' ? record.agentId : null
-  const platformAssignScope = typeof record.platformAssignScope === 'string' ? record.platformAssignScope : undefined
+  const delegationEnabled = record.delegationEnabled === true
+  const delegationTargetMode = record.delegationTargetMode === 'selected'
+    ? 'selected'
+    : 'all'
+  const delegationTargetAgentIds = Array.isArray(record.delegationTargetAgentIds)
+    ? record.delegationTargetAgentIds.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : []
   const storedResumeIds = record.delegateResumeIds && typeof record.delegateResumeIds === 'object'
     ? record.delegateResumeIds as Record<string, unknown>
     : null
@@ -122,7 +134,9 @@ function buildDelegateContextFromSessionish(session: unknown): DelegateContext {
     ctx: {
       sessionId,
       agentId,
-      platformAssignScope,
+      delegationEnabled,
+      delegationTargetMode,
+      delegationTargetAgentIds,
     },
   }
 }
@@ -967,7 +981,7 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
   const tools: StructuredToolInterface[] = []
   const { hasPlugin } = bctx
 
-  if (hasPlugin('delegate')) {
+  if (bctx.ctx?.delegationEnabled && hasPlugin('delegate')) {
     tools.push(
       tool(
         async (args) => executeDelegateAction(args, bctx),
@@ -981,7 +995,7 @@ export function buildDelegateTools(bctx: ToolBuildContext): StructuredToolInterf
   }
 
   // Assign to agent and check status tools (kept as platform-level tools)
-  if (bctx.ctx?.platformAssignScope === 'all' && bctx.ctx?.agentId) {
+  if (bctx.ctx?.delegationEnabled && bctx.ctx?.agentId) {
     // ... existing check_delegation_status and delegate_to_agent ...
     // These are already part of PLATFORM_TOOLS in tool-definitions
   }

@@ -177,7 +177,7 @@ export function parseSwarmStatusOutput(toolName: string, output: string): import
     return {
       swarmId: snap.swarmId || data.swarmId || '',
       parentSessionId: snap.parentSessionId || null,
-      parentAgentName: 'Orchestrator',
+      parentAgentName: 'Delegating Agent',
       parentAgentSeed: null,
       status: snap.status || 'running',
       createdAt: snap.createdAt || Date.now(),

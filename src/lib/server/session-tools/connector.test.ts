@@ -158,7 +158,9 @@ describe('connector_message_tool contract', () => {
     const built = await buildSessionTools(process.cwd(), ['manage_connectors'], {
       sessionId: 'connector-native-schema-test',
       agentId: 'default',
-      platformAssignScope: 'self',
+      delegationEnabled: false,
+      delegationTargetMode: 'all',
+      delegationTargetAgentIds: [],
     })
 
     try {
@@ -181,7 +183,9 @@ describe('connector_message_tool contract', () => {
     const built = await buildSessionTools(process.cwd(), ['connector_message_tool'], {
       sessionId: 'connector-tool-alias-test',
       agentId: 'default',
-      platformAssignScope: 'self',
+      delegationEnabled: false,
+      delegationTargetMode: 'all',
+      delegationTargetAgentIds: [],
     })
 
     try {

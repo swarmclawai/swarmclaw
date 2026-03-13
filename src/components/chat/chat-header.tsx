@@ -744,7 +744,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
                 {connectorPresenceMeta.label}
               </HeaderChip>
             )}
-            {agent?.platformAssignScope === 'all' && (
+            {agent?.delegationEnabled === true && (
               <HeaderChip className="bg-amber-500/10 border-amber-500/15 text-amber-400 shrink-0">Delegates</HeaderChip>
             )}
             {streaming && (

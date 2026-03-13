@@ -3,24 +3,38 @@ import assert from 'node:assert/strict'
 import { AgentCreateSchema } from './schemas'
 
 describe('AgentCreateSchema', () => {
-  it('defaults platformAssignScope to all', () => {
+  it('defaults delegation to disabled with all-target mode available', () => {
     const parsed = AgentCreateSchema.parse({
       name: 'Solo Agent',
       provider: 'openai',
     })
 
-    assert.equal(parsed.platformAssignScope, 'all')
+    assert.equal(parsed.delegationEnabled, false)
+    assert.equal(parsed.delegationTargetMode, 'all')
+    assert.deepEqual(parsed.delegationTargetAgentIds, [])
   })
 
-  it('accepts explicit all-scope delegation without relying on legacy orchestrator flags', () => {
+  it('defaults heartbeat and proactive memory to enabled for new agents', () => {
+    const parsed = AgentCreateSchema.parse({
+      name: 'Solo Agent',
+      provider: 'openai',
+    })
+
+    assert.equal(parsed.heartbeatEnabled, true)
+    assert.equal(parsed.proactiveMemory, true)
+  })
+
+  it('accepts explicit delegation settings without any legacy coordination flags', () => {
     const parsed = AgentCreateSchema.parse({
       name: 'Coordinator',
       provider: 'openai',
-      platformAssignScope: 'all',
-      isOrchestrator: false,
+      delegationEnabled: true,
+      delegationTargetMode: 'selected',
+      delegationTargetAgentIds: ['agent-a', 'agent-b'],
     })
 
-    assert.equal(parsed.platformAssignScope, 'all')
-    assert.equal(parsed.isOrchestrator, false)
+    assert.equal(parsed.delegationEnabled, true)
+    assert.equal(parsed.delegationTargetMode, 'selected')
+    assert.deepEqual(parsed.delegationTargetAgentIds, ['agent-a', 'agent-b'])
   })
 })

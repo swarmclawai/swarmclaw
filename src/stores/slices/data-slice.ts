@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand'
 import type { AppState } from '../use-app-store'
-import type { NetworkInfo, Directory, ProviderInfo, Credentials, Schedule, AppSettings, OrchestratorSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, ActivityEntry, AppNotification, GatewayProfile } from '../../types'
+import type { NetworkInfo, Directory, ProviderInfo, Credentials, Schedule, AppSettings, StoredSecret, ProviderConfig, Skill, Connector, Webhook, McpServerConfig, PluginMeta, Project, ActivityEntry, AppNotification, GatewayProfile } from '../../types'
 import { api } from '@/lib/app/api-client'
 import { safeStorageGetJson, safeStorageSet } from '@/lib/app/safe-storage'
 import { fetchDirs, fetchProviders, fetchCredentials } from '@/lib/chat/chats'
@@ -21,7 +21,7 @@ export interface DataSlice {
   appSettings: AppSettings
   loadSettings: () => Promise<void>
   updateSettings: (patch: Partial<AppSettings>) => Promise<void>
-  secrets: Record<string, OrchestratorSecret>
+  secrets: Record<string, StoredSecret>
   loadSecrets: () => Promise<void>
   providerConfigs: ProviderConfig[]
   loadProviderConfigs: () => Promise<void>
@@ -122,7 +122,7 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
   secrets: {},
   loadSecrets: async () => {
     try {
-      const secrets = await api<Record<string, OrchestratorSecret>>('GET', '/secrets')
+      const secrets = await api<Record<string, StoredSecret>>('GET', '/secrets')
       setIfChanged<AppState>(set, 'secrets', secrets)
     } catch (err) {
       console.warn('Store error:', err)

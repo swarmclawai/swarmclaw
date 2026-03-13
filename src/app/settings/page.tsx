@@ -8,7 +8,6 @@ import { PageLoader } from '@/components/ui/page-loader'
 import { inputClass } from '@/views/settings/utils'
 import { UserPreferencesSection } from '@/views/settings/section-user-preferences'
 import { ThemeSection } from '@/views/settings/section-theme'
-import { OrchestratorSection } from '@/views/settings/section-orchestrator'
 import { RuntimeLoopSection } from '@/views/settings/section-runtime-loop'
 import { SupervisorReflectionSection } from '@/views/settings/section-supervisor-reflection'
 import { CapabilityPolicySection } from '@/views/settings/section-capability-policy'
@@ -60,7 +59,7 @@ const TABS: Tab[] = [
   {
     id: 'agents',
     label: 'Agents & Automation',
-    keywords: ['orchestrator', 'runtime', 'loop', 'automation', 'heartbeat', 'delegation', 'agent', 'swarm', 'turns'],
+    keywords: ['runtime', 'loop', 'automation', 'heartbeat', 'delegation', 'agent', 'swarm', 'turns'],
     icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>,
   },
   {
@@ -165,14 +164,6 @@ export default function SettingsRoute() {
       description: 'Adjust theme hue and interface styling.',
       keywords: ['theme', 'appearance', 'color', 'hue'],
       render: () => <ThemeSection {...sectionProps} />,
-    },
-    {
-      id: 'coordination-engine',
-      tabId: 'agents',
-      title: 'Coordination Engine',
-      description: 'Choose the model settings used for delegation-heavy agent work.',
-      keywords: ['coordination', 'delegation', 'engine', 'orchestrator'],
-      render: () => <OrchestratorSection {...sectionProps} />,
     },
     {
       id: 'runtime-loop',

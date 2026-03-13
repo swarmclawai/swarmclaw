@@ -1708,44 +1708,46 @@ async function runResearchBuildDeployScenario(ctx: ScenarioContext): Promise<Age
   }
 }
 
-async function runBlackboardOrchestratorScenario(ctx: ScenarioContext): Promise<AgentRegressionScenarioResult> {
+async function runBlackboardDelegationScenario(ctx: ScenarioContext): Promise<AgentRegressionScenarioResult> {
   const noteRelativePath = 'ops/blackboard-fit.md'
   const notePath = scenarioFile(ctx, noteRelativePath)
   const prefix = `Eval ${ctx.sessionId.slice(-8)}`
   const departments = [
-    { agentName: `${prefix} Research Orchestrator`, taskTitle: `${prefix} research-blackboard` },
-    { agentName: `${prefix} Product Orchestrator`, taskTitle: `${prefix} product-blackboard` },
-    { agentName: `${prefix} Revenue Orchestrator`, taskTitle: `${prefix} revenue-blackboard` },
-    { agentName: `${prefix} Operations Orchestrator`, taskTitle: `${prefix} operations-blackboard` },
-    { agentName: `${prefix} Support Orchestrator`, taskTitle: `${prefix} support-blackboard` },
+    { agentName: `${prefix} Research Lead`, taskTitle: `${prefix} research-blackboard` },
+    { agentName: `${prefix} Product Lead`, taskTitle: `${prefix} product-blackboard` },
+    { agentName: `${prefix} Revenue Lead`, taskTitle: `${prefix} revenue-blackboard` },
+    { agentName: `${prefix} Operations Lead`, taskTitle: `${prefix} operations-blackboard` },
+    { agentName: `${prefix} Support Lead`, taskTitle: `${prefix} support-blackboard` },
   ]
 
   const agentsBefore = loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>
   const currentAgent = agentsBefore[ctx.agentId]
-  const previousAssignScope = typeof currentAgent?.platformAssignScope === 'string'
-    ? currentAgent.platformAssignScope
-    : undefined
+  const previousDelegationEnabled = currentAgent?.delegationEnabled === true
   if (currentAgent) {
-    currentAgent.platformAssignScope = 'all'
+    currentAgent.delegationEnabled = true
+    currentAgent.delegationTargetMode = 'all'
+    currentAgent.delegationTargetAgentIds = []
     currentAgent.updatedAt = Date.now()
     agentsBefore[ctx.agentId] = currentAgent
     saveAgents(agentsBefore)
-    ctx.agent.platformAssignScope = 'all'
+    ctx.agent.delegationEnabled = true
+    ctx.agent.delegationTargetMode = 'all'
+    ctx.agent.delegationTargetAgentIds = []
   }
 
   try {
     const prompt = [
-      'Evaluate whether SwarmClaw can support a zero-work KING COO orchestrator model.',
+      'Evaluate whether SwarmClaw can support a zero-work delegation-led coordination model.',
       'Do not do any department implementation work yourself.',
       'Use manage_agents to create exactly five full agents with these exact names:',
       ...departments.map((department) => `- ${department.agentName}`),
-      'Give each agent a short soul that describes a department orchestrator or execution lead.',
+      'Give each agent a short soul that describes a department lead or execution lead.',
       'Use manage_tasks to create exactly five backlog tasks with these exact titles and assign one task to each new agent:',
       ...departments.map((department) => `- ${department.taskTitle}`),
       `Write "${noteRelativePath}" with sections "Supported Today", "Native Gaps", and "Bridging Plan".`,
       'In that note, mention that SwarmClaw already has native agents, task queues, memory, and chatroom/connector communication primitives.',
       'Also state clearly that SurrealDB would currently be an external integration or custom backing store, not a native built-in blackboard database.',
-      'In your final response list the created agent ids, the created task ids, reference the note path, and say explicitly that the orchestrator stayed coordinator-only.',
+      'In your final response list the created agent ids, the created task ids, reference the note path, and say explicitly that the delegating agent stayed coordinator-only.',
     ].join('\n')
 
     await runTurn(ctx, prompt)
@@ -1758,7 +1760,7 @@ async function runBlackboardOrchestratorScenario(ctx: ScenarioContext): Promise<
     if (createdAgents.length < departments.length || createdTasks.length < departments.length || !fs.existsSync(notePath)) {
       await runTurn(
         ctx,
-        'Finish the orchestration setup exactly as requested. Create any missing agents, create any missing backlog tasks assigned to those agents, and write the missing architecture note. Do not do department implementation work yourself.',
+        'Finish the delegation setup exactly as requested. Create any missing agents, create any missing backlog tasks assigned to those agents, and write the missing architecture note. Do not do department implementation work yourself.',
       )
       createdAgents = Object.values(loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>)
         .filter((agent) => agent?.createdInSessionId === ctx.sessionId)
@@ -1812,7 +1814,7 @@ async function runBlackboardOrchestratorScenario(ctx: ScenarioContext): Promise<
         ctx,
         [
           `If "${noteRelativePath}" is missing or incomplete, write it now with the required sections and SurrealDB gap explanation.`,
-          'Then reply with a concise summary that lists the created agent ids, the created task ids, references the note path exactly, and says the orchestrator stayed coordinator-only.',
+          'Then reply with a concise summary that lists the created agent ids, the created task ids, references the note path exactly, and says the delegating agent stayed coordinator-only.',
         ].join(' '),
       )
       noteText = readIfExists(notePath)
@@ -1831,7 +1833,7 @@ async function runBlackboardOrchestratorScenario(ctx: ScenarioContext): Promise<
         weight: 2,
       },
       {
-        name: 'five orchestrator agents created',
+        name: 'five delegated department agents created',
         passed: createdAgents.length === departments.length
           && createdAgents.every((agent) => expectedAgentNames.has(String(agent.name || ''))),
         details: createdAgents.map((agent) => `${agent.id}:${agent.name}`).join(' | '),
@@ -1858,15 +1860,15 @@ async function runBlackboardOrchestratorScenario(ctx: ScenarioContext): Promise<
         weight: 3,
       },
       {
-        name: 'final response references coordinator-only orchestration note',
+        name: 'final response references coordinator-only delegation note',
         passed: hasCoordinatorSummary(),
       },
     ]
 
     const scored = scoreAssertions(assertions)
     return {
-      scenarioId: 'blackboard-orchestrator-fit',
-      name: 'Blackboard Orchestrator Fit',
+      scenarioId: 'blackboard-delegation-fit',
+      name: 'Blackboard Delegation Fit',
       approvalMode: ctx.approvalMode,
       pluginMode: ctx.pluginMode,
       ...scored,
@@ -1887,19 +1889,15 @@ async function runBlackboardOrchestratorScenario(ctx: ScenarioContext): Promise<
   } finally {
     const latestAgents = loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>
     if (latestAgents[ctx.agentId]) {
-      if (previousAssignScope) {
-        latestAgents[ctx.agentId].platformAssignScope = previousAssignScope
-      } else {
-        delete latestAgents[ctx.agentId].platformAssignScope
-      }
+      latestAgents[ctx.agentId].delegationEnabled = previousDelegationEnabled
+      latestAgents[ctx.agentId].delegationTargetMode = 'all'
+      latestAgents[ctx.agentId].delegationTargetAgentIds = []
       latestAgents[ctx.agentId].updatedAt = Date.now()
       saveAgents(latestAgents)
     }
-    if (previousAssignScope) {
-      ctx.agent.platformAssignScope = previousAssignScope
-    } else {
-      delete ctx.agent.platformAssignScope
-    }
+    ctx.agent.delegationEnabled = previousDelegationEnabled
+    ctx.agent.delegationTargetMode = 'all'
+    ctx.agent.delegationTargetAgentIds = []
   }
 }
 
@@ -2182,11 +2180,11 @@ export const AGENT_REGRESSION_SCENARIOS: AgentRegressionScenarioDefinition[] = [
     run: runResearchBuildDeployScenario,
   },
   {
-    id: 'blackboard-orchestrator-fit',
-    name: 'Blackboard Orchestrator Fit',
+    id: 'blackboard-delegation-fit',
+    name: 'Blackboard Delegation Fit',
     plugins: ['manage_agents', 'manage_tasks', 'files'],
     defaultInSuite: false,
-    run: runBlackboardOrchestratorScenario,
+    run: runBlackboardDelegationScenario,
   },
   {
     id: 'tool-call-efficiency',

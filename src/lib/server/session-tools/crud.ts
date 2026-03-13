@@ -297,12 +297,12 @@ const RESOURCE_DEFAULTS: Record<string, (parsed: any) => any> = {
     soul: p.soul || '',
     provider: p.provider || 'claude-cli',
     model: p.model || '',
-    platformAssignScope: p.platformAssignScope === 'all' ? 'all' : 'self',
-    isOrchestrator: p.platformAssignScope === 'all',
+    delegationEnabled: p.delegationEnabled === true,
+    delegationTargetMode: p.delegationTargetMode === 'selected' ? 'selected' : 'all',
     tools: p.tools || [],
     skills: p.skills || [],
     skillIds: p.skillIds || [],
-    subAgentIds: p.subAgentIds || [],
+    delegationTargetAgentIds: p.delegationTargetMode === 'selected' ? (p.delegationTargetAgentIds || []) : [],
     ...p,
   }),
   manage_tasks: (p) => ({
@@ -403,10 +403,10 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
   }
 
   // Build dynamic agent summary for tools that need agent awareness
-  const assignScope = ctx?.platformAssignScope || 'self'
+  const canAssignOtherAgents = ctx?.delegationEnabled === true
   let agentSummary = ''
   if (hasPlugin('manage_tasks') || hasPlugin('manage_schedules')) {
-    if (assignScope === 'all') {
+    if (canAssignOtherAgents) {
       try {
         const agents = loadAgents()
         const agentList = Object.values(agents)
@@ -425,7 +425,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
       description += `\n\nUse this direct tool name exactly as shown (\`${toolKey}\`). Do not swap it for \`manage_platform\` unless that umbrella tool is separately enabled in the current session.`
     }
     if (toolKey === 'manage_tasks') {
-      if (assignScope === 'self') {
+      if (!canAssignOtherAgents) {
         description += `\n\nYou may create tasks for yourself ("${ctx?.agentId || 'unknown'}") or leave them unassigned to track multi-step work. You cannot assign tasks to other agents unless a user enables "Assign to Other Agents" in your agent settings. Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.`
       } else {
         description += `\n\nYou may create tasks for yourself, leave them unassigned, or delegate them to other agents. Your agent ID is "${ctx?.agentId || 'unknown'}". When delegating, set a target agent using "agentId", "assignee", "agent", "assignedAgentId", or "assigned_agent_id". Use the target agent's exact ID when possible. Valid manual statuses: backlog, queued, completed, failed, archived. "running" is runtime-only and set automatically when execution starts.` + agentSummary
@@ -442,9 +442,9 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
         description += `\n\nCurrent project context: "${ctx.projectName || ctx.projectId}" (projectId "${ctx.projectId}"). For get/update/delete, you may omit "id" to target this active project.`
       }
     } else if (toolKey === 'manage_agents') {
-      description += `\n\nAgents may self-edit their own soul only when explicitly changing persona or operating instructions. Do not use manage_agents to store user preferences, durable facts, or normal memory; use the memory tools for that. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field. Set "platformAssignScope":"all" to let an agent delegate work across the fleet; use "self" for solo execution.`
+      description += `\n\nAgents may self-edit their own soul only when explicitly changing persona or operating instructions. Do not use manage_agents to store user preferences, durable facts, or normal memory; use the memory tools for that. To update your soul, use action="update", id="${ctx?.agentId || 'your-agent-id'}", and include data with the "soul" field. Set "delegationEnabled":true to let an agent delegate work across the fleet. Use "delegationTargetMode":"selected" plus "delegationTargetAgentIds" to limit which agents it may delegate to.`
     } else if (toolKey === 'manage_schedules') {
-      if (assignScope === 'self') {
+      if (!canAssignOtherAgents) {
         description += `\n\nOmit "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}"), or set it explicitly to yourself. You can only assign schedules to yourself. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Provide either taskPrompt, command, or action+path. Before create, call list/get to avoid duplicate schedules. Reuse or update an existing schedule you already created in this chat instead of making a near-duplicate. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true). For one-off reminders, prefer "once"; agent-created one-off schedules are cleaned up automatically after they finish. When the user says stop/pause/cancel a reminder, pause or delete every matching schedule you created in this chat, not just one row.`
       } else {
         description += `\n\nOmit "agentId" to assign a schedule to yourself ("${ctx?.agentId || 'unknown'}"), or set "agentId" to another agent when needed. Schedule types: interval (set intervalMs), cron (set cron), once (set runAt). Provide either taskPrompt, command, or action+path. Before create, call list/get to avoid duplicate schedules. Reuse or update an existing schedule you already created in this chat instead of making a near-duplicate. If an equivalent active/paused schedule already exists, create returns that existing schedule (deduplicated=true). For one-off reminders, prefer "once"; agent-created one-off schedules are cleaned up automatically after they finish. When the user says stop/pause/cancel a reminder, pause or delete every matching schedule you created in this chat, not just one row.` + agentSummary
@@ -564,12 +564,12 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                     : null,
                   { allowDescription: toolKey === 'manage_tasks' },
                 )
-                const assignmentError = validateManagedAgentAssignment({
-                  resourceLabel: res.label,
-                  agents,
-                  assignScope,
-                  currentAgentId: ctx?.agentId || null,
-                  targetAgentId: resolution.agentId,
+                  const assignmentError = validateManagedAgentAssignment({
+                    resourceLabel: res.label,
+                    agents,
+                    assignScope: canAssignOtherAgents ? 'all' : 'self',
+                    currentAgentId: ctx?.agentId || null,
+                    targetAgentId: resolution.agentId,
                   unresolvedReference: resolution.unresolvedReference,
                   isDelegation: toolKey === 'manage_tasks' ? isDelegationTaskPayload(parsed as Record<string, unknown>) : false,
                   delegatorAgentId: toolKey === 'manage_tasks'
@@ -739,7 +739,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   const assignmentError = validateManagedAgentAssignment({
                     resourceLabel: res.label,
                     agents: managedAgents,
-                    assignScope,
+                    assignScope: canAssignOtherAgents ? 'all' : 'self',
                     currentAgentId: ctx?.agentId || null,
                     targetAgentId: requestedClear ? null : resolution.agentId,
                     unresolvedReference: requestedClear ? null : resolution.unresolvedReference,

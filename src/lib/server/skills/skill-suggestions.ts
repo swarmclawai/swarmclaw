@@ -12,7 +12,7 @@ import {
   saveSkillSuggestions,
   saveSkills,
 } from '@/lib/server/storage'
-import { buildLLM } from '@/lib/server/build-llm'
+import { buildLLM, type GenerationModelPreference } from '@/lib/server/build-llm'
 import { notify } from '@/lib/server/ws-hub'
 import { normalizeSkillPayload } from './skills-normalize'
 import { clearDiscoveredSkillsCache } from './skill-discovery'
@@ -208,6 +208,8 @@ export async function createSkillSuggestionFromSession(
   const sessions = loadSessions()
   const session = sessions[sessionId] as Session | undefined
   if (!session) throw new Error(`Session "${sessionId}" not found.`)
+  const agents = loadAgents()
+  const agent = session.agentId ? agents[session.agentId] : null
 
   const transcript = buildSessionTranscript(session)
   const sourceMessageCount = getSessionMessageCount(session)
@@ -232,7 +234,25 @@ export async function createSkillSuggestionFromSession(
   const responseText = options?.generateText
     ? await options.generateText(prompt)
     : await (async () => {
-      const { llm } = await buildLLM()
+      const preferredModels: GenerationModelPreference[] = [{
+        provider: session.provider,
+        model: session.model,
+        credentialId: session.credentialId || null,
+        apiEndpoint: session.apiEndpoint || null,
+        thinkingLevel: session.thinkingLevel || null,
+      }]
+      if (agent) {
+        preferredModels.push({
+          provider: agent.provider,
+          model: agent.model,
+          credentialId: agent.credentialId || null,
+          apiEndpoint: agent.apiEndpoint || null,
+          thinkingLevel: agent.thinkingLevel || null,
+        })
+      }
+      const { llm } = await buildLLM({
+        preferred: preferredModels,
+      })
       const response = await llm.invoke([new HumanMessage(prompt)])
       return getModelText(response.content)
     })()
@@ -241,8 +261,6 @@ export async function createSkillSuggestionFromSession(
     throw new Error(parsed.reason || 'No reusable skill draft could be generated from this conversation.')
   }
 
-  const agents = loadAgents()
-  const agent = session.agentId ? agents[session.agentId] : null
   const now = Date.now()
   const suggestionId = sessionDraft?.id || genId()
   const suggestion: SkillSuggestion = {

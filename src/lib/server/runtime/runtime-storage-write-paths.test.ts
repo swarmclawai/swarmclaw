@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..')
+const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..')
 
 function readRepoSource(relativePath: string): string {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf-8')
@@ -15,16 +15,6 @@ test('runtime hot paths use row-level task, schedule, and agent writes', () => {
       file: 'src/lib/server/runtime/scheduler.ts',
       required: ['upsertTask(', 'upsertSchedule(', 'upsertSchedules('],
       forbidden: ['saveTasks(', 'saveSchedules('],
-    },
-    {
-      file: 'src/lib/server/agents/orchestrator-lg.ts',
-      required: ['patchTask(', 'upsertTask('],
-      forbidden: ['saveTasks('],
-    },
-    {
-      file: 'src/app/api/orchestrator/run/route.ts',
-      required: ['upsertTask('],
-      forbidden: ['saveTasks('],
     },
     {
       file: 'src/app/api/schedules/[id]/run/route.ts',

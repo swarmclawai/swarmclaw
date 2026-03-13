@@ -820,7 +820,7 @@ describe('sanitizeConnectorOutboundContent', () => {
       const built = await toolsApi.buildSessionTools(process.cwd(), ['manage_connectors'], {
         sessionId: 'session_1',
         agentId: 'agent_1',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
       })
 
       try {
@@ -928,7 +928,7 @@ describe('sanitizeConnectorOutboundContent', () => {
       const built = await toolsApi.buildSessionTools(process.cwd(), ['manage_connectors'], {
         sessionId: 'session_1',
         agentId: 'agent_1',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
       })
 
       try {
@@ -1039,7 +1039,7 @@ describe('sanitizeConnectorOutboundContent', () => {
       const built = await toolsApi.buildSessionTools(process.cwd(), ['manage_connectors'], {
         sessionId: 'session_1',
         agentId: 'agent_1',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
       })
 
       try {
@@ -1273,7 +1273,7 @@ describe('sanitizeConnectorOutboundContent', () => {
       const built = await toolsApi.buildSessionTools(process.cwd(), ['manage_connectors'], {
         sessionId: 'session_1',
         agentId: 'agent_1',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
       })
 
       try {
@@ -1380,7 +1380,7 @@ describe('sanitizeConnectorOutboundContent', () => {
       const built = await toolsApi.buildSessionTools(process.cwd(), ['manage_connectors'], {
         sessionId: 'session_1',
         agentId: 'agent_1',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
       })
 
       try {
@@ -2117,7 +2117,7 @@ describe('sanitizeConnectorOutboundContent', () => {
       const built = await toolsApi.buildSessionTools(process.cwd(), ['manage_connectors'], {
         sessionId: 'session_1',
         agentId: 'agent_1',
-        platformAssignScope: 'self',
+        delegationEnabled: false,
       })
 
       try {

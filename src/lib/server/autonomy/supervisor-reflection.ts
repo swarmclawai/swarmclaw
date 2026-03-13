@@ -747,7 +747,7 @@ export async function observeAutonomyRunOutcome(
   const responseText = options?.generateText
     ? await options.generateText(prompt)
     : await (async () => {
-      const { llm } = await buildLLM()
+      const { llm } = await buildLLM({ sessionId: input.sessionId, agentId: input.agentId || session.agentId || null })
       const response = await llm.invoke([new HumanMessage(prompt)])
       if (typeof response.content === 'string') return response.content
       if (Array.isArray(response.content)) {

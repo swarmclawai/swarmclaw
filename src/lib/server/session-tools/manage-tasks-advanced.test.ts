@@ -67,7 +67,7 @@ const AGENT_SETUP = `
   const cwd = process.env.WORKSPACE_DIR
   const tools = crud.buildCrudTools({
     cwd,
-    ctx: { sessionId: 'session-1', agentId: 'agent1', platformAssignScope: 'self' },
+    ctx: { sessionId: 'session-1', agentId: 'agent1', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
     hasPlugin: (name) => name === 'manage_tasks' || name === 'manage_projects',
   })
   const taskTool = tools.find((entry) => entry.name === 'manage_tasks')
@@ -796,14 +796,14 @@ describe('manage_tasks: fingerprint dedup', () => {
       const cwd = process.env.WORKSPACE_DIR
       const tools1 = crud.buildCrudTools({
         cwd,
-        ctx: { sessionId: 's1', agentId: 'agent1', platformAssignScope: 'self' },
+        ctx: { sessionId: 's1', agentId: 'agent1', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'manage_tasks',
       })
       const tool1 = tools1.find((e) => e.name === 'manage_tasks')
 
       const tools2 = crud.buildCrudTools({
         cwd,
-        ctx: { sessionId: 's2', agentId: 'agent2', platformAssignScope: 'self' },
+        ctx: { sessionId: 's2', agentId: 'agent2', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'manage_tasks',
       })
       const tool2 = tools2.find((e) => e.name === 'manage_tasks')

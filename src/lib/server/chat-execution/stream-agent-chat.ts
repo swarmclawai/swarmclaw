@@ -166,14 +166,14 @@ function extractProviderErrorInfo(err: unknown): { statusCode: number; retryAfte
   return { statusCode, retryAfterMs }
 }
 
-function buildPluginCapabilityLines(enabledPlugins: string[], opts?: { platformAssignScope?: 'self' | 'all' }): string[] {
+function buildPluginCapabilityLines(enabledPlugins: string[], opts?: { delegationEnabled?: boolean }): string[] {
   // Collect capability descriptions dynamically from plugins
   const lines = getPluginManager().collectCapabilityDescriptions(enabledPlugins)
 
   // Context tools are available to any session with plugins
   if (enabledPlugins.length > 0) {
     lines.push('- I can monitor my own context usage (`context_status`) and compact my conversation history (`context_summarize`) when I\'m running low on space.')
-    if (opts?.platformAssignScope === 'all') {
+    if (opts?.delegationEnabled) {
       lines.push('- I can delegate tasks to other agents (`delegate_to_agent`) based on their strengths and availability.')
     }
   }
@@ -374,7 +374,7 @@ function buildAgenticExecutionPolicy(opts: {
   loopMode: 'bounded' | 'ongoing'
   heartbeatPrompt: string
   heartbeatIntervalSec: number
-  platformAssignScope?: 'self' | 'all'
+  delegationEnabled?: boolean
   userMessage?: string
   history?: Message[]
   hasAttachmentContext?: boolean
@@ -382,7 +382,7 @@ function buildAgenticExecutionPolicy(opts: {
   responseMaxChars?: number | null
 }) {
   const hasTooling = opts.enabledPlugins.length > 0
-  const pluginLines = buildPluginCapabilityLines(opts.enabledPlugins, { platformAssignScope: opts.platformAssignScope })
+  const pluginLines = buildPluginCapabilityLines(opts.enabledPlugins, { delegationEnabled: opts.delegationEnabled })
   const toolDisciplineLines = buildToolDisciplineLines(opts.enabledPlugins)
   const hasMemoryTools = opts.enabledPlugins.some((toolId) => (canonicalizePluginId(toolId) || toolId) === 'memory')
 
@@ -629,7 +629,9 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   }
 
   // Load agent context when a full prompt was not already composed by the route layer.
-  let agentPlatformAssignScope: 'self' | 'all' = 'self'
+  let agentDelegationEnabled = false
+  let agentDelegationTargetMode: 'all' | 'selected' = 'all'
+  let agentDelegationTargetAgentIds: string[] | undefined
   let agentMcpServerIds: string[] | undefined
   let agentMcpDisabledTools: string[] | undefined
   let agentHeartbeatEnabled = false
@@ -640,7 +642,9 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   if (session.agentId) {
     const agents = loadAgents()
     const agent = agents[session.agentId]
-    agentPlatformAssignScope = agent?.platformAssignScope || 'self'
+    agentDelegationEnabled = agent?.delegationEnabled === true
+    agentDelegationTargetMode = agent?.delegationTargetMode === 'selected' ? 'selected' : 'all'
+    agentDelegationTargetAgentIds = Array.isArray(agent?.delegationTargetAgentIds) ? agent.delegationTargetAgentIds : undefined
     agentMcpServerIds = agent?.mcpServerIds
     agentMcpDisabledTools = agent?.mcpDisabledTools
     agentHeartbeatEnabled = agent?.heartbeatEnabled === true
@@ -805,7 +809,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       loopMode: runtime.loopMode,
       heartbeatPrompt,
       heartbeatIntervalSec,
-      platformAssignScope: agentPlatformAssignScope,
+      delegationEnabled: agentDelegationEnabled,
       userMessage: message,
       history,
       hasAttachmentContext,
@@ -1087,7 +1091,9 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     agentId: session.agentId,
     sessionId: session.id,
     runId,
-    platformAssignScope: agentPlatformAssignScope,
+    delegationEnabled: agentDelegationEnabled,
+    delegationTargetMode: agentDelegationTargetMode,
+    delegationTargetAgentIds: agentDelegationTargetAgentIds,
     mcpServerIds: agentMcpServerIds,
     mcpDisabledTools: agentMcpDisabledTools,
     projectId: activeProjectContext.projectId,
@@ -1509,7 +1515,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
             })
             if (toolBoundary) {
               terminalToolBoundary = toolBoundary.kind
-              terminalToolResponse = toolBoundary.responseText || ''
+              terminalToolResponse = 'responseText' in toolBoundary ? (toolBoundary.responseText || '') : ''
               if (terminalToolResponse) {
                 lastSegment = terminalToolResponse
                 lastSettledSegment = terminalToolResponse

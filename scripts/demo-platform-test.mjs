@@ -4,10 +4,10 @@
  *
  * Exercises the full platform lifecycle:
  *  1. Auth verification
- *  2. Agent CRUD (create researcher + builder + orchestrator)
+ *  2. Agent CRUD (create researcher + builder + delegator)
  *  3. Session lifecycle (create, chat, verify messages)
  *  4. Task board operations (create, update status, comment)
- *  5. Multi-agent orchestration run
+ *  5. Delegation configuration
  *  6. Cleanup
  */
 
@@ -105,19 +105,20 @@ async function createAgents() {
   assert(builder.ok, `Created Builder agent → ${builder.data?.id?.slice(0, 8)}`);
   if (builder.data?.id) created.agents.push(builder.data.id);
 
-  // Create an Orchestrator that coordinates both
-  const orchestrator = await api('POST', '/api/agents', {
-    name: '🧠 Demo Orchestrator',
+  // Create a delegating agent that coordinates both
+  const delegator = await api('POST', '/api/agents', {
+    name: '🧠 Demo Delegator',
     description: 'Coordinates the researcher and builder to complete complex tasks',
-    systemPrompt: 'You are an orchestrator. Break tasks into research and build phases. Delegate to your sub-agents effectively.',
+    systemPrompt: 'You are a delegating agent. Break tasks into research and build phases. Delegate to the most suitable agent.',
     provider: 'openai',
     model: 'gpt-4o',
     credentialId,
-    isOrchestrator: true,
-    subAgentIds: [researcher.data?.id, builder.data?.id].filter(Boolean),
+    delegationEnabled: true,
+    delegationTargetMode: 'selected',
+    delegationTargetAgentIds: [researcher.data?.id, builder.data?.id].filter(Boolean),
   });
-  assert(orchestrator.ok, `Created Orchestrator agent → ${orchestrator.data?.id?.slice(0, 8)}`);
-  if (orchestrator.data?.id) created.agents.push(orchestrator.data.id);
+  assert(delegator.ok, `Created Delegator agent → ${delegator.data?.id?.slice(0, 8)}`);
+  if (delegator.data?.id) created.agents.push(delegator.data.id);
 
   // List agents and verify ours exist
   const list = await api('GET', '/api/agents');
@@ -133,7 +134,7 @@ async function createAgents() {
     assert(updated.ok, `Updated Researcher description via PUT`);
   }
 
-  return { researcherId: created.agents[0], builderId: created.agents[1], orchestratorId: created.agents[2] };
+  return { researcherId: created.agents[0], builderId: created.agents[1], delegatorId: created.agents[2] };
 }
 
 // ── 3. Sessions & Chat ──────────────────────────────────
@@ -281,32 +282,21 @@ async function testTasks(agentIds) {
   assert(list.ok, `GET /api/tasks lists ${Object.keys(list.data || {}).length} tasks`);
 }
 
-// ── 5. Orchestrator ──────────────────────────────────────
+// ── 5. Delegation ────────────────────────────────────────
 
-async function testOrchestrator(agentIds) {
-  section('5. Orchestrator');
+async function testDelegationConfig(agentIds) {
+  section('5. Delegation');
 
-  if (!agentIds.orchestratorId) {
-    console.log('  ⊘ Skipping: no orchestrator agent created');
+  if (!agentIds.delegatorId) {
+    console.log('  ⊘ Skipping: no delegator agent created');
     return;
   }
 
-  // Check the orchestrator graph endpoint
-  const graph = await api('GET', '/api/orchestrator/graph');
-  assert(graph.ok || graph.status === 200, `GET /api/orchestrator/graph → ${graph.status}`);
-
-  // Trigger an orchestration run (won't actually execute if no provider key, but tests the endpoint)
-  const run = await api('POST', '/api/orchestrator/run', {
-    agentId: agentIds.orchestratorId,
-    task: 'Demo test: describe the purpose of SwarmClaw in one sentence.',
-  });
-  // May fail if no API key is configured for the provider — that's okay for the demo
-  if (run.ok) {
-    assert(true, `Orchestrator run started → taskId=${run.data?.taskId?.slice(0, 8)}`);
-  } else {
-    console.log(`  ⊘ Orchestrator run returned ${run.status} (expected if no API key configured)`);
-    assert(true, `Orchestrator endpoint responded (${run.status}) — API key may not be set`);
-  }
+  const read = await api('GET', `/api/agents/${agentIds.delegatorId}`);
+  assert(read.ok, `GET /api/agents/${agentIds.delegatorId.slice(0, 8)} returned data`);
+  assert(read.data?.delegationEnabled === true, 'Delegation is enabled on the delegator');
+  assert(read.data?.delegationTargetMode === 'selected', 'Delegator target mode is selected');
+  assert(Array.isArray(read.data?.delegationTargetAgentIds) && read.data.delegationTargetAgentIds.length === 2, 'Delegator target list contains the expected agents');
 }
 
 // ── 6. Provider & Credential endpoints ──────────────────
@@ -370,7 +360,7 @@ async function main() {
     const agentIds = await createAgents();
     await testSessions(agentIds);
     await testTasks(agentIds);
-    await testOrchestrator(agentIds);
+    await testDelegationConfig(agentIds);
     await testProviders();
     await cleanup();
   } catch (err) {

@@ -23,7 +23,9 @@ async function buildUseSkillTool() {
   const built = await buildSessionTools(workspaceDir, ['manage_skills'], {
     sessionId: 'skill-runtime-session',
     agentId: 'skill-runtime-agent',
-    platformAssignScope: 'self',
+    delegationEnabled: false,
+    delegationTargetMode: 'all',
+    delegationTargetAgentIds: [],
   })
   const tool = built.tools.find((entry) => entry.name === 'use_skill')
   assert.ok(tool, 'expected use_skill tool')
@@ -58,7 +60,9 @@ before(async () => {
       plugins: ['manage_skills'],
       tools: ['manage_skills'],
       skillIds: [],
-      platformAssignScope: 'self',
+      delegationEnabled: false,
+      delegationTargetMode: 'all',
+      delegationTargetAgentIds: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     } satisfies Agent,
