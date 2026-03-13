@@ -14,6 +14,7 @@ import { getSessionLastMessage } from '@/lib/chat/session-summary'
 import { getNotificationActivityAt, getNotificationOccurrenceCount } from '@/lib/notifications/notification-utils'
 import { timeAgo, timeUntil } from '@/lib/time-format'
 import type { Agent, Session, ActivityEntry, BoardTask, AppNotification } from '@/types'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 import { HintTip } from '@/components/shared/hint-tip'
 import { MainContent } from '@/components/layout/main-content'
 import { PageLoader } from '@/components/ui/page-loader'
@@ -508,8 +509,8 @@ export default function HomePage() {
             {pinnedAgents.length > 0 ? (
               <div className="flex gap-3 overflow-x-auto pb-2">
                 {pinnedAgents.map((agent) => {
-                  const threadSession = agent.threadSessionId ? sessions[agent.threadSessionId] as Session | undefined : undefined
-                  const heartbeatOn = agent.heartbeatEnabled === true && (agent.plugins?.length ?? 0) > 0
+                  const threadSession = agent.threadSessionId ? sessions[agent.threadSessionId] as unknown as Session | undefined : undefined
+                  const heartbeatOn = agent.heartbeatEnabled === true && getEnabledCapabilityIds(agent).length > 0
                   const recentlyActive = !!now && (threadSession?.lastActiveAt ?? 0) > now - 30 * 60 * 1000
                   const isOnline = runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive
                   const isTyping = streamingSessionId === agent.threadSessionId

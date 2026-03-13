@@ -9,7 +9,7 @@ export function CapabilityPolicySection({ appSettings, patchSettings, inputClass
         Capability Policy
       </h3>
       <p className="text-[12px] text-text-3 mb-5">
-        Centralized guardrails for agent plugin families and platform features. SwarmClaw now relies on direct capability policy and explicit feature gates rather than a workflow approval queue.
+        Centralized guardrails for agent tool families and platform features. SwarmClaw now relies on direct capability policy and explicit feature gates rather than a workflow approval queue.
       </p>
       <div className="p-6 rounded-[18px] bg-surface border border-white/[0.06]">
         <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-3">Policy Mode</label>
@@ -111,7 +111,7 @@ export function CapabilityPolicySection({ appSettings, patchSettings, inputClass
           </div>
 
           <div>
-            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Blocked Plugins</label>
+            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Blocked Tools</label>
             <input
               type="text"
               value={(appSettings.capabilityBlockedTools || []).join(', ')}
@@ -128,7 +128,7 @@ export function CapabilityPolicySection({ appSettings, patchSettings, inputClass
           </div>
 
           <div>
-            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Allowed Plugins (Override)</label>
+            <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Allowed Tools (Override)</label>
             <input
               type="text"
               value={(appSettings.capabilityAllowedTools || []).join(', ')}

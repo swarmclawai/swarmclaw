@@ -22,7 +22,7 @@ const REGISTRY_URLS: Array<{ url: string; catalogSource: PluginCatalogSource }> 
   { url: 'https://swarmclaw.ai/registry/plugins.json', catalogSource: 'swarmclaw-site' },
   { url: 'https://raw.githubusercontent.com/swarmclawai/swarmforge/main/registry.json', catalogSource: 'swarmforge' },
 ]
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000
 
 let cache: { data: unknown; fetchedAt: number } | null = null
 
@@ -41,7 +41,7 @@ function normalizeRegistryPluginUrl(url: unknown): string | null {
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const query = searchParams.get('q') || ''
-  
+
   const now = Date.now()
   if (!query && cache && now - cache.fetchedAt < CACHE_TTL) {
     return NextResponse.json(cache.data)
@@ -50,7 +50,6 @@ export async function GET(req: Request) {
   const allPlugins: Record<string, unknown>[] = []
   const registryPlugins = new Map<string, Record<string, unknown>>()
 
-  // 1. Fetch SwarmClaw Registry
   for (const registry of REGISTRY_URLS) {
     try {
       const res = await fetch(registry.url, { cache: 'no-store' })
@@ -76,7 +75,7 @@ export async function GET(req: Request) {
         })
       }
     } catch (err: unknown) {
-      console.warn('[marketplace] SC Registry failed:', {
+      console.warn('[extensions-marketplace] Registry failed:', {
         registryUrl: registry.url,
         error: errorMessage(err),
       })
@@ -85,11 +84,10 @@ export async function GET(req: Request) {
 
   allPlugins.push(...registryPlugins.values())
 
-  // 2. Fetch ClawHub Skills/Plugins
   try {
     const hubResults = await searchClawHub(query)
-    allPlugins.push(...hubResults.skills.map(s => ({
-      id: s.id, // Explicitly ensure ID is present
+    allPlugins.push(...hubResults.skills.map((s) => ({
+      id: s.id,
       name: s.name,
       description: s.description,
       author: s.author,
@@ -99,7 +97,7 @@ export async function GET(req: Request) {
       catalogSource: 'clawhub',
     })))
   } catch (err: unknown) {
-    console.warn('[marketplace] ClawHub failed:', errorMessage(err))
+    console.warn('[extensions-marketplace] ClawHub failed:', errorMessage(err))
   }
 
   allPlugins.sort((a, b) => {
@@ -111,7 +109,6 @@ export async function GET(req: Request) {
     return nameA.localeCompare(nameB)
   })
 
-  // Update cache only for empty queries
   if (!query) {
     cache = { data: allPlugins, fetchedAt: now }
   }

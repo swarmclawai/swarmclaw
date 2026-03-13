@@ -11,8 +11,10 @@ import { safeJsonParseObject } from './json-utils'
 import { normalizeHeartbeatSettingFields } from '@/lib/runtime/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
 import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
+import { normalizeCapabilitySelection } from '@/lib/capability-selection'
 import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 import type {
+  Agent,
   AppNotification,
   BoardTask,
   ExternalAgentRuntime,
@@ -173,6 +175,8 @@ if (!IS_BUILD_BOOTSTRAP) {
 db.pragma('foreign_keys = ON')
 
 type StoredObject = Record<string, unknown>
+type StoredSessionRecord = Session
+type StoredAgentRecord = Agent
 type ActiveProcess = ChildProcess | {
   runId?: string | null
   source?: string
@@ -284,10 +288,13 @@ function normalizeStoredRecord(table: string, value: unknown): unknown {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return value
 
     const agent = value as StoredObject
-    if (Array.isArray(agent.tools) && !Array.isArray(agent.plugins)) {
-      agent.plugins = agent.tools
-      delete agent.tools
-    }
+    const normalizedCapabilities = normalizeCapabilitySelection({
+      tools: Array.isArray(agent.tools) ? agent.tools as string[] : undefined,
+      extensions: Array.isArray(agent.extensions) ? agent.extensions as string[] : undefined,
+    })
+    agent.tools = normalizedCapabilities.tools
+    agent.extensions = normalizedCapabilities.extensions
+    if ('plugins' in agent) delete agent.plugins
     const legacyAssignScope = agent.platformAssignScope === 'all' || agent.platformAssignScope === 'self'
       ? agent.platformAssignScope
       : null
@@ -331,9 +338,13 @@ function normalizeStoredRecord(table: string, value: unknown): unknown {
   ) {
     session.shortcutForAgentId = session.agentId
   }
-  if (Array.isArray(session.tools) && !Array.isArray(session.plugins)) {
-    session.plugins = [...session.tools]
-  }
+  const normalizedCapabilities = normalizeCapabilitySelection({
+    tools: Array.isArray(session.tools) ? session.tools as string[] : undefined,
+    extensions: Array.isArray(session.extensions) ? session.extensions as string[] : undefined,
+  })
+  session.tools = normalizedCapabilities.tools
+  session.extensions = normalizedCapabilities.extensions
+  if ('plugins' in session) delete session.plugins
   if ('mainLoopState' in session) delete session.mainLoopState
   return session
 }
@@ -530,7 +541,9 @@ function normalizeStoredScheduleRecord(value: unknown): unknown {
 }
 
 function loadCollection(table: string): Record<string, StoredObject> {
-  return loadCollectionWithNormalizationState(table).result
+  const { result, normalizedCount } = loadCollectionWithNormalizationState(table)
+  if (normalizedCount > 0) saveCollection(table, result)
+  return result
 }
 
 function saveCollection(table: string, data: Record<string, unknown>) {
@@ -974,7 +987,8 @@ Use your platform management tools proactively:
 You have opinions about good agent design. You suggest creative approaches, warn about common pitfalls, and get excited when someone gets something cool working. You're not a manual — you're a collaborator.
 
 Be concise but not curt. Warmth doesn't require verbosity. When someone asks "how do I...?", give them the direct steps. Offer to do things rather than just explaining — if someone wants an agent created, create it. Use your tools when actions speak louder than words. If you don't know something, say so honestly.`,
-      plugins: defaultStarterTools,
+      tools: defaultStarterTools,
+      extensions: [],
       heartbeatEnabled: true,
       delegationEnabled: true,
       delegationTargetMode: 'all',
@@ -990,11 +1004,14 @@ Be concise but not curt. Warmth doesn't require verbosity. When someone asks "ho
     if (row?.data) {
       try {
         const existing = JSON.parse(row.data) as Record<string, unknown>
-        const existingPlugins = Array.isArray(existing.plugins) ? existing.plugins : Array.isArray(existing.tools) ? existing.tools : []
-        const mergedPlugins = dedup([...existingPlugins, ...defaultStarterTools]).filter((t) => t !== 'delete_file')
-        if (JSON.stringify(existingPlugins) !== JSON.stringify(mergedPlugins)) {
-          existing.plugins = mergedPlugins
-          delete existing.tools
+        const existingTools = Array.isArray(existing.tools) ? existing.tools as string[] : []
+        const mergedTools = dedup([...existingTools, ...defaultStarterTools]).filter((t) => t !== 'delete_file')
+        if (JSON.stringify(existingTools) !== JSON.stringify(mergedTools)) {
+          existing.tools = mergedTools
+          existing.updatedAt = Date.now()
+        }
+        if (!Array.isArray(existing.extensions)) {
+          existing.extensions = []
           existing.updatedAt = Date.now()
         }
         const beforeNormalize = JSON.stringify(existing)
@@ -1084,10 +1101,10 @@ export function replaceAccessKey(newKey: string): void {
 }
 
 // --- Sessions ---
-export function loadSessions(): Record<string, any> {
-  const sessions = loadCollection('sessions')
+export function loadSessions(): Record<string, StoredSessionRecord> {
+  const sessions = loadCollection('sessions') as unknown as Record<string, StoredSessionRecord>
   const agents = loadCollection('agents')
-  const changedEntries: Array<[string, any]> = []
+  const changedEntries: Array<[string, StoredSessionRecord]> = []
 
   for (const [id, session] of Object.entries(sessions)) {
     if (!session || typeof session !== 'object') continue
@@ -1104,10 +1121,19 @@ export function loadSessions(): Record<string, any> {
       touched = true
     }
 
-    // Migrate tools → plugins
-    if (Array.isArray(session.tools) && !Array.isArray(session.plugins)) {
-      session.plugins = session.tools
-      delete session.tools
+    const normalizedCapabilities = normalizeCapabilitySelection({
+      tools: Array.isArray(session.tools) ? session.tools : undefined,
+      extensions: Array.isArray((session as unknown as StoredObject).extensions) ? (session as unknown as StoredObject).extensions as string[] : undefined,
+    })
+    if (
+      JSON.stringify(session.tools) !== JSON.stringify(normalizedCapabilities.tools)
+      || JSON.stringify((session as unknown as StoredObject).extensions) !== JSON.stringify(normalizedCapabilities.extensions)
+    ) {
+      session.tools = normalizedCapabilities.tools
+      ;(session as unknown as StoredObject).extensions = normalizedCapabilities.extensions
+      if (Object.prototype.hasOwnProperty.call(session as unknown as StoredObject, 'plugins')) {
+        delete (session as unknown as StoredObject).plugins
+      }
       touched = true
     }
 
@@ -1119,10 +1145,13 @@ export function loadSessions(): Record<string, any> {
   return sessions
 }
 
-export function saveSessions(s: Record<string, any>) {
+export function saveSessions(s: Record<string, Session | StoredObject>) {
   // Upsert-only — never delete sessions that aren't in the map.
   // Explicit deletion goes through deleteSession(id).
-  const entries = Object.entries(s)
+  const entries: Array<[string, unknown]> = Object.entries(s).map(([id, session]) => [
+    id,
+    normalizeStoredRecord('sessions', structuredClone(session as unknown as StoredObject)),
+  ])
   if (entries.length > 0) upsertCollectionItems('sessions', entries)
 }
 
@@ -1214,47 +1243,53 @@ function migrateAgents(agents: Record<string, Record<string, unknown>>): boolean
   return changed
 }
 
-export function loadAgents(opts?: { includeTrashed?: boolean }): Record<string, any> {
+export function loadAgents(opts?: { includeTrashed?: boolean }): Record<string, StoredAgentRecord> {
   // Cache the full (non-trashed) agent set; includeTrashed bypasses cache
   if (opts?.includeTrashed) {
-    const all = loadCollection('agents')
-    if (migrateAgents(all)) saveCollection('agents', all)
+    const all = loadCollection('agents') as unknown as Record<string, StoredAgentRecord>
+    if (migrateAgents(all as unknown as Record<string, Record<string, unknown>>)) saveCollection('agents', all)
     return all
   }
 
   const cache = getAgentsCache()
   const cached = cache.get()
-  if (cached) return structuredClone(cached) as Record<string, unknown>
+  if (cached) return structuredClone(cached) as unknown as Record<string, StoredAgentRecord>
 
-  const all = loadCollection('agents')
-  if (migrateAgents(all)) saveCollection('agents', all)
-  const result: Record<string, any> = {}
+  const all = loadCollection('agents') as unknown as Record<string, StoredAgentRecord>
+  if (migrateAgents(all as unknown as Record<string, Record<string, unknown>>)) saveCollection('agents', all)
+  const result: Record<string, StoredAgentRecord> = {}
   for (const [id, agent] of Object.entries(all)) {
     if (!agent.trashedAt) result[id] = agent
   }
   cache.set(result)
-  return structuredClone(result) as Record<string, unknown>
+  return structuredClone(result) as unknown as Record<string, StoredAgentRecord>
 }
 
-export function loadTrashedAgents(): Record<string, any> {
-  const all = loadCollection('agents')
-  const result: Record<string, any> = {}
+export function loadTrashedAgents(): Record<string, StoredAgentRecord> {
+  const all = loadCollection('agents') as unknown as Record<string, StoredAgentRecord>
+  const result: Record<string, StoredAgentRecord> = {}
   for (const [id, agent] of Object.entries(all)) {
     if (agent.trashedAt) result[id] = agent
   }
   return result
 }
 
-export function saveAgents(p: Record<string, any>) {
-  saveCollection('agents', p)
+export function saveAgents(p: Record<string, Agent | StoredObject>) {
+  const normalized = Object.fromEntries(
+    Object.entries(p).map(([id, agent]) => [
+      id,
+      normalizeStoredRecord('agents', structuredClone(agent)),
+    ]),
+  )
+  saveCollection('agents', normalized)
   getAgentsCache().invalidate()
 }
 
-export function loadAgent(id: string, opts?: { includeTrashed?: boolean }): Record<string, any> | null {
-  const agent = loadCollectionItem('agents', id) as Record<string, any> | null
+export function loadAgent(id: string, opts?: { includeTrashed?: boolean }): StoredAgentRecord | null {
+  const agent = loadCollectionItem('agents', id) as StoredAgentRecord | null
   if (!agent) return null
   const before = JSON.stringify(agent)
-  const normalized = normalizeStoredRecord('agents', agent) as Record<string, any>
+  const normalized = normalizeStoredRecord('agents', agent) as StoredAgentRecord
   if (JSON.stringify(normalized) !== before) upsertCollectionItem('agents', id, normalized)
   if (!opts?.includeTrashed && normalized.trashedAt) return null
   return normalized
@@ -1267,9 +1302,9 @@ export function upsertAgent(id: string, agent: unknown) {
 
 export function patchAgent(
   id: string,
-  updater: (current: Record<string, any> | null) => Record<string, any> | null,
-): Record<string, any> | null {
-  const next = patchStoredItem<Record<string, any>>('agents', id, updater)
+  updater: (current: StoredAgentRecord | null) => StoredAgentRecord | null,
+): StoredAgentRecord | null {
+  const next = patchStoredItem<StoredAgentRecord>('agents', id, updater)
   getAgentsCache().invalidate()
   return next
 }

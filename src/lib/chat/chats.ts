@@ -21,13 +21,14 @@ export const createChat = (
   apiEndpoint?: string | null,
   sessionType?: SessionType,
   agentId?: string | null,
-  plugins?: string[],
+  tools?: string[],
+  extensions?: string[],
   file?: string | null,
 ) =>
   api<Session>('POST', '/chats', {
     name, cwd: cwd || undefined, user,
     provider, model, credentialId, apiEndpoint,
-    sessionType, agentId, plugins, file: file || undefined,
+    sessionType, agentId, tools, extensions, file: file || undefined,
   })
 /** @deprecated Use createChat */
 export const createSession = createChat

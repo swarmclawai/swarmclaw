@@ -731,7 +731,10 @@ describe('sanitizeConnectorOutboundContent', () => {
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const plugins = pluginsMod.default || pluginsMod
-      const toolsApi = toolsMod.default || toolsMod
+      const toolsApi = {
+        ...toolsMod,
+        ...(toolsMod.default || {}),
+      }
 
       const now = Date.now()
       const sent = []
@@ -855,7 +858,10 @@ describe('sanitizeConnectorOutboundContent', () => {
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const plugins = pluginsMod.default || pluginsMod
-      const toolsApi = toolsMod.default || toolsMod
+      const toolsApi = {
+        ...toolsMod,
+        ...(toolsMod.default || {}),
+      }
 
       const now = Date.now()
       const sent = []
@@ -969,7 +975,10 @@ describe('sanitizeConnectorOutboundContent', () => {
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const plugins = pluginsMod.default || pluginsMod
-      const toolsApi = toolsMod.default || toolsMod
+      const toolsApi = {
+        ...toolsMod,
+        ...(toolsMod.default || {}),
+      }
 
       const now = Date.now()
       const sent = []
@@ -1080,7 +1089,10 @@ describe('sanitizeConnectorOutboundContent', () => {
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const plugins = pluginsMod.default || pluginsMod
-      const toolsApi = toolsMod.default || toolsMod
+      const toolsApi = {
+        ...toolsMod,
+        ...(toolsMod.default || {}),
+      }
 
       const now = Date.now()
       const sent = []
@@ -1151,28 +1163,43 @@ describe('sanitizeConnectorOutboundContent', () => {
 
       await manager.startConnector('conn_cross_wrap')
       try {
-        const entry = plugins.getPluginManager()
-          .getTools(['manage_connectors'])
-          .find((tool) => tool.tool.name === 'connector_message_tool')
+        const toolsMod = await import('./src/lib/server/session-tools/index')
+        const nativeCapabilitiesMod = await import('./src/lib/server/native-capabilities')
+        const toolsApi = {
+          ...toolsMod,
+          ...(toolsMod.default || {}),
+        }
+        const nativeCapabilitiesApi = {
+          ...nativeCapabilitiesMod,
+          ...(nativeCapabilitiesMod.default || {}),
+        }
+        const built = await toolsApi.buildSessionTools(process.env.WORKSPACE_DIR, ['manage_connectors'], {
+          sessionId: 'session_1',
+          agentId: 'agent_1',
+          delegationEnabled: false,
+          delegationTargetMode: 'all',
+          delegationTargetAgentIds: [],
+        })
+        const entry = built.tools.find((tool) => tool.name === 'connector_message_tool')
+        const nativeConnectorTool = nativeCapabilitiesApi
+          .getNativeCapabilityTools(['manage_connectors'])
+          .find((candidate) => candidate.tool.name === 'connector_message_tool')
+        if (!nativeConnectorTool) throw new Error('Native connector capability tool not found')
         const session = storage.loadSessions().session_1
         const ctx = { session, message: 'Run the scheduled follow-ups now.' }
-        const first = JSON.parse(String(await entry.tool.execute({
-          input: JSON.stringify({
-            action: 'send_voice_note',
-            connectorId: 'conn_cross_wrap',
-            to: '48172353241206@lid',
-            mediaPath: voicePath,
-          }),
-        }, ctx)))
-        const second = JSON.parse(String(await entry.tool.execute({
-          input: JSON.stringify({
-            action: 'send',
-            connectorId: 'conn_cross_wrap',
-            to: '185216370999415@lid',
-            text: 'Wayde ferry update',
-          }),
-        }, ctx)))
-        const third = JSON.parse(String(await entry.tool.execute({
+        const first = JSON.parse(String(await entry.invoke({
+          action: 'send_voice_note',
+          connectorId: 'conn_cross_wrap',
+          to: '48172353241206@lid',
+          mediaPath: voicePath,
+        })))
+        const second = JSON.parse(String(await entry.invoke({
+          action: 'send',
+          connectorId: 'conn_cross_wrap',
+          to: '185216370999415@lid',
+          text: 'Wayde ferry update',
+        })))
+        const third = JSON.parse(String(await nativeConnectorTool.tool.execute({
           input: JSON.stringify({
             action: 'send_voice_note',
             connectorId: 'conn_cross_wrap',
@@ -1204,7 +1231,10 @@ describe('sanitizeConnectorOutboundContent', () => {
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const plugins = pluginsMod.default || pluginsMod
-      const toolsApi = toolsMod.default || toolsMod
+      const toolsApi = {
+        ...toolsMod,
+        ...(toolsMod.default || {}),
+      }
 
       const now = Date.now()
       let startCount = 0
@@ -1310,7 +1340,10 @@ describe('sanitizeConnectorOutboundContent', () => {
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const plugins = pluginsMod.default || pluginsMod
-      const toolsApi = toolsMod.default || toolsMod
+      const toolsApi = {
+        ...toolsMod,
+        ...(toolsMod.default || {}),
+      }
 
       const now = Date.now()
       const sent = []
@@ -2024,7 +2057,10 @@ describe('sanitizeConnectorOutboundContent', () => {
       const storage = storageMod.default || storageMod
       const manager = managerMod.default || managerMod
       const plugins = pluginsMod.default || pluginsMod
-      const toolsApi = toolsMod.default || toolsMod
+      const toolsApi = {
+        ...toolsMod,
+        ...(toolsMod.default || {}),
+      }
 
       const now = Date.now()
       plugins.getPluginManager().registerBuiltin('test-ambiguous-connector-plugin', {

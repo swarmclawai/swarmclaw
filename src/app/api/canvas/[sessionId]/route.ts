@@ -11,7 +11,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ session
 
   return NextResponse.json({
     sessionId,
-    content: (session as Record<string, unknown>).canvasContent || null,
+    content: (session as unknown as Record<string, unknown>).canvasContent || null,
   })
 }
 
@@ -23,7 +23,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ session
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
 
   const nextContent = normalizeCanvasContent(body.document ?? body.content)
-  ;(session as Record<string, unknown>).canvasContent = nextContent
+  ;(session as unknown as Record<string, unknown>).canvasContent = nextContent
   session.lastActiveAt = Date.now()
   sessions[sessionId] = session
   saveSessions(sessions)

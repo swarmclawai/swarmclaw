@@ -5,6 +5,7 @@ import { spawn, spawnSync } from 'child_process'
 import type { StreamChatOptions } from './index'
 import { log } from '../server/logger'
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
+import { getEnabledToolIds } from '@/lib/capability-selection'
 
 function findClaude(): string {
   const locations = [
@@ -43,7 +44,7 @@ export function streamClaudeCliChat({ session, message, imagePath, systemPrompt,
   }
 
   // Add MCP servers for enabled tools
-  const tools: string[] = session.plugins || []
+  const tools = getEnabledToolIds(session as { tools?: string[] | null } | null)
   let mcpConfigPath: string | null = null
   if (tools.includes('browser')) {
     const proxyScript = path.join(process.cwd(), 'src/lib/server/playwright-proxy.mjs')

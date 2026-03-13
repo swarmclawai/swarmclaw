@@ -22,7 +22,6 @@ import { pruneIncompleteToolEvents } from '@/lib/server/chat-execution/chat-stre
 import { runLinkUnderstanding } from '@/lib/server/link-understanding'
 import type { Session } from '@/types'
 import { stripMainLoopMetaForPersistence } from '@/lib/server/agents/main-agent-loop'
-import { getPluginManager } from '@/lib/server/plugins'
 import { isLocalOpenClawEndpoint, normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { notify } from '@/lib/server/ws-hub'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
@@ -76,6 +75,20 @@ import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 import { errorMessage as toErrorMessage } from '@/lib/shared-utils'
 import { listUniversalToolAccessPluginIds } from '@/lib/server/universal-tool-access'
 import { bridgeHumanReplyFromChat } from '@/lib/server/chatrooms/session-mailbox'
+import {
+  collectCapabilityDescriptions,
+  collectCapabilityOperatingGuidance,
+  runCapabilityBeforeMessageWrite,
+  runCapabilityBeforeModelResolve,
+  runCapabilityHook,
+  runCapabilityToolResultPersist,
+  transformCapabilityText,
+} from '@/lib/server/native-capabilities'
+import {
+  getEnabledCapabilityIds,
+  getEnabledCapabilitySelection,
+  splitCapabilityIds,
+} from '@/lib/capability-selection'
 
 export {
   shouldApplySessionFreshnessReset,
@@ -145,14 +158,13 @@ async function applyMessageLifecycleHooks(params: {
   runId?: string
   isSynthetic?: boolean
 }): Promise<Message | null> {
-  const pluginManager = getPluginManager()
   let currentMessage = params.message
   const toolEvents = Array.isArray(currentMessage.toolEvents)
     ? currentMessage.toolEvents.filter((event) => typeof event.output === 'string' || event.error === true)
     : []
 
   for (const event of toolEvents) {
-    currentMessage = await pluginManager.runToolResultPersist(
+    currentMessage = await runCapabilityToolResultPersist(
       {
         session: params.session,
         message: currentMessage,
@@ -164,7 +176,7 @@ async function applyMessageLifecycleHooks(params: {
     )
   }
 
-  const writeResult = await pluginManager.runBeforeMessageWrite(
+  const writeResult = await runCapabilityBeforeMessageWrite(
     {
       session: params.session,
       message: currentMessage,
@@ -383,7 +395,7 @@ function syncSessionFromAgent(sessionId: string): void {
       changed = true
     }
     if (JSON.stringify(session.fallbackCredentialIds || []) !== JSON.stringify(resolved.fallbackCredentialIds || [])) {
-      session.fallbackCredentialIds = [...resolved.fallbackCredentialIds]
+      session.fallbackCredentialIds = [...(resolved.fallbackCredentialIds || [])]
       changed = true
     }
     if ((session.apiEndpoint || null) !== (resolved.apiEndpoint || null)) {
@@ -404,8 +416,14 @@ function syncSessionFromAgent(sessionId: string): void {
       if (normalized !== session.apiEndpoint) { session.apiEndpoint = normalized; changed = true }
     }
   }
-  if (!Array.isArray(session.plugins)) {
-    session.plugins = Array.isArray(agent.plugins) ? [...agent.plugins] : []
+  const agentSelection = getEnabledCapabilitySelection(agent)
+  const currentSelection = getEnabledCapabilitySelection(session)
+  if (
+    JSON.stringify(currentSelection.tools) !== JSON.stringify(agentSelection.tools)
+    || JSON.stringify(currentSelection.extensions) !== JSON.stringify(agentSelection.extensions)
+  ) {
+    session.tools = agentSelection.tools
+    session.extensions = agentSelection.extensions
     changed = true
   }
   const desiredMemoryScopeMode = resolveEffectiveSessionMemoryScopeMode(session, agent.memoryScopeMode ?? null)
@@ -415,10 +433,14 @@ function syncSessionFromAgent(sessionId: string): void {
   }
   const isShortcutChat = session.shortcutForAgentId === agent.id || agent.threadSessionId === sessionId
   if (isShortcutChat) {
-    const desiredPlugins = Array.isArray(agent.plugins) ? [...agent.plugins] : []
-    const currentPlugins = Array.isArray(session.plugins) ? [...session.plugins] : []
-    if (JSON.stringify(currentPlugins) !== JSON.stringify(desiredPlugins)) {
-      session.plugins = desiredPlugins
+    const desiredSelection = agentSelection
+    const currentShortcutSelection = getEnabledCapabilitySelection(session)
+    if (
+      JSON.stringify(currentShortcutSelection.tools) !== JSON.stringify(desiredSelection.tools)
+      || JSON.stringify(currentShortcutSelection.extensions) !== JSON.stringify(desiredSelection.extensions)
+    ) {
+      session.tools = desiredSelection.tools
+      session.extensions = desiredSelection.extensions
       changed = true
     }
     if (session.shortcutForAgentId !== agent.id) { session.shortcutForAgentId = agent.id; changed = true }
@@ -492,7 +514,7 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
   const settings = loadSettings()
   const parts: string[] = []
   const enabledPlugins = listUniversalToolAccessPluginIds(
-    Array.isArray(session.plugins) ? session.plugins : (Array.isArray(agent.plugins) ? agent.plugins : []),
+    getEnabledCapabilityIds(session).length > 0 ? getEnabledCapabilityIds(session) : getEnabledCapabilityIds(agent),
   )
 
   // 1. Identity & Persona
@@ -563,9 +585,9 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
   if (toolAvailabilityLines.length > 0) parts.push(['## Tool Availability', ...toolAvailabilityLines].join('\n'))
   const toolDisciplineLines = buildToolDisciplineLines(enabledPlugins)
   if (toolDisciplineLines.length > 0) parts.push(['## Tool Discipline', ...toolDisciplineLines].join('\n'))
-  const operatingGuidance = getPluginManager().collectOperatingGuidance(enabledPlugins)
+  const operatingGuidance = collectCapabilityOperatingGuidance(enabledPlugins)
   if (operatingGuidance.length > 0) parts.push(['## Tool Guidance', ...operatingGuidance].join('\n'))
-  const capabilityLines = getPluginManager().collectCapabilityDescriptions(enabledPlugins)
+  const capabilityLines = collectCapabilityDescriptions(enabledPlugins)
   if (capabilityLines.length > 0) parts.push(['## Tool Capabilities', ...capabilityLines].join('\n'))
 
   // 7. Heartbeat Guidance
@@ -626,7 +648,6 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const runMessageStartIndex = session.messages.length
 
   const appSettings = loadSettings()
-  const pluginManager = getPluginManager()
   const lifecycleRunId = runId || `${sessionId}:${runStartedAt}`
   const agentForSession = session.agentId ? loadAgents()[session.agentId] : null
   if (isAgentDisabled(agentForSession)) {
@@ -642,7 +663,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           text: disabledError,
           time: Date.now(),
         },
-        enabledIds: Array.isArray(session.plugins) ? session.plugins : [],
+        enabledIds: getEnabledCapabilityIds(session),
         phase: 'assistant_final',
         runId: lifecycleRunId,
         isSynthetic: true,
@@ -664,10 +685,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       error: disabledError,
     }
   }
-  const toolPolicy = resolveSessionToolPolicy(
-    listUniversalToolAccessPluginIds(session.plugins),
-    appSettings,
-  )
+  const toolPolicy = resolveSessionToolPolicy(listUniversalToolAccessPluginIds(getEnabledCapabilityIds(session)), appSettings)
   const isHeartbeatRun = isInternalHeartbeatRun(internal, source)
   const isAutonomousInternalRun = internal && source !== 'chat'
   const heartbeatLightContext = isHeartbeatRun && !!input.heartbeatConfig?.lightContext
@@ -684,7 +702,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     })
     if (!freshness.fresh) {
       try { syncSessionArchiveMemory(session, { agent: agentForSession }) } catch { /* archive sync is best-effort */ }
-      await pluginManager.runHook(
+      await runCapabilityHook(
         'sessionEnd',
         {
           sessionId: session.id,
@@ -694,7 +712,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           reason: freshness.reason || 'session_reset',
         },
         {
-          enabledIds: Array.isArray(session.plugins) ? session.plugins : [],
+          enabledIds: getEnabledCapabilityIds(session),
         },
       )
       resetSessionRuntime(session, freshness.reason || 'session_reset')
@@ -708,7 +726,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   }
   const pluginsForRun = heartbeatStatusOnly ? [] : toolPolicy.enabledPlugins
   if (runMessageStartIndex === 0) {
-    await pluginManager.runHook(
+    await runCapabilityHook(
       'sessionStart',
       {
         session,
@@ -717,9 +735,11 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       { enabledIds: pluginsForRun },
     )
   }
-  let sessionForRun = pluginsForRun === session.plugins
+  const sessionEnabledIds = getEnabledCapabilityIds(session)
+  const sessionForRunSelection = splitCapabilityIds(pluginsForRun)
+  let sessionForRun = JSON.stringify(sessionEnabledIds) === JSON.stringify(pluginsForRun)
     ? session
-    : { ...session, plugins: pluginsForRun }
+    : { ...session, tools: sessionForRunSelection.tools, extensions: sessionForRunSelection.extensions }
   if (agentForSession) {
     const preferredRoute = resolvePrimaryAgentRoute(agentForSession, undefined, {
       preferredGatewayTags: session.routePreferredGatewayTags || [],
@@ -733,7 +753,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
   if (pluginsForRun.length > 0) {
     try {
-      effectiveMessage = await getPluginManager().transformText(
+      effectiveMessage = await transformCapabilityText(
         'transformInboundMessage',
         { session: sessionForRun, text: message },
         { enabledIds: pluginsForRun },
@@ -752,7 +772,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     const modelResolvePrompt = heartbeatLightContext
       ? (buildLightHeartbeatSystemPrompt(sessionForRun) || '')
       : (buildAgentSystemPrompt(sessionForRun) || '')
-    const modelResolve = await pluginManager.runBeforeModelResolve(
+    const modelResolve = await runCapabilityBeforeModelResolve(
       {
         session: sessionForRun,
         prompt: modelResolvePrompt,
@@ -802,7 +822,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
                 text: budgetError,
                 time: Date.now(),
               },
-              enabledIds: Array.isArray(session.plugins) ? session.plugins : [],
+              enabledIds: getEnabledCapabilityIds(session),
               phase: 'assistant_final',
               runId: lifecycleRunId,
               isSynthetic: true,
@@ -849,7 +869,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
             text: spendError,
             time: Date.now(),
           },
-          enabledIds: Array.isArray(session.plugins) ? session.plugins : [],
+          enabledIds: getEnabledCapabilityIds(session),
           phase: 'assistant_final',
           runId: lifecycleRunId,
           isSynthetic: true,
@@ -949,7 +969,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       }
       if (!internal) {
         try {
-          await pluginManager.runHook('onMessage', { session, message: nextUserMessage }, { enabledIds: pluginsForRun })
+          await runCapabilityHook('onMessage', { session, message: nextUserMessage }, { enabledIds: pluginsForRun })
         } catch { /* onMessage hooks are non-critical */ }
       }
     }
@@ -958,9 +978,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   // Determine plugin/LangGraph path early so we can skip the redundant system prompt.
   // Dependencies: providerType (line 750), sessionForRun (line 625), isLocalOpenClawEndpoint (import).
   const useLocalOpenClawNativeRuntime = providerType === 'openclaw' && isLocalOpenClawEndpoint(sessionForRun.apiEndpoint)
-  const enabledSessionPlugins = Array.isArray(sessionForRun.plugins)
-    ? sessionForRun.plugins
-    : (Array.isArray(sessionForRun.tools) ? sessionForRun.tools : [])
+  const enabledSessionPlugins = getEnabledCapabilityIds(sessionForRun)
   const hasPlugins = enabledSessionPlugins.length > 0
     && !NON_LANGGRAPH_PROVIDER_IDS.has(providerType)
     && !useLocalOpenClawNativeRuntime
@@ -1208,7 +1226,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         })
         emit({ t: 'd', text: cached.text })
       } else {
-        await pluginManager.runHook(
+        await runCapabilityHook(
           'llmInput',
           {
             session: sessionForRun,
@@ -1239,7 +1257,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           onUsage: (u) => { directUsage.inputTokens = u.inputTokens; directUsage.outputTokens = u.outputTokens; directUsage.received = true },
           signal: abortController.signal,
         })
-        await pluginManager.runHook(
+        await runCapabilityHook(
           'llmOutput',
           {
             session: sessionForRun,
@@ -1374,7 +1392,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   let finalText = (fullResponse || '').trim() || (!internal && errorMessage ? `Error: ${errorMessage}` : '')
   if (pluginsForRun.length > 0 && finalText && !isHeartbeatRun) {
     try {
-      finalText = await getPluginManager().transformText(
+      finalText = await transformCapabilityText(
         'transformOutboundMessage',
         { session: sessionForRun, text: finalText },
         { enabledIds: pluginsForRun },
@@ -1442,8 +1460,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     })
     const persistField = (key: string, value: unknown) => {
       const normalized = normalizeResumeId(value)
-      if ((current as Record<string, unknown>)[key] !== normalized) {
-        ;(current as Record<string, unknown>)[key] = normalized
+      if ((current as unknown as Record<string, unknown>)[key] !== normalized) {
+        ;(current as unknown as Record<string, unknown>)[key] = normalized
       }
     }
 
@@ -1523,7 +1541,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
             current.lastHeartbeatSentAt = nowTs
           }
           try {
-            await pluginManager.runHook('onMessage', { session: current, message: nextAssistantMessage }, { enabledIds: pluginsForRun })
+            await runCapabilityHook('onMessage', { session: current, message: nextAssistantMessage }, { enabledIds: pluginsForRun })
           } catch { /* onMessage hooks are non-critical */ }
 
           // Conversation tone detection
@@ -1615,7 +1633,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
 
     // Fire afterChatTurn hook for all enabled plugins (memory auto-save, logging, etc.)
     try {
-      await getPluginManager().runHook('afterChatTurn', {
+      await runCapabilityHook('afterChatTurn', {
         session: current,
         message,
         response: persistedResponseForHooks,

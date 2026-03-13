@@ -69,9 +69,8 @@ export const AgentCreateSchema = z.object({
   delegationEnabled: z.boolean().optional().default(false),
   delegationTargetMode: z.enum(['all', 'selected']).optional().default('all'),
   delegationTargetAgentIds: z.array(z.string()).optional().default([]),
-  plugins: z.array(z.string()).optional().default([]),
-  /** @deprecated Use plugins */
   tools: z.array(z.string()).optional(),
+  extensions: z.array(z.string()).optional().default([]),
   skills: z.array(z.string()).optional().default([]),
   skillIds: z.array(z.string()).optional().default([]),
   mcpServerIds: z.array(z.string()).optional().default([]),

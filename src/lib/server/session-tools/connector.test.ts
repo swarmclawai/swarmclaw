@@ -5,30 +5,41 @@ import {
   buildConnectorTurnReplayKey,
   CONNECTOR_MESSAGE_TOOL_ACTIONS,
   CONNECTOR_MESSAGE_TOOL_PARAMETERS,
+  CONNECTOR_MESSAGE_TOOL_SCHEMA,
   inferConnectorActionName,
   normalizeConnectorActionInputAliases,
   normalizeConnectorActionName,
   resolveConnectorVoiceId,
 } from './connector'
-import { getPluginManager } from '../plugins'
 import { buildSessionTools } from './index'
 
 describe('connector_message_tool contract', () => {
-  it('exposes the connector actions and voice-note fields through the plugin schema', () => {
-    const entry = getPluginManager()
-      .getTools(['manage_connectors'])
-      .find((tool) => tool.tool.name === 'connector_message_tool')
+  it('exposes the connector actions and voice-note fields through the native tool schema', async () => {
+    const built = await buildSessionTools(process.cwd(), ['manage_connectors'], {
+      sessionId: 'connector-contract',
+      agentId: 'agent-contract',
+      delegationEnabled: false,
+      delegationTargetMode: 'all',
+      delegationTargetAgentIds: [],
+    })
+    const entry = built.tools.find((tool) => tool.name === 'connector_message_tool')
 
     assert.ok(entry, 'connector_message_tool should be registered for manage_connectors')
 
-    const props = (entry!.tool.parameters?.properties ?? {}) as Record<string, { type?: string; enum?: string[] }>
-    assert.deepEqual(props.action?.enum, [...CONNECTOR_MESSAGE_TOOL_ACTIONS])
+    const schemaHolder = entry as unknown as { schema?: { shape?: Record<string, { unwrap?: () => { options?: string[]; _def?: { values?: string[] } }; _def?: { values?: string[] } }> } }
+    const shape = schemaHolder.schema?.shape ?? {}
+    const actionSchema = shape.action
+    const unwrappedActionSchema = typeof actionSchema?.unwrap === 'function' ? actionSchema.unwrap() : actionSchema
+    const actionValues = Array.isArray(unwrappedActionSchema?.options)
+      ? unwrappedActionSchema.options
+      : unwrappedActionSchema?._def?.values
+    const props = CONNECTOR_MESSAGE_TOOL_PARAMETERS.properties as Record<string, { type?: string; enum?: string[] }>
+    assert.deepEqual(actionValues, [...CONNECTOR_MESSAGE_TOOL_ACTIONS])
     assert.equal(props.approved?.type, 'boolean')
     assert.equal(props.ptt?.type, 'boolean')
     assert.equal(props.voiceText?.type, 'string')
     assert.equal(props.recipientId?.type, 'string')
     assert.equal(props.channel?.type, 'string')
-    assert.equal(Array.isArray(entry!.tool.parameters?.required), false)
     assert.equal(Array.isArray((CONNECTOR_MESSAGE_TOOL_PARAMETERS as { required?: unknown }).required), false)
   })
 
@@ -174,6 +185,7 @@ describe('connector_message_tool contract', () => {
       assert.equal(schema.safeParse({ action: 'message_react' }).success, true)
       assert.equal(schema.safeParse({}).success, true)
       assert.equal(schema.safeParse({ action: 'bogus_action' }).success, false)
+      assert.equal(schema, CONNECTOR_MESSAGE_TOOL_SCHEMA)
     } finally {
       await built.cleanup()
     }

@@ -10,6 +10,7 @@ import { notify } from '@/lib/server/ws-hub'
 import { resolveTaskAgentFromDescription } from '@/lib/server/tasks/task-mention'
 import { validateDag } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 import {
   prepareTaskCreation,
 } from '@/lib/server/tasks/task-service'
@@ -162,7 +163,7 @@ export async function POST(req: Request) {
 
   const task = prepared.task
   if (task.status === 'completed') {
-    const agentPlugins = resolvedAgentId ? (loadAgents()[resolvedAgentId]?.plugins || []) : []
+    const agentPlugins = resolvedAgentId ? getEnabledCapabilityIds(loadAgents()[resolvedAgentId]) : []
     getPluginManager().runHook(
       'onTaskComplete',
       { taskId: id, result: task.result },

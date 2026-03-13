@@ -8,7 +8,7 @@ import { synthesizeElevenLabsMp3 } from '../elevenlabs'
 import { isAudioMime, mimeFromPath } from '../connectors/media'
 import type { ToolBuildContext } from './context'
 import type { Connector, Plugin, PluginHooks } from '@/types'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { safeJsonParseObject } from '../json-utils'
 import { tryResolvePathWithinBaseDir } from '../path-utils'
@@ -87,6 +87,27 @@ export const CONNECTOR_MESSAGE_TOOL_PARAMETERS = {
     ptt: { type: 'boolean' },
   },
 } as const
+
+function buildConnectorMessageToolSchema() {
+  const shape = Object.fromEntries(
+    Object.entries(CONNECTOR_MESSAGE_TOOL_PARAMETERS.properties).map(([key, definition]) => {
+      const enumValues = 'enum' in definition && Array.isArray(definition.enum)
+        ? definition.enum
+        : null
+      if (enumValues && enumValues.length > 0) {
+        const tuple = enumValues as unknown as [string, ...string[]]
+        return [key, z.enum(tuple).optional()]
+      }
+      if (definition.type === 'number') return [key, z.number().optional()]
+      if (definition.type === 'boolean') return [key, z.boolean().optional()]
+      return [key, z.string().optional()]
+    }),
+  ) as Record<string, z.ZodTypeAny>
+
+  return z.object(shape).passthrough()
+}
+
+export const CONNECTOR_MESSAGE_TOOL_SCHEMA = buildConnectorMessageToolSchema()
 
 const LEGACY_CONNECTOR_ACTION_ALIASES: Record<string, string> = {
   message_react: 'react',
@@ -1063,7 +1084,7 @@ const ConnectorPlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('connectors', ConnectorPlugin)
+registerNativeCapability('connectors', ConnectorPlugin)
 
 /**
  * Legacy Bridge
@@ -1076,7 +1097,7 @@ export function buildConnectorTools(bctx: ToolBuildContext): StructuredToolInter
       {
         name: 'connector_message_tool',
         description: ConnectorPlugin.tools![0].description,
-        schema: z.object({}).passthrough()
+        schema: CONNECTOR_MESSAGE_TOOL_SCHEMA
       }
     )
   ]

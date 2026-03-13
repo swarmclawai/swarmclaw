@@ -119,7 +119,7 @@ export function MobileDrawer({
             {([
               { label: 'Workspace', views: ['agents', 'inbox', 'chatrooms', 'projects'] as AppView[] },
               { label: 'Execution', views: ['tasks', 'schedules', 'memory', 'runs'] as AppView[] },
-              { label: 'Knowledge', views: ['knowledge', 'skills', 'connectors', 'webhooks', 'mcp_servers', 'plugins'] as AppView[] },
+              { label: 'Knowledge', views: ['knowledge', 'skills', 'connectors', 'webhooks', 'mcp_servers', 'extensions'] as AppView[] },
               { label: 'System', views: ['secrets', 'providers', 'usage', 'logs'] as AppView[] },
             ]).map((section) => {
               const visibleViews = section.views.filter((view) => isViewEnabled(view))
@@ -166,7 +166,7 @@ export function MobileDrawer({
                       style={{ fontFamily: 'inherit' }}
                     >
                       <div className="text-[12px] font-600">{item.label}</div>
-                      <div className="text-[10px] text-emerald-300/60 mt-1">Open plugin view</div>
+                      <div className="text-[10px] text-emerald-300/60 mt-1">Open extension view</div>
                     </button>
                   ))}
                 </div>
@@ -218,7 +218,7 @@ export function MobileDrawer({
         {activeView === 'webhooks' && <WebhookList inSidebar />}
         {activeView === 'mcp_servers' && <McpServerList />}
         {activeView === 'knowledge' && <KnowledgeList />}
-        {activeView === 'plugins' && <PluginList inSidebar />}
+        {activeView === 'extensions' && <PluginList inSidebar />}
         {activeView === 'runs' && <RunList />}
         {activeView === 'logs' && <LogList />}
       </div>

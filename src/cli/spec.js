@@ -69,6 +69,8 @@ const COMMAND_GROUPS = {
       create: { description: 'Create a connector', method: 'POST', path: '/connectors' },
       update: { description: 'Update connector config', method: 'PUT', path: '/connectors/:id', params: ['id'] },
       delete: { description: 'Delete connector', method: 'DELETE', path: '/connectors/:id', params: ['id'] },
+      'access-get': { description: 'Get connector access and ownership state', method: 'GET', path: '/connectors/:id/access', params: ['id'] },
+      'access-set': { description: 'Update connector access and ownership state', method: 'PUT', path: '/connectors/:id/access', params: ['id'] },
       start: {
         description: 'Start connector runtime',
         method: 'PUT',
@@ -90,6 +92,14 @@ const COMMAND_GROUPS = {
         params: ['id'],
         staticBody: { action: 'repair' },
       },
+    },
+  },
+  clawhub: {
+    description: 'Browse and install ClawHub skills',
+    commands: {
+      search: { description: 'Search ClawHub skills catalog', method: 'GET', path: '/clawhub/search' },
+      preview: { description: 'Preview a ClawHub skill install without writing files', method: 'POST', path: '/clawhub/preview' },
+      install: { description: 'Install a skill from ClawHub', method: 'POST', path: '/clawhub/install' },
     },
   },
   credentials: {
@@ -334,15 +344,15 @@ const COMMAND_GROUPS = {
       sync: { description: 'Run OpenClaw sync action', method: 'POST', path: '/openclaw/sync' },
     },
   },
-  plugins: {
-    description: 'Plugin listing/config/install',
+  extensions: {
+    description: 'Extension listing/config/install',
     commands: {
-      list: { description: 'List installed plugins', method: 'GET', path: '/plugins' },
-      update: { description: 'Enable/disable plugin (body: {"filename":"x.js","enabled":true})', method: 'POST', path: '/plugins' },
-      marketplace: { description: 'Get plugin marketplace registry', method: 'GET', path: '/plugins/marketplace' },
-      install: { description: 'Install plugin by URL', method: 'POST', path: '/plugins/install' },
-      'settings-get': { description: 'Read plugin settings (supports --query pluginId=...)', method: 'GET', path: '/plugins/settings' },
-      'settings-set': { description: 'Write plugin settings (supports --query pluginId=... and --data JSON)', method: 'PUT', path: '/plugins/settings' },
+      list: { description: 'List installed extensions', method: 'GET', path: '/extensions' },
+      update: { description: 'Enable or disable an extension (body: {"filename":"x.js","enabled":true})', method: 'POST', path: '/extensions' },
+      marketplace: { description: 'Get extension marketplace registry', method: 'GET', path: '/extensions/marketplace' },
+      install: { description: 'Install extension by URL', method: 'POST', path: '/extensions/install' },
+      'settings-get': { description: 'Read extension settings (supports --query pluginId=...)', method: 'GET', path: '/extensions/settings' },
+      'settings-set': { description: 'Write extension settings (supports --query pluginId=... and --data JSON)', method: 'PUT', path: '/extensions/settings' },
     },
   },
   providers: {

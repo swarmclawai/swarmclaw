@@ -16,6 +16,7 @@ import { cancelDelegationJobsForParentSession } from '@/lib/server/agents/delega
 import { getMainLoopStateForSession, handleMainLoopRunResult } from '@/lib/server/agents/main-agent-loop'
 import { observeAutonomyRunOutcome } from '@/lib/server/autonomy/supervisor-reflection'
 import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
+import { getEnabledToolIds } from '@/lib/capability-selection'
 
 export type SessionRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type SessionQueueMode = 'followup' | 'steer' | 'collect'
@@ -641,8 +642,8 @@ export interface EnqueueSessionRunResult {
 
 const LONG_TOOL_NAMES: ReadonlySet<string> = new Set(['claude_code', 'codex_cli', 'opencode_cli'])
 type SessionToolConfig = {
-  plugins?: string[] | null
   tools?: string[] | null
+  extensions?: string[] | null
 }
 
 function computeEffectiveRunTimeoutMs(
@@ -670,11 +671,7 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
   const runtime = loadRuntimeSettings()
   const defaultMaxRuntimeMs = runtime.ongoingLoopMaxRuntimeMs ?? (10 * 60_000)
   const sessionData = loadSession(input.sessionId) as SessionToolConfig | null
-  const sessionTools = Array.isArray(sessionData?.plugins)
-    ? sessionData.plugins
-    : Array.isArray(sessionData?.tools)
-      ? sessionData.tools
-      : []
+  const sessionTools = getEnabledToolIds(sessionData)
   const adjustedDefaultMs = computeEffectiveRunTimeoutMs(defaultMaxRuntimeMs, sessionTools, runtime)
   const effectiveMaxRuntimeMs = typeof input.maxRuntimeMs === 'number'
     ? input.maxRuntimeMs

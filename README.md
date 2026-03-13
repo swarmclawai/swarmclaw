@@ -13,7 +13,17 @@ SwarmClaw is a self-hosted AI runtime for OpenClaw and multi-agent work. It help
 GitHub: https://github.com/swarmclawai/swarmclaw  
 Docs: https://swarmclaw.ai/docs  
 Website: https://swarmclaw.ai  
-Plugin tutorial: https://swarmclaw.ai/docs/plugin-tutorial
+Extension tutorial: https://swarmclaw.ai/docs/extension-tutorial
+
+## Release Notes
+
+### v1.0.7 Highlights
+
+- **Connector inbox + isolation**: external connector conversations now live in a dedicated Inbox with owner routing, allow/deny controls, pairing management, sender avatars, and strict sender-scoped memory.
+- **Schedules as an operations surface**: schedules now use explicit session routing, archive/cancel cascades, `cancelled` task outcomes, and a proper `Live / Archived / Runs` console instead of a simple list.
+- **Delegation, not orchestration**: orchestration is no longer a special product/runtime concept. Agents either delegate or they do not, and background AI work now uses the current agent/session model config rather than a separate orchestration engine.
+- **Tools + extensions cutover**: built-in capabilities are native tools, external add-ons are extensions, and persisted agent/session data now stores canonical `tools` + `extensions` fields only.
+- Breaking change: agent and session records now persist `tools` and `extensions` only. The legacy `plugins` field is no longer part of the runtime data model.
 
 ## What SwarmClaw Focuses On
 
@@ -23,7 +33,7 @@ Plugin tutorial: https://swarmclaw.ai/docs/plugin-tutorial
 - **Runtime skills**: pinned skills, OpenClaw-compatible `SKILL.md` import, on-demand skill execution, and configurable keyword or embedding-based recommendation.
 - **Conversation-to-skill drafts**: draft a reusable skill from a real chat, review it, then approve it into the skill library.
 - **Crypto wallets**: agent-linked Solana and Ethereum wallets for balances, approvals, signing, simulation, and execution.
-- **Operator tooling**: connectors, plugins, browser automation, shell/files/git tooling, and runtime guardrails.
+- **Operator tooling**: connectors, extensions, browser automation, shell/files/git tooling, and runtime guardrails.
 
 ## OpenClaw
 
@@ -102,7 +112,7 @@ Then open `http://localhost:3456`.
 - **Memory**: hybrid recall, graph traversal, journaling, durable documents, project-scoped context, automatic reflection memory, communication preferences, profile and boundary memory, significant events, and open follow-up loops.
 - **Wallets**: balances, transfers, signatures, EVM call/quote/swap flows, and approval-gated execution.
 - **Connectors**: Discord, Slack, Telegram, WhatsApp, Teams, Matrix, OpenClaw, and more.
-- **Plugins**: tool plugins, UI extensions, hooks, install/update flows, and runtime policy controls.
+- **Extensions**: external tool extensions, UI modules, hooks, and install/update flows.
 
 ## Requirements
 
@@ -124,5 +134,5 @@ Then open `http://localhost:3456`.
 - OpenClaw setup: https://swarmclaw.ai/docs/openclaw-setup
 - Agents: https://swarmclaw.ai/docs/agents
 - Connectors: https://swarmclaw.ai/docs/connectors
-- Plugins: https://swarmclaw.ai/docs/plugins
+- Extensions: https://swarmclaw.ai/docs/extensions
 - CLI reference: https://swarmclaw.ai/docs/cli

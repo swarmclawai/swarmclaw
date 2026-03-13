@@ -5,7 +5,7 @@ import { loadAgents, loadSessions, loadUsage, logActivity, upsertStoredItem } fr
 import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { notify } from '@/lib/server/ws-hub'
 import { getAgentSpendWindows } from '@/lib/server/cost'
-import { resolveAgentPluginSelection } from '@/lib/agent-default-tools'
+import { resolveAgentToolSelection } from '@/lib/agent-default-tools'
 import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
 import { AgentCreateSchema, formatZodError } from '@/lib/validation/schemas'
 import { z } from 'zod'
@@ -29,7 +29,10 @@ export async function GET(req: Request) {
       || (typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0)
       || (typeof agent.hourlyBudget === 'number' && agent.hourlyBudget > 0)
     ) {
-      const spend = getAgentSpendWindows(agent.id, Date.now(), { sessions, usage })
+      const spend = getAgentSpendWindows(agent.id, Date.now(), {
+        sessions: sessions as unknown as Record<string, Record<string, unknown>>,
+        usage,
+      })
       if (typeof agent.monthlyBudget === 'number' && agent.monthlyBudget > 0) agent.monthlySpend = spend.monthly
       if (typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0) agent.dailySpend = spend.daily
       if (typeof agent.hourlyBudget === 'number' && agent.hourlyBudget > 0) agent.hourlySpend = spend.hourly
@@ -60,11 +63,11 @@ export async function POST(req: Request) {
     return NextResponse.json(formatZodError(parsed.error as z.ZodError), { status: 400 })
   }
   const body = parsed.data
-  const plugins = resolveAgentPluginSelection({
-    hasExplicitPlugins: Boolean(rawRecord && Object.prototype.hasOwnProperty.call(rawRecord, 'plugins')),
+  const capabilitySelection = resolveAgentToolSelection({
     hasExplicitTools: Boolean(rawRecord && Object.prototype.hasOwnProperty.call(rawRecord, 'tools')),
-    plugins: body.plugins,
+    hasExplicitExtensions: Boolean(rawRecord && Object.prototype.hasOwnProperty.call(rawRecord, 'extensions')),
     tools: body.tools,
+    extensions: body.extensions,
   })
   const id = genId()
   const now = Date.now()
@@ -90,7 +93,8 @@ export async function POST(req: Request) {
     delegationEnabled: body.delegationEnabled ?? false,
     delegationTargetMode: body.delegationTargetMode ?? 'all',
     delegationTargetAgentIds: (body.delegationTargetMode === 'selected' ? body.delegationTargetAgentIds : []).filter(Boolean),
-    plugins,
+    tools: capabilitySelection.tools,
+    extensions: capabilitySelection.extensions,
     skills: body.skills,
     skillIds: body.skillIds,
     mcpServerIds: body.mcpServerIds,

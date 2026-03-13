@@ -312,7 +312,7 @@ function flushWakes(): void {
 
   const agents = loadAgents()
   const settings = loadSettings()
-  const sessions = loadSessions() as Record<string, Record<string, unknown>>
+  const sessions = loadSessions() as unknown as Record<string, Record<string, unknown>>
   let delayedForRetry = false
 
   for (const wake of wakes) {
@@ -320,7 +320,7 @@ function flushWakes(): void {
       const sessionId = resolveWakeSessionId(wake, sessions)
       if (!sessionId) continue
 
-      const session = (sessions[sessionId] || loadSessions()[sessionId]) as Record<string, unknown> | undefined
+      const session = (sessions[sessionId] || loadSessions()[sessionId]) as unknown as Record<string, unknown> | undefined
       if (!session) continue
 
       let execution = getSessionExecutionState(sessionId)
@@ -349,7 +349,7 @@ function flushWakes(): void {
       }
 
       const agentId = (session.agentId || wake.agentId) as string | undefined
-      const agent = agentId ? agents[agentId] as Record<string, unknown> | null : null
+      const agent = agentId ? agents[agentId] as unknown as Record<string, unknown> | null : null
       // Skip sessions whose agent was deleted or trashed (not in loadAgents())
       if (agentId && !agent) continue
       if (isAgentDisabled(agent)) continue

@@ -662,7 +662,7 @@ class PluginManager {
       const watcher = fs.watch(PLUGINS_DIR, (_eventType, filename) => {
         if (!filename || (!filename.endsWith('.js') && !filename.endsWith('.mjs'))) return
         this.loaded = false
-        notify('plugins')
+        notify('extensions')
       })
       watcher.on('error', (err: unknown) => {
         log.warn('plugins', 'Plugin watcher disabled after runtime watch failure', {
@@ -910,12 +910,12 @@ class PluginManager {
       title: `Plugin auto-disabled: ${id}`,
       message: `${reason}. It failed ${failure.count} times consecutively and was disabled for stability.`,
       actionLabel: 'Open Plugins',
-      actionUrl: '/plugins',
+      actionUrl: '/extensions',
       entityType: 'plugin',
       entityId: id,
       dedupKey: `plugin-auto-disabled:${id}`,
     })
-    notify('plugins')
+    notify('extensions')
   }
 
   private markPluginFailure(id: string, stage: string, err: unknown, disableEligible: boolean): void {

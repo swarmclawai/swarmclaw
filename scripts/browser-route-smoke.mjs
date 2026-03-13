@@ -17,7 +17,7 @@ const ROUTE_TIMEOUT_MS = Number.parseInt(process.env.SWARMCLAW_BROWSER_SMOKE_TIM
 const ROUTES = (
   process.env.SWARMCLAW_BROWSER_SMOKE_ROUTES
     ? process.env.SWARMCLAW_BROWSER_SMOKE_ROUTES.split(',').map((entry) => entry.trim()).filter(Boolean)
-    : ['/', '/agents', '/plugins', '/connectors', '/tasks', '/skills', '/mcp-servers', '/webhooks']
+    : ['/', '/agents', '/extensions', '/connectors', '/tasks', '/skills', '/mcp-servers', '/webhooks']
 )
 
 const accessKey = readAccessKey()

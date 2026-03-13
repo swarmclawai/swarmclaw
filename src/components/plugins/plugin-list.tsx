@@ -12,12 +12,11 @@ import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { dedup } from '@/lib/shared-utils'
 
-type InstalledTab = 'core' | 'extensions'
-type TopTab = InstalledTab | 'marketplace'
+type TopTab = 'extensions' | 'marketplace'
 
 export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
-  const plugins = useAppStore((s) => s.plugins)
-  const loadPlugins = useAppStore((s) => s.loadPlugins)
+  const extensions = useAppStore((s) => s.extensions)
+  const loadExtensions = useAppStore((s) => s.loadExtensions)
   const setPluginSheetOpen = useAppStore((s) => s.setPluginSheetOpen)
   const setEditingPluginFilename = useAppStore((s) => s.setEditingPluginFilename)
   const agents = useAppStore((s) => s.agents)
@@ -30,7 +29,7 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const [tab, setTab] = useState<TopTab>('core')
+  const [tab, setTab] = useState<TopTab>('extensions')
   const [marketplace, setMarketplace] = useState<MarketplacePlugin[]>([])
   const [mpLoading, setMpLoading] = useState(false)
   const [installing, setInstalling] = useState<string | null>(null)
@@ -42,14 +41,14 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
   const mountedRef = useMountedRef()
 
   useEffect(() => {
-    void loadPlugins()
-  }, [loadPlugins])
+    void loadExtensions()
+  }, [loadExtensions])
 
   const loadMarketplace = useCallback(async () => {
     if (!mountedRef.current) return
     setMpLoading(true)
     try {
-      const data = await api<MarketplacePlugin[]>('GET', '/plugins/marketplace')
+      const data = await api<MarketplacePlugin[]>('GET', '/extensions/marketplace')
       if (mountedRef.current && Array.isArray(data)) setMarketplace(data)
     } catch { /* ignore */ }
     if (mountedRef.current) setMpLoading(false)
@@ -61,11 +60,10 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
     return () => clearTimeout(timer)
   }, [tab, inSidebar, loadMarketplace])
 
-  const pluginList = Object.values(plugins)
-  const corePlugins = useMemo(() => pluginList.filter((p) => p.isBuiltin), [pluginList])
+  const pluginList = Object.values(extensions)
   const extensionPlugins = useMemo(() => pluginList.filter((p) => !p.isBuiltin), [pluginList])
 
-  // Search filtering for installed plugins
+  // Search filtering for installed extensions
   const filterInstalled = useCallback((list: PluginMeta[]) => {
     if (!search.trim()) return list
     const q = search.toLowerCase()
@@ -76,7 +74,6 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
     )
   }, [search])
 
-  const filteredCore = useMemo(() => filterInstalled(corePlugins), [filterInstalled, corePlugins])
   const filteredExtensions = useMemo(() => filterInstalled(extensionPlugins), [filterInstalled, extensionPlugins])
 
   const handleEdit = (filename: string) => {
@@ -87,11 +84,11 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
   const handleToggle = async (e: React.MouseEvent, filename: string, enabled: boolean) => {
     e.stopPropagation()
     try {
-      await api('POST', '/plugins', { filename, enabled: !enabled })
-      toast.success(!enabled ? 'Plugin enabled' : 'Plugin disabled')
-      loadPlugins()
+      await api('POST', '/extensions', { filename, enabled: !enabled })
+      toast.success(!enabled ? 'Extension enabled' : 'Extension disabled')
+      loadExtensions()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to toggle plugin')
+      toast.error(err instanceof Error ? err.message : 'Failed to toggle extension')
     }
   }
 
@@ -104,9 +101,9 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
     if (!confirmDelete) return
     setDeleting(true)
     try {
-      await api('DELETE', `/plugins?filename=${encodeURIComponent(confirmDelete.filename)}`)
-      toast.success('Plugin deleted')
-      await loadPlugins()
+      await api('DELETE', `/extensions?filename=${encodeURIComponent(confirmDelete.filename)}`)
+      toast.success('Extension deleted')
+      await loadExtensions()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Delete failed')
     } finally {
@@ -120,14 +117,14 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
     const toastId = toast.loading(`Installing ${p.name}...`)
     try {
       const safeFilename = `${p.id.replace(/[^a-zA-Z0-9.-]/g, '_')}.js`
-      await api('POST', '/plugins/install', {
+      await api('POST', '/extensions/install', {
         url: p.url,
         filename: safeFilename,
         installMethod: 'marketplace',
         sourceLabel: p.source,
         installSource: p.catalogSource || p.source,
       })
-      await loadPlugins()
+      await loadExtensions()
       toast.success(`Installed ${p.name}`, { id: toastId })
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Install failed', { id: toastId })
@@ -135,7 +132,7 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
     setInstalling(null)
   }
 
-  const installedFilenames = new Set(Object.keys(plugins))
+  const installedFilenames = new Set(Object.keys(extensions))
 
   // --- Sidebar mode ---
   if (inSidebar) {
@@ -172,7 +169,7 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search plugins..."
+            placeholder="Search extensions..."
             className="w-full pl-8 pr-3 py-2 rounded-[10px] bg-surface border border-white/[0.06] text-[12px] text-text placeholder:text-text-3/40 outline-none focus:border-accent-bright/30 transition-colors"
             style={{ fontFamily: 'inherit' }}
           />
@@ -181,9 +178,6 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 mb-5 border-b border-white/[0.06] pb-px">
-        <TabButton active={tab === 'core'} onClick={() => setTab('core')} count={corePlugins.length}>
-          Core
-        </TabButton>
         <TabButton active={tab === 'extensions'} onClick={() => setTab('extensions')} count={extensionPlugins.length}>
           Extensions
         </TabButton>
@@ -193,20 +187,6 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
       </div>
 
       {/* Tab content */}
-      {tab === 'core' && (
-        <InstalledGrid
-          plugins={filteredCore}
-          allowDelete={false}
-          search={search}
-          agents={agents}
-          onEdit={handleEdit}
-          onToggle={handleToggle}
-          onDelete={handleDeleteClick}
-          onNavigateToAgent={navigateToAgentChat}
-          emptyMessage="No core plugins found"
-        />
-      )}
-
       {tab === 'extensions' && (
         <InstalledGrid
           plugins={filteredExtensions}
@@ -247,7 +227,7 @@ export function PluginList({ inSidebar }: { inSidebar?: boolean }) {
 
       <ConfirmDialog
         open={!!confirmDelete}
-        title="Delete Plugin"
+        title="Delete Extension"
         message={confirmDelete ? `Delete "${confirmDelete.name}"? This cannot be undone.` : ''}
         confirmLabel={deleting ? 'Deleting...' : 'Delete'}
         danger
@@ -299,7 +279,7 @@ function TabButton({ active, onClick, count, children }: {
 function pluginDescription(plugin: PluginMeta): string {
   const raw = (plugin.description || '').trim()
   if (raw) return raw
-  const sourceLabel = plugin.isBuiltin ? 'core plugin' : 'installed plugin'
+  const sourceLabel = plugin.isBuiltin ? 'built-in tool integration' : 'installed extension'
   return `No description provided. Click to view metadata and controls for this ${sourceLabel}.`
 }
 
@@ -314,7 +294,7 @@ function pluginCapabilityBadges(plugin: PluginMeta): string[] {
   return badges
 }
 
-// --- Installed plugins grid ---
+// --- Installed extensions grid ---
 
 function InstalledGrid({ plugins, allowDelete, search, agents, onEdit, onToggle, onDelete, onNavigateToAgent, emptyMessage, emptyAction }: {
   plugins: PluginMeta[]
@@ -553,7 +533,7 @@ function MarketplaceTab({ marketplace, loading, installing, installedFilenames, 
             <polyline points="9,22 9,12 15,12 15,22" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
-        <p className="text-[13px] text-text-3/50">No plugins available in the marketplace</p>
+        <p className="text-[13px] text-text-3/50">No extensions available in the marketplace</p>
       </div>
     )
   }
@@ -611,7 +591,7 @@ function MarketplaceTab({ marketplace, loading, installing, installedFilenames, 
       </div>
 
       {filtered.length === 0 ? (
-        <p className="text-[12px] text-text-3/50 text-center py-4">No plugins match your search</p>
+        <p className="text-[12px] text-text-3/50 text-center py-4">No extensions match your search</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {filtered.map((p) => {

@@ -6,6 +6,7 @@ import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-sessi
 import { suspendAgentReferences } from '@/lib/server/agents/agent-cascade'
 import { notify } from '@/lib/server/ws-hub'
 import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
+import { normalizeCapabilitySelection } from '@/lib/capability-selection'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ops: CollectionOps<any> = { load: () => loadAgents({ includeTrashed: true }), save: saveAgents, topic: 'agents', table: 'agents' }
@@ -15,9 +16,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const body = await req.json()
   const result = mutateItem(ops, id, (agent) => {
     Object.assign(agent, body, { updatedAt: Date.now() })
-    if (Array.isArray(body.plugins) || Array.isArray(body.tools)) {
-      agent.plugins = Array.isArray(body.plugins) ? body.plugins : body.tools
-      delete (agent as Record<string, unknown>).tools
+    if (body.tools !== undefined || body.extensions !== undefined) {
+      const nextSelection = normalizeCapabilitySelection({
+        tools: Array.isArray(body.tools) ? body.tools : agent.tools,
+        extensions: Array.isArray(body.extensions) ? body.extensions : agent.extensions,
+      })
+      agent.tools = nextSelection.tools
+      agent.extensions = nextSelection.extensions
     }
     if (body.delegationEnabled !== undefined) {
       agent.delegationEnabled = body.delegationEnabled === true
@@ -122,11 +127,11 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   // Detach sessions from the trashed agent
   const sessions = loadSessions()
   const detached: Array<[string, unknown]> = []
-  for (const session of Object.values(sessions) as Array<Record<string, unknown>>) {
+  for (const session of Object.values(sessions)) {
     if (!session || session.agentId !== id) continue
     session.agentId = null
     session.heartbeatEnabled = false
-    detached.push([session.id as string, session])
+    detached.push([session.id, session])
   }
   if (detached.length > 0) {
     upsertStoredItems('sessions', detached)

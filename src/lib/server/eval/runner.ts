@@ -21,7 +21,7 @@ export async function runEvalScenario(scenarioId: string, agentId: string): Prom
   const scenario = getScenario(scenarioId)
   if (!scenario) throw new Error(`Unknown eval scenario: ${scenarioId}`)
 
-  const agents = loadAgents() as Record<string, Record<string, unknown>>
+  const agents = loadAgents() as unknown as Record<string, Record<string, unknown>>
   const agent = agents[agentId]
   if (!agent) throw new Error(`Unknown agent: ${agentId}`)
 

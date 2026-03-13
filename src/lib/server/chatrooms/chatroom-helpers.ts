@@ -11,6 +11,7 @@ import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import type { Chatroom, ChatroomMember, Agent, Session, Message, ChatroomMessage } from '@/types'
+import { getEnabledCapabilityIds, getEnabledToolIds } from '@/lib/capability-selection'
 
 /** Resolve API key from an agent's credentialId */
 export function resolveApiKey(credentialId: string | null | undefined): string | null {
@@ -169,9 +170,9 @@ export function buildChatroomSystemPrompt(chatroom: Chatroom, agents: Record<str
     .map((id) => {
       const a = agents[id]
       if (!a) return null
-      const plugins = (a.plugins || a.tools)?.length ? `Plugins: ${(a.plugins || a.tools)!.join(', ')}` : 'No specialized plugins'
+      const tools = getEnabledToolIds(a).length ? `Tools: ${getEnabledToolIds(a).join(', ')}` : 'No specialized tools'
       const desc = a.description || a.soul || 'No description'
-      return `- **${a.name}**: ${desc}\n  ${plugins}`
+      return `- **${a.name}**: ${desc}\n  ${tools}`
     })
     .filter(Boolean)
     .join('\n')
@@ -191,7 +192,7 @@ export function buildChatroomSystemPrompt(chatroom: Chatroom, agents: Record<str
     `## Chatroom Context`,
     `You are **${selfName}** in a group chatroom called "${chatroom.name}" with ${memberCount} participants (you, ${otherNames.join(', ') || 'others'}, and the user).`,
     selfAgent?.description ? `Your role: ${selfAgent.description}` : '',
-    selfAgent?.tools?.length ? `Your available tools: ${selfAgent.tools.join(', ')}` : '',
+    getEnabledToolIds(selfAgent).length ? `Your available tools: ${getEnabledToolIds(selfAgent).join(', ')}` : '',
     '',
     '## Team Members',
     teamProfiles || '(no other agents)',
@@ -254,7 +255,8 @@ export function buildSyntheticSession(agent: Agent, chatroomId: string): Session
     createdAt: now,
     lastActiveAt: now,
     sessionType: 'human',
-    plugins: agent.plugins || agent.tools || [],
+    tools: getEnabledToolIds(agent),
+    extensions: agent.extensions || [],
     agentId: agent.id,
   }, resolvePrimaryAgentRoute(agent))
 }
@@ -280,8 +282,8 @@ export function ensureSyntheticSession(agent: Agent, chatroomId: string): Sessio
         apiEndpoint: resolveAgentApiEndpoint(agent),
         sessionType: existing.sessionType || 'human',
         agentId: agent.id,
-        plugins: agent.plugins || agent.tools || [],
-        tools: agent.plugins || agent.tools || [],
+        tools: getEnabledToolIds(agent),
+        extensions: agent.extensions || [],
         createdAt: existing.createdAt || now,
         lastActiveAt: now,
       }, resolvePrimaryAgentRoute(agent))
@@ -289,7 +291,8 @@ export function ensureSyntheticSession(agent: Agent, chatroomId: string): Sessio
         ...buildSyntheticSession(agent, chatroomId),
         fallbackCredentialIds: Array.isArray(agent.fallbackCredentialIds) ? [...agent.fallbackCredentialIds] : [],
         lastActiveAt: now,
-        tools: agent.plugins || agent.tools || [],
+        tools: getEnabledToolIds(agent),
+        extensions: agent.extensions || [],
       }, resolvePrimaryAgentRoute(agent))
 
   if (!Array.isArray(session.messages)) session.messages = []
@@ -362,7 +365,7 @@ export function buildAgentSystemPromptForChatroom(agent: Agent, cwd?: string | n
   try {
     const runtimeSkills = resolveRuntimeSkills({
       cwd,
-      enabledPlugins: agent.plugins || agent.tools || [],
+      enabledPlugins: getEnabledCapabilityIds(agent),
       agentSkillIds: agent.skillIds || [],
       storedSkills: loadSkills(),
     })

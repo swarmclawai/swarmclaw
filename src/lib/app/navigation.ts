@@ -20,7 +20,7 @@ const VIEW_TO_PATH: Record<AppView, string> = {
   mcp_servers: '/mcp-servers',
   knowledge: '/knowledge',
   logs: '/logs',
-  plugins: '/plugins',
+  extensions: '/extensions',
   usage: '/usage',
   wallets: '/wallets',
   runs: '/runs',

@@ -543,7 +543,7 @@ export function ConnectorSheet() {
 
   useEffect(() => {
     if (open) {
-      api<Array<{ id: string; name: string; description?: string }>>('GET', '/plugins/ui?type=connectors').then(list => {
+      api<Array<{ id: string; name: string; description?: string }>>('GET', '/extensions/ui?type=connectors').then(list => {
         setDynamicPlatforms(list || [])
       }).catch(() => {})
     }

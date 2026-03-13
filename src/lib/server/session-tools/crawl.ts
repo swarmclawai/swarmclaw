@@ -9,6 +9,7 @@ import { runStructuredExtraction } from '../structured-extract'
 import type { ToolBuildContext } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { dedup, errorMessage } from '@/lib/shared-utils'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 
 interface CrawledPage {
   url: string
@@ -423,7 +424,7 @@ const CrawlPlugin: Plugin = {
           persistDelegateResumeId: () => undefined,
           readStoredDelegateResumeId: () => null,
           resolveCurrentSession: () => context.session,
-          activePlugins: context.session.plugins || [],
+          activePlugins: getEnabledCapabilityIds(context.session),
         } as ToolBuildContext
         return executeCrawlAction(args, syntheticBuildContext)
       },

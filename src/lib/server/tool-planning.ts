@@ -1,6 +1,7 @@
 import type { PluginToolPlanning } from '@/types'
 import { dedup } from '@/lib/shared-utils'
 import { getPluginManager } from './plugins'
+import { getNativeCapabilityTools } from './native-capabilities'
 import { canonicalizePluginId, expandPluginIds } from './tool-aliases'
 
 export const TOOL_CAPABILITY = {
@@ -176,6 +177,8 @@ const CORE_TOOL_PLANNING: Record<string, ToolPlanningEntry[]> = {
       capabilities: ['human.input'],
       disciplineGuidance: [
         'For `ask_human`, when a workflow needs a code, approval, or out-of-band value from a person, do not guess or keep re-submitting blank forms. Use `{"action":"request_input","question":"..."}` and, for durable pauses, `{"action":"wait_for_reply","correlationId":"..."}`.',
+        'Reuse the same `correlationId` from `request_input` when you call `wait_for_reply`. Once the durable wait returns active, stop the turn immediately and wait for the reply instead of calling `request_input` again.',
+        'Do not ask the same pending human question twice before the durable wait resumes unless the question materially changes.',
       ],
       requestMatchers: [],
     },
@@ -226,7 +229,10 @@ export function getEnabledToolPlanningView(enabledPlugins: string[]): ToolPlanni
     }
   }
 
-  for (const entry of getPluginManager().getTools(expandedPluginIds)) {
+  for (const entry of [
+    ...getNativeCapabilityTools(expandedPluginIds),
+    ...getPluginManager().getTools(expandedPluginIds),
+  ]) {
     const planningEntry = normalizePlanningEntry(entry.tool.name, entry.tool.planning)
     if (planningEntry) entries.push(planningEntry)
   }

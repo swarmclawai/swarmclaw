@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { ToolBuildContext } from './context'
 import { getPluginManager, normalizeMarketplacePluginUrl } from '../plugins'
+import { listNativeCapabilities, registerNativeCapability } from '../native-capabilities'
 import type { Plugin, PluginHooks, ClawHubSkill } from '@/types'
 import { searchClawHub } from '@/lib/server/skills/clawhub-client'
 import { normalizeToolInputArgs } from './normalize-tool-args'
@@ -9,9 +10,32 @@ import { pluginIdMatches } from '../tool-aliases'
 import { loadSessions, patchAgent, patchSession } from '../storage'
 import { inferPluginPublisherSourceFromUrl } from '@/lib/plugin-sources'
 import { errorMessage } from '@/lib/shared-utils'
+import { getEnabledCapabilityIds, isExternalExtensionId, normalizeCapabilitySelection } from '@/lib/capability-selection'
 
-function trimString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
+function grantCapabilitySelection(current: {
+  tools?: string[] | null
+  extensions?: string[] | null
+}, requestedId: string): {
+  tools: string[]
+  extensions: string[]
+  changed: boolean
+} {
+  const normalized = normalizeCapabilitySelection({
+    tools: current.tools,
+    extensions: current.extensions,
+  })
+  const nextTools = [...normalized.tools]
+  const nextExtensions = [...normalized.extensions]
+  const targetList = isExternalExtensionId(requestedId) ? nextExtensions : nextTools
+  if (targetList.includes(requestedId)) {
+    return { ...normalized, changed: false }
+  }
+  targetList.push(requestedId)
+  return {
+    tools: nextTools,
+    extensions: nextExtensions,
+    changed: true,
+  }
 }
 
 /**
@@ -46,17 +70,19 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
     switch (action) {
       case 'list':
       case 'discover': {
-        const plugins = manager.listPlugins()
+        const nativeCapabilities = listNativeCapabilities()
+        const nativeIds = new Set(nativeCapabilities.map((entry) => entry.filename))
+        const capabilities = [...nativeCapabilities, ...manager.listPlugins()]
         const currentSession = bctx?.ctx?.sessionId ? loadSessions()[bctx.ctx.sessionId] : null
-        const sessionPlugins = currentSession?.plugins || currentSession?.tools || []
-        return JSON.stringify(plugins.map(p => ({
+        const sessionPlugins = getEnabledCapabilityIds(currentSession)
+        return JSON.stringify(capabilities.map(p => ({
           id: p.filename,
           name: p.name,
           description: p.description,
           enabled: p.enabled,
           granted: pluginIdMatches(sessionPlugins, p.filename),
-          availableNow: pluginIdMatches(sessionPlugins, p.filename) && !manager.isExplicitlyDisabled(p.filename),
-          isBuiltin: !p.filename.endsWith('.js') && !p.filename.endsWith('.mjs')
+          availableNow: pluginIdMatches(sessionPlugins, p.filename) && (nativeIds.has(p.filename) || !manager.isExplicitlyDisabled(p.filename)),
+          isBuiltin: !isExternalExtensionId(p.filename)
         })), null, 2)
       }
       case 'search_marketplace': {
@@ -126,7 +152,7 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
         if (bctx?.ctx?.sessionId) {
           const allSessions = loadSessions()
           const currentSession = allSessions[bctx.ctx.sessionId]
-          const grantedTools = currentSession?.plugins || currentSession?.tools || []
+          const grantedTools = getEnabledCapabilityIds(currentSession)
           if (currentSession && pluginIdMatches(grantedTools, pluginId)) {
             return JSON.stringify({
               alreadyGranted: true,
@@ -139,24 +165,26 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
         if (bctx?.ctx?.sessionId) {
           patchSession(bctx.ctx.sessionId, (currentSession) => {
             if (!currentSession) return currentSession
-            const currentPlugins = Array.isArray(currentSession.plugins) ? currentSession.plugins : []
-            if (currentPlugins.includes(pluginId)) return currentSession
-            currentSession.plugins = [...currentPlugins, pluginId]
+            const nextSelection = grantCapabilitySelection(currentSession, pluginId)
+            if (!nextSelection.changed) return currentSession
+            currentSession.tools = nextSelection.tools
+            currentSession.extensions = nextSelection.extensions
             currentSession.updatedAt = Date.now()
             return currentSession
           })
         } else if (bctx?.ctx?.agentId) {
           patchAgent(bctx.ctx.agentId, (currentAgent) => {
             if (!currentAgent) return currentAgent
-            const currentPlugins = Array.isArray(currentAgent.plugins) ? currentAgent.plugins : []
-            if (currentPlugins.includes(pluginId)) return currentAgent
-            currentAgent.plugins = [...currentPlugins, pluginId]
+            const nextSelection = grantCapabilitySelection(currentAgent, pluginId)
+            if (!nextSelection.changed) return currentAgent
+            currentAgent.tools = nextSelection.tools
+            currentAgent.extensions = nextSelection.extensions
             currentAgent.updatedAt = Date.now()
             return currentAgent
           })
         }
         return JSON.stringify({
-          type: 'plugin_access_granted',
+          type: 'capability_access_granted',
           alreadyGranted: true,
           pluginId,
           toolId: pluginId,
@@ -179,9 +207,10 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
         if (bctx?.ctx?.sessionId) {
           patchSession(bctx.ctx.sessionId, (currentSession) => {
             if (!currentSession) return currentSession
-            const currentPlugins = Array.isArray(currentSession.plugins) ? currentSession.plugins : []
-            if (currentPlugins.includes(installed.filename)) return currentSession
-            currentSession.plugins = [...currentPlugins, installed.filename]
+            const nextSelection = grantCapabilitySelection(currentSession, installed.filename)
+            if (!nextSelection.changed) return currentSession
+            currentSession.tools = nextSelection.tools
+            currentSession.extensions = nextSelection.extensions
             currentSession.updatedAt = Date.now()
             return currentSession
           })
@@ -208,19 +237,19 @@ async function executeDiscoveryAction(args: Record<string, unknown>, bctx?: Tool
  * Register as a Built-in Plugin
  */
 const DiscoveryPlugin: Plugin = {
-  name: 'Core Discovery',
-  description: 'Discover available plugins, search marketplaces, request access, or suggest new installs.',
+  name: 'Capability Discovery',
+  description: 'Discover built-in tools and external extensions, search marketplaces, request access, or suggest new installs.',
   hooks: {} as PluginHooks,
   tools: [
     {
       name: 'manage_capabilities',
-      description: 'Discover currently available tools, search marketplaces, or request access to a direct tool/plugin name with action="request_access" (for example "shell", "manage_schedules", or "delegate").',
+      description: 'Discover available built-in tools or external extensions, search marketplaces, or request access to a direct tool or extension id with action="request_access" (for example "shell", "manage_schedules", or "delegate").',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['discover', 'search_marketplace', 'request_access', 'install_request'] },
-          query: { type: 'string', description: 'Search term for marketplace, or the direct tool/plugin name for request_access' },
-          pluginId: { type: 'string', description: 'The exact tool/plugin name to request, such as "shell" or "manage_schedules"' },
+          query: { type: 'string', description: 'Search term for marketplace, or the direct tool/extension name for request_access' },
+          pluginId: { type: 'string', description: 'The exact tool or extension name to request, such as "shell" or "manage_schedules"' },
           url: { type: 'string', description: 'URL for new plugin install request' },
           reason: { type: 'string', description: 'Why you need this capability' }
         },
@@ -231,7 +260,7 @@ const DiscoveryPlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('discovery', DiscoveryPlugin)
+registerNativeCapability('discovery', DiscoveryPlugin)
 
 export function buildDiscoveryTools(bctx: ToolBuildContext): StructuredToolInterface[] {
   // Always allow agents to discover what they can do
@@ -243,8 +272,8 @@ export function buildDiscoveryTools(bctx: ToolBuildContext): StructuredToolInter
         description: DiscoveryPlugin.tools![0].description,
         schema: z.object({
           action: z.enum(['discover', 'search_marketplace', 'request_access', 'install_request']).describe('The discovery action to perform'),
-          query: z.string().optional().describe('The marketplace query, or the direct tool/plugin name to request access to'),
-          pluginId: z.string().optional().describe('The exact tool/plugin name to request, such as "shell" or "manage_schedules"'),
+          query: z.string().optional().describe('The marketplace query, or the direct tool/extension name to request access to'),
+          pluginId: z.string().optional().describe('The exact tool or extension name to request, such as "shell" or "manage_schedules"'),
           url: z.string().optional(),
           reason: z.string().describe('Why you need to perform this discovery action')
         })

@@ -768,7 +768,8 @@ export function buildProgram(): Command {
     .option('--name <name>', 'Chat name')
     .option('--cwd <cwd>', 'Working directory')
     .option('--agent-id <agentId>', 'Agent id')
-    .option('--plugins <json>', 'Plugins JSON array, e.g. ["shell","memory"]')
+    .option('--tools <json>', 'Tools JSON array, e.g. ["shell","memory"]')
+    .option('--extensions <json>', 'Extensions JSON array, e.g. ["weather.mjs"]')
     .option('--heartbeat-enabled <heartbeatEnabled>', 'Heartbeat enabled (true|false)')
     .option('--heartbeat-interval-sec <heartbeatIntervalSec>', 'Heartbeat interval seconds')
     .action(async function (
@@ -777,7 +778,8 @@ export function buildProgram(): Command {
         name?: string
         cwd?: string
         agentId?: string
-        plugins?: string
+        tools?: string
+        extensions?: string
         heartbeatEnabled?: string
         heartbeatIntervalSec?: string
       },
@@ -789,15 +791,20 @@ export function buildProgram(): Command {
       if (opts.heartbeatIntervalSec && (!Number.isFinite(heartbeatIntervalSec) || heartbeatIntervalSec! < 0)) {
         throw new Error(`Invalid --heartbeat-interval-sec value: ${opts.heartbeatIntervalSec}`)
       }
-      const plugins = parseJsonValue(opts.plugins, '--plugins')
-      if (plugins !== undefined && !Array.isArray(plugins)) {
-        throw new Error('--plugins must be a JSON array')
+      const tools = parseJsonValue(opts.tools, '--tools')
+      if (tools !== undefined && !Array.isArray(tools)) {
+        throw new Error('--tools must be a JSON array')
+      }
+      const extensions = parseJsonValue(opts.extensions, '--extensions')
+      if (extensions !== undefined && !Array.isArray(extensions)) {
+        throw new Error('--extensions must be a JSON array')
       }
       await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'PUT', `/chats/${encodeURIComponent(id)}`, compactObject({
         name: opts.name,
         cwd: opts.cwd,
         agentId: opts.agentId,
-        plugins,
+        tools,
+        extensions,
         heartbeatEnabled: typeof opts.heartbeatEnabled === 'string' ? heartbeatEnabled : undefined,
         heartbeatIntervalSec,
       })))

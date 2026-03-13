@@ -22,6 +22,7 @@ import { startConnectorOutboxWorker, stopConnectorOutboxWorker } from '@/lib/ser
 import { startHeartbeatService, stopHeartbeatService, getHeartbeatServiceStatus, pruneHeartbeatState } from '@/lib/server/runtime/heartbeat-service'
 import { hasOpenClawAgents, ensureGatewayConnected, disconnectGateway, getGateway } from '@/lib/server/openclaw/gateway'
 import { enqueueSessionRun } from '@/lib/server/runtime/session-run-manager'
+import { getEnabledCapabilitySelection } from '@/lib/capability-selection'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/runtime/heartbeat-defaults'
 import { genId } from '@/lib/id'
@@ -281,7 +282,7 @@ async function runConnectorHealthChecks(now: number) {
   }
 
   const connectors = loadConnectors()
-  for (const connector of Object.values(connectors) as Record<string, unknown>[]) {
+  for (const connector of Object.values(connectors) as unknown as Record<string, unknown>[]) {
     if (!connector?.id || typeof connector.id !== 'string') continue
     if (connector.isEnabled !== true) {
       clearReconnectState(connector.id)
@@ -377,7 +378,7 @@ async function processWebhookRetries() {
   const sessions = loadSessions()
 
   for (const entry of dueEntries) {
-    const webhook = webhooks[entry.webhookId] as Record<string, unknown> | undefined
+    const webhook = webhooks[entry.webhookId] as unknown as Record<string, unknown> | undefined
     if (!webhook) {
       // Webhook deleted — drop the retry
       deleteWebhookRetry(entry.id)
@@ -385,7 +386,7 @@ async function processWebhookRetries() {
     }
 
     const agentId = typeof webhook.agentId === 'string' ? webhook.agentId : ''
-    const agent = agentId ? (agents[agentId] as Record<string, unknown> | undefined) : null
+    const agent = agentId ? (agents[agentId] as unknown as Record<string, unknown> | undefined) : null
     if (!agent) {
       entry.deadLettered = true
       upsertWebhookRetry(entry.id, entry)
@@ -406,7 +407,7 @@ async function processWebhookRetries() {
         const rec = s as Record<string, unknown>
         return rec.name === sessionName && rec.agentId === agent.id
       },
-    ) as Record<string, unknown> | undefined
+    ) as unknown as Record<string, unknown> | undefined
 
     if (!session) {
       const sessionId = genId()
@@ -430,7 +431,7 @@ async function processWebhookRetries() {
         sessionType: 'human',
         agentId: agent.id,
         parentSessionId: null,
-        plugins: agent.plugins || agent.tools || [],
+        ...getEnabledCapabilitySelection(agent),
         heartbeatEnabled: (agent.heartbeatEnabled as boolean | undefined) ?? false,
         heartbeatIntervalSec: (agent.heartbeatIntervalSec as number | null | undefined) ?? null,
       }
@@ -513,7 +514,7 @@ async function runProviderHealthChecks() {
   const seen = new Set<string>()
   const tuples: { provider: string; credentialId: string; apiEndpoint: string; agentId: string; credentialName: string }[] = []
 
-  for (const agent of Object.values(agents) as Record<string, unknown>[]) {
+  for (const agent of Object.values(agents) as unknown as Record<string, unknown>[]) {
     if (!agent?.id || typeof agent.id !== 'string') continue
     if (shouldSuppressSyntheticAgentHealthAlert(agent.id)) continue
     const provider = typeof agent.provider === 'string' ? agent.provider : ''
@@ -529,7 +530,7 @@ async function runProviderHealthChecks() {
     if (seen.has(key)) continue
     seen.add(key)
 
-    const cred = credentialId ? (credentials[credentialId] as Record<string, unknown> | undefined) : undefined
+    const cred = credentialId ? (credentials[credentialId] as unknown as Record<string, unknown> | undefined) : undefined
     const credName = typeof cred?.name === 'string' ? cred.name : provider
 
     tuples.push({
@@ -544,7 +545,7 @@ async function runProviderHealthChecks() {
   for (const tuple of tuples) {
     let apiKey: string | undefined
     if (tuple.credentialId) {
-      const cred = credentials[tuple.credentialId] as Record<string, unknown> | undefined
+      const cred = credentials[tuple.credentialId] as unknown as Record<string, unknown> | undefined
       if (cred?.encryptedKey && typeof cred.encryptedKey === 'string') {
         try { apiKey = decryptKey(cred.encryptedKey) } catch { /* skip undecryptable */ continue }
       }
@@ -586,7 +587,7 @@ async function runOpenClawGatewayHealthChecks() {
   const seen = new Set<string>()
   const tuples: { agentId: string; endpoint: string; credentialId: string; credentialName: string }[] = []
 
-  for (const agent of Object.values(agents) as Record<string, unknown>[]) {
+  for (const agent of Object.values(agents) as unknown as Record<string, unknown>[]) {
     if (!agent?.id || typeof agent.id !== 'string') continue
     if (shouldSuppressSyntheticAgentHealthAlert(agent.id)) continue
     if (agent.provider !== 'openclaw') continue
@@ -597,7 +598,7 @@ async function runOpenClawGatewayHealthChecks() {
 
     const credentialId = typeof agent.credentialId === 'string' ? agent.credentialId : ''
     const endpoint = typeof agent.apiEndpoint === 'string' ? agent.apiEndpoint : ''
-    const cred = credentialId ? (credentials[credentialId] as Record<string, unknown> | undefined) : undefined
+    const cred = credentialId ? (credentials[credentialId] as unknown as Record<string, unknown> | undefined) : undefined
     const credName = typeof cred?.name === 'string' ? cred.name : 'openclaw'
 
     tuples.push({ agentId: agent.id, endpoint, credentialId, credentialName: credName })
@@ -610,7 +611,7 @@ async function runOpenClawGatewayHealthChecks() {
   for (const tuple of tuples) {
     let token: string | undefined
     if (tuple.credentialId) {
-      const cred = credentials[tuple.credentialId] as Record<string, unknown> | undefined
+      const cred = credentials[tuple.credentialId] as unknown as Record<string, unknown> | undefined
       if (cred?.encryptedKey && typeof cred.encryptedKey === 'string') {
         try { token = decryptKey(cred.encryptedKey) } catch { continue }
       }
@@ -717,7 +718,7 @@ async function runHealthChecks() {
   const currentlyStale = new Set<string>()
   const dirtySessionIds: string[] = []
 
-  for (const session of Object.values(sessions) as Record<string, unknown>[]) {
+  for (const session of Object.values(sessions) as unknown as Record<string, unknown>[]) {
     if (!session?.id || typeof session.id !== 'string') continue
     if (session.heartbeatEnabled !== true) continue
 
@@ -1041,7 +1042,7 @@ export function getDaemonStatus() {
 
   // Find next scheduled task
   let nextScheduled: number | null = null
-  for (const s of Object.values(schedules) as Record<string, unknown>[]) {
+  for (const s of Object.values(schedules) as unknown as Record<string, unknown>[]) {
     if (s.status === 'active' && s.nextRunAt) {
       if (!nextScheduled || (s.nextRunAt as number) < nextScheduled) {
         nextScheduled = s.nextRunAt as number

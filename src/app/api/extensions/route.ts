@@ -5,9 +5,9 @@ import '@/lib/server/builtin-plugins'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(_req: Request) {
+export async function GET() {
   const manager = getPluginManager()
-  return NextResponse.json(manager.listPlugins())
+  return NextResponse.json(manager.listPlugins().filter((plugin) => !plugin.isBuiltin))
 }
 
 export async function POST(req: Request) {
@@ -19,8 +19,12 @@ export async function POST(req: Request) {
   }
 
   const manager = getPluginManager()
+  const plugin = manager.listPlugins().find((entry) => entry.filename === filename)
+  if (!plugin || plugin.isBuiltin) {
+    return NextResponse.json({ error: 'Only external extensions can be toggled from this surface' }, { status: 400 })
+  }
   manager.setEnabled(filename, enabled)
-  notify('plugins')
+  notify('extensions')
 
   return NextResponse.json({ ok: true })
 }
@@ -34,9 +38,9 @@ export async function DELETE(req: Request) {
   const manager = getPluginManager()
   const deleted = manager.deletePlugin(filename)
   if (!deleted) {
-    return NextResponse.json({ error: 'Cannot delete built-in or non-existent plugin' }, { status: 400 })
+    return NextResponse.json({ error: 'Cannot delete built-in or non-existent extension' }, { status: 400 })
   }
-  notify('plugins')
+  notify('extensions')
   return NextResponse.json({ ok: true })
 }
 
@@ -44,20 +48,20 @@ export async function PATCH(req: Request) {
   const { searchParams } = new URL(req.url)
   const id = searchParams.get('id')
   const all = searchParams.get('all') === 'true'
-  
+
   const manager = getPluginManager()
-  
+
   if (all) {
     await manager.updateAllPlugins()
-    notify('plugins')
-    return NextResponse.json({ ok: true, message: 'All plugins updated' })
+    notify('extensions')
+    return NextResponse.json({ ok: true, message: 'All extensions updated' })
   }
-  
+
   if (id) {
     await manager.updatePlugin(id)
-    notify('plugins')
-    return NextResponse.json({ ok: true, message: `Plugin ${id} updated` })
+    notify('extensions')
+    return NextResponse.json({ ok: true, message: `Extension ${id} updated` })
   }
-  
+
   return NextResponse.json({ error: 'id or all=true required' }, { status: 400 })
 }

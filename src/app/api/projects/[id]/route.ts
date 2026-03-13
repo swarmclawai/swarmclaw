@@ -49,7 +49,11 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     }
   }
 
-  clearProjectId(loadAgents, saveAgents, 'agents')
+  clearProjectId(
+    loadAgents as unknown as () => Record<string, Record<string, unknown>>,
+    saveAgents as unknown as (data: Record<string, Record<string, unknown>>) => void,
+    'agents',
+  )
   clearProjectId(loadTasks, saveTasks as any, 'tasks')
   clearProjectId(loadSchedules, saveSchedules, 'schedules')
   clearProjectId(loadSkills, saveSkills, 'skills')

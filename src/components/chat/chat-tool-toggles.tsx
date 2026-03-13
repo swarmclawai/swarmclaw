@@ -7,10 +7,11 @@ import { AVAILABLE_TOOLS, PLATFORM_TOOLS } from '@/lib/tool-definitions'
 import type { ToolDefinition } from '@/lib/tool-definitions'
 import type { Session } from '@/types'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
+import { getEnabledToolIds, getEnabledExtensionIds } from '@/lib/capability-selection'
 
 const TOOL_GROUPS: { label: string; tools: ToolDefinition[] }[] = [
-  { label: 'Plugins', tools: AVAILABLE_TOOLS },
-  { label: 'Platform Plugins', tools: PLATFORM_TOOLS },
+  { label: 'Tools', tools: AVAILABLE_TOOLS },
+  { label: 'Platform Tools', tools: PLATFORM_TOOLS },
 ]
 
 const TOTAL_TOOL_COUNT = AVAILABLE_TOOLS.length + PLATFORM_TOOLS.length
@@ -27,7 +28,8 @@ export function ChatToolToggles({ session }: Props) {
   const skills = useAppStore((s) => s.skills)
 
   const agent = session.agentId ? agents[session.agentId] : null
-  const sessionTools: string[] = session.plugins || []
+  const sessionTools: string[] = getEnabledToolIds(session)
+  const sessionExtensions = getEnabledExtensionIds(session)
 
   // Agent's skill IDs
   const agentSkillIds: string[] = agent?.skillIds || []
@@ -45,7 +47,10 @@ export function ChatToolToggles({ session }: Props) {
     const updated = sessionTools.includes(toolId)
       ? sessionTools.filter((t) => t !== toolId)
       : [...sessionTools, toolId]
-    await api('PUT', `/chats/${session.id}`, { plugins: updated })
+    await api('PUT', `/chats/${session.id}`, {
+      tools: updated,
+      extensions: sessionExtensions,
+    })
     await refreshSession(session.id)
   }
 

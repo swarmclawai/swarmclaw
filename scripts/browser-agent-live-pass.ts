@@ -73,7 +73,8 @@ function buildClonePayload(source: Agent, suffix: string) {
     delegationEnabled: source.delegationEnabled ?? false,
     delegationTargetMode: source.delegationTargetMode || 'all',
     delegationTargetAgentIds: source.delegationTargetMode === 'selected' ? (source.delegationTargetAgentIds || []) : [],
-    plugins: dedupeStrings([...(source.plugins || source.tools || []), 'ask_human']),
+    tools: dedupeStrings([...(source.tools || []), 'ask_human']),
+    extensions: source.extensions || [],
     skills: source.skills || [],
     skillIds: source.skillIds || [],
     mcpServerIds: source.mcpServerIds || [],
@@ -108,7 +109,7 @@ function buildClonePayload(source: Agent, suffix: string) {
 }
 
 function getSession(sessionId: string): Session {
-  const session = loadSessions()[sessionId] as Session | undefined
+  const session = loadSessions()[sessionId] as unknown as Session | undefined
   if (!session) throw new Error(`Session not found: ${sessionId}`)
   return session
 }

@@ -4,6 +4,7 @@ import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agent
 import { isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { loadAgents, loadSessions, upsertAgent, upsertStoredItem } from '@/lib/server/storage'
+import { getEnabledCapabilitySelection } from '@/lib/capability-selection'
 
 function buildEmptyDelegateResumeIds(): NonNullable<Session['delegateResumeIds']> {
   return {
@@ -15,6 +16,10 @@ function buildEmptyDelegateResumeIds(): NonNullable<Session['delegateResumeIds']
 }
 
 function buildThreadSession(agent: Agent, sessionId: string, user: string, createdAt: number, existing?: Session): Session {
+  const capabilitySelection = getEnabledCapabilitySelection({
+    tools: agent.tools,
+    extensions: agent.extensions,
+  })
   const baseSession: Session = {
     id: sessionId,
     name: agent.name,
@@ -41,8 +46,8 @@ function buildThreadSession(agent: Agent, sessionId: string, user: string, creat
     sessionType: existing?.sessionType || 'human',
     agentId: agent.id,
     parentSessionId: existing?.parentSessionId || null,
-    plugins: agent.plugins || agent.tools || [],
-    tools: agent.plugins || agent.tools || [],
+    tools: capabilitySelection.tools,
+    extensions: capabilitySelection.extensions,
     heartbeatEnabled: agent.heartbeatEnabled || false,
     heartbeatIntervalSec: agent.heartbeatIntervalSec || null,
     heartbeatTarget: existing?.heartbeatTarget || null,
@@ -112,7 +117,7 @@ export function ensureAgentThreadSession(agentId: string, user = 'default'): Ses
   const legacySession = Object.values(sessions).find((session) => (
     (session.shortcutForAgentId === agentId || session.name === `agent-thread:${agentId}`)
     && session.user === user
-  )) as Session | undefined
+  )) as unknown as Session | undefined
 
   if (legacySession) {
     agent.threadSessionId = legacySession.id

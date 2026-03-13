@@ -2,6 +2,7 @@ import { getProvider } from '@/lib/providers'
 import type { Connector } from '@/types'
 import { loadAgents } from '../storage'
 import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 import { resolvePairingAccess } from './access'
 import {
   addAllowedSender,
@@ -191,7 +192,7 @@ export async function handleConnectorCommand(params: {
     const all = Array.isArray(session.messages) ? session.messages : []
     const userCount = all.filter((message: { role?: string }) => message?.role === 'user').length
     const assistantCount = all.filter((message: { role?: string }) => message?.role === 'assistant').length
-    const toolsCount = Array.isArray(session.plugins) ? session.plugins.length : 0
+    const toolsCount = getEnabledCapabilityIds(session).length
     const statusText = [
       `Status for ${connector.platform} / ${connector.name}:`,
       `- Agent: ${agentName}`,

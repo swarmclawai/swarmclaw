@@ -109,8 +109,8 @@ export async function GET(req: Request) {
   }
 
   const tasks = loadTasks() as Record<string, Record<string, unknown>>
-  const agents = loadAgents() as Record<string, Record<string, unknown>>
-  const sessions = loadSessions() as Record<string, Record<string, unknown>>
+  const agents = loadAgents() as unknown as Record<string, Record<string, unknown>>
+  const sessions = loadSessions() as unknown as Record<string, Record<string, unknown>>
   const schedules = loadSchedules() as Record<string, Record<string, unknown>>
   const webhooks = loadWebhooks() as Record<string, Record<string, unknown>>
   const skills = loadSkills() as Record<string, Record<string, unknown>>

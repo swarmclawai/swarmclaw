@@ -8,6 +8,7 @@ import type { Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { errorMessage } from '@/lib/shared-utils'
+import { getEnabledExtensionIds } from '@/lib/capability-selection'
 
 const PLUGINS_DIR = path.join(DATA_DIR, 'plugins')
 
@@ -55,9 +56,9 @@ async function executePluginCreatorAction(args: Record<string, unknown>, ctxOrBc
           const sessions = loadSessions()
           const session = sessions[pctx.sessionId!]
           if (session) {
-            const currentTools = session.plugins || []
-            if (!currentTools.includes(filename)) {
-              session.plugins = [...currentTools, filename]
+            const currentExtensions = getEnabledExtensionIds(session)
+            if (!currentExtensions.includes(filename)) {
+              session.extensions = [...currentExtensions, filename]
               saveSessions(sessions)
             }
           }

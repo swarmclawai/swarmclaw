@@ -15,6 +15,7 @@ import { CronJobForm } from './cron-job-form'
 import { toast } from 'sonner'
 import { StatusDot } from '@/components/ui/status-dot'
 import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
+import { getEnabledToolIds } from '@/lib/capability-selection'
 
 interface Props {
   agent: Agent
@@ -112,7 +113,7 @@ export function InspectorPanel({ agent, onEditAgent, onClearHistory, onDeleteAge
                 {agent.model || 'Default model'}
               </span>
               <span className="inline-flex items-center rounded-[8px] border border-white/[0.06] bg-white/[0.03] px-2 py-1 text-[10px] font-600 text-text-3/70">
-                {(agent.plugins?.length ?? 0)} plugins
+                {getEnabledToolIds(agent).length} tools
               </span>
             </div>
           </div>
@@ -205,7 +206,7 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
   const summaryStats = [
     { label: 'Provider', value: PROVIDER_LABELS[agent.provider] || agent.provider.replace(/-/g, ' ') },
     { label: 'Model', value: agent.model || 'Default' },
-    { label: 'Plugins', value: String(agent.plugins?.length ?? 0) },
+    { label: 'Tools', value: String(getEnabledToolIds(agent).length) },
     { label: 'Heartbeat', value: agent.heartbeatEnabled ? `Every ${agent.heartbeatIntervalSec ?? DEFAULT_HEARTBEAT_INTERVAL_SEC}s` : 'Off' },
     { label: 'Status', value: agent.disabled === true ? 'Disabled' : 'Enabled' },
   ]
@@ -261,11 +262,11 @@ function OverviewTab({ agent, onEditAgent, onClearHistory, onDeleteAgent, onDele
           </div>
         </div>
       )}
-      {agent.plugins && agent.plugins.length > 0 && (
+      {getEnabledToolIds(agent).length > 0 && (
         <div className={panelCardClass('p-4')}>
-          <SectionLabel>Plugins</SectionLabel>
+          <SectionLabel>Tools</SectionLabel>
           <div className="flex flex-wrap gap-1.5">
-            {agent.plugins.map((tool) => (
+            {getEnabledToolIds(agent).map((tool) => (
               <span key={tool} className="px-2.5 py-1 rounded-[8px] text-[11px] font-700 bg-sky-400/[0.08] text-sky-300 border border-sky-400/[0.08]">
                 {tool}
               </span>

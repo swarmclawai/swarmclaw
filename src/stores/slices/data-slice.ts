@@ -35,8 +35,8 @@ export interface DataSlice {
   loadWebhooks: () => Promise<void>
   mcpServers: Record<string, McpServerConfig>
   loadMcpServers: () => Promise<void>
-  plugins: Record<string, PluginMeta>
-  loadPlugins: () => Promise<void>
+  extensions: Record<string, PluginMeta>
+  loadExtensions: () => Promise<void>
   projects: Record<string, Project>
   loadProjects: () => Promise<void>
   activityEntries: ActivityEntry[]
@@ -189,16 +189,16 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
       setIfChanged<AppState>(set, 'mcpServers', {})
     }
   },
-  plugins: {},
-  loadPlugins: async () => {
+  extensions: {},
+  loadExtensions: async () => {
     try {
-      const list = await api<PluginMeta[]>('GET', '/plugins')
-      const plugins: Record<string, PluginMeta> = {}
-      for (const p of list) plugins[p.filename] = p
-      setIfChanged<AppState>(set, 'plugins', plugins)
+      const list = await api<PluginMeta[]>('GET', '/extensions')
+      const extensions: Record<string, PluginMeta> = {}
+      for (const p of list) extensions[p.filename] = p
+      setIfChanged<AppState>(set, 'extensions', extensions)
     } catch (err) {
       console.warn('Store error:', err)
-      setIfChanged<AppState>(set, 'plugins', {})
+      setIfChanged<AppState>(set, 'extensions', {})
     }
   },
   projects: {},

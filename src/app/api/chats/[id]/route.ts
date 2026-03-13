@@ -5,7 +5,7 @@ import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { clearMainLoopStateForSession } from '@/lib/server/agents/main-agent-loop'
 import { getSessionRunState } from '@/lib/server/runtime/session-run-manager'
-import type { Session } from '@/types'
+import { normalizeCapabilitySelection } from '@/lib/capability-selection'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -79,8 +79,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     session.routePreferredGatewayUseCase = routePreferredGatewayUseCase
   }
 
-  if (updates.plugins !== undefined) session.plugins = updates.plugins
-  else if (agentIdUpdateProvided && linkedAgent) session.plugins = Array.isArray(linkedAgent.plugins) ? linkedAgent.plugins : []
+  if (updates.tools !== undefined || updates.extensions !== undefined || (agentIdUpdateProvided && linkedAgent)) {
+    const nextSelection = normalizeCapabilitySelection({
+      tools: Array.isArray(updates.tools)
+        ? updates.tools
+        : (agentIdUpdateProvided && linkedAgent ? linkedAgent.tools : session.tools as string[] | undefined),
+      extensions: Array.isArray(updates.extensions)
+        ? updates.extensions
+        : (agentIdUpdateProvided && linkedAgent ? linkedAgent.extensions : session.extensions as string[] | undefined),
+    })
+    session.tools = nextSelection.tools
+    session.extensions = nextSelection.extensions
+  }
 
   if (updates.apiEndpoint !== undefined) {
     session.apiEndpoint = normalizeProviderEndpoint(

@@ -13,8 +13,7 @@ import { dedup } from '@/lib/shared-utils'
 function pluginDescription(plugin: PluginMeta): string {
   const raw = (plugin.description || '').trim()
   if (raw) return raw
-  const sourceLabel = plugin.isBuiltin ? 'core plugin' : 'installed plugin'
-  return `No description provided. This ${sourceLabel} is available and can be configured from this panel.`
+  return 'No description provided. This installed extension is available and can be configured from this panel.'
 }
 
 function pluginCapabilityBadges(plugin: PluginMeta): string[] {
@@ -33,8 +32,8 @@ export function PluginSheet() {
   const setOpen = useAppStore((s) => s.setPluginSheetOpen)
   const editingFilename = useAppStore((s) => s.editingPluginFilename)
   const setEditingFilename = useAppStore((s) => s.setEditingPluginFilename)
-  const plugins = useAppStore((s) => s.plugins)
-  const loadPlugins = useAppStore((s) => s.loadPlugins)
+  const extensions = useAppStore((s) => s.extensions)
+  const loadExtensions = useAppStore((s) => s.loadExtensions)
 
   const [tab, setTab] = useState<'marketplace' | 'url'>('marketplace')
   const [marketplace, setMarketplace] = useState<MarketplacePlugin[]>([])
@@ -54,9 +53,9 @@ export function PluginSheet() {
   const [pluginSettingsSaving, setPluginSettingsSaving] = useState(false)
   const [dependencyInstalling, setDependencyInstalling] = useState(false)
 
-  const editing = editingFilename ? plugins[editingFilename] : null
+  const editing = editingFilename ? extensions[editingFilename] : null
 
-  // Load per-plugin settings when editing a plugin that has settingsFields
+  // Load per-extension settings when editing an extension that has settingsFields
   useEffect(() => {
     if (!editing?.settingsFields?.length) {
       setPluginSettingsValues({})
@@ -64,7 +63,7 @@ export function PluginSheet() {
       return
     }
     setPluginSettingsLoading(true)
-    api<{ values?: Record<string, unknown>; configuredSecretFields?: string[] }>('GET', `/plugins/settings?pluginId=${encodeURIComponent(editing.filename)}`)
+    api<{ values?: Record<string, unknown>; configuredSecretFields?: string[] }>('GET', `/extensions/settings?pluginId=${encodeURIComponent(editing.filename)}`)
       .then((data) => {
         setPluginSettingsValues(data?.values ?? {})
         setConfiguredSecretFields(Array.isArray(data?.configuredSecretFields) ? data.configuredSecretFields : [])
@@ -94,14 +93,14 @@ export function PluginSheet() {
       )
       const response = await api<{ values?: Record<string, unknown>; configuredSecretFields?: string[] }>(
         'PUT',
-        `/plugins/settings?pluginId=${encodeURIComponent(editing.filename)}`,
+        `/extensions/settings?pluginId=${encodeURIComponent(editing.filename)}`,
         payload,
       )
       setPluginSettingsValues(response?.values ?? {})
       setConfiguredSecretFields(Array.isArray(response?.configuredSecretFields) ? response.configuredSecretFields : [])
-      toast.success('Plugin settings saved')
+      toast.success('Extension settings saved')
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save settings')
+      toast.error(err instanceof Error ? err.message : 'Failed to save extension settings')
     }
     setPluginSettingsSaving(false)
   }, [editing, pluginSettingsValues])
@@ -109,7 +108,7 @@ export function PluginSheet() {
   const loadMarketplace = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await api<MarketplacePlugin[]>('GET', '/plugins/marketplace')
+      const data = await api<MarketplacePlugin[]>('GET', '/extensions/marketplace')
       if (Array.isArray(data)) setMarketplace(data)
     } catch { /* ignore */ }
     setLoading(false)
@@ -134,20 +133,20 @@ export function PluginSheet() {
 
   const togglePlugin = async (filename: string, enabled: boolean) => {
     try {
-      await api('POST', '/plugins', { filename, enabled })
-      toast.success(enabled ? 'Plugin enabled' : 'Plugin disabled')
-      loadPlugins()
+      await api('POST', '/extensions', { filename, enabled })
+      toast.success(enabled ? 'Extension enabled' : 'Extension disabled')
+      loadExtensions()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to toggle plugin')
+      toast.error(err instanceof Error ? err.message : 'Failed to toggle extension')
     }
   }
 
   const deletePlugin = async (filename: string) => {
     setDeleting(true)
     try {
-      await api('DELETE', `/plugins?filename=${encodeURIComponent(filename)}`)
-      toast.success('Plugin deleted')
-      await loadPlugins()
+      await api('DELETE', `/extensions?filename=${encodeURIComponent(filename)}`)
+      toast.success('Extension deleted')
+      await loadExtensions()
       handleClose()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Delete failed')
@@ -159,33 +158,33 @@ export function PluginSheet() {
     if (!editing?.filename) return
     setDependencyInstalling(true)
     try {
-      const response = await api<{ ok: boolean }>('POST', '/plugins/dependencies', {
+      const response = await api<{ ok: boolean }>('POST', '/extensions/dependencies', {
         filename: editing.filename,
         packageManager: editing.packageManager,
       })
       if (response?.ok) {
-        await loadPlugins()
-        toast.success('Plugin dependencies installed')
+        await loadExtensions()
+        toast.success('Extension dependencies installed')
       }
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to install plugin dependencies')
+      toast.error(err instanceof Error ? err.message : 'Failed to install extension dependencies')
     }
     setDependencyInstalling(false)
-  }, [editing?.filename, editing?.packageManager, loadPlugins])
+  }, [editing?.filename, editing?.packageManager, loadExtensions])
 
   const installFromMarketplace = async (p: MarketplacePlugin) => {
     setInstalling(p.id)
     const toastId = toast.loading(`Installing ${p.name}...`)
     try {
       const safeFilename = `${p.id.replace(/[^a-zA-Z0-9.-]/g, '_')}.js`
-      await api('POST', '/plugins/install', {
+      await api('POST', '/extensions/install', {
         url: p.url,
         filename: safeFilename,
         installMethod: 'marketplace',
         sourceLabel: p.source,
         installSource: p.catalogSource || p.source,
       })
-      await loadPlugins()
+      await loadExtensions()
       toast.success(`Installed ${p.name}`, { id: toastId })
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Install failed', { id: toastId })
@@ -198,10 +197,10 @@ export function PluginSheet() {
     setUrlStatus(null)
     setInstalling('url')
     try {
-      await api('POST', '/plugins/install', { url: urlInput, filename: urlFilename })
-      await loadPlugins()
+      await api('POST', '/extensions/install', { url: urlInput, filename: urlFilename })
+      await loadExtensions()
       setUrlStatus({ ok: true, message: 'Installed successfully' })
-      toast.success('Plugin installed from URL')
+      toast.success('Extension installed from URL')
       setUrlInput('')
       setUrlFilename('')
     } catch (err: unknown) {
@@ -210,7 +209,7 @@ export function PluginSheet() {
     setInstalling(null)
   }
 
-  const installedFilenames = new Set(Object.keys(plugins))
+  const installedFilenames = new Set(Object.keys(extensions))
 
   const tabClass = (t: string) =>
     `py-2.5 px-4 rounded-[10px] text-center cursor-pointer transition-all text-[12px] font-600 border
@@ -303,8 +302,8 @@ export function PluginSheet() {
                   <div className="text-[13px] font-600 text-text">Dependencies</div>
                   <p className="text-[11px] text-text-3/60 mt-1">
                     {editing.hasDependencyManifest
-                      ? `Managed in a per-plugin workspace${editing.packageManager ? ` via ${editing.packageManager}` : ''}.`
-                      : 'No package.json manifest is currently attached to this plugin.'}
+                      ? `Managed in a per-extension workspace${editing.packageManager ? ` via ${editing.packageManager}` : ''}.`
+                      : 'No package.json manifest is currently attached to this extension.'}
                   </p>
                 </div>
                 {editing.hasDependencyManifest && (
@@ -347,7 +346,7 @@ export function PluginSheet() {
           <div className="flex items-center justify-between py-3 px-4 rounded-[14px] bg-surface border border-white/[0.06]">
             <div>
               <span className="text-[13px] font-600 text-text block">Enabled</span>
-              <span className="text-[11px] text-text-3/60">Disable to keep the plugin installed but inactive.</span>
+              <span className="text-[11px] text-text-3/60">Disable to keep the extension installed but inactive.</span>
             </div>
             <div
               onClick={() => togglePlugin(editing.filename, !editing.enabled)}
@@ -397,7 +396,7 @@ export function PluginSheet() {
                 hover:bg-red-500/20 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-default"
               style={{ fontFamily: 'inherit' }}
             >
-              {deleting ? 'Deleting...' : 'Delete Plugin'}
+              {deleting ? 'Deleting...' : 'Delete Extension'}
             </button>
           )}
         </div>
@@ -416,7 +415,7 @@ export function PluginSheet() {
             loading
               ? <p className="text-[12px] text-text-3/70">Loading marketplace...</p>
               : marketplace.length === 0
-                ? <p className="text-[12px] text-text-3/70">No plugins available</p>
+                ? <p className="text-[12px] text-text-3/70">No extensions available</p>
                 : (() => {
                     const allTags = dedup(marketplace.flatMap((p) => (p.tags ?? []))).sort()
                     const q = search.toLowerCase()
@@ -441,7 +440,7 @@ export function PluginSheet() {
                         <input
                           value={search}
                           onChange={(e) => setSearch(e.target.value)}
-                          placeholder="Search plugins..."
+                          placeholder="Search extensions..."
                           className="w-full px-3 py-2.5 rounded-[10px] bg-bg border border-white/[0.06] text-[12px] text-text placeholder:text-text-3/50 outline-none focus:border-accent-bright/30"
                           style={{ fontFamily: 'inherit' }}
                         />
@@ -481,7 +480,7 @@ export function PluginSheet() {
 
                         {/* Results */}
                         {filtered.length === 0 ? (
-                          <p className="text-[12px] text-text-3/50 text-center py-4">No plugins match your search</p>
+                          <p className="text-[12px] text-text-3/50 text-center py-4">No extensions match your search</p>
                         ) : (
                           <div className="space-y-2.5">
                             {filtered.map((p) => {
@@ -551,12 +550,12 @@ export function PluginSheet() {
           {tab === 'url' && (
             <div className="p-5 rounded-[14px] bg-surface border border-white/[0.06]">
               <div className="mb-4">
-                <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Plugin URL</label>
+                <label className="block font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Extension URL</label>
                 <input
                   type="url"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://example.com/my-plugin.js"
+                  placeholder="https://example.com/my-extension.js"
                   className="w-full py-2.5 px-3 rounded-[10px] text-[13px] bg-bg border border-white/[0.06] text-text placeholder:text-text-3/60 outline-none focus:border-accent-bright/30"
                   style={{ fontFamily: 'inherit' }}
                 />
@@ -567,7 +566,7 @@ export function PluginSheet() {
                   type="text"
                   value={urlFilename}
                   onChange={(e) => setUrlFilename(e.target.value)}
-                  placeholder="my-plugin.js"
+                  placeholder="my-extension.js"
                   className="w-full py-2.5 px-3 rounded-[10px] text-[13px] bg-bg border border-white/[0.06] text-text placeholder:text-text-3/60 outline-none focus:border-accent-bright/30"
                   style={{ fontFamily: 'inherit' }}
                 />
@@ -579,7 +578,7 @@ export function PluginSheet() {
                   hover:bg-accent-soft/80 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-default"
                 style={{ fontFamily: 'inherit' }}
               >
-                {installing === 'url' ? 'Installing...' : 'Install Plugin'}
+                {installing === 'url' ? 'Installing...' : 'Install Extension'}
               </button>
               {urlStatus && (
                 <p className={`text-[11px] mt-3 ${urlStatus.ok ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -587,7 +586,7 @@ export function PluginSheet() {
                 </p>
               )}
               <p className="text-[10px] text-text-3/60 mt-3">
-                Works with `.js` / `.mjs` SwarmClaw and OpenClaw plugin formats. URL must be HTTPS.
+                Works with `.js` / `.mjs` SwarmClaw and OpenClaw extension formats. URL must be HTTPS.
               </p>
             </div>
           )}
@@ -595,7 +594,7 @@ export function PluginSheet() {
       )}
       <ConfirmDialog
         open={!!editing && confirmDelete}
-        title="Delete Plugin"
+        title="Delete Extension"
         message={editing ? `Delete "${editing.name}"? This cannot be undone.` : ''}
         confirmLabel={deleting ? 'Deleting...' : 'Delete'}
         danger

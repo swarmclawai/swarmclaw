@@ -5,7 +5,7 @@ import { loadSessions, saveSessions } from '../storage'
 import { buildChatModel } from '../build-llm'
 import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks, Session } from '@/types'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { errorMessage } from '@/lib/shared-utils'
 
@@ -85,7 +85,7 @@ const ContextPlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('context_mgmt', ContextPlugin)
+registerNativeCapability('context_mgmt', ContextPlugin)
 
 /**
  * Legacy Bridge

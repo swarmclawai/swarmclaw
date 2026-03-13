@@ -4,8 +4,9 @@ import { genId } from '@/lib/id'
 import { loadSessions, saveSessions, loadAgents } from '../storage'
 import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
+import { getEnabledCapabilitySelection } from '@/lib/capability-selection'
 
 /**
  * Core Session Info Execution Logic
@@ -75,8 +76,11 @@ async function executeSessionsAction(args: any, context: { sessionId?: string; a
       sessions[id] = {
         id, name: (name || `${agent.name} Chat`).trim(), cwd: context.cwd, user: 'system',
         provider: agent.provider, model: agent.model, credentialId: agent.credentialId || null,
+        claudeSessionId: null,
+        codexThreadId: null,
+        opencodeSessionId: null,
         messages: [], createdAt: now, lastActiveAt: now, sessionType: 'human',
-        agentId: agent.id, parentSessionId: context.sessionId || undefined, plugins: agent.plugins || agent.tools || [],
+        agentId: agent.id, parentSessionId: context.sessionId || undefined, ...getEnabledCapabilitySelection(agent),
       }
       saveSessions(sessions)
       return JSON.stringify({ sessionId: id, name: agent.name })
@@ -107,7 +111,7 @@ async function executeSessionsAction(args: any, context: { sessionId?: string; a
       const patch = updates && typeof updates === 'object' ? updates : {}
       for (const [key, value] of Object.entries(patch)) {
         if (!allowedKeys.has(key)) continue
-        target[key] = value
+        ;(target as unknown as Record<string, unknown>)[key] = value
       }
       saveSessions(sessions)
       return JSON.stringify({ sessionId: targetId, updated: Object.keys(patch).filter((key) => allowedKeys.has(key)) })
@@ -153,7 +157,7 @@ const SessionInfoPlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('session_info', SessionInfoPlugin)
+registerNativeCapability('session_info', SessionInfoPlugin)
 
 /**
  * Legacy Bridge

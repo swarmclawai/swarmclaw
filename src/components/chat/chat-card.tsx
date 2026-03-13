@@ -13,6 +13,7 @@ import { ConnectorPlatformBadge, getSessionConnector } from '@/components/shared
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { timeAgoShort } from '@/lib/time-format'
 import { toast } from 'sonner'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 
 function shortPath(p: string): string {
   return (p || '').replace(/^\/Users\/\w+/, '~')
@@ -81,7 +82,7 @@ export function ChatCard({ session, active, onClick }: Props) {
   const intervalEnabled = Number.isFinite(intervalNum) ? intervalNum > 0 : true
   const heartbeatEnabled =
     (loopIsOngoing || explicitOptIn)
-    && (session.plugins?.length ?? 0) > 0
+    && getEnabledCapabilityIds(session).length > 0
     && intervalEnabled
     && session.heartbeatEnabled !== false
     && agent?.heartbeatEnabled !== false

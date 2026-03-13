@@ -14,7 +14,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const now = Date.now()
 
   // Deep-copy the source agent, then override clone-specific fields
-  const cloned = JSON.parse(JSON.stringify(source)) as Record<string, unknown>
+  const cloned = JSON.parse(JSON.stringify(source)) as typeof source
   cloned.id = newId
   cloned.name = `${source.name} (Copy)`
   cloned.createdAt = now

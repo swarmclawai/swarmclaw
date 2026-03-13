@@ -5,12 +5,12 @@ import { MainContent } from '@/components/layout/main-content'
 import { PluginList } from '@/components/plugins/plugin-list'
 import { useAppStore } from '@/stores/use-app-store'
 
-export default function PluginsLayout({ children }: { children: React.ReactNode }) {
+export default function ExtensionsLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <SidebarPanelShell
-        title="Plugins"
-        createLabel="Plugin"
+        title="Extensions"
+        createLabel="Extension"
         onNew={() => useAppStore.getState().setPluginSheetOpen(true)}
       >
         <PluginList inSidebar />

@@ -14,7 +14,7 @@ import { loadSettings } from '../storage'
 import { expandQuery } from '../query-expansion'
 import type { FileReference, MemoryEntry, MemoryImage, MemoryReference, Plugin, PluginHooks, Session } from '@/types'
 import type { ToolBuildContext } from './context'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { getMemoryTier, partitionMemoriesByTier, shouldHideFromDurableRecall } from '@/lib/server/memory/memory-tiers'
 import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
@@ -1089,7 +1089,7 @@ const MemoryPlugin: Plugin = {
 }
 
 // Auto-register when imported
-getPluginManager().registerBuiltin('memory', MemoryPlugin)
+registerNativeCapability('memory', MemoryPlugin)
 
 export function buildMemoryTools(bctx: ToolBuildContext) {
   if (!bctx.hasPlugin('memory')) return []

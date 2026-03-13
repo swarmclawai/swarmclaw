@@ -240,7 +240,7 @@ function deriveScheduleFollowupTarget(sessionId: string | null | undefined): {
   const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : ''
   if (!normalizedSessionId) return {}
 
-  const session = loadSessions()[normalizedSessionId] as {
+  const session = loadSessions()[normalizedSessionId] as unknown as {
     connectorContext?: Record<string, unknown>
     messages?: Array<Record<string, unknown>>
   } | undefined
@@ -891,7 +891,10 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   }
                   if (changed) save(items)
                 }
-                clearProjectId(loadAgents, saveAgents)
+                clearProjectId(
+                  loadAgents as unknown as () => Record<string, Record<string, unknown>>,
+                  saveAgents as unknown as (data: Record<string, Record<string, unknown>>) => void,
+                )
                 clearProjectId(loadTasks, saveTasks as any)
                 clearProjectId(loadSchedules, saveSchedules as any)
                 clearProjectId(loadSkills, saveSkills as any)

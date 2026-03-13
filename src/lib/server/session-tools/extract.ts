@@ -8,6 +8,7 @@ import type { ToolBuildContext } from './context'
 import { safePath } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { errorMessage } from '@/lib/shared-utils'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 
 function resolveSessionForExtraction(bctx: ToolBuildContext) {
   const session = bctx.resolveCurrentSession?.()
@@ -113,7 +114,7 @@ const ExtractPlugin: Plugin = {
           persistDelegateResumeId: () => undefined,
           readStoredDelegateResumeId: () => null,
           resolveCurrentSession: () => context.session,
-          activePlugins: context.session.plugins || [],
+          activePlugins: getEnabledCapabilityIds(context.session),
         } as ToolBuildContext
         return executeExtractAction(args, syntheticBuildContext)
       },

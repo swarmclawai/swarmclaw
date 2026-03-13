@@ -32,7 +32,7 @@ function buildCacheKey(cwd?: string): string {
   return `${cwd || ''}|${resolveWorkspaceSkillsDir()}`
 }
 
-function resolveWorkspaceSkillsDir(): string {
+export function resolveWorkspaceSkillsDir(): string {
   const swarmclawHome = process.env.SWARMCLAW_HOME || path.join(os.homedir(), '.swarmclaw')
   return path.join(swarmclawHome, 'skills')
 }

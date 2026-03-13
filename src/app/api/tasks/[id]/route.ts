@@ -9,6 +9,7 @@ import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { requestHeartbeatNow } from '@/lib/server/runtime/heartbeat-wake'
 import { validateDag, cascadeUnblock } from '@/lib/server/dag-validation'
 import { getPluginManager } from '@/lib/server/plugins'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 import {
   applyTaskPatch,
 } from '@/lib/server/tasks/task-service'
@@ -96,7 +97,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     })
     
     if (tasks[id].status === 'completed') {
-      const agentPlugins = tasks[id].agentId ? (loadAgents()[tasks[id].agentId]?.plugins || []) : []
+      const agentPlugins = tasks[id].agentId ? getEnabledCapabilityIds(loadAgents()[tasks[id].agentId]) : []
       getPluginManager().runHook(
         'onTaskComplete',
         { taskId: id, result: tasks[id].result },

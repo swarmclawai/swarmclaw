@@ -131,7 +131,7 @@ function McpServerForm({ editing, onClose, loadMcpServers }: {
         <h2 className="font-display text-[28px] font-700 tracking-[-0.03em] mb-2">
           {editing ? 'Edit MCP Server' : 'New MCP Server'}
         </h2>
-        <p className="text-[14px] text-text-3">Configure an MCP server to provide plugins to agents</p>
+        <p className="text-[14px] text-text-3">Configure an MCP server to provide tools to agents</p>
       </div>
 
       <div className="mb-8">

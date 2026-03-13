@@ -28,7 +28,7 @@ import {
   signEthereumTypedData,
   simulateEthereumTransaction,
 } from '../ethereum'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { loadAgents, loadWalletTransactions, upsertWalletTransaction } from '../storage'
 import {
   getSolanaClusterLabel,
@@ -1286,7 +1286,7 @@ const WalletPlugin: Plugin = {
   ],
 }
 
-getPluginManager().registerBuiltin('wallet', WalletPlugin)
+registerNativeCapability('wallet', WalletPlugin)
 
 export function buildWalletTools(bctx: ToolBuildContext): StructuredToolInterface[] {
   if (!bctx.hasPlugin('wallet')) return []

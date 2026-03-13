@@ -25,7 +25,8 @@ import { HintTip } from '@/components/shared/hint-tip'
 import { StatusDot } from '@/components/ui/status-dot'
 import { isOllamaCloudModel } from '@/lib/ollama-model'
 import { errorMessage } from '@/lib/shared-utils'
-import { getDefaultAgentPluginIds } from '@/lib/agent-default-tools'
+import { getDefaultAgentToolIds } from '@/lib/agent-default-tools'
+import { getEnabledExtensionIds, getEnabledToolIds } from '@/lib/capability-selection'
 
 const HB_PRESETS = [1800, 3600, 7200, 21600, 43200] as const
 const FALLBACK_ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
@@ -204,6 +205,7 @@ export function AgentSheet() {
   const [delegationTargetMode, setDelegationTargetMode] = useState<'all' | 'selected'>('all')
   const [delegationTargetAgentIds, setDelegationTargetAgentIds] = useState<string[]>([])
   const [tools, setTools] = useState<string[]>([])
+  const [extensions, setExtensions] = useState<string[]>([])
   const [skills, setSkills] = useState<string[]>([])
   const [skillIds, setSkillIds] = useState<string[]>([])
   const [mcpServerIds, setMcpServerIds] = useState<string[]>([])
@@ -397,7 +399,8 @@ export function AgentSheet() {
         setDelegationEnabled(editing.delegationEnabled === true)
         setDelegationTargetMode(editing.delegationTargetMode === 'selected' ? 'selected' : 'all')
         setDelegationTargetAgentIds(editing.delegationTargetAgentIds || [])
-        setTools(editing.plugins || [])
+        setTools(getEnabledToolIds(editing))
+        setExtensions(getEnabledExtensionIds(editing))
         setSkills(editing.skills || [])
         setSkillIds(editing.skillIds || [])
         setMcpServerIds(editing.mcpServerIds || [])
@@ -468,7 +471,8 @@ export function AgentSheet() {
         setDelegationEnabled(false)
         setDelegationTargetMode('all')
         setDelegationTargetAgentIds([])
-        setTools(getDefaultAgentPluginIds())
+        setTools(getDefaultAgentToolIds())
+        setExtensions([])
         setSkills([])
         setSkillIds([])
         setMcpDisabledTools([])
@@ -657,7 +661,8 @@ export function AgentSheet() {
       delegationEnabled,
       delegationTargetMode: delegationEnabled ? delegationTargetMode : 'all',
       delegationTargetAgentIds: delegationEnabled && delegationTargetMode === 'selected' ? delegationTargetAgentIds : [],
-      plugins: tools,
+      tools,
+      extensions,
       skills,
       skillIds,
       mcpServerIds,
@@ -747,8 +752,8 @@ export function AgentSheet() {
         gatewayProfileId: editing.gatewayProfileId || null,
         routingStrategy: editing.routingStrategy || null,
         routingTargets: editing.routingTargets || [],
-        tools: editing.plugins || editing.tools || [],
-        plugins: editing.plugins || editing.tools || [],
+        tools: getEnabledToolIds(editing),
+        extensions: getEnabledExtensionIds(editing),
         capabilities: editing.capabilities,
         elevenLabsVoiceId: editing.elevenLabsVoiceId || null,
         soul: editing.soul,
@@ -856,9 +861,9 @@ export function AgentSheet() {
 
   const canDelegateToAgents = delegationEnabled
   const agentOptions = Object.values(agents).filter((p) => p.id !== editingId)
-  const defaultAgentPluginIds = useMemo(() => getDefaultAgentPluginIds(), [])
-  const toolsDifferFromDefault = tools.length !== defaultAgentPluginIds.length
-    || defaultAgentPluginIds.some((toolId) => !tools.includes(toolId))
+  const defaultAgentToolIds = useMemo(() => getDefaultAgentToolIds(), [])
+  const toolsDifferFromDefault = tools.length !== defaultAgentToolIds.length
+    || defaultAgentToolIds.some((toolId) => !tools.includes(toolId))
   const agentAdvancedBadges = useMemo(() => {
     const badges: string[] = []
     if (voiceId.trim()) badges.push('Voice')
@@ -2004,14 +2009,14 @@ export function AgentSheet() {
 
       <SectionCard
         title="Tools & Delegation"
-        description="Enable plugins, pin preferred skills, connect MCP tools, and configure delegation behavior for this agent."
+        description="Enable tool families, pin preferred skills, connect MCP tools, and configure delegation behavior for this agent."
         className="mb-6 border-white/[0.05] bg-white/[0.01]"
       >
-      {/* Plugins — hidden for providers that manage capabilities outside LangGraph */}
+      {/* Tools — hidden for providers that manage capabilities outside LangGraph */}
       {!hasNativeCapabilities && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Plugins</label>
-          <p className="text-[12px] text-text-3/60 mb-3">Enable capabilities and plugins for this agent.</p>
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Tools</label>
+          <p className="text-[12px] text-text-3/60 mb-3">Enable built-in tool families for this agent.</p>
           <div className="space-y-3">
             {AVAILABLE_TOOLS.map((t) => (
               <label key={t.id} className="flex items-center gap-3 cursor-pointer">
@@ -2050,7 +2055,7 @@ export function AgentSheet() {
       {/* Platform — hidden for providers that manage capabilities outside LangGraph */}
       {!hasNativeCapabilities && (
         <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Platform Plugins</label>
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Platform Tools</label>
           <p className="text-[12px] text-text-3/60 mb-3">Allow this agent to manage platform resources directly.</p>
           <div className="space-y-3">
             {PLATFORM_TOOLS.map((t) => (

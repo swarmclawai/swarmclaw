@@ -1,26 +1,36 @@
 import { ALL_TOOLS } from '@/lib/tool-definitions'
+import { normalizeCapabilitySelection } from '@/lib/capability-selection'
 
-const DEFAULT_AGENT_PLUGIN_IDS = Array.from(new Set(ALL_TOOLS.map((tool) => tool.id)))
+const DEFAULT_AGENT_TOOL_IDS = Array.from(new Set(ALL_TOOLS.map((tool) => tool.id)))
 
 const KNOWN_TOOL_IDS = new Set(ALL_TOOLS.map((tool) => tool.id))
 
-export function getDefaultAgentPluginIds(): string[] {
-  return DEFAULT_AGENT_PLUGIN_IDS.filter((toolId) => KNOWN_TOOL_IDS.has(toolId))
+export function getDefaultAgentToolIds(): string[] {
+  return DEFAULT_AGENT_TOOL_IDS.filter((toolId) => KNOWN_TOOL_IDS.has(toolId))
 }
 
-export function resolveAgentPluginSelection(options: {
-  hasExplicitPlugins: boolean
+export function resolveAgentToolSelection(options: {
   hasExplicitTools: boolean
-  plugins?: string[] | null
+  hasExplicitExtensions: boolean
   tools?: string[] | null
-}): string[] {
-  const { hasExplicitPlugins, hasExplicitTools, plugins, tools } = options
+  extensions?: string[] | null
+}): {
+  tools: string[]
+  extensions: string[]
+} {
+  const { hasExplicitTools, hasExplicitExtensions, tools, extensions } = options
 
-  if (hasExplicitPlugins) return Array.isArray(plugins) ? plugins : []
-  if (hasExplicitTools) return Array.isArray(tools) ? tools : []
+  if (!hasExplicitTools && !hasExplicitExtensions && !Array.isArray(tools) && !Array.isArray(extensions)) {
+    const defaultTools = getDefaultAgentToolIds()
+    return {
+      tools: defaultTools,
+      extensions: [],
+    }
+  }
 
-  if (Array.isArray(plugins) && plugins.length) return plugins
-  if (Array.isArray(tools) && tools.length) return tools
-
-  return getDefaultAgentPluginIds()
+  const normalized = normalizeCapabilitySelection({ tools, extensions })
+  return {
+    tools: hasExplicitTools ? normalized.tools : (Array.isArray(tools) ? normalized.tools : getDefaultAgentToolIds()),
+    extensions: hasExplicitExtensions ? normalized.extensions : normalized.extensions,
+  }
 }

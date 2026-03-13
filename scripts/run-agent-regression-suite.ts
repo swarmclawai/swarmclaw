@@ -60,7 +60,7 @@ async function main() {
 
   console.log(JSON.stringify(payload, null, 2))
 
-  const agent = (loadAgents() as Record<string, Record<string, unknown>>)[result.agentId]
+  const agent = (loadAgents() as unknown as Record<string, Record<string, unknown>>)[result.agentId]
   const threadSessionId = typeof agent?.threadSessionId === 'string' ? agent.threadSessionId : ''
   if (threadSessionId) {
     const failedScenarios = result.scenarios.filter((scenario) => scenario.status !== 'passed')

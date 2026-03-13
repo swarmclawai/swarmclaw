@@ -3,13 +3,14 @@ import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { buildCrudTools } from './crud'
 import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks, Session } from '@/types'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { loadSettings } from '../storage'
 import { resolveSessionToolPolicy } from '../tool-capability-policy'
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { expandPluginIds } from '../tool-aliases'
 import { dedup } from '@/lib/shared-utils'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 
 function parsePlatformData(value: unknown): Record<string, unknown> | null {
   if (!value) return null
@@ -162,9 +163,7 @@ function resolvePlatformResourceAccess(toolId: string, bctx: ToolBuildContext): 
 
 function buildPlatformContextFromSession(session: Session): ToolBuildContext {
   const runtime = loadRuntimeSettings()
-  const sessionPlugins = Array.isArray(session.plugins) ? session.plugins : []
-  const legacyTools = Array.isArray(session.tools) ? session.tools : []
-  const activePlugins = expandPluginIds([...sessionPlugins, ...legacyTools, 'manage_platform'])
+  const activePlugins = expandPluginIds([...getEnabledCapabilityIds(session), 'manage_platform'])
   const activePluginSet = new Set(activePlugins)
   const hasPlugin = (name: string) => activePluginSet.has(name)
 
@@ -248,7 +247,7 @@ const PlatformPlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('manage_platform', PlatformPlugin)
+registerNativeCapability('manage_platform', PlatformPlugin)
 
 /**
  * Legacy Bridge

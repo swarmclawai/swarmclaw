@@ -6,9 +6,22 @@ export interface ClawHubSearchResult {
   total: number
   page: number
   nextCursor?: string | null
+  error?: string
+}
+
+export interface ClawHubBundleFile {
+  path: string
+  content: Buffer
+}
+
+export interface ClawHubSkillBundle {
+  slug: string
+  content: string
+  files: ClawHubBundleFile[]
 }
 
 const CLAWHUB_BASE_URL = process.env.CLAWHUB_API_URL || 'https://clawhub.ai/api/v1'
+const CLAWHUB_DOWNLOAD_API_URL = process.env.CLAWHUB_DOWNLOAD_API_URL || 'https://wry-manatee-359.convex.site/api/v1'
 
 /**
  * Raw shape returned by the ClawHub `/skills` endpoint.
@@ -31,6 +44,7 @@ interface ClawHubRawItem {
 }
 
 function mapRawToSkill(raw: ClawHubRawItem): ClawHubSkill {
+  const listingUrl = `https://clawhub.ai/skills/${raw.slug}`
   const name = raw.displayName || raw.name || raw.slug
   const description = raw.summary || raw.description || ''
   const author = typeof raw.author === 'string'
@@ -48,16 +62,106 @@ function mapRawToSkill(raw: ClawHubRawItem): ClawHubSkill {
     author,
     tags,
     downloads,
-    url: raw.url || `https://clawhub.ai/skills/${raw.slug}`,
+    stars: raw.stats?.stars ?? undefined,
+    url: listingUrl,
     version,
+    changelog: raw.latestVersion?.changelog,
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
+    metadata: raw.metadata
+      ? (raw.url ? { ...raw.metadata, upstreamUrl: raw.url } : raw.metadata)
+      : raw.url ? { upstreamUrl: raw.url } : null,
   }
 }
 
-export async function searchClawHub(query: string, page = 1, limit = 20): Promise<ClawHubSearchResult> {
+function extractClawHubSlug(rawUrl: string): string | null {
+  try {
+    const parsed = new URL(rawUrl)
+    const parts = parsed.pathname.split('/').filter(Boolean)
+
+    if (parsed.hostname === 'wry-manatee-359.convex.site') {
+      const slug = parsed.searchParams.get('slug')
+      return slug?.trim() || null
+    }
+
+    if (!parsed.hostname.endsWith('clawhub.ai')) return null
+    if (parts[0] === 'skills' && parts[1]) return parts[1]
+    if (parts.length >= 2) return parts[1]
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function extractClawHubBundleFromZip(params: {
+  slug: string
+  buffer: ArrayBuffer
+}): Promise<ClawHubSkillBundle> {
+  const JSZip = (await import('jszip')).default
+  const archive = await JSZip.loadAsync(Buffer.from(params.buffer))
+  const preferredPatterns = [
+    /^SKILL\.md$/i,
+    /^README\.md$/i,
+  ]
+  const files = await Promise.all(
+    Object.values(archive.files)
+      .filter((file) => !file.dir)
+      .map(async (file) => ({
+        path: file.name,
+        content: await file.async('nodebuffer'),
+      })),
+  )
+
+  for (const pattern of preferredPatterns) {
+    const match = Object.values(archive.files).find((file) => !file.dir && pattern.test(file.name))
+    if (match) {
+      return {
+        slug: params.slug,
+        content: await match.async('text'),
+        files,
+      }
+    }
+  }
+
+  for (const pattern of preferredPatterns) {
+    const match = Object.values(archive.files).find((file) => !file.dir && pattern.test(file.name.split('/').pop() || ''))
+    if (match) {
+      return {
+        slug: params.slug,
+        content: await match.async('text'),
+        files,
+      }
+    }
+  }
+
+  throw new Error('Failed to fetch skill content: archive did not contain SKILL.md or README.md')
+}
+
+export async function fetchClawHubSkillBundle(rawUrl: string): Promise<ClawHubSkillBundle | null> {
+  const slug = extractClawHubSlug(rawUrl)
+  if (!slug) return null
+
+  const downloadUrl = `${CLAWHUB_DOWNLOAD_API_URL}/download?slug=${encodeURIComponent(slug)}`
+  const downloadResponse = await fetch(downloadUrl, { signal: AbortSignal.timeout(12000) })
+  if (!downloadResponse.ok) {
+    throw new Error(`Failed to fetch skill content: ${downloadResponse.status}`)
+  }
+
+  return extractClawHubBundleFromZip({
+    slug,
+    buffer: await downloadResponse.arrayBuffer(),
+  })
+}
+
+export async function searchClawHub(query: string, page = 1, limit = 20, cursor?: string | null): Promise<ClawHubSearchResult> {
   try {
     const params = new URLSearchParams({ limit: String(limit) })
     if (query) params.set('q', query)
-    if (page > 1) params.set('page', String(page))
+    if (cursor) {
+      params.set('cursor', cursor)
+    } else if (page > 1) {
+      params.set('page', String(page))
+    }
 
     const url = `${CLAWHUB_BASE_URL}/skills?${params}`
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
@@ -72,32 +176,20 @@ export async function searchClawHub(query: string, page = 1, limit = 20): Promis
 
     return { skills, total, page, nextCursor: data.nextCursor }
   } catch (err: unknown) {
-    console.warn('[clawhub] search failed:', errorMessage(err))
-    return { skills: [], total: 0, page }
+    const error = errorMessage(err)
+    console.warn('[clawhub] search failed:', error)
+    return { skills: [], total: 0, page, error }
   }
 }
 
 export async function fetchSkillContent(rawUrl: string): Promise<string> {
-  // ClawHub skill pages are at /skills/<slug> — try raw content endpoint first
-  let contentUrl = rawUrl
-  if (contentUrl.startsWith('https://clawhub.ai/skills/') && !contentUrl.includes('/raw')) {
-    const slug = contentUrl.replace('https://clawhub.ai/skills/', '').replace(/\/$/, '')
-    // Try the raw content API first
-    const rawApiUrl = `${CLAWHUB_BASE_URL}/skills/${slug}/content`
-    try {
-      const res = await fetch(rawApiUrl, { signal: AbortSignal.timeout(8000) })
-      if (res.ok) {
-        const data = await res.json() as { content?: string }
-        if (data.content) return data.content
-      }
-    } catch {
-      // Fall through to direct fetch
-    }
-    // Try the raw endpoint pattern
-    contentUrl = `https://clawhub.ai/skills/${slug}/raw`
+  const bundle = await fetchClawHubSkillBundle(rawUrl)
+  if (bundle) {
+    if (bundle.content.trim()) return bundle.content
+    throw new Error('Failed to fetch skill content: archive did not contain readable skill content')
   }
 
-  const res = await fetch(contentUrl, { signal: AbortSignal.timeout(10000) })
+  const res = await fetch(rawUrl, { signal: AbortSignal.timeout(10000) })
   if (!res.ok) throw new Error(`Failed to fetch skill content: ${res.status}`)
   return res.text()
 }

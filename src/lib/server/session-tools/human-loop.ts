@@ -61,6 +61,11 @@ async function executeHumanLoopAction(args: Record<string, unknown>, bctx: { ses
         envelope,
         correlationId: effectiveCorrelationId,
         reused: existing ? true : undefined,
+        nextAction: {
+          action: 'wait_for_reply',
+          correlationId: effectiveCorrelationId,
+          guidance: 'If this turn should pause for the human reply, call wait_for_reply once with this correlationId, then stop after the durable wait is active. Do not request the same pending input again before the reply arrives.',
+        },
         hint: `A human can answer via POST /api/chats/${toSessionId}/mailbox with action="send", type="human_reply", correlationId="${effectiveCorrelationId}", and payload set to the response.`,
       })
     }
@@ -196,7 +201,7 @@ const HumanLoopPlugin: Plugin = {
   description: 'Request structured human input or approvals, then wait durably for the response.',
   hooks: {
     getCapabilityDescription: () =>
-      'I can request structured human input or explicit approvals with `ask_human`, then pause on durable wait handles until the response arrives.',
+      'I can request structured human input or explicit approvals with `ask_human`, then pause on durable wait handles until the response arrives. I should not repeat the same pending human question before that wait resumes.',
     getApprovalGuidance: ({ approval, phase, approved }) => {
       if (approval.category !== 'human_loop') return null
       if (phase === 'request') {
@@ -220,7 +225,7 @@ const HumanLoopPlugin: Plugin = {
   tools: [
     {
       name: 'ask_human',
-      description: 'Human-loop tool. Use request_input(question, ...) to ask a human, wait_for_reply(correlationId) for durable waiting, list_mailbox to read replies, ack_mailbox(envelopeId) to acknowledge them, and status(approvalId or watchJobId) only when you have an id.',
+      description: 'Human-loop tool. Use request_input(question, ...) once to ask a human, wait_for_reply(correlationId) for durable waiting, then stop when the wait becomes active. Do not repeat the same pending question before the reply arrives. Use list_mailbox to read replies, ack_mailbox(envelopeId) to acknowledge them, and status(approvalId or watchJobId) only when you have an id.',
       parameters: {
         type: 'object',
         properties: {

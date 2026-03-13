@@ -1,7 +1,7 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "1.0.6",
-  "description": "Self-hosted AI orchestration control plane for OpenClaw, multi-agent workflows, runtime skills, crypto wallets, and chat platform connectors.",
+  "version": "1.0.7",
+  "description": "Self-hosted AI runtime for OpenClaw, delegation, autonomy, runtime skills, crypto wallets, and chat platform connectors.",
   "license": "MIT",
   "publishConfig": {
     "access": "public",
@@ -12,15 +12,15 @@
     "url": "git+https://github.com/swarmclawai/swarmclaw.git"
   },
   "keywords": [
-    "ai",
-    "agents",
-    "llm",
-    "orchestration",
-    "swarm",
     "openclaw",
-    "self-hosted",
-    "wallets",
-    "multi-agent"
+    "crustacean",
+    "clawd",
+    "clawdbot",
+    "moltbot",
+    "openclaw-skill",
+    "openclaw-dashboard",
+    "openclaw-gateway",
+    "clawdbot-dashboard"
   ],
   "engines": {
     "node": ">=22.6.0"

@@ -16,6 +16,7 @@ import {
 import { isDirectConnectorSession } from './session-kind'
 import { resolveThreadPersonaLabel } from './thread-context'
 import type { InboundMessage } from './types'
+import { getEnabledCapabilitySelection } from '@/lib/capability-selection'
 
 export type ConnectorSession = Session
 export type ConnectorAgent = Agent
@@ -347,7 +348,7 @@ export function resolveDirectSession(params: {
       lastActiveAt: Date.now(),
       sessionType: 'human' as const,
       agentId: agent.id,
-      plugins: agent.plugins || agent.tools || [],
+      ...getEnabledCapabilitySelection(agent),
       memoryScopeMode: resolveEffectiveSessionMemoryScopeMode({
         id,
         agentId: agent.id,
@@ -363,7 +364,9 @@ export function resolveDirectSession(params: {
   }
   session.name = sessionKey
   session.agentId = agent.id
-  session.plugins = Array.isArray(session.plugins) ? session.plugins : (agent.plugins || agent.tools || [])
+  const capabilitySelection = getEnabledCapabilitySelection(agent)
+  if (!Array.isArray(session.tools)) session.tools = capabilitySelection.tools
+  if (!Array.isArray(session.extensions)) session.extensions = capabilitySelection.extensions
   session.provider = defaultProvider
   session.model = defaultModel
   if (session.credentialId === undefined) session.credentialId = agent.credentialId || null

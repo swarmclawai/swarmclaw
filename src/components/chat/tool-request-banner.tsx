@@ -6,6 +6,7 @@ import { selectActiveSessionId } from '@/stores/slices/session-slice'
 import { useChatStore } from '@/stores/use-chat-store'
 import { api } from '@/lib/app/api-client'
 import { TOOL_LABELS } from '@/lib/tool-definitions'
+import { getEnabledToolIds } from '@/lib/capability-selection'
 
 interface Props {
   text: string
@@ -50,13 +51,13 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
 
   const handleGrant = async (toolId: string) => {
     if (!sid || !session) return
-    const currentTools: string[] = session.plugins || []
+    const currentTools = getEnabledToolIds(session)
     if (currentTools.includes(toolId)) {
       setGranted((prev) => new Set(prev).add(toolId))
       return
     }
     const updated = [...currentTools, toolId]
-    await api('PUT', `/chats/${sid}`, { plugins: updated })
+    await api('PUT', `/chats/${sid}`, { tools: updated })
     await loadSessions()
     const newGranted = new Set(granted).add(toolId)
     setGranted(newGranted)
@@ -83,7 +84,7 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
     setTimeout(() => {
       const { streaming, sendMessage } = useChatStore.getState()
       if (!streaming) {
-        sendMessage(`Plugin access denied for ${label} — proceed without it.`)
+          sendMessage(`Tool access denied for ${label} — proceed without it.`)
       }
     }, 200)
   }
@@ -91,7 +92,7 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
   return (
     <div className="max-w-[85%] md:max-w-[72%] flex flex-col gap-2 mt-2">
       {pluginRequests.map(({ pluginId, reason }) => {
-        const isGranted = granted.has(pluginId) || (session?.plugins || []).includes(pluginId)
+        const isGranted = granted.has(pluginId) || getEnabledToolIds(session).includes(pluginId)
         const isDenied = denied.has(pluginId)
         const label = TOOL_LABELS[pluginId] || pluginId
         return (
@@ -105,7 +106,7 @@ export function ToolRequestBanner({ text, toolOutputs = [] }: Props) {
             </svg>
             <div className="flex-1 min-w-0">
               <p className="text-[12px] text-text-2 font-600">
-                Requesting plugin access to <span className="text-amber-400">{label}</span>
+                Requesting tool access to <span className="text-amber-400">{label}</span>
               </p>
               {reason && <p className="text-[11px] text-text-3/60 mt-0.5 truncate">{reason}</p>}
             </div>

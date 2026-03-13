@@ -162,6 +162,9 @@ describe('primitive tools', () => {
       correlationId: 'corr_123',
     })))
     assert.equal(requestInput.ok, true)
+    assert.equal(requestInput.nextAction?.action, 'wait_for_reply')
+    assert.equal(requestInput.nextAction?.correlationId, 'corr_123')
+    assert.match(String(requestInput.nextAction?.guidance || ''), /Do not request the same pending input again/i)
     const duplicateRequestInput = JSON.parse(String(await humanTool.invoke({
       action: 'request_input',
       question: '  ship it? ',

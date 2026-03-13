@@ -45,12 +45,19 @@ import { buildTableTools } from './table'
 import { buildCrawlTools } from './crawl'
 import { buildGoogleWorkspaceTools } from './google-workspace'
 import { buildSkillRuntimeTools } from './skill-runtime'
+import { buildConnectorTools } from './connector'
 import './connector'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { enforceFileAccessPolicy } from './file-access-policy'
 
 import { getPluginManager } from '../plugins'
+import { runCapabilityBeforeToolCall, runCapabilityHook } from '../native-capabilities'
 import { jsonSchemaToZod } from '../mcp-client'
+import {
+  getEnabledCapabilitySelection,
+  isExternalExtensionId,
+  splitCapabilityIds,
+} from '@/lib/capability-selection'
 
 export type { ToolContext, SessionToolsResult }
 export { sweepOrphanedBrowsers, cleanupSessionBrowser, getActiveBrowserCount, hasActiveBrowser }
@@ -191,6 +198,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       ['context_mgmt', buildContextTools],
       ['discovery', buildDiscoveryTools],
       ['monitor', buildMonitorTools],
+      ['manage_connectors', buildConnectorTools],
       ['plugin_creator', buildPluginCreatorTools],
       ['image_gen', buildImageGenTools],
       ['email', buildEmailTools],
@@ -320,18 +328,22 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
           if (ctx?.sessionId) {
             patchSession(ctx.sessionId, (currentSession) => {
               if (!currentSession) return currentSession
-              const currentPlugins = Array.isArray(currentSession.plugins) ? currentSession.plugins : []
-              if (currentPlugins.includes(normalizedToolId)) return currentSession
-              currentSession.plugins = [...currentPlugins, normalizedToolId]
+              const selection = getEnabledCapabilitySelection(currentSession)
+              const targetList = isExternalExtensionId(normalizedToolId) ? selection.extensions : selection.tools
+              if (targetList.includes(normalizedToolId)) return currentSession
+              if (isExternalExtensionId(normalizedToolId)) currentSession.extensions = [...selection.extensions, normalizedToolId]
+              else currentSession.tools = [...selection.tools, normalizedToolId]
               currentSession.updatedAt = Date.now()
               return currentSession
             })
           } else if (ctx?.agentId) {
             patchAgent(ctx.agentId, (currentAgent) => {
               if (!currentAgent) return currentAgent
-              const currentPlugins = Array.isArray(currentAgent.plugins) ? currentAgent.plugins : []
-              if (currentPlugins.includes(normalizedToolId)) return currentAgent
-              currentAgent.plugins = [...currentPlugins, normalizedToolId]
+              const selection = getEnabledCapabilitySelection(currentAgent)
+              const targetList = isExternalExtensionId(normalizedToolId) ? selection.extensions : selection.tools
+              if (targetList.includes(normalizedToolId)) return currentAgent
+              if (isExternalExtensionId(normalizedToolId)) currentAgent.extensions = [...selection.extensions, normalizedToolId]
+              else currentAgent.tools = [...selection.tools, normalizedToolId]
               currentAgent.updatedAt = Date.now()
               return currentAgent
             })
@@ -369,7 +381,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
       agentId: ctx?.agentId || null,
-      plugins: [...activePlugins],
+      ...splitCapabilityIds(activePlugins),
     })
 
     const wrappedTools = tools.map((candidate) => {
@@ -408,7 +420,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
               guardedArgs = guardResult.input === undefined ? guardedArgs : guardResult.input ?? null
             }
           }
-          const hookResult = await pluginManager.runBeforeToolCall(
+          const hookResult = await runCapabilityBeforeToolCall(
             {
               session: hookSession,
               toolName: candidate.name,
@@ -429,7 +441,7 @@ export async function buildSessionTools(cwd: string, enabledPlugins: string[], c
           const effectiveArgs = hookResult.input ?? guardedArgs
           const result = await candidate.invoke(effectiveArgs ?? {})
           const outputText = typeof result === 'string' ? result : JSON.stringify(result)
-          await pluginManager.runHook(
+          await runCapabilityHook(
             'afterToolExec',
             { session: hookSession, toolName: candidate.name, input: effectiveArgs, output: outputText },
             { enabledIds: activePlugins },

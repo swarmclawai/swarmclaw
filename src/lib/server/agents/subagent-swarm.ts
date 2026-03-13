@@ -118,7 +118,7 @@ export interface BatchTask {
 export function _resolveSwarmExecutionMode(
   tasks: BatchTask[],
   executionMode: BatchSpawnInput['executionMode'],
-  agents = loadAgents() as Record<string, Record<string, unknown>>,
+  agents = loadAgents() as unknown as Record<string, Record<string, unknown>>,
 ): 'parallel' | 'serial' {
   if (executionMode === 'parallel' || executionMode === 'serial') return executionMode
   const hasOllamaTarget = tasks.some((task) => agents[task.agentId]?.provider === 'ollama')

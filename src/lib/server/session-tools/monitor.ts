@@ -3,7 +3,7 @@ import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import fs from 'fs'
 import * as os from 'os'
 import type { ToolBuildContext } from './context'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import type { Plugin, PluginHooks } from '@/types'
 import { safePath, truncate } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
@@ -256,7 +256,7 @@ const MonitorPlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('monitor', MonitorPlugin)
+registerNativeCapability('monitor', MonitorPlugin)
 
 export function buildMonitorTools(bctx: ToolBuildContext): StructuredToolInterface[] {
   if (!bctx.hasPlugin('monitor')) return []

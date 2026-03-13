@@ -4,7 +4,7 @@ import { loadSessions, saveSessions } from '../storage'
 import { notify } from '../ws-hub'
 import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { normalizeCanvasContent, summarizeCanvasContent } from '@/lib/canvas-content'
 import { errorMessage } from '@/lib/shared-utils'
@@ -28,7 +28,7 @@ async function executeCanvasAction(args: Record<string, unknown>, context: { ses
     if (action === 'present') {
       const nextContent = normalizeCanvasContent(document ?? content)
       if (!nextContent) return 'Error: content or document is required for present action.'
-      ;(session as Record<string, unknown>).canvasContent = nextContent
+      ;(session as unknown as Record<string, unknown>).canvasContent = nextContent
       session.lastActiveAt = Date.now()
       sessions[sessionId] = session
       saveSessions(sessions)
@@ -41,7 +41,7 @@ async function executeCanvasAction(args: Record<string, unknown>, context: { ses
     }
 
     if (action === 'hide') {
-      ;(session as Record<string, unknown>).canvasContent = null
+      ;(session as unknown as Record<string, unknown>).canvasContent = null
       session.lastActiveAt = Date.now()
       sessions[sessionId] = session
       saveSessions(sessions)
@@ -50,7 +50,7 @@ async function executeCanvasAction(args: Record<string, unknown>, context: { ses
     }
 
     if (action === 'snapshot') {
-      const current = normalizeCanvasContent((session as Record<string, unknown>).canvasContent)
+      const current = normalizeCanvasContent((session as unknown as Record<string, unknown>).canvasContent)
       return JSON.stringify({ ok: true, action: 'snapshot', ...summarizeCanvasContent(current) })
     }
 
@@ -85,7 +85,7 @@ const CanvasPlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('canvas', CanvasPlugin)
+registerNativeCapability('canvas', CanvasPlugin)
 
 /**
  * Legacy Bridge

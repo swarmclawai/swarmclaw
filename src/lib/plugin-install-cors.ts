@@ -42,5 +42,5 @@ export function buildPluginInstallCorsHeaders(origin: string | null): HeadersIni
 }
 
 export function isPluginInstallCorsPath(pathname: string): boolean {
-  return pathname === '/api/plugins/install'
+  return pathname === '/api/extensions/install'
 }

@@ -25,6 +25,7 @@ import { speak } from '@/lib/tts'
 import { api } from '@/lib/app/api-client'
 import { messagesDiffer } from '@/lib/chat/chat-streaming-state'
 import { getSessionLastMessage } from '@/lib/chat/session-summary'
+import { getEnabledCapabilityIds, getEnabledToolIds } from '@/lib/capability-selection'
 
 const DIRECT_PROMPT_SUGGESTIONS = [
   { text: 'What can you help me with?', icon: 'book', gradient: 'from-[#6366F1]/10 to-[#818CF8]/5' },
@@ -94,10 +95,10 @@ export function ChatArea() {
   const [messagesLoading, setMessagesLoading] = useState(true)
   const [connectorFilter, setConnectorFilter] = useState<string | null>(null)
   const [pluginChatActions, setPluginChatActions] = useState<Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>>([])
-  const sessionHasBrowserPlugin = session?.plugins?.includes('browser') === true
+  const sessionHasBrowserPlugin = getEnabledToolIds(session).includes('browser')
 
   const refreshPluginChatActions = useCallback(() => {
-    api<Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>>('GET', '/plugins/ui?type=chat_actions').then((actions) => {
+    api<Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>>('GET', '/extensions/ui?type=chat_actions').then((actions) => {
       if (Array.isArray(actions)) setPluginChatActions(actions)
     }).catch(() => {})
   }, [])
@@ -106,7 +107,7 @@ export function ChatArea() {
     void refreshPluginChatActions()
   }, [refreshPluginChatActions])
 
-  useWs('plugins', refreshPluginChatActions)
+  useWs('extensions', refreshPluginChatActions)
 
   // Collect unique connector sources from messages for filter UI
   const { connectorSources, hasDirectMessages } = useMemo(() => {
@@ -222,7 +223,7 @@ export function ChatArea() {
 
   // Auto-poll messages for sessions that are actively running on the server
   const isServerActive = session?.active === true
-  const isOngoingMonitored = appSettings.loopMode === 'ongoing' && !!session?.plugins?.length
+  const isOngoingMonitored = appSettings.loopMode === 'ongoing' && getEnabledCapabilityIds(session).length > 0
   const shouldPollMessages = !!sessionId && (isServerActive || isOngoingMonitored)
   const messagesRef = useRef(messages)
   messagesRef.current = messages
@@ -291,7 +292,7 @@ export function ChatArea() {
   }, [isServerActive, sessionId, setMessages])
 
   // Poll browser status while session has browser tools
-  const hasBrowserTool = session?.plugins?.includes('browser')
+  const hasBrowserTool = getEnabledToolIds(session).includes('browser')
   const checkBrowserStatus = useCallback(() => {
     if (!sessionId || !hasBrowserTool) return
     checkBrowser(sessionId).then((r) => setBrowserActive(r.active)).catch(() => {})

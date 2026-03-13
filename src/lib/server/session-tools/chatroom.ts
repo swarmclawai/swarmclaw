@@ -5,7 +5,7 @@ import { genId } from '@/lib/id'
 import { notify } from '../ws-hub'
 import type { ToolBuildContext } from './context'
 import type { Chatroom, Plugin, PluginHooks } from '@/types'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { errorMessage } from '@/lib/shared-utils'
 
@@ -131,7 +131,7 @@ const ChatroomPlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('chatroom', ChatroomPlugin)
+registerNativeCapability('chatroom', ChatroomPlugin)
 
 /**
  * Legacy Bridge

@@ -8,7 +8,7 @@ import { loadSettings } from '../storage'
 import type { ToolBuildContext } from './context'
 import { MAX_OUTPUT, truncate } from './context'
 import type { Plugin, PluginHooks } from '@/types'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 
 const execFileAsync = promisify(execFile)
@@ -122,7 +122,7 @@ const WorkspacePlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('openclaw_workspace', WorkspacePlugin)
+registerNativeCapability('openclaw_workspace', WorkspacePlugin)
 
 /**
  * Legacy Bridge

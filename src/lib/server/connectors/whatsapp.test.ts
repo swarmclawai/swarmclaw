@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { WAMessage } from '@whiskeysockets/baileys'
 import {
   buildWhatsAppTextPayloads,
   buildWhatsAppInboundMessage,
@@ -56,7 +57,7 @@ test('isWhatsAppInboundAllowed matches allow-list entries against alt phone JIDs
       remoteJid: '199900000001@lid',
       remoteJidAlt: '15550001111@s.whatsapp.net',
     },
-  } as any
+  } as Pick<WAMessage, 'key'>
 
   assert.equal(isWhatsAppInboundAllowed({ allowedJids: allowed, msg }), true)
   assert.equal(isWhatsAppInboundAllowed({ allowedJids: ['15559990000'], msg }), false)
@@ -102,7 +103,7 @@ test('buildWhatsAppInboundMessage includes modern WhatsApp metadata', () => {
           },
         },
       },
-    } as any,
+    } as WAMessage,
     selfJids: ['bot@s.whatsapp.net'],
   })
 
@@ -130,7 +131,7 @@ test('buildWhatsAppInboundMessage marks self-chat traffic as the owner conversat
       message: {
         conversation: 'Testing self chat',
       },
-    } as any,
+    } as WAMessage,
     isOwnerConversation: true,
   })
 

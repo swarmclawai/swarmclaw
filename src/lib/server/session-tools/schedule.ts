@@ -4,7 +4,7 @@ import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { requestHeartbeatNow } from '@/lib/server/runtime/heartbeat-wake'
 import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { createWatchJob } from '@/lib/server/runtime/watch-jobs'
 
@@ -75,7 +75,7 @@ const SchedulePlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('schedule', SchedulePlugin)
+registerNativeCapability('schedule', SchedulePlugin)
 
 /**
  * Legacy Bridge

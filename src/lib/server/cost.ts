@@ -109,7 +109,7 @@ export function getAgentSpendWindows(
   now = Date.now(),
   opts?: { sessions?: SessionsMap; usage?: UsageMap },
 ): AgentSpendWindows {
-  const sessions = opts?.sessions ?? (loadSessions() as SessionsMap)
+  const sessions = opts?.sessions ?? (loadSessions() as unknown as SessionsMap)
   const usage = opts?.usage ?? (loadUsage() as UsageMap)
   const agentSessionIds = getAgentSessionIds(agentId, sessions)
   if (agentSessionIds.size === 0) {

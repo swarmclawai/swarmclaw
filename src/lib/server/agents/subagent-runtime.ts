@@ -13,7 +13,7 @@ import { enqueueSessionRun, type EnqueueSessionRunResult } from '@/lib/server/ru
 import { loadRuntimeSettings } from '@/lib/server/runtime/runtime-settings'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { resolveSubagentBrowserProfileId } from '@/lib/server/session-tools/subagent'
-import { getPluginManager } from '@/lib/server/plugins'
+import { runCapabilityHook, runCapabilitySubagentSpawning } from '@/lib/server/native-capabilities'
 import {
   appendDelegationCheckpoint,
   completeDelegationJob,
@@ -43,6 +43,7 @@ import {
   type SubagentState,
 } from '@/lib/server/agents/subagent-lineage'
 import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
+import { getEnabledCapabilityIds, splitCapabilityIds } from '@/lib/capability-selection'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -125,22 +126,18 @@ export function getHandle(jobId: string): SubagentHandle | null {
  * Agent plugins take precedence (listed first), parent plugins fill in gaps.
  * Case-insensitive deduplication, original casing preserved.
  */
-function mergePlugins(
-  agentPlugins: string[],
+function mergeCapabilities(
+  agentCapabilities: string[],
   parentSession: Record<string, unknown> | null | undefined,
 ): string[] {
-  const parentPlugins = (
-    Array.isArray(parentSession?.plugins) ? parentSession.plugins
-    : Array.isArray(parentSession?.tools) ? parentSession.tools
-    : []
-  ) as string[]
+  const parentCapabilities = getEnabledCapabilityIds(parentSession as { tools?: string[] | null, extensions?: string[] | null } | null)
 
-  if (parentPlugins.length === 0) return agentPlugins
-  if (agentPlugins.length === 0) return [...parentPlugins]
+  if (parentCapabilities.length === 0) return agentCapabilities
+  if (agentCapabilities.length === 0) return [...parentCapabilities]
 
   const seen = new Set<string>()
   const merged: string[] = []
-  for (const id of [...agentPlugins, ...parentPlugins]) {
+  for (const id of [...agentCapabilities, ...parentCapabilities]) {
     const trimmed = typeof id === 'string' ? id.trim() : ''
     const normalized = trimmed.toLowerCase()
     if (normalized && !seen.has(normalized)) {
@@ -165,7 +162,7 @@ export function getSessionDepth(
   let depth = 0
   let current = sessionId
   while (current && depth < maxDepth + 1) {
-    const session = allSessions[current] as Record<string, unknown> | undefined
+    const session = allSessions[current] as unknown as Record<string, unknown> | undefined
     if (!session?.parentSessionId) break
     current = session.parentSessionId as string
     depth++
@@ -204,13 +201,8 @@ async function spawnSubagentImpl(
     throw new Error(`Max subagent depth (${maxDepth}) reached.`)
   }
   const parent = context.sessionId ? sessions[context.sessionId] : null
-  const parentPlugins = (
-    Array.isArray(parent?.plugins) ? parent.plugins
-    : Array.isArray(parent?.tools) ? parent.tools
-    : []
-  ) as string[]
-  const pluginManager = getPluginManager()
-  const spawningResult = await pluginManager.runSubagentSpawning(
+  const parentPlugins = getEnabledCapabilityIds(parent as { tools?: string[] | null, extensions?: string[] | null } | null)
+  const spawningResult = await runCapabilitySubagentSpawning(
     {
       parentSessionId: context.sessionId || null,
       agentId: input.agentId,
@@ -245,10 +237,11 @@ async function spawnSubagentImpl(
     input.shareBrowserProfile === true,
   )
 
-  const agentPlugins: string[] = (agent.plugins || agent.tools || []) as string[]
+  const agentPlugins = getEnabledCapabilityIds(agent)
   const effectivePlugins = input.inheritPlugins === false
     ? agentPlugins
-    : mergePlugins(agentPlugins, parent)
+    : mergeCapabilities(agentPlugins, parent)
+  const effectiveSelection = splitCapabilityIds(effectivePlugins)
 
   const nextSession = {
     id: sid,
@@ -264,7 +257,8 @@ async function spawnSubagentImpl(
     sessionType: 'orchestrated',
     agentId: agent.id,
     parentSessionId: context.sessionId || null,
-    plugins: effectivePlugins,
+    tools: effectiveSelection.tools,
+    extensions: effectiveSelection.extensions,
     browserProfileId,
   }
   sessions[sid] = applyResolvedRoute(nextSession, resolvePrimaryAgentRoute(agent))
@@ -305,7 +299,7 @@ async function spawnSubagentImpl(
     mode: 'followup',
     executionGroupKey: input.executionGroupKey,
   })
-  await pluginManager.runHook(
+  await runCapabilityHook(
     'subagentSpawned',
     {
       parentSessionId: context.sessionId || null,
@@ -346,7 +340,7 @@ async function spawnSubagentImpl(
 
         subagentResult = buildResult(job.id, sid, lineageNode, agent, 'completed', responseText, null)
       }
-      await pluginManager.runHook(
+      await runCapabilityHook(
         'subagentEnded',
         {
           parentSessionId: context.sessionId || null,
@@ -360,7 +354,7 @@ async function spawnSubagentImpl(
         },
         { enabledIds: parentPlugins },
       )
-      await pluginManager.runHook(
+      await runCapabilityHook(
         'sessionEnd',
         {
           sessionId: sid,
@@ -387,7 +381,7 @@ async function spawnSubagentImpl(
 
         subagentResult = buildResult(job.id, sid, lineageNode, agent, 'failed', null, message)
       }
-      await pluginManager.runHook(
+      await runCapabilityHook(
         'subagentEnded',
         {
           parentSessionId: context.sessionId || null,
@@ -401,7 +395,7 @@ async function spawnSubagentImpl(
         },
         { enabledIds: parentPlugins },
       )
-      await pluginManager.runHook(
+      await runCapabilityHook(
         'sessionEnd',
         {
           sessionId: sid,
@@ -439,7 +433,7 @@ function buildResult(
   jobId: string,
   sessionId: string,
   lineageNode: LineageNode,
-  agent: Record<string, unknown>,
+  agent: { id?: string; name?: string },
   status: SubagentResult['status'],
   response: string | null,
   error: string | null,
@@ -472,7 +466,7 @@ export {
   getDescendants,
   buildLineageTree,
   cancelSubtree,
-  mergePlugins as _mergePlugins,
+  mergeCapabilities as _mergePlugins,
 }
 
 export type {

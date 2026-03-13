@@ -14,6 +14,7 @@ import { AgentAvatar } from './agent-avatar'
 import { SearchInput } from '@/components/ui/search-input'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 
 interface Props {
   inSidebar?: boolean
@@ -139,7 +140,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
     if (chatFilter === 'all') return sortedAgents
     if (!now) return sortedAgents
     return sortedAgents.filter((a) => {
-      const threadSession = a.threadSessionId ? sessions[a.threadSessionId] as Session | undefined : undefined
+      const threadSession = a.threadSessionId ? sessions[a.threadSessionId] as unknown as Session | undefined : undefined
       const isRunning = runningAgentIds.has(a.id) || (threadSession?.active ?? false)
       const isStreaming = streamingSessionId === a.threadSessionId
       const isChatroomActive = chatroomActiveAgentIds.has(a.id)
@@ -280,9 +281,9 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
       )}
       <div className="flex flex-col gap-0.5 px-2 pb-4">
         {defaultAgentVisible && defaultAgent && (() => {
-          const threadSession = defaultAgent.threadSessionId ? sessions[defaultAgent.threadSessionId] as Session | undefined : undefined
+          const threadSession = defaultAgent.threadSessionId ? sessions[defaultAgent.threadSessionId] as unknown as Session | undefined : undefined
           const lastMsg = threadSession?.messages?.at(-1)
-          const heartbeatOn = defaultAgent.heartbeatEnabled === true && (defaultAgent.plugins?.length ?? 0) > 0
+          const heartbeatOn = defaultAgent.heartbeatEnabled === true && getEnabledCapabilityIds(defaultAgent).length > 0
           const recentlyActive = !!now && (threadSession?.lastActiveAt ?? 0) > now - 30 * 60 * 1000
           const isDisabled = defaultAgent.disabled === true
           const isWorking = !isDisabled && (runningAgentIds.has(defaultAgent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(defaultAgent.id))
@@ -383,10 +384,10 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
           )
         })()}
         {listAgents.map((agent) => {
-          const threadSession = agent.threadSessionId ? sessions[agent.threadSessionId] as Session | undefined : undefined
+          const threadSession = agent.threadSessionId ? sessions[agent.threadSessionId] as unknown as Session | undefined : undefined
           const lastMsg = threadSession?.messages?.at(-1)
           const isActive = currentAgentId === agent.id
-          const heartbeatOn = agent.heartbeatEnabled === true && (agent.plugins?.length ?? 0) > 0
+          const heartbeatOn = agent.heartbeatEnabled === true && getEnabledCapabilityIds(agent).length > 0
           const recentlyActive = !!now && (threadSession?.lastActiveAt ?? 0) > now - 30 * 60 * 1000
           const isDisabled = agent.disabled === true
           const isWorking = !isDisabled && (runningAgentIds.has(agent.id) || (threadSession?.active ?? false) || heartbeatOn || recentlyActive || chatroomActiveAgentIds.has(agent.id))

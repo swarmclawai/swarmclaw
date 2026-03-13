@@ -55,7 +55,8 @@ describe('discovery tool access flows', () => {
           lastActiveAt: now,
           sessionType: 'human',
           agentId: 'default',
-          plugins: [],
+          tools: [],
+          extensions: [],
         },
       })
 
@@ -73,13 +74,15 @@ describe('discovery tool access flows', () => {
       console.log(JSON.stringify({
         raw,
         approvalCount: Object.keys(approvals).length,
-        plugins: session.plugins || [],
+        tools: session.tools || [],
+        extensions: session.extensions || [],
       }))
     `)
 
     assert.match(String(output.raw), /tool_access_granted|granted immediately/i)
     assert.equal(output.approvalCount, 0)
-    assert.equal(output.plugins.includes('shell'), true)
+    assert.equal(output.tools.includes('shell'), true)
+    assert.equal(output.extensions.includes('shell'), false)
   })
 
   it('manage_capabilities request_access grants tools immediately without approval state', () => {
@@ -104,7 +107,8 @@ describe('discovery tool access flows', () => {
           lastActiveAt: now,
           sessionType: 'human',
           agentId: 'default',
-          plugins: [],
+          tools: [],
+          extensions: [],
         },
       })
 
@@ -120,12 +124,14 @@ describe('discovery tool access flows', () => {
       const session = storage.loadSessions().session_caps
       console.log(JSON.stringify({
         raw,
-        plugins: session.plugins || [],
+        tools: session.tools || [],
+        extensions: session.extensions || [],
       }))
     `)
 
-    assert.match(String(output.raw), /plugin_access_granted|granted immediately/i)
-    assert.equal(output.plugins.includes('shell'), true)
+    assert.match(String(output.raw), /capability_access_granted|granted immediately/i)
+    assert.equal(output.tools.includes('shell'), true)
+    assert.equal(output.extensions.includes('shell'), false)
   })
 
   it('manage_capabilities request_access tells the agent to call already-available alias tools directly', () => {
@@ -150,7 +156,8 @@ describe('discovery tool access flows', () => {
           lastActiveAt: now,
           sessionType: 'human',
           agentId: 'default',
-          plugins: ['memory'],
+          tools: ['memory'],
+          extensions: [],
         },
       })
 
@@ -192,7 +199,8 @@ describe('discovery tool access flows', () => {
           lastActiveAt: now,
           sessionType: 'human',
           agentId: 'default',
-          plugins: ['email'],
+          tools: ['email'],
+          extensions: [],
         },
       })
 
@@ -233,7 +241,8 @@ describe('discovery tool access flows', () => {
           lastActiveAt: now,
           sessionType: 'human',
           agentId: 'default',
-          plugins: ['email'],
+          tools: ['email'],
+          extensions: [],
         },
       })
 

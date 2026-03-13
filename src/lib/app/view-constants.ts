@@ -16,7 +16,7 @@ export const VIEW_LABELS: Record<AppView, string> = {
   mcp_servers: 'MCP Servers',
   knowledge: 'Knowledge',
   logs: 'Logs',
-  plugins: 'Plugins',
+  extensions: 'Extensions',
   usage: 'Usage',
   wallets: 'Wallets',
   runs: 'Runs',
@@ -36,7 +36,7 @@ export const CREATE_LABELS: Partial<Record<AppView, string>> = {
   webhooks: 'Webhook',
   mcp_servers: 'MCP Server',
   knowledge: 'Knowledge Entry',
-  plugins: 'Plugin',
+  extensions: 'Extension',
   projects: 'Project',
 }
 
@@ -56,7 +56,7 @@ export const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   mcp_servers: 'Connect agents to external MCP tool servers',
   knowledge: 'Shared knowledge base accessible by all agents',
   logs: 'Application logs & error tracking',
-  plugins: 'Extend agent capabilities with custom plugins',
+  extensions: 'Manage external extensions and marketplace installs',
   usage: 'Usage metrics, cost tracking & agent performance',
   wallets: 'Agent crypto wallets — hold funds, send SOL, manage spending',
   runs: 'Live run monitoring & history',
@@ -144,11 +144,11 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
     description: 'View application logs, errors, and debug information. Logs auto-refresh in real-time.',
     features: ['Filter by level: ERROR, WARN, INFO, DEBUG', 'Search through log entries', 'Auto-refresh with live mode', 'Click entries to expand details'],
   },
-  plugins: {
+  extensions: {
     icon: 'puzzle',
-    title: 'Plugins',
-    description: 'Extend agent behavior with hooks. Install from the marketplace, a URL, or drop .js files into data/plugins/.',
-    features: ['Install plugins from the marketplace or a URL', 'Toggle plugins on/off', 'Lifecycle hooks: beforeChat, afterChat, onError', 'Compatible with OpenClaw plugin format'],
+    title: 'Extensions',
+    description: 'Install external extensions from the marketplace, a URL, or local extension files.',
+    features: ['Install extensions from the marketplace or a URL', 'Toggle extensions on/off', 'External hooks, tools, and UI modules', 'Compatible with OpenClaw extension format'],
   },
   usage: {
     icon: 'bar-chart',
@@ -190,6 +190,6 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
 
 export const FULL_WIDTH_VIEWS = new Set<AppView>([
   'home', 'inbox', 'chatrooms', 'schedules', 'secrets', 'providers', 'skills',
-  'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'plugins',
+  'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'extensions',
   'usage', 'wallets', 'runs', 'logs', 'settings', 'activity', 'projects',
 ])

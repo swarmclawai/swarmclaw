@@ -706,7 +706,7 @@ export async function observeAutonomyRunOutcome(
   }
 
   const sessions = loadSessions()
-  const session = sessions[input.sessionId] as Session | undefined
+  const session = sessions[input.sessionId] as unknown as Session | undefined
   const toolEvents = Array.isArray(input.toolEvents) && input.toolEvents.length > 0
     ? input.toolEvents
     : latestAssistantToolEvents(session || null)

@@ -107,6 +107,7 @@ import {
   type ConnectorReconnectState,
 } from './reconnect-state'
 import { connectorRuntimeState, runningConnectors } from './runtime-state'
+import { getEnabledCapabilityIds, getEnabledCapabilitySelection } from '@/lib/capability-selection'
 
 export {
   advanceConnectorReconnectState,
@@ -640,7 +641,7 @@ function resolveDirectSession(params: {
       lastActiveAt: Date.now(),
       sessionType: 'human' as const,
       agentId: agent.id,
-      plugins: agent.plugins || agent.tools || [],
+      ...getEnabledCapabilitySelection(agent),
       thinkingLevel: agent.thinkingLevel || null,
       connectorThinkLevel: policySeed.thinkingLevel || null,
     }
@@ -648,7 +649,9 @@ function resolveDirectSession(params: {
   }
   session.name = sessionKey
   session.agentId = agent.id
-  session.plugins = Array.isArray(session.plugins) ? session.plugins : (agent.plugins || agent.tools || [])
+  const capabilitySelection = getEnabledCapabilitySelection(agent)
+  if (!Array.isArray(session.tools)) session.tools = capabilitySelection.tools
+  if (!Array.isArray(session.extensions)) session.extensions = capabilitySelection.extensions
   // Always sync provider/model from agent defaults so connector sessions
   // track agent config changes (e.g. model renamed from glm-5 to glm-5:cloud).
   session.provider = defaultProvider
@@ -915,7 +918,7 @@ async function handleConnectorCommand(params: {
     const all = Array.isArray(session.messages) ? session.messages : []
     const userCount = all.filter((m: { role?: string }) => m?.role === 'user').length
     const assistantCount = all.filter((m: { role?: string }) => m?.role === 'assistant').length
-    const toolsCount = Array.isArray(session.plugins) ? session.plugins.length : 0
+    const toolsCount = getEnabledCapabilityIds(session).length
     const statusText = [
       `Status for ${connector.platform} / ${connector.name}:`,
       `- Agent: ${agentName}`,
@@ -1532,9 +1535,8 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   if (agent.systemPrompt) promptParts.push(agent.systemPrompt)
   try {
     const enabledPlugins = dedup([
-      ...(Array.isArray(session.plugins) ? session.plugins : []),
-      ...(Array.isArray(agent.plugins) ? agent.plugins : []),
-      ...(Array.isArray(agent.tools) ? agent.tools : []),
+      ...getEnabledCapabilityIds(session),
+      ...getEnabledCapabilityIds(agent),
     ])
     const runtimeSkills = resolveRuntimeSkills({
       cwd: session.cwd,
@@ -1607,7 +1609,7 @@ If media sending fails, report the exact error and retry with a corrected path/t
   let streamErrorText = ''
   const connectorToolInputsByCallId = new Map<string, Record<string, unknown>>()
   const connectorToolMirrorTexts: string[] = []
-  const hasTools = session.plugins?.length && session.provider !== 'claude-cli'
+  const hasTools = getEnabledCapabilityIds(session).length > 0 && session.provider !== 'claude-cli'
   console.log(`[connector] Routing message to agent "${agent.name}" (${session.provider}/${session.model}), hasTools=${!!hasTools}`)
 
   if (hasTools) {
@@ -2389,7 +2391,12 @@ export async function sendConnectorMessage(params: {
         if (source.channelId !== channelId) continue
         if (!source.messageId && result?.messageId) {
           entry.source = {
-            ...source,
+            platform: source.platform || connector.platform,
+            connectorId: source.connectorId || connectorId,
+            connectorName: source.connectorName || connector.name,
+            channelId: source.channelId || channelId,
+            senderId: source.senderId,
+            senderName: source.senderName,
             messageId: result.messageId,
             threadId: source.threadId || params.threadId,
             replyToMessageId: source.replyToMessageId || params.replyToMessageId,

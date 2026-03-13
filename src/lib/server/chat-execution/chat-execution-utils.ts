@@ -6,11 +6,11 @@ import { getUsageSpendSince } from '@/lib/server/storage'
 import { pluginIdMatches } from '@/lib/server/tool-aliases'
 import { buildToolEventAssistantSummary } from '@/lib/chat/tool-event-summary'
 import { looksLikePositiveConnectorDeliveryText } from '@/lib/server/chat-execution/chat-execution-connector-delivery'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 
 export interface SessionWithTools {
-  plugins?: string[] | null
-  /** @deprecated Use plugins */
   tools?: string[] | null
+  extensions?: string[] | null
 }
 
 export type DelegateTool =
@@ -345,7 +345,7 @@ export function requestedToolNamesFromMessage(message: string): string[] {
 }
 
 export function hasToolEnabled(session: SessionWithTools, toolName: string): boolean {
-  return pluginIdMatches(session?.plugins || session?.tools || [], toolName)
+  return pluginIdMatches(getEnabledCapabilityIds(session), toolName)
 }
 
 export function enabledDelegationTools(session: SessionWithTools): DelegateTool[] {

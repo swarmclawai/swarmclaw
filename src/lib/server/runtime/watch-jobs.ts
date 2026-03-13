@@ -333,7 +333,7 @@ function evaluateTaskJob(job: WatchJob): { triggered: boolean; result: Record<st
   const taskId = typeof job.target.taskId === 'string' ? job.target.taskId : ''
   if (!taskId) return { triggered: false, result: { error: 'Missing taskId' } }
   const tasks = loadTasks()
-  const task = tasks[taskId] as Record<string, unknown> | undefined
+  const task = tasks[taskId] as unknown as Record<string, unknown> | undefined
   const statuses = Array.isArray(job.condition.statusIn)
     ? job.condition.statusIn.filter((value): value is string => typeof value === 'string')
     : ['completed', 'failed']
@@ -544,7 +544,7 @@ export function triggerApprovalWatchJobs(params: {
   description?: string
 }): WatchJob[] {
   const approvals = loadApprovals()
-  const approval = approvals[params.approvalId] as Record<string, unknown> | undefined
+  const approval = approvals[params.approvalId] as unknown as Record<string, unknown> | undefined
   const matches = listWatchJobs({ status: 'active' }).filter((job) => {
     if (job.type !== 'approval') return false
     const targetApprovalId = typeof job.target.approvalId === 'string' ? job.target.approvalId : ''

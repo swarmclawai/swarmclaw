@@ -820,7 +820,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   if (!state) return null
 
   const sessions = loadSessions()
-  const session = sessions[input.sessionId] as Session | undefined
+  const session = sessions[input.sessionId] as unknown as Session | undefined
   const resultText = input.resultText || ''
   const persistedText = stripMainLoopMetaForPersistence(resultText)
   const toolEvents = Array.isArray(input.toolEvents) ? input.toolEvents : []

@@ -24,7 +24,7 @@ export function PluginManager() {
 
   const loadPlugins = useCallback(async () => {
     try {
-      const data = await api<PluginMeta[]>('GET', '/plugins')
+      const data = await api<PluginMeta[]>('GET', '/extensions')
       setPlugins(data)
     } catch { /* ignore */ }
   }, [])
@@ -32,7 +32,7 @@ export function PluginManager() {
   const loadMarketplace = useCallback(async (q = '') => {
     setLoading(true)
     try {
-      const data = await api<MarketplacePlugin[]>('GET', `/plugins/marketplace?q=${encodeURIComponent(q)}`)
+      const data = await api<MarketplacePlugin[]>('GET', `/extensions/marketplace?q=${encodeURIComponent(q)}`)
       if (Array.isArray(data)) setMarketplace(data)
     } catch { /* ignore */ }
     setLoading(false)
@@ -43,17 +43,17 @@ export function PluginManager() {
 
   const togglePlugin = async (filename: string, enabled: boolean) => {
     try {
-      await api('POST', '/plugins', { filename, enabled })
-      toast.success(enabled ? 'Plugin enabled' : 'Plugin disabled')
+      await api('POST', '/extensions', { filename, enabled })
+      toast.success(enabled ? 'Extension enabled' : 'Extension disabled')
       loadPlugins()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to toggle plugin')
+      toast.error(err instanceof Error ? err.message : 'Failed to toggle extension')
     }
   }
 
   const deletePlugin = async (filename: string, name: string) => {
     try {
-      await api('DELETE', `/plugins?filename=${encodeURIComponent(filename)}`)
+      await api('DELETE', `/extensions?filename=${encodeURIComponent(filename)}`)
       toast.success(`Deleted ${name}`)
       loadPlugins()
     } catch (err: unknown) {
@@ -64,8 +64,8 @@ export function PluginManager() {
   const handleUpdateOne = async (id: string) => {
     setUpdating(id)
     try {
-      await api('PATCH', `/plugins?id=${id}`)
-      toast.success('Plugin updated')
+      await api('PATCH', `/extensions?id=${id}`)
+      toast.success('Extension updated')
       await loadPlugins()
     } catch (err: unknown) {
       toast.error(errorMessage(err))
@@ -77,8 +77,8 @@ export function PluginManager() {
   const handleUpdateAll = async () => {
     setUpdatingAll(true)
     try {
-      await api('PATCH', '/plugins?all=true')
-      toast.success('All plugins updated')
+      await api('PATCH', '/extensions?all=true')
+      toast.success('All extensions updated')
       await loadPlugins()
     } catch (err: unknown) {
       toast.error(errorMessage(err))
@@ -91,11 +91,11 @@ export function PluginManager() {
     setInstalling(p.id)
     const toastId = toast.loading(`Installing ${p.name}...`)
     try {
-      if (!p.url) throw new Error('No functional URL found for this plugin')
+      if (!p.url) throw new Error('No functional URL found for this extension')
 
       const safeFilename = `${p.id.replace(/[^a-zA-Z0-9.-]/g, '_')}.js`
 
-      await api('POST', '/plugins/install', {
+      await api('POST', '/extensions/install', {
         url: p.url,
         filename: safeFilename,
         installMethod: 'marketplace',
@@ -107,7 +107,7 @@ export function PluginManager() {
       setTab('installed')
       toast.success(`Successfully installed ${p.name}`, { id: toastId })
     } catch (err: unknown) {
-      console.error('[plugin-manager] Installation failed:', err)
+      console.error('[extension-manager] Installation failed:', err)
       toast.error(err instanceof Error ? err.message : 'Install failed', { id: toastId })
     } finally {
       setInstalling(null)
@@ -120,12 +120,12 @@ export function PluginManager() {
     setUrlStatus(null)
     setInstalling('url')
     try {
-      await api('POST', '/plugins/install', { url: urlInput, filename: urlFilename })
+      await api('POST', '/extensions/install', { url: urlInput, filename: urlFilename })
       await loadPlugins()
       setUrlStatus({ ok: true, message: 'Installed successfully' })
       setUrlInput('')
       setUrlFilename('')
-      toast.success('Plugin installed from URL')
+      toast.success('Extension installed from URL')
     } catch (err: unknown) {
       setUrlStatus({ ok: false, message: err instanceof Error ? err.message : 'Install failed' })
     }
@@ -211,7 +211,7 @@ export function PluginManager() {
             <button
               onClick={() => setConfirmDelete({ filename: p.filename, name: p.name })}
               className="p-2 rounded-[8px] text-text-3 hover:text-red-400 hover:bg-red-400/10 transition-all border-none bg-transparent cursor-pointer"
-              title="Uninstall plugin"
+              title="Uninstall extension"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <path d="M4 7l16 0" /><path d="M10 11l0 6" /><path d="M14 11l0 6" /><path d="M5 7l1 12a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2l1 -12" /><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
@@ -235,9 +235,9 @@ export function PluginManager() {
       <div className="max-w-4xl mx-auto px-6 py-10">
         <div className="flex items-center justify-between gap-4 mb-10">
           <div>
-            <h1 className="font-display text-[32px] font-800 tracking-[-0.04em] text-text mb-1.5">Plugins</h1>
+            <h1 className="font-display text-[32px] font-800 tracking-[-0.04em] text-text mb-1.5">Extensions</h1>
             <p className="text-[14px] text-text-3 max-w-md leading-relaxed">
-              Extend your swarm with new capabilities, UI modules, and platform connectors.
+              Install external extensions, browse the marketplace, and manage extension UI modules.
             </p>
           </div>
           <div className="flex bg-surface p-1.5 rounded-[14px] border border-white/[0.04]">
@@ -270,15 +270,15 @@ export function PluginManager() {
 
             {plugins.length === 0 ? (
               <div className="py-20 text-center rounded-[24px] border border-dashed border-white/[0.06]">
-                <p className="text-[14px] text-text-3/50">No plugins found in the registry</p>
+                <p className="text-[14px] text-text-3/50">No extensions found in the registry</p>
               </div>
             ) : (
               <div className="space-y-10">
                 {corePlugins.length > 0 && (
                   <section>
                     <div className="mb-4 px-1">
-                      <h3 className="text-[13px] font-700 text-text-2">Core Platform</h3>
-                      <p className="text-[12px] text-text-3/50 mt-0.5">Built-in SwarmClaw official capabilities</p>
+                      <h3 className="text-[13px] font-700 text-text-2">Built-in Tools</h3>
+                      <p className="text-[12px] text-text-3/50 mt-0.5">Platform-owned capabilities managed outside the Extensions registry</p>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {corePlugins.map(renderPluginItem)}
@@ -290,7 +290,7 @@ export function PluginManager() {
                   <section>
                     <div className="mb-4 px-1">
                       <h3 className="text-[13px] font-700 text-text-2">Extensions</h3>
-                      <p className="text-[12px] text-text-3/50 mt-0.5">Custom and Marketplace installed plugins</p>
+                      <p className="text-[12px] text-text-3/50 mt-0.5">Custom and marketplace-installed extensions</p>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {installedPlugins.map(renderPluginItem)}
@@ -417,7 +417,7 @@ export function PluginManager() {
                   type="text"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://example.com/my-plugin.js"
+                  placeholder="https://example.com/my-extension.js"
                   className="w-full h-12 px-4 bg-bg border border-white/[0.08] rounded-[14px] text-[14px] text-text outline-none focus:border-accent-bright/40 focus:ring-4 focus:ring-accent-bright/5 transition-all"
                   style={{ fontFamily: 'inherit' }}
                 />
@@ -428,7 +428,7 @@ export function PluginManager() {
                   type="text"
                   value={urlFilename}
                   onChange={(e) => setUrlFilename(e.target.value)}
-                  placeholder="my-plugin.js"
+                  placeholder="my-extension.js"
                   className="w-full h-12 px-4 bg-bg border border-white/[0.08] rounded-[14px] text-[14px] text-text outline-none focus:border-accent-bright/40 focus:ring-4 focus:ring-accent-bright/5 transition-all"
                   style={{ fontFamily: 'inherit' }}
                 />
@@ -439,7 +439,7 @@ export function PluginManager() {
                 className="w-full h-12 bg-accent-bright text-white rounded-[14px] text-[14px] font-800 shadow-lg shadow-accent-bright/20 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ fontFamily: 'inherit' }}
               >
-                {installing === 'url' ? 'Installing...' : 'Install Plugin'}
+                {installing === 'url' ? 'Installing...' : 'Install Extension'}
               </button>
             </div>
             {urlStatus && (
@@ -449,14 +449,14 @@ export function PluginManager() {
               </div>
             )}
             <p className="text-[11px] text-text-3/40 mt-6 leading-relaxed text-center italic">
-              SwarmClaw supports `.js` / `.mjs` plugins, native SwarmClaw hooks/tools, and OpenClaw activate/register formats.
+              SwarmClaw supports `.js` / `.mjs` extensions, native SwarmClaw hooks/tools, and OpenClaw activate/register formats.
             </p>
           </div>
         )}
       </div>
       <ConfirmDialog
         open={!!confirmDelete}
-        title="Delete Plugin"
+        title="Delete Extension"
         message={confirmDelete ? `Delete "${confirmDelete.name}"? This cannot be undone.` : ''}
         confirmLabel="Delete"
         danger

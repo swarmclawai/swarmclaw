@@ -7,6 +7,7 @@ import { TrashList } from './trash-list'
 import { useApprovalStore } from '@/stores/use-approval-store'
 import { Skeleton } from '@/components/shared/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 
 interface Props {
   inSidebar?: boolean
@@ -70,7 +71,7 @@ export function AgentList({ inSidebar }: Props) {
     const recentThreshold = now - 30 * 60 * 1000
     for (const a of Object.values(agents)) {
       if (a.disabled === true) continue
-      if (a.heartbeatEnabled === true && (a.plugins?.length ?? 0) > 0) { ids.add(a.id); continue }
+      if (a.heartbeatEnabled === true && getEnabledCapabilityIds(a).length > 0) { ids.add(a.id); continue }
       // Check if any session for this agent was active in the last 30 minutes
       for (const s of Object.values(sessions)) {
         if (s.agentId === a.id && (s.lastActiveAt ?? 0) > recentThreshold) { ids.add(a.id); break }

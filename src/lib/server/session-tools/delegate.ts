@@ -4,7 +4,7 @@ import { spawn, spawnSync, type ChildProcess } from 'child_process'
 import type { ToolBuildContext } from './context'
 import { truncate, findBinaryOnPath, MAX_OUTPUT } from './context'
 import type { Plugin, PluginHooks } from '@/types'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { canonicalizePluginId } from '../tool-aliases'
 import { errorMessage, sleep } from '@/lib/shared-utils'
@@ -972,7 +972,7 @@ const DelegatePlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('delegate', DelegatePlugin)
+registerNativeCapability('delegate', DelegatePlugin)
 
 /**
  * Legacy Bridge

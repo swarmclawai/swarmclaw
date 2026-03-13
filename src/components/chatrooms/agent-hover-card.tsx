@@ -8,6 +8,7 @@ import { useNavigate } from '@/lib/app/navigation'
 import { api } from '@/lib/app/api-client'
 import { AVAILABLE_TOOLS, PLATFORM_TOOLS, TOOL_LABELS } from '@/lib/tool-definitions'
 import type { Agent } from '@/types'
+import { getEnabledToolIds } from '@/lib/capability-selection'
 
 interface Props {
   agent: Agent
@@ -21,7 +22,7 @@ export function AgentHoverCard({ agent, children, status }: Props) {
   const navigateTo = useNavigate()
   const [showAll, setShowAll] = useState(false)
   const [busy, setBusy] = useState(false)
-  const tools = agent.plugins ?? []
+  const tools = getEnabledToolIds(agent)
 
   const displayTools = showAll ? ALL_TOOL_IDS : tools
 
@@ -29,11 +30,11 @@ export function AgentHoverCard({ agent, children, status }: Props) {
     if (busy) return
     setBusy(true)
     try {
-      const current = agent.plugins || []
+      const current = getEnabledToolIds(agent)
       const updated = current.includes(toolId)
         ? current.filter((t) => t !== toolId)
         : [...current, toolId]
-      await api('PUT', `/agents/${agent.id}`, { plugins: updated })
+      await api('PUT', `/agents/${agent.id}`, { tools: updated })
       useAppStore.getState().loadAgents()
     } finally {
       setBusy(false)

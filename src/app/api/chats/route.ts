@@ -12,6 +12,7 @@ import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agent
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import { materializeStreamingAssistantArtifacts } from '@/lib/chat/chat-streaming-state'
 import { buildSessionListSummary } from '@/lib/chat/session-summary'
+import { normalizeCapabilitySelection } from '@/lib/capability-selection'
 export const dynamic = 'force-dynamic'
 
 async function ensureDaemonIfNeeded(source: string) {
@@ -111,8 +112,10 @@ export async function POST(req: Request) {
     preferredGatewayTags: routePreferredGatewayTags,
     preferredGatewayUseCase: routePreferredGatewayUseCase,
   }) : null
-  const requestedPlugins = Array.isArray(body.plugins) ? body.plugins : (Array.isArray(body.tools) ? body.tools : null)
-  const resolvedPlugins = requestedPlugins ?? (Array.isArray(agent?.plugins) ? agent.plugins : (Array.isArray(agent?.tools) ? agent.tools : []))
+  const resolvedCapabilities = normalizeCapabilitySelection({
+    tools: Array.isArray(body.tools) ? body.tools : agent?.tools,
+    extensions: Array.isArray(body.extensions) ? body.extensions : agent?.extensions,
+  })
 
   // If session with this ID already exists, return it as-is
   if (body.id && sessions[id]) {
@@ -148,7 +151,8 @@ export async function POST(req: Request) {
     sessionType: body.sessionType || 'human',
     agentId: body.agentId || null,
     parentSessionId: body.parentSessionId || null,
-    plugins: resolvedPlugins,
+    tools: resolvedCapabilities.tools,
+    extensions: resolvedCapabilities.extensions,
     heartbeatEnabled: body.heartbeatEnabled ?? null,
     heartbeatIntervalSec: body.heartbeatIntervalSec ?? null,
     sessionResetMode: body.sessionResetMode ?? agent?.sessionResetMode ?? null,

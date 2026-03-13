@@ -2,6 +2,7 @@ import { genId } from '@/lib/id'
 import { loadSessions, saveSessions } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import type { Agent } from '@/types'
+import { getEnabledCapabilitySelection } from '@/lib/capability-selection'
 
 export function createAgentTaskSession(
   agent: Agent,
@@ -45,7 +46,7 @@ export function createAgentTaskSession(
     sessionType: 'human',
     agentId: agent.id,
     parentSessionId: parentSessionId || null,
-    plugins: Array.isArray(agent.plugins) ? [...agent.plugins] : (Array.isArray(agent.tools) ? [...agent.tools] : []),
+    ...getEnabledCapabilitySelection(agent),
     heartbeatEnabled: false,
   }
 

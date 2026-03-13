@@ -850,7 +850,7 @@ export function resolveRegressionPlugins(
     }
   }
 
-  const effectivePlugins = normalizePluginList(agent.plugins ?? agent.tools)
+  const effectivePlugins = normalizePluginList(Array.isArray(agent.tools) ? agent.tools as string[] : [])
   const expandedAgentPlugins = new Set(expandPluginIds(effectivePlugins))
   const missingPlugins = requiredCanonical.filter((plugin) => !expandedAgentPlugins.has(plugin))
   return {
@@ -916,7 +916,7 @@ function cleanupScenarioState(ctx: ScenarioContext): void {
     deleteApproval(approval.id)
   }
 
-  const agents = loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>
+  const agents = loadAgents({ includeTrashed: true }) as unknown as Record<string, Record<string, unknown>>
   let agentsChanged = false
   for (const [agentId, agent] of Object.entries(agents)) {
     if (agent?.createdInSessionId !== ctx.sessionId) continue
@@ -995,8 +995,8 @@ function buildRegressionSession(params: {
     lastActiveAt: now,
     sessionType: 'human',
     agentId: params.agent.id as string,
-    plugins: [...params.plugins],
     tools: [...params.plugins],
+    extensions: [],
   }
 }
 
@@ -1083,7 +1083,7 @@ async function runApprovalResumeScenario(ctx: ScenarioContext): Promise<AgentReg
 
   for (let attempt = 0; attempt < 2 && !fs.existsSync(proofPath); attempt += 1) {
     const session = loadSessions()[ctx.sessionId]
-    const hasShell = Array.isArray(session?.plugins) && session.plugins.includes('shell')
+    const hasShell = Array.isArray(session?.tools) && session.tools.includes('shell')
     if (!hasShell) break
     await runTurn(ctx, attempt === 0 ? resumePrompt : `${resumePrompt}\nKeep going until the proof file exists.`)
   }
@@ -1485,14 +1485,22 @@ async function runHumanVerifiedSignupScenario(ctx: ScenarioContext): Promise<Age
       'Complete a verified browser signup flow.',
       `Use the browser tool to start at ${signupHarness.baseUrl}/verify-social/signup?email=${encodeURIComponent(emailAddress)}&handle=${encodeURIComponent(handle)}.`,
       'Use the exact literal URLs from this prompt. Do not invent placeholders like `[Your Verification Page URL]`.',
-      'When the site asks for a verification code, use ask_human with action "request_input" to ask for the code instead of guessing.',
-      'After requesting input, set up a durable wait if appropriate, then continue once the human reply arrives.',
+      'When the site asks for a verification code, use ask_human with action "request_input" exactly once to ask for the code instead of guessing.',
+      'After requesting input, set up a durable wait with the same correlationId, stop the turn, and do not ask for the same pending code again before the human reply arrives.',
       'When verification succeeds, store the recovery token shown on the success page with manage_secrets as an agent-scoped secret named "Chirper Recovery Token" and service "chirper".',
       'Do not echo the raw recovery token in your final answer.',
       'In the final answer, report the handle and the secret id only.',
     ].join('\n')
 
     await runTurn(ctx, prompt)
+
+    const initialAskHumanEvents = findToolEvents(ctx, 'ask_human')
+    const initialHumanInputs = initialAskHumanEvents.map((event) => parseJsonRecord(event.input))
+    const initialRequestCount = initialHumanInputs.filter((input) => input?.action === 'request_input').length
+    const firstWaitIndex = initialHumanInputs.findIndex((input) => input?.action === 'wait_for_reply')
+    const askedAgainAfterWait = firstWaitIndex >= 0
+      ? initialHumanInputs.slice(firstWaitIndex + 1).some((input) => input?.action === 'request_input')
+      : false
 
     const mailboxRequest = listMailbox(ctx.sessionId, { includeAcked: true })
       .find((entry) => entry.type === 'human_request')
@@ -1549,6 +1557,12 @@ async function runHumanVerifiedSignupScenario(ctx: ScenarioContext): Promise<Age
         name: 'agent attempted a durable wait after asking the human',
         passed: usedDurableWait,
         details: usedDurableWait ? 'wait_for_reply used' : 'no durable wait detected',
+      },
+      {
+        name: 'agent asked for the verification code exactly once before the durable wait resumed',
+        passed: initialRequestCount === 1 && !askedAgainAfterWait,
+        details: `initial request_input count=${initialRequestCount}, repeated after wait=${String(askedAgainAfterWait)}`,
+        weight: 2,
       },
       {
         name: 'verified account completed after the human reply',
@@ -1720,7 +1734,7 @@ async function runBlackboardDelegationScenario(ctx: ScenarioContext): Promise<Ag
     { agentName: `${prefix} Support Lead`, taskTitle: `${prefix} support-blackboard` },
   ]
 
-  const agentsBefore = loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>
+    const agentsBefore = loadAgents({ includeTrashed: true }) as unknown as Record<string, Record<string, unknown>>
   const currentAgent = agentsBefore[ctx.agentId]
   const previousDelegationEnabled = currentAgent?.delegationEnabled === true
   if (currentAgent) {
@@ -1752,7 +1766,7 @@ async function runBlackboardDelegationScenario(ctx: ScenarioContext): Promise<Ag
 
     await runTurn(ctx, prompt)
 
-    let createdAgents = Object.values(loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>)
+    let createdAgents = Object.values(loadAgents({ includeTrashed: true }) as unknown as Record<string, Record<string, unknown>>)
       .filter((agent) => agent?.createdInSessionId === ctx.sessionId)
     let createdTasks = Object.values(loadTasks() as Record<string, Record<string, unknown>>)
       .filter((task) => task?.createdInSessionId === ctx.sessionId)
@@ -1762,7 +1776,7 @@ async function runBlackboardDelegationScenario(ctx: ScenarioContext): Promise<Ag
         ctx,
         'Finish the delegation setup exactly as requested. Create any missing agents, create any missing backlog tasks assigned to those agents, and write the missing architecture note. Do not do department implementation work yourself.',
       )
-      createdAgents = Object.values(loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>)
+      createdAgents = Object.values(loadAgents({ includeTrashed: true }) as unknown as Record<string, Record<string, unknown>>)
         .filter((agent) => agent?.createdInSessionId === ctx.sessionId)
       createdTasks = Object.values(loadTasks() as Record<string, Record<string, unknown>>)
         .filter((task) => task?.createdInSessionId === ctx.sessionId)
@@ -1887,7 +1901,7 @@ async function runBlackboardDelegationScenario(ctx: ScenarioContext): Promise<Ag
       evidencePaths: writeScenarioEvidenceFiles(ctx),
     }
   } finally {
-    const latestAgents = loadAgents({ includeTrashed: true }) as Record<string, Record<string, unknown>>
+    const latestAgents = loadAgents({ includeTrashed: true }) as unknown as Record<string, Record<string, unknown>>
     if (latestAgents[ctx.agentId]) {
       latestAgents[ctx.agentId].delegationEnabled = previousDelegationEnabled
       latestAgents[ctx.agentId].delegationTargetMode = 'all'
@@ -2230,7 +2244,7 @@ export async function runAgentRegressionSuite(params?: {
     ? [...params.approvalModes]
     : ['manual', 'auto', 'off']
   const pluginMode: RegressionPluginMode = params?.pluginMode === 'agent' ? 'agent' : 'scenario'
-  const agents = loadAgents() as Record<string, Record<string, unknown>>
+  const agents = loadAgents() as unknown as Record<string, Record<string, unknown>>
   const agent = agents[agentId]
   if (!agent) throw new Error(`Unknown agent: ${agentId}`)
 

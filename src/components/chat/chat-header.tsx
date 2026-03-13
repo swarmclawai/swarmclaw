@@ -26,6 +26,7 @@ import { useWs } from '@/hooks/use-ws'
 import { useNavigate } from '@/lib/app/navigation'
 import { StatusDot } from '@/components/ui/status-dot'
 import { formatDurationSec } from '@/lib/format-display'
+import { getEnabledCapabilityIds, getEnabledToolIds } from '@/lib/capability-selection'
 
 function Tip({ label, children, side = 'bottom' }: { label: string; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
   return (
@@ -183,7 +184,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   }, [])
 
   const refreshHeaderWidgets = useCallback(() => {
-    api<Array<{ id: string; label: string; icon?: string }>>('GET', '/plugins/ui?type=header').then((widgets) => {
+    api<Array<{ id: string; label: string; icon?: string }>>('GET', '/extensions/ui?type=header').then((widgets) => {
       if (Array.isArray(widgets)) setHeaderWidgets(widgets)
     }).catch(() => {})
   }, [])
@@ -192,7 +193,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     void refreshHeaderWidgets()
   }, [refreshHeaderWidgets])
 
-  useWs('plugins', refreshHeaderWidgets)
+  useWs('extensions', refreshHeaderWidgets)
 
   const fetchWalletBalance = useCallback(async () => {
     if (!activeWalletId) {
@@ -370,7 +371,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     } catch { /* best-effort */ }
   }
 
-  const heartbeatSupported = (session.plugins?.length ?? 0) > 0
+  const heartbeatSupported = getEnabledCapabilityIds(session).length > 0
   const loopIsOngoing = appSettings.loopMode === 'ongoing'
   const { heartbeatEnabled, heartbeatIntervalSec, heartbeatExplicitOptIn } = useMemo(() => {
     // Resolve through the same cascade as the backend: settings → agent → session
@@ -615,8 +616,8 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   }, [session.id])
 
   // Context bar shows for tools, memories, source filter, task links, resume handles, browser
-  const hasToolToggles = ((agent?.plugins?.length ?? 0) > 0) || ((session.plugins?.length ?? 0) > 0)
-  const hasMemoryLink = !!(agent && session.plugins?.includes('memory'))
+  const hasToolToggles = getEnabledCapabilityIds(agent).length > 0 || getEnabledCapabilityIds(session).length > 0
+  const hasMemoryLink = !!(agent && getEnabledToolIds(session).includes('memory'))
   const hasSourceFilter = !!hasMultipleSources
   const canSuggestSkill = Array.isArray(session.messages) && session.messages.some((message) => (message.text || '').trim().length > 0)
   const handleSuggestSkill = async () => {

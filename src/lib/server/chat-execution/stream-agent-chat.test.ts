@@ -108,6 +108,8 @@ describe('buildToolDisciplineLines', () => {
 
     assert.ok(lines.some((line) => line.includes('request_input') && line.includes('wait_for_reply') && line.includes('correlationId')))
     assert.ok(lines.some((line) => line.includes('do not guess or keep re-submitting blank forms')))
+    assert.ok(lines.some((line) => line.includes('stop the turn immediately') && line.includes('durable wait returns active')))
+    assert.ok(lines.some((line) => line.includes('same pending human question twice')))
   })
 
   it('tells agents how to send email and write files when those tools are enabled', () => {
@@ -197,7 +199,7 @@ describe('buildToolDisciplineLines', () => {
   })
 
   it('wires prompt-build hooks and pre-tool loop guards into the runtime path', () => {
-    assert.ok(streamAgentChatSource.includes('runBeforePromptBuild'))
+    assert.ok(streamAgentChatSource.includes('runCapabilityBeforePromptBuild'))
     assert.ok(streamAgentChatSource.includes('applyBeforePromptBuildResult'))
     assert.ok(streamAgentChatSource.includes('beforeToolCall: ({ toolName, input }) =>'))
     assert.ok(streamAgentChatSource.includes("phase: 'before_tool_call'"))

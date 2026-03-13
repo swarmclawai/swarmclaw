@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import type { ToolBuildContext } from './context'
 import type { Plugin, PluginHooks } from '@/types'
-import { getPluginManager } from '../plugins'
+import { registerNativeCapability } from '../native-capabilities'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { errorMessage, sleep } from '@/lib/shared-utils'
 import {
@@ -531,7 +531,7 @@ const SubagentPlugin: Plugin = {
   ]
 }
 
-getPluginManager().registerBuiltin('subagent', SubagentPlugin)
+registerNativeCapability('subagent', SubagentPlugin)
 
 /**
  * Legacy Bridge

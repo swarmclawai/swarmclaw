@@ -605,7 +605,7 @@ async function executeTaskRun(
   const maxSupervisorFollowups = 2
   for (let followupIndex = 0; followupIndex < maxSupervisorFollowups; followupIndex += 1) {
     const sessions = loadSessions()
-    const session = sessions[sessionId] as Session | undefined
+    const session = sessions[sessionId] as unknown as Session | undefined
     const assessment = assessAutonomyRun({
       runId: `${task.id}:attempt-${(task.attempts || 0) + 1}:step-${followupIndex + 1}`,
       sessionId,
@@ -1505,7 +1505,7 @@ export async function processNext() {
           // Copy ALL CLI resume IDs from the execution session to the task record
           try {
             const execSessions = loadSessions()
-            const execSession = execSessions[sessionId] as Record<string, unknown> | undefined
+            const execSession = execSessions[sessionId] as unknown as Record<string, unknown> | undefined
             if (execSession) {
               const delegateIds = execSession.delegateResumeIds as
                 | { claudeCode?: string | null; codex?: string | null; opencode?: string | null; gemini?: string | null }

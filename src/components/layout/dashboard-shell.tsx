@@ -47,8 +47,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const appSettings = useAppStore((s) => s.appSettings)
-  const plugins = useAppStore((s) => s.plugins)
-  const loadPlugins = useAppStore((s) => s.loadPlugins)
+  const extensions = useAppStore((s) => s.extensions)
+  const loadExtensions = useAppStore((s) => s.loadExtensions)
   const isDesktop = useMediaQuery('(min-width: 768px)')
 
   const isAuthPage = AUTH_PATHS.has(pathname)
@@ -150,16 +150,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const isViewEnabled = useCallback((view: AppView) => {
     if (view === 'projects') return appSettings.projectManagementEnabled !== false
     if (view === 'tasks') return appSettings.taskManagementEnabled !== false
-    if (view === 'chatrooms') return plugins['chatroom']?.enabled !== false
-    if (view === 'schedules') return plugins['schedule']?.enabled !== false
-    if (view === 'memory') return plugins['memory']?.enabled !== false
-    if (view === 'inbox') return plugins['connectors']?.enabled !== false
-    if (view === 'connectors') return plugins['connectors']?.enabled !== false
-    if (view === 'webhooks') return plugins['http']?.enabled !== false
-    if (view === 'wallets') return plugins['wallet']?.enabled !== false
-    if (view === 'logs') return plugins['monitor']?.enabled !== false
+    if (view === 'chatrooms') return true
+    if (view === 'schedules') return true
+    if (view === 'memory') return true
+    if (view === 'inbox') return true
+    if (view === 'connectors') return true
+    if (view === 'webhooks') return extensions['http']?.enabled !== false
+    if (view === 'wallets') return true
+    if (view === 'logs') return true
     return true
-  }, [appSettings.projectManagementEnabled, appSettings.taskManagementEnabled, plugins])
+  }, [appSettings.projectManagementEnabled, appSettings.taskManagementEnabled, extensions])
 
   // Redirect disabled views
   useEffect(() => {
@@ -172,11 +172,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   // Plugin sidebar items
   const refreshPluginState = useCallback(() => {
-    void loadPlugins()
-  }, [loadPlugins])
+    void loadExtensions()
+  }, [loadExtensions])
 
   useEffect(() => { refreshPluginState() }, [refreshPluginState])
-  useWs('plugins', refreshPluginState, 30000)
+  useWs('extensions', refreshPluginState, 30000)
 
   // Keyboard shortcuts
   const handleShortcutKey = useCallback((e: KeyboardEvent) => {

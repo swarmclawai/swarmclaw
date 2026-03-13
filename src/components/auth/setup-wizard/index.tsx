@@ -11,7 +11,7 @@ import {
   getDefaultModelForProvider,
   type SetupProvider,
 } from '@/lib/setup-defaults'
-import { getDefaultAgentPluginIds } from '@/lib/agent-default-tools'
+import { getDefaultAgentToolIds } from '@/lib/agent-default-tools'
 import type {
   SetupStep,
   SetupWizardProps,
@@ -130,7 +130,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         credentialId: cp.credentialId,
         apiEndpoint: cp.endpoint,
         gatewayProfileId: cp.gatewayProfileId,
-        tools: getDefaultAgentPluginIds(),
+        tools: getDefaultAgentToolIds(),
         capabilities: [],
         delegationEnabled: false,
         delegationTargetMode: 'all',
@@ -189,7 +189,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       credentialId: defaultProvider?.credentialId || null,
       apiEndpoint: defaultProvider?.endpoint || null,
       gatewayProfileId: defaultProvider?.gatewayProfileId || null,
-      tools: getDefaultAgentPluginIds(),
+      tools: getDefaultAgentToolIds(),
       capabilities: [],
       delegationEnabled: false,
       delegationTargetMode: 'all',
@@ -321,7 +321,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           provider: draft.provider as ProviderType,
           model: draft.model.trim() || getDefaultModelForProvider(draft.provider as SetupProvider),
           credentialId: draft.credentialId || null,
-          plugins: draft.tools,
+          tools: draft.tools,
           capabilities: draft.capabilities,
           delegationEnabled: draft.delegationEnabled,
           delegationTargetMode: draft.delegationTargetMode,

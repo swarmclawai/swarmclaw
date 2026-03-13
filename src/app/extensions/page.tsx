@@ -3,12 +3,12 @@
 import { useAppStore } from '@/stores/use-app-store'
 import { PluginList } from '@/components/plugins/plugin-list'
 
-export default function PluginsPage() {
+export default function ExtensionsPage() {
   return (
     <div className="flex-1 flex flex-col h-full">
       <div className="flex items-center px-6 pt-5 pb-3 shrink-0">
         <h2 className="font-display text-[14px] font-600 text-text-2 tracking-[-0.01em] capitalize flex-1">
-          Plugins
+          Extensions
         </h2>
         <button
           onClick={() => useAppStore.getState().setPluginSheetOpen(true)}
@@ -18,7 +18,7 @@ export default function PluginsPage() {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          Plugin
+          Extension
         </button>
       </div>
       <PluginList />

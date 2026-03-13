@@ -206,7 +206,7 @@ export async function createSkillSuggestionFromSession(
   options?: { generateText?: (prompt: string) => Promise<string> },
 ): Promise<SkillSuggestion> {
   const sessions = loadSessions()
-  const session = sessions[sessionId] as Session | undefined
+  const session = sessions[sessionId] as unknown as Session | undefined
   if (!session) throw new Error(`Session "${sessionId}" not found.`)
   const agents = loadAgents()
   const agent = session.agentId ? agents[session.agentId] : null

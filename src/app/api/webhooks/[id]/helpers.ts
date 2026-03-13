@@ -6,7 +6,7 @@ import { enqueueSessionRun } from '@/lib/server/runtime/session-run-manager'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { requestHeartbeatNow } from '@/lib/server/runtime/heartbeat-wake'
 import { notFound } from '@/lib/server/collection-helpers'
-import type { WebhookRetryEntry } from '@/types'
+import type { Session, WebhookRetryEntry } from '@/types'
 import { triggerWebhookWatchJobs } from '@/lib/server/runtime/watch-jobs'
 import { errorMessage } from '@/lib/shared-utils'
 
@@ -130,7 +130,7 @@ export async function handleWebhookPost(
   let session = Object.values(sessions).find((s: unknown) => {
     const rec = s as Record<string, unknown>
     return rec.name === sessionName && rec.agentId === agent.id
-  }) as Record<string, unknown> | undefined
+  }) as (Session & Record<string, unknown>) | undefined
   if (!session) {
     const sessionId = genId()
     const now = Date.now()
@@ -160,12 +160,12 @@ export async function handleWebhookPost(
       tools: agent.tools || [],
       heartbeatEnabled: agent.heartbeatEnabled ?? false,
       heartbeatIntervalSec: agent.heartbeatIntervalSec ?? null,
-    }
-    sessions[session.id as string] = session
+    } as Session & Record<string, unknown>
+    sessions[session.id] = session
     saveSessions(sessions)
   }
 
-  const sid = session.id as string
+  const sid = session.id
   const payloadPreview = (rawBody || '').slice(0, 12_000)
   const prompt = [
     'Webhook event received.',

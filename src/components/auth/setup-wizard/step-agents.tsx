@@ -497,7 +497,7 @@ export function StepAgents({
                       />
                     </div>
                     <div>
-                      <div className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Plugins</div>
+                      <div className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Tools</div>
                       <div className="space-y-2">
                         {AVAILABLE_TOOLS.map((t) => (
                           <label key={t.id} className="flex items-center gap-3 cursor-pointer">
@@ -516,7 +516,7 @@ export function StepAgents({
                       </div>
                     </div>
                     <div className="mt-3">
-                      <div className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Platform Plugins</div>
+                      <div className="block text-[12px] text-text-3 font-500 mb-1.5 ml-1">Platform Tools</div>
                       <div className="space-y-2">
                         {PLATFORM_TOOLS.map((t) => (
                           <label key={t.id} className="flex items-center gap-3 cursor-pointer">

@@ -17,9 +17,6 @@ export async function POST(req: Request) {
     })
     return NextResponse.json({ ok: true, dependencyInfo: result })
   } catch (err: unknown) {
-    return NextResponse.json(
-      { error: errorMessage(err) },
-      { status: 400 },
-    )
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 })
   }
 }

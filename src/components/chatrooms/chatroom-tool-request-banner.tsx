@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { api } from '@/lib/app/api-client'
 import { TOOL_LABELS } from '@/lib/tool-definitions'
+import { getEnabledToolIds } from '@/lib/capability-selection'
 
 interface Props {
   agentId: string
@@ -44,7 +45,7 @@ export function ChatroomToolRequestBanner({ agentId, agentName, text, toolOutput
   if (toolRequests.length === 0) return null
 
   const agent = agents[agentId]
-  const agentTools: string[] = agent?.plugins || []
+  const agentTools = getEnabledToolIds(agent)
 
   const handleGrant = async (toolId: string) => {
     if (agentTools.includes(toolId)) {
@@ -52,7 +53,7 @@ export function ChatroomToolRequestBanner({ agentId, agentName, text, toolOutput
       return
     }
     const updated = [...agentTools, toolId]
-    await api('PUT', `/agents/${agentId}`, { plugins: updated })
+    await api('PUT', `/agents/${agentId}`, { tools: updated })
     await loadAgents()
     const newGranted = new Set(granted).add(toolId)
     setGranted(newGranted)

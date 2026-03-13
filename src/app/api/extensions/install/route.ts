@@ -42,11 +42,7 @@ export async function POST(req: Request) {
     || 'manual'
 
   if (!url || !url.startsWith('https://')) {
-    return json(
-      { error: 'URL must be a valid HTTPS URL' },
-      400,
-      origin,
-    )
+    return json({ error: 'URL must be a valid HTTPS URL' }, 400, origin)
   }
 
   try {
@@ -66,7 +62,7 @@ export async function POST(req: Request) {
         ? 504
         : 500
     return json(
-      { error: isTimeout ? 'Download timed out — the plugin URL may be unreachable' : msg },
+      { error: isTimeout ? 'Download timed out — the extension URL may be unreachable' : msg },
       status,
       origin,
     )

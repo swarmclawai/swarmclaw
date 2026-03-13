@@ -8,6 +8,14 @@ import { buildChatModel } from '@/lib/server/build-llm'
 import { loadSettings, loadAgents, loadSkills, appendUsage } from '@/lib/server/storage'
 import { estimateCost, buildPluginDefinitionCosts } from '@/lib/server/cost'
 import { getPluginManager } from '@/lib/server/plugins'
+import {
+  collectCapabilityAgentContext,
+  collectCapabilityDescriptions,
+  collectCapabilityOperatingGuidance,
+  listNativeCapabilities,
+  runCapabilityBeforePromptBuild,
+  runCapabilityHook,
+} from '@/lib/server/native-capabilities'
 import { loadRuntimeSettings, getAgentLoopRecursionLimit } from '@/lib/server/runtime/runtime-settings'
 import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 
@@ -16,6 +24,7 @@ import { buildCurrentDateTimePromptContext } from '@/lib/server/prompt-runtime-c
 import { canonicalizePluginId, expandPluginIds, pluginIdMatches } from '@/lib/server/tool-aliases'
 import type { Session, Message, UsageRecord, PluginInvocationRecord, MessageToolEvent, PluginPromptBuildResult } from '@/types'
 import { extractSuggestions } from '@/lib/server/suggestions'
+import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 import { buildIdentityContinuityContext } from '@/lib/server/identity-continuity'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { resolveActiveProjectContext } from '@/lib/server/project-context'
@@ -167,8 +176,7 @@ function extractProviderErrorInfo(err: unknown): { statusCode: number; retryAfte
 }
 
 function buildPluginCapabilityLines(enabledPlugins: string[], opts?: { delegationEnabled?: boolean }): string[] {
-  // Collect capability descriptions dynamically from plugins
-  const lines = getPluginManager().collectCapabilityDescriptions(enabledPlugins)
+  const lines = collectCapabilityDescriptions(enabledPlugins)
 
   // Context tools are available to any session with plugins
   if (enabledPlugins.length > 0) {
@@ -436,8 +444,8 @@ function buildAgenticExecutionPolicy(opts: {
     )
   }
 
-  // Plugin-specific operating guidance (collected dynamically from plugins)
-  const guidanceLines = getPluginManager().collectOperatingGuidance(opts.enabledPlugins)
+  // Tool-specific operating guidance (native capabilities first, then extensions)
+  const guidanceLines = collectCapabilityOperatingGuidance(opts.enabledPlugins)
   if (guidanceLines.length) parts.push(...guidanceLines)
 
   // Response behavior
@@ -568,7 +576,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   const startTs = Date.now()
   const { session, message, imagePath, imageUrl, attachedFiles, apiKey, systemPrompt, write, history, fallbackCredentialIds, signal } = opts
   const isConnectorSession = isDirectConnectorSession(session)
-  const rawPlugins = Array.isArray(session.plugins) ? session.plugins : []
+  const rawPlugins = getEnabledCapabilityIds(session)
   const hasShellCapability = rawPlugins.some((toolId) => ['shell', 'execute_command'].includes(String(toolId)))
   const sessionPlugins = expandPluginIds([
     ...rawPlugins,
@@ -712,12 +720,12 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     }
   }
 
-  // Collect dynamic context from enabled plugins (wallet, memory, etc.)
+  // Collect dynamic context from enabled native capabilities and extensions.
   try {
-    const pluginContextParts = await getPluginManager().collectAgentContext(session, sessionPlugins, message, history)
+    const pluginContextParts = await collectCapabilityAgentContext(session, sessionPlugins, message, history)
     promptParts.push(...pluginContextParts)
   } catch (err: unknown) {
-    console.error('[stream-agent-chat] Plugin context injection failed:', err instanceof Error ? err.message : String(err))
+    console.error('[stream-agent-chat] Capability context injection failed:', err instanceof Error ? err.message : String(err))
   }
 
   if (!hasProvidedSystemPrompt && activeProjectContext.projectId) {
@@ -757,25 +765,21 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     promptParts.push(projectLines.join('\n'))
   }
 
-  // Tell the LLM about available plugins and their access status
+  // Tell the LLM about available tools/extensions and their access status
   {
     const agentEnabledSet = new Set(sessionPlugins)
     const { getPluginManager } = await import('@/lib/server/plugins')
-    const allPlugins = getPluginManager().listPlugins()
+    const allPlugins = [...listNativeCapabilities(), ...getPluginManager().listPlugins()]
     const mcpDisabled = agentMcpDisabledTools ?? []
 
-    // Categorize plugins
+    // Categorize native tools and extensions
     const globallyDisabled: string[] = [] // Disabled site-wide by admin
     const enabledButNoAccess: string[] = [] // Enabled globally but agent doesn't have access
-    const agentHasAccess: string[] = [] // Agent can use these
-
     for (const p of allPlugins) {
       if (!p.enabled) {
         globallyDisabled.push(`${p.name} (${p.filename})`)
       } else if (!agentEnabledSet.has(p.filename)) {
         enabledButNoAccess.push(`${p.name} (${p.filename})`)
-      } else {
-        agentHasAccess.push(p.filename)
       }
     }
 
@@ -783,11 +787,14 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     if (globallyDisabled.length > 0) {
       accessParts.push(`**Disabled site-wide:** ${globallyDisabled.join(', ')}`)
     }
+    if (enabledButNoAccess.length > 0) {
+      accessParts.push(`**Installed but not enabled in this chat:** ${enabledButNoAccess.join(', ')}`)
+    }
     if (mcpDisabled.length > 0) {
       accessParts.push(`**MCP tools not available:** ${mcpDisabled.join(', ')}`)
     }
     if (accessParts.length > 0) {
-      promptParts.push(`## Plugin Access\n${accessParts.join('\n')}`)
+      promptParts.push(`## Tool & Extension Access\n${accessParts.join('\n')}`)
     }
   }
 
@@ -1017,8 +1024,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   const currentContent = await buildLangChainContent(message, imagePath, attachedFiles)
   langchainMessages.push(new HumanMessage({ content: currentContent }))
 
-  const pluginMgr = getPluginManager()
-  const promptHookResult = await pluginMgr.runBeforePromptBuild(
+  const promptHookResult = await runCapabilityBeforePromptBuild(
     {
       session,
       prompt,
@@ -1071,7 +1077,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     // Warning failure is non-critical
   }
 
-  await pluginMgr.runHook(
+  await runCapabilityHook(
     'llmInput',
     {
       session,
@@ -1175,8 +1181,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   const routingDecision = routeTaskIntent(message, sessionPlugins, null)
   const likelyResearchSynthesisTask = routingDecision.intent === 'research' || routingDecision.intent === 'browsing'
 
-  // Plugin hooks: beforeAgentStart
-  await pluginMgr.runHook('beforeAgentStart', { session, message }, { enabledIds: sessionPlugins })
+  await runCapabilityHook('beforeAgentStart', { session, message }, { enabledIds: sessionPlugins })
 
   const abortController = new AbortController()
   abortSignalRef.signal = abortController.signal
@@ -2012,7 +2017,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
 
   const emitLlmOutputHook = async (response: string) => {
     const total = totalInputTokens + totalOutputTokens
-    await pluginMgr.runHook(
+    await runCapabilityHook(
       'llmOutput',
       {
         session,
@@ -2142,8 +2147,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
 
   await emitLlmOutputHook(finalResponse)
 
-  // Plugin hooks: afterAgentComplete
-  await pluginMgr.runHook('afterAgentComplete', { session, response: fullText }, { enabledIds: sessionPlugins })
+  await runCapabilityHook('afterAgentComplete', { session, response: fullText }, { enabledIds: sessionPlugins })
 
   // OpenClaw auto-sync: push memory if enabled
   try {

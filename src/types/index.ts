@@ -176,9 +176,8 @@ export interface Session {
   sessionType?: SessionType
   agentId?: string | null
   parentSessionId?: string | null
-  plugins?: string[]
-  /** @deprecated Use `plugins` instead. Kept for backward compat with stored data. */
   tools?: string[]
+  extensions?: string[]
   heartbeatEnabled?: boolean | null
   heartbeatIntervalSec?: number | null
   heartbeatTarget?: 'last' | 'none' | string | null
@@ -786,9 +785,8 @@ export interface Agent {
   delegationEnabled?: boolean
   delegationTargetMode?: DelegationTargetMode
   delegationTargetAgentIds?: string[]
-  plugins?: string[]             // e.g. ['browser', 'memory'] — enabled plugin IDs
-  /** @deprecated Use `plugins` instead. Kept for backward compat with stored data. */
   tools?: string[]
+  extensions?: string[]
   skills?: string[]             // e.g. ['frontend-design'] — pinned Claude Code skills to mention explicitly
   skillIds?: string[]           // IDs of pinned managed skills to keep always-on for this agent
   mcpServerIds?: string[]       // IDs of configured MCP servers to inject tools from
@@ -1245,7 +1243,7 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human'
-export type AppView = 'home' | 'agents' | 'inbox' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'wallets' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
+export type AppView = 'home' | 'agents' | 'inbox' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'extensions' | 'usage' | 'wallets' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
 
 // --- Chatrooms ---
 
@@ -1814,7 +1812,7 @@ export interface AgentPackEntry {
   routingStrategy?: AgentRoutingStrategy | null
   routingTargets?: AgentRoutingTarget[]
   tools?: string[]
-  plugins?: string[]
+  extensions?: string[]
   capabilities?: string[]
   elevenLabsVoiceId?: string | null
   soul?: string
@@ -2215,8 +2213,13 @@ export interface ClawHubSkill {
   author: string
   tags: string[]
   downloads: number
+  stars?: number
   url: string
   version: string
+  changelog?: string
+  createdAt?: number
+  updatedAt?: number
+  metadata?: Record<string, unknown> | null
 }
 
 // --- OpenClaw Execution Approvals ---

@@ -614,7 +614,7 @@ function seedLastActive() {
   const now = Date.now()
   const agents = loadAgents()
   const hbAgentIds = new Set(
-    (Object.values(agents) as Record<string, unknown>[])
+    (Object.values(agents) as unknown as Record<string, unknown>[])
       .filter((a) => a?.heartbeatEnabled === true && !isAgentDisabled(a))
       .map((a) => String(a.id)),
   )
