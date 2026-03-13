@@ -39,7 +39,7 @@ describe('agent regression helpers', () => {
       'mock-signup-secret-email',
       'human-verified-signup',
       'research-build-deploy',
-      'blackboard-orchestrator-fit',
+      'blackboard-delegation-fit',
       'tool-call-efficiency',
       'file-creation-followthrough',
       'knowledge-first-file',
@@ -48,7 +48,7 @@ describe('agent regression helpers', () => {
 
   it('keeps exploratory scenarios out of the default suite score path', () => {
     assert.ok(DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('research-build-deploy'))
-    assert.ok(!DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('blackboard-orchestrator-fit'))
+    assert.ok(!DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('blackboard-delegation-fit'))
   })
 
   it('can resolve regressions against the agent capability set instead of injected scenario plugins', () => {

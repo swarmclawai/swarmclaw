@@ -6,7 +6,7 @@ import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSchedules, 
 import { notify } from '@/lib/server/ws-hub'
 import { perf } from '@/lib/server/runtime/perf'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
-import { createOrchestratorSession } from '@/lib/server/agents/orchestrator'
+import { createAgentTaskSession } from '@/lib/server/agents/task-session'
 import { formatValidationFailure } from '@/lib/server/tasks/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
 import { executeSessionChatTurn, type ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-execution'
@@ -581,8 +581,8 @@ async function executeTaskRun(
     '- Include concrete evidence in your final summary: changed file paths, commands run, and verification results.',
     '- If blocked, state the blocker explicitly and what input or permission is missing.',
   ].join('\n')
-  // All agents (including orchestrators) go through the unified chat execution path.
-  // Agents with subAgentIds get delegation tools automatically via session-tools.
+  // All agents go through the unified chat execution path.
+  // Agents with delegation enabled get delegation tools automatically via session-tools.
   let latestRun: ExecuteChatTurnResult = await executeSessionChatTurn({
     sessionId,
     message: prompt,
@@ -1315,7 +1315,7 @@ export async function processNext() {
           }
         }
         if (!sessionId) {
-          sessionId = createOrchestratorSession(
+          sessionId = createAgentTaskSession(
             agent,
             task.title,
             agentThreadSessionId || undefined,
@@ -1330,7 +1330,7 @@ export async function processNext() {
           saveSchedules(schedules)
         }
       } else {
-        sessionId = reusableTaskSessionId || createOrchestratorSession(
+        sessionId = reusableTaskSessionId || createAgentTaskSession(
           agent,
           task.title,
           agentThreadSessionId || undefined,
@@ -1460,7 +1460,7 @@ export async function processNext() {
           const { validation } = refreshTaskCompletionValidation(t2[taskId], settings)
 
           const now = Date.now()
-          // Add a completion/failure comment from the orchestrator.
+          // Add a completion/failure comment from the executing agent.
           if (!t2[taskId].comments) t2[taskId].comments = []
 
           if (validation.ok) {

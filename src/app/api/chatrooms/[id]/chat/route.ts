@@ -21,7 +21,7 @@ import {
 import { filterHealthyChatroomAgents } from '@/lib/server/chatrooms/chatroom-health'
 import { evaluateRoutingRules } from '@/lib/server/chatrooms/chatroom-routing'
 import { markProviderFailure, markProviderSuccess } from '@/lib/server/provider-health'
-import { applyAgentReactionsFromText } from '@/lib/server/chatrooms/chatroom-orchestration'
+import { applyAgentReactionsFromText } from '@/lib/server/chatrooms/chatroom-agent-signals'
 import { resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/agents/assistant-control'
 import type { Chatroom, ChatroomMessage, Agent } from '@/types'

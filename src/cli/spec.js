@@ -221,15 +221,6 @@ const COMMAND_GROUPS = {
       delete: { description: 'Delete notification by id', method: 'DELETE', path: '/notifications/:id', params: ['id'] },
     },
   },
-  orchestrator: {
-    description: 'Orchestrator runs and run-state APIs',
-    commands: {
-      run: { description: 'Run orchestrator task now', method: 'POST', path: '/orchestrator/run', waitable: true },
-      runs: { description: 'List queued/running/completed runs', method: 'GET', path: '/runs' },
-      'run-get': { description: 'Get run by id', method: 'GET', path: '/runs/:id', params: ['id'] },
-      graph: { description: 'Get orchestrator graph structure', method: 'GET', path: '/orchestrator/graph' },
-    },
-  },
   openclaw: {
     description: 'OpenClaw discovery, gateway control, and runtime APIs',
     commands: {

@@ -324,17 +324,6 @@ const COMMAND_GROUPS = [
     commands: [],
   },
   {
-    name: 'orchestrator',
-    description: 'Trigger orchestrator runs',
-    commands: [
-      cmd('run', 'POST', '/orchestrator/run', 'Queue orchestrator task', {
-        expectsJsonBody: true,
-        waitEntityFrom: 'taskId',
-      }),
-      cmd('graph', 'GET', '/orchestrator/graph', 'Get orchestrator graph structure'),
-    ],
-  },
-  {
     name: 'openclaw',
     description: 'OpenClaw discovery, gateway control, and runtime APIs',
     commands: [

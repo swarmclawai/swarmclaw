@@ -89,6 +89,17 @@ export function resolveSubagentBrowserProfileId(
 interface ActionContext {
   sessionId?: string
   cwd: string
+  delegationTargetMode?: 'all' | 'selected'
+  delegationTargetAgentIds?: string[]
+}
+
+function validateAllowedSubagentTarget(agentId: string, ctx: ActionContext): string | null {
+  if (ctx.delegationTargetMode !== 'selected') return null
+  const allowedAgentIds = Array.isArray(ctx.delegationTargetAgentIds)
+    ? ctx.delegationTargetAgentIds.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : []
+  if (allowedAgentIds.length === 0 || allowedAgentIds.includes(agentId)) return null
+  return `Error: agent "${agentId}" is not in the allowed delegate agent list.`
 }
 
 function parseBooleanLike(value: unknown): boolean | unknown {
@@ -238,6 +249,8 @@ async function handleBatch(args: Record<string, unknown>, ctx: ActionContext): P
   if (!Array.isArray(tasks) || tasks.length === 0) return 'Error: tasks array is required for batch action.'
   for (const t of tasks) {
     if (!t.agentId || !t.message) return 'Error: each task requires agentId and message.'
+    const targetError = validateAllowedSubagentTarget(t.agentId, ctx)
+    if (targetError) return targetError
   }
   const waitForCompletion = args.waitForCompletion !== false && args.background !== true
   const executionMode = args.executionMode === 'parallel' || args.executionMode === 'serial'
@@ -297,6 +310,8 @@ async function handleSwarm(args: Record<string, unknown>, ctx: ActionContext): P
   if (!Array.isArray(tasks) || tasks.length === 0) return 'Error: tasks array is required for swarm action.'
   for (const t of tasks) {
     if (!t.agentId || !t.message) return 'Error: each task requires agentId and message.'
+    const targetError = validateAllowedSubagentTarget(t.agentId, ctx)
+    if (targetError) return targetError
   }
   const waitForCompletion = args.waitForCompletion !== false && args.background !== true
   const executionMode = args.executionMode === 'parallel' || args.executionMode === 'serial'
@@ -356,6 +371,8 @@ async function handleStart(args: Record<string, unknown>, ctx: ActionContext): P
   const message = args.message as string | undefined
   if (!agentId) return 'Error: agentId is required.'
   if (!message) return 'Error: message is required.'
+  const targetError = validateAllowedSubagentTarget(agentId, ctx)
+  if (targetError) return targetError
 
   const cwd = args.cwd as string | undefined
   const shareBrowserProfile = args.shareBrowserProfile === true || args.share_browser_profile === true
@@ -520,10 +537,15 @@ getPluginManager().registerBuiltin('subagent', SubagentPlugin)
  * Legacy Bridge
  */
 export function buildSubagentTools(bctx: ToolBuildContext): StructuredToolInterface[] {
-  if (!bctx.hasPlugin('spawn_subagent')) return []
+  if (!bctx.ctx?.delegationEnabled || !bctx.hasPlugin('spawn_subagent')) return []
   return [
     tool(
-      async (args) => executeSubagentAction(args, { sessionId: bctx.ctx?.sessionId || undefined, cwd: bctx.cwd }),
+      async (args) => executeSubagentAction(args, {
+        sessionId: bctx.ctx?.sessionId || undefined,
+        cwd: bctx.cwd,
+        delegationTargetMode: bctx.ctx?.delegationTargetMode,
+        delegationTargetAgentIds: bctx.ctx?.delegationTargetAgentIds,
+      }),
       {
         name: 'spawn_subagent',
         description: SubagentPlugin.tools![0].description,

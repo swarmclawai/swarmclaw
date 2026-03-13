@@ -8,7 +8,7 @@
   <img src="https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/public/branding/swarmclaw-org-avatar.png" alt="SwarmClaw lobster logo" width="120" />
 </p>
 
-SwarmClaw is a self-hosted AI orchestration runtime for OpenClaw and multi-agent work. It helps you run autonomous agents with heartbeats, schedules, delegation, memory, runtime skills, and reviewed conversation-to-skill learning across OpenClaw gateways and other providers.
+SwarmClaw is a self-hosted AI runtime for OpenClaw and multi-agent work. It helps you run autonomous agents with heartbeats, schedules, delegation, memory, runtime skills, and reviewed conversation-to-skill learning across OpenClaw gateways and other providers.
 
 GitHub: https://github.com/swarmclawai/swarmclaw  
 Docs: https://swarmclaw.ai/docs  
@@ -17,7 +17,7 @@ Plugin tutorial: https://swarmclaw.ai/docs/plugin-tutorial
 
 ## What SwarmClaw Focuses On
 
-- **AI orchestration**: LangGraph-backed orchestration, delegated work, subagents, durable jobs, checkpointing, and background task execution.
+- **Delegation and background execution**: delegated work, subagents, durable jobs, checkpointing, and background task execution.
 - **Autonomy and memory**: heartbeats, schedules, long-running execution, durable memory, reflection memory, human-context learning, document recall, and project-aware context.
 - **OpenClaw integration**: named gateway profiles, external runtimes, deploy helpers, config sync, approval handling, and OpenClaw agent file editing.
 - **Runtime skills**: pinned skills, OpenClaw-compatible `SKILL.md` import, on-demand skill execution, and configurable keyword or embedding-based recommendation.
@@ -123,7 +123,6 @@ Then open `http://localhost:3456`.
 - Getting started: https://swarmclaw.ai/docs/getting-started
 - OpenClaw setup: https://swarmclaw.ai/docs/openclaw-setup
 - Agents: https://swarmclaw.ai/docs/agents
-- Orchestration: https://swarmclaw.ai/docs/orchestration
 - Connectors: https://swarmclaw.ai/docs/connectors
 - Plugins: https://swarmclaw.ai/docs/plugins
 - CLI reference: https://swarmclaw.ai/docs/cli

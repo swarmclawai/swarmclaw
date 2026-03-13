@@ -89,11 +89,11 @@ export function AgentList({ inSidebar }: Props) {
   }, [approvals])
 
   const delegatingCount = useMemo(
-    () => Object.values(agents).filter((agent) => agent.platformAssignScope === 'all' && !agent.trashedAt).length,
+    () => Object.values(agents).filter((agent) => agent.delegationEnabled === true && !agent.trashedAt).length,
     [agents],
   )
   const soloCount = useMemo(
-    () => Object.values(agents).filter((agent) => agent.platformAssignScope !== 'all' && !agent.trashedAt).length,
+    () => Object.values(agents).filter((agent) => agent.delegationEnabled !== true && !agent.trashedAt).length,
     [agents],
   )
 
@@ -101,7 +101,7 @@ export function AgentList({ inSidebar }: Props) {
     return Object.values(agents)
       .filter((p) => {
         if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false
-        const canDelegateToAgents = p.platformAssignScope === 'all'
+        const canDelegateToAgents = p.delegationEnabled === true
         if (filter === 'delegating' && !canDelegateToAgents) return false
         if (filter === 'solo' && canDelegateToAgents) return false
         if (activeProjectFilter && p.projectId !== activeProjectFilter) return false

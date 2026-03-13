@@ -264,7 +264,7 @@ describe('AGENT_REGRESSION_SCENARIOS registry', () => {
       'mock-signup-secret-email',
       'human-verified-signup',
       'research-build-deploy',
-      'blackboard-orchestrator-fit',
+      'blackboard-delegation-fit',
       'tool-call-efficiency',
       'file-creation-followthrough',
       'knowledge-first-file',
@@ -285,7 +285,7 @@ describe('AGENT_REGRESSION_SCENARIOS registry', () => {
   })
 
   it('default suite ids exclude exploratory regressions unless explicitly requested', () => {
-    assert.ok(!DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('blackboard-orchestrator-fit'))
+    assert.ok(!DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('blackboard-delegation-fit'))
     assert.ok(DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('approval-resume'))
     assert.ok(DEFAULT_AGENT_REGRESSION_SCENARIO_IDS.includes('knowledge-first-file'))
   })

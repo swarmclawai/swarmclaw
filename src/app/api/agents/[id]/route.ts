@@ -19,11 +19,19 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       agent.plugins = Array.isArray(body.plugins) ? body.plugins : body.tools
       delete (agent as Record<string, unknown>).tools
     }
-    if (body.platformAssignScope === 'all' || body.platformAssignScope === 'self') {
-      agent.platformAssignScope = body.platformAssignScope
-      agent.isOrchestrator = body.platformAssignScope === 'all'
-    } else if (agent.platformAssignScope === 'all' || agent.platformAssignScope === 'self') {
-      agent.isOrchestrator = agent.platformAssignScope === 'all'
+    if (body.delegationEnabled !== undefined) {
+      agent.delegationEnabled = body.delegationEnabled === true
+    }
+    if (body.delegationTargetMode === 'all' || body.delegationTargetMode === 'selected') {
+      agent.delegationTargetMode = body.delegationTargetMode
+    }
+    if (body.delegationTargetAgentIds !== undefined) {
+      agent.delegationTargetAgentIds = Array.isArray(body.delegationTargetAgentIds)
+        ? body.delegationTargetAgentIds.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        : []
+    }
+    if (agent.delegationTargetMode !== 'selected') {
+      agent.delegationTargetAgentIds = []
     }
     if (body.apiEndpoint !== undefined) {
       agent.apiEndpoint = normalizeProviderEndpoint(
@@ -67,8 +75,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         priority: typeof target.priority === 'number' ? target.priority : index + 1,
       }))
     }
+    delete (agent as Record<string, unknown>).platformAssignScope
+    delete (agent as Record<string, unknown>).subAgentIds
     delete (agent as Record<string, unknown>).isOrchestrator
-    agent.isOrchestrator = agent.platformAssignScope === 'all'
     delete (agent as Record<string, unknown>).id
     agent.id = id
     return agent

@@ -7,8 +7,6 @@ import { loadSettings } from '@/lib/server/storage'
 export interface RuntimeSettings {
   loopMode: LoopMode
   agentLoopRecursionLimit: number
-  orchestratorLoopRecursionLimit: number
-  legacyOrchestratorMaxTurns: number
   delegationMaxDepth: number
   ongoingLoopMaxIterations: number
   ongoingLoopMaxRuntimeMs: number | null
@@ -26,8 +24,6 @@ export function loadRuntimeSettings(): RuntimeSettings {
   return {
     loopMode: normalized.loopMode as LoopMode,
     agentLoopRecursionLimit: normalized.agentLoopRecursionLimit,
-    orchestratorLoopRecursionLimit: normalized.orchestratorLoopRecursionLimit,
-    legacyOrchestratorMaxTurns: normalized.legacyOrchestratorMaxTurns,
     delegationMaxDepth: normalized.delegationMaxDepth,
     ongoingLoopMaxIterations: normalized.ongoingLoopMaxIterations,
     ongoingLoopMaxRuntimeMs: normalized.ongoingLoopMaxRuntimeMinutes > 0 ? normalized.ongoingLoopMaxRuntimeMinutes * 60_000 : null,
@@ -41,12 +37,4 @@ export function loadRuntimeSettings(): RuntimeSettings {
 
 export function getAgentLoopRecursionLimit(runtime: RuntimeSettings): number {
   return runtime.loopMode === 'ongoing' ? runtime.ongoingLoopMaxIterations : runtime.agentLoopRecursionLimit
-}
-
-export function getOrchestratorLoopRecursionLimit(runtime: RuntimeSettings): number {
-  return runtime.loopMode === 'ongoing' ? runtime.ongoingLoopMaxIterations : runtime.orchestratorLoopRecursionLimit
-}
-
-export function getLegacyOrchestratorMaxTurns(runtime: RuntimeSettings): number {
-  return runtime.loopMode === 'ongoing' ? runtime.ongoingLoopMaxIterations : runtime.legacyOrchestratorMaxTurns
 }

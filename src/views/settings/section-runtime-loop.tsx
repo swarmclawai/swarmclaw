@@ -5,10 +5,8 @@ import {
   DEFAULT_CLAUDE_CODE_TIMEOUT_SEC,
   DEFAULT_CLI_PROCESS_TIMEOUT_SEC,
   DEFAULT_DELEGATION_MAX_DEPTH,
-  DEFAULT_LEGACY_ORCHESTRATOR_MAX_TURNS,
   DEFAULT_ONGOING_LOOP_MAX_ITERATIONS,
   DEFAULT_ONGOING_LOOP_MAX_RUNTIME_MINUTES,
-  DEFAULT_ORCHESTRATOR_LOOP_RECURSION_LIMIT,
   DEFAULT_SHELL_COMMAND_TIMEOUT_SEC,
   DEFAULT_STREAM_IDLE_STALL_SEC,
   DEFAULT_REQUIRED_TOOL_KICKOFF_SEC,
@@ -64,7 +62,7 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
         </div>
 
         {loopMode === 'bounded' ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+          <div className="grid grid-cols-1 md:grid-cols-1 gap-3 mb-5">
             <div>
               <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Agent Steps <HintTip text="Maximum actions an agent can take before stopping — prevents infinite loops" /></label>
               <input
@@ -75,36 +73,6 @@ export function RuntimeLoopSection({ appSettings, patchSettings, inputClass }: S
                 onChange={(e) => {
                   const n = Number.parseInt(e.target.value, 10)
                   patchSettings({ agentLoopRecursionLimit: Number.isFinite(n) ? n : DEFAULT_AGENT_LOOP_RECURSION_LIMIT })
-                }}
-                className={inputClass}
-                style={{ fontFamily: 'inherit' }}
-              />
-            </div>
-          <div>
-            <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Coordination Steps <HintTip text="Maximum tool calls an agent can make while coordinating multiple delegated agents" /></label>
-              <input
-                type="number"
-                min={1}
-                max={300}
-                value={appSettings.orchestratorLoopRecursionLimit ?? DEFAULT_ORCHESTRATOR_LOOP_RECURSION_LIMIT}
-                onChange={(e) => {
-                  const n = Number.parseInt(e.target.value, 10)
-                  patchSettings({ orchestratorLoopRecursionLimit: Number.isFinite(n) ? n : DEFAULT_ORCHESTRATOR_LOOP_RECURSION_LIMIT })
-                }}
-                className={inputClass}
-                style={{ fontFamily: 'inherit' }}
-              />
-            </div>
-          <div>
-            <label className="flex items-center gap-1.5 font-display text-[11px] font-600 text-text-3 uppercase tracking-[0.08em] mb-2">Legacy Turns <HintTip text="Compatibility limit for older coordination flows that still rely on turn-based execution" /></label>
-              <input
-                type="number"
-                min={1}
-                max={300}
-                value={appSettings.legacyOrchestratorMaxTurns ?? DEFAULT_LEGACY_ORCHESTRATOR_MAX_TURNS}
-                onChange={(e) => {
-                  const n = Number.parseInt(e.target.value, 10)
-                  patchSettings({ legacyOrchestratorMaxTurns: Number.isFinite(n) ? n : DEFAULT_LEGACY_ORCHESTRATOR_MAX_TURNS })
                 }}
                 className={inputClass}
                 style={{ fontFamily: 'inherit' }}

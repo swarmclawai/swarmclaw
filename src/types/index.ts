@@ -756,7 +756,9 @@ export interface NetworkInfo {
   port: number
 }
 
-// --- Agent / Orchestration ---
+// --- Agent / Delegation ---
+
+export type DelegationTargetMode = 'all' | 'selected'
 
 export interface Agent {
   id: string
@@ -781,8 +783,9 @@ export interface Agent {
   preferredGatewayUseCase?: string | null
   routingStrategy?: AgentRoutingStrategy | null
   routingTargets?: AgentRoutingTarget[]
-  isOrchestrator?: boolean
-  subAgentIds?: string[]
+  delegationEnabled?: boolean
+  delegationTargetMode?: DelegationTargetMode
+  delegationTargetAgentIds?: string[]
   plugins?: string[]             // e.g. ['browser', 'memory'] — enabled plugin IDs
   /** @deprecated Use `plugins` instead. Kept for backward compat with stored data. */
   tools?: string[]
@@ -792,7 +795,6 @@ export interface Agent {
   mcpDisabledTools?: string[]   // MCP tool names disabled for this agent (denylist)
   capabilities?: string[]       // e.g. ['frontend', 'screenshots', 'research', 'devops']
   threadSessionId?: string | null  // persistent shortcut chat session for agent-centric UI
-  platformAssignScope?: 'self' | 'all'  // defaults to 'self'
   heartbeatEnabled?: boolean
   heartbeatIntervalSec?: number | null
   heartbeatInterval?: string | number | null
@@ -1449,8 +1451,6 @@ export interface WebhookLogEntry {
 }
 
 // --- App Settings ---
-
-export type LangGraphProvider = string
 export type LoopMode = 'bounded' | 'ongoing'
 
 export interface GoalContract {
@@ -1465,17 +1465,12 @@ export interface AppSettings {
   userPrompt?: string
   userName?: string
   setupCompleted?: boolean
-  langGraphProvider?: LangGraphProvider
-  langGraphModel?: string
-  langGraphCredentialId?: string | null
-  langGraphEndpoint?: string | null
   embeddingProvider?: 'local' | 'openai' | 'ollama' | null
   embeddingModel?: string | null
   embeddingCredentialId?: string | null
+  embeddingEndpoint?: string | null
   loopMode?: LoopMode
   agentLoopRecursionLimit?: number
-  orchestratorLoopRecursionLimit?: number
-  legacyOrchestratorMaxTurns?: number
   delegationMaxDepth?: number
   ongoingLoopMaxIterations?: number
   ongoingLoopMaxRuntimeMinutes?: number
@@ -1605,7 +1600,7 @@ export interface WhatsAppApprovedContact {
 
 // --- Agent Secrets ---
 
-export interface OrchestratorSecret {
+export interface StoredSecret {
   id: string
   name: string
   service: string           // e.g. 'gmail', 'ahrefs', 'custom'

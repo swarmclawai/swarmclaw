@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { OrchestratorSecret, Project, Schedule, Skill, BoardTask } from '@/types'
+import type { StoredSecret, Project, Schedule, Skill, BoardTask } from '@/types'
 import { WORKSPACE_DIR } from './data-dir'
 import { loadSchedules, loadSecrets, loadSkills, loadTasks } from './storage'
 
@@ -110,7 +110,7 @@ export function summarizeProjectResources(projectId: string): ProjectResourceSum
     .filter((task) => task?.projectId === projectId)
   const schedules = Object.values(loadSchedules() as Record<string, Schedule>)
     .filter((schedule) => schedule?.projectId === projectId)
-  const secrets = Object.values(loadSecrets() as Record<string, OrchestratorSecret & { projectId?: string }>)
+  const secrets = Object.values(loadSecrets() as Record<string, StoredSecret & { projectId?: string }>)
     .filter((secret) => secret?.projectId === projectId)
   const skills = Object.values(loadSkills() as Record<string, Skill>)
     .filter((skill) => skill?.projectId === projectId)

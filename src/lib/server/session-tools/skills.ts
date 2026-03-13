@@ -111,8 +111,18 @@ function resolveTargetAgentId(
       : bctx.ctx?.agentId || null
 
   if (!requested) return null
-  if (bctx.ctx?.platformAssignScope !== 'all' && requested !== bctx.ctx?.agentId) {
+  if (!bctx.ctx?.delegationEnabled && requested !== bctx.ctx?.agentId) {
     throw new Error(`You may only attach skills to your own agent (${bctx.ctx?.agentId || 'current agent'}) in this session.`)
+  }
+  if (
+    bctx.ctx?.delegationEnabled
+    && bctx.ctx.delegationTargetMode === 'selected'
+    && Array.isArray(bctx.ctx.delegationTargetAgentIds)
+    && bctx.ctx.delegationTargetAgentIds.length > 0
+    && requested !== bctx.ctx?.agentId
+    && !bctx.ctx.delegationTargetAgentIds.includes(requested)
+  ) {
+    throw new Error(`You may only target the selected delegate agents in this session.`)
   }
   const target = loadAgent(requested)
   if (!target) throw new Error(`Agent "${requested}" not found.`)

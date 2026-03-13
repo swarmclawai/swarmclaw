@@ -23,7 +23,7 @@ let upsertApproval: Awaited<typeof import('../storage')>['upsertApproval']
 function buildManageSkillsTool() {
   const tools = buildCrudTools({
     cwd: workspaceDir,
-    ctx: { sessionId: 'skill-session', agentId: 'agent-skill-test', platformAssignScope: 'self' },
+    ctx: { sessionId: 'skill-session', agentId: 'agent-skill-test', delegationEnabled: false, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
     hasPlugin: (name) => name === 'manage_skills',
     hasTool: (name) => name === 'manage_skills',
     cleanupFns: [],
@@ -68,7 +68,9 @@ before(async () => {
       plugins: ['manage_skills'],
       tools: ['manage_skills'],
       skillIds: [],
-      platformAssignScope: 'self',
+      delegationEnabled: false,
+      delegationTargetMode: 'all',
+      delegationTargetAgentIds: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     } satisfies Agent,

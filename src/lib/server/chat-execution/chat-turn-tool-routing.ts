@@ -173,7 +173,9 @@ async function invokeSessionTool(
   const { tools, cleanup } = await buildSessionTools(ctx.session.cwd, ctx.enabledPlugins, {
     agentId: ctx.session.agentId || null,
     sessionId: ctx.sessionId,
-    platformAssignScope: (agentRecord?.platformAssignScope as 'self' | 'all') || 'self',
+    delegationEnabled: agentRecord?.delegationEnabled === true,
+    delegationTargetMode: agentRecord?.delegationTargetMode === 'selected' ? 'selected' : 'all',
+    delegationTargetAgentIds: Array.isArray(agentRecord?.delegationTargetAgentIds) ? agentRecord?.delegationTargetAgentIds as string[] : undefined,
     mcpServerIds: agentRecord?.mcpServerIds as string[] | undefined,
     mcpDisabledTools: agentRecord?.mcpDisabledTools as string[] | undefined,
     projectId: activeProjectContext.projectId,

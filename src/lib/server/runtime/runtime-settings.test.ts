@@ -47,8 +47,6 @@ describe('runtime settings defaults', () => {
 
     assert.equal(output.settings.loopMode, 'bounded')
     assert.equal(output.settings.agentLoopRecursionLimit, 300)
-    assert.equal(output.settings.orchestratorLoopRecursionLimit, 80)
-    assert.equal(output.settings.legacyOrchestratorMaxTurns, 16)
     assert.equal(output.settings.ongoingLoopMaxIterations, 250)
     assert.equal(output.settings.ongoingLoopMaxRuntimeMinutes, 60)
     assert.equal(output.settings.delegationMaxDepth, 3)
@@ -62,8 +60,6 @@ describe('runtime settings defaults', () => {
     assert.equal(output.settings.heartbeatTarget, null)
     assert.equal(output.settings.heartbeatPrompt, null)
     assert.equal(output.runtime.agentLoopRecursionLimit, 300)
-    assert.equal(output.runtime.orchestratorLoopRecursionLimit, 80)
-    assert.equal(output.runtime.legacyOrchestratorMaxTurns, 16)
   })
 
   it('clamps invalid persisted runtime settings into the supported range', () => {
@@ -76,8 +72,6 @@ describe('runtime settings defaults', () => {
       storage.saveSettings({
         loopMode: 'invalid',
         agentLoopRecursionLimit: 999,
-        orchestratorLoopRecursionLimit: -5,
-        legacyOrchestratorMaxTurns: 0,
         ongoingLoopMaxIterations: 999999,
         ongoingLoopMaxRuntimeMinutes: -1,
         delegationMaxDepth: 99,
@@ -100,8 +94,6 @@ describe('runtime settings defaults', () => {
 
     assert.equal(output.settings.loopMode, 'bounded')
     assert.equal(output.settings.agentLoopRecursionLimit, 500)
-    assert.equal(output.settings.orchestratorLoopRecursionLimit, 1)
-    assert.equal(output.settings.legacyOrchestratorMaxTurns, 1)
     assert.equal(output.settings.ongoingLoopMaxIterations, 5000)
     assert.equal(output.settings.ongoingLoopMaxRuntimeMinutes, 0)
     assert.equal(output.settings.delegationMaxDepth, 12)

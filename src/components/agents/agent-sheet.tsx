@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { selectActiveSessionId } from '@/stores/slices/session-slice'
 import { createAgent, updateAgent, deleteAgent } from '@/lib/agents'
@@ -19,6 +19,7 @@ import { AgentPickerList } from '@/components/shared/agent-picker-list'
 import { randomSoul } from '@/lib/soul-suggestions'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { SectionLabel } from '@/components/shared/section-label'
+import { AdvancedSettingsSection } from '@/components/shared/advanced-settings-section'
 import { SoulLibraryPicker } from './soul-library-picker'
 import { HintTip } from '@/components/shared/hint-tip'
 import { StatusDot } from '@/components/ui/status-dot'
@@ -41,7 +42,6 @@ const AUTO_SYNC_MODEL_PROVIDER_IDS = new Set<ProviderType>([
   'ollama',
 ])
 
-type AgentSheetSectionId = 'overview' | 'instructions' | 'model' | 'tools'
 type SafeAgentWallet = Omit<AgentWallet, 'encryptedPrivateKey'> & {
   balanceAtomic?: string
   balanceLamports?: number
@@ -200,8 +200,9 @@ export function AgentSheet() {
   const [preferredGatewayUseCase, setPreferredGatewayUseCase] = useState('')
   const [routingStrategy, setRoutingStrategy] = useState<AgentRoutingStrategy>('single')
   const [routingTargets, setRoutingTargets] = useState<AgentRoutingTarget[]>([])
-  const [platformAssignScope, setPlatformAssignScope] = useState<'self' | 'all'>('all')
-  const [subAgentIds, setAgentAgentIds] = useState<string[]>([])
+  const [delegationEnabled, setDelegationEnabled] = useState(false)
+  const [delegationTargetMode, setDelegationTargetMode] = useState<'all' | 'selected'>('all')
+  const [delegationTargetAgentIds, setDelegationTargetAgentIds] = useState<string[]>([])
   const [tools, setTools] = useState<string[]>([])
   const [skills, setSkills] = useState<string[]>([])
   const [skillIds, setSkillIds] = useState<string[]>([])
@@ -221,7 +222,7 @@ export function AgentSheet() {
   const [thinkingLevel, setThinkingLevel] = useState<'' | 'minimal' | 'low' | 'medium' | 'high'>('')
   const [memoryScopeMode, setMemoryScopeMode] = useState<'auto' | 'all' | 'global' | 'agent' | 'session' | 'project'>('auto')
   const [memoryTierPreference, setMemoryTierPreference] = useState<'working' | 'durable' | 'archive' | 'blended'>('blended')
-  const [proactiveMemory, setProactiveMemory] = useState(false)
+  const [proactiveMemory, setProactiveMemory] = useState(true)
   const [autoDraftSkillSuggestions, setAutoDraftSkillSuggestions] = useState(true)
   const [autoRecovery, setAutoRecovery] = useState(false)
   const [disabled, setDisabled] = useState(false)
@@ -266,12 +267,7 @@ export function AgentSheet() {
   const promptFileRef = useRef<HTMLInputElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
   const lastAutoSyncedModelsKeyRef = useRef<string | null>(null)
-  const sectionRefs = useRef<Record<AgentSheetSectionId, HTMLDivElement | null>>({
-    overview: null,
-    instructions: null,
-    model: null,
-    tools: null,
-  })
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
 
   const handleFileUpload = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -314,8 +310,6 @@ export function AgentSheet() {
     : globalVoiceId
       ? 'Global default'
       : 'Built-in fallback'
-  const providerSummary = openclawEnabled ? 'OpenClaw gateway' : (currentProvider?.name || provider)
-  const modelSummary = openclawEnabled ? (gatewayProfileId ? 'Gateway-managed' : 'default') : (model || 'Select a model')
   const syncLiveProviderModels = useCallback(async (
     providerId: ProviderType,
     nextCredentialId: string | null,
@@ -383,6 +377,7 @@ export function AgentSheet() {
       loadClaudeSkills()
       setTestStatus('idle')
       setTestMessage('')
+      setShowAdvancedSettings(false)
       if (editing) {
         setName(editing.name)
         setDescription(editing.description)
@@ -399,8 +394,9 @@ export function AgentSheet() {
         setPreferredGatewayUseCase(editing.preferredGatewayUseCase || '')
         setRoutingStrategy(editing.routingStrategy || 'single')
         setRoutingTargets(editing.routingTargets || [])
-        setPlatformAssignScope(editing.platformAssignScope || 'all')
-        setAgentAgentIds(editing.subAgentIds || [])
+        setDelegationEnabled(editing.delegationEnabled === true)
+        setDelegationTargetMode(editing.delegationTargetMode === 'selected' ? 'selected' : 'all')
+        setDelegationTargetAgentIds(editing.delegationTargetAgentIds || [])
         setTools(editing.plugins || [])
         setSkills(editing.skills || [])
         setSkillIds(editing.skillIds || [])
@@ -421,8 +417,8 @@ export function AgentSheet() {
         setThinkingLevel(editing.thinkingLevel || '')
         setMemoryScopeMode(editing.memoryScopeMode || 'auto')
         setMemoryTierPreference(editing.memoryTierPreference || 'blended')
-        setProactiveMemory(editing.proactiveMemory || false)
-        setAutoDraftSkillSuggestions(editing.autoDraftSkillSuggestions === true)
+        setProactiveMemory(editing.proactiveMemory !== false)
+        setAutoDraftSkillSuggestions(editing.autoDraftSkillSuggestions !== false)
         setAutoRecovery(editing.autoRecovery || false)
         setDisabled(editing.disabled === true)
         setFilesystemScope(editing.filesystemScope === 'machine' ? 'machine' : 'workspace')
@@ -469,8 +465,9 @@ export function AgentSheet() {
         setPreferredGatewayUseCase('')
         setRoutingStrategy('single')
         setRoutingTargets([])
-        setPlatformAssignScope('all')
-        setAgentAgentIds([])
+        setDelegationEnabled(false)
+        setDelegationTargetMode('all')
+        setDelegationTargetAgentIds([])
         setTools(getDefaultAgentPluginIds())
         setSkills([])
         setSkillIds([])
@@ -485,12 +482,12 @@ export function AgentSheet() {
         setThinkingLevel('')
         setMemoryScopeMode('auto')
         setMemoryTierPreference('blended')
-        setProactiveMemory(false)
+        setProactiveMemory(true)
         setAutoDraftSkillSuggestions(true)
         setAutoRecovery(false)
         setDisabled(false)
         setVoiceId('')
-        setHeartbeatEnabled(false)
+        setHeartbeatEnabled(true)
         setHeartbeatIntervalSec('')
         setHeartbeatModel('')
         setHeartbeatPrompt('')
@@ -572,10 +569,6 @@ export function AgentSheet() {
     setEditingId(null)
   }
 
-  const jumpToSection = (sectionId: AgentSheetSectionId) => {
-    sectionRefs.current[sectionId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
   const applyGatewayProfileSelection = (nextGatewayProfileId: string | null) => {
     setGatewayProfileId(nextGatewayProfileId)
     const gateway = openclawGatewayProfiles.find((item) => item.id === nextGatewayProfileId)
@@ -642,7 +635,6 @@ export function AgentSheet() {
       }
       return Object.values(value).some((entry) => Array.isArray(entry) ? entry.length > 0 : Boolean(entry)) ? value : null
     })()
-    const canDelegateToAgents = platformAssignScope === 'all'
     const data = {
       name: name.trim() || 'Unnamed Agent',
       description,
@@ -662,14 +654,15 @@ export function AgentSheet() {
         preferredGatewayUseCase: target.preferredGatewayUseCase || null,
         priority: typeof target.priority === 'number' ? target.priority : index + 1,
       })),
-      subAgentIds: canDelegateToAgents ? subAgentIds : [],
+      delegationEnabled,
+      delegationTargetMode: delegationEnabled ? delegationTargetMode : 'all',
+      delegationTargetAgentIds: delegationEnabled && delegationTargetMode === 'selected' ? delegationTargetAgentIds : [],
       plugins: tools,
       skills,
       skillIds,
       mcpServerIds,
       mcpDisabledTools: mcpDisabledTools.length ? mcpDisabledTools : undefined,
       fallbackCredentialIds,
-      platformAssignScope,
       capabilities,
       projectId: projectId || undefined,
       avatarSeed: avatarSeed.trim() || undefined,
@@ -861,13 +854,73 @@ export function AgentSheet() {
     setSaving(false)
   }
 
-  const canDelegateToAgents = platformAssignScope === 'all'
+  const canDelegateToAgents = delegationEnabled
   const agentOptions = Object.values(agents).filter((p) => p.id !== editingId)
+  const defaultAgentPluginIds = useMemo(() => getDefaultAgentPluginIds(), [])
+  const toolsDifferFromDefault = tools.length !== defaultAgentPluginIds.length
+    || defaultAgentPluginIds.some((toolId) => !tools.includes(toolId))
+  const agentAdvancedBadges = useMemo(() => {
+    const badges: string[] = []
+    if (voiceId.trim()) badges.push('Voice')
+    if (routingStrategy !== 'single' || routingTargets.length > 0 || fallbackCredentialIds.length > 0) badges.push('Routing')
+    if (memoryScopeMode !== 'auto' || memoryTierPreference !== 'blended' || !proactiveMemory) badges.push('Memory')
+    if (sessionResetMode || sessionIdleTimeoutSec || sessionMaxAgeSec || sessionDailyResetAt || sessionResetTimezone) badges.push('Session reset')
+    if (identityPersonaLabel.trim() || identitySelfSummary.trim() || identityRelationshipSummary.trim() || identityToneStyle.trim()) badges.push('Continuity')
+    if (skills.length > 0 || skillIds.length > 0 || mcpServerIds.length > 0 || mcpDisabledTools.length > 0) badges.push('Skills & MCP')
+    if (toolsDifferFromDefault || filesystemScope === 'machine' || delegationEnabled || delegationTargetMode === 'selected' || delegationTargetAgentIds.length > 0) badges.push('Tools')
+    if (budgetEnabled) badges.push('Budget')
+    if (disabled) badges.push('Disabled')
+    if (autoRecovery) badges.push('Recovery')
+    if (projectId) badges.push('Project')
+    if (thinkingLevel) badges.push('Thinking')
+    if (!autoDraftSkillSuggestions) badges.push('Skill drafting')
+    return Array.from(new Set(badges))
+  }, [
+    autoDraftSkillSuggestions,
+    autoRecovery,
+    budgetEnabled,
+    disabled,
+    fallbackCredentialIds.length,
+    filesystemScope,
+    identityPersonaLabel,
+    identityRelationshipSummary,
+    identitySelfSummary,
+    identityToneStyle,
+    mcpDisabledTools.length,
+    mcpServerIds.length,
+    memoryScopeMode,
+    memoryTierPreference,
+    proactiveMemory,
+    projectId,
+    routingStrategy,
+    routingTargets.length,
+    sessionDailyResetAt,
+    sessionIdleTimeoutSec,
+    sessionMaxAgeSec,
+    sessionResetMode,
+    sessionResetTimezone,
+    skillIds.length,
+    skills.length,
+    delegationEnabled,
+    delegationTargetAgentIds.length,
+    delegationTargetMode,
+    thinkingLevel,
+    toolsDifferFromDefault,
+    voiceId,
+  ])
+  const advancedSummary = agentAdvancedBadges.length > 0
+    ? `${agentAdvancedBadges.length} configured`
+    : 'Defaults only'
 
   const toggleAgent = (id: string) => {
-    setAgentAgentIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    )
+    setDelegationTargetMode('selected')
+    setDelegationTargetAgentIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      if (next.length === 0) {
+        setDelegationTargetMode('all')
+      }
+      return next
+    })
   }
 
   const inputClass = "w-full px-4 py-3.5 rounded-[14px] border border-white/[0.08] bg-surface text-text text-[15px] outline-none transition-all duration-200 placeholder:text-text-3/50 focus-glow"
@@ -875,7 +928,7 @@ export function AgentSheet() {
   return (
     <>
     <BottomSheet open={open} onClose={onClose} wide>
-      <div className="mb-10 flex items-start justify-between gap-6 pr-14 sm:pr-20">
+      <div className="mb-8 pr-14 sm:pr-20">
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <h2 className="font-display text-[28px] font-700 tracking-[-0.03em]">
@@ -889,87 +942,13 @@ export function AgentSheet() {
               {disabled ? 'Disabled' : 'Enabled'}
             </span>
           </div>
-          <p className="text-[14px] text-text-3">Define an AI agent and optional multi-agent delegation behavior</p>
-        </div>
-        <div className="mt-1.5 flex shrink-0 items-center gap-3">
-          <label className="text-[11px] font-600 text-text-3 uppercase tracking-[0.08em]">OpenClaw</label>
-          <button
-            type="button"
-            onClick={() => {
-              if (!openclawEnabled) {
-                setOpenclawEnabled(true)
-                setProvider('openclaw')
-                setModel('default')
-                if (!apiEndpoint) setApiEndpoint('http://localhost:18789')
-              } else {
-                setOpenclawEnabled(false)
-                const first = providers[0]?.id || 'claude-cli'
-                setProvider(first)
-                setModel('')
-                setApiEndpoint(null)
-                setCredentialId(null)
-                setGatewayProfileId(null)
-                setTestStatus('idle')
-                setTestMessage('')
-                setTestErrorCode(null)
-              }
-            }}
-            className={`relative w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer border-none ${openclawEnabled ? 'bg-accent-bright' : 'bg-white/[0.12]'}`}
-          >
-            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform duration-200 ${openclawEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
-          </button>
+          <p className="text-[14px] text-text-3">Set up an agent with sensible defaults, then expand advanced settings if you need deeper control.</p>
         </div>
       </div>
 
-      <div className="mb-8 rounded-[20px] border border-white/[0.06] bg-white/[0.03] p-4 sm:p-5">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div className="rounded-[14px] border border-white/[0.05] bg-black/10 p-3">
-            <p className="text-[11px] font-600 uppercase tracking-[0.08em] text-text-3">Provider</p>
-            <p className="mt-1 text-[14px] font-600 text-text">{providerSummary}</p>
-          </div>
-          <div className="rounded-[14px] border border-white/[0.05] bg-black/10 p-3">
-            <p className="text-[11px] font-600 uppercase tracking-[0.08em] text-text-3">Model</p>
-            <p className="mt-1 text-[14px] font-600 text-text">{modelSummary}</p>
-          </div>
-          <div className="rounded-[14px] border border-white/[0.05] bg-black/10 p-3">
-            <p className="text-[11px] font-600 uppercase tracking-[0.08em] text-text-3">Voice</p>
-            <p className="mt-1 text-[14px] font-600 text-text">{voiceControlsAvailable ? effectiveVoiceSource : 'Not configured'}</p>
-            {voiceControlsAvailable && (
-              <p className="mt-1 truncate text-[12px] text-text-3/75">{effectiveVoiceId}</p>
-            )}
-          </div>
-          <div className="rounded-[14px] border border-white/[0.05] bg-black/10 p-3">
-            <p className="text-[11px] font-600 uppercase tracking-[0.08em] text-text-3">Mode</p>
-            <p className="mt-1 text-[14px] font-600 text-text">{canDelegateToAgents ? 'Delegating agent' : 'Solo agent'}</p>
-            <p className="mt-1 text-[12px] text-text-3/75">
-              {routingTargets.length > 0 ? `${routingTargets.length} route${routingTargets.length === 1 ? '' : 's'} configured` : 'Single primary route'}
-            </p>
-          </div>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {([
-            ['overview', 'Overview'],
-            ['instructions', 'Instructions'],
-            ['model', 'Model Setup'],
-            ['tools', 'Tools'],
-          ] as const).map(([sectionId, label]) => (
-            <button
-              key={sectionId}
-              type="button"
-              onClick={() => jumpToSection(sectionId)}
-              className="rounded-[10px] border border-white/[0.08] bg-transparent px-3 py-2 text-[12px] font-600 text-text-3 transition-all hover:bg-white/[0.04] hover:text-text-2"
-              style={{ fontFamily: 'inherit' }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div ref={(node) => { sectionRefs.current.overview = node }}>
       <SectionCard
-        title="Overview"
-        description="Basic identity, defaults, voice, heartbeat, and budget controls for this agent."
+        title="Basics"
+        description="Start with the core identity and description users will see first."
       >
       <div className="mb-8">
         <SectionLabel>Name</SectionLabel>
@@ -1064,615 +1043,48 @@ export function AgentSheet() {
         <SectionLabel>Description</SectionLabel>
         <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What does this agent do?" className={inputClass} style={{ fontFamily: 'inherit' }} />
       </div>
+      </SectionCard>
 
-      {/* Capabilities — hidden for OpenClaw (gateway manages its own capabilities) */}
-      {!openclawEnabled && <div className="mb-8">
-        <SectionLabel>Capabilities <span className="normal-case tracking-normal font-normal text-text-3">(for agent delegation)</span></SectionLabel>
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {capabilities.map((cap) => (
-            <span
-              key={cap}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[8px] bg-accent-soft text-accent-bright text-[12px] font-600"
-            >
-              {cap}
-              <button
-                onClick={() => setCapabilities((prev) => prev.filter((c) => c !== cap))}
-                className="bg-transparent border-none text-accent-bright/60 hover:text-accent-bright cursor-pointer text-[14px] leading-none p-0"
-              >
-                x
-              </button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={capInput}
-            onChange={(e) => setCapInput(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.key === 'Enter' || e.key === ',') && capInput.trim()) {
-                e.preventDefault()
-                const val = capInput.trim().toLowerCase().replace(/,/g, '')
-                if (val && !capabilities.includes(val)) {
-                  setCapabilities((prev) => [...prev, val])
+      <SectionCard
+        title="Model & Connection"
+        description="Choose how this agent connects to a model, then verify the setup before saving."
+      >
+      <div className="mb-8">
+        <div className="flex items-center justify-between gap-3 rounded-[14px] border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+          <div>
+            <p className="text-[12px] font-700 uppercase tracking-[0.08em] text-text-3">Runtime</p>
+            <p className="mt-1 text-[14px] font-600 text-text">{openclawEnabled ? 'OpenClaw gateway' : 'Direct provider connection'}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[11px] font-600 uppercase tracking-[0.08em] text-text-3">OpenClaw</label>
+            <button
+              type="button"
+              onClick={() => {
+                if (!openclawEnabled) {
+                  setOpenclawEnabled(true)
+                  setProvider('openclaw')
+                  setModel('default')
+                  if (!apiEndpoint) setApiEndpoint('http://localhost:18789')
+                } else {
+                  setOpenclawEnabled(false)
+                  const first = providers[0]?.id || 'claude-cli'
+                  setProvider(first)
+                  setModel('')
+                  setApiEndpoint(null)
+                  setCredentialId(null)
+                  setGatewayProfileId(null)
+                  setTestStatus('idle')
+                  setTestMessage('')
+                  setTestErrorCode(null)
                 }
-                setCapInput('')
-              }
-            }}
-            placeholder="e.g. frontend, research, devops"
-            className={inputClass}
-            style={{ fontFamily: 'inherit' }}
-          />
-        </div>
-        <p className="text-[11px] text-text-3/70 mt-1.5">Press Enter or comma to add. Other agents see these when deciding delegation.</p>
-      </div>}
-
-      {/* Project */}
-      {Object.keys(projects).length > 0 && (
-        <div className="mb-8">
-          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-            Project <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
-          </label>
-          <select
-            value={projectId || ''}
-            onChange={(e) => setProjectId(e.target.value || undefined)}
-            className={inputClass}
-            style={{ fontFamily: 'inherit' }}
-          >
-            <option value="">None</option>
-            {Object.values(projects).map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* Thinking Level */}
-      <div className="mb-8">
-        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-          Thinking Level <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
-          <HintTip text="Higher levels produce more thoughtful responses but cost more tokens" />
-        </label>
-        <select
-          value={thinkingLevel}
-          onChange={(e) => setThinkingLevel(e.target.value as typeof thinkingLevel)}
-          className={inputClass}
-          style={{ fontFamily: 'inherit' }}
-        >
-          <option value="">None (default)</option>
-          <option value="minimal">Minimal — Direct and concise</option>
-          <option value="low">Low — Brief reasoning</option>
-          <option value="medium">Medium — Moderate analysis</option>
-          <option value="high">High — Deep, thorough reasoning</option>
-        </select>
-        <p className="text-[11px] text-text-3/70 mt-1.5">Controls reasoning depth. Anthropic models use extended thinking; OpenAI o-series uses reasoning_effort. Others get system prompt guidance.</p>
-      </div>
-
-      <div className="mb-8">
-        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-          Memory Defaults <HintTip text="Controls where this agent should look first and which memory tier it should favor when writing or recalling context." />
-        </label>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <select value={memoryScopeMode} onChange={(e) => setMemoryScopeMode(e.target.value as typeof memoryScopeMode)} className={inputClass}>
-            <option value="auto">Scope: Auto</option>
-            <option value="all">Scope: All memories</option>
-            <option value="global">Scope: Global only</option>
-            <option value="agent">Scope: Agent memories</option>
-            <option value="session">Scope: Session memories</option>
-            <option value="project">Scope: Project memories</option>
-          </select>
-          <select value={memoryTierPreference} onChange={(e) => setMemoryTierPreference(e.target.value as typeof memoryTierPreference)} className={inputClass}>
-            <option value="blended">Tier: Blended</option>
-            <option value="working">Tier: Working</option>
-            <option value="durable">Tier: Durable</option>
-            <option value="archive">Tier: Archive</option>
-          </select>
-        </div>
-        <p className="text-[11px] text-text-3/70 mt-1.5">Use working for fast recent context, durable for facts/preferences, and archive for long-lived history.</p>
-
-        <div className="flex items-center justify-between mt-3">
-          <label className="flex items-center gap-2 text-[12px] text-text-2">
-            Proactive Memory Recall
-          </label>
-          <div
-            onClick={() => setProactiveMemory(!proactiveMemory)}
-            className={`w-9 h-5 rounded-full transition-all relative cursor-pointer ${proactiveMemory ? 'bg-accent-bright' : 'bg-surface-3'}`}
-          >
-            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${proactiveMemory ? 'left-[18px]' : 'left-0.5'}`} />
-          </div>
-        </div>
-        <p className="text-[11px] text-text-3/70 mt-1">Automatically inject relevant memories from previous chats into the agent&apos;s context before each response.</p>
-      </div>
-
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">
-            Conversation Skill Drafting
-            <HintTip text="When enabled, meaningful chat turns for this agent refresh a reviewed skill draft that you can approve later." />
-          </label>
-          <div
-            onClick={() => setAutoDraftSkillSuggestions(!autoDraftSkillSuggestions)}
-            className={`w-9 h-5 rounded-full transition-all relative cursor-pointer ${autoDraftSkillSuggestions ? 'bg-accent-bright' : 'bg-surface-3'}`}
-          >
-            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${autoDraftSkillSuggestions ? 'left-[18px]' : 'left-0.5'}`} />
-          </div>
-        </div>
-        <p className="text-[11px] text-text-3/70">
-          New agents default to on. SwarmClaw refreshes one reviewed draft per chat when the agent does real tool-backed work, and you still approve or dismiss it manually in Skills.
-        </p>
-      </div>
-
-      {/* Auto-Recovery */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">
-            Agent Availability
-            <HintTip text="Disabled agents stay visible, but cannot take chats, heartbeats, schedules, or queued work until re-enabled." />
-          </label>
-          <div
-            onClick={() => setDisabled(!disabled)}
-            className={`w-9 h-5 rounded-full transition-all relative cursor-pointer ${disabled ? 'bg-amber-400' : 'bg-accent-bright'}`}
-          >
-            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${disabled ? 'left-0.5' : 'left-[18px]'}`} />
-          </div>
-        </div>
-        <p className="text-[11px] text-text-3/70">
-          {disabled
-            ? 'This agent is paused. Existing chats remain viewable, but new work is blocked until you switch it back on.'
-            : 'This agent is active and can accept chats, heartbeats, schedules, and queued work.'}
-          {' '}Gateway and remote runtime shutdown stay managed separately in Providers and OpenClaw Deploy.
-        </p>
-      </div>
-
-      {/* Auto-Recovery */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Guardian Auto-Recovery <HintTip text="Automatically resets the agent's workspace if it gets into a broken state" /></label>
-          <div
-            onClick={() => setAutoRecovery(!autoRecovery)}
-            className={`w-9 h-5 rounded-full transition-all relative cursor-pointer ${autoRecovery ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
-          >
-            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${autoRecovery ? 'left-[18px]' : 'left-0.5'}`} />
-          </div>
-        </div>
-        <p className="text-[11px] text-text-3/70">If this agent critically fails a task that modifies the workspace, SwarmClaw Guardian will automatically perform a <code className="text-[10px] bg-white/[0.05] px-1 rounded">git reset --hard</code> to restore the last known good state.</p>
-      </div>
-
-      {/* ElevenLabs Voice ID */}
-      {voiceControlsAvailable && (
-        <div className="mb-8">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">
-                Voice & Audio <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
-              </label>
-              <p className="mt-1 text-[12px] leading-[1.6] text-text-3/70">
-                Set an agent-specific ElevenLabs voice or inherit the global default configured in Settings.
-              </p>
-            </div>
-            <div className={`rounded-[12px] border px-3 py-2 text-right ${
-              agentVoiceId
-                ? 'border-accent-bright/25 bg-accent-soft/20'
-                : 'border-white/[0.06] bg-white/[0.03]'
-            }`}>
-              <p className="text-[10px] font-700 uppercase tracking-[0.08em] text-text-3">
-                {effectiveVoiceSource}
-              </p>
-              <p className="mt-1 max-w-[240px] truncate font-mono text-[12px] text-text-2">{effectiveVoiceId}</p>
-            </div>
-          </div>
-          <input
-            type="text"
-            value={voiceId}
-            onChange={(e) => setVoiceId(e.target.value)}
-            placeholder={globalVoiceId ? `Leave blank to use ${globalVoiceId}` : 'Leave blank for the global default'}
-            className={inputClass}
-            style={{ fontFamily: 'inherit' }}
-          />
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {agentVoiceId && (
-              <button
-                type="button"
-                onClick={() => setVoiceId('')}
-                className="rounded-[9px] border border-white/[0.08] bg-transparent px-2.5 py-1.5 text-[11px] font-600 text-text-3 transition-all hover:bg-white/[0.04] hover:text-text-2"
-                style={{ fontFamily: 'inherit' }}
-              >
-                Use global default
-              </button>
-            )}
-            {!voicePlaybackEnabled && (
-              <span className="rounded-[9px] border border-amber-400/20 bg-amber-400/[0.08] px-2.5 py-1.5 text-[11px] font-600 text-amber-300">
-                Voice playback is disabled globally
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-text-3/70 mt-2">
-            {globalVoiceId
-              ? `Global default: ${globalVoiceId}. This agent can override it with a different voice ID.`
-              : 'No global default voice ID is set yet. If left blank, the built-in ElevenLabs fallback will be used.'}
-          </p>
-        </div>
-      )}
-
-      {/* Heartbeat Configuration */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Heartbeat <HintTip text="Periodically runs a background prompt to keep the agent active and aware" /></label>
-          <button
-            type="button"
-            onClick={() => setHeartbeatEnabled(!heartbeatEnabled)}
-            className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${heartbeatEnabled ? 'bg-accent' : 'bg-white/[0.12]'}`}
-          >
-            <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${heartbeatEnabled ? 'translate-x-[18px]' : ''}`} />
-          </button>
-        </div>
-        {heartbeatEnabled && (
-          <div className="space-y-4 mt-3">
-            <div>
-              <label className="flex items-center gap-1.5 text-[12px] text-text-3/70 mb-1.5">Interval <HintTip text="Minutes between each heartbeat check" /></label>
-              <select
-                value={heartbeatIntervalSec}
-                onChange={(e) => setHeartbeatIntervalSec(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Default (30m)</option>
-                {HB_PRESETS.map((sec) => (
-                  <option key={sec} value={String(sec)}>{formatHbDuration(sec)}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[12px] text-text-3/70 mb-1.5">Model override <span className="text-text-3/50">(optional, cheaper model)</span></label>
-              <input
-                type="text"
-                value={heartbeatModel}
-                onChange={(e) => setHeartbeatModel(e.target.value)}
-                placeholder="e.g. gpt-4o-mini"
-                className={inputClass}
-                style={{ fontFamily: 'inherit' }}
-              />
-            </div>
-            <div>
-              <label className="block text-[12px] text-text-3/70 mb-1.5">Instructions <span className="text-text-3/50">(what to do each tick)</span></label>
-              <textarea
-                value={heartbeatPrompt}
-                onChange={(e) => setHeartbeatPrompt(e.target.value)}
-                placeholder="Describe what this agent should do during heartbeat ticks..."
-                rows={4}
-                className={`${inputClass} resize-y min-h-[100px]`}
-                style={{ fontFamily: 'inherit' }}
-              />
-            </div>
-          </div>
-        )}
-        <p className="text-[11px] text-text-3/70 mt-1.5">Periodic check-in runs on idle chats using this agent. Processes pending events and monitors status.</p>
-      </div>
-
-      {/* Spend Limits */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Spend Limits <HintTip text="Set hourly, daily, and monthly API spend limits for this agent" /></label>
-          <button
-            type="button"
-            onClick={() => setBudgetEnabled(!budgetEnabled)}
-            className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${budgetEnabled ? 'bg-accent' : 'bg-white/[0.12]'}`}
-          >
-            <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${budgetEnabled ? 'translate-x-[18px]' : ''}`} />
-          </button>
-        </div>
-        {budgetEnabled && (
-          <div className="space-y-4 mt-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-[12px] text-text-3/70 mb-1.5">Hourly cap (USD)</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-3/50 text-[14px]">$</span>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={hourlyBudget}
-                    onChange={(e) => setHourlyBudget(e.target.value)}
-                    placeholder="0.50"
-                    className={`${inputClass} pl-7`}
-                    style={{ fontFamily: 'inherit' }}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[12px] text-text-3/70 mb-1.5">Daily cap (USD)</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-3/50 text-[14px]">$</span>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={dailyBudget}
-                    onChange={(e) => setDailyBudget(e.target.value)}
-                    placeholder="5.00"
-                    className={`${inputClass} pl-7`}
-                    style={{ fontFamily: 'inherit' }}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[12px] text-text-3/70 mb-1.5">Monthly cap (USD)</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-3/50 text-[14px]">$</span>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={monthlyBudget}
-                    onChange={(e) => setMonthlyBudget(e.target.value)}
-                    placeholder="20.00"
-                    className={`${inputClass} pl-7`}
-                    style={{ fontFamily: 'inherit' }}
-                  />
-                </div>
-              </div>
-            </div>
-            <div>
-              <label className="flex items-center gap-1.5 text-[12px] text-text-3/70 mb-1.5">When exceeded <HintTip text="Warn shows an alert but keeps running; Block stops the agent from making API calls" /></label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setBudgetAction('warn')}
-                  className={`flex-1 px-3 py-2.5 rounded-[10px] border text-[13px] font-600 cursor-pointer transition-all ${
-                    budgetAction === 'warn'
-                      ? 'border-amber-400/40 bg-amber-400/[0.08] text-amber-400'
-                      : 'border-white/[0.08] bg-transparent text-text-3 hover:bg-white/[0.04]'
-                  }`}
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  Warn
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBudgetAction('block')}
-                  className={`flex-1 px-3 py-2.5 rounded-[10px] border text-[13px] font-600 cursor-pointer transition-all ${
-                    budgetAction === 'block'
-                      ? 'border-red-400/40 bg-red-400/[0.08] text-red-400'
-                      : 'border-white/[0.08] bg-transparent text-text-3 hover:bg-white/[0.04]'
-                  }`}
-                  style={{ fontFamily: 'inherit' }}
-                >
-                  Block
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        <p className="text-[11px] text-text-3/70 mt-1.5">
-          {budgetAction === 'block'
-            ? 'When any configured cap is exceeded, runs are blocked until spend drops below that cap window.'
-            : 'When a configured cap is exceeded, a warning is shown but runs continue.'}
-        </p>
-      </div>
-      </SectionCard>
-      </div>
-
-      {/* Wallet Section */}
-      {editingId && (
-        <WalletSection
-          agentId={editingId}
-          wallets={agentWallets}
-          activeWalletId={editing?.activeWalletId || editing?.walletId || agentWallets.find((wallet) => wallet.isActive)?.id || null}
-          onWalletCreated={async () => {
-            await loadAgents()
-            await loadAgentWallets(editingId)
-          }}
-        />
-      )}
-
-      <div ref={(node) => { sectionRefs.current.instructions = node }}>
-      <SectionCard
-        title="Instructions & Continuity"
-        description="Define personality, system behavior, and long-running context this agent should preserve."
-      >
-      {provider !== 'openclaw' && (
-        <div className="mb-8">
-          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-            Soul / Personality <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
-            <HintTip text="The agent's voice and tone — how it talks, not what it knows" />
-            {soul !== soulInitial && soulSaveState === 'idle' && (
-              <span className="inline-flex items-center gap-1 normal-case tracking-normal text-[10px] text-amber-400 font-600">
-                <StatusDot status="warning" size="sm" />
-                Unsaved
-              </span>
-            )}
-            {soulSaveState === 'saved' && (
-              <span className="inline-flex items-center gap-1 normal-case tracking-normal text-[10px] text-emerald-400 font-600">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
-                Saved
-              </span>
-            )}
-          </label>
-          <div className="flex items-center gap-2 mb-3">
-            <p className="text-[12px] text-text-3/60">Define the agent&apos;s voice, tone, and personality. Injected before the system prompt.</p>
-            <button
-              type="button"
-              onClick={() => setSoul(randomSoul())}
-              className="inline-flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-transparent text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors"
-              style={{ fontFamily: 'inherit' }}
-              title="Randomize personality"
+              }}
+              className={`relative h-6 w-11 rounded-full border-none transition-colors duration-200 ${openclawEnabled ? 'bg-accent-bright' : 'bg-white/[0.12]'}`}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <rect x="4" y="4" width="16" height="16" rx="2" />
-                <circle cx="9" cy="9" r="1" fill="currentColor" />
-                <circle cx="15" cy="15" r="1" fill="currentColor" />
-              </svg>
-              Shuffle
+              <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${openclawEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
-            <button
-              type="button"
-              onClick={() => setSoulLibraryOpen(true)}
-              className="shrink-0 px-2 py-1 rounded-[8px] border border-accent-bright/20 bg-accent-soft text-[11px] text-accent-bright hover:brightness-110 cursor-pointer transition-colors"
-              style={{ fontFamily: 'inherit' }}
-            >
-              Browse Library
-            </button>
-            <button onClick={() => soulFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
-            <input ref={soulFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSoul)} className="hidden" />
           </div>
-          <textarea
-            value={soul}
-            onChange={(e) => setSoul(e.target.value)}
-            placeholder="e.g. You speak concisely and directly. You have a dry sense of humor. You always back claims with data."
-            rows={3}
-            className={`${inputClass} resize-y min-h-[80px]`}
-            style={{ fontFamily: 'inherit' }}
-          />
-        </div>
-      )}
-
-      {provider !== 'openclaw' && (
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-3">
-            <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">System Prompt <HintTip text="Instructions that tell the agent what it can do, what tools to use, and how to behave" /></label>
-            <button onClick={() => promptFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
-            <input ref={promptFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSystemPrompt)} className="hidden" />
-          </div>
-          <textarea
-            value={systemPrompt}
-            onChange={(e) => setSystemPrompt(e.target.value)}
-            placeholder="You are an expert..."
-            rows={5}
-            className={`${inputClass} resize-y min-h-[120px]`}
-            style={{ fontFamily: 'inherit' }}
-          />
-        </div>
-      )}
-
-      <div className="mb-8">
-        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-          Identity Continuity <HintTip text="Seeds the agent's continuity state so session memory can preserve a stable persona and relationship context." />
-        </label>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-          <input
-            type="text"
-            value={identityPersonaLabel}
-            onChange={(e) => setIdentityPersonaLabel(e.target.value)}
-            placeholder="Persona label"
-            className={inputClass}
-            style={{ fontFamily: 'inherit' }}
-          />
-          <input
-            type="text"
-            value={identityToneStyle}
-            onChange={(e) => setIdentityToneStyle(e.target.value)}
-            placeholder="Tone style"
-            className={inputClass}
-            style={{ fontFamily: 'inherit' }}
-          />
-        </div>
-        <div className="grid grid-cols-1 gap-3">
-          <textarea
-            value={identitySelfSummary}
-            onChange={(e) => setIdentitySelfSummary(e.target.value)}
-            placeholder="How this agent should summarize itself across sessions."
-            rows={3}
-            className={`${inputClass} resize-y min-h-[84px]`}
-            style={{ fontFamily: 'inherit' }}
-          />
-          <textarea
-            value={identityRelationshipSummary}
-            onChange={(e) => setIdentityRelationshipSummary(e.target.value)}
-            placeholder="Relationship framing or standing context the agent should keep in mind."
-            rows={3}
-            className={`${inputClass} resize-y min-h-[84px]`}
-            style={{ fontFamily: 'inherit' }}
-          />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <textarea
-              value={identityBoundariesText}
-              onChange={(e) => setIdentityBoundariesText(e.target.value)}
-              placeholder="Boundaries, one per line."
-              rows={4}
-              className={`${inputClass} resize-y min-h-[108px]`}
-              style={{ fontFamily: 'inherit' }}
-            />
-            <textarea
-              value={identityContinuityNotesText}
-              onChange={(e) => setIdentityContinuityNotesText(e.target.value)}
-              placeholder="Continuity notes, one per line."
-              rows={4}
-              className={`${inputClass} resize-y min-h-[108px]`}
-              style={{ fontFamily: 'inherit' }}
-            />
-          </div>
-        </div>
-        <p className="text-[12px] text-text-3/60 mt-2 leading-[1.5]">
-          Use one line per item. Boundaries are stable guardrails; continuity notes are recurring relationship or project context worth carrying across sessions.
-        </p>
-      </div>
-
-      <div className="mb-8">
-        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
-          Session Reset Policy <HintTip text="Controls when this agent's sessions are considered stale and should be refreshed." />
-        </label>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-          <div>
-            <select
-              value={sessionResetMode}
-              onChange={(e) => setSessionResetMode(e.target.value as typeof sessionResetMode)}
-              className={inputClass}
-              style={{ fontFamily: 'inherit' }}
-            >
-              <option value="">Inherit global default</option>
-              <option value="idle">Idle</option>
-              <option value="daily">Daily</option>
-              <option value="isolated">Isolated (fresh context per run)</option>
-            </select>
-          </div>
-          <div>
-            <input
-              type="number"
-              min={0}
-              value={sessionIdleTimeoutSec}
-              onChange={(e) => setSessionIdleTimeoutSec(e.target.value)}
-              placeholder="Idle timeout in seconds"
-              className={inputClass}
-              style={{ fontFamily: 'inherit' }}
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <input
-            type="number"
-            min={0}
-            value={sessionMaxAgeSec}
-            onChange={(e) => setSessionMaxAgeSec(e.target.value)}
-            placeholder="Max age in seconds"
-            className={inputClass}
-            style={{ fontFamily: 'inherit' }}
-          />
-          <input
-            type="text"
-            value={sessionDailyResetAt}
-            onChange={(e) => setSessionDailyResetAt(e.target.value)}
-            placeholder="Daily reset time (HH:MM)"
-            className={inputClass}
-            style={{ fontFamily: 'inherit' }}
-          />
-          <input
-            type="text"
-            value={sessionResetTimezone}
-            onChange={(e) => setSessionResetTimezone(e.target.value)}
-            placeholder="Timezone (optional)"
-            className={inputClass}
-            style={{ fontFamily: 'inherit' }}
-          />
         </div>
       </div>
-      </SectionCard>
-      </div>
-
-      <div ref={(node) => { sectionRefs.current.model = node }}>
-      <SectionCard
-        title="Model Setup"
-        description="Choose the provider, credentials, routing, and gateway preferences this agent should use."
-      >
       {/* OpenClaw Gateway Fields */}
       {openclawEnabled && (
         <div className="mb-8 space-y-5">
@@ -2084,7 +1496,308 @@ export function AgentSheet() {
         </div>
       )}
 
-      {(provider === 'openclaw' || routingTargets.some((target) => target.provider === 'openclaw') || openclawGatewayProfiles.length > 0) && (
+      </SectionCard>
+
+      <SectionCard
+        title="Instructions"
+        description="Keep the agent's personality and core prompt visible and easy to edit."
+      >
+        <div className="mb-8">
+          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+            Soul / Personality <span className="normal-case tracking-normal font-normal text-text-3">(optional)</span>
+            <HintTip text="The agent's voice and tone — how it talks, not what it knows" />
+            {soul !== soulInitial && soulSaveState === 'idle' && (
+              <span className="inline-flex items-center gap-1 normal-case tracking-normal text-[10px] text-amber-400 font-600">
+                <StatusDot status="warning" size="sm" />
+                Unsaved
+              </span>
+            )}
+            {soulSaveState === 'saved' && (
+              <span className="inline-flex items-center gap-1 normal-case tracking-normal text-[10px] text-emerald-400 font-600">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+                Saved
+              </span>
+            )}
+          </label>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <p className="text-[12px] text-text-3/60">Define the agent&apos;s voice, tone, and personality. Injected before the system prompt.</p>
+            <button
+              type="button"
+              onClick={() => setSoul(randomSoul())}
+              className="inline-flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-transparent text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors"
+              style={{ fontFamily: 'inherit' }}
+              title="Randomize personality"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+                <circle cx="9" cy="9" r="1" fill="currentColor" />
+                <circle cx="15" cy="15" r="1" fill="currentColor" />
+              </svg>
+              Shuffle
+            </button>
+            <button
+              type="button"
+              onClick={() => setSoulLibraryOpen(true)}
+              className="shrink-0 px-2 py-1 rounded-[8px] border border-accent-bright/20 bg-accent-soft text-[11px] text-accent-bright hover:brightness-110 cursor-pointer transition-colors"
+              style={{ fontFamily: 'inherit' }}
+            >
+              Browse Library
+            </button>
+            <button onClick={() => soulFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
+            <input ref={soulFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSoul)} className="hidden" />
+          </div>
+          <textarea
+            value={soul}
+            onChange={(e) => setSoul(e.target.value)}
+            placeholder="e.g. You speak concisely and directly. You have a dry sense of humor. You always back claims with data."
+            rows={3}
+            className={`${inputClass} resize-y min-h-[80px]`}
+            style={{ fontFamily: 'inherit' }}
+          />
+        </div>
+
+        {provider !== 'openclaw' ? (
+          <div className="mb-1">
+            <div className="mb-3 flex items-center gap-2">
+              <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">System Prompt <HintTip text="Instructions that tell the agent what it can do, what tools to use, and how to behave" /></label>
+              <button onClick={() => promptFileRef.current?.click()} className="shrink-0 px-2 py-1 rounded-[8px] border border-white/[0.08] bg-surface text-[11px] text-text-3 hover:text-text-2 cursor-pointer transition-colors" style={{ fontFamily: 'inherit' }}>Upload .md</button>
+              <input ref={promptFileRef} type="file" accept=".md,.txt,.markdown" onChange={handleFileUpload(setSystemPrompt)} className="hidden" />
+            </div>
+            <textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              placeholder="You are an expert..."
+              rows={6}
+              className={`${inputClass} resize-y min-h-[140px]`}
+              style={{ fontFamily: 'inherit' }}
+            />
+          </div>
+        ) : (
+          <div className="rounded-[14px] border border-white/[0.06] bg-white/[0.02] px-4 py-4 text-[13px] leading-[1.6] text-text-3">
+            OpenClaw agents rely on the gateway runtime for tool execution and node routing. Expand advanced settings if you need continuity, voice, or heartbeat overrides.
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Behavior"
+        description="Keep the core autonomy switch visible. Expert heartbeat controls stay in advanced settings."
+      >
+        <div className="flex items-center justify-between gap-4 rounded-[14px] border border-white/[0.06] bg-white/[0.02] px-4 py-4">
+          <div className="min-w-0">
+            <p className="text-[14px] font-600 text-text">Heartbeat</p>
+            <p className="mt-1 text-[12px] leading-[1.6] text-text-3/75">
+              Keep this agent alive in the background for proactive work and scheduled follow-through.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setHeartbeatEnabled((current) => !current)}
+            className={`relative h-6 w-11 shrink-0 rounded-full border-none transition-colors duration-200 ${heartbeatEnabled ? 'bg-accent-bright' : 'bg-white/[0.12]'}`}
+            aria-pressed={heartbeatEnabled}
+          >
+            <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${heartbeatEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+      </SectionCard>
+
+      <AdvancedSettingsSection
+        open={showAdvancedSettings}
+        onToggle={() => setShowAdvancedSettings((current) => !current)}
+        summary={advancedSummary}
+        badges={agentAdvancedBadges}
+      >
+      <SectionCard
+        title="Voice & Autonomy"
+        description="Tune voice and the detailed heartbeat behavior for this agent."
+        className="mb-6 border-white/[0.05] bg-white/[0.01]"
+      >
+      <div className="mb-8">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Voice &amp; Audio
+        </label>
+        {voiceControlsAvailable ? (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-3">
+              <input
+                type="text"
+                value={voiceId}
+                onChange={(e) => setVoiceId(e.target.value)}
+                placeholder="ElevenLabs voice ID"
+                className={inputClass}
+                style={{ fontFamily: 'inherit' }}
+              />
+              <button
+                type="button"
+                onClick={() => setVoiceId('')}
+                className="px-3 py-2.5 rounded-[10px] border border-white/[0.08] bg-transparent text-[12px] font-600 text-text-3 hover:bg-white/[0.04] hover:text-text-2 transition-all cursor-pointer"
+                style={{ fontFamily: 'inherit' }}
+              >
+                Use global default
+              </button>
+            </div>
+            <p className="mt-2 text-[12px] leading-[1.6] text-text-3/70">
+              Current effective voice: <span className="text-text-2">{effectiveVoiceId}</span> · {effectiveVoiceSource}
+              {!voicePlaybackEnabled && ' · Voice playback is disabled globally'}
+            </p>
+          </>
+        ) : (
+          <p className="text-[12px] leading-[1.6] text-text-3/70">
+            ElevenLabs is not configured yet. Add a global API key in Settings to enable voice overrides here.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Heartbeat Controls
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+          <select
+            value={heartbeatIntervalSec}
+            onChange={(e) => setHeartbeatIntervalSec(e.target.value)}
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          >
+            <option value="">Use default interval</option>
+            {HB_PRESETS.map((preset) => (
+              <option key={preset} value={preset}>{formatHbDuration(preset)}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={heartbeatModel}
+            onChange={(e) => setHeartbeatModel(e.target.value)}
+            placeholder="Heartbeat model override"
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          />
+        </div>
+        <textarea
+          value={heartbeatPrompt}
+          onChange={(e) => setHeartbeatPrompt(e.target.value)}
+          placeholder="Optional custom heartbeat prompt"
+          rows={3}
+          className={`${inputClass} resize-y min-h-[84px]`}
+          style={{ fontFamily: 'inherit' }}
+        />
+      </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Memory & Intelligence"
+        description="Reasoning depth, memory defaults, and drafting behavior."
+        className="mb-6 border-white/[0.05] bg-white/[0.01]"
+      >
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        <select value={thinkingLevel} onChange={(e) => setThinkingLevel(e.target.value as typeof thinkingLevel)} className={inputClass}>
+          <option value="">Default thinking</option>
+          <option value="minimal">Minimal</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+        <select value={memoryScopeMode} onChange={(e) => setMemoryScopeMode(e.target.value as typeof memoryScopeMode)} className={inputClass}>
+          <option value="auto">Auto memory scope</option>
+          <option value="all">All</option>
+          <option value="global">Global</option>
+          <option value="agent">Agent</option>
+          <option value="session">Session</option>
+          <option value="project">Project</option>
+        </select>
+        <select value={memoryTierPreference} onChange={(e) => setMemoryTierPreference(e.target.value as typeof memoryTierPreference)} className={inputClass}>
+          <option value="blended">Blended tiering</option>
+          <option value="working">Working memory</option>
+          <option value="durable">Durable memory</option>
+          <option value="archive">Archive memory</option>
+        </select>
+      </div>
+      <div className="space-y-3">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div
+            onClick={() => setProactiveMemory((current) => !current)}
+            className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0 ${proactiveMemory ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
+          >
+            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200 ${proactiveMemory ? 'left-[22px]' : 'left-0.5'}`} />
+          </div>
+          <span className="text-[13px] text-text-2">Use proactive recall before each run</span>
+        </label>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div
+            onClick={() => setAutoDraftSkillSuggestions((current) => !current)}
+            className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0 ${autoDraftSkillSuggestions ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
+          >
+            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200 ${autoDraftSkillSuggestions ? 'left-[22px]' : 'left-0.5'}`} />
+          </div>
+          <span className="text-[13px] text-text-2">Auto-draft conversation skills</span>
+        </label>
+      </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Continuity"
+        description="Stable identity, relationship context, and session reset policy."
+        className="mb-6 border-white/[0.05] bg-white/[0.01]"
+      >
+      <div className="mb-8">
+        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Identity Continuity <HintTip text="Seeds the agent's continuity state so session memory can preserve a stable persona and relationship context." />
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <input type="text" value={identityPersonaLabel} onChange={(e) => setIdentityPersonaLabel(e.target.value)} placeholder="Persona label" className={inputClass} style={{ fontFamily: 'inherit' }} />
+          <input type="text" value={identityToneStyle} onChange={(e) => setIdentityToneStyle(e.target.value)} placeholder="Tone style" className={inputClass} style={{ fontFamily: 'inherit' }} />
+        </div>
+        <div className="grid grid-cols-1 gap-3">
+          <textarea value={identitySelfSummary} onChange={(e) => setIdentitySelfSummary(e.target.value)} placeholder="How this agent should summarize itself across sessions." rows={3} className={`${inputClass} resize-y min-h-[84px]`} style={{ fontFamily: 'inherit' }} />
+          <textarea value={identityRelationshipSummary} onChange={(e) => setIdentityRelationshipSummary(e.target.value)} placeholder="Relationship framing or standing context the agent should keep in mind." rows={3} className={`${inputClass} resize-y min-h-[84px]`} style={{ fontFamily: 'inherit' }} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <textarea value={identityBoundariesText} onChange={(e) => setIdentityBoundariesText(e.target.value)} placeholder="Boundaries, one per line." rows={4} className={`${inputClass} resize-y min-h-[108px]`} style={{ fontFamily: 'inherit' }} />
+            <textarea value={identityContinuityNotesText} onChange={(e) => setIdentityContinuityNotesText(e.target.value)} placeholder="Continuity notes, one per line." rows={4} className={`${inputClass} resize-y min-h-[108px]`} style={{ fontFamily: 'inherit' }} />
+          </div>
+        </div>
+        <p className="mt-2 text-[12px] leading-[1.5] text-text-3/60">
+          Use one line per item. Boundaries are stable guardrails; continuity notes are recurring relationship or project context worth carrying across sessions.
+        </p>
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
+          Session Reset Policy <HintTip text="Controls when this agent's sessions are considered stale and should be refreshed." />
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <select value={sessionResetMode} onChange={(e) => setSessionResetMode(e.target.value as typeof sessionResetMode)} className={inputClass} style={{ fontFamily: 'inherit' }}>
+            <option value="">Inherit global default</option>
+            <option value="idle">Idle</option>
+            <option value="daily">Daily</option>
+            <option value="isolated">Isolated (fresh context per run)</option>
+          </select>
+          <input type="number" min={0} value={sessionIdleTimeoutSec} onChange={(e) => setSessionIdleTimeoutSec(e.target.value)} placeholder="Idle timeout in seconds" className={inputClass} style={{ fontFamily: 'inherit' }} />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <input type="number" min={0} value={sessionMaxAgeSec} onChange={(e) => setSessionMaxAgeSec(e.target.value)} placeholder="Max age in seconds" className={inputClass} style={{ fontFamily: 'inherit' }} />
+          <input type="text" value={sessionDailyResetAt} onChange={(e) => setSessionDailyResetAt(e.target.value)} placeholder="Daily reset time (HH:MM)" className={inputClass} style={{ fontFamily: 'inherit' }} />
+          <input type="text" value={sessionResetTimezone} onChange={(e) => setSessionResetTimezone(e.target.value)} placeholder="Timezone (optional)" className={inputClass} style={{ fontFamily: 'inherit' }} />
+        </div>
+      </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Routing & Infrastructure"
+        description="Project binding, filesystem access, and other deeper runtime controls."
+        className="mb-6 border-white/[0.05] bg-white/[0.01]"
+      >
+      {Object.keys(projects).length > 0 && (
+        <div className="mb-8">
+          <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Project</label>
+          <select value={projectId || ''} onChange={(e) => setProjectId(e.target.value || undefined)} className={inputClass} style={{ fontFamily: 'inherit' }}>
+            <option value="">No project</option>
+            {Object.values(projects).map((project) => (
+              <option key={project.id} value={project.id}>{project.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {openclawEnabled && (
         <div className="mb-8">
           <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
             Gateway Preferences <HintTip text="When multiple OpenClaw gateways are available, prefer matching tags or deployment templates before falling back to the default route." />
@@ -2111,7 +1824,6 @@ export function AgentSheet() {
           </p>
         </div>
       )}
-
       <div className="mb-8">
         <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">
           Model Routing <HintTip text="Route this agent through a provider/model pool instead of a single fixed model. The base provider remains the default when no route matches." />
@@ -2233,13 +1945,67 @@ export function AgentSheet() {
           <p className="text-[11px] text-text-3/70 mt-2">No route pool yet. Add one if this agent should switch between cheaper, stronger, or gateway-specific models.</p>
         )}
       </div>
+      <div>
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Filesystem Access</label>
+        <select
+          value={filesystemScope}
+          onChange={(e) => setFilesystemScope(e.target.value as 'workspace' | 'machine')}
+          className="w-full h-10 px-3 rounded-[10px] bg-white/[0.04] border border-white/[0.06] text-[14px] text-text-2"
+        >
+          <option value="workspace">Workspace only</option>
+          <option value="machine">Full machine</option>
+        </select>
+        {filesystemScope === 'machine' && (
+          <p className="mt-2 text-[12px] text-amber-400/80">Agent can access any file your user account can reach. Sensitive paths (.ssh, .env, .gnupg) are blocked by default.</p>
+        )}
+      </div>
       </SectionCard>
+
+      <SectionCard
+        title="Safety & Limits"
+        description="Enable safeguards, recovery, and spend limits without crowding the main setup flow."
+        className="mb-6 border-white/[0.05] bg-white/[0.01]"
+      >
+      <div className="space-y-3 mb-6">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div onClick={() => setDisabled((current) => !current)} className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0 ${disabled ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}>
+            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200 ${disabled ? 'left-[22px]' : 'left-0.5'}`} />
+          </div>
+          <span className="text-[13px] text-text-2">Disable this agent</span>
+        </label>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div onClick={() => setAutoRecovery((current) => !current)} className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0 ${autoRecovery ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}>
+            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200 ${autoRecovery ? 'left-[22px]' : 'left-0.5'}`} />
+          </div>
+          <span className="text-[13px] text-text-2">Guardian auto-recovery</span>
+        </label>
       </div>
 
-      <div ref={(node) => { sectionRefs.current.tools = node }}>
+      <div className="mb-4">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div onClick={() => setBudgetEnabled((current) => !current)} className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0 ${budgetEnabled ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}>
+            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200 ${budgetEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+          </div>
+          <span className="text-[13px] text-text-2">Spend limits</span>
+        </label>
+      </div>
+      {budgetEnabled && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <input type="number" min={0} step="0.01" value={hourlyBudget} onChange={(e) => setHourlyBudget(e.target.value)} placeholder="Hourly" className={inputClass} style={{ fontFamily: 'inherit' }} />
+          <input type="number" min={0} step="0.01" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} placeholder="Daily" className={inputClass} style={{ fontFamily: 'inherit' }} />
+          <input type="number" min={0} step="0.01" value={monthlyBudget} onChange={(e) => setMonthlyBudget(e.target.value)} placeholder="Monthly" className={inputClass} style={{ fontFamily: 'inherit' }} />
+          <select value={budgetAction} onChange={(e) => setBudgetAction(e.target.value as typeof budgetAction)} className={inputClass} style={{ fontFamily: 'inherit' }}>
+            <option value="warn">Warn</option>
+            <option value="block">Block</option>
+          </select>
+        </div>
+      )}
+      </SectionCard>
+
       <SectionCard
         title="Tools & Delegation"
         description="Enable plugins, pin preferred skills, connect MCP tools, and configure delegation behavior for this agent."
+        className="mb-6 border-white/[0.05] bg-white/[0.01]"
       >
       {/* Plugins — hidden for providers that manage capabilities outside LangGraph */}
       {!hasNativeCapabilities && (
@@ -2476,7 +2242,7 @@ export function AgentSheet() {
           <label className="flex items-center gap-3 cursor-pointer">
             <div
               onClick={() => {
-                setPlatformAssignScope((current) => current === 'all' ? 'self' : 'all')
+                setDelegationEnabled((current) => !current)
               }}
               className={`w-11 h-6 rounded-full transition-all duration-200 relative cursor-pointer
                 ${canDelegateToAgents ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
@@ -2492,16 +2258,111 @@ export function AgentSheet() {
 
       {provider !== 'openclaw' && canDelegateToAgents && agentOptions.length > 0 && (
         <div className="mb-8">
-          <SectionLabel>Available Agents</SectionLabel>
+          <SectionLabel>Allowed Delegate Agents</SectionLabel>
           <AgentPickerList
             agents={agentOptions}
-            selected={subAgentIds}
+            selected={delegationTargetMode === 'all' ? [] : delegationTargetAgentIds}
             onSelect={(id) => toggleAgent(id)}
+            noneOption={{
+              label: 'All Agents',
+              onSelect: () => {
+                setDelegationTargetMode('all')
+                setDelegationTargetAgentIds([])
+              },
+            }}
+          />
+        </div>
+      )}
+      <div className="mb-2">
+        <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Capabilities</label>
+        <p className="text-[12px] text-text-3/60 mb-3">Optional tags that describe what this agent is especially good at.</p>
+        {capabilities.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {capabilities.map((capability) => (
+              <span key={capability} className="inline-flex items-center gap-1.5 rounded-[8px] border border-accent-bright/20 bg-accent-soft/20 px-3 py-1 text-[12px] text-accent-bright">
+                {capability}
+                <button
+                  type="button"
+                  onClick={() => setCapabilities((current) => current.filter((entry) => entry !== capability))}
+                  className="bg-transparent border-none text-accent-bright/70 hover:text-accent-bright cursor-pointer"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={capInput}
+            onChange={(e) => setCapInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              e.preventDefault()
+              const next = capInput.trim()
+              if (!next || capabilities.includes(next)) return
+              setCapabilities((current) => [...current, next])
+              setCapInput('')
+            }}
+            placeholder="Add a capability tag"
+            className={inputClass}
+            style={{ fontFamily: 'inherit' }}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const next = capInput.trim()
+              if (!next || capabilities.includes(next)) return
+              setCapabilities((current) => [...current, next])
+              setCapInput('')
+            }}
+            className="shrink-0 px-3 py-2.5 rounded-[10px] bg-accent-soft/50 text-accent-bright text-[12px] font-700 hover:bg-accent-soft transition-colors cursor-pointer border border-accent-bright/20"
+          >
+            Add
+          </button>
+        </div>
+      </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Utilities"
+        description="Import and export agents, and manage any attached wallets."
+        className="mb-0 border-white/[0.05] bg-white/[0.01]"
+      >
+      <div className="flex flex-wrap gap-3">
+        {editing ? (
+          <button
+            type="button"
+            onClick={handleExport}
+            className="px-4 py-2.5 rounded-[10px] border border-white/[0.08] bg-transparent text-text-2 text-[12px] font-600 cursor-pointer hover:bg-white/[0.04] transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Export agent
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => importFileRef.current?.click()}
+            className="px-4 py-2.5 rounded-[10px] border border-white/[0.08] bg-transparent text-text-2 text-[12px] font-600 cursor-pointer hover:bg-white/[0.04] transition-all"
+            style={{ fontFamily: 'inherit' }}
+          >
+            Import agent
+          </button>
+        )}
+      </div>
+      {editing && (
+        <div className="mt-6">
+          <WalletSection
+            agentId={editing.id}
+            wallets={agentWallets}
+            activeWalletId={editing.activeWalletId || null}
+            onWalletCreated={() => loadAgentWallets(editing.id)}
           />
         </div>
       )}
       </SectionCard>
-      </div>
+      </AdvancedSettingsSection>
 
       {/* Provider key warning */}
       {providerNeedsKey && (
@@ -2531,16 +2392,6 @@ export function AgentSheet() {
         {editing && (
           <button onClick={handleDelete} className="py-3.5 px-6 rounded-[14px] border border-red-500/20 bg-transparent text-red-400 text-[15px] font-600 cursor-pointer hover:bg-red-500/10 transition-all" style={{ fontFamily: 'inherit' }}>
             Delete
-          </button>
-        )}
-        {editing && (
-          <button onClick={handleExport} className="py-3.5 px-4 rounded-[14px] border border-white/[0.08] bg-transparent text-text-3 text-[13px] font-600 cursor-pointer hover:bg-surface-2 hover:text-text-2 transition-all" style={{ fontFamily: 'inherit' }} title="Export agent as JSON">
-            Export
-          </button>
-        )}
-        {!editing && (
-          <button onClick={() => importFileRef.current?.click()} className="py-3.5 px-4 rounded-[14px] border border-white/[0.08] bg-transparent text-text-3 text-[13px] font-600 cursor-pointer hover:bg-surface-2 hover:text-text-2 transition-all" style={{ fontFamily: 'inherit' }} title="Import agent from JSON">
-            Import
           </button>
         )}
         <button onClick={onClose} className="flex-1 py-3.5 rounded-[14px] border border-white/[0.08] bg-transparent text-text-2 text-[15px] font-600 cursor-pointer hover:bg-surface-2 transition-all" style={{ fontFamily: 'inherit' }}>

@@ -5,10 +5,6 @@ export const DEFAULT_LOOP_MODE: LoopMode = 'bounded'
 // Loop limits
 export const AGENT_LOOP_RECURSION_LIMIT_MIN = 1
 export const AGENT_LOOP_RECURSION_LIMIT_MAX = 500
-export const ORCHESTRATOR_LOOP_RECURSION_LIMIT_MIN = 1
-export const ORCHESTRATOR_LOOP_RECURSION_LIMIT_MAX = 300
-export const LEGACY_ORCHESTRATOR_MAX_TURNS_MIN = 1
-export const LEGACY_ORCHESTRATOR_MAX_TURNS_MAX = 300
 export const ONGOING_LOOP_MAX_ITERATIONS_MIN = 10
 export const ONGOING_LOOP_MAX_ITERATIONS_MAX = 5000
 export const ONGOING_LOOP_MAX_RUNTIME_MINUTES_MIN = 0
@@ -27,8 +23,6 @@ export const REQUIRED_TOOL_KICKOFF_SEC_MIN = 10
 export const REQUIRED_TOOL_KICKOFF_SEC_MAX = 120
 
 export const DEFAULT_AGENT_LOOP_RECURSION_LIMIT = 300
-export const DEFAULT_ORCHESTRATOR_LOOP_RECURSION_LIMIT = 80
-export const DEFAULT_LEGACY_ORCHESTRATOR_MAX_TURNS = 16
 export const DEFAULT_ONGOING_LOOP_MAX_ITERATIONS = 250
 export const DEFAULT_ONGOING_LOOP_MAX_RUNTIME_MINUTES = 60
 export const DEFAULT_DELEGATION_MAX_DEPTH = 3
@@ -53,8 +47,6 @@ function parseIntSetting(value: unknown, fallback: number, min: number, max: num
 export interface NormalizedRuntimeSettingFields {
   loopMode: LoopMode
   agentLoopRecursionLimit: number
-  orchestratorLoopRecursionLimit: number
-  legacyOrchestratorMaxTurns: number
   delegationMaxDepth: number
   ongoingLoopMaxIterations: number
   ongoingLoopMaxRuntimeMinutes: number
@@ -73,18 +65,6 @@ export function normalizeRuntimeSettingFields(settings: Record<string, unknown>)
       DEFAULT_AGENT_LOOP_RECURSION_LIMIT,
       AGENT_LOOP_RECURSION_LIMIT_MIN,
       AGENT_LOOP_RECURSION_LIMIT_MAX,
-    ),
-    orchestratorLoopRecursionLimit: parseIntSetting(
-      settings.orchestratorLoopRecursionLimit,
-      DEFAULT_ORCHESTRATOR_LOOP_RECURSION_LIMIT,
-      ORCHESTRATOR_LOOP_RECURSION_LIMIT_MIN,
-      ORCHESTRATOR_LOOP_RECURSION_LIMIT_MAX,
-    ),
-    legacyOrchestratorMaxTurns: parseIntSetting(
-      settings.legacyOrchestratorMaxTurns,
-      DEFAULT_LEGACY_ORCHESTRATOR_MAX_TURNS,
-      LEGACY_ORCHESTRATOR_MAX_TURNS_MIN,
-      LEGACY_ORCHESTRATOR_MAX_TURNS_MAX,
     ),
     delegationMaxDepth: parseIntSetting(
       settings.delegationMaxDepth,

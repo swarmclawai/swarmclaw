@@ -68,7 +68,7 @@ describe('delegate fallback', () => {
 
       const tools = buildDelegateTools({
         cwd: process.cwd(),
-        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', delegationEnabled: true, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'delegate',
         hasTool: (name) => name === 'delegate',
         cleanupFns: [],
@@ -98,7 +98,7 @@ describe('delegate fallback', () => {
 
       const tools = buildDelegateTools({
         cwd: process.cwd(),
-        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', delegationEnabled: true, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'delegate',
         hasTool: (name) => name === 'delegate',
         cleanupFns: [],
@@ -138,7 +138,7 @@ describe('delegate fallback', () => {
 
       const tools = buildDelegateTools({
         cwd: process.cwd(),
-        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', delegationEnabled: true, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'delegate' || name === 'memory' || name === 'memory_store',
         hasTool: (name) => name === 'delegate' || name === 'memory' || name === 'memory_store',
         cleanupFns: [],
@@ -174,7 +174,7 @@ describe('delegate fallback', () => {
 
       const tools = buildDelegateTools({
         cwd: process.cwd(),
-        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', delegationEnabled: true, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'delegate',
         hasTool: (name) => name === 'delegate',
         cleanupFns: [],
@@ -210,7 +210,7 @@ describe('delegate fallback', () => {
 
       const tools = buildDelegateTools({
         cwd: process.cwd(),
-        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', delegationEnabled: true, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'delegate',
         hasTool: (name) => name === 'delegate',
         cleanupFns: [],
@@ -249,7 +249,7 @@ describe('delegate fallback', () => {
 
       const tools = buildDelegateTools({
         cwd: process.cwd(),
-        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', delegationEnabled: true, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'delegate',
         hasTool: (name) => name === 'delegate',
         cleanupFns: [],
@@ -285,7 +285,7 @@ describe('delegate fallback', () => {
 
       const tools = buildDelegateTools({
         cwd: process.cwd(),
-        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', delegationEnabled: true, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'delegate',
         hasTool: (name) => name === 'delegate',
         cleanupFns: [],
@@ -324,7 +324,7 @@ describe('delegate fallback', () => {
 
       const tools = buildDelegateTools({
         cwd: process.cwd(),
-        ctx: { sessionId: 'session-test', agentId: 'agent-test', platformAssignScope: 'self' },
+        ctx: { sessionId: 'session-test', agentId: 'agent-test', delegationEnabled: true, delegationTargetMode: 'all', delegationTargetAgentIds: [] },
         hasPlugin: (name) => name === 'delegate',
         hasTool: (name) => name === 'delegate',
         cleanupFns: [],

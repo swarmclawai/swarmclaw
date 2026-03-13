@@ -63,7 +63,9 @@ export interface StarterDraftAgent {
   gatewayProfileId: string | null
   tools: string[]
   capabilities: string[]
-  platformAssignScope: 'self' | 'all'
+  delegationEnabled: boolean
+  delegationTargetMode: 'all' | 'selected'
+  delegationTargetAgentIds: string[]
   autoDraftSkillSuggestions: boolean
   avatarSeed: string
   avatarUrl: string | null

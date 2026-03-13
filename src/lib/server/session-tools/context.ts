@@ -8,7 +8,9 @@ export interface ToolContext {
   agentId?: string | null
   sessionId?: string | null
   runId?: string | null
-  platformAssignScope?: 'self' | 'all'
+  delegationEnabled?: boolean
+  delegationTargetMode?: 'all' | 'selected'
+  delegationTargetAgentIds?: string[]
   mcpServerIds?: string[]
   mcpDisabledTools?: string[]
   projectId?: string | null

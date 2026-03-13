@@ -22,9 +22,6 @@ export async function GET(req: Request) {
   const agents = loadAgents()
   const sessions = loadSessions()
   const usage = loadUsage()
-  for (const agent of Object.values(agents)) {
-    agent.isOrchestrator = agent.platformAssignScope === 'all'
-  }
   // Enrich agents that have spend limits with current spend windows
   for (const agent of Object.values(agents)) {
     if (
@@ -71,7 +68,6 @@ export async function POST(req: Request) {
   })
   const id = genId()
   const now = Date.now()
-  const platformAssignScope = body.platformAssignScope
   const agent = {
     id,
     name: body.name,
@@ -91,9 +87,9 @@ export async function POST(req: Request) {
       ...target,
       apiEndpoint: normalizeProviderEndpoint(target.provider, target.apiEndpoint || null),
     })),
-    isOrchestrator: platformAssignScope === 'all',
-    platformAssignScope,
-    subAgentIds: body.subAgentIds,
+    delegationEnabled: body.delegationEnabled ?? false,
+    delegationTargetMode: body.delegationTargetMode ?? 'all',
+    delegationTargetAgentIds: (body.delegationTargetMode === 'selected' ? body.delegationTargetAgentIds : []).filter(Boolean),
     plugins,
     skills: body.skills,
     skillIds: body.skillIds,
@@ -103,7 +99,7 @@ export async function POST(req: Request) {
     thinkingLevel: body.thinkingLevel || undefined,
     autoRecovery: body.autoRecovery || false,
     disabled: body.disabled || false,
-    heartbeatEnabled: body.heartbeatEnabled || false,
+    heartbeatEnabled: body.heartbeatEnabled ?? true,
     heartbeatInterval: body.heartbeatInterval,
     heartbeatIntervalSec: body.heartbeatIntervalSec,
     heartbeatModel: body.heartbeatModel,
@@ -116,6 +112,7 @@ export async function POST(req: Request) {
     identityState: body.identityState ?? null,
     memoryScopeMode: body.memoryScopeMode,
     memoryTierPreference: body.memoryTierPreference,
+    proactiveMemory: body.proactiveMemory ?? true,
     autoDraftSkillSuggestions: body.autoDraftSkillSuggestions,
     projectId: body.projectId,
     avatarSeed: body.avatarSeed,

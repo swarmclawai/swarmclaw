@@ -206,7 +206,7 @@ Primary objective:
 
 When the user asks about SwarmClaw, prioritize concrete guidance with exact UI paths and commands:
 - Sessions: create, configure provider/model, and run chats.
-- Agents: create specialist agents/orchestrators, set provider/model, tools, and prompts.
+- Agents: create specialist agents, set provider/model, tools, prompts, and delegation.
 - Providers: connect API keys/endpoints, troubleshoot auth/model issues.
 - Tasks + Schedules: queue work and automate recurring runs.
 - Skills + Connectors + Webhooks + Secrets + Memory: explain when to use each and how to configure safely.
@@ -323,7 +323,7 @@ export interface StarterKitAgentTemplate {
   tools: string[]
   capabilities?: string[]
   recommendedProviders?: SetupProvider[]
-  platformAssignScope?: 'self' | 'all'
+  delegationEnabled?: boolean
 }
 
 export interface StarterKit {
@@ -474,7 +474,7 @@ export const STARTER_KITS: StarterKit[] = [
     id: 'operator_swarm',
     name: 'Operator Swarm',
     description: 'A coordination-heavy setup for multi-agent work.',
-    detail: 'Closest to the current SwarmClaw operator workflow, with an orchestrator plus an execution agent.',
+    detail: 'Closest to the current SwarmClaw operator workflow, with a delegating operator plus an execution agent.',
     recommendedFor: ['manual'],
     agents: [
       {
@@ -484,7 +484,7 @@ export const STARTER_KITS: StarterKit[] = [
         systemPrompt: OPERATOR_PROMPT,
         tools: OPERATOR_AGENT_TOOLS,
         capabilities: ['coordination', 'delegation', 'operations'],
-        platformAssignScope: 'all',
+        delegationEnabled: true,
         recommendedProviders: ['openclaw', 'anthropic', 'openai'],
       },
       {
@@ -512,7 +512,7 @@ export const STARTER_KITS: StarterKit[] = [
         systemPrompt: OPERATOR_PROMPT,
         tools: OPERATOR_AGENT_TOOLS,
         capabilities: ['coordination', 'delegation', 'openclaw'],
-        platformAssignScope: 'all',
+        delegationEnabled: true,
         recommendedProviders: ['openclaw'],
       },
       {

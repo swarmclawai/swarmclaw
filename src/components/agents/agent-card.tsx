@@ -67,7 +67,7 @@ export function AgentCard({ agent, isDefault, isRunning, isOnline, isSelected, o
       budget: typeof agent.dailyBudget === 'number' && agent.dailyBudget > 0 ? agent.dailyBudget : null,
     },
   ].filter((entry) => entry.budget !== null)
-  const canDelegateToAgents = agent.platformAssignScope === 'all'
+  const canDelegateToAgents = agent.delegationEnabled === true
   const agentDisabled = agent.disabled === true
   useWs(`heartbeat:agent:${agent.id}`, () => {
     if (heartbeatTimerRef.current) {

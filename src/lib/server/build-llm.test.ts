@@ -1,123 +1,151 @@
-import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ChatOpenAI } from '@langchain/openai'
-import {
-  buildChatModel,
-  OPENAI_COMPAT_MODEL_MAX_RETRIES,
-  OPENAI_COMPAT_MODEL_TIMEOUT_MS,
-} from './build-llm'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import test, { after, before, beforeEach } from 'node:test'
 
-type ChatOpenAiInternals = ChatOpenAI & {
-  timeout?: number
-  caller?: { maxRetries?: number }
-  clientConfig?: { defaultHeaders?: Record<string, string> }
+const originalEnv = {
+  DATA_DIR: process.env.DATA_DIR,
+  WORKSPACE_DIR: process.env.WORKSPACE_DIR,
+  SWARMCLAW_BUILD_MODE: process.env.SWARMCLAW_BUILD_MODE,
 }
 
-describe('buildChatModel', () => {
-  it('applies bounded timeout and disables internal retries for openai-compatible models', () => {
-    const llm = buildChatModel({
-      provider: 'openai',
-      model: 'gpt-4o',
-      apiKey: 'test-key',
-    })
-    const model = llm as ChatOpenAiInternals
+let tempDir = ''
+let workspaceDir = ''
+let resolveGenerationModelConfig: Awaited<typeof import('./build-llm')>['resolveGenerationModelConfig']
+let saveAgents: Awaited<typeof import('./storage')>['saveAgents']
+let saveSessions: Awaited<typeof import('./storage')>['saveSessions']
 
-    assert.equal(llm instanceof ChatOpenAI, true)
-    assert.equal(model.timeout, OPENAI_COMPAT_MODEL_TIMEOUT_MS)
-    assert.equal(model.caller?.maxRetries, OPENAI_COMPAT_MODEL_MAX_RETRIES)
+before(async () => {
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-build-llm-'))
+  workspaceDir = path.join(tempDir, 'workspace')
+  process.env.DATA_DIR = path.join(tempDir, 'data')
+  process.env.WORKSPACE_DIR = workspaceDir
+  process.env.SWARMCLAW_BUILD_MODE = '1'
+  fs.mkdirSync(process.env.DATA_DIR, { recursive: true })
+  fs.mkdirSync(workspaceDir, { recursive: true })
+
+  const mod = await import('./build-llm')
+  resolveGenerationModelConfig = mod.resolveGenerationModelConfig
+
+  const storage = await import('./storage')
+  saveAgents = storage.saveAgents
+  saveSessions = storage.saveSessions
+})
+
+beforeEach(() => {
+  saveAgents({})
+  saveSessions({})
+})
+
+after(() => {
+  if (originalEnv.DATA_DIR === undefined) delete process.env.DATA_DIR
+  else process.env.DATA_DIR = originalEnv.DATA_DIR
+  if (originalEnv.WORKSPACE_DIR === undefined) delete process.env.WORKSPACE_DIR
+  else process.env.WORKSPACE_DIR = originalEnv.WORKSPACE_DIR
+  if (originalEnv.SWARMCLAW_BUILD_MODE === undefined) delete process.env.SWARMCLAW_BUILD_MODE
+  else process.env.SWARMCLAW_BUILD_MODE = originalEnv.SWARMCLAW_BUILD_MODE
+  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true })
+})
+
+test('resolveGenerationModelConfig prefers an explicit non-CLI candidate over stored session/agent config', () => {
+  saveAgents({
+    agent1: {
+      id: 'agent1',
+      name: 'Agent 1',
+      provider: 'ollama',
+      model: 'phi4',
+      apiEndpoint: 'http://127.0.0.1:11434',
+    },
+  })
+  saveSessions({
+    session1: {
+      id: 'session1',
+      name: 'Session 1',
+      cwd: workspaceDir,
+      user: 'tester',
+      provider: 'ollama',
+      model: 'llama3.2',
+      apiEndpoint: 'http://127.0.0.1:11434',
+      claudeSessionId: null,
+      messages: [],
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      sessionType: 'human',
+      agentId: 'agent1',
+    },
+  })
+  const resolved = resolveGenerationModelConfig({
+    sessionId: 'session1',
+    preferred: {
+      provider: 'ollama',
+      model: 'qwen3.5',
+      apiEndpoint: 'http://127.0.0.1:11434',
+    },
   })
 
-  it('preserves openclaw headers while applying the same timeout policy', () => {
-    const llm = buildChatModel({
-      provider: 'openclaw',
-      model: 'gpt-4o',
-      apiKey: 'test-key',
-      apiEndpoint: 'https://example.com/v1',
-    })
-    const model = llm as ChatOpenAiInternals
+  assert.equal(resolved.provider, 'ollama')
+  assert.equal(resolved.model, 'qwen3.5')
+  assert.equal(resolved.apiEndpoint, 'http://127.0.0.1:11434')
+})
 
-    assert.equal(llm instanceof ChatOpenAI, true)
-    assert.equal(model.timeout, OPENAI_COMPAT_MODEL_TIMEOUT_MS)
-    assert.equal(model.caller?.maxRetries, OPENAI_COMPAT_MODEL_MAX_RETRIES)
-    assert.deepEqual(model.clientConfig?.defaultHeaders, { 'Content-Type': 'text/plain' })
+test('resolveGenerationModelConfig skips CLI-only preferences and falls back to the current session config', () => {
+  saveSessions({
+    session1: {
+      id: 'session1',
+      name: 'Session 1',
+      cwd: workspaceDir,
+      user: 'tester',
+      provider: 'ollama',
+      model: 'llama3.2',
+      apiEndpoint: 'http://127.0.0.1:11434',
+      claudeSessionId: null,
+      messages: [],
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      sessionType: 'human',
+    },
   })
 
-  it('routes glm-5:cloud to Ollama Cloud and strips the transport suffix', () => {
-    const originalKey = process.env.OLLAMA_API_KEY
-    process.env.OLLAMA_API_KEY = 'ollama-cloud-test-key'
+  const resolved = resolveGenerationModelConfig({
+    sessionId: 'session1',
+    preferred: {
+      provider: 'claude-cli',
+      model: 'ignored',
+    },
+  })
 
-    try {
-      const llm = buildChatModel({
+  assert.equal(resolved.provider, 'ollama')
+  assert.equal(resolved.model, 'llama3.2')
+})
+
+test('resolveGenerationModelConfig skips unusable preferred providers and falls back to the owning agent route targets', () => {
+  saveAgents({
+    agent1: {
+      id: 'agent1',
+      name: 'Agent 1',
+      provider: 'claude-cli',
+      model: '',
+      delegationEnabled: false,
+      routingTargets: [{
+        id: 'route-1',
         provider: 'ollama',
-        model: 'glm-5:cloud',
-        apiKey: null,
-      })
-      const model = llm as ChatOpenAiInternals & {
-        model?: string
-        clientConfig?: { baseURL?: string }
-      }
-
-      assert.equal(llm instanceof ChatOpenAI, true)
-      assert.equal(model.model, 'glm-5')
-      assert.equal(model.clientConfig?.baseURL, 'https://ollama.com/v1')
-      assert.equal(model.timeout, OPENAI_COMPAT_MODEL_TIMEOUT_MS)
-      assert.equal(model.caller?.maxRetries, OPENAI_COMPAT_MODEL_MAX_RETRIES)
-    } finally {
-      if (originalKey === undefined) delete process.env.OLLAMA_API_KEY
-      else process.env.OLLAMA_API_KEY = originalKey
-    }
+        model: 'phi4',
+        apiEndpoint: 'http://127.0.0.1:11434',
+        priority: 1,
+      }],
+    },
   })
 
-  it('keeps glm-5:cloud on the local Ollama endpoint when no cloud key is available', () => {
-    const originalKey = process.env.OLLAMA_API_KEY
-    delete process.env.OLLAMA_API_KEY
-
-    try {
-      const llm = buildChatModel({
-        provider: 'ollama',
-        model: 'glm-5:cloud',
-        apiKey: null,
-      })
-      const model = llm as ChatOpenAiInternals & {
-        model?: string
-        clientConfig?: { baseURL?: string }
-      }
-
-      assert.equal(llm instanceof ChatOpenAI, true)
-      assert.equal(model.model, 'glm-5:cloud')
-      assert.equal(model.clientConfig?.baseURL, 'http://localhost:11434/v1')
-      assert.equal(model.timeout, OPENAI_COMPAT_MODEL_TIMEOUT_MS)
-      assert.equal(model.caller?.maxRetries, OPENAI_COMPAT_MODEL_MAX_RETRIES)
-    } finally {
-      if (originalKey === undefined) delete process.env.OLLAMA_API_KEY
-      else process.env.OLLAMA_API_KEY = originalKey
-    }
+  const resolved = resolveGenerationModelConfig({
+    agentId: 'agent1',
+    preferred: {
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      credentialId: null,
+    },
   })
 
-  it('keeps an explicit local Ollama endpoint even when a cloud key exists', () => {
-    const originalKey = process.env.OLLAMA_API_KEY
-    process.env.OLLAMA_API_KEY = 'ollama-cloud-test-key'
-
-    try {
-      const llm = buildChatModel({
-        provider: 'ollama',
-        model: 'glm-5:cloud',
-        apiKey: null,
-        apiEndpoint: 'http://localhost:11434',
-      })
-      const model = llm as ChatOpenAiInternals & {
-        model?: string
-        clientConfig?: { baseURL?: string }
-      }
-
-      assert.equal(llm instanceof ChatOpenAI, true)
-      assert.equal(model.model, 'glm-5:cloud')
-      assert.equal(model.clientConfig?.baseURL, 'http://localhost:11434/v1')
-      assert.equal(model.timeout, OPENAI_COMPAT_MODEL_TIMEOUT_MS)
-      assert.equal(model.caller?.maxRetries, OPENAI_COMPAT_MODEL_MAX_RETRIES)
-    } finally {
-      if (originalKey === undefined) delete process.env.OLLAMA_API_KEY
-      else process.env.OLLAMA_API_KEY = originalKey
-    }
-  })
+  assert.equal(resolved.provider, 'ollama')
+  assert.equal(resolved.model, 'phi4')
 })

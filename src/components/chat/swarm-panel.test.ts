@@ -269,6 +269,6 @@ describe('parseSwarmStatusOutput', () => {
     assert.equal(result.members[0].agentName, 'Researcher')
     assert.equal(result.members[0].task, 'Research APIs')
     assert.equal(result.members[1].resultPreview, 'Module ready')
-    assert.equal(result.parentAgentName, 'Orchestrator')
+    assert.equal(result.parentAgentName, 'Delegator')
   })
 })

@@ -57,9 +57,9 @@ export async function runDailyConsolidation(): Promise<{
         ...memoryLines,
       ].join('\n')
 
-      // Use the configured LangGraph (utility) provider
+      // Use the target agent's configured generation provider
       const { buildLLM } = await import('@/lib/server/build-llm')
-      const { llm } = await buildLLM()
+      const { llm } = await buildLLM({ agentId })
 
       const response = await llm.invoke([new HumanMessage(prompt)])
       const digestContent = typeof response.content === 'string'

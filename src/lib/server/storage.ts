@@ -288,6 +288,24 @@ function normalizeStoredRecord(table: string, value: unknown): unknown {
       agent.plugins = agent.tools
       delete agent.tools
     }
+    const legacyAssignScope = agent.platformAssignScope === 'all' || agent.platformAssignScope === 'self'
+      ? agent.platformAssignScope
+      : null
+    const legacyTargetIds = Array.isArray(agent.subAgentIds)
+      ? agent.subAgentIds.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      : []
+    if (typeof agent.delegationEnabled !== 'boolean') {
+      agent.delegationEnabled = legacyAssignScope === 'all'
+    }
+    if (agent.delegationTargetMode !== 'all' && agent.delegationTargetMode !== 'selected') {
+      agent.delegationTargetMode = legacyTargetIds.length > 0 ? 'selected' : 'all'
+    }
+    if (!Array.isArray(agent.delegationTargetAgentIds)) {
+      agent.delegationTargetAgentIds = legacyTargetIds
+    }
+    delete agent.platformAssignScope
+    delete agent.subAgentIds
+    delete agent.isOrchestrator
     agent.sandboxConfig = normalizeAgentSandboxConfig(agent.sandboxConfig)
     return agent
   }
@@ -925,7 +943,7 @@ if (!IS_BUILD_BOOTSTRAP) {
       description: 'A general-purpose AI assistant',
       provider: 'claude-cli',
       model: '',
-      systemPrompt: `You are the SwarmClaw assistant. SwarmClaw is a self-hosted AI orchestration control plane.
+      systemPrompt: `You are the SwarmClaw assistant. SwarmClaw is a self-hosted AI runtime for autonomous agents.
 
 ## Platform
 
@@ -956,13 +974,13 @@ Use your platform management tools proactively:
 You have opinions about good agent design. You suggest creative approaches, warn about common pitfalls, and get excited when someone gets something cool working. You're not a manual — you're a collaborator.
 
 Be concise but not curt. Warmth doesn't require verbosity. When someone asks "how do I...?", give them the direct steps. Offer to do things rather than just explaining — if someone wants an agent created, create it. Use your tools when actions speak louder than words. If you don't know something, say so honestly.`,
-      isOrchestrator: true,
       plugins: defaultStarterTools,
       heartbeatEnabled: true,
-      platformAssignScope: 'all',
+      delegationEnabled: true,
+      delegationTargetMode: 'all',
+      delegationTargetAgentIds: [],
       skillIds: [],
       autoDraftSkillSuggestions: true,
-      subAgentIds: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
@@ -979,12 +997,11 @@ Be concise but not curt. Warmth doesn't require verbosity. When someone asks "ho
           delete existing.tools
           existing.updatedAt = Date.now()
         }
-        if (existing.platformAssignScope === 'all' || existing.platformAssignScope === 'self') {
-          const derivedIsOrchestrator = existing.platformAssignScope === 'all'
-          if (existing.isOrchestrator !== derivedIsOrchestrator) {
-            existing.isOrchestrator = derivedIsOrchestrator
-            existing.updatedAt = Date.now()
-          }
+        const beforeNormalize = JSON.stringify(existing)
+        const normalized = normalizeStoredRecord('agents', structuredClone(existing)) as Record<string, unknown>
+        if (beforeNormalize !== JSON.stringify(normalized)) {
+          Object.assign(existing, normalized)
+          existing.updatedAt = Date.now()
         }
         if (existing.autoDraftSkillSuggestions !== false && existing.autoDraftSkillSuggestions !== true) {
           existing.autoDraftSkillSuggestions = true
@@ -1421,7 +1438,7 @@ export function loadPublicSettings(): Record<string, any> {
   return settings
 }
 
-// --- Secrets (service keys for orchestrators) ---
+// --- Secrets (service keys for agents and integrations) ---
 const secretsStore = createCollectionStore('secrets')
 export const loadSecrets = secretsStore.load
 export const saveSecrets = secretsStore.save
