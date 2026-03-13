@@ -33,6 +33,10 @@ import { truncateToolResultText, calculateMaxToolResultChars } from '@/lib/serve
 import type { LoopDetectionResult } from '@/lib/server/tool-loop-detection'
 import { isCurrentThreadRecallRequest } from '@/lib/server/memory/memory-policy'
 import {
+  buildSessionMemoryScopeFilter,
+  resolveEffectiveSessionMemoryScopeMode,
+} from '@/lib/server/memory/session-memory-scope'
+import {
   isBroadGoal,
   looksLikeExternalWalletTask,
   looksLikeBoundedExternalExecutionTask,
@@ -58,6 +62,7 @@ import {
   getExplicitRequiredToolNames,
   getWalletApprovalBoundaryAction,
   isWalletSimulationResult,
+  pruneIncompleteToolEvents,
   resolveToolAction,
   shouldForceExternalServiceSummary,
   shouldTerminateOnSuccessfulMemoryMutation,
@@ -89,6 +94,7 @@ export {
   getExplicitRequiredToolNames,
   isWalletSimulationResult,
   looksLikeOpenEndedDeliverableTask,
+  pruneIncompleteToolEvents,
   shouldForceExternalExecutionKickoffFollowthrough,
   shouldForceRecoverableToolErrorFollowthrough,
   shouldForceExternalExecutionFollowthrough,
@@ -636,7 +642,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     agentMcpServerIds = agent?.mcpServerIds
     agentMcpDisabledTools = agent?.mcpDisabledTools
     agentHeartbeatEnabled = agent?.heartbeatEnabled === true
-    agentMemoryScopeMode = agent?.memoryScopeMode || null
+    agentMemoryScopeMode = resolveEffectiveSessionMemoryScopeMode(session, agent?.memoryScopeMode || null)
     agentResponseStyle = agent?.responseStyle || null
     agentResponseMaxChars = agent?.responseMaxChars || null
     if (!hasProvidedSystemPrompt) {
@@ -816,7 +822,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
         const { getMemoryDb } = await import('@/lib/server/memory/memory-db')
         const memDb = getMemoryDb()
         const recalled = memDb.search(message, session.agentId, {
-          scope: { mode: agentForMemory.memoryScopeMode || 'auto', agentId: session.agentId },
+          scope: buildSessionMemoryScopeFilter(session, agentForMemory?.memoryScopeMode || null, activeProjectContext.projectRoot),
         })
         const topRecalled = recalled.slice(0, 3)
         if (topRecalled.length > 0) {
@@ -1296,7 +1302,6 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       const toolEventTracker = new LangGraphToolEventTracker()
       const toolPerfEnds = new Map<string, (extra?: Record<string, unknown>) => number>()
       const iterationInputMessages = pendingGraphMessages
-      let iterationSucceeded = false
       const eventStream = agent.streamEvents(
         { messages: iterationInputMessages },
         {
@@ -1550,7 +1555,6 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
             }
           }
         }
-        iterationSucceeded = true
       } catch (innerErr: unknown) {
         const errName = innerErr instanceof Error ? innerErr.constructor.name : ''
         const errMsg = idleTimedOut
@@ -1660,6 +1664,13 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       }
 
       if (reachedExecutionBoundary) break
+
+      if (terminalToolResponse) {
+        const completedToolEvents = pruneIncompleteToolEvents(streamedToolEvents)
+        streamedToolEvents.length = 0
+        streamedToolEvents.push(...completedToolEvents)
+        break
+      }
 
       if (!shouldContinue
         && toolEventTracker.pendingCount > 0

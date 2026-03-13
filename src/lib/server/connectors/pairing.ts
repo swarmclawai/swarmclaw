@@ -1,9 +1,17 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { WhatsAppApprovedContact } from '@/types'
+import { normalizeSenderId, senderMatchesAnyEntry } from '@/lib/connectors/sender-id'
+import type { ConnectorDmAddressingMode, WhatsAppApprovedContact } from '@/types'
 import { CONNECTORS_DATA_DIR } from '../data-dir'
 import { safeJsonParseObject } from '../json-utils'
+
+export {
+  findMatchingSenderEntry,
+  normalizeSenderId,
+  senderIdVariants,
+  senderMatchesAnyEntry,
+} from '@/lib/connectors/sender-id'
 
 const STORE_VERSION = 1
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000
@@ -26,35 +34,20 @@ export interface PairingRequest {
   updatedAt: number
 }
 
+export interface SenderAddressingOverride {
+  senderId: string
+  dmAddressingMode: ConnectorDmAddressingMode
+}
+
 interface ConnectorPairingState {
   allowedSenderIds: string[]
   pending: PairingRequest[]
+  senderAddressingOverrides: SenderAddressingOverride[]
 }
 
 interface PairingStore {
   version: number
   connectors: Record<string, ConnectorPairingState>
-}
-
-function normalizeSenderId(value: string): string {
-  return value.trim().toLowerCase()
-}
-
-function senderIdVariants(value: string): string[] {
-  const normalized = normalizeSenderId(value)
-  if (!normalized) return []
-
-  const variants = new Set<string>([normalized])
-  const jidUser = normalized.split('@')[0]?.split(':')[0]?.trim()
-  if (jidUser) variants.add(jidUser)
-
-  const digits = normalized.replace(/[^\d]/g, '')
-  if (digits) {
-    variants.add(digits)
-    variants.add(`${digits}@s.whatsapp.net`)
-  }
-
-  return [...variants]
 }
 
 function dedupe(items: string[]): string[] {
@@ -96,6 +89,20 @@ function prunePending(entries: PairingRequest[]): PairingRequest[] {
   }).slice(-MAX_PENDING_PER_CONNECTOR)
 }
 
+function dedupeSenderAddressingOverrides(entries: SenderAddressingOverride[]): SenderAddressingOverride[] {
+  const out: SenderAddressingOverride[] = []
+  for (const entry of entries) {
+    const normalizedSenderId = normalizeSenderId(entry.senderId)
+    const dmAddressingMode = parseDmAddressingMode(entry.dmAddressingMode, 'open')
+    if (!normalizedSenderId) continue
+    const existingIndex = out.findIndex((item) => senderMatchesAnyEntry(normalizedSenderId, [item.senderId]))
+    const nextEntry = { senderId: normalizedSenderId, dmAddressingMode }
+    if (existingIndex >= 0) out[existingIndex] = nextEntry
+    else out.push(nextEntry)
+  }
+  return out
+}
+
 function emptyStore(): PairingStore {
   return { version: STORE_VERSION, connectors: {} }
 }
@@ -115,7 +122,17 @@ function loadStore(): PairingStore {
       const state = value as Partial<ConnectorPairingState>
       const allowedSenderIds = dedupe(Array.isArray(state.allowedSenderIds) ? state.allowedSenderIds.map(String) : [])
       const pending = prunePending(Array.isArray(state.pending) ? state.pending as PairingRequest[] : [])
-      normalized.connectors[connectorId] = { allowedSenderIds, pending }
+      const senderAddressingOverrides = dedupeSenderAddressingOverrides(
+        Array.isArray(state.senderAddressingOverrides)
+          ? state.senderAddressingOverrides
+            .filter((entry): entry is Partial<SenderAddressingOverride> => !!entry && typeof entry === 'object')
+            .map((entry) => ({
+              senderId: String(entry.senderId || ''),
+              dmAddressingMode: parseDmAddressingMode(entry.dmAddressingMode, 'open'),
+            }))
+          : [],
+      )
+      normalized.connectors[connectorId] = { allowedSenderIds, pending, senderAddressingOverrides }
     }
     return normalized
   } catch {
@@ -134,11 +151,13 @@ function ensureConnectorState(store: PairingStore, connectorId: string): Connect
   if (existing) {
     existing.allowedSenderIds = dedupe(existing.allowedSenderIds || [])
     existing.pending = prunePending(existing.pending || [])
+    existing.senderAddressingOverrides = dedupeSenderAddressingOverrides(existing.senderAddressingOverrides || [])
     return existing
   }
   const created: ConnectorPairingState = {
     allowedSenderIds: [],
     pending: [],
+    senderAddressingOverrides: [],
   }
   store.connectors[connectorId] = created
   return created
@@ -162,6 +181,16 @@ export function parsePairingPolicy(value: unknown, fallback: PairingPolicy = 'op
   if (normalized === 'open' || normalized === 'allowlist' || normalized === 'pairing' || normalized === 'disabled') {
     return normalized
   }
+  return fallback
+}
+
+export function parseDmAddressingMode(
+  value: unknown,
+  fallback: ConnectorDmAddressingMode = 'open',
+): ConnectorDmAddressingMode {
+  if (typeof value !== 'string') return fallback
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'open' || normalized === 'addressed') return normalized
   return fallback
 }
 
@@ -208,22 +237,44 @@ export function listPendingPairingRequests(connectorId: string): PairingRequest[
   return state.pending.slice().sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+export function listSenderAddressingOverrides(connectorId: string): SenderAddressingOverride[] {
+  const store = loadStore()
+  const state = ensureConnectorState(store, connectorId)
+  return state.senderAddressingOverrides.slice()
+}
+
 export function addAllowedSender(connectorId: string, senderId: string): { added: boolean; normalized: string } {
   const normalized = normalizeSenderId(senderId)
   if (!normalized) return { added: false, normalized }
 
   const store = loadStore()
   const state = ensureConnectorState(store, connectorId)
-  const hasExisting = state.allowedSenderIds.includes(normalized)
+  const hasExisting = senderMatchesAnyEntry(normalized, state.allowedSenderIds)
   if (!hasExisting) {
     state.allowedSenderIds.push(normalized)
+    state.allowedSenderIds = dedupe(state.allowedSenderIds)
   }
 
   // Remove any pending requests for the same sender after approval.
-  state.pending = state.pending.filter((entry) => normalizeSenderId(entry.senderId) !== normalized)
+  state.pending = state.pending.filter((entry) => !senderMatchesAnyEntry(normalized, [entry.senderId]))
 
   saveStore(store)
   return { added: !hasExisting, normalized }
+}
+
+export function removeAllowedSender(connectorId: string, senderId: string): { removed: boolean; normalized: string } {
+  const normalized = normalizeSenderId(senderId)
+  if (!normalized) return { removed: false, normalized }
+
+  const store = loadStore()
+  const state = ensureConnectorState(store, connectorId)
+  const nextAllowed = state.allowedSenderIds.filter((entry) => !senderMatchesAnyEntry(normalized, [entry]))
+  const removed = nextAllowed.length !== state.allowedSenderIds.length
+  if (removed) {
+    state.allowedSenderIds = nextAllowed
+    saveStore(store)
+  }
+  return { removed, normalized }
 }
 
 export function createOrTouchPairingRequest(params: {
@@ -294,24 +345,100 @@ export function approvePairingCode(connectorId: string, codeRaw: string): {
   }
 }
 
+export function findPendingPairingRequest(connectorId: string, senderId: string): PairingRequest | null {
+  const normalized = normalizeSenderId(senderId)
+  if (!normalized) return null
+  const store = loadStore()
+  const state = ensureConnectorState(store, connectorId)
+  return state.pending.find((entry) => senderMatchesAnyEntry(normalized, [entry.senderId])) || null
+}
+
+export function approvePendingSender(connectorId: string, senderId: string): {
+  ok: boolean
+  senderId?: string
+  senderName?: string
+  reason?: string
+} {
+  const pending = findPendingPairingRequest(connectorId, senderId)
+  if (!pending) return { ok: false, reason: 'Pending request not found or expired' }
+  return approvePairingCode(connectorId, pending.code)
+}
+
+export function rejectPendingSender(connectorId: string, senderId: string): { removed: boolean; normalized: string } {
+  const normalized = normalizeSenderId(senderId)
+  if (!normalized) return { removed: false, normalized }
+
+  const store = loadStore()
+  const state = ensureConnectorState(store, connectorId)
+  const nextPending = state.pending.filter((entry) => !senderMatchesAnyEntry(normalized, [entry.senderId]))
+  const removed = nextPending.length !== state.pending.length
+  if (removed) {
+    state.pending = nextPending
+    saveStore(store)
+  }
+  return { removed, normalized }
+}
+
+export function getSenderAddressingOverride(
+  connectorId: string,
+  senderId: string | string[],
+): ConnectorDmAddressingMode | null {
+  const senderIds = Array.isArray(senderId) ? senderId : [senderId]
+  const normalizedIds = senderIds.map((entry) => normalizeSenderId(entry)).filter(Boolean)
+  if (normalizedIds.length === 0) return null
+  const store = loadStore()
+  const state = ensureConnectorState(store, connectorId)
+  const match = state.senderAddressingOverrides.find((entry) => senderMatchesAnyEntry(normalizedIds, [entry.senderId]))
+  return match?.dmAddressingMode || null
+}
+
+export function setSenderAddressingOverride(
+  connectorId: string,
+  senderId: string,
+  dmAddressingMode: ConnectorDmAddressingMode,
+): { changed: boolean; normalized: string } {
+  const normalized = normalizeSenderId(senderId)
+  if (!normalized) return { changed: false, normalized }
+
+  const store = loadStore()
+  const state = ensureConnectorState(store, connectorId)
+  const nextMode = parseDmAddressingMode(dmAddressingMode, 'open')
+  const existingIndex = state.senderAddressingOverrides.findIndex((entry) => senderMatchesAnyEntry(normalized, [entry.senderId]))
+  if (existingIndex >= 0 && state.senderAddressingOverrides[existingIndex]?.dmAddressingMode === nextMode) {
+    return { changed: false, normalized }
+  }
+  if (existingIndex >= 0) state.senderAddressingOverrides[existingIndex] = { senderId: normalized, dmAddressingMode: nextMode }
+  else state.senderAddressingOverrides.push({ senderId: normalized, dmAddressingMode: nextMode })
+  state.senderAddressingOverrides = dedupeSenderAddressingOverrides(state.senderAddressingOverrides)
+  saveStore(store)
+  return { changed: true, normalized }
+}
+
+export function clearSenderAddressingOverride(connectorId: string, senderId: string): { removed: boolean; normalized: string } {
+  const normalized = normalizeSenderId(senderId)
+  if (!normalized) return { removed: false, normalized }
+
+  const store = loadStore()
+  const state = ensureConnectorState(store, connectorId)
+  const nextOverrides = state.senderAddressingOverrides.filter((entry) => !senderMatchesAnyEntry(normalized, [entry.senderId]))
+  const removed = nextOverrides.length !== state.senderAddressingOverrides.length
+  if (removed) {
+    state.senderAddressingOverrides = nextOverrides
+    saveStore(store)
+  }
+  return { removed, normalized }
+}
+
 export function isSenderAllowed(params: {
   connectorId: string
   senderId: string
   configAllowFrom?: string[]
 }): boolean {
-  const senderVariants = new Set(senderIdVariants(params.senderId))
-  if (senderVariants.size === 0) return false
-
-  const configMatches = (params.configAllowFrom || []).some((item) =>
-    senderIdVariants(item).some((variant) => senderVariants.has(variant)),
-  )
-  if (configMatches) return true
+  if (senderMatchesAnyEntry(params.senderId, params.configAllowFrom || [])) return true
 
   const store = loadStore()
   const state = ensureConnectorState(store, params.connectorId)
-  return state.allowedSenderIds.some((item) =>
-    senderIdVariants(item).some((variant) => senderVariants.has(variant)),
-  )
+  return senderMatchesAnyEntry(params.senderId, state.allowedSenderIds)
 }
 
 export function clearConnectorPairingState(connectorId: string): void {

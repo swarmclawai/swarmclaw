@@ -13,6 +13,10 @@ import {
   translateRequestedToolInvocation,
 } from '@/lib/server/chat-execution/chat-execution'
 import {
+  shouldReplaceRecentConnectorFollowupMessage,
+  shouldSuppressRedundantConnectorDeliveryFollowup,
+} from '@/lib/server/chat-execution/chat-execution-utils'
+import {
   buildToolDisciplineLines,
   getExplicitRequiredToolNames,
   looksLikeOpenEndedDeliverableTask,
@@ -467,6 +471,52 @@ describe('reconcileConnectorDeliveryText advanced', () => {
     ]
     const text = 'The connector returned an error.'
     assert.equal(reconcileConnectorDeliveryText(text, events), text)
+  })
+})
+
+describe('connector follow-up persistence guards', () => {
+  it('replaces repeated connector completion summaries when neither message has tool evidence', () => {
+    assert.equal(
+      shouldReplaceRecentConnectorFollowupMessage({
+        previous: {
+          role: 'assistant',
+          text: 'Sent voice notes to both Mom and Gran.',
+          kind: 'chat',
+          time: Date.now(),
+          toolEvents: [],
+        },
+        nextText: 'Task complete. Both voice notes delivered successfully.',
+        nextToolEvents: [],
+        nextKind: 'chat',
+        now: Date.now() + 1000,
+      }),
+      true,
+    )
+  })
+
+  it('suppresses connector follow-up summaries after a verified delivery already exists', () => {
+    assert.equal(
+      shouldSuppressRedundantConnectorDeliveryFollowup({
+        previous: {
+          role: 'assistant',
+          text: "I've successfully sent the update to your WhatsApp.",
+          kind: 'chat',
+          time: Date.now(),
+          toolEvents: [
+            {
+              name: 'connector_message_tool',
+              input: '{"action":"send"}',
+              output: '{"status":"sent","messageId":"abc"}',
+            },
+          ],
+        },
+        nextText: 'Task complete. The WhatsApp voice note was sent.',
+        nextToolEvents: [],
+        nextKind: 'chat',
+        now: Date.now() + 1000,
+      }),
+      true,
+    )
   })
 })
 

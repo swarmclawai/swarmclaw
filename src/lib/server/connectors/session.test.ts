@@ -327,6 +327,7 @@ describe('connectors/session', () => {
         channelId: 'tg-ch-1',
         senderId: 'tg-user-1',
         senderName: 'TG User',
+        senderAvatarUrl: 'https://example.com/tg-user.png',
         text: 'hi',
         isGroup: true,
         threadId: 'thread-42',
@@ -339,7 +340,9 @@ describe('connectors/session', () => {
       assert.equal(session.connectorContext?.channelId, 'tg-ch-1')
       assert.equal(session.connectorContext?.senderId, 'tg-user-1')
       assert.equal(session.connectorContext?.senderName, 'TG User')
+      assert.equal(session.connectorContext?.senderAvatarUrl, 'https://example.com/tg-user.png')
       assert.equal(session.connectorContext?.isGroup, true)
+      assert.equal(session.connectorContext?.isOwnerConversation, false)
       assert.equal(session.connectorContext?.threadId, 'thread-42')
       assert.ok(typeof session.connectorContext?.lastInboundAt === 'number')
     })
@@ -394,6 +397,7 @@ describe('connectors/session', () => {
       assert.equal(result.session.agentId, 'agent-new')
       assert.equal(result.session.provider, 'anthropic')
       assert.equal(result.session.model, 'claude-3')
+      assert.equal(result.session.memoryScopeMode, 'session')
       assert.ok(result.sessionKey.includes('connector:'))
     })
 
@@ -433,6 +437,136 @@ describe('connectors/session', () => {
       const second = mod.resolveDirectSession({ connector, msg, agent })
       assert.equal(second.wasCreated, false)
       assert.equal(second.session.id, first.session.id)
+    })
+
+    it('routes owner conversations to the agent thread session instead of a direct connector session', () => {
+      const now = Date.now()
+      storage.upsertStoredItem('agents', 'agent-owner', {
+        id: 'agent-owner',
+        name: 'Owner Agent',
+        provider: 'anthropic',
+        model: 'claude-3',
+        plugins: [],
+        threadSessionId: 'agent-thread-owner',
+        createdAt: now,
+      })
+      storage.saveSessions({
+        'agent-thread-owner': {
+          id: 'agent-thread-owner',
+          name: 'Owner Agent',
+          cwd: process.env.WORKSPACE_DIR || '',
+          user: 'default',
+          provider: 'anthropic',
+          model: 'claude-3',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'agent-owner',
+          plugins: [],
+        },
+      })
+
+      const connector = {
+        id: 'conn-owner',
+        name: 'Owner WhatsApp',
+        platform: 'whatsapp' as const,
+        agentId: 'agent-owner',
+        config: {},
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      } as unknown as Connector
+      const msg = {
+        platform: 'whatsapp',
+        channelId: '15550001111@s.whatsapp.net',
+        senderId: '15550001111@s.whatsapp.net',
+        senderName: 'Wayde',
+        text: 'hello from self chat',
+        isOwnerConversation: true,
+      }
+      const agent = {
+        id: 'agent-owner',
+        name: 'Owner Agent',
+        provider: 'anthropic' as const,
+        model: 'claude-3',
+        plugins: [],
+        threadSessionId: 'agent-thread-owner',
+        createdAt: now,
+      } as unknown as Agent
+
+      const result = mod.resolveDirectSession({ connector, msg, agent })
+
+      assert.equal(result.session.id, 'agent-thread-owner')
+      assert.equal(result.session.user, 'default')
+      assert.equal(result.session.connectorContext?.isOwnerConversation, true)
+      assert.equal(result.session.connectorContext?.scope, 'main')
+    })
+  })
+
+  describe('pushSessionMessage', () => {
+    it('does not mirror external connector transcript entries into the main agent thread', () => {
+      const now = Date.now()
+      storage.upsertStoredItem('agents', 'agent-mirror', {
+        id: 'agent-mirror',
+        name: 'Mirror Agent',
+        provider: 'anthropic',
+        model: 'claude-3',
+        plugins: [],
+        threadSessionId: 'agent-thread-mirror',
+        createdAt: now,
+      })
+      storage.saveSessions({
+        'agent-thread-mirror': {
+          id: 'agent-thread-mirror',
+          name: 'Mirror Agent',
+          cwd: process.env.WORKSPACE_DIR || '',
+          user: 'default',
+          provider: 'anthropic',
+          model: 'claude-3',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'agent-mirror',
+          plugins: [],
+        },
+      })
+
+      const session = {
+        id: 'connector-session',
+        name: 'connector:conn-owner:agent:agent-mirror:channel:15550001111@s.whatsapp.net:peer:15550001111@s.whatsapp.net',
+        user: 'connector',
+        provider: 'anthropic' as const,
+        model: 'claude-3',
+        messages: [],
+        createdAt: now,
+        lastActiveAt: now,
+        agentId: 'agent-mirror',
+        connectorContext: {
+          connectorId: 'conn-owner',
+          senderId: '15550001111@s.whatsapp.net',
+          senderName: 'Alice',
+          isOwnerConversation: false,
+        },
+      } as unknown as Session
+
+      mod.pushSessionMessage(session, 'user', 'hello there', {
+        source: {
+          platform: 'whatsapp',
+          connectorId: 'conn-owner',
+          channelId: '15550001111@s.whatsapp.net',
+          senderId: '15550001111@s.whatsapp.net',
+          senderName: 'Alice',
+          messageId: 'msg-1',
+        },
+      })
+
+      const thread = storage.loadStoredItem('sessions', 'agent-thread-mirror') as Session
+      assert.equal(session.messages.length, 1)
+      assert.equal(thread.messages.length, 0)
     })
   })
 

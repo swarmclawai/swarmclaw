@@ -29,6 +29,9 @@ const WHATSAPP_SINGLE_MESSAGE_MAX = 4096
 const WHATSAPP_TEXT_CHUNK_MAX = 4000
 const WHATSAPP_VOICE_NOTE_MIME = 'audio/ogg; codecs=opus'
 const WHATSAPP_VOICE_NOTE_EXTS = new Set(['.ogg', '.opus'])
+const WHATSAPP_PROFILE_PICTURE_TTL_MS = 6 * 60 * 60 * 1000
+const WHATSAPP_PROFILE_PICTURE_MISS_TTL_MS = 15 * 60 * 1000
+const WHATSAPP_PROFILE_PICTURE_TIMEOUT_MS = 1_500
 
 let cachedFfmpegBinary: string | null | undefined
 
@@ -44,6 +47,15 @@ type WhatsAppSocketState = {
 type WhatsAppPresenceSocket = {
   sendPresenceUpdate?: (state: 'composing' | 'paused', jid: string) => Promise<unknown>
 } | null
+
+type WhatsAppProfilePictureSocket = {
+  profilePictureUrl?: (jid: string, type?: 'preview' | 'image', timeoutMs?: number) => Promise<string | undefined>
+} | null
+
+type WhatsAppProfilePictureCacheEntry = {
+  url: string | null
+  expiresAt: number
+}
 
 export function buildWhatsAppTextPayloads(text: string): Array<{ text: string; linkPreview: null }> {
   const chunks = text.length <= WHATSAPP_SINGLE_MESSAGE_MAX
@@ -81,6 +93,52 @@ export async function sendWhatsAppTypingPresence(params: {
   const sendPresenceUpdate = params.socket?.sendPresenceUpdate
   if (typeof sendPresenceUpdate !== 'function') return
   await sendPresenceUpdate('composing', channelId)
+}
+
+async function resolveWhatsAppProfilePictureUrl(params: {
+  socket: WhatsAppProfilePictureSocket
+  senderIds: string[]
+  cache: Map<string, WhatsAppProfilePictureCacheEntry>
+  now?: number
+}): Promise<string | null> {
+  const senderIds = dedup(params.senderIds.map((value) => String(value || '').trim()).filter(Boolean))
+  if (senderIds.length === 0) return null
+  const profilePictureUrl = params.socket?.profilePictureUrl
+  if (typeof profilePictureUrl !== 'function') return null
+
+  const now = params.now ?? Date.now()
+  for (const senderId of senderIds) {
+    const cached = params.cache.get(senderId)
+    if (cached && cached.expiresAt > now) {
+      if (cached.url) return cached.url
+      continue
+    }
+  }
+
+  for (const senderId of senderIds) {
+    try {
+      const url = await profilePictureUrl(senderId, 'preview', WHATSAPP_PROFILE_PICTURE_TIMEOUT_MS)
+      const trimmed = typeof url === 'string' ? url.trim() : ''
+      if (trimmed) {
+        const expiresAt = now + WHATSAPP_PROFILE_PICTURE_TTL_MS
+        for (const candidate of senderIds) {
+          params.cache.set(candidate, { url: trimmed, expiresAt })
+        }
+        return trimmed
+      }
+      params.cache.set(senderId, {
+        url: null,
+        expiresAt: now + WHATSAPP_PROFILE_PICTURE_MISS_TTL_MS,
+      })
+    } catch {
+      params.cache.set(senderId, {
+        url: null,
+        expiresAt: now + WHATSAPP_PROFILE_PICTURE_MISS_TTL_MS,
+      })
+    }
+  }
+
+  return null
 }
 
 function normalizeMimeType(mimeType?: string): string {
@@ -269,6 +327,7 @@ export function buildWhatsAppInboundMessage(params: {
   msg: WAMessage
   media?: NonNullable<InboundMessage['media']>
   selfJids?: string[]
+  isOwnerConversation?: boolean
 }): InboundMessage | null {
   const { msg } = params
   const media = Array.isArray(params.media) ? params.media : []
@@ -321,6 +380,7 @@ export function buildWhatsAppInboundMessage(params: {
       ? contextInfo.stanzaId.trim()
       : undefined,
     mentionsBot,
+    isOwnerConversation: params.isOwnerConversation === true,
   }
 }
 
@@ -355,6 +415,7 @@ const whatsapp: PlatformConnector = {
     let connectionState: string | null = 'connecting'
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     const seenInboundMessageIds = new Map<string, number>()
+    const profilePictureCache = new Map<string, WhatsAppProfilePictureCacheEntry>()
 
     const clearReconnectTimer = () => {
       if (!reconnectTimer) return
@@ -664,8 +725,16 @@ const whatsapp: PlatformConnector = {
             sock?.user?.id || '',
             sock?.user?.lid || '',
           ].filter(Boolean)
-          const inbound = buildWhatsAppInboundMessage({ msg, media, selfJids })
+          const inbound = buildWhatsAppInboundMessage({ msg, media, selfJids, isOwnerConversation: isSelfChat })
           if (!inbound) continue
+
+          if (!inbound.isGroup) {
+            inbound.senderAvatarUrl = await resolveWhatsAppProfilePictureUrl({
+              socket: sock as WhatsAppProfilePictureSocket,
+              senderIds: [inbound.senderIdAlt || '', inbound.senderId],
+              cache: profilePictureCache,
+            }) || undefined
+          }
 
           console.log(`[whatsapp] Message from ${inbound.senderName} (${jid}): ${inbound.text.slice(0, 80)}`)
 

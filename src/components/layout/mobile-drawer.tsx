@@ -117,7 +117,7 @@ export function MobileDrawer({
         <div className="px-4 pb-3 shrink-0 max-h-[260px] overflow-y-auto">
           <div className="space-y-4">
             {([
-              { label: 'Workspace', views: ['agents', 'chatrooms', 'projects'] as AppView[] },
+              { label: 'Workspace', views: ['agents', 'inbox', 'chatrooms', 'projects'] as AppView[] },
               { label: 'Execution', views: ['tasks', 'schedules', 'memory', 'runs'] as AppView[] },
               { label: 'Knowledge', views: ['knowledge', 'skills', 'connectors', 'webhooks', 'mcp_servers', 'plugins'] as AppView[] },
               { label: 'System', views: ['secrets', 'providers', 'usage', 'logs'] as AppView[] },
@@ -174,7 +174,7 @@ export function MobileDrawer({
             )}
           </div>
         </div>
-        {activeView !== 'logs' && activeView !== 'usage' && activeView !== 'runs' && activeView !== 'settings' && (
+        {activeView !== 'inbox' && activeView !== 'logs' && activeView !== 'usage' && activeView !== 'runs' && activeView !== 'settings' && (
           <div className="px-4 py-2.5 shrink-0">
             <button
               onClick={() => {

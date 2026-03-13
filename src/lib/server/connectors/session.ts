@@ -3,6 +3,7 @@ import { getProvider } from '@/lib/providers'
 import type { Agent, Connector, MessageSource, Session } from '@/types'
 import { WORKSPACE_DIR } from '../data-dir'
 import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
+import { resolveEffectiveSessionMemoryScopeMode } from '@/lib/server/memory/session-memory-scope'
 import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
 import { loadAgents, loadSessions, loadStoredItem, upsertStoredItem } from '../storage'
 import { notify } from '../ws-hub'
@@ -92,6 +93,7 @@ export function updateSessionConnectorContext(
     senderId: msg.senderId,
     senderIdAlt: msg.senderIdAlt || session.connectorContext?.senderIdAlt || null,
     senderName: msg.senderName,
+    senderAvatarUrl: msg.senderAvatarUrl || session.connectorContext?.senderAvatarUrl || null,
     sessionKey,
     peerKey: msg.senderIdAlt || msg.senderId,
     scope: policy.scope,
@@ -104,6 +106,7 @@ export function updateSessionConnectorContext(
     threadParentChannelId: msg.threadParentChannelId || session.connectorContext?.threadParentChannelId || null,
     threadParentChannelName: msg.threadParentChannelName || session.connectorContext?.threadParentChannelName || null,
     isGroup: !!msg.isGroup,
+    isOwnerConversation: msg.isOwnerConversation === true,
     lastInboundAt: Date.now(),
     lastInboundMessageId: msg.messageId || null,
     lastInboundReplyToMessageId: msg.replyToMessageId || null,
@@ -277,6 +280,24 @@ export function resolveDirectSession(params: {
   agent: ConnectorAgent
 }): ResolvedDirectSession {
   const { connector, msg, agent } = params
+  if (msg.isOwnerConversation) {
+    const existingThreadId = typeof agent.threadSessionId === 'string' ? agent.threadSessionId : ''
+    const existingThreadSession = existingThreadId
+      ? loadStoredItem('sessions', existingThreadId) as ConnectorSession | null
+      : null
+    const threadSession = ensureAgentThreadSession(agent.id) as ConnectorSession | null
+    if (!threadSession) {
+      throw new Error(`Failed to resolve main thread session for agent ${agent.id}`)
+    }
+    updateSessionConnectorContext(threadSession, connector, msg, threadSession.id)
+    persistSessionRecord(threadSession)
+    return {
+      session: threadSession,
+      sessionKey: threadSession.id,
+      wasCreated: !existingThreadSession,
+    }
+  }
+
   const policySeed = resolveConnectorSessionPolicy(connector, msg)
   const providerInfo = policySeed.providerOverride ? getProvider(policySeed.providerOverride) : null
   const defaultProvider: Session['provider'] = providerInfo?.id || (agent.provider === 'claude-cli' ? 'anthropic' : agent.provider)
@@ -327,6 +348,14 @@ export function resolveDirectSession(params: {
       sessionType: 'human' as const,
       agentId: agent.id,
       plugins: agent.plugins || agent.tools || [],
+      memoryScopeMode: resolveEffectiveSessionMemoryScopeMode({
+        id,
+        agentId: agent.id,
+        memoryScopeMode: agent.memoryScopeMode ?? null,
+        connectorContext: null,
+        name: sessionKey,
+        user: 'connector',
+      }, agent.memoryScopeMode ?? null),
       thinkingLevel: agent.thinkingLevel || null,
       connectorThinkLevel: policySeed.thinkingLevel || null,
     }
@@ -345,6 +374,7 @@ export function resolveDirectSession(params: {
   if ((session.connectorThinkLevel === undefined || session.connectorThinkLevel === null) && policySeed.thinkingLevel) {
     session.connectorThinkLevel = policySeed.thinkingLevel
   }
+  session.memoryScopeMode = resolveEffectiveSessionMemoryScopeMode(session, agent.memoryScopeMode ?? null)
 
   const policy = resolveConnectorSessionPolicy(connector, msg, session)
   const staleness = getConnectorSessionStaleness(session, policy)
@@ -374,6 +404,7 @@ function mirrorConnectorMessageToAgentThread(
 ): void {
   if (!session.agentId) return
   if (typeof session.name !== 'string' || !session.name.startsWith('connector:')) return
+  if (session.connectorContext?.isOwnerConversation !== true) return
 
   const agents = loadAgents()
   const agent = agents[session.agentId]

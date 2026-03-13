@@ -5,6 +5,7 @@ import { dedup } from '@/lib/shared-utils'
 import { getUsageSpendSince } from '@/lib/server/storage'
 import { pluginIdMatches } from '@/lib/server/tool-aliases'
 import { buildToolEventAssistantSummary } from '@/lib/chat/tool-event-summary'
+import { looksLikePositiveConnectorDeliveryText } from '@/lib/server/chat-execution/chat-execution-connector-delivery'
 
 export interface SessionWithTools {
   plugins?: string[] | null
@@ -212,6 +213,47 @@ export function shouldReplaceRecentAssistantMessage(params: {
   if (typeof previous.time === 'number' && now - previous.time > 45_000) return false
   const prevTools = Array.isArray(previous.toolEvents) ? previous.toolEvents.length : 0
   return prevTools === 0
+}
+
+function isEligibleRecentAssistantComparison(params: {
+  previous: Message | null | undefined
+  nextKind: Message['kind']
+  now: number
+}): params is { previous: Message; nextKind: Message['kind']; now: number } {
+  const { previous, nextKind, now } = params
+  if (!previous || previous.role !== 'assistant') return false
+  if (previous.kind && nextKind && previous.kind !== nextKind) return false
+  return !(typeof previous.time === 'number' && now - previous.time > 90_000)
+}
+
+export function shouldReplaceRecentConnectorFollowupMessage(params: {
+  previous: Message | null | undefined
+  nextText: string
+  nextToolEvents: MessageToolEvent[]
+  nextKind: Message['kind']
+  now: number
+}): boolean {
+  if (!isEligibleRecentAssistantComparison(params)) return false
+  const { previous, nextText, nextToolEvents } = params
+  const previousToolEvents = Array.isArray(previous.toolEvents) ? previous.toolEvents : []
+  if (previousToolEvents.length !== 0 || nextToolEvents.length !== 0) return false
+  return looksLikePositiveConnectorDeliveryText(previous.text || '', { requireConnectorContext: true })
+    && looksLikePositiveConnectorDeliveryText(nextText || '', { requireConnectorContext: true })
+}
+
+export function shouldSuppressRedundantConnectorDeliveryFollowup(params: {
+  previous: Message | null | undefined
+  nextText: string
+  nextToolEvents: MessageToolEvent[]
+  nextKind: Message['kind']
+  now: number
+}): boolean {
+  if (!isEligibleRecentAssistantComparison(params)) return false
+  const { previous, nextText, nextToolEvents } = params
+  const previousToolEvents = Array.isArray(previous.toolEvents) ? previous.toolEvents : []
+  if (previousToolEvents.length === 0 || nextToolEvents.length !== 0) return false
+  return looksLikePositiveConnectorDeliveryText(previous.text || '')
+    && looksLikePositiveConnectorDeliveryText(nextText || '', { requireConnectorContext: true })
 }
 
 export function hasPersistableAssistantPayload(text: string, thinking: string, toolEvents: MessageToolEvent[]): boolean {

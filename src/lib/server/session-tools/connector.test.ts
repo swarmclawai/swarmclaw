@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  buildConnectorTurnReplayKey,
   CONNECTOR_MESSAGE_TOOL_ACTIONS,
   CONNECTOR_MESSAGE_TOOL_PARAMETERS,
   inferConnectorActionName,
   normalizeConnectorActionInputAliases,
   normalizeConnectorActionName,
+  resolveConnectorVoiceId,
 } from './connector'
 import { getPluginManager } from '../plugins'
 import { buildSessionTools } from './index'
@@ -77,6 +79,63 @@ describe('connector_message_tool contract', () => {
         to: '199900000001@lid',
       },
     )
+  })
+
+  it('inherits the current agent ElevenLabs voice for connector voice notes when no explicit voiceId is passed', () => {
+    assert.equal(
+      resolveConnectorVoiceId({
+        sessionAgentId: 'agent-1',
+        getAgent: (id) => id === 'agent-1' ? { elevenLabsVoiceId: 'agent-voice-123' } : null,
+      }),
+      'agent-voice-123',
+    )
+
+    assert.equal(
+      resolveConnectorVoiceId({
+        explicitVoiceId: 'tool-voice-999',
+        sessionAgentId: 'agent-1',
+        getAgent: () => ({ elevenLabsVoiceId: 'agent-voice-123' }),
+      }),
+      'tool-voice-999',
+    )
+
+    assert.equal(
+      resolveConnectorVoiceId({
+        sessionAgentId: 'agent-1',
+        getAgent: () => ({ elevenLabsVoiceId: '   ' }),
+      }),
+      undefined,
+    )
+  })
+
+  it('uses a distinct same-turn replay key for different recipients and actions', () => {
+    const base = {
+      turnKey: 'session-1|1234',
+      connectorId: 'conn-1',
+      message: 'hello',
+    }
+
+    const lindaSend = buildConnectorTurnReplayKey({
+      ...base,
+      actionName: 'send_voice_note',
+      channelId: '27822644571@s.whatsapp.net',
+      voiceText: 'hello linda',
+    })
+    const carmenSend = buildConnectorTurnReplayKey({
+      ...base,
+      actionName: 'send_voice_note',
+      channelId: '27848402416@s.whatsapp.net',
+      voiceText: 'hello linda',
+    })
+    const lindaText = buildConnectorTurnReplayKey({
+      ...base,
+      actionName: 'send',
+      channelId: '27822644571@s.whatsapp.net',
+      message: 'plain text',
+    })
+
+    assert.notEqual(lindaSend, carmenSend)
+    assert.notEqual(lindaSend, lindaText)
   })
 
   it('treats raw id as messageId for message actions instead of as a target alias', () => {

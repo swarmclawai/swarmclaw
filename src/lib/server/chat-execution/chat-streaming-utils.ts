@@ -159,9 +159,12 @@ export function updateStreamedToolEvents(
   }
 }
 
+export function pruneIncompleteToolEvents(events: MessageToolEvent[]): MessageToolEvent[] {
+  return events.filter((event) => event.output !== undefined || event.error === true)
+}
+
 export function compactThreadRecallText(text: string, maxChars = 180): string {
   const compact = extractSuggestions(text || '').clean.replace(/\s+/g, ' ').trim()
   if (!compact) return ''
   return compact.length > maxChars ? `${compact.slice(0, maxChars - 3)}...` : compact
 }
-

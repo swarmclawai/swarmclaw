@@ -8,10 +8,11 @@ export async function register() {
     
     // One-time migration: backfill allKnownPeerIds on existing connector sessions
     try {
-      const { backfillAllKnownPeerIds } = await import('@/lib/server/connectors/session-consolidation')
+      const { backfillAllKnownPeerIds, pruneThreadConnectorMirrors } = await import('@/lib/server/connectors/session-consolidation')
       backfillAllKnownPeerIds()
+      pruneThreadConnectorMirrors()
     } catch (err) {
-      console.error('[instrumentation] backfillAllKnownPeerIds failed:', err)
+      console.error('[instrumentation] connector session consolidation failed:', err)
     }
 
     // In worker-only mode, we FORCE the daemon to start, but skip the WebSocket listener

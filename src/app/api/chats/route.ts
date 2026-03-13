@@ -22,6 +22,12 @@ async function ensureDaemonIfNeeded(source: string) {
 
 export async function GET(req: Request) {
   const endPerf = perf.start('api', 'GET /api/chats')
+  try {
+    const { pruneThreadConnectorMirrors } = await import('@/lib/server/connectors/session-consolidation')
+    pruneThreadConnectorMirrors()
+  } catch (err) {
+    console.error('[api/chats] pruneThreadConnectorMirrors failed:', err)
+  }
   const sessions = loadSessions()
   const changedSessionIds: string[] = []
   for (const id of Object.keys(sessions)) {

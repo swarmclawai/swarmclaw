@@ -115,7 +115,26 @@ test('buildWhatsAppInboundMessage includes modern WhatsApp metadata', () => {
   assert.equal(inbound?.replyToMessageId, 'quoted-1')
   assert.equal(inbound?.mentionsBot, true)
   assert.equal(inbound?.isGroup, false)
+  assert.equal(inbound?.isOwnerConversation, false)
   assert.equal(inbound?.text, 'Hey there')
+})
+
+test('buildWhatsAppInboundMessage marks self-chat traffic as the owner conversation', () => {
+  const inbound = buildWhatsAppInboundMessage({
+    msg: {
+      key: {
+        remoteJid: '15550001111@s.whatsapp.net',
+        id: 'wamid-self-1',
+      },
+      pushName: 'Wayde',
+      message: {
+        conversation: 'Testing self chat',
+      },
+    } as any,
+    isOwnerConversation: true,
+  })
+
+  assert.equal(inbound?.isOwnerConversation, true)
 })
 
 test('isWhatsAppSocketAlive reports disconnected sockets as dead so daemon restarts can run', () => {

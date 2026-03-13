@@ -373,4 +373,14 @@ describe('reconcileConnectorDeliveryText', () => {
       `I've successfully sent the update to your WhatsApp.`,
     )
   })
+
+  it('downgrades connector delivery claims when no connector tool call was recorded', () => {
+    assert.equal(
+      reconcileConnectorDeliveryText(
+        `Sent voice notes to both Mom and Gran.\n\n| Recipient | Number | Message ID |\n|-----------|--------|------------|`,
+        [],
+      ),
+      `I couldn't confirm that the configured connector actually sent anything. No connector delivery tool call was recorded for this response.`,
+    )
+  })
 })

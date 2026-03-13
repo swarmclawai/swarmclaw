@@ -12,8 +12,6 @@ import path from 'path'
 import { streamAgentChat } from '@/lib/server/chat-execution/stream-agent-chat'
 import { notify } from '../ws-hub'
 import { logExecution } from '../execution-log'
-import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
-import { requestHeartbeatNow } from '@/lib/server/runtime/heartbeat-wake'
 import { buildCurrentDateTimePromptContext } from '../prompt-runtime-context'
 import {
   parseMentions,
@@ -59,9 +57,10 @@ import {
 } from './policy'
 import { buildConnectorThreadContextBlock } from './thread-context'
 import { isDirectConnectorSession } from './session-kind'
-import { enforceSenderQuietBoundary, loadSenderBoundaryContext } from './contact-boundaries'
 import { shouldSuppressHiddenControlText, stripHiddenControlTokens } from '@/lib/server/agents/assistant-control'
 import {
+  applyConnectorAccessMetadata,
+  buildConnectorAddressAliases,
   buildInboundApprovalSubject as buildInboundApprovalSubjectHelper,
   enforceInboundAccessPolicy as enforceInboundAccessPolicyHelper,
   resolveInboundApprovalSenderId as resolveInboundApprovalSenderIdHelper,
@@ -155,8 +154,15 @@ const { recentOutbound } = connectorRuntimeState
 const OUTBOUND_DEDUP_TTL_MS = 30_000
 const OUTBOUND_DEDUP_PRUNE_TTL_MS = 60_000
 
-function outboundDedupeKey(connectorId: string, channelId: string, text: string): string {
-  return `${connectorId}:${channelId}:${text.slice(0, 200).trim()}`
+function outboundDedupeKey(params: {
+  connectorId: string
+  channelId: string
+  text?: string
+  dedupeKey?: string
+}): string {
+  const explicit = params.dedupeKey?.trim()
+  if (explicit) return `${params.connectorId}:${params.channelId}:dedupe:${explicit}`
+  return `${params.connectorId}:${params.channelId}:text:${(params.text || '').slice(0, 200).trim()}`
 }
 
 function pruneRecentOutbound(now = Date.now()): void {
@@ -165,10 +171,18 @@ function pruneRecentOutbound(now = Date.now()): void {
   }
 }
 
-function isDuplicateOutbound(connectorId: string, channelId: string, text: string): boolean {
+function isDuplicateOutbound(params: {
+  connectorId: string
+  channelId: string
+  text?: string
+  dedupeKey?: string
+}): boolean {
+  const explicit = params.dedupeKey?.trim()
+  const trimmedText = (params.text || '').trim()
+  if (!explicit && !trimmedText) return false
   const now = Date.now()
   pruneRecentOutbound(now)
-  const key = outboundDedupeKey(connectorId, channelId, text)
+  const key = outboundDedupeKey(params)
   const lastSent = recentOutbound.get(key)
   if (lastSent && now - lastSent < OUTBOUND_DEDUP_TTL_MS) return true
   recentOutbound.set(key, now)
@@ -202,10 +216,10 @@ function isConnectorToolDeliveryMatch(params: {
 }
 
 /** Register an outbound send in the dedup map without checking for duplicates */
-export function registerOutboundSend(connectorId: string, channelId: string, text: string): void {
+export function registerOutboundSend(connectorId: string, channelId: string, text: string, dedupeKey?: string): void {
   const now = Date.now()
   pruneRecentOutbound(now)
-  const key = outboundDedupeKey(connectorId, channelId, text)
+  const key = outboundDedupeKey({ connectorId, channelId, text, dedupeKey })
   recentOutbound.set(key, now)
 }
 
@@ -854,12 +868,15 @@ function buildInboundApprovalSubject(msg: InboundMessage): string {
 async function enforceInboundAccessPolicy(params: {
   connector: Connector
   msg: InboundMessage
-  session: ConnectorSession
-  agent: ConnectorAgent
+  session?: { connectorContext?: { lastOutboundMessageId?: string | null } } | null
+  aliases?: string[]
 }): Promise<string | null> {
   return enforceInboundAccessPolicyHelper({
-    ...params,
+    connector: params.connector,
+    msg: params.msg,
     noMessageSentinel: NO_MESSAGE_SENTINEL,
+    session: params.session,
+    aliases: params.aliases,
   })
 }
 
@@ -1100,6 +1117,17 @@ async function routeMessageToChatroom(connector: Connector, msg: InboundMessage)
     msg,
     preferredCredentialId,
   })
+  const accessPolicyResult = await enforceInboundAccessPolicy({
+    connector,
+    msg,
+    aliases: buildConnectorAddressAliases({
+      connectorName: connector.name,
+      aliases: chatroomAgentAliases,
+    }),
+  })
+  if (accessPolicyResult) {
+    return accessPolicyResult
+  }
   const groupGate = evaluateGroupPolicy({
     connector,
     msg,
@@ -1305,6 +1333,7 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     lastInboundChannelByConnector.set(connector.id, msg.channelId)
   }
   lastInboundTimeByConnector.set(connector.id, Date.now())
+  msg = applyConnectorAccessMetadata(connector, msg)
 
   // Route to chatroom if configured
   if (connector.chatroomId) {
@@ -1341,29 +1370,14 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   }
 
   const parsedCommand = parseConnectorCommand(msg.text || '')
-  if (parsedCommand?.name === 'pair') {
-    const commandResult = await handlePairCommand({
-      connector,
-      msg,
-      args: parsedCommand.args,
-    })
-    logExecution(session.id, 'decision', 'Connector pair command handled', {
-      agentId: agent.id,
-      detail: {
-        platform: msg.platform,
-        channelId: msg.channelId,
-        command: 'pair',
-        args: parsedCommand.args || null,
-      },
-    })
-    return commandResult
-  }
-
   const accessPolicyResult = await enforceInboundAccessPolicy({
     connector,
     msg,
     session,
-    agent,
+    aliases: buildConnectorAddressAliases({
+      agentName: agent.name,
+      connectorName: connector.name,
+    }),
   })
   if (accessPolicyResult) {
     if (accessPolicyResult !== NO_MESSAGE_SENTINEL) {
@@ -1401,6 +1415,24 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     return accessPolicyResult
   }
 
+  if (parsedCommand?.name === 'pair') {
+    const commandResult = await handlePairCommand({
+      connector,
+      msg,
+      args: parsedCommand.args,
+    })
+    logExecution(session.id, 'decision', 'Connector pair command handled', {
+      agentId: agent.id,
+      detail: {
+        platform: msg.platform,
+        channelId: msg.channelId,
+        command: 'pair',
+        args: parsedCommand.args || null,
+      },
+    })
+    return commandResult
+  }
+
   const groupGate = evaluateGroupPolicy({
     connector,
     msg,
@@ -1416,26 +1448,6 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
         senderId: msg.senderId,
         groupPolicy: resolveConnectorSessionPolicy(connector, msg, session).groupPolicy,
         reason: groupGate.reason,
-      },
-    })
-    return NO_MESSAGE_SENTINEL
-  }
-
-  const quietBoundary = enforceSenderQuietBoundary({
-    agent,
-    connector,
-    session,
-    msg,
-  })
-  if (quietBoundary.suppress) {
-    logExecution(session.id, 'decision', 'Connector inbound suppressed by sender quiet boundary', {
-      agentId: agent.id,
-      detail: {
-        platform: msg.platform,
-        channelId: msg.channelId,
-        senderId: msg.senderId,
-        senderName: msg.senderName,
-        memoryTitle: quietBoundary.memoryTitle || null,
       },
     })
     return NO_MESSAGE_SENTINEL
@@ -1464,31 +1476,6 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   await maybeSendStatusReaction(connector, msg, 'processing')
   const stopTyping = startConnectorTypingLoop(connector, msg)
   try {
-    // Enqueue system event + heartbeat wake for the agent only after access/gating checks pass.
-    const threadSession = agent.threadSessionId
-      ? (loadSessions()[agent.threadSessionId] as ConnectorSession | undefined) || ensureAgentThreadSession(agent.id)
-      : ensureAgentThreadSession(agent.id)
-    const wakeSessionId = threadSession?.id || session.id
-    const preview = (msg.text || '').slice(0, 80)
-    enqueueSystemEvent(
-      wakeSessionId,
-      `Inbound message from ${msg.platform}: ${preview}`,
-      'connector-message',
-    )
-    requestHeartbeatNow({
-      agentId: effectiveAgentId,
-      sessionId: wakeSessionId,
-      eventId: `${connector.id}:${msg.messageId || msg.replyToMessageId || Date.now()}`,
-      reason: 'connector-message',
-      source: `connector:${msg.platform}`,
-      resumeMessage: `Inbound ${msg.platform} message from ${msg.senderName || msg.senderId || 'unknown sender'}.`,
-      detail: [
-        (msg.text || '').trim() ? `Text: ${(msg.text || '').slice(0, 240)}` : '',
-        msg.imageUrl ? 'Includes image input.' : '',
-        Array.isArray(msg.media) && msg.media.length > 0 ? `Media count: ${msg.media.length}` : '',
-      ].filter(Boolean).join(' '),
-    })
-
     logExecution(session.id, 'trigger', `${msg.platform} message from ${msg.senderName}`, {
       agentId: agent.id,
       detail: {
@@ -1592,8 +1579,6 @@ When the user asks to send media (image, screenshot, PDF, file, or voice note), 
 Do not claim "sent" unless a tool call succeeded.
 If voice note is requested, prefer connector_message_tool action=send_voice_note when available.
 If media sending fails, report the exact error and retry with a corrected path/target.`)
-  const boundaryContext = loadSenderBoundaryContext({ agent, connector, session, msg })
-  if (boundaryContext) promptParts.push(boundaryContext)
   const systemPrompt = promptParts.join('\n\n')
 
   // Add message to session
@@ -2263,6 +2248,7 @@ export async function sendConnectorMessage(params: {
   platform?: string
   channelId: string
   text: string
+  dedupeKey?: string
   sessionId?: string | null
   imageUrl?: string
   fileUrl?: string
@@ -2321,7 +2307,12 @@ export async function sendConnectorMessage(params: {
 
   // Outbound deduplication: skip if identical text was sent to the same channel recently
   // Must run AFTER WhatsApp channel normalization so dedup keys are consistent
-  if (sanitizedText && isDuplicateOutbound(connectorId, channelId, sanitizedText)) {
+  if (isDuplicateOutbound({
+    connectorId,
+    channelId,
+    text: sanitizedText,
+    dedupeKey: params.dedupeKey,
+  })) {
     console.log(`[connector] sendConnectorMessage: duplicate suppressed for ${connectorId}:${channelId}`)
     return { connectorId, platform: connector.platform, channelId, suppressed: true }
   }

@@ -29,6 +29,7 @@ export interface InboundMessage {
   senderId: string         // platform-specific user ID
   senderIdAlt?: string
   senderName: string       // display name
+  senderAvatarUrl?: string
   text: string
   isGroup?: boolean
   messageId?: string
@@ -45,6 +46,7 @@ export interface InboundMessage {
   threadHistory?: InboundThreadHistoryEntry[]
   mentionsBot?: boolean
   agentIdOverride?: string
+  isOwnerConversation?: boolean
 }
 
 export interface OutboundSendOptions {

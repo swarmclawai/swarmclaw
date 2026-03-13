@@ -214,6 +214,7 @@ export interface Session {
     senderId?: string | null
     senderIdAlt?: string | null
     senderName?: string | null
+    senderAvatarUrl?: string | null
     sessionKey?: string | null
     peerKey?: string | null
     scope?: 'main' | 'channel' | 'peer' | 'channel-peer' | 'thread' | null
@@ -226,6 +227,7 @@ export interface Session {
     threadParentChannelId?: string | null
     threadParentChannelName?: string | null
     isGroup?: boolean
+    isOwnerConversation?: boolean
     lastInboundAt?: number | null
     lastInboundMessageId?: string | null
     lastInboundReplyToMessageId?: string | null
@@ -1239,7 +1241,7 @@ export interface MemoryEntry {
 }
 
 export type SessionType = 'human'
-export type AppView = 'home' | 'agents' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'wallets' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
+export type AppView = 'home' | 'agents' | 'inbox' | 'chatrooms' | 'schedules' | 'memory' | 'tasks' | 'secrets' | 'providers' | 'skills' | 'connectors' | 'webhooks' | 'mcp_servers' | 'knowledge' | 'plugins' | 'usage' | 'wallets' | 'runs' | 'logs' | 'settings' | 'projects' | 'activity'
 
 // --- Chatrooms ---
 
@@ -2008,6 +2010,67 @@ export interface Connector {
   presence?: { lastMessageAt?: number | null; channelId?: string | null }
   createdAt: number
   updatedAt: number
+}
+
+export type ConnectorDmAddressingMode = 'open' | 'addressed'
+
+export interface ConnectorAccessSenderStatus {
+  senderIds: string[]
+  isOwnerOverride: boolean
+  isBlocked: boolean
+  isApproved: boolean
+  isConfigAllowed: boolean
+  isStoredAllowed: boolean
+  isGlobalAllowed: boolean
+  isPending: boolean
+  pendingCode?: string | null
+  dmAddressingOverride: ConnectorDmAddressingMode | null
+  effectiveDmAddressingMode: ConnectorDmAddressingMode
+  requiresDirectAddress: boolean
+}
+
+export interface ConnectorAccessSnapshot {
+  connectorId: string
+  platform: ConnectorPlatform
+  dmPolicy: 'open' | 'allowlist' | 'pairing' | 'disabled'
+  dmAddressingMode: ConnectorDmAddressingMode
+  allowFrom: string[]
+  denyFrom: string[]
+  ownerSenderId: string | null
+  storedAllowedSenderIds: string[]
+  senderAddressingOverrides: Array<{
+    senderId: string
+    dmAddressingMode: ConnectorDmAddressingMode
+  }>
+  pendingPairingRequests: Array<{
+    code: string
+    senderId: string
+    senderName?: string
+    channelId?: string
+    createdAt: number
+    updatedAt: number
+  }>
+  globalWhatsAppApprovedContacts: WhatsAppApprovedContact[]
+  senderStatus?: ConnectorAccessSenderStatus | null
+}
+
+export type ConnectorAccessMutationAction =
+  | 'set_policy'
+  | 'set_dm_addressing_mode'
+  | 'allow_sender'
+  | 'remove_allowed_sender'
+  | 'block_sender'
+  | 'unblock_sender'
+  | 'approve_pairing'
+  | 'reject_pairing'
+  | 'set_owner'
+  | 'clear_owner'
+  | 'set_sender_dm_addressing'
+  | 'clear_sender_dm_addressing'
+
+export interface ConnectorAccessMutationResponse {
+  ok: boolean
+  snapshot: ConnectorAccessSnapshot
 }
 
 export interface Webhook {

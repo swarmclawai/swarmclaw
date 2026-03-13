@@ -2,12 +2,12 @@ import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import path from 'path'
 import fs from 'fs'
-import { loadConnectors, loadSettings, UPLOAD_DIR } from '../storage'
+import { loadAgent, loadConnectors, loadSettings, UPLOAD_DIR } from '../storage'
 import { genId } from '@/lib/id'
 import { synthesizeElevenLabsMp3 } from '../elevenlabs'
 import { isAudioMime, mimeFromPath } from '../connectors/media'
 import type { ToolBuildContext } from './context'
-import type { Plugin, PluginHooks } from '@/types'
+import type { Connector, Plugin, PluginHooks } from '@/types'
 import { getPluginManager } from '../plugins'
 import { normalizeToolInputArgs } from './normalize-tool-args'
 import { safeJsonParseObject } from '../json-utils'
@@ -19,7 +19,8 @@ const CONNECTOR_ACTION_DEDUPE_TTL_MS = 30_000
 const CONNECTOR_TURN_SEND_TTL_MS = 180_000
 const AUTONOMOUS_OUTREACH_COOLDOWN_MS = 2 * 60 * 60 * 1000
 const recentConnectorActionCache = new Map<string, { at: number; result: string }>()
-const connectorTurnSendBudget = new Map<string, { count: number; at: number; lastResult?: string }>()
+const connectorTurnReplayCache = new Map<string, { at: number; result: string }>()
+const connectorTurnRecipientReplayCache = new Map<string, { at: number; result: string }>()
 const autonomousOutreachBudget = new Map<string, { at: number; result?: string }>()
 
 export const CONNECTOR_MESSAGE_TOOL_ACTIONS = [
@@ -98,8 +99,11 @@ function pruneOldConnectorToolState(now: number): void {
   for (const [key, entry] of recentConnectorActionCache.entries()) {
     if (now - entry.at > CONNECTOR_ACTION_DEDUPE_TTL_MS) recentConnectorActionCache.delete(key)
   }
-  for (const [key, entry] of connectorTurnSendBudget.entries()) {
-    if (now - entry.at > CONNECTOR_TURN_SEND_TTL_MS) connectorTurnSendBudget.delete(key)
+  for (const [key, entry] of connectorTurnReplayCache.entries()) {
+    if (now - entry.at > CONNECTOR_TURN_SEND_TTL_MS) connectorTurnReplayCache.delete(key)
+  }
+  for (const [key, entry] of connectorTurnRecipientReplayCache.entries()) {
+    if (now - entry.at > CONNECTOR_TURN_SEND_TTL_MS) connectorTurnRecipientReplayCache.delete(key)
   }
   for (const [key, entry] of autonomousOutreachBudget.entries()) {
     if (now - entry.at > AUTONOMOUS_OUTREACH_COOLDOWN_MS) autonomousOutreachBudget.delete(key)
@@ -118,12 +122,6 @@ function parseLatestUserTurn(
     return { text, time }
   }
   return { text: '', time: 0 }
-}
-
-function userExplicitlyWantsMultipleOutbound(userText: string): boolean {
-  if (!userText) return false
-  const text = userText.toLowerCase()
-  return /\b(both|multiple|all of them|all numbers|two messages|three messages|each number|every number|and also|plus also|send again|resend)\b/.test(text)
 }
 
 function userExplicitlyRequestedFollowup(userText: string): boolean {
@@ -160,20 +158,91 @@ function buildConnectorActionKey(parts: Array<string | number | boolean | null |
   return parts.map((part) => String(part ?? '')).join('|')
 }
 
-function normalizeDedupedReplayResult(raw: string, fallback: { connectorId: string; platform: string; to: string }): string {
+export function buildConnectorTurnReplayKey(parts: {
+  turnKey: string
+  actionName: string
+  connectorId: string
+  channelId: string
+  message?: string
+  voiceText?: string
+  mediaPath?: string
+  imageUrl?: string
+  fileUrl?: string
+  mimeType?: string
+  fileName?: string
+  caption?: string
+  replyToMessageId?: string
+  threadId?: string
+  followUpMessage?: string
+  followUpDelaySec?: number
+  delaySec?: number
+  dedupeKey?: string
+  ptt?: boolean
+  voiceId?: string
+}): string {
+  return buildConnectorActionKey([
+    parts.turnKey,
+    parts.actionName,
+    parts.connectorId,
+    parts.channelId,
+    parts.message?.trim() || '',
+    parts.voiceText?.trim() || '',
+    parts.mediaPath?.trim() || '',
+    parts.imageUrl?.trim() || '',
+    parts.fileUrl?.trim() || '',
+    parts.mimeType?.trim() || '',
+    parts.fileName?.trim() || '',
+    parts.caption?.trim() || '',
+    parts.replyToMessageId?.trim() || '',
+    parts.threadId?.trim() || '',
+    parts.followUpMessage?.trim() || '',
+    Number.isFinite(parts.followUpDelaySec) ? Number(parts.followUpDelaySec) : '',
+    Number.isFinite(parts.delaySec) ? Number(parts.delaySec) : '',
+    parts.dedupeKey?.trim() || '',
+    parts.ptt === undefined ? '' : String(parts.ptt),
+    parts.voiceId?.trim() || '',
+  ])
+}
+
+export function buildConnectorTurnRecipientReplayKey(parts: {
+  turnKey: string
+  actionName: string
+  connectorId: string
+  channelId?: string
+  replyToMessageId?: string
+  threadId?: string
+  dedupeKey?: string
+}): string {
+  return buildConnectorActionKey([
+    parts.turnKey,
+    parts.actionName,
+    parts.connectorId,
+    parts.channelId?.trim() || '',
+    parts.replyToMessageId?.trim() || '',
+    parts.threadId?.trim() || '',
+    parts.dedupeKey?.trim() || '',
+  ])
+}
+
+function normalizeDedupedReplayResult(raw: string, fallback: {
+  connectorId: string
+  platform: string
+  to: string
+  status?: string
+}): string {
   const record = safeJsonParseObject(raw)
-  if (record && String(record.status || '') === 'deduped') {
+  if (record) {
     return JSON.stringify({
-      status: 'sent',
+      ...record,
+      status: typeof record.status === 'string' && record.status.trim() ? record.status : (fallback.status || 'sent'),
       connectorId: String(record.connectorId || fallback.connectorId),
       platform: String(record.platform || fallback.platform),
       to: String(record.to || fallback.to),
       deduped: true,
     })
   }
-  if (record) return raw
   return JSON.stringify({
-    status: 'sent',
+    status: fallback.status || 'sent',
     connectorId: fallback.connectorId,
     platform: fallback.platform,
     to: fallback.to,
@@ -553,8 +622,32 @@ interface ConnectorActionInput {
 
 interface ConnectorActionContext {
   cwd: string
-  resolveCurrentSession?: () => { messages?: Array<Record<string, unknown>>; id?: string } | null
-  ctx?: { sessionId?: string | null }
+  agentId?: string | null
+  resolveCurrentSession?: () => { messages?: Array<Record<string, unknown>>; id?: string; agentId?: string | null } | null
+  ctx?: { sessionId?: string | null; agentId?: string | null }
+}
+
+export function resolveConnectorVoiceId(params: {
+  explicitVoiceId?: string | null
+  sessionAgentId?: string | null
+  contextAgentId?: string | null
+  nestedContextAgentId?: string | null
+  getAgent?: (id: string) => { elevenLabsVoiceId?: string | null } | null
+}): string | undefined {
+  const explicitVoiceId = typeof params.explicitVoiceId === 'string' ? params.explicitVoiceId.trim() : ''
+  if (explicitVoiceId) return explicitVoiceId
+
+  const agentId = [
+    params.sessionAgentId,
+    params.contextAgentId,
+    params.nestedContextAgentId,
+  ].find((candidate) => typeof candidate === 'string' && candidate.trim())?.trim()
+  if (!agentId) return undefined
+
+  const getAgent = params.getAgent || ((id: string) => loadAgent(id) as { elevenLabsVoiceId?: string | null } | null)
+  const agent = getAgent(agentId)
+  const agentVoiceId = typeof agent?.elevenLabsVoiceId === 'string' ? agent.elevenLabsVoiceId.trim() : ''
+  return agentVoiceId || undefined
 }
 
 async function executeConnectorAction(input: ConnectorActionInput, bctx: ConnectorActionContext) {
@@ -597,23 +690,54 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
     const actionName = normalizeConnectorActionName(String(inferredAction || action || ''))
     if (!actionName) return 'Error: action is required.'
 
+    const currentSession = bctx.resolveCurrentSession?.()
+    const sessionId = bctx.ctx?.sessionId || currentSession?.id || undefined
+    const connectorScopedSessionId = isDirectConnectorSession(currentSession) ? sessionId : undefined
+    const latestUserTurn = parseLatestUserTurn(currentSession)
+    const turnKey = buildConnectorActionKey([sessionId, latestUserTurn.time || 'no-user-turn'])
+
     if (actionName === 'list_running' || actionName === 'list_targets') {
       return JSON.stringify(running)
     }
 
     if (actionName === 'start') {
       if (!connectorId) {
-        const allConnectors = loadConnectors()
-        const stopped = Object.values(allConnectors)
-          .filter((c: any) => !platform || c.platform === platform)
-          .filter((c: any) => !running.find((r) => r.id === c.id))
-          .map((c: any) => ({ id: c.id, name: c.name, platform: c.platform }))
+        const allConnectors = Object.values(loadConnectors()) as Connector[]
+        const stopped = allConnectors
+          .filter((connector) => !platform || connector.platform === platform)
+          .filter((connector) => !running.find((runningConnector) => runningConnector.id === connector.id))
+          .map((connector) => ({ id: connector.id, name: connector.name, platform: connector.platform }))
         if (!stopped.length) return 'All connectors are already running.'
         return `Error: connectorId is required. Stopped connectors available to start: ${JSON.stringify(stopped)}`
       }
+      const connectors = loadConnectors()
+      const connector = connectors[connectorId] as Connector | undefined
+      if (!connector) return `Error: connector not found: ${connectorId}`
+      const now = Date.now()
+      pruneOldConnectorToolState(now)
+      let startChannelId = (to || '').trim()
+      if (startChannelId && connector.platform === 'whatsapp') startChannelId = normalizeWhatsAppTarget(startChannelId)
+      const startReplayKey = buildConnectorTurnRecipientReplayKey({
+        turnKey,
+        actionName,
+        connectorId,
+        channelId: startChannelId,
+        dedupeKey,
+      })
+      const cachedStart = connectorTurnRecipientReplayCache.get(startReplayKey)
+      if (cachedStart && now - cachedStart.at <= CONNECTOR_TURN_SEND_TTL_MS) {
+        return normalizeDedupedReplayResult(cachedStart.result, {
+          connectorId,
+          platform: connector.platform,
+          to: startChannelId,
+          status: 'started',
+        })
+      }
       const { startConnector: doStart } = await import('../connectors/manager')
       await doStart(connectorId)
-      return JSON.stringify({ status: 'started', connectorId })
+      const result = JSON.stringify({ status: 'started', connectorId })
+      connectorTurnRecipientReplayCache.set(startReplayKey, { at: now, result })
+      return result
     }
 
     if (actionName === 'stop') {
@@ -625,10 +749,10 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
 
     const resolveSelectedConnector = () => {
       if (!running.length) {
-        const allConnectors = loadConnectors()
-        const configured = Object.values(allConnectors)
-          .filter((c: any) => !platform || c.platform === platform)
-          .map((c: any) => ({ id: c.id, name: c.name, platform: c.platform, agentId: c.agentId || null }))
+        const allConnectors = Object.values(loadConnectors()) as Connector[]
+        const configured = allConnectors
+          .filter((connector) => !platform || connector.platform === platform)
+          .map((connector) => ({ id: connector.id, name: connector.name, platform: connector.platform, agentId: connector.agentId || null }))
         if (configured.length) {
           return {
             error: `Error: no running connectors found. Ask user to start one. Configured: ${JSON.stringify(configured)}`,
@@ -645,10 +769,6 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
       if (!connector) return { error: `Error: connector not found: ${selected.id}` }
       return { selected, connector }
     }
-
-    const currentSession = bctx.resolveCurrentSession?.()
-    const sessionId = bctx.ctx?.sessionId || currentSession?.id || undefined
-    const connectorScopedSessionId = isDirectConnectorSession(currentSession) ? sessionId : undefined
 
     if (actionName === 'send' || actionName === 'send_voice_note' || actionName === 'schedule_followup') {
       const settings = loadSettings()
@@ -671,21 +791,31 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
 
       let channelId = target.channelId
       if (connector.platform === 'whatsapp') channelId = normalizeWhatsAppTarget(channelId)
-
-      const latestUserTurn = parseLatestUserTurn(currentSession)
-      const turnKey = buildConnectorActionKey([sessionId, latestUserTurn.time || 'no-user-turn'])
-      const multiOutboundAllowed = userExplicitlyWantsMultipleOutbound(latestUserTurn.text)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const _followupExplicitlyRequested = userExplicitlyRequestedFollowup(latestUserTurn.text)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const _autonomousTurn = isAutonomousSystemTurn(latestUserTurn.text)
-      const existingBudget = connectorTurnSendBudget.get(turnKey)
-      
-      if (!multiOutboundAllowed && existingBudget && now - existingBudget.at <= CONNECTOR_TURN_SEND_TTL_MS && existingBudget.count >= 1) {
-        if (existingBudget.lastResult) {
-          return normalizeDedupedReplayResult(existingBudget.lastResult, { connectorId: selected.id, platform: selected.platform, to: channelId })
+      const recipientReplayKey = actionName === 'schedule_followup'
+        ? ''
+        : buildConnectorTurnRecipientReplayKey({
+            turnKey,
+            actionName,
+            connectorId: selected.id,
+            channelId,
+            replyToMessageId,
+            threadId,
+            dedupeKey,
+          })
+      if (recipientReplayKey) {
+        const cachedRecipientReplay = connectorTurnRecipientReplayCache.get(recipientReplayKey)
+        if (cachedRecipientReplay && now - cachedRecipientReplay.at <= CONNECTOR_TURN_SEND_TTL_MS) {
+          return normalizeDedupedReplayResult(cachedRecipientReplay.result, {
+            connectorId: selected.id,
+            platform: selected.platform,
+            to: channelId,
+            status: actionName === 'send_voice_note' ? 'voice_sent' : 'sent',
+          })
         }
-        return JSON.stringify({ status: 'sent', connectorId: selected.id, platform: selected.platform, to: channelId, deduped: true })
       }
 
       if (actionName === 'send_voice_note') {
@@ -696,6 +826,37 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
         }
         const ttsText = (voiceText || message || '').trim()
         if (!media.mediaPath && !ttsText) return 'Error: voiceText, message, or an audio mediaPath is required.'
+        const effectiveVoiceId = resolveConnectorVoiceId({
+          explicitVoiceId: voiceId,
+          sessionAgentId: currentSession?.agentId,
+          contextAgentId: bctx.agentId,
+          nestedContextAgentId: bctx.ctx?.agentId,
+        })
+        const turnReplayKey = buildConnectorTurnReplayKey({
+          turnKey,
+          actionName,
+          connectorId: selected.id,
+          channelId,
+          message,
+          voiceText: ttsText,
+          mediaPath: media.mediaPath,
+          mimeType,
+          fileName,
+          caption,
+          replyToMessageId,
+          threadId,
+          dedupeKey,
+          ptt,
+          voiceId: effectiveVoiceId,
+        })
+        const cachedTurnReplay = connectorTurnReplayCache.get(turnReplayKey)
+        if (cachedTurnReplay && now - cachedTurnReplay.at <= CONNECTOR_TURN_SEND_TTL_MS) {
+          return normalizeDedupedReplayResult(cachedTurnReplay.result, {
+            connectorId: selected.id,
+            platform: selected.platform,
+            to: channelId,
+          })
+        }
         const voiceActionKey = buildConnectorActionKey([
           sessionId,
           actionName,
@@ -703,10 +864,11 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
           channelId,
           media.mediaPath || '',
           ttsText,
-          voiceId?.trim() || '',
+          effectiveVoiceId || '',
           fileName?.trim() || '',
           caption?.trim() || '',
           ptt ?? true,
+          dedupeKey?.trim() || '',
         ])
         const cachedVoice = recentConnectorActionCache.get(voiceActionKey)
         if (cachedVoice && now - cachedVoice.at <= CONNECTOR_ACTION_DEDUPE_TTL_MS) {
@@ -720,7 +882,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
             return `Error: send_voice_note mediaPath must point to an audio file. Resolved MIME type was "${outboundMimeType}".`
           }
         } else {
-          const audioBuffer = await synthesizeElevenLabsMp3({ text: ttsText, voiceId: voiceId?.trim() || undefined })
+          const audioBuffer = await synthesizeElevenLabsMp3({ text: ttsText, voiceId: effectiveVoiceId })
           const voiceFileName = `${Date.now()}-${genId()}-voicenote.mp3`
           voicePath = path.join(UPLOAD_DIR, voiceFileName)
           fs.writeFileSync(voicePath, audioBuffer)
@@ -733,6 +895,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
           sessionId: connectorScopedSessionId,
           replyToMessageId: replyToMessageId?.trim() || undefined,
           threadId: threadId?.trim() || undefined,
+          dedupeKey: recipientReplayKey || undefined,
         })
         const result = JSON.stringify({
           status: 'voice_sent',
@@ -742,7 +905,8 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
           messageId: sent.messageId || null,
           voiceFile: voicePath,
         })
-        connectorTurnSendBudget.set(turnKey, { count: (existingBudget?.count || 0) + 1, at: now, lastResult: result })
+        connectorTurnReplayCache.set(turnReplayKey, { at: now, result })
+        if (recipientReplayKey) connectorTurnRecipientReplayCache.set(recipientReplayKey, { at: now, result })
         recentConnectorActionCache.set(voiceActionKey, { at: now, result })
         return result
       }
@@ -752,6 +916,36 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
 
       if (actionName === 'send' && !message?.trim() && !media.mediaPath && !media.imageUrl && !media.fileUrl) {
         return 'Error: message or media required.'
+      }
+
+      const turnReplayKey = buildConnectorTurnReplayKey({
+        turnKey,
+        actionName,
+        connectorId: selected.id,
+        channelId,
+        message,
+        voiceText,
+        mediaPath: media.mediaPath,
+        imageUrl: media.imageUrl,
+        fileUrl: media.fileUrl,
+        mimeType,
+        fileName,
+        caption,
+        replyToMessageId,
+        threadId,
+        followUpMessage: typeof normalized.followUpMessage === 'string' ? normalized.followUpMessage : undefined,
+        followUpDelaySec: Number(normalized.followUpDelaySec),
+        delaySec: Number(normalized.delaySec),
+        dedupeKey,
+        ptt,
+      })
+      const cachedTurnReplay = connectorTurnReplayCache.get(turnReplayKey)
+      if (cachedTurnReplay && now - cachedTurnReplay.at <= CONNECTOR_TURN_SEND_TTL_MS) {
+        return normalizeDedupedReplayResult(cachedTurnReplay.result, {
+          connectorId: selected.id,
+          platform: selected.platform,
+          to: channelId,
+        })
       }
 
       if (actionName === 'schedule_followup') {
@@ -783,7 +977,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
           threadId: threadId?.trim() || undefined,
           ptt: ptt ?? undefined,
         })
-        return JSON.stringify({
+        const result = JSON.stringify({
           status: 'scheduled',
           connectorId: selected.id,
           platform: selected.platform,
@@ -791,6 +985,8 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
           followUpId: scheduled.followUpId,
           sendAt: scheduled.sendAt,
         })
+        connectorTurnReplayCache.set(turnReplayKey, { at: now, result })
+        return result
       }
 
       const sent = await sendConnectorMessage({
@@ -802,10 +998,12 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
         replyToMessageId: replyToMessageId?.trim() || undefined,
         threadId: threadId?.trim() || undefined,
         ptt: ptt ?? undefined,
+        dedupeKey: recipientReplayKey || undefined,
       })
 
       const result = JSON.stringify({ status: 'sent', connectorId: sent.connectorId, platform: sent.platform, to: sent.channelId, messageId: sent.messageId || null })
-      connectorTurnSendBudget.set(turnKey, { count: (existingBudget?.count || 0) + 1, at: now, lastResult: result })
+      connectorTurnReplayCache.set(turnReplayKey, { at: now, result })
+      if (recipientReplayKey) connectorTurnRecipientReplayCache.set(recipientReplayKey, { at: now, result })
       return result
     }
 

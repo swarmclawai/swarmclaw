@@ -46,14 +46,33 @@ function connectorToolEventSucceeded(event: MessageToolEvent): boolean {
 }
 
 const POSITIVE_CONNECTOR_DELIVERY_RE = /\b(?:i(?:'ve| have)?(?: successfully)? sent|i sent|successfully sent|sent to your|voice note (?:has been|was) sent|message (?:has been|was) sent)\b/i
+const CONNECTOR_DELIVERY_CONTEXT_RE = /\b(?:connector|whatsapp|voice note|voice notes|message id|recipient|channel id)\b/i
+const CONNECTOR_DELIVERY_VERB_RE = /\b(?:sent|delivered|scheduled)\b/i
+
+export function looksLikePositiveConnectorDeliveryText(
+  text: string,
+  options?: { requireConnectorContext?: boolean },
+): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  const hasConnectorContext = CONNECTOR_DELIVERY_CONTEXT_RE.test(trimmed)
+  if (options?.requireConnectorContext && !hasConnectorContext) return false
+  if (POSITIVE_CONNECTOR_DELIVERY_RE.test(trimmed)) {
+    return !options?.requireConnectorContext || hasConnectorContext
+  }
+  return CONNECTOR_DELIVERY_VERB_RE.test(trimmed) && hasConnectorContext
+}
 
 export function reconcileConnectorDeliveryText(text: string, events: MessageToolEvent[]): string {
   const trimmed = text.trim()
-  if (!trimmed || !POSITIVE_CONNECTOR_DELIVERY_RE.test(trimmed)) return text
-
   const connectorEvents = dedupeConsecutiveToolEvents(events).filter((event) => event.name === 'connector_message_tool')
-  if (connectorEvents.length === 0) return text
+  if (!looksLikePositiveConnectorDeliveryText(trimmed, {
+    requireConnectorContext: connectorEvents.length === 0,
+  })) return text
   if (connectorEvents.some((event) => connectorToolEventSucceeded(event))) return text
+  if (connectorEvents.length === 0) {
+    return `I couldn't confirm that the configured connector actually sent anything. No connector delivery tool call was recorded for this response.`
+  }
 
   const latestFailure = [...connectorEvents]
     .reverse()

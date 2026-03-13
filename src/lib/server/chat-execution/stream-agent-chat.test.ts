@@ -10,6 +10,7 @@ import {
   getExplicitRequiredToolNames,
   isWalletSimulationResult,
   looksLikeOpenEndedDeliverableTask,
+  pruneIncompleteToolEvents,
   resolveContinuationAssistantText,
   resolveFinalStreamResponseText,
   shouldSkipToolSummaryForShortResponse,
@@ -533,6 +534,21 @@ describe('shouldTerminateOnSuccessfulMemoryMutation', () => {
       }),
       false,
     )
+  })
+})
+
+describe('pruneIncompleteToolEvents', () => {
+  it('drops unfinished tool-call stubs while preserving completed events', () => {
+    const events: MessageToolEvent[] = [
+      { name: 'memory_store', input: '{"title":"A"}', toolCallId: 'call-1' },
+      { name: 'memory_store', input: '{"title":"A"}', toolCallId: 'call-2', output: 'Stored memory "A"' },
+      { name: 'connector_message_tool', input: '{"action":"send"}', toolCallId: 'call-3', output: '' },
+    ]
+
+    assert.deepEqual(pruneIncompleteToolEvents(events), [
+      { name: 'memory_store', input: '{"title":"A"}', toolCallId: 'call-2', output: 'Stored memory "A"' },
+      { name: 'connector_message_tool', input: '{"action":"send"}', toolCallId: 'call-3', output: '' },
+    ])
   })
 })
 

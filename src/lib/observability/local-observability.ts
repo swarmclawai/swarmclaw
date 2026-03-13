@@ -2,7 +2,7 @@ import type { Session } from '@/types'
 
 const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0'])
 const OBSERVABLE_PLATFORM_SESSION_OWNERS = new Set(['workbench', 'comparison-bench'])
-const VISIBLE_NON_USER_SESSION_OWNERS = new Set(['system', 'connector', 'swarm'])
+const VISIBLE_NON_USER_SESSION_OWNERS = new Set(['system', 'swarm'])
 
 function normalizeHostname(hostname: string): string {
   return hostname.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1')

@@ -134,8 +134,7 @@ describe('connector manager roundtrip routing', () => {
     assert.equal(output.directSession.messages.length, 2)
     assert.equal(output.directSession.messages[0].source.messageId, 'in-bidi-1')
     assert.equal(output.directSession.messages[1].text, 'Reply over connector')
-    assert.equal(output.mainSession.messages.at(-1).text, 'Reply over connector')
-    assert.equal(output.mainSession.messages.at(-1).historyExcluded, true)
+    assert.equal(output.mainSession.messages.length, 0)
   })
 
   it('does not emit a second transport reply when same-channel connector delivery was already reported', () => {

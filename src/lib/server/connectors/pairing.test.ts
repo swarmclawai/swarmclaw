@@ -6,15 +6,20 @@ import { test } from 'node:test'
 import {
   addAllowedSender,
   approvePairingCode,
+  clearSenderAddressingOverride,
   clearConnectorPairingState,
   createOrTouchPairingRequest,
+  getSenderAddressingOverride,
   getWhatsAppApprovedSenderIds,
   isSenderAllowed,
+  listSenderAddressingOverrides,
   listPendingPairingRequests,
   listStoredAllowedSenders,
   normalizeWhatsAppApprovedContacts,
   parseAllowFromCsv,
+  parseDmAddressingMode,
   parsePairingPolicy,
+  setSenderAddressingOverride,
 } from './pairing'
 
 function withTempDataDir<T>(fn: (dir: string) => T): T {
@@ -33,6 +38,7 @@ function withTempDataDir<T>(fn: (dir: string) => T): T {
 test('pairing store creates request, approves code, and persists allowlist', () => {
   withTempDataDir(() => {
     const connectorId = 'pair-test-1'
+    clearConnectorPairingState(connectorId)
 
     const first = createOrTouchPairingRequest({
       connectorId,
@@ -81,6 +87,8 @@ test('pairing helpers normalize policy and allowFrom csv entries', () => {
   assert.equal(parsePairingPolicy('PAIRING'), 'pairing')
   assert.equal(parsePairingPolicy('allowlist'), 'allowlist')
   assert.equal(parsePairingPolicy('unknown', 'open'), 'open')
+  assert.equal(parseDmAddressingMode('ADDRESSED'), 'addressed')
+  assert.equal(parseDmAddressingMode('unknown', 'open'), 'open')
 
   const list = parseAllowFromCsv('  +1555,TEST@example.com,+1555  ,   ')
   assert.deepEqual(list, ['+1555', 'test@example.com'])
@@ -89,6 +97,7 @@ test('pairing helpers normalize policy and allowFrom csv entries', () => {
 test('addAllowedSender deduplicates and normalizes sender ids', () => {
   withTempDataDir(() => {
     const connectorId = 'pair-test-2'
+    clearConnectorPairingState(connectorId)
     const first = addAllowedSender(connectorId, '  TEST@Example.com  ')
     assert.equal(first.added, true)
     assert.equal(first.normalized, 'test@example.com')
@@ -113,4 +122,24 @@ test('normalizeWhatsAppApprovedContacts trims entries and deduplicates equivalen
     { id: 'wa-contact-2', label: '16660002222@s.whatsapp.net', phone: '16660002222@s.whatsapp.net' },
   ])
   assert.deepEqual(getWhatsAppApprovedSenderIds(contacts), ['+1 (555) 000-1111', '16660002222@s.whatsapp.net'])
+})
+
+test('sender addressing overrides match equivalent sender variants', () => {
+  withTempDataDir(() => {
+    const connectorId = 'pair-test-3'
+    clearConnectorPairingState(connectorId)
+
+    const first = setSenderAddressingOverride(connectorId, '15550001111@s.whatsapp.net', 'addressed')
+    assert.equal(first.changed, true)
+    assert.equal(getSenderAddressingOverride(connectorId, '+1 (555) 000-1111'), 'addressed')
+    assert.equal(listSenderAddressingOverrides(connectorId).length, 1)
+
+    const second = setSenderAddressingOverride(connectorId, '+1 (555) 000-1111', 'open')
+    assert.equal(second.changed, true)
+    assert.equal(getSenderAddressingOverride(connectorId, '15550001111@s.whatsapp.net'), 'open')
+
+    const cleared = clearSenderAddressingOverride(connectorId, '15550001111@s.whatsapp.net')
+    assert.equal(cleared.removed, true)
+    assert.equal(getSenderAddressingOverride(connectorId, '15550001111@s.whatsapp.net'), null)
+  })
 })

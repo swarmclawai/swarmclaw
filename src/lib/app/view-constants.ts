@@ -3,6 +3,7 @@ import type { AppView } from '@/types'
 export const VIEW_LABELS: Record<AppView, string> = {
   home: 'Home',
   agents: 'Agents',
+  inbox: 'Inbox',
   chatrooms: 'Chatrooms',
   schedules: 'Schedules',
   memory: 'Memory',
@@ -42,6 +43,7 @@ export const CREATE_LABELS: Partial<Record<AppView, string>> = {
 export const VIEW_DESCRIPTIONS: Record<AppView, string> = {
   home: 'SwarmClaw overview',
   agents: 'Chat with & configure your AI agents',
+  inbox: 'Review external connector conversations by platform and bridge',
   chatrooms: 'Multi-agent collaborative chatrooms',
   schedules: 'Automated task schedules',
   memory: 'Long-term agent memory store',
@@ -112,6 +114,12 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
     description: 'Bridge chat platforms to your AI agents. Receive messages from Discord, Telegram, Slack, or WhatsApp and route them to agents.',
     features: ['Connect Discord, Telegram, Slack, or WhatsApp bots', 'Route incoming messages to any agent', 'Each platform channel gets its own chat thread', 'Start and stop connectors from the UI'],
   },
+  inbox: {
+    icon: 'inbox',
+    title: 'Inbox',
+    description: 'Inspect external connector conversations in a dedicated inbox, separated from the main agent chats.',
+    features: ['Filter by connector platform', 'Switch between connector instances', 'Review isolated sender transcripts', 'Keep the main chat focused on your own thread'],
+  },
   webhooks: {
     icon: 'webhook',
     title: 'Webhooks',
@@ -181,7 +189,7 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
 }
 
 export const FULL_WIDTH_VIEWS = new Set<AppView>([
-  'home', 'chatrooms', 'schedules', 'secrets', 'providers', 'skills',
+  'home', 'inbox', 'chatrooms', 'schedules', 'secrets', 'providers', 'skills',
   'connectors', 'webhooks', 'mcp_servers', 'knowledge', 'plugins',
   'usage', 'wallets', 'runs', 'logs', 'settings', 'activity', 'projects',
 ])

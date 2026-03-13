@@ -16,6 +16,7 @@ import { loadAgents } from '@/lib/server/storage'
 import { buildSessionTools } from '@/lib/server/session-tools'
 import { resolveConcreteToolPolicyBlock, type PluginPolicyDecision } from '@/lib/server/tool-capability-policy'
 import { resolveActiveProjectContext } from '@/lib/server/project-context'
+import { resolveEffectiveSessionMemoryScopeMode } from '@/lib/server/memory/session-memory-scope'
 import { genId } from '@/lib/id'
 import { rankDelegatesByHealth } from '@/lib/server/provider-health'
 import { routeTaskIntent, type CapabilityRoutingDecision } from '@/lib/server/capability-router'
@@ -179,7 +180,10 @@ async function invokeSessionTool(
     projectRoot: activeProjectContext.projectRoot,
     projectName: activeProjectContext.project?.name || null,
     projectDescription: activeProjectContext.project?.description || null,
-    memoryScopeMode: (ctx.session.memoryScopeMode ?? agentRecord?.memoryScopeMode as string | null ?? null) as 'all' | 'auto' | 'global' | 'agent' | 'session' | 'project' | null,
+    memoryScopeMode: resolveEffectiveSessionMemoryScopeMode(
+      ctx.session,
+      (agentRecord?.memoryScopeMode as 'all' | 'auto' | 'global' | 'agent' | 'session' | 'project' | null | undefined) ?? null,
+    ),
   })
 
   try {

@@ -24,6 +24,10 @@ import {
   shouldAutoCaptureMemoryTurn,
   shouldInjectMemoryContext,
 } from '@/lib/server/memory/memory-policy'
+import {
+  buildSessionMemoryScopeFilter,
+  resolveEffectiveSessionMemoryScopeMode,
+} from '@/lib/server/memory/session-memory-scope'
 import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 
 /**
@@ -651,6 +655,9 @@ const MemoryPlugin: Plugin = {
       // Group channels, threads, and shared "main" sessions don't see them.
       const connCtx = isDirectConnectorSession(ctx.session) ? ctx.session.connectorContext : null
       const isPrivateContext = !connCtx || !connCtx.isGroup
+      const scopeFilter = buildSessionMemoryScopeFilter(ctx.session)
+      const effectiveScopeMode = resolveEffectiveSessionMemoryScopeMode(ctx.session, null) || 'auto'
+      const strictScopedRecall = effectiveScopeMode === 'session' || effectiveScopeMode === 'project'
 
       const memDb = getMemoryDb()
       const seen = new Set<string>()
@@ -669,10 +676,12 @@ const MemoryPlugin: Plugin = {
       }
 
       // --- Always-on: pinned + identity memories (bypass shouldInjectMemoryContext gate) ---
-      const cached = getCachedAgentMemories(agentId)
-      const pinned = cached?.pinned ?? memDb.listPinned(agentId, 5)
-      const allRecent = cached?.allRecent ?? memDb.list(agentId, 100)
-      if (!cached) setCachedAgentMemories(agentId, pinned, allRecent)
+      const cached = strictScopedRecall ? null : getCachedAgentMemories(agentId)
+      const pinnedSource = cached?.pinned ?? memDb.listPinned(agentId, strictScopedRecall ? 50 : 5)
+      const allRecentSource = cached?.allRecent ?? memDb.list(agentId, strictScopedRecall ? 200 : 100)
+      if (!cached && !strictScopedRecall) setCachedAgentMemories(agentId, pinnedSource, allRecentSource)
+      const pinned = filterMemoriesByScope(pinnedSource, scopeFilter).slice(0, 5)
+      const allRecent = filterMemoriesByScope(allRecentSource, scopeFilter)
 
       const pinnedLines = pinned.filter(dedup).map(formatMemoryLine)
 
@@ -771,8 +780,8 @@ const MemoryPlugin: Plugin = {
         ].join('\n')
 
         const relevantSlice = Math.max(2, 6 - pinnedLines.length)
-        const relevantLookup = memDb.searchWithLinked(memoryQuerySeed, agentId, 1, 10, 14)
-        const recent = memDb.list(agentId, 12).slice(0, 6)
+        const relevantLookup = memDb.searchWithLinked(memoryQuerySeed, agentId, 1, 10, 14, { scope: scopeFilter })
+        const recent = filterMemoriesByScope(memDb.list(agentId, strictScopedRecall ? 60 : 12), scopeFilter).slice(0, 6)
         const relevantByTier = partitionMemoriesByTier(relevantLookup.entries)
         const recentByTier = partitionMemoriesByTier(recent)
 
@@ -825,7 +834,7 @@ const MemoryPlugin: Plugin = {
         '- Something I\'ve already stored',
         '',
         '**Categories** — pick the one that fits best when storing:',
-        '- `identity/preferences` — Likes, dislikes, style choices, timezone, pronouns, contact-specific behavioral rules (e.g. "do not reply to X unless directly addressed")',
+        '- `identity/preferences` — Likes, dislikes, style choices, timezone, pronouns, and personal preferences',
         '- `identity/relationships` — Who people are and how they relate to each other',
         '- `identity/contacts` — Phone numbers, emails, platform IDs for matching senders',
         '- `identity/routines` — Recurring patterns: "picks up kids at 3pm", "checks in every morning"',
@@ -843,8 +852,8 @@ const MemoryPlugin: Plugin = {
         '- Give memories clear titles ("User prefers dark mode" not "Note 1")',
         '- For contacts, store identifiers (phone, email, platform IDs) in content so I can match senders automatically',
         '- When storing something about a specific person, include their name in the title (e.g. "Wife prefers short replies") so it surfaces when they message',
-        '- Store behavioral rules about a person on their contact/relationship entry rather than as separate memories',
-        '- For contact boundaries like "stop replying to X" or "ignore messages from X unless they address me", store as identity/preferences with phrasing "Do not reply to [name] unless they directly address me" and metadata `boundaryType: \'quiet_until_directly_addressed\'` so the system can enforce it automatically',
+        '- Store behavioral notes about a person on their contact/relationship entry rather than as separate memories',
+        '- For connector-specific reply gating like "only respond when this sender addresses the agent by name", use Inbox/Connector Access settings instead of memory',
         '- Prefer durable memories first; only inspect session archives when transcript history is specifically needed',
         '- Check what I already know before storing something new',
         '- When I learn something that corrects old knowledge, update or remove the old memory',

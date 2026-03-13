@@ -148,7 +148,9 @@ export function resolveConnectorSessionPolicy(
 ): ResolvedConnectorSessionPolicy {
   const fallbackScope = msg.isGroup ? DEFAULT_GROUP_SCOPE : DEFAULT_DM_SCOPE
   const scope = normalizeConnectorSessionScope(
-    session?.connectorSessionScope ?? connector.config?.sessionScope,
+    msg.isOwnerConversation
+      ? 'main'
+      : session?.connectorSessionScope ?? connector.config?.sessionScope,
     fallbackScope,
   )
   const resetType = inferSessionResetType(session, {
@@ -393,7 +395,11 @@ export function buildConnectorDoctorWarnings(params: {
     connector.config?.allowFrom,
     ...globalWhatsAppAllowFrom,
   ].filter(Boolean).join(','))
+  const configuredDenyFrom = parseAllowFromCsv(connector.config?.denyFrom)
   const storedAllowFrom = listStoredAllowedSenders(connector.id)
+  const ownerSenderId = typeof connector.config?.ownerSenderId === 'string'
+    ? connector.config.ownerSenderId.trim()
+    : ''
   if (parseBool(connector.config?.statusReactions, true) && connector.platform === 'telegram') {
     warnings.push('Status reactions are enabled, but Telegram support is partial and may no-op depending on bot permissions.')
   }
@@ -427,11 +433,20 @@ export function buildConnectorDoctorWarnings(params: {
   if (!sampleMsg.isGroup && dmPolicy === 'open') {
     warnings.push('DM policy is "open", so any direct sender can start a connector session without approval.')
   }
+  if (configuredDenyFrom.length > 0) {
+    warnings.push(`Connector deny list is active for ${configuredDenyFrom.length} sender${configuredDenyFrom.length === 1 ? '' : 's'}.`)
+  }
   if (dmPolicy === 'allowlist' && configuredAllowFrom.length === 0 && storedAllowFrom.length === 0) {
     warnings.push('DM policy is "allowlist", but no approved sender IDs are configured or paired yet.')
   }
   if (dmPolicy === 'pairing' && configuredAllowFrom.length === 0 && storedAllowFrom.length === 0) {
     warnings.push('DM policy is "pairing" with no approved senders, so the first pairing approval will bootstrap trust from any DM.')
+  }
+  if (ownerSenderId && connector.chatroomId) {
+    warnings.push('Owner override is configured, but this connector routes to a chatroom, so owner messages still land in the chatroom instead of a main agent thread.')
+  }
+  if (ownerSenderId && configuredDenyFrom.includes(ownerSenderId.toLowerCase())) {
+    warnings.push('Owner override is also present in the deny list. Owner routing wins, so remove the deny entry if that sender should truly be blocked.')
   }
   if (connector.config?.providerOverride && !policy.providerOverride) {
     warnings.push(`Provider override "${connector.config.providerOverride}" is invalid, so connector runs fall back to the agent provider.`)

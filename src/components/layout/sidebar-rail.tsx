@@ -216,6 +216,14 @@ export function SidebarRail({
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
               </svg>
             </NavItem>
+            {isViewEnabled('inbox') && (
+              <NavItem view="inbox" label="Inbox" expanded={railExpanded} isActive={isNavActive('inbox')} onClick={() => handleNavClick('inbox')}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 12h-5l-2 3H9l-2-3H2" />
+                  <path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+                </svg>
+              </NavItem>
+            )}
             {isViewEnabled('chatrooms') && (
               <NavItem view="chatrooms" label="Chatrooms" expanded={railExpanded} isActive={isNavActive('chatrooms')} onClick={() => handleNavClick('chatrooms')}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

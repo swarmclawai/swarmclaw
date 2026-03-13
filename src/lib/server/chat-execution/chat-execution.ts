@@ -18,9 +18,9 @@ import { estimateCost, checkAgentBudgetLimits } from '@/lib/server/cost'
 import { log } from '@/lib/server/logger'
 import { logExecution } from '@/lib/server/execution-log'
 import { buildToolAvailabilityLines, buildToolDisciplineLines, streamAgentChat } from '@/lib/server/chat-execution/stream-agent-chat'
+import { pruneIncompleteToolEvents } from '@/lib/server/chat-execution/chat-streaming-utils'
 import { runLinkUnderstanding } from '@/lib/server/link-understanding'
 import type { Session } from '@/types'
-import type { ApprovalCategory } from '@/types'
 import { stripMainLoopMetaForPersistence } from '@/lib/server/agents/main-agent-loop'
 import { getPluginManager } from '@/lib/server/plugins'
 import { isLocalOpenClawEndpoint, normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
@@ -44,6 +44,8 @@ import {
   getPersistedAssistantText,
   getToolEventsSnapshotKey,
   requestedToolNamesFromMessage,
+  shouldReplaceRecentConnectorFollowupMessage,
+  shouldSuppressRedundantConnectorDeliveryFollowup,
   hasDirectLocalCodingTools,
   parseUsdLimit,
   getTodaySpendUsd,
@@ -51,6 +53,7 @@ import {
   estimateConversationTone,
   pruneOldHeartbeatMessages,
 } from '@/lib/server/chat-execution/chat-execution-utils'
+import { reconcileConnectorDeliveryText } from '@/lib/server/chat-execution/chat-execution-connector-delivery'
 import { runPostLlmToolRouting } from '@/lib/server/chat-execution/chat-turn-tool-routing'
 import {
   getCachedLlmResponse,
@@ -63,6 +66,7 @@ import { markProviderFailure, markProviderSuccess } from '@/lib/server/provider-
 import { isHeartbeatSource, isInternalHeartbeatRun } from '@/lib/server/runtime/heartbeat-source'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '@/lib/provider-sets'
 import { buildIdentityContinuityContext, refreshSessionIdentityState } from '@/lib/server/identity-continuity'
+import { resolveEffectiveSessionMemoryScopeMode } from '@/lib/server/memory/session-memory-scope'
 import { syncSessionArchiveMemory } from '@/lib/server/memory/session-archive-memory'
 import { evaluateSessionFreshness, resetSessionRuntime, resolveSessionResetPolicy } from '@/lib/server/session-reset-policy'
 import { pruneStreamingAssistantArtifacts, upsertStreamingAssistantArtifact } from '@/lib/chat/chat-streaming-state'
@@ -79,6 +83,7 @@ export {
   normalizeAssistantArtifactLinks,
   requestedToolNamesFromMessage,
   hasDirectLocalCodingTools,
+  reconcileConnectorDeliveryText,
 }
 
 export function buildAgentRuntimeCapabilities(enabledPlugins: string[]): string[] {
@@ -350,71 +355,6 @@ export function pruneSuppressedHeartbeatStreamMessage(messages: Message[]): bool
   return pruneStreamingAssistantArtifacts(messages)
 }
 
-function parseToolJsonObject(raw: string): Record<string, unknown> | null {
-  const trimmed = raw.trim()
-  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null
-  try {
-    const parsed = JSON.parse(trimmed)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null
-  } catch {
-    return null
-  }
-}
-
-function summarizeConnectorToolFailure(output: string): string {
-  const trimmed = output.trim()
-  const withoutPrefix = trimmed.replace(/^Error:\s*/i, '')
-  const parsed = parseToolJsonObject(withoutPrefix) || parseToolJsonObject(trimmed)
-  if (parsed) {
-    const detail = parsed.detail
-    if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
-      const detailRecord = detail as Record<string, unknown>
-      const message = typeof detailRecord.message === 'string' ? detailRecord.message.trim() : ''
-      if (message) return message
-      const code = typeof detailRecord.code === 'string' ? detailRecord.code.trim() : ''
-      const status = typeof detailRecord.status === 'string' ? detailRecord.status.trim() : ''
-      if (code && status) return `${code}: ${status}`
-      if (code) return code
-      if (status) return status
-    }
-    const message = typeof parsed.message === 'string' ? parsed.message.trim() : ''
-    if (message) return message
-    const error = typeof parsed.error === 'string' ? parsed.error.trim() : ''
-    if (error) return error
-  }
-  return withoutPrefix.replace(/\s+/g, ' ').trim() || 'Connector delivery failed.'
-}
-
-function connectorToolEventSucceeded(event: MessageToolEvent): boolean {
-  if (!event.output) return false
-  const parsed = parseToolJsonObject(event.output)
-  const status = typeof parsed?.status === 'string' ? parsed.status.trim().toLowerCase() : ''
-  return status === 'sent' || status === 'voice_sent' || status === 'scheduled'
-}
-
-const POSITIVE_CONNECTOR_DELIVERY_RE = /\b(?:i(?:'ve| have)?(?: successfully)? sent|i sent|successfully sent|sent to your|voice note (?:has been|was) sent|message (?:has been|was) sent)\b/i
-
-export function reconcileConnectorDeliveryText(text: string, events: MessageToolEvent[]): string {
-  const trimmed = text.trim()
-  if (!trimmed || !POSITIVE_CONNECTOR_DELIVERY_RE.test(trimmed)) return text
-
-  const connectorEvents = dedupeConsecutiveToolEvents(events).filter((event) => event.name === 'connector_message_tool')
-  if (connectorEvents.length === 0) return text
-  if (connectorEvents.some((event) => connectorToolEventSucceeded(event))) return text
-
-  const latestFailure = [...connectorEvents]
-    .reverse()
-    .find((event) => event.error === true && typeof event.output === 'string' && event.output.trim())
-
-  const failureSummary = latestFailure?.output
-    ? summarizeConnectorToolFailure(latestFailure.output)
-    : 'I could not confirm that the connector actually sent anything.'
-
-  return `I couldn't send that through the configured connector. ${failureSummary}`.trim()
-}
-
 function syncSessionFromAgent(sessionId: string): void {
   const sessions = loadSessions()
   const session = sessions[sessionId]
@@ -467,6 +407,11 @@ function syncSessionFromAgent(sessionId: string): void {
     session.plugins = Array.isArray(agent.plugins) ? [...agent.plugins] : []
     changed = true
   }
+  const desiredMemoryScopeMode = resolveEffectiveSessionMemoryScopeMode(session, agent.memoryScopeMode ?? null)
+  if ((((session as unknown as Record<string, unknown>).memoryScopeMode as string | null | undefined) ?? null) !== desiredMemoryScopeMode) {
+    ;(session as unknown as Record<string, unknown>).memoryScopeMode = desiredMemoryScopeMode
+    changed = true
+  }
   const isShortcutChat = session.shortcutForAgentId === agent.id || agent.threadSessionId === sessionId
   if (isShortcutChat) {
     const desiredPlugins = Array.isArray(agent.plugins) ? [...agent.plugins] : []
@@ -485,11 +430,6 @@ function syncSessionFromAgent(sessionId: string): void {
     const desiredHeartbeatIntervalSec = agent.heartbeatIntervalSec ?? null
     if ((session.heartbeatIntervalSec ?? null) !== desiredHeartbeatIntervalSec) {
       session.heartbeatIntervalSec = desiredHeartbeatIntervalSec
-      changed = true
-    }
-    const desiredMemoryScopeMode = agent.memoryScopeMode ?? null
-    if ((((session as unknown as Record<string, unknown>).memoryScopeMode as string | null | undefined) ?? null) !== desiredMemoryScopeMode) {
-      ;(session as unknown as Record<string, unknown>).memoryScopeMode = desiredMemoryScopeMode
       changed = true
     }
     const desiredMemoryTierPreference = agent.memoryTierPreference ?? null
@@ -1045,7 +985,9 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   const persistStreamingAssistantArtifact = async () => {
     partialSaveTimeout = null
     if (partialPersistenceClosed) return
-    const persistedToolEvents = toolEvents.length ? dedupeConsecutiveToolEvents([...toolEvents]) : []
+    const persistedToolEvents = toolEvents.length
+      ? dedupeConsecutiveToolEvents(pruneIncompleteToolEvents([...toolEvents]))
+      : []
     if (!hasPersistableAssistantPayload(streamingPartialText, thinkingText, persistedToolEvents)) return
 
     try {
@@ -1417,7 +1359,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     errorMessage = terminalError
   }
 
-  const persistedToolEvents = dedupeConsecutiveToolEvents(toolEvents)
+  const persistedToolEvents = dedupeConsecutiveToolEvents(pruneIncompleteToolEvents(toolEvents))
   let finalText = (fullResponse || '').trim() || (!internal && errorMessage ? `Error: ${errorMessage}` : '')
   if (pluginsForRun.length > 0 && finalText && !isHeartbeatRun) {
     try {
@@ -1537,36 +1479,55 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         const previous = current.messages.at(-1)
         const nextToolEvents = nextAssistantMessage.toolEvents || []
         const nextKind = nextAssistantMessage.kind || persistedKind
-        if (previous?.streaming || shouldReplaceRecentAssistantMessage({
+        if (shouldSuppressRedundantConnectorDeliveryFollowup({
           previous,
+          nextText: nextAssistantMessage.text,
+          nextToolEvents,
+          nextKind,
+          now: nowTs,
+        })) {
+          persistedResponseForHooks = nextAssistantMessage.text
+        } else if (previous?.streaming || shouldReplaceRecentAssistantMessage({
+          previous,
+          nextToolEvents,
+          nextKind,
+          now: nowTs,
+        }) || shouldReplaceRecentConnectorFollowupMessage({
+          previous,
+          nextText: nextAssistantMessage.text,
           nextToolEvents,
           nextKind,
           now: nowTs,
         })) {
           current.messages[current.messages.length - 1] = nextAssistantMessage
+          assistantPersisted = true
         } else {
           current.messages.push(nextAssistantMessage)
+          assistantPersisted = true
         }
-        assistantPersisted = true
         persistedResponseForHooks = nextAssistantMessage.text
-        if (isHeartbeatRun) {
-          current.lastHeartbeatText = nextAssistantMessage.text
-          current.lastHeartbeatSentAt = nowTs
-        }
-        try {
-          await pluginManager.runHook('onMessage', { session: current, message: nextAssistantMessage }, { enabledIds: pluginsForRun })
-        } catch { /* onMessage hooks are non-critical */ }
+        if (assistantPersisted) {
+          if (isHeartbeatRun) {
+            current.lastHeartbeatText = nextAssistantMessage.text
+            current.lastHeartbeatSentAt = nowTs
+          }
+          try {
+            await pluginManager.runHook('onMessage', { session: current, message: nextAssistantMessage }, { enabledIds: pluginsForRun })
+          } catch { /* onMessage hooks are non-critical */ }
 
-        // Conversation tone detection
-        if (!internal) {
-          const tone = estimateConversationTone(nextAssistantMessage.text)
-          if (tone !== current.conversationTone) {
-            current.conversationTone = tone
+          // Conversation tone detection
+          if (!internal) {
+            const tone = estimateConversationTone(nextAssistantMessage.text)
+            if (tone !== current.conversationTone) {
+              current.conversationTone = tone
+            }
           }
         }
 
         // Target routing for non-suppressed heartbeat alerts
         if (
+          assistantPersisted
+          &&
           isHeartbeatRun
           && shouldAutoRouteHeartbeatAlerts(heartbeatConfig)
           && heartbeatConfig?.target
@@ -1601,6 +1562,8 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
         // Auto-discover connectors linked to this agent when no explicit target is set
         // Skip if a real inbound message was handled recently — the agent just responded to it
         if (
+          assistantPersisted
+          &&
           isHeartbeatRun
           && shouldAutoRouteHeartbeatAlerts(heartbeatConfig)
           && !heartbeatConfig?.target

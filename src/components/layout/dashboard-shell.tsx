@@ -153,6 +153,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     if (view === 'chatrooms') return plugins['chatroom']?.enabled !== false
     if (view === 'schedules') return plugins['schedule']?.enabled !== false
     if (view === 'memory') return plugins['memory']?.enabled !== false
+    if (view === 'inbox') return plugins['connectors']?.enabled !== false
     if (view === 'connectors') return plugins['connectors']?.enabled !== false
     if (view === 'webhooks') return plugins['http']?.enabled !== false
     if (view === 'wallets') return plugins['wallet']?.enabled !== false

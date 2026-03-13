@@ -6,7 +6,13 @@ import { BottomSheet } from '@/components/shared/bottom-sheet'
 import { api } from '@/lib/app/api-client'
 import { useWs } from '@/hooks/use-ws'
 import { toast } from 'sonner'
-import type { Connector, ConnectorPlatform } from '@/types'
+import type {
+  Connector,
+  ConnectorAccessMutationAction,
+  ConnectorAccessMutationResponse,
+  ConnectorAccessSnapshot,
+  ConnectorPlatform,
+} from '@/types'
 import { ConnectorPlatformBadge } from '@/components/shared/connector-platform-icon'
 import { AgentPickerList } from '@/components/shared/agent-picker-list'
 import { ChatroomPickerList } from '@/components/shared/chatroom-picker-list'
@@ -16,6 +22,7 @@ import { HintTip } from '@/components/shared/hint-tip'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { ConnectorHealth } from '@/components/connectors/connector-health'
+import { ConnectorAccessPanel } from '@/components/connectors/connector-access-panel'
 import { errorMessage } from '@/lib/shared-utils'
 
 /** Auto-detect URLs in text and make them clickable links that open in a new tab */
@@ -77,6 +84,9 @@ const FIELD_HINTS: Record<string, string> = {
   spaceIds: 'Leave empty to allow all configured spaces',
   allowedJids: 'Phone numbers in international format, or WhatsApp JIDs. Leave empty to allow all',
   allowFrom: 'Only needed for allowlist or pairing DM policy modes',
+  denyFrom: 'Blocked sender IDs are rejected before pairing or reply generation',
+  dmAddressingMode: 'Control whether DMs need to address the agent by name before it replies',
+  ownerSenderId: 'Optional sender ID that should route to the main owner thread for direct agent connectors',
   scopes: 'Press Enter after each scope to add it',
 }
 
@@ -97,6 +107,11 @@ const DM_POLICY_OPTIONS: ConnectorConfigOption[] = [
   { value: 'allowlist', label: 'Allowlist' },
   { value: 'pairing', label: 'Pairing approval' },
   { value: 'disabled', label: 'Disabled' },
+]
+
+const DM_ADDRESSING_OPTIONS: ConnectorConfigOption[] = [
+  { value: 'open', label: 'Reply to any DM' },
+  { value: 'addressed', label: 'Require agent name' },
 ]
 
 const SESSION_SCOPE_OPTIONS: ConnectorConfigOption[] = [
@@ -205,8 +220,6 @@ const PLATFORMS: {
     tokenLabel: '',
     tokenHelp: '',
     configFields: [
-      { key: 'dmPolicy', label: 'DM Policy', placeholder: 'open', help: 'How new direct-message senders are handled. Leave unset to use the platform default.', type: 'select', options: DM_POLICY_OPTIONS, emptyLabel: 'Not set (default: open)' },
-      { key: 'allowFrom', label: 'Approved DM Senders', placeholder: '15551234567,447700900123', help: 'Optional allowlist used by allowlist/pairing mode.', type: 'tags' },
       { key: 'allowedJids', label: 'Allowed Numbers/Groups', placeholder: '1234567890,MyGroup', help: 'Leave empty to respond to all messages', type: 'tags' },
       { key: 'outboundJid', label: 'Default Outbound Recipient', placeholder: '15551234567 or 15551234567@s.whatsapp.net', help: 'Used by connector_message_tool when the agent sends proactive WhatsApp updates without an explicit "to" value' },
     ],
@@ -247,8 +260,6 @@ const PLATFORMS: {
     configFields: [
       { key: 'serverUrl', label: 'Server URL', placeholder: 'http://127.0.0.1:1234', help: 'BlueBubbles server URL (no trailing /api path needed)' },
       { key: 'chatIds', label: 'Allowed Chat IDs', placeholder: 'iMessage;-;+15551234567', help: 'Optional comma-separated chat IDs/guid fragments. Leave empty for all chats.', type: 'tags' },
-      { key: 'dmPolicy', label: 'DM Policy', placeholder: 'open', help: 'Access policy for direct-message senders. Leave unset to use the platform default.', type: 'select', options: DM_POLICY_OPTIONS, emptyLabel: 'Not set (default: open)' },
-      { key: 'allowFrom', label: 'Allowed Sender IDs', placeholder: '+15551234567,test@example.com', help: 'Optional sender allowlist used by allowlist/pairing mode.', type: 'tags' },
       { key: 'outboundTarget', label: 'Default Outbound Target', placeholder: 'iMessage;-;+15551234567', help: 'Used when proactive sends omit "to".' },
       { key: 'webhookSecret', label: 'Webhook Secret', placeholder: 'optional-shared-secret', help: 'Optional secret required by /api/connectors/{id}/webhook (header: x-connector-secret or ?secret=...)' },
       { key: 'timeoutMs', label: 'Request Timeout (ms)', placeholder: '10000', help: 'Optional BlueBubbles API timeout in milliseconds.' },
@@ -459,6 +470,47 @@ const COMMON_CONFIG_FIELDS: ConnectorConfigField[] = [
   },
 ]
 
+const ACCESS_CONTROL_FIELDS: ConnectorConfigField[] = [
+  {
+    key: 'dmPolicy',
+    label: 'DM Policy',
+    placeholder: 'open',
+    help: 'How new direct-message senders are handled for this connector.',
+    type: 'select',
+    options: DM_POLICY_OPTIONS,
+    emptyLabel: 'Not set (default: open)',
+  },
+  {
+    key: 'dmAddressingMode',
+    label: 'DM Addressing Default',
+    placeholder: 'open',
+    help: 'Whether direct messages should only trigger when the sender addresses the agent by name or replies to it.',
+    type: 'select',
+    options: DM_ADDRESSING_OPTIONS,
+    emptyLabel: 'Not set (default: reply to any DM)',
+  },
+  {
+    key: 'allowFrom',
+    label: 'Configured Allowlist',
+    placeholder: '15551234567,447700900123',
+    help: 'Connector-specific sender IDs that are always approved.',
+    type: 'tags',
+  },
+  {
+    key: 'denyFrom',
+    label: 'Deny List',
+    placeholder: '15551234567,447700900123',
+    help: 'Blocked sender IDs. These are rejected before pairing or reply generation.',
+    type: 'tags',
+  },
+  {
+    key: 'ownerSenderId',
+    label: 'Owner Sender ID',
+    placeholder: '15551234567@s.whatsapp.net',
+    help: 'Optional direct-message sender ID that should route into the main owner thread.',
+  },
+]
+
 export function ConnectorSheet() {
   const open = useAppStore((s) => s.connectorSheetOpen)
   const setOpen = useAppStore((s) => s.setConnectorSheetOpen)
@@ -519,13 +571,19 @@ export function ConnectorSheet() {
   const [doctorWarnings, setDoctorWarnings] = useState<string[]>([])
   const [doctorPolicy, setDoctorPolicy] = useState<ConnectorDoctorPolicyPreview | null>(null)
   const [doctorLoading, setDoctorLoading] = useState(false)
+  const [accessSnapshot, setAccessSnapshot] = useState<ConnectorAccessSnapshot | null>(null)
+  const [accessLoading, setAccessLoading] = useState(false)
+  const [accessError, setAccessError] = useState<string | null>(null)
+  const [accessPending, setAccessPending] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmWhatsAppAction, setConfirmWhatsAppAction] = useState<'unlink' | 'repair' | null>(null)
   const [deleting, setDeleting] = useState(false)
   const localAllowlistCount = config.allowFrom ? config.allowFrom.split(',').map((entry) => entry.trim()).filter(Boolean).length : 0
+  const localBlocklistCount = config.denyFrom ? config.denyFrom.split(',').map((entry) => entry.trim()).filter(Boolean).length : 0
   const globalWhatsAppAllowlistCount = platform === 'whatsapp' && Array.isArray(appSettings.whatsappApprovedContacts)
     ? appSettings.whatsappApprovedContacts.length
     : 0
+  const supportsAccessControls = platform === 'whatsapp' || platform === 'bluebubbles'
 
   const editing = editingId ? connectors[editingId] as Connector | undefined : null
 
@@ -563,7 +621,7 @@ export function ConnectorSheet() {
     setWaAuthenticated(false)
     setWaHasCreds(false)
     setWaConnecting(false)
-  }, [editingIdRef, open])
+  }, [editing, editingIdRef, open])
 
   // Poll for QR code when WhatsApp connector is running or connecting
   const isWaRunning = editing?.platform === 'whatsapp' && (editing?.status === 'running' || waConnecting)
@@ -583,11 +641,11 @@ export function ConnectorSheet() {
         }
       }
     } catch { /* ignore */ }
-  }, [editing?.id, editing?.status])
+  }, [editing])
 
   useEffect(() => {
     if (editing && isWaRunning) pollWaStatus()
-  }, [editing?.id, isWaRunning, pollWaStatus])
+  }, [editing, editing?.id, isWaRunning, pollWaStatus])
 
   useWs('connectors', pollWaStatus, isWaRunning ? 2000 : undefined)
 
@@ -618,6 +676,10 @@ export function ConnectorSheet() {
       setDoctorWarnings([])
       setDoctorPolicy(null)
       setDoctorLoading(false)
+      setAccessSnapshot(null)
+      setAccessLoading(false)
+      setAccessError(null)
+      setAccessPending(false)
       setConfirmDelete(false)
       setConfirmWhatsAppAction(null)
       setDeleting(false)
@@ -628,6 +690,82 @@ export function ConnectorSheet() {
     }, 250)
     return () => window.clearTimeout(timer)
   }, [open, loadDoctorPreview])
+
+  const applySnapshotToConfig = useCallback((snapshot: ConnectorAccessSnapshot) => {
+    setConfig((prev) => {
+      const next = { ...prev }
+      if (snapshot.dmAddressingMode === 'addressed') next.dmAddressingMode = 'addressed'
+      else delete next.dmAddressingMode
+      if (snapshot.allowFrom.length > 0) next.allowFrom = snapshot.allowFrom.join(',')
+      else delete next.allowFrom
+      if (snapshot.denyFrom.length > 0) next.denyFrom = snapshot.denyFrom.join(',')
+      else delete next.denyFrom
+      if (snapshot.ownerSenderId) next.ownerSenderId = snapshot.ownerSenderId
+      else delete next.ownerSenderId
+      return next
+    })
+  }, [])
+
+  const loadAccessSnapshot = useCallback(async () => {
+    if (!editing?.id) {
+      setAccessSnapshot(null)
+      setAccessError(null)
+      return
+    }
+    setAccessLoading(true)
+    setAccessError(null)
+    try {
+      const snapshot = await api<ConnectorAccessSnapshot>('GET', `/connectors/${editing.id}/access`)
+      setAccessSnapshot(snapshot)
+    } catch (err: unknown) {
+      setAccessSnapshot(null)
+      setAccessError(errorMessage(err))
+    } finally {
+      setAccessLoading(false)
+    }
+  }, [editing?.id])
+
+  useEffect(() => {
+    if (!open || !editing?.id) {
+      setAccessSnapshot(null)
+      setAccessLoading(false)
+      setAccessError(null)
+      return
+    }
+    void loadAccessSnapshot()
+  }, [editing?.id, loadAccessSnapshot, open])
+
+  const handleAccessAction = useCallback(async (
+    action: ConnectorAccessMutationAction,
+    payload?: {
+      senderId?: string | null
+      senderIdAlt?: string | null
+      code?: string | null
+      dmAddressingMode?: 'open' | 'addressed' | null
+    },
+  ) => {
+    if (!editing?.id) return
+    setAccessPending(true)
+    setAccessError(null)
+    try {
+      const result = await api<ConnectorAccessMutationResponse>('PUT', `/connectors/${editing.id}/access`, {
+        action,
+        senderId: payload?.senderId || null,
+        senderIdAlt: payload?.senderIdAlt || null,
+        code: payload?.code || null,
+        dmAddressingMode: payload?.dmAddressingMode || null,
+      })
+      setAccessSnapshot(result.snapshot)
+      applySnapshotToConfig(result.snapshot)
+      await loadConnectors()
+    } catch (err: unknown) {
+      const message = errorMessage(err)
+      setAccessError(message)
+      toast.error(message)
+    } finally {
+      setAccessPending(false)
+    }
+  }, [applySnapshotToConfig, editing?.id, loadConnectors])
 
   const handleSave = async () => {
     const hasTarget = routeMode === 'agent' ? !!agentId : !!chatroomId
@@ -1084,6 +1222,34 @@ export function ConnectorSheet() {
         </div>
       )}
 
+      {supportsAccessControls && (
+        <div className="mb-2">
+          <SectionLabel>Access &amp; Ownership</SectionLabel>
+          <p className="text-[12px] text-text-3/60 mb-4">
+            Configure who can DM this connector, who is blocked, and which sender should be treated as the connector owner.
+          </p>
+          {ACCESS_CONTROL_FIELDS.map((field) => renderConfigField(field))}
+          {platform === 'whatsapp' && (
+            <div className="mb-6 rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-[12px] text-text-3">
+              Global WhatsApp approved contacts are shown in the access panel below and still managed from Settings.
+            </div>
+          )}
+          {editing && (
+            <div className="mb-6">
+              <ConnectorAccessPanel
+                connector={editing}
+                snapshot={accessSnapshot}
+                loading={accessLoading}
+                error={accessError}
+                pending={accessPending}
+                onAction={handleAccessAction}
+                description="Live pairing store and owner controls for this connector. Form fields above edit saved config; actions here manage paired senders and pending requests immediately."
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="mb-2">
         <SectionLabel>Routing &amp; Autonomy</SectionLabel>
         <p className="text-[12px] text-text-3/60 mb-4">
@@ -1165,6 +1331,7 @@ export function ConnectorSheet() {
             </div>
             <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3/80">
               Allowlist: <span className="text-text-2">{localAllowlistCount + globalWhatsAppAllowlistCount}</span>{' '}
+              · Blocked: <span className="text-text-2">{localBlocklistCount}</span>{' '}
               · Reactions: <span className="text-text-2">{doctorPolicy.statusReactions === false ? 'off' : 'on'}</span>{' '}
               · Typing: <span className="text-text-2">{doctorPolicy.typingIndicators === false ? 'off' : 'on'}</span>
             </div>
@@ -1208,6 +1375,7 @@ export function ConnectorSheet() {
             Open WhatsApp &gt; Settings &gt; Linked Devices &gt; Link a Device
           </p>
           <div className="inline-block p-2 bg-white rounded-[12px]">
+            {/* eslint-disable-next-line @next/next/no-img-element -- WhatsApp QR data URL is generated at runtime */}
             <img src={qrDataUrl} alt="WhatsApp QR Code" className="w-[240px] h-[240px]" />
           </div>
           <p className="text-[11px] text-text-3 mt-3">QR code refreshes automatically</p>

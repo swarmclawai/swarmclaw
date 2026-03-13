@@ -38,11 +38,13 @@ describe('local observability', () => {
   it('shows observable platform sessions only on localhost', () => {
     const workbench = makeSession({ id: 'wb-1', user: 'workbench' })
     const swarm = makeSession({ id: 'sw-1', user: 'swarm' })
+    const connector = makeSession({ id: 'conn-1', user: 'connector' })
     const mine = makeSession({ id: 'me-1', user: 'wayde' })
 
     assert.equal(isVisibleSessionForViewer(workbench, 'wayde', { localhost: false }), false)
     assert.equal(isVisibleSessionForViewer(workbench, 'wayde', { localhost: true }), true)
     assert.equal(isVisibleSessionForViewer(swarm, 'wayde', { localhost: false }), true)
+    assert.equal(isVisibleSessionForViewer(connector, 'wayde', { localhost: false }), false)
     assert.equal(isVisibleSessionForViewer(mine, 'wayde', { localhost: false }), true)
   })
 

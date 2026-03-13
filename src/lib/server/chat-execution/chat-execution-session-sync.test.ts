@@ -231,6 +231,100 @@ test('executeSessionChatTurn keeps tool-only heartbeats off the visible main-thr
   assert.equal(output.heartbeatKinds, 0)
 })
 
+test('executeSessionChatTurn forces external connector sessions onto session-scoped memory', () => {
+  const output = runWithTempDataDir(`
+    const storageMod = await import('@/lib/server/storage')
+    const providersMod = await import('@/lib/providers/index')
+    const execMod = await import('@/lib/server/chat-execution/chat-execution')
+    const storage = storageMod.default || storageMod['module.exports'] || storageMod
+    const executeSessionChatTurn = execMod.executeSessionChatTurn
+      || execMod.default?.executeSessionChatTurn
+      || execMod['module.exports']?.executeSessionChatTurn
+    const providers = providersMod.PROVIDERS
+      || providersMod.default?.PROVIDERS
+      || providersMod['module.exports']?.PROVIDERS
+
+    providers['test-provider'] = {
+      id: 'test-provider',
+      name: 'Test Provider',
+      models: ['unit'],
+      requiresApiKey: false,
+      requiresEndpoint: false,
+      handler: {
+        async streamChat() {
+          return 'connector reply'
+        },
+      },
+    }
+
+    const now = Date.now()
+    storage.saveAgents({
+      inbox: {
+        id: 'inbox',
+        name: 'Inbox Agent',
+        description: 'External connector scope test',
+        provider: 'test-provider',
+        model: 'unit',
+        credentialId: null,
+        apiEndpoint: null,
+        fallbackCredentialIds: [],
+        disabled: false,
+        heartbeatEnabled: false,
+        heartbeatIntervalSec: null,
+        memoryScopeMode: 'agent',
+        plugins: ['memory'],
+        createdAt: now,
+        updatedAt: now,
+      },
+    })
+
+    storage.saveSessions({
+      connector_peer: {
+        id: 'connector_peer',
+        name: 'connector:whatsapp:conn-whats:peer:447700900000',
+        cwd: process.env.WORKSPACE_DIR,
+        user: 'connector',
+        provider: 'test-provider',
+        model: 'unit',
+        claudeSessionId: null,
+        codexThreadId: null,
+        opencodeSessionId: null,
+        delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null },
+        messages: [],
+        createdAt: now,
+        lastActiveAt: now,
+        sessionType: 'human',
+        agentId: 'inbox',
+        plugins: ['memory'],
+        memoryScopeMode: 'agent',
+        connectorContext: {
+          connectorId: 'conn-whats',
+          platform: 'whatsapp',
+          channelId: '447700900000@s.whatsapp.net',
+          senderId: '447700900000@s.whatsapp.net',
+          senderName: 'External Sender',
+          isOwnerConversation: false,
+        },
+      },
+    })
+
+    await executeSessionChatTurn({
+      sessionId: 'connector_peer',
+      message: 'remember my dog is called Kiki',
+      runId: 'run-connector-session-scope',
+    })
+
+    const persisted = storage.loadSession('connector_peer')
+    console.log(JSON.stringify({
+      memoryScopeMode: persisted?.memoryScopeMode || null,
+      connectorContext: persisted?.connectorContext || null,
+    }))
+  `)
+
+  assert.equal(output.memoryScopeMode, 'session')
+  assert.equal(output.connectorContext?.isOwnerConversation, false)
+})
+
 test('executeSessionChatTurn applies lifecycle hooks for model resolution and message persistence', () => {
   const output = runWithTempDataDir(`
     const storageMod = await import('@/lib/server/storage')
