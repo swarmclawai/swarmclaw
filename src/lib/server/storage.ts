@@ -11,7 +11,7 @@ import { safeJsonParseObject } from './json-utils'
 import { normalizeHeartbeatSettingFields } from '@/lib/runtime/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
 import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
-import type { AppNotification, BoardTask, ExternalAgentRuntime, GatewayProfile, Message, Session } from '@/types'
+import type { AppNotification, BoardTask, ExternalAgentRuntime, GatewayProfile, Message, Session, SkillSuggestion } from '@/types'
 import { dedup, hmrSingleton } from '@/lib/shared-utils'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
@@ -181,6 +181,7 @@ const COLLECTIONS = [
   'provider_configs',
   'gateway_profiles',
   'skills',
+  'skill_suggestions',
   'connectors',
   'documents',
   'webhooks',
@@ -716,7 +717,7 @@ if (!IS_BUILD_BOOTSTRAP) {
       description: 'A general-purpose AI assistant',
       provider: 'claude-cli',
       model: '',
-      systemPrompt: `You are the SwarmClaw assistant. SwarmClaw is a self-hosted AI agent orchestration dashboard.
+      systemPrompt: `You are the SwarmClaw assistant. SwarmClaw is a self-hosted AI orchestration control plane.
 
 ## Platform
 
@@ -752,6 +753,7 @@ Be concise but not curt. Warmth doesn't require verbosity. When someone asks "ho
       heartbeatEnabled: true,
       platformAssignScope: 'all',
       skillIds: [],
+      autoDraftSkillSuggestions: true,
       subAgentIds: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -775,6 +777,10 @@ Be concise but not curt. Warmth doesn't require verbosity. When someone asks "ho
             existing.isOrchestrator = derivedIsOrchestrator
             existing.updatedAt = Date.now()
           }
+        }
+        if (existing.autoDraftSkillSuggestions !== false && existing.autoDraftSkillSuggestions !== true) {
+          existing.autoDraftSkillSuggestions = true
+          existing.updatedAt = Date.now()
         }
         if (JSON.stringify(JSON.parse(row.data)) !== JSON.stringify(existing)) {
           db.prepare('UPDATE agents SET data = ? WHERE id = ?').run(JSON.stringify(existing), 'default')
@@ -1282,6 +1288,18 @@ export const deleteProject = projectsStore.deleteItem
 const skillsStore = createCollectionStore('skills')
 export const loadSkills = skillsStore.load
 export const saveSkills = skillsStore.save
+
+// --- Skill Suggestions ---
+const skillSuggestionsStore = createCollectionStore('skill_suggestions')
+export const loadSkillSuggestions = skillSuggestionsStore.load as () => Record<string, SkillSuggestion>
+export const saveSkillSuggestions = skillSuggestionsStore.save as (items: Record<string, SkillSuggestion>) => void
+export const loadSkillSuggestion = skillSuggestionsStore.loadItem as (id: string) => SkillSuggestion | null
+export const upsertSkillSuggestion = skillSuggestionsStore.upsert as (id: string, value: SkillSuggestion) => void
+export const patchSkillSuggestion = skillSuggestionsStore.patch as (
+  id: string,
+  updater: (current: SkillSuggestion | null) => SkillSuggestion | null,
+) => SkillSuggestion | null
+export const deleteSkillSuggestion = skillSuggestionsStore.deleteItem
 
 // --- External Agent Runtimes ---
 const externalAgentsStore = createCollectionStore('external_agents')

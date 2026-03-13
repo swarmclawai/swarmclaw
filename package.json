@@ -1,7 +1,7 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "1.0.4",
-  "description": "Self-hosted AI agent orchestration dashboard with OpenClaw integration, multi-provider support, LangGraph workflows, and chat platform connectors.",
+  "version": "1.0.5",
+  "description": "Self-hosted AI orchestration control plane for OpenClaw, multi-agent workflows, runtime skills, crypto wallets, and chat platform connectors.",
   "license": "MIT",
   "publishConfig": {
     "access": "public",
@@ -17,9 +17,10 @@
     "llm",
     "orchestration",
     "swarm",
-    "dashboard",
+    "openclaw",
     "self-hosted",
-    "chatbot"
+    "wallets",
+    "multi-agent"
   ],
   "engines": {
     "node": ">=22.6.0"

@@ -87,7 +87,7 @@ test('resolveRuntimeSkills auto-matches skills from explicit tool metadata and r
   assert.ok(skill?.matchReasons.some((reason) => /matches tools/i.test(reason)))
 })
 
-test('recommendRuntimeSkillsForTask ranks matching local skills and prompt blocks include auto-matched skills', () => {
+test('recommendRuntimeSkillsForTask ranks matching local skills and prompt blocks include auto-matched skills', async () => {
   const storedSkills = {
     gws_skill: makeSkill('gws_skill', {
       name: 'google-workspace-helper',
@@ -105,13 +105,48 @@ test('recommendRuntimeSkillsForTask ranks matching local skills and prompt block
     enabledPlugins: ['google_workspace'],
     storedSkills,
   })
-  const recommended = recommendRuntimeSkillsForTask(snapshot.skills, 'Update the Google Docs and Sheets workspace report', ['google_workspace'])
+  const recommended = await recommendRuntimeSkillsForTask(snapshot.skills, 'Update the Google Docs and Sheets workspace report', ['google_workspace'])
 
   assert.equal(recommended[0]?.skill.name, 'google-workspace-helper')
   const blocks = buildRuntimeSkillPromptBlocks(snapshot).join('\n')
   assert.match(blocks, /Skill Runtime/)
   assert.match(blocks, /Available Skills/)
   assert.match(blocks, /google-workspace-helper/)
+})
+
+test('recommendRuntimeSkillsForTask supports embedding ranking when configured', async () => {
+  const storedSkills = {
+    deploy_skill: makeSkill('deploy_skill', {
+      name: 'deploy-verification',
+      description: 'Verify deploy blockers, config, and smoke checks.',
+      capabilities: ['deploy', 'verification', 'smoke'],
+    }),
+    notes_skill: makeSkill('notes_skill', {
+      name: 'meeting-notes',
+      description: 'Capture meeting notes and follow-ups.',
+      capabilities: ['notes', 'meeting'],
+    }),
+  }
+
+  const snapshot = resolveRuntimeSkills({ storedSkills })
+  const recommended = await recommendRuntimeSkillsForTask(
+    snapshot.skills,
+    'Investigate the deployment failure and validate config before rerunning smoke checks.',
+    null,
+    {
+      mode: 'embedding',
+      limit: 5,
+      embeddingResolver: async (text) => {
+        if (text.includes('deployment failure')) return [1, 0, 0]
+        if (text.includes('deploy-verification')) return [0.98, 0.02, 0]
+        if (text.includes('meeting-notes')) return [0, 1, 0]
+        return [0, 0, 1]
+      },
+    },
+  )
+
+  assert.equal(recommended[0]?.skill.name, 'deploy-verification')
+  assert.ok(recommended[0]?.reasons.some((reason) => /semantic similarity/i.test(reason)))
 })
 
 test('buildRuntimeSkillPromptBlocks only inlines pinned skills before explicit selection', () => {

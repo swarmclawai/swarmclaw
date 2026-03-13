@@ -84,17 +84,23 @@ function resolveSkillSelector(rawArgs: Record<string, unknown>): string {
   return ''
 }
 
-function resolveTargetSkill(params: {
+async function resolveTargetSkill(params: {
   rawArgs: Record<string, unknown>
   snapshot: RuntimeSkillSnapshot
+  activePlugins?: string[] | null
   requireExplicit?: boolean
-}): ResolvedRuntimeSkill | null {
+}): Promise<ResolvedRuntimeSkill | null> {
   const selector = resolveSkillSelector(params.rawArgs)
   if (selector) return findResolvedSkill(params.snapshot.skills, selector)
 
   const query = typeof params.rawArgs.query === 'string' ? params.rawArgs.query.trim() : ''
   if (query) {
-    const ranked = recommendRuntimeSkillsForTask(params.snapshot.skills, query)
+    const ranked = await recommendRuntimeSkillsForTask(
+      params.snapshot.skills,
+      query,
+      params.activePlugins,
+      { limit: parseSearchLimit(params.rawArgs.limit, 8) },
+    )
     const top = ranked.find((entry) => entry.skill.eligible || entry.skill.runnable)
       || ranked[0]
     return top?.skill || null
@@ -307,7 +313,7 @@ export function buildSkillRuntimeTools(bctx: ToolBuildContext): StructuredToolIn
               const query = typeof normalized.query === 'string' ? normalized.query.trim() : ''
               const limit = parseSearchLimit(normalized.limit, 12)
               const ranked: RuntimeSkillRecommendation[] = query
-                ? recommendRuntimeSkillsForTask(snapshot.skills, query, bctx.activePlugins)
+                ? await recommendRuntimeSkillsForTask(snapshot.skills, query, bctx.activePlugins, { limit })
                 : snapshot.skills.map((skill) => ({ skill, score: skill.score, reasons: skill.matchReasons }))
               return JSON.stringify({
                 selectedSkillId: snapshot.selectedSkill?.id || null,
@@ -319,7 +325,7 @@ export function buildSkillRuntimeTools(bctx: ToolBuildContext): StructuredToolIn
               })
             }
             case 'select': {
-              const target = resolveTargetSkill({ rawArgs: normalized, snapshot, requireExplicit: true })
+              const target = await resolveTargetSkill({ rawArgs: normalized, snapshot, activePlugins: bctx.activePlugins, requireExplicit: true })
               if (!target) return JSON.stringify({ ok: false, blocker: 'No matching skill found to select.' })
               persistSkillRuntimeState({ bctx, skill: target, action: 'select' })
               return JSON.stringify({
@@ -329,7 +335,7 @@ export function buildSkillRuntimeTools(bctx: ToolBuildContext): StructuredToolIn
               })
             }
             case 'load': {
-              const target = resolveTargetSkill({ rawArgs: normalized, snapshot })
+              const target = await resolveTargetSkill({ rawArgs: normalized, snapshot, activePlugins: bctx.activePlugins })
               if (!target) return JSON.stringify({ ok: false, blocker: 'No selected or matching skill found to load.' })
               persistSkillRuntimeState({ bctx, skill: target, action: 'load' })
               return JSON.stringify({
@@ -340,13 +346,13 @@ export function buildSkillRuntimeTools(bctx: ToolBuildContext): StructuredToolIn
               })
             }
             case 'run': {
-              const target = resolveTargetSkill({ rawArgs: normalized, snapshot })
+              const target = await resolveTargetSkill({ rawArgs: normalized, snapshot, activePlugins: bctx.activePlugins })
               if (!target) return JSON.stringify({ ok: false, blocker: 'No selected or matching skill found to run.' })
               persistSkillRuntimeState({ bctx, skill: target, action: 'select' })
               return dispatchSkillRun({ bctx, skill: target, rawArgs: normalized })
             }
             case 'explain_blocker': {
-              const target = resolveTargetSkill({ rawArgs: normalized, snapshot })
+              const target = await resolveTargetSkill({ rawArgs: normalized, snapshot, activePlugins: bctx.activePlugins })
               return JSON.stringify(explainSkillBlocker(target))
             }
             default:

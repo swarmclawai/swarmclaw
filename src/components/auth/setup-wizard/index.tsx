@@ -133,6 +133,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         tools: getDefaultAgentPluginIds(),
         capabilities: [],
         platformAssignScope: 'self',
+        autoDraftSkillSuggestions: true,
         avatarSeed: crypto.randomUUID().slice(0, 8),
         avatarUrl: null,
         enabled: true,
@@ -189,6 +190,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       tools: getDefaultAgentPluginIds(),
       capabilities: [],
       platformAssignScope: 'self',
+      autoDraftSkillSuggestions: true,
       avatarSeed: crypto.randomUUID().slice(0, 8),
       avatarUrl: null,
       enabled: true,
@@ -318,6 +320,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           plugins: draft.tools,
           capabilities: draft.capabilities,
           platformAssignScope: draft.platformAssignScope,
+          autoDraftSkillSuggestions: draft.autoDraftSkillSuggestions,
           avatarSeed: draft.avatarSeed.trim() || undefined,
           avatarUrl: draft.avatarUrl || null,
         }

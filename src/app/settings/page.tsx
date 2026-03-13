@@ -17,6 +17,7 @@ import { VoiceSection } from '@/views/settings/section-voice'
 import { WebSearchSection } from '@/views/settings/section-web-search'
 import { HeartbeatSection } from '@/views/settings/section-heartbeat'
 import { EmbeddingSection } from '@/views/settings/section-embedding'
+import { SkillsSection } from '@/views/settings/section-skills'
 import { MemorySection } from '@/views/settings/section-memory'
 import { SecretsSection } from '@/views/settings/section-secrets'
 import { ProvidersSection } from '@/views/settings/section-providers'
@@ -195,6 +196,14 @@ export default function SettingsRoute() {
       description: 'Configure providers for embeddings and vector-backed features.',
       keywords: ['embedding', 'vector', 'provider', 'semantic'],
       render: () => <EmbeddingSection {...sectionProps} credList={credList} />,
+    },
+    {
+      id: 'skills',
+      tabId: 'memory',
+      title: 'Skills',
+      description: 'Tune runtime skill recommendation ranking and suggestion behavior.',
+      keywords: ['skills', 'retrieval', 'semantic', 'recommendation', 'embedding'],
+      render: () => <SkillsSection {...sectionProps} />,
     },
     {
       id: 'memory',

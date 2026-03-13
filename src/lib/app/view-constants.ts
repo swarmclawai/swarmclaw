@@ -40,7 +40,7 @@ export const CREATE_LABELS: Partial<Record<AppView, string>> = {
 }
 
 export const VIEW_DESCRIPTIONS: Record<AppView, string> = {
-  home: 'Dashboard overview',
+  home: 'SwarmClaw overview',
   agents: 'Chat with & configure your AI agents',
   chatrooms: 'Multi-agent collaborative chatrooms',
   schedules: 'Automated task schedules',
@@ -103,8 +103,8 @@ export const VIEW_EMPTY_STATES: Record<Exclude<AppView, 'agents' | 'home'>, { ic
   skills: {
     icon: 'book',
     title: 'Skills',
-    description: 'Upload and manage reusable instruction sets that agents can use during task execution.',
-    features: ['Upload markdown files with specialized instructions', 'Assign skills to specific agents', 'Skills are injected into agent system prompts', 'Create libraries of reusable expertise'],
+    description: 'Manage reusable instruction sets, runtime skill selection, and reviewed skill drafts generated from real conversations.',
+    features: ['Upload markdown files with specialized instructions', 'Approve reviewed skill drafts from conversations', 'Assign skills to specific agents', 'Use runtime skill recommendations during execution'],
   },
   connectors: {
     icon: 'link',

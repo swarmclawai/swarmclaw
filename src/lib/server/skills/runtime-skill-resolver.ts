@@ -1,3 +1,5 @@
+import crypto from 'node:crypto'
+
 import type {
   Skill,
   SkillCommandDispatch,
@@ -9,6 +11,7 @@ import type {
 import { dedup } from '@/lib/shared-utils'
 import { expandPluginIds, getPluginAliases, normalizePluginId } from '@/lib/server/tool-aliases'
 import { loadSettings, loadSkills } from '@/lib/server/storage'
+import { cosineSimilarity, getEmbedding } from '@/lib/server/embeddings'
 import { discoverSkills, type DiscoveredSkill } from './skill-discovery'
 import { evaluateSkillEligibility } from './skill-eligibility'
 import {
@@ -135,12 +138,23 @@ export interface RuntimeSkillRecommendation {
   reasons: string[]
 }
 
+export type RuntimeSkillRetrievalMode = 'keyword' | 'embedding'
+
+export interface RuntimeSkillRecommendationOptions {
+  mode?: RuntimeSkillRetrievalMode
+  limit?: number
+  embeddingResolver?: (text: string) => Promise<number[] | null>
+}
+
 const SOURCE_PRIORITY: Record<RuntimeSkillSource, number> = {
   bundled: 10,
   stored: 20,
   workspace: 30,
   project: 40,
 }
+
+const DEFAULT_RUNTIME_SKILL_TOP_K = 8
+const embeddingCache = new Map<string, Promise<number[] | null>>()
 
 function normalizeKey(value: string | null | undefined): string {
   return String(value || '')
@@ -675,7 +689,7 @@ function buildAvailableSkillBlocks(skills: ResolvedRuntimeSkill[]): string[] {
     : []
 }
 
-export function recommendRuntimeSkillsForTask(
+function recommendRuntimeSkillsForTaskSync(
   skills: ResolvedRuntimeSkill[],
   task: string,
   enabledPlugins?: string[] | null,
@@ -732,6 +746,105 @@ export function recommendRuntimeSkillsForTask(
       if (b.score !== a.score) return b.score - a.score
       return a.skill.name.localeCompare(b.skill.name)
     })
+}
+
+function getRecommendationMode(options?: RuntimeSkillRecommendationOptions): RuntimeSkillRetrievalMode {
+  if (options?.mode === 'embedding' || options?.mode === 'keyword') return options.mode
+  const configured = loadSettings().runtimeSkillRetrievalMode
+  return configured === 'embedding' ? 'embedding' : 'keyword'
+}
+
+function getRecommendationLimit(options?: RuntimeSkillRecommendationOptions): number {
+  if (typeof options?.limit === 'number' && Number.isFinite(options.limit)) {
+    return Math.max(1, Math.min(20, Math.trunc(options.limit)))
+  }
+  const configured = loadSettings().runtimeSkillTopK
+  if (typeof configured === 'number' && Number.isFinite(configured)) {
+    return Math.max(1, Math.min(20, Math.trunc(configured)))
+  }
+  return DEFAULT_RUNTIME_SKILL_TOP_K
+}
+
+function buildSkillEmbeddingText(skill: ResolvedRuntimeSkill): string {
+  return [
+    skill.name,
+    skill.description || '',
+    skill.tags.join(' '),
+    skill.capabilities.join(' '),
+    skill.content.slice(0, 1200),
+  ].join('\n')
+}
+
+function getSkillEmbeddingCacheKey(skill: ResolvedRuntimeSkill): string {
+  const hash = crypto.createHash('sha1')
+  hash.update(skill.id)
+  hash.update('\n')
+  hash.update(buildSkillEmbeddingText(skill))
+  return hash.digest('hex')
+}
+
+async function getCachedSkillEmbedding(
+  skill: ResolvedRuntimeSkill,
+  embeddingResolver: (text: string) => Promise<number[] | null>,
+): Promise<number[] | null> {
+  const key = getSkillEmbeddingCacheKey(skill)
+  let cached = embeddingCache.get(key)
+  if (!cached) {
+    cached = embeddingResolver(buildSkillEmbeddingText(skill))
+    embeddingCache.set(key, cached)
+  }
+  return cached
+}
+
+export async function recommendRuntimeSkillsForTask(
+  skills: ResolvedRuntimeSkill[],
+  task: string,
+  enabledPlugins?: string[] | null,
+  options?: RuntimeSkillRecommendationOptions,
+): Promise<RuntimeSkillRecommendation[]> {
+  const keywordRanked = recommendRuntimeSkillsForTaskSync(skills, task, enabledPlugins)
+  const limit = getRecommendationLimit(options)
+  const mode = getRecommendationMode(options)
+  if (mode !== 'embedding') return keywordRanked.slice(0, limit)
+
+  const embeddingResolver = options?.embeddingResolver || getEmbedding
+  const taskEmbedding = await embeddingResolver(task)
+  if (!taskEmbedding) {
+    return keywordRanked.slice(0, limit).map((entry) => ({
+      ...entry,
+      reasons: dedup([...entry.reasons, 'embedding retrieval unavailable; used keyword ranking']),
+    }))
+  }
+
+  const enriched = await Promise.all(skills.map(async (skill) => {
+    const baseline = keywordRanked.find((entry) => entry.skill.id === skill.id) || {
+      skill,
+      score: skill.score,
+      reasons: [...skill.matchReasons],
+    }
+    const skillEmbedding = await getCachedSkillEmbedding(skill, embeddingResolver)
+    const semantic = skillEmbedding ? cosineSimilarity(taskEmbedding, skillEmbedding) : 0
+    let score = baseline.score
+    const reasons = [...baseline.reasons]
+    if (semantic >= 0.35) {
+      score += 18 + Math.round(semantic * 20)
+      reasons.push('semantic similarity via embeddings')
+    } else if (semantic >= 0.2) {
+      score += 8 + Math.round(semantic * 10)
+      reasons.push('moderate semantic similarity via embeddings')
+    }
+    return { skill, score, reasons: dedup(reasons), semantic }
+  }))
+
+  return enriched
+    .filter((entry) => entry.score > 0 || entry.semantic >= 0.2)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score
+      if (b.semantic !== a.semantic) return b.semantic - a.semantic
+      return a.skill.name.localeCompare(b.skill.name)
+    })
+    .slice(0, limit)
+    .map(({ skill, score, reasons }) => ({ skill, score, reasons }))
 }
 
 export function findResolvedSkill(

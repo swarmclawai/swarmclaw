@@ -222,6 +222,7 @@ export function AgentSheet() {
   const [memoryScopeMode, setMemoryScopeMode] = useState<'auto' | 'all' | 'global' | 'agent' | 'session' | 'project'>('auto')
   const [memoryTierPreference, setMemoryTierPreference] = useState<'working' | 'durable' | 'archive' | 'blended'>('blended')
   const [proactiveMemory, setProactiveMemory] = useState(false)
+  const [autoDraftSkillSuggestions, setAutoDraftSkillSuggestions] = useState(true)
   const [autoRecovery, setAutoRecovery] = useState(false)
   const [disabled, setDisabled] = useState(false)
   const [filesystemScope, setFilesystemScope] = useState<'workspace' | 'machine'>('workspace')
@@ -421,6 +422,7 @@ export function AgentSheet() {
         setMemoryScopeMode(editing.memoryScopeMode || 'auto')
         setMemoryTierPreference(editing.memoryTierPreference || 'blended')
         setProactiveMemory(editing.proactiveMemory || false)
+        setAutoDraftSkillSuggestions(editing.autoDraftSkillSuggestions === true)
         setAutoRecovery(editing.autoRecovery || false)
         setDisabled(editing.disabled === true)
         setFilesystemScope(editing.filesystemScope === 'machine' ? 'machine' : 'workspace')
@@ -483,6 +485,8 @@ export function AgentSheet() {
         setThinkingLevel('')
         setMemoryScopeMode('auto')
         setMemoryTierPreference('blended')
+        setProactiveMemory(false)
+        setAutoDraftSkillSuggestions(true)
         setAutoRecovery(false)
         setDisabled(false)
         setVoiceId('')
@@ -674,6 +678,7 @@ export function AgentSheet() {
       memoryScopeMode,
       memoryTierPreference,
       proactiveMemory,
+      autoDraftSkillSuggestions,
       autoRecovery,
       disabled,
       filesystemScope: filesystemScope === 'machine' ? 'machine' as const : undefined,
@@ -1177,6 +1182,24 @@ export function AgentSheet() {
           </div>
         </div>
         <p className="text-[11px] text-text-3/70 mt-1">Automatically inject relevant memories from previous chats into the agent&apos;s context before each response.</p>
+      </div>
+
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="flex items-center gap-2 font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">
+            Conversation Skill Drafting
+            <HintTip text="When enabled, meaningful chat turns for this agent refresh a reviewed skill draft that you can approve later." />
+          </label>
+          <div
+            onClick={() => setAutoDraftSkillSuggestions(!autoDraftSkillSuggestions)}
+            className={`w-9 h-5 rounded-full transition-all relative cursor-pointer ${autoDraftSkillSuggestions ? 'bg-accent-bright' : 'bg-surface-3'}`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${autoDraftSkillSuggestions ? 'left-[18px]' : 'left-0.5'}`} />
+          </div>
+        </div>
+        <p className="text-[11px] text-text-3/70">
+          New agents default to on. SwarmClaw refreshes one reviewed draft per chat when the agent does real tool-backed work, and you still approve or dismiss it manually in Skills.
+        </p>
       </div>
 
       {/* Auto-Recovery */}

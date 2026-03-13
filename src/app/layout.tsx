@@ -6,7 +6,7 @@ import "./globals.css"
 
 export const metadata: Metadata = {
   title: "SwarmClaw",
-  description: "AI agent orchestration dashboard with multi-provider support",
+  description: "Self-hosted AI orchestration control plane for OpenClaw, agent swarms, runtime skills, and wallets.",
 }
 
 export const viewport: Viewport = {

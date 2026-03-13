@@ -462,6 +462,22 @@ export function StepAgents({
                       </p>
                     )}
                   </div>
+                  <div className="md:col-span-2">
+                    <div className="flex items-center justify-between rounded-[12px] border border-white/[0.08] bg-bg px-4 py-3">
+                      <div>
+                        <div className="text-[12px] font-600 text-text">Conversation Skill Drafting</div>
+                        <div className="mt-1 text-[11px] text-text-3">
+                          Auto-refresh a reviewed draft skill from meaningful chat turns. You still approve it manually later.
+                        </div>
+                      </div>
+                      <div
+                        onClick={() => onUpdateDraft(draft.id, { autoDraftSkillSuggestions: !draft.autoDraftSkillSuggestions })}
+                        className={`w-9 h-5 rounded-full transition-all relative cursor-pointer shrink-0 ${draft.autoDraftSkillSuggestions ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${draft.autoDraftSkillSuggestions ? 'left-[18px]' : 'left-0.5'}`} />
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <details className="mt-4 rounded-[12px] border border-white/[0.08] bg-bg px-4 py-3">

@@ -159,6 +159,7 @@ export function buildStarterDrafts(args: {
       tools: template.tools,
       capabilities: previous?.capabilities || template.capabilities || [],
       platformAssignScope: previous?.platformAssignScope || template.platformAssignScope || 'self',
+      autoDraftSkillSuggestions: previous?.autoDraftSkillSuggestions ?? true,
       avatarSeed: previous?.avatarSeed || crypto.randomUUID().slice(0, 8),
       avatarUrl: previous?.avatarUrl || null,
       enabled: previous?.enabled ?? true,

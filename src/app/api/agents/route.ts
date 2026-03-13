@@ -116,6 +116,7 @@ export async function POST(req: Request) {
     identityState: body.identityState ?? null,
     memoryScopeMode: body.memoryScopeMode,
     memoryTierPreference: body.memoryTierPreference,
+    autoDraftSkillSuggestions: body.autoDraftSkillSuggestions,
     projectId: body.projectId,
     avatarSeed: body.avatarSeed,
     avatarUrl: body.avatarUrl,

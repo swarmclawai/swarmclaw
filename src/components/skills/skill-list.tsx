@@ -8,6 +8,8 @@ import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { ClawHubBrowser } from './clawhub-browser'
 import { toast } from 'sonner'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
+import { useWs } from '@/hooks/use-ws'
+import type { SkillSuggestion } from '@/types'
 
 interface ClawHubSkill {
   id: string
@@ -32,10 +34,12 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
   const loadSkills = useAppStore((s) => s.loadSkills)
   const agents = useAppStore((s) => s.agents)
   const loadAgents = useAppStore((s) => s.loadAgents)
+  const currentAgentId = useAppStore((s) => s.currentAgentId)
   const setSkillSheetOpen = useAppStore((s) => s.setSkillSheetOpen)
   const setEditingSkillId = useAppStore((s) => s.setEditingSkillId)
   const activeProjectFilter = useAppStore((s) => s.activeProjectFilter)
   const [clawHubOpen, setClawHubOpen] = useState(false)
+  const currentSessionId = currentAgentId ? agents[currentAgentId]?.threadSessionId || null : null
 
   // Embedded ClawHub state (full-width only)
   const [tab, setTab] = useState<'skills' | 'clawhub'>('skills')
@@ -47,6 +51,10 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
   const [hubSearched, setHubSearched] = useState(false)
   const [hubError, setHubError] = useState<string | null>(null)
   const [installing, setInstalling] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<SkillSuggestion[]>([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [suggestionActionId, setSuggestionActionId] = useState<string | null>(null)
+  const [generatingSuggestion, setGeneratingSuggestion] = useState(false)
   const hubSearchRequestIdRef = useRef(0)
 
   useEffect(() => {
@@ -57,6 +65,26 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
 
   const skillList = Object.values(skills).filter((s) => !activeProjectFilter || s.projectId === activeProjectFilter)
 
+  const loadSuggestions = useCallback(async () => {
+    if (inSidebar) return
+    setSuggestionsLoading(true)
+    try {
+      const result = await api<SkillSuggestion[]>('GET', '/skill-suggestions')
+      if (!mountedRef.current) return
+      setSuggestions(Array.isArray(result) ? result : [])
+    } catch (err) {
+      if (!mountedRef.current) return
+      toast.error(err instanceof Error ? err.message : 'Failed to load skill suggestions')
+    } finally {
+      if (mountedRef.current) setSuggestionsLoading(false)
+    }
+  }, [inSidebar, mountedRef])
+
+  useEffect(() => {
+    void loadSuggestions()
+  }, [loadSuggestions])
+  useWs('skill_suggestions', () => { void loadSuggestions() })
+
   const handleEdit = (id: string) => {
     setEditingSkillId(id)
     setSkillSheetOpen(true)
@@ -66,6 +94,50 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
     e.stopPropagation()
     await api('DELETE', `/skills/${id}`)
     loadSkills()
+  }
+
+  const handleGenerateSuggestion = async () => {
+    if (!currentSessionId) {
+      toast.error('Open a chat first so SwarmClaw has a session to learn from.')
+      return
+    }
+    setGeneratingSuggestion(true)
+    try {
+      await api<SkillSuggestion>('POST', '/skill-suggestions', { sessionId: currentSessionId })
+      toast.success('Drafted a skill suggestion from the current conversation.')
+      await loadSuggestions()
+      setTab('skills')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate a skill suggestion')
+    } finally {
+      if (mountedRef.current) setGeneratingSuggestion(false)
+    }
+  }
+
+  const handleApproveSuggestion = async (id: string) => {
+    setSuggestionActionId(id)
+    try {
+      await api('POST', `/skill-suggestions/${id}/approve`)
+      toast.success('Skill suggestion approved and saved.')
+      await Promise.all([loadSuggestions(), loadSkills()])
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to approve the skill suggestion')
+    } finally {
+      if (mountedRef.current) setSuggestionActionId(null)
+    }
+  }
+
+  const handleRejectSuggestion = async (id: string) => {
+    setSuggestionActionId(id)
+    try {
+      await api('POST', `/skill-suggestions/${id}/reject`)
+      toast.success('Skill suggestion dismissed.')
+      await loadSuggestions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to dismiss the skill suggestion')
+    } finally {
+      if (mountedRef.current) setSuggestionActionId(null)
+    }
   }
 
   // Embedded ClawHub search
@@ -236,6 +308,115 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
     )
   }
 
+  const renderSuggestions = () => {
+    if (inSidebar || tab !== 'skills') return null
+    return (
+      <div className="mb-5 rounded-[16px] border border-white/[0.06] bg-surface p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+          <div>
+            <h3 className="font-display text-[13px] font-600 text-text">Suggested From Conversations</h3>
+            <p className="text-[12px] text-text-3/65 mt-1">
+              Turn useful work into a reviewable skill draft. New agents keep auto-drafting on by default, and you can still draft from the current chat manually at any time.
+            </p>
+          </div>
+          <button
+            onClick={handleGenerateSuggestion}
+            disabled={generatingSuggestion}
+            className="px-3.5 py-2 rounded-[10px] text-[12px] font-600 bg-accent-soft text-accent-bright border border-accent-bright/20 hover:bg-accent-soft/80 transition-all cursor-pointer disabled:opacity-50"
+            style={{ fontFamily: 'inherit' }}
+          >
+            {generatingSuggestion ? 'Drafting…' : 'Draft From Current Chat'}
+          </button>
+        </div>
+
+        {suggestionsLoading ? (
+          <div className="flex items-center justify-center py-6">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-text-3/20 border-t-text-3/60" />
+          </div>
+        ) : suggestions.length === 0 ? (
+          <div className="rounded-[12px] border border-dashed border-white/[0.08] px-4 py-5 text-[12px] text-text-3/60">
+            No drafted suggestions yet. Use the current chat button after a conversation that produced a reusable workflow.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            {suggestions.map((suggestion) => {
+              const busy = suggestionActionId === suggestion.id
+              const statusTone = suggestion.status === 'approved'
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                : suggestion.status === 'rejected'
+                  ? 'bg-white/[0.04] text-text-3/65 border-white/[0.08]'
+                  : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+              return (
+                <div key={suggestion.id} className="rounded-[14px] border border-white/[0.06] bg-bg/50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-display text-[14px] font-600 text-text truncate">{suggestion.name}</div>
+                      <div className="text-[11px] text-text-3/55 mt-1 truncate">
+                        {suggestion.sourceSessionName || suggestion.sourceSessionId}
+                        {suggestion.sourceAgentName ? ` · ${suggestion.sourceAgentName}` : ''}
+                      </div>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-700 uppercase tracking-[0.08em] ${statusTone}`}>
+                      {suggestion.status}
+                    </span>
+                  </div>
+                  {suggestion.description && (
+                    <p className="mt-2 text-[12px] text-text-3/70">{suggestion.description}</p>
+                  )}
+                  {suggestion.summary && (
+                    <p className="mt-2 text-[12px] text-text-3/60">Summary: {suggestion.summary}</p>
+                  )}
+                  {suggestion.rationale && (
+                    <p className="mt-1.5 text-[12px] text-text-3/60">Why reusable: {suggestion.rationale}</p>
+                  )}
+                  {suggestion.sourceSnippet && (
+                    <div className="mt-3 rounded-[10px] border border-white/[0.06] bg-surface px-3 py-2 text-[11px] text-text-3/65 whitespace-pre-wrap">
+                      {suggestion.sourceSnippet}
+                    </div>
+                  )}
+                  {suggestion.tags && suggestion.tags.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {suggestion.tags.map((tag) => (
+                        <Badge key={`${suggestion.id}-${tag}`} variant="secondary" className="text-[10px] px-1.5 py-0">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {suggestion.status === 'draft' && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleApproveSuggestion(suggestion.id)}
+                        disabled={busy}
+                        className="px-3 py-1.5 rounded-[9px] text-[12px] font-600 bg-accent-soft text-accent-bright border border-accent-bright/20 hover:bg-accent-soft/80 transition-all cursor-pointer disabled:opacity-50"
+                        style={{ fontFamily: 'inherit' }}
+                      >
+                        {busy ? 'Working…' : 'Approve'}
+                      </button>
+                      <button
+                        onClick={() => handleRejectSuggestion(suggestion.id)}
+                        disabled={busy}
+                        className="px-3 py-1.5 rounded-[9px] text-[12px] font-600 bg-transparent text-text-3 border border-white/[0.08] hover:bg-white/[0.04] transition-all cursor-pointer disabled:opacity-50"
+                        style={{ fontFamily: 'inherit' }}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+                  {suggestion.status !== 'draft' && suggestion.createdSkillId && (
+                    <div className="mt-3 text-[11px] text-text-3/60">
+                      Saved as skill <span className="font-mono text-text-3/85">{suggestion.createdSkillId}</span>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className={`flex-1 overflow-y-auto ${inSidebar ? 'px-3 pb-4' : 'px-5 pb-6'}`}>
       {/* Sidebar: ClawHub button + Sheet */}
@@ -255,14 +436,17 @@ export function SkillList({ inSidebar }: { inSidebar?: boolean }) {
 
       {/* Full-width: tabs */}
       {!inSidebar && (
+        <>
+        {renderSuggestions()}
         <div className="flex gap-1 mb-4" style={{ animation: 'fade-up 0.4s var(--ease-spring)' }}>
           <button onClick={() => setTab('skills')} className={tabClass('skills')} style={{ fontFamily: 'inherit' }}>
-            My Skills
+            Skill Library
           </button>
           <button onClick={() => setTab('clawhub')} className={tabClass('clawhub')} style={{ fontFamily: 'inherit' }}>
             ClawHub
           </button>
         </div>
+        </>
       )}
 
       {(!inSidebar && tab === 'clawhub') ? renderClawHub() : (

@@ -314,6 +314,21 @@ export function deriveTerminalRunError(params: {
   return undefined
 }
 
+function shouldAutoDraftSkillSuggestion(params: {
+  assistantPersisted: boolean
+  internal: boolean
+  isHeartbeatRun: boolean
+  agentAutoDraftSetting: boolean
+  toolEventCount: number
+  messageCount: number
+}): boolean {
+  if (!params.assistantPersisted) return false
+  if (params.internal || params.isHeartbeatRun) return false
+  if (!params.agentAutoDraftSetting) return false
+  if (params.toolEventCount === 0) return false
+  return params.messageCount >= 4
+}
+
 export function isLikelyToolErrorOutput(output: string): boolean {
   const trimmed = String(output || '').trim()
   if (!trimmed) return false
@@ -1647,6 +1662,21 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     } catch { /* archive sync is best-effort */ }
     fresh[sessionId] = current
     saveSessions(fresh)
+    if (current.agentId && shouldAutoDraftSkillSuggestion({
+      assistantPersisted,
+      internal,
+      isHeartbeatRun,
+      agentAutoDraftSetting: currentAgent?.autoDraftSkillSuggestions === true,
+      toolEventCount: persistedToolEvents.length,
+      messageCount: current.messages.length,
+    })) {
+      try {
+        const { createSkillSuggestionFromSession } = await import('@/lib/server/skills/skill-suggestions')
+        await createSkillSuggestionFromSession(sessionId)
+      } catch {
+        // Reviewed skill drafting is best-effort.
+      }
+    }
     notify(`messages:${sessionId}`)
   }
 

@@ -833,6 +833,8 @@ export interface Agent {
   hourlyBudget?: number | null
   autoRecovery?: boolean
   proactiveMemory?: boolean
+  /** Auto-refresh a reviewed skill draft from meaningful chat turns for this agent. */
+  autoDraftSkillSuggestions?: boolean
   /** Controls whether file operations are confined to the workspace or allowed anywhere on the host. Default: 'workspace'. */
   filesystemScope?: 'workspace' | 'machine' | null
   /** Per-agent filesystem restrictions. Globs matched against resolved paths. */
@@ -1488,6 +1490,8 @@ export interface AppSettings {
   memoryMaxPerLookup?: number
   // Chat UX
   suggestionsEnabled?: boolean
+  runtimeSkillRetrievalMode?: 'keyword' | 'embedding'
+  runtimeSkillTopK?: number
   // Globally approved WhatsApp contacts for connector DMs
   whatsappApprovedContacts?: WhatsAppApprovedContact[]
   // Voice conversation
@@ -1836,6 +1840,32 @@ export interface Skill {
   frontmatter?: Record<string, unknown> | null
   scope?: 'global' | 'agent'
   agentIds?: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export type SkillSuggestionStatus = 'draft' | 'approved' | 'rejected'
+
+export interface SkillSuggestion {
+  id: string
+  status: SkillSuggestionStatus
+  sourceSessionId: string
+  sourceSessionName?: string | null
+  sourceAgentId?: string | null
+  sourceAgentName?: string | null
+  sourceHash?: string | null
+  sourceMessageCount?: number | null
+  name: string
+  description?: string
+  content: string
+  tags?: string[]
+  confidence?: number | null
+  rationale?: string | null
+  summary?: string | null
+  sourceSnippet?: string | null
+  createdSkillId?: string | null
+  approvedAt?: number | null
+  rejectedAt?: number | null
   createdAt: number
   updatedAt: number
 }

@@ -94,6 +94,7 @@ export const AgentCreateSchema = z.object({
   sessionResetTimezone: z.string().nullable().optional().default(null),
   memoryScopeMode: z.enum(['auto', 'all', 'global', 'agent', 'session', 'project']).nullable().optional().default(null),
   memoryTierPreference: z.enum(['working', 'durable', 'archive', 'blended']).nullable().optional().default(null),
+  autoDraftSkillSuggestions: z.boolean().optional().default(true),
   projectId: z.string().optional(),
   avatarSeed: z.string().optional(),
   avatarUrl: z.string().nullable().optional().default(null),

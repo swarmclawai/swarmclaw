@@ -174,6 +174,7 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const [walletBalance, setWalletBalance] = useState<{ formatted: string; symbol: string; assets?: number } | null>(null)
   const [headerWidgets, setHeaderWidgets] = useState<Array<{ id: string; label: string; icon?: string }>>([])
   const [localhostBrowser, setLocalhostBrowser] = useState(false)
+  const [suggestingSkill, setSuggestingSkill] = useState(false)
   const agentWalletIds = useMemo(() => getAgentWalletIds(agent), [agent])
   const activeWalletId = useMemo(() => getAgentActiveWalletId(agent), [agent])
 
@@ -617,6 +618,18 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const hasToolToggles = ((agent?.plugins?.length ?? 0) > 0) || ((session.plugins?.length ?? 0) > 0)
   const hasMemoryLink = !!(agent && session.plugins?.includes('memory'))
   const hasSourceFilter = !!hasMultipleSources
+  const canSuggestSkill = Array.isArray(session.messages) && session.messages.some((message) => (message.text || '').trim().length > 0)
+  const handleSuggestSkill = async () => {
+    setSuggestingSkill(true)
+    try {
+      await api('POST', '/skill-suggestions', { sessionId: session.id })
+      toast.success('Drafted a skill suggestion from this chat.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to draft a skill suggestion')
+    } finally {
+      setSuggestingSkill(false)
+    }
+  }
   const hasContextBar = !!(hasMemoryLink || hasSourceFilter || linkedTask || resumeHandle || (isOpenClawAgent && openclawSessionKey) || browserActive)
 
   return (
@@ -743,6 +756,18 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
           </div>
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
             {hasToolToggles && <ChatToolToggles session={session} />}
+            {canSuggestSkill && (
+              <HeaderChip
+                onClick={() => { if (!suggestingSkill) void handleSuggestSkill() }}
+                title="Draft a reusable skill from this conversation"
+                className="text-text-3/80"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={suggestingSkill ? 'animate-spin' : ''}>
+                  <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" />
+                </svg>
+                <span>{suggestingSkill ? 'Drafting Skill' : 'Draft Skill'}</span>
+              </HeaderChip>
+            )}
             {visibleHeaderWidgets.map((widget) => {
               const actionable = widget.id === 'wallet-status'
               const walletLabel = actionable

@@ -64,6 +64,7 @@ export interface StarterDraftAgent {
   tools: string[]
   capabilities: string[]
   platformAssignScope: 'self' | 'all'
+  autoDraftSkillSuggestions: boolean
   avatarSeed: string
   avatarUrl: string | null
   enabled: boolean
