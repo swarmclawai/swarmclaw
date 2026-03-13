@@ -8,7 +8,7 @@
   <img src="https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/public/branding/swarmclaw-org-avatar.png" alt="SwarmClaw lobster logo" width="120" />
 </p>
 
-SwarmClaw is a self-hosted AI orchestration control plane for OpenClaw and multi-agent work. It gives you one place to run agents, route work across providers and gateways, coordinate delegated tasks, manage memory and autonomy loops, use runtime skills, and operate agent-linked crypto wallets.
+SwarmClaw is a self-hosted AI orchestration runtime for OpenClaw and multi-agent work. It helps you run autonomous agents with heartbeats, schedules, delegation, memory, runtime skills, and reviewed conversation-to-skill learning across OpenClaw gateways and other providers.
 
 GitHub: https://github.com/swarmclawai/swarmclaw  
 Docs: https://swarmclaw.ai/docs  
