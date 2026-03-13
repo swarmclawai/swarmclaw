@@ -72,6 +72,18 @@ npm run quickstart
 
 `npm run quickstart` installs dependencies, prepares local config and runtime state, and starts SwarmClaw.
 
+### Docker
+
+```bash
+git clone https://github.com/swarmclawai/swarmclaw.git
+cd swarmclaw
+mkdir -p data
+touch .env.local
+docker compose up -d --build
+```
+
+Then open `http://localhost:3456`.
+
 ## Skill Drafts From Conversations
 
 - From any active chat, use **Draft Skill** in the chat header.
