@@ -1,6 +1,7 @@
 import { hmrSingleton } from '@/lib/shared-utils'
 import type { GoalContract, Message, MessageToolEvent, Session } from '@/types'
 import { mergeGoalContracts, parseGoalContractFromText, parseMainLoopPlan, parseMainLoopReview } from '@/lib/server/agents/autonomy-contract'
+import { assessAutonomyRun } from '@/lib/server/autonomy/supervisor-reflection'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { loadSessions, loadSettings } from '@/lib/server/storage'
 
@@ -73,6 +74,7 @@ export interface PushMainLoopEventInput {
 }
 
 export interface HandleMainLoopRunResultInput {
+  runId?: string
   sessionId: string
   message: string
   internal: boolean
@@ -817,6 +819,8 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   const state = getOrCreateState(input.sessionId)
   if (!state) return null
 
+  const sessions = loadSessions()
+  const session = sessions[input.sessionId] as Session | undefined
   const resultText = input.resultText || ''
   const persistedText = stripMainLoopMetaForPersistence(resultText)
   const toolEvents = Array.isArray(input.toolEvents) ? input.toolEvents : []
@@ -892,6 +896,36 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     state.pendingEvents = []
   }
 
+  const assessment = assessAutonomyRun({
+    runId: input.runId || `main-loop-${input.sessionId}-${nowTs}`,
+    sessionId: input.sessionId,
+    source: input.source,
+    status: input.error ? 'failed' : 'completed',
+    resultText,
+    error: input.error,
+    toolEvents,
+    mainLoopState: state,
+    session: session || null,
+    settings: loadSettings(),
+  })
+  for (const incident of assessment.incidents) {
+    appendTimeline(
+      state,
+      'supervisor',
+      `Supervisor: ${incident.summary}`,
+      incident.autoAction === 'block' ? 'blocked' : 'reflection',
+    )
+  }
+  const supervisorPrompt = assessment.shouldBlock ? null : assessment.interventionPrompt
+  if (assessment.shouldBlock) {
+    state.status = 'blocked'
+    state.paused = true
+    state.followupChainCount = 0
+    appendTimeline(state, 'supervisor', 'Supervisor paused the run after detecting a hard blocker.', 'blocked')
+  } else if (supervisorPrompt) {
+    state.paused = false
+  }
+
   const needsReplan = review?.needs_replan === true || ((review?.confidence ?? 1) < 0.45)
   const limit = followupLimit()
   const allowChatOriginFollowup = !input.internal
@@ -900,7 +934,9 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     && !waitingForExternal
     && !gotTerminalAck
     && (
-      needsReplan
+      !!supervisorPrompt
+      || assessment.shouldBlock
+      || needsReplan
       || heartbeat?.status === 'progress'
       || !!heartbeat?.nextAction
       || (!!plan?.current_step && toolNames.length > 0)
@@ -913,18 +949,19 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
     state.followupChainCount = 0
     if (gotTerminalAck && state.status !== 'blocked') state.status = 'ok'
   } else {
-    const shouldContinue = needsReplan || state.status === 'progress' || (!!state.nextAction && toolNames.length > 0)
+    const shouldContinue = !!supervisorPrompt || needsReplan || state.status === 'progress' || (!!state.nextAction && toolNames.length > 0)
     if (shouldContinue && state.followupChainCount < limit) {
       state.followupChainCount += 1
-      const message = needsReplan
-        ? 'Replan from the latest outcome, then execute only the highest-value remaining step. Do not repeat completed work.'
-        : state.nextAction
-          ? `Continue the objective. Resume from this next action: ${state.nextAction}`
-          : 'Continue the objective and finish the next highest-value remaining step.'
+      const message = supervisorPrompt
+        || (needsReplan
+          ? 'Replan from the latest outcome, then execute only the highest-value remaining step. Do not repeat completed work.'
+          : state.nextAction
+            ? `Continue the objective. Resume from this next action: ${state.nextAction}`
+            : 'Continue the objective and finish the next highest-value remaining step.')
       followup = {
         message,
         delayMs: DEFAULT_FOLLOWUP_DELAY_MS,
-        dedupeKey: `main-loop:${input.sessionId}:${state.followupChainCount}:${state.currentPlanStep || state.nextAction || 'continue'}`,
+        dedupeKey: `main-loop:${input.sessionId}:${state.followupChainCount}:${supervisorPrompt ? 'supervisor' : (state.currentPlanStep || state.nextAction || 'continue')}`,
       }
       appendTimeline(state, 'followup', message, 'progress')
     } else {

@@ -230,6 +230,41 @@ describe('main-agent-loop advanced', () => {
     assert.match(String(output.followupMessage || ''), /Resume from this next action/)
   })
 
+  it('uses the supervisor followup prompt when chat runs start thrashing on the same tool', () => {
+    const output = runWithTempDataDir(`
+      ${sessionSetupScript()}
+
+      const followup = mainLoop.handleMainLoopRunResult({
+        runId: 'run-supervisor',
+        sessionId: 'main',
+        message: 'Fix the broken deployment pipeline.',
+        internal: false,
+        source: 'chat',
+        resultText: 'Retried the same shell path several times and got the same failure.',
+        toolEvents: [
+          { name: 'shell', input: '{"cmd":"npm test"}' },
+          { name: 'shell', input: '{"cmd":"npm test"}' },
+          { name: 'shell', input: '{"cmd":"npm test"}' },
+        ],
+      })
+      const state = mainLoop.getMainLoopStateForSession('main')
+
+      console.log(JSON.stringify({
+        hasFollowup: followup !== null,
+        followupMessage: followup?.message ?? null,
+        chain: state?.followupChainCount ?? -1,
+        timelineSources: (state?.timeline || []).map((entry) => entry.source),
+        timelineNotes: (state?.timeline || []).map((entry) => entry.note),
+      }))
+    `)
+
+    assert.equal(output.hasFollowup, true, 'supervisor should queue a recovery followup')
+    assert.equal(output.chain, 1, 'supervisor followup increments the chain')
+    assert.match(String(output.followupMessage || ''), /Supervisor intervention: stop repeating shell/i)
+    assert.ok((output.timelineSources as string[]).includes('supervisor'), 'supervisor interventions should be visible in timeline')
+    assert.ok((output.timelineNotes as string[]).some((note) => /Repeated tool use detected/i.test(String(note))), 'timeline should explain the supervisor trigger')
+  })
+
   it('persists and upgrades a skill blocker across recommend/install steps', () => {
     const output = runWithTempDataDir(`
       ${sessionSetupScript()}

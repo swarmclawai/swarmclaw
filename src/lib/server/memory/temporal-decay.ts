@@ -35,6 +35,12 @@ const DECAY_EXEMPT_CATEGORIES = new Set([
   'core/rules',
   'reference',
   'reference/docs',
+  'reflection/invariant',
+  'reflection/communication',
+  'reflection/relationship',
+  'reflection/significant_event',
+  'reflection/profile',
+  'reflection/boundary',
 ])
 
 /**

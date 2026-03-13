@@ -10,6 +10,7 @@ import { UserPreferencesSection } from '@/views/settings/section-user-preference
 import { ThemeSection } from '@/views/settings/section-theme'
 import { OrchestratorSection } from '@/views/settings/section-orchestrator'
 import { RuntimeLoopSection } from '@/views/settings/section-runtime-loop'
+import { SupervisorReflectionSection } from '@/views/settings/section-supervisor-reflection'
 import { CapabilityPolicySection } from '@/views/settings/section-capability-policy'
 import { WalletsSection } from '@/views/settings/section-wallets'
 import { StorageSection } from '@/views/settings/section-storage'
@@ -188,6 +189,14 @@ export default function SettingsRoute() {
       description: 'Configure automatic follow-up checks for active agent chats.',
       keywords: ['heartbeat', 'follow up', 'interval', 'ongoing'],
       render: () => <HeartbeatSection {...sectionProps} />,
+    },
+    {
+      id: 'supervisor-reflection',
+      tabId: 'agents',
+      title: 'Supervisor & Reflection',
+      description: 'Automatic recovery from bad loops plus post-run reflection memory.',
+      keywords: ['supervisor', 'reflection', 'autonomy', 'memory', 'self-learning', 'replan'],
+      render: () => <SupervisorReflectionSection {...sectionProps} />,
     },
     {
       id: 'embedding',

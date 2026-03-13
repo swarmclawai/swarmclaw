@@ -1379,6 +1379,57 @@ export interface SessionRunRecord {
   resultPreview?: string
 }
 
+export type SupervisorIncidentKind =
+  | 'run_error'
+  | 'repeated_tool'
+  | 'no_progress'
+  | 'budget_pressure'
+  | 'context_pressure'
+
+export type SupervisorIncidentSeverity = 'low' | 'medium' | 'high'
+
+export interface SupervisorIncident {
+  id: string
+  runId: string
+  sessionId: string
+  taskId?: string | null
+  agentId?: string | null
+  source: string
+  kind: SupervisorIncidentKind
+  severity: SupervisorIncidentSeverity
+  summary: string
+  details?: string | null
+  toolName?: string | null
+  autoAction?: 'replan' | 'compact' | 'block' | 'budget_trim' | null
+  createdAt: number
+}
+
+export interface RunReflection {
+  id: string
+  runId: string
+  sessionId: string
+  taskId?: string | null
+  agentId?: string | null
+  source: string
+  status: SessionRunStatus | 'completed' | 'failed'
+  summary: string
+  sourceSnippet?: string | null
+  invariantNotes: string[]
+  derivedNotes: string[]
+  failureNotes: string[]
+  lessonNotes: string[]
+  communicationNotes?: string[]
+  relationshipNotes?: string[]
+  significantEventNotes?: string[]
+  profileNotes?: string[]
+  boundaryNotes?: string[]
+  openLoopNotes?: string[]
+  incidentIds?: string[]
+  autoMemoryIds?: string[]
+  createdAt: number
+  updatedAt: number
+}
+
 // --- Webhook Logs ---
 
 export interface WebhookLogEntry {
@@ -1483,6 +1534,12 @@ export interface AppSettings {
   // Continuous eval
   autonomyEvalEnabled?: boolean
   autonomyEvalCron?: string | null
+  supervisorEnabled?: boolean
+  supervisorRuntimeScope?: 'chat' | 'task' | 'both'
+  supervisorNoProgressLimit?: number
+  supervisorRepeatedToolLimit?: number
+  reflectionEnabled?: boolean
+  reflectionAutoWriteMemory?: boolean
   memoryReferenceDepth?: number
   maxMemoriesPerLookup?: number
   maxLinkedMemoriesExpanded?: number

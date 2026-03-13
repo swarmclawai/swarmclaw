@@ -13,7 +13,8 @@ import { log } from '@/lib/server/logger'
 import { isInternalHeartbeatRun } from '@/lib/server/runtime/heartbeat-source'
 import { cleanupSessionBrowser } from '@/lib/server/session-tools/web'
 import { cancelDelegationJobsForParentSession } from '@/lib/server/agents/delegation-jobs'
-import { handleMainLoopRunResult } from '@/lib/server/agents/main-agent-loop'
+import { getMainLoopStateForSession, handleMainLoopRunResult } from '@/lib/server/agents/main-agent-loop'
+import { observeAutonomyRunOutcome } from '@/lib/server/autonomy/supervisor-reflection'
 import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 
 export type SessionRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -153,6 +154,36 @@ function emitRunMeta(entry: QueueEntry, status: SessionRunStatus, extra?: Record
         ...extra,
       },
     }),
+  })
+}
+
+function queueAutonomyObservation(input: {
+  runId: string
+  sessionId: string
+  source: string
+  status: SessionRunStatus
+  resultText?: string | null
+  error?: string | null
+  toolEvents?: ExecuteChatTurnResult['toolEvents']
+  sourceMessage?: string | null
+}) {
+  const session = loadSession(input.sessionId)
+  void observeAutonomyRunOutcome({
+    runId: input.runId,
+    sessionId: input.sessionId,
+    agentId: session?.agentId || null,
+    source: input.source,
+    status: input.status,
+    resultText: input.resultText,
+    error: input.error || undefined,
+    toolEvents: input.toolEvents,
+    mainLoopState: getMainLoopStateForSession(input.sessionId),
+    sourceMessage: input.sourceMessage,
+  }).catch((err: unknown) => {
+    log.warn('session-run', `Autonomy observation failed for ${input.runId}`, {
+      sessionId: input.sessionId,
+      error: errorMessage(err),
+    })
   })
 }
 
@@ -489,6 +520,7 @@ async function drainExecution(executionKey: string): Promise<void> {
       durationMs: (next.run.endedAt || now()) - (next.run.startedAt || now()),
     })
     const followup = handleMainLoopRunResult({
+      runId: next.run.id,
       sessionId: next.run.sessionId,
       message: next.message,
       internal: next.run.internal,
@@ -499,6 +531,16 @@ async function drainExecution(executionKey: string): Promise<void> {
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       estimatedCost: result.estimatedCost,
+    })
+    queueAutonomyObservation({
+      runId: next.run.id,
+      sessionId: next.run.sessionId,
+      source: next.run.source,
+      status: next.run.status,
+      resultText: result.text,
+      error: next.run.error || null,
+      toolEvents: result.toolEvents,
+      sourceMessage: next.message,
     })
     if (followup) {
       setTimeout(() => {
@@ -530,6 +572,14 @@ async function drainExecution(executionKey: string): Promise<void> {
       status: next.run.status,
       error: next.run.error,
       durationMs: (next.run.endedAt || now()) - (next.run.startedAt || now()),
+    })
+    queueAutonomyObservation({
+      runId: next.run.id,
+      sessionId: next.run.sessionId,
+      source: next.run.source,
+      status: next.run.status,
+      error: next.run.error || null,
+      sourceMessage: next.message,
     })
     next.reject(err instanceof Error ? err : new Error(next.run.error))
   } finally {

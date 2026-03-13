@@ -9,8 +9,9 @@ import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { createOrchestratorSession } from '@/lib/server/agents/orchestrator'
 import { formatValidationFailure } from '@/lib/server/tasks/task-validation'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
-import { executeSessionChatTurn } from '@/lib/server/chat-execution/chat-execution'
+import { executeSessionChatTurn, type ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-execution'
 import { extractTaskResult, formatResultBody } from '@/lib/server/tasks/task-result'
+import { assessAutonomyRun, observeAutonomyRunOutcome } from '@/lib/server/autonomy/supervisor-reflection'
 import {
   collectTaskConnectorFollowupTargets as collectTaskConnectorFollowupTargetsImpl,
   extractLikelyOutputFiles,
@@ -535,11 +536,39 @@ function looksIncomplete(text: string): boolean {
   return false
 }
 
+function queueTaskAutonomyObservation(input: {
+  runId: string
+  sessionId: string
+  taskId: string
+  agentId: string
+  status: 'completed' | 'failed'
+  resultText?: string | null
+  error?: string | null
+  toolEvents?: ExecuteChatTurnResult['toolEvents']
+  sourceMessage?: string | null
+}) {
+  void observeAutonomyRunOutcome({
+    runId: input.runId,
+    sessionId: input.sessionId,
+    taskId: input.taskId,
+    agentId: input.agentId,
+    source: 'task',
+    status: input.status,
+    resultText: input.resultText,
+    error: input.error || undefined,
+    toolEvents: input.toolEvents,
+    sourceMessage: input.sourceMessage,
+  }).catch((err: unknown) => {
+    console.warn(`[queue] Autonomy observation failed for ${input.runId}:`, err)
+  })
+}
+
 async function executeTaskRun(
   task: BoardTask,
   agent: Agent,
   sessionId: string,
-): Promise<string> {
+): Promise<ExecuteChatTurnResult> {
+  const settings = loadSettings()
   const basePrompt = task.description || task.title
   const prompt = [
     basePrompt,
@@ -551,29 +580,81 @@ async function executeTaskRun(
   ].join('\n')
   // All agents (including orchestrators) go through the unified chat execution path.
   // Agents with subAgentIds get delegation tools automatically via session-tools.
-  const run = await executeSessionChatTurn({
+  let latestRun: ExecuteChatTurnResult = await executeSessionChatTurn({
     sessionId,
     message: prompt,
     internal: false,
     source: 'task',
     runId: task.id,
   })
-  let text = typeof run.text === 'string' ? run.text.trim() : ''
-  if (run.error) return text ? text : `Error: ${run.error}`
+  let text = typeof latestRun.text === 'string' ? latestRun.text.trim() : ''
+  let previousSummary: string | null = null
+  let totalInputTokens = latestRun.inputTokens || 0
+  let totalOutputTokens = latestRun.outputTokens || 0
+  let totalEstimatedCost = Number(latestRun.estimatedCost || 0)
+  if (latestRun.error) {
+    return {
+      ...latestRun,
+      text,
+    }
+  }
 
-  // Auto-continue if the result looks incomplete
-  if (text && looksIncomplete(text)) {
+  const maxSupervisorFollowups = 2
+  for (let followupIndex = 0; followupIndex < maxSupervisorFollowups; followupIndex += 1) {
+    const sessions = loadSessions()
+    const session = sessions[sessionId] as Session | undefined
+    const assessment = assessAutonomyRun({
+      runId: `${task.id}:attempt-${(task.attempts || 0) + 1}:step-${followupIndex + 1}`,
+      sessionId,
+      taskId: task.id,
+      agentId: agent.id,
+      source: 'task',
+      status: latestRun.error ? 'failed' : 'completed',
+      resultText: text,
+      error: latestRun.error,
+      toolEvents: latestRun.toolEvents,
+      mainLoopState: {
+        followupChainCount: followupIndex + 1,
+        summary: previousSummary,
+        missionCostUsd: totalEstimatedCost,
+      },
+      session: session || null,
+      settings,
+    })
+    if (assessment.shouldBlock) break
+    const followupMessage = assessment.interventionPrompt
+      || (text && looksIncomplete(text)
+        ? 'Continue and complete the remaining steps. Provide a final summary when done.'
+        : null)
+    if (!followupMessage) break
+    previousSummary = text || previousSummary
     const followUp = await executeSessionChatTurn({
       sessionId,
-      message: 'Continue and complete the remaining steps. Provide a final summary when done.',
+      message: followupMessage,
       internal: false,
       source: 'task',
     })
-    const contText = typeof followUp.text === 'string' ? followUp.text.trim() : ''
-    if (contText) text = contText
+    totalInputTokens += followUp.inputTokens || 0
+    totalOutputTokens += followUp.outputTokens || 0
+    totalEstimatedCost += Number(followUp.estimatedCost || 0)
+    text = typeof followUp.text === 'string' ? followUp.text.trim() : ''
+    latestRun = {
+      ...followUp,
+      text,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      estimatedCost: totalEstimatedCost,
+    }
+    if (latestRun.error) break
   }
 
-  return text
+  return {
+    ...latestRun,
+    text,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+    estimatedCost: totalEstimatedCost,
+  }
 }
 
 function hasFinishedExecutionSession(session: SessionLike | Session | null | undefined): boolean {
@@ -1332,9 +1413,13 @@ export async function processNext() {
       console.log(`[queue] Running task "${task.title}" (${taskId}) with ${agent.name}`)
 
       try {
+        const taskRunId = `${taskId}:attempt-${(task.attempts || 0) + 1}`
         const endTaskRunPerf = perf.start('queue', 'executeTaskRun', { taskId, agentName: agent.name })
-        const result = await executeTaskRun(task, agent, sessionId)
+        const taskRun = await executeTaskRun(task, agent, sessionId)
         endTaskRunPerf()
+        const result = taskRun.error
+          ? (taskRun.text || `Error: ${taskRun.error}`)
+          : taskRun.text
         const t2 = loadTasks()
         const settings = loadSettings()
         if (t2[taskId]) {
@@ -1434,6 +1519,17 @@ export async function processNext() {
           disableSessionHeartbeat(t2[taskId].sessionId)
         }
         const doneTask = t2[taskId]
+        queueTaskAutonomyObservation({
+          runId: taskRunId,
+          sessionId,
+          taskId,
+          agentId: agent.id,
+          status: doneTask?.status === 'completed' ? 'completed' : 'failed',
+          resultText: doneTask?.result || result || null,
+          error: doneTask?.status === 'completed' ? null : (doneTask?.error || taskRun.error || null),
+          toolEvents: taskRun.toolEvents,
+          sourceMessage: task.description || task.title,
+        })
         if (doneTask?.status === 'completed') {
           pushMainLoopEventToMainSessions({
             type: 'task_completed',
@@ -1477,6 +1573,7 @@ export async function processNext() {
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err || 'Unknown error')
         console.error(`[queue] Task "${task.title}" failed:`, errMsg)
+        const taskRunId = `${taskId}:attempt-${(task.attempts || 0) + 1}`
         const t2 = loadTasks()
         if (t2[taskId]) {
           applyTaskPolicyDefaults(t2[taskId])
@@ -1508,6 +1605,15 @@ export async function processNext() {
             })
           }
         }
+        queueTaskAutonomyObservation({
+          runId: taskRunId,
+          sessionId,
+          taskId,
+          agentId: agent.id,
+          status: 'failed',
+          error: errMsg,
+          sourceMessage: task.description || task.title,
+        })
         const latest = loadTasks()[taskId] as BoardTask | undefined
         if (latest?.status === 'queued') {
           console.warn(`[queue] Task "${task.title}" queued for retry after error`)

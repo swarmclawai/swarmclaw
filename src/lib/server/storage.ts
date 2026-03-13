@@ -11,7 +11,17 @@ import { safeJsonParseObject } from './json-utils'
 import { normalizeHeartbeatSettingFields } from '@/lib/runtime/heartbeat-defaults'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
 import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
-import type { AppNotification, BoardTask, ExternalAgentRuntime, GatewayProfile, Message, Session, SkillSuggestion } from '@/types'
+import type {
+  AppNotification,
+  BoardTask,
+  ExternalAgentRuntime,
+  GatewayProfile,
+  Message,
+  RunReflection,
+  Session,
+  SkillSuggestion,
+  SupervisorIncident,
+} from '@/types'
 import { dedup, hmrSingleton } from '@/lib/shared-utils'
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 
@@ -182,6 +192,8 @@ const COLLECTIONS = [
   'gateway_profiles',
   'skills',
   'skill_suggestions',
+  'supervisor_incidents',
+  'run_reflections',
   'connectors',
   'documents',
   'webhooks',
@@ -1300,6 +1312,20 @@ export const patchSkillSuggestion = skillSuggestionsStore.patch as (
   updater: (current: SkillSuggestion | null) => SkillSuggestion | null,
 ) => SkillSuggestion | null
 export const deleteSkillSuggestion = skillSuggestionsStore.deleteItem
+
+// --- Supervisor Incidents ---
+const supervisorIncidentsStore = createCollectionStore('supervisor_incidents')
+export const loadSupervisorIncidents = supervisorIncidentsStore.load as () => Record<string, SupervisorIncident>
+export const saveSupervisorIncidents = supervisorIncidentsStore.save as (items: Record<string, SupervisorIncident>) => void
+export const loadSupervisorIncident = supervisorIncidentsStore.loadItem as (id: string) => SupervisorIncident | null
+export const upsertSupervisorIncident = supervisorIncidentsStore.upsert as (id: string, value: SupervisorIncident) => void
+
+// --- Run Reflections ---
+const runReflectionsStore = createCollectionStore('run_reflections')
+export const loadRunReflections = runReflectionsStore.load as () => Record<string, RunReflection>
+export const saveRunReflections = runReflectionsStore.save as (items: Record<string, RunReflection>) => void
+export const loadRunReflection = runReflectionsStore.loadItem as (id: string) => RunReflection | null
+export const upsertRunReflection = runReflectionsStore.upsert as (id: string, value: RunReflection) => void
 
 // --- External Agent Runtimes ---
 const externalAgentsStore = createCollectionStore('external_agents')

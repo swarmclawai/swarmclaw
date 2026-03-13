@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Self-hosted AI orchestration control plane for OpenClaw, multi-agent workflows, runtime skills, crypto wallets, and chat platform connectors.",
   "license": "MIT",
   "publishConfig": {

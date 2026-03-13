@@ -25,6 +25,13 @@ const COMMAND_GROUPS = {
       login: { description: 'Validate an access key', method: 'POST', path: '/auth' },
     },
   },
+  autonomy: {
+    description: 'Autonomy supervisor inspection',
+    commands: {
+      incidents: { description: 'List supervisor incidents (supports --query sessionId=..., --query taskId=..., --query limit=50)', method: 'GET', path: '/autonomy/incidents' },
+      reflections: { description: 'List run reflections (supports --query sessionId=..., --query taskId=..., --query limit=50)', method: 'GET', path: '/autonomy/reflections' },
+    },
+  },
   approvals: {
     description: 'List and resolve human-loop approvals',
     commands: {

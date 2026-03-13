@@ -3,6 +3,7 @@ import { normalizeHeartbeatSettingFields } from '@/lib/runtime/heartbeat-default
 import { normalizeWhatsAppApprovedContacts } from '@/lib/server/connectors/pairing'
 import { loadPublicSettings, loadSettings, saveSettings } from '@/lib/server/storage'
 import { normalizeRuntimeSettingFields } from '@/lib/runtime/runtime-loop'
+import { normalizeSupervisorSettings } from '@/lib/autonomy/supervisor-settings'
 export const dynamic = 'force-dynamic'
 
 
@@ -85,6 +86,7 @@ export async function PUT(req: Request) {
   )
   const normalizedRuntime = normalizeRuntimeSettingFields(settings)
   const normalizedHeartbeat = normalizeHeartbeatSettingFields(settings)
+  const normalizedSupervisor = normalizeSupervisorSettings(settings)
   const nextResponseCacheTtlSec = parseIntSetting(
     settings.responseCacheTtlSec,
     15 * 60,
@@ -118,6 +120,7 @@ export async function PUT(req: Request) {
   settings.maxLinkedMemoriesExpanded = nextLinked
   Object.assign(settings, normalizedRuntime)
   Object.assign(settings, normalizedHeartbeat)
+  Object.assign(settings, normalizedSupervisor)
   settings.responseCacheTtlSec = nextResponseCacheTtlSec
   settings.responseCacheMaxEntries = nextResponseCacheMaxEntries
   settings.responseCacheEnabled = parseBoolSetting(settings.responseCacheEnabled, true)

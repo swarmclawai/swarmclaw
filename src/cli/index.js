@@ -45,6 +45,14 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'autonomy',
+    description: 'Inspect supervisor incidents and reflection output',
+    commands: [
+      cmd('incidents', 'GET', '/autonomy/incidents', 'List supervisor incidents (use --query sessionId=..., --query taskId=..., --query limit=50)'),
+      cmd('reflections', 'GET', '/autonomy/reflections', 'List run reflections (use --query sessionId=..., --query taskId=..., --query limit=50)'),
+    ],
+  },
+  {
     name: 'approvals',
     description: 'List and resolve human-loop approvals',
     commands: [
