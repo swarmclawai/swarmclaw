@@ -18,7 +18,7 @@ Plugin tutorial: https://swarmclaw.ai/docs/plugin-tutorial
 ## What SwarmClaw Focuses On
 
 - **AI orchestration**: LangGraph-backed orchestration, delegated work, subagents, durable jobs, checkpointing, and background task execution.
-- **Autonomy and memory**: heartbeats, schedules, long-running execution, durable memory, working memory, document recall, and project-aware context.
+- **Autonomy and memory**: heartbeats, schedules, long-running execution, durable memory, reflection memory, human-context learning, document recall, and project-aware context.
 - **OpenClaw integration**: named gateway profiles, external runtimes, deploy helpers, config sync, approval handling, and OpenClaw agent file editing.
 - **Runtime skills**: pinned skills, OpenClaw-compatible `SKILL.md` import, on-demand skill execution, and configurable keyword or embedding-based recommendation.
 - **Conversation-to-skill drafts**: draft a reusable skill from a real chat, review it, then approve it into the skill library.
@@ -45,13 +45,22 @@ npm i -g @swarmclawai/swarmclaw
 swarmclaw
 ```
 
-Running `swarmclaw` starts the server on `http://localhost:3456`.
-
-### One-off run
+```bash
+yarn global add @swarmclawai/swarmclaw
+swarmclaw
+```
 
 ```bash
-npx @swarmclawai/swarmclaw
+pnpm add -g @swarmclawai/swarmclaw
+swarmclaw
 ```
+
+```bash
+bun add -g @swarmclawai/swarmclaw
+swarmclaw
+```
+
+Running `swarmclaw` starts the server on `http://localhost:3456`.
 
 ### From the repo
 
@@ -77,8 +86,8 @@ npm run quickstart
 
 - **Providers**: OpenClaw, OpenAI, Anthropic, Ollama, Google, DeepSeek, Groq, Together, Mistral, xAI, Fireworks, plus compatible custom endpoints.
 - **Delegation**: built-in delegation to Claude Code, Codex CLI, OpenCode CLI, Gemini CLI, and native SwarmClaw subagents.
-- **Autonomy**: heartbeat loops, schedules, background jobs, task execution, and agent wakeups.
-- **Memory**: hybrid recall, graph traversal, journaling, durable documents, and project-scoped context.
+- **Autonomy**: heartbeat loops, schedules, background jobs, task execution, supervisor recovery, and agent wakeups.
+- **Memory**: hybrid recall, graph traversal, journaling, durable documents, project-scoped context, automatic reflection memory, communication preferences, profile and boundary memory, significant events, and open follow-up loops.
 - **Wallets**: balances, transfers, signatures, EVM call/quote/swap flows, and approval-gated execution.
 - **Connectors**: Discord, Slack, Telegram, WhatsApp, Teams, Matrix, OpenClaw, and more.
 - **Plugins**: tool plugins, UI extensions, hooks, install/update flows, and runtime policy controls.
