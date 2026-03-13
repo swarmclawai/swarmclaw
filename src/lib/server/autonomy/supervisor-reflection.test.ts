@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { describe, it } from 'node:test'
 
 import { assessAutonomyRun } from '@/lib/server/autonomy/supervisor-reflection'
+import type { Session } from '@/types'
 
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..')
 
@@ -42,6 +43,18 @@ function runWithTempDataDir(script: string) {
 
 describe('supervisor-reflection', () => {
   it('recommends an automatic supervisor recovery step for repeated tool thrash', () => {
+    const session: Session = {
+      id: 'session-1',
+      name: 'Autonomy Test',
+      cwd: process.cwd(),
+      user: 'tester',
+      provider: 'openai',
+      model: 'gpt-test',
+      claudeSessionId: null,
+      messages: [],
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+    }
     const assessment = assessAutonomyRun({
       runId: 'run-1',
       sessionId: 'session-1',
@@ -65,18 +78,7 @@ describe('supervisor-reflection', () => {
         reflectionEnabled: true,
         reflectionAutoWriteMemory: true,
       },
-      session: {
-        id: 'session-1',
-        name: 'Autonomy Test',
-        cwd: process.cwd(),
-        user: 'tester',
-        provider: 'openai',
-        model: 'gpt-test',
-        claudeSessionId: null,
-        messages: [],
-        createdAt: Date.now(),
-        lastActiveAt: Date.now(),
-      } as any,
+      session,
     })
 
     assert.ok(assessment.incidents.some((incident) => incident.kind === 'repeated_tool'))

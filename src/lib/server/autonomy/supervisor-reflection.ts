@@ -15,13 +15,11 @@ import {
 import type {
   AppSettings,
   GoalContract,
-  Message,
   MessageToolEvent,
   RunReflection,
   Session,
   SessionRunStatus,
   SupervisorIncident,
-  SupervisorIncidentKind,
   SupervisorIncidentSeverity,
 } from '@/types'
 import {
