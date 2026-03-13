@@ -8,7 +8,7 @@
   <img src="https://raw.githubusercontent.com/swarmclawai/swarmclaw/main/public/branding/swarmclaw-org-avatar.png" alt="SwarmClaw lobster logo" width="120" />
 </p>
 
-SwarmClaw is a self-hosted AI orchestration control plane for OpenClaw and multi-agent work. It gives you one place to run agents, route work across providers and gateways, coordinate delegated tasks, manage runtime skills, and operate agent-linked crypto wallets.
+SwarmClaw is a self-hosted AI orchestration control plane for OpenClaw and multi-agent work. It gives you one place to run agents, route work across providers and gateways, coordinate delegated tasks, manage memory and autonomy loops, use runtime skills, and operate agent-linked crypto wallets.
 
 GitHub: https://github.com/swarmclawai/swarmclaw  
 Docs: https://swarmclaw.ai/docs  
@@ -18,11 +18,12 @@ Plugin tutorial: https://swarmclaw.ai/docs/plugin-tutorial
 ## What SwarmClaw Focuses On
 
 - **AI orchestration**: LangGraph-backed orchestration, delegated work, subagents, durable jobs, checkpointing, and background task execution.
+- **Autonomy and memory**: heartbeats, schedules, long-running execution, durable memory, working memory, document recall, and project-aware context.
 - **OpenClaw integration**: named gateway profiles, external runtimes, deploy helpers, config sync, approval handling, and OpenClaw agent file editing.
 - **Runtime skills**: pinned skills, OpenClaw-compatible `SKILL.md` import, on-demand skill execution, and configurable keyword or embedding-based recommendation.
 - **Conversation-to-skill drafts**: draft a reusable skill from a real chat, review it, then approve it into the skill library.
 - **Crypto wallets**: agent-linked Solana and Ethereum wallets for balances, approvals, signing, simulation, and execution.
-- **Operator tooling**: connectors, memory, plugins, browser automation, shell/files/git tooling, and runtime guardrails.
+- **Operator tooling**: connectors, plugins, browser automation, shell/files/git tooling, and runtime guardrails.
 
 ## OpenClaw
 
@@ -76,7 +77,8 @@ npm run quickstart
 
 - **Providers**: OpenClaw, OpenAI, Anthropic, Ollama, Google, DeepSeek, Groq, Together, Mistral, xAI, Fireworks, plus compatible custom endpoints.
 - **Delegation**: built-in delegation to Claude Code, Codex CLI, OpenCode CLI, Gemini CLI, and native SwarmClaw subagents.
-- **Memory**: hybrid memory search, graph traversal, journaling, and durable document storage.
+- **Autonomy**: heartbeat loops, schedules, background jobs, task execution, and agent wakeups.
+- **Memory**: hybrid recall, graph traversal, journaling, durable documents, and project-scoped context.
 - **Wallets**: balances, transfers, signatures, EVM call/quote/swap flows, and approval-gated execution.
 - **Connectors**: Discord, Slack, Telegram, WhatsApp, Teams, Matrix, OpenClaw, and more.
 - **Plugins**: tool plugins, UI extensions, hooks, install/update flows, and runtime policy controls.
