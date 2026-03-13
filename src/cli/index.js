@@ -584,6 +584,19 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'skill-suggestions',
+    description: 'Review conversation-derived skill drafts',
+    commands: [
+      cmd('list', 'GET', '/skill-suggestions', 'List skill suggestions'),
+      cmd('draft', 'POST', '/skill-suggestions', 'Generate or refresh a draft from a session', {
+        expectsJsonBody: true,
+        bodyFlagMap: { session: 'sessionId' },
+      }),
+      cmd('approve', 'POST', '/skill-suggestions/:id/approve', 'Approve a skill suggestion and materialize it'),
+      cmd('reject', 'POST', '/skill-suggestions/:id/reject', 'Reject a skill suggestion draft'),
+    ],
+  },
+  {
     name: 'souls',
     description: 'Browse and manage soul library templates',
     commands: [

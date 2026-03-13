@@ -442,6 +442,15 @@ const COMMAND_GROUPS = {
       claude: { description: 'List local ~/.claude/skills', method: 'GET', path: '/claude-skills' },
     },
   },
+  'skill-suggestions': {
+    description: 'Conversation-derived skill draft review',
+    commands: {
+      list: { description: 'List generated skill suggestions', method: 'GET', path: '/skill-suggestions' },
+      draft: { description: 'Generate or refresh a skill suggestion from a session', method: 'POST', path: '/skill-suggestions' },
+      approve: { description: 'Approve a skill suggestion and materialize it', method: 'POST', path: '/skill-suggestions/:id/approve', params: ['id'] },
+      reject: { description: 'Reject a skill suggestion draft', method: 'POST', path: '/skill-suggestions/:id/reject', params: ['id'] },
+    },
+  },
   system: {
     description: 'System and version endpoints',
     commands: {
