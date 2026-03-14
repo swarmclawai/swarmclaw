@@ -40,7 +40,13 @@ async function executeContextSummarize(args: { keepLastN?: number }, bctx: Conte
     if (messages.length <= keep) return JSON.stringify({ status: 'no_action' })
 
     const generateSummary = async (prompt: string): Promise<string> => {
-      const llm = buildChatModel({ provider: session.provider, model: session.model, apiKey: null })
+      const llm = buildChatModel({
+        provider: session.provider,
+        model: session.model,
+        apiKey: null,
+        credentialId: session.credentialId ?? null,
+        apiEndpoint: session.apiEndpoint ?? null,
+      })
       const res = await llm.invoke([new HumanMessage(prompt)])
       return typeof res.content === 'string' ? res.content : ''
     }

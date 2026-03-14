@@ -8,6 +8,7 @@ import { useApprovalStore } from '@/stores/use-approval-store'
 import { Skeleton } from '@/components/shared/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
 import { getEnabledCapabilityIds } from '@/lib/capability-selection'
+import { useWs } from '@/hooks/use-ws'
 
 interface Props {
   inSidebar?: boolean
@@ -47,7 +48,8 @@ export function AgentList({ inSidebar }: Props) {
   }, [updateSettings])
 
   const [loaded, setLoaded] = useState(Object.keys(agents).length > 0)
-  useEffect(() => { loadAgents().then(() => setLoaded(true)) }, [])
+  useEffect(() => { loadAgents().then(() => setLoaded(true)) }, [loadAgents])
+  useWs('agents', loadAgents, 30_000)
 
   // Compute which agents are "running" (have active sessions)
   const runningAgentIds = useMemo(() => {

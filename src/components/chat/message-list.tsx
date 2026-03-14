@@ -838,7 +838,7 @@ export function MessageList({ messages, streaming, connectorFilter = null, loadi
           )}
         </div>
       </div>
-      {showGatewayOverlay && <GatewayDisconnectOverlay />}
+      {showGatewayOverlay && <GatewayDisconnectOverlay agentId={agent?.id || null} />}
       {showScrollToBottom && (
         <button
           onClick={handleScrollToBottom}

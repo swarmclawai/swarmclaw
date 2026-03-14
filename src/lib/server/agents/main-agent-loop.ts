@@ -651,6 +651,15 @@ function extractWaitSignal(text: string, toolEvents: MessageToolEvent[]): boolea
   return /\b(wait for|waiting for|approval|human reply|mailbox|watch job|pending approval)\b/i.test(haystack)
 }
 
+function hasSuccessfulChatDelivery(toolEvents: MessageToolEvent[]): boolean {
+  return toolEvents.some((event) => (
+    event.name === 'send_file'
+    && event.error !== true
+    && typeof event.output === 'string'
+    && event.output.trim().length > 0
+  ))
+}
+
 function followupLimit(): number {
   const settings = loadSettings()
   const raw = settings.maxFollowupChain
@@ -821,6 +830,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
 
   const sessions = loadSessions()
   const session = sessions[input.sessionId] as unknown as Session | undefined
+  const isDirectUserChat = !input.internal && input.source === 'chat'
   const resultText = input.resultText || ''
   const persistedText = stripMainLoopMetaForPersistence(resultText)
   const toolEvents = Array.isArray(input.toolEvents) ? input.toolEvents : []
@@ -873,6 +883,7 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
   const cleanedResult = persistedText.trim()
   const waitingForExternal = extractWaitSignal(resultText, toolEvents)
   const gotTerminalAck = /^HEARTBEAT_OK$/i.test(cleanedResult) || /^NO_MESSAGE$/i.test(cleanedResult)
+  const successfulChatDelivery = isDirectUserChat && !input.error && hasSuccessfulChatDelivery(toolEvents)
   const selectedSkillNote = summarizeUseSkillToolEvent(toolEvents)
   if (selectedSkillNote) appendWorkingMemory(state, selectedSkillNote)
   state.metaMissCount = heartbeat || plan || review || gotTerminalAck ? 0 : state.metaMissCount + 1
@@ -928,22 +939,18 @@ export function handleMainLoopRunResult(input: HandleMainLoopRunResultInput): Ma
 
   const needsReplan = review?.needs_replan === true || ((review?.confidence ?? 1) < 0.45)
   const limit = followupLimit()
-  const allowChatOriginFollowup = !input.internal
-    && input.source === 'chat'
-    && !input.error
-    && !waitingForExternal
-    && !gotTerminalAck
-    && (
-      !!supervisorPrompt
-      || assessment.shouldBlock
-      || needsReplan
-      || heartbeat?.status === 'progress'
-      || !!heartbeat?.nextAction
-      || (!!plan?.current_step && toolNames.length > 0)
-    )
 
   let followup: MainLoopFollowupRequest | null = null
-  if (!input.internal && !allowChatOriginFollowup) {
+  if (isDirectUserChat) {
+    state.followupChainCount = 0
+    if (successfulChatDelivery) {
+      state.status = 'ok'
+      state.nextAction = null
+      state.currentPlanStep = null
+      state.planSteps = []
+      state.paused = false
+    }
+  } else if (!input.internal) {
     state.followupChainCount = 0
   } else if (input.error || waitingForExternal || gotTerminalAck) {
     state.followupChainCount = 0

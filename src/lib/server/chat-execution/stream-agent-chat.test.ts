@@ -230,6 +230,12 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(streamAgentChatSource.includes('## Exact Structural Constraints'))
   })
 
+  it('keeps silent-reply guidance scoped away from direct user chat', () => {
+    assert.ok(streamAgentChatSource.includes('allowSilentReplies: isConnectorSession'))
+    assert.ok(streamAgentChatSource.includes('Do not use it for greetings, direct questions, or when the user is clearly opening a conversation.'))
+    assert.ok(streamAgentChatSource.includes('For direct user chats, always send a visible reply. Never answer with control tokens like NO_MESSAGE or HEARTBEAT_OK unless this is an explicit heartbeat poll.'))
+  })
+
   it('canonicalizes required tool names when checking completion', () => {
     // The requiredToolsPending filter must canonicalize tool names so that
     // alias names (e.g. ask_human) match canonical names from LangGraph events.

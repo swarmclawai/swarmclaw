@@ -38,6 +38,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     authenticated,
     setAuthenticated,
     currentUser,
+    userReady,
     setupDone,
     agentReady
   } = useAppBootstrap()
@@ -78,7 +79,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     ? 'Restoring local session'
     : !authChecked
       ? 'Checking access'
-      : authenticated && currentUser && setupDone === null
+      : authenticated && !userReady
+        ? 'Restoring profile'
+        : authenticated && setupDone === null
         ? 'Loading setup state'
         : authenticated && currentUser && !agentReady
           ? 'Restoring agent workspace'
@@ -109,15 +112,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     if (!hydrated || !authChecked) return
     if (isAuthPage) {
       // Reverse redirect: already authenticated with user → leave auth pages
-      if (authenticated && currentUser && setupDone !== false) {
+      if (authenticated && userReady && currentUser && setupDone !== false) {
         router.replace('/home')
       }
       return
     }
     if (!authenticated) { router.replace('/login'); return }
-    if (!currentUser) { router.replace('/setup'); return }
+    if (!userReady) return
     if (setupDone === false) { router.replace('/setup'); return }
-  }, [hydrated, authChecked, authenticated, currentUser, setupDone, router, isAuthPage])
+    if (!currentUser) { router.replace('/setup'); return }
+  }, [hydrated, authChecked, authenticated, currentUser, setupDone, router, isAuthPage, userReady])
 
   // Star notification (one-time)
   useEffect(() => {
@@ -235,7 +239,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   // Redirect happens in effect above; show loader while waiting
-  if (!authenticated || !currentUser || setupDone === null || !agentReady || setupDone === false) {
+  if (!authenticated || !userReady || !currentUser || setupDone === null || !agentReady || setupDone === false) {
     return (
       <FullScreenLoader
         stage={bootStage}

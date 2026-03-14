@@ -19,6 +19,7 @@ import type {
   BoardTask,
   ExternalAgentRuntime,
   GatewayProfile,
+  LearnedSkill,
   Message,
   RunReflection,
   Session,
@@ -196,6 +197,7 @@ const COLLECTIONS = [
   'provider_configs',
   'gateway_profiles',
   'skills',
+  'learned_skills',
   'skill_suggestions',
   'supervisor_incidents',
   'run_reflections',
@@ -1557,6 +1559,18 @@ export const deleteProject = projectsStore.deleteItem
 const skillsStore = createCollectionStore('skills')
 export const loadSkills = skillsStore.load
 export const saveSkills = skillsStore.save
+
+// --- Learned Skills ---
+const learnedSkillsStore = createCollectionStore('learned_skills')
+export const loadLearnedSkills = learnedSkillsStore.load as () => Record<string, LearnedSkill>
+export const saveLearnedSkills = learnedSkillsStore.save as (items: Record<string, LearnedSkill>) => void
+export const loadLearnedSkill = learnedSkillsStore.loadItem as (id: string) => LearnedSkill | null
+export const upsertLearnedSkill = learnedSkillsStore.upsert as (id: string, value: LearnedSkill) => void
+export const patchLearnedSkill = learnedSkillsStore.patch as (
+  id: string,
+  updater: (current: LearnedSkill | null) => LearnedSkill | null,
+) => LearnedSkill | null
+export const deleteLearnedSkill = learnedSkillsStore.deleteItem
 
 // --- Skill Suggestions ---
 const skillSuggestionsStore = createCollectionStore('skill_suggestions')

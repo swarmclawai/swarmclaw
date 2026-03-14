@@ -49,9 +49,15 @@ export function useGatewayStatus() {
   return status
 }
 
-export function GatewayDisconnectOverlay() {
+interface GatewayDisconnectOverlayProps {
+  agentId?: string | null
+}
+
+export function GatewayDisconnectOverlay({ agentId = null }: GatewayDisconnectOverlayProps) {
   const navigateTo = useNavigate()
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
+  const setAgentSheetOpen = useAppStore((s) => s.setAgentSheetOpen)
+  const setEditingAgentId = useAppStore((s) => s.setEditingAgentId)
 
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/60 backdrop-blur-sm">
@@ -67,13 +73,18 @@ export function GatewayDisconnectOverlay() {
         </div>
         <button
           onClick={() => {
+            if (agentId) {
+              setEditingAgentId(agentId)
+              setAgentSheetOpen(true)
+              return
+            }
             navigateTo('settings')
             setSidebarOpen(true)
           }}
           className="px-5 py-2 rounded-[10px] border-none bg-accent-bright text-white text-[13px] font-600 cursor-pointer transition-all hover:brightness-110"
           style={{ fontFamily: 'inherit' }}
         >
-          Connect Gateway
+          {agentId ? 'Open Agent Settings' : 'Open Settings'}
         </button>
       </div>
     </div>

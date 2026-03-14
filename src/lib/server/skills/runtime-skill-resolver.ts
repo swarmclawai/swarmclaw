@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 
 import type {
+  LearnedSkill,
   Skill,
   SkillCommandDispatch,
   SkillInstallOption,
@@ -10,7 +11,7 @@ import type {
 } from '@/types'
 import { dedup } from '@/lib/shared-utils'
 import { expandPluginIds, getPluginAliases, normalizePluginId } from '@/lib/server/tool-aliases'
-import { loadSettings, loadSkills } from '@/lib/server/storage'
+import { loadLearnedSkills, loadSettings, loadSkills } from '@/lib/server/storage'
 import { cosineSimilarity, getEmbedding } from '@/lib/server/embeddings'
 import { discoverSkills, type DiscoveredSkill } from './skill-discovery'
 import { evaluateSkillEligibility } from './skill-eligibility'
@@ -19,7 +20,7 @@ import {
   MAX_SKILLS_PROMPT_CHARS,
 } from './skill-prompt-budget'
 
-export type RuntimeSkillSource = 'stored' | 'bundled' | 'workspace' | 'project'
+export type RuntimeSkillSource = 'stored' | 'learned' | 'bundled' | 'workspace' | 'project'
 
 type SkillSeed = {
   runtimeId: string
@@ -129,6 +130,10 @@ export interface ResolveRuntimeSkillsOptions {
   enabledPlugins?: string[] | null
   agentSkillIds?: string[] | null
   storedSkills?: Record<string, Skill>
+  learnedSkills?: Record<string, LearnedSkill>
+  agentId?: string | null
+  sessionId?: string | null
+  userId?: string | null
   selectedSkillId?: string | null
 }
 
@@ -149,6 +154,7 @@ export interface RuntimeSkillRecommendationOptions {
 const SOURCE_PRIORITY: Record<RuntimeSkillSource, number> = {
   bundled: 10,
   stored: 20,
+  learned: 25,
   workspace: 30,
   project: 40,
 }
@@ -352,6 +358,57 @@ function buildSeedFromStored(skill: Skill, attachedIds: Set<string>): SkillSeed 
   }
 }
 
+function buildSeedFromLearned(skill: LearnedSkill): SkillSeed | null {
+  if (skill.lifecycle !== 'active') return null
+  const name = typeof skill.name === 'string' ? skill.name.trim() : ''
+  const content = typeof skill.content === 'string' ? skill.content.trim() : ''
+  if (!name || !content) return null
+  const explicitToolNames: string[] = []
+  const toolNames = inferToolNames({
+    name,
+    skillKey: skill.workflowKey,
+    explicit: explicitToolNames,
+  })
+
+  return {
+    runtimeId: `runtime:learned:${skill.id}`,
+    storageId: skill.id,
+    name,
+    key: buildSkillKey({
+      skillKey: skill.workflowKey,
+      name,
+      filename: `${name}.md`,
+    }),
+    filename: `${buildSkillKey({ skillKey: skill.workflowKey, name }) || 'learned-skill'}.md`,
+    content,
+    description: skill.description || '',
+    tags: dedup(Array.isArray(skill.tags) ? skill.tags : []),
+    toolNames,
+    capabilities: inferCapabilities({
+      name,
+      description: [skill.description, skill.objectiveSummary].filter(Boolean).join(' '),
+      tags: skill.tags,
+      toolNames,
+      explicit: [skill.workflowKey, skill.failureFamily || ''].filter(Boolean),
+    }),
+    source: 'learned',
+    author: 'swarmclaw-learned-skill',
+    skillKey: skill.workflowKey,
+    always: false,
+    attached: true,
+    frontmatter: {
+      learnedSkill: {
+        id: skill.id,
+        sourceKind: skill.sourceKind,
+        workflowKey: skill.workflowKey,
+        failureFamily: skill.failureFamily || null,
+        confidence: skill.confidence ?? null,
+      },
+    },
+    priority: SOURCE_PRIORITY.learned,
+  }
+}
+
 function buildSeedFromDiscovered(skill: DiscoveredSkill): SkillSeed {
   const explicitToolNames = Array.isArray(skill.toolNames) ? skill.toolNames : []
   const toolNames = inferToolNames({
@@ -524,10 +581,22 @@ function toResolvedSkill(seed: SkillSeed, status: RuntimeSkillStatus, match: {
 
 export function resolveRuntimeSkills(options: ResolveRuntimeSkillsOptions = {}): RuntimeSkillSnapshot {
   const storedSkills = options.storedSkills || loadSkills()
+  const learnedSkills = options.learnedSkills || loadLearnedSkills()
   const attachedIds = new Set(Array.isArray(options.agentSkillIds) ? options.agentSkillIds.filter(Boolean) : [])
   const discovered = discoverSkills({ cwd: options.cwd || undefined })
+  const scopedLearnedSeeds = Object.values(learnedSkills)
+    .filter((skill) => {
+      if (skill.scope === 'session') return Boolean(options.sessionId && skill.sessionId === options.sessionId)
+      if (!options.agentId) return false
+      if (skill.agentId !== options.agentId) return false
+      if (options.userId && skill.userId && skill.userId !== options.userId) return false
+      return true
+    })
+    .map((skill) => buildSeedFromLearned(skill))
+    .filter((skill): skill is SkillSeed => Boolean(skill))
   const seeds = [
     ...Object.values(storedSkills).map((skill) => buildSeedFromStored(skill, attachedIds)),
+    ...scopedLearnedSeeds,
     ...discovered.map((skill) => buildSeedFromDiscovered(skill)),
   ]
 

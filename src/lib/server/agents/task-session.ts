@@ -3,6 +3,7 @@ import { loadSessions, saveSessions } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import type { Agent } from '@/types'
 import { getEnabledCapabilitySelection } from '@/lib/capability-selection'
+import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 
 export function createAgentTaskSession(
   agent: Agent,
@@ -19,8 +20,12 @@ export function createAgentTaskSession(
   const preferredGatewayTags = Array.isArray(routePreferences?.preferredGatewayTags)
     ? routePreferences.preferredGatewayTags.filter((tag) => typeof tag === 'string' && tag.trim())
     : []
+  const resolvedRoute = resolvePrimaryAgentRoute(agent, undefined, {
+    preferredGatewayTags,
+    preferredGatewayUseCase: routePreferences?.preferredGatewayUseCase || null,
+  })
 
-  sessions[sessionId] = {
+  sessions[sessionId] = applyResolvedRoute({
     id: sessionId,
     name: `[Task] ${agent.name}: ${task.slice(0, 40)}`,
     cwd: cwd || WORKSPACE_DIR,
@@ -28,7 +33,9 @@ export function createAgentTaskSession(
     provider: agent.provider,
     model: agent.model,
     credentialId: agent.credentialId || null,
+    fallbackCredentialIds: agent.fallbackCredentialIds || [],
     apiEndpoint: agent.apiEndpoint || null,
+    gatewayProfileId: agent.gatewayProfileId || null,
     routePreferredGatewayTags: preferredGatewayTags,
     routePreferredGatewayUseCase: routePreferences?.preferredGatewayUseCase || null,
     claudeSessionId: null,
@@ -48,7 +55,7 @@ export function createAgentTaskSession(
     parentSessionId: parentSessionId || null,
     ...getEnabledCapabilitySelection(agent),
     heartbeatEnabled: false,
-  }
+  }, resolvedRoute)
 
   saveSessions(sessions)
   return sessionId

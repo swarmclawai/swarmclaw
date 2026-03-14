@@ -40,7 +40,7 @@ export function BottomSheet({ open, onClose, children, wide, title, description 
               </DialogPrimitive.Description>
             ) : null}
             <DialogPrimitive.Close
-              className="absolute right-4 top-3.5 inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-white/[0.06] bg-white/[0.03] text-text-3 transition-all hover:bg-white/[0.06] hover:text-text-2 focus:outline-none focus:ring-2 focus:ring-accent-bright/30 sm:right-5 sm:top-5"
+              className="absolute right-4 top-3.5 inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-[12px] border border-white/[0.06] bg-white/[0.03] text-text-3 transition-all hover:bg-white/[0.06] hover:text-text-2 focus:outline-none focus:ring-2 focus:ring-accent-bright/30 sm:right-5 sm:top-5"
             >
               <XIcon className="size-4" />
               <span className="sr-only">Close</span>

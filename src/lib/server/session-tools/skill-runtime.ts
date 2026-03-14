@@ -39,6 +39,9 @@ function buildRuntimeSnapshot(bctx: ToolBuildContext): RuntimeSkillSnapshot {
   return resolveRuntimeSkills({
     cwd: bctx.cwd,
     enabledPlugins: bctx.activePlugins,
+    agentId: activeAgent?.id || null,
+    sessionId: session?.id || null,
+    userId: session?.user || null,
     agentSkillIds: activeAgent?.skillIds || [],
     storedSkills: loadSkills(),
     selectedSkillId: selectedSkillIdFromSession(session),

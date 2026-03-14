@@ -1541,6 +1541,9 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     const runtimeSkills = resolveRuntimeSkills({
       cwd: session.cwd,
       enabledPlugins,
+      agentId: agent.id,
+      sessionId: session.id,
+      userId: session.user,
       agentSkillIds: agent.skillIds || [],
       storedSkills: loadSkills(),
       selectedSkillId: session.skillRuntimeState?.selectedSkillId || null,

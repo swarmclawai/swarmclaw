@@ -98,6 +98,14 @@ function buildThreadSession(agent: Agent, sessionId: string, user: string, creat
   )
 }
 
+function shouldHealAgentCredentialId(agent: Agent, session: Session): boolean {
+  const currentCredentialId = typeof agent.credentialId === 'string' ? agent.credentialId.trim() : ''
+  const resolvedCredentialId = typeof session.credentialId === 'string' ? session.credentialId.trim() : ''
+  if (!currentCredentialId || !resolvedCredentialId || currentCredentialId === resolvedCredentialId) return false
+  if (agent.gatewayProfileId) return false
+  return session.provider === agent.provider
+}
+
 export function ensureAgentThreadSession(agentId: string, user = 'default'): Session | null {
   const agents = loadAgents()
   const agent = agents[agentId] as Agent | undefined
@@ -110,6 +118,11 @@ export function ensureAgentThreadSession(agentId: string, user = 'default'): Ses
   const existingId = typeof agent.threadSessionId === 'string' ? agent.threadSessionId : ''
   if (existingId && sessions[existingId]) {
     const session = buildThreadSession(agent, existingId, user, now, sessions[existingId] as Session)
+    if (shouldHealAgentCredentialId(agent, session)) {
+      agent.credentialId = session.credentialId ?? null
+      agent.updatedAt = now
+      upsertAgent(agentId, agent)
+    }
     upsertStoredItem('sessions', existingId, session)
     return session
   }
@@ -121,9 +134,12 @@ export function ensureAgentThreadSession(agentId: string, user = 'default'): Ses
 
   if (legacySession) {
     agent.threadSessionId = legacySession.id
+    const session = buildThreadSession(agent, legacySession.id, user, now, legacySession)
+    if (shouldHealAgentCredentialId(agent, session)) {
+      agent.credentialId = session.credentialId ?? null
+    }
     agent.updatedAt = now
     upsertAgent(agentId, agent)
-    const session = buildThreadSession(agent, legacySession.id, user, now, legacySession)
     upsertStoredItem('sessions', legacySession.id, session)
     return session
   }
@@ -132,6 +148,9 @@ export function ensureAgentThreadSession(agentId: string, user = 'default'): Ses
 
   const sessionId = `agent-chat-${agentId}-${genId()}`
   const session = buildThreadSession(agent, sessionId, user, now)
+  if (shouldHealAgentCredentialId(agent, session)) {
+    agent.credentialId = session.credentialId ?? null
+  }
   upsertStoredItem('sessions', sessionId, session)
 
   agent.threadSessionId = sessionId

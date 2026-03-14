@@ -6,6 +6,7 @@ import { useChatStore } from '@/stores/use-chat-store'
 import { useChatroomStore } from '@/stores/use-chatroom-store'
 import { useNow } from '@/hooks/use-now'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
+import { useWs } from '@/hooks/use-ws'
 import { useNavigate } from '@/lib/app/navigation'
 import { api } from '@/lib/app/api-client'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -86,6 +87,7 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
   }, [])
 
   useEffect(() => { loadAgents() }, [loadAgents])
+  useWs('agents', loadAgents, 30_000)
 
   useEffect(() => {
     return () => {

@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import type { Skill } from '@/types'
+import type { LearnedSkill, Skill } from '@/types'
 import {
   buildRuntimeSkillPromptBlocks,
   recommendRuntimeSkillsForTask,
@@ -194,4 +194,73 @@ test('resolveRuntimeSkills marks the selected skill and loads it into the prompt
   assert.match(blocks, /Active Selected Skill/)
   assert.match(blocks, /Selected Workflow/)
   assert.match(blocks, /### Selected Workflow/)
+})
+
+test('resolveRuntimeSkills includes active learned skills only for the matching agent', () => {
+  const now = Date.now()
+  const learnedSkills: Record<string, LearnedSkill> = {
+    learned_active: {
+      id: 'learned_active',
+      agentId: 'agent-a',
+      userId: 'tester',
+      sessionId: 'session-a',
+      scope: 'agent',
+      lifecycle: 'active',
+      sourceKind: 'success_pattern',
+      workflowKey: 'success:deploy_workflow',
+      objectiveSummary: 'Repeat the deploy workflow.',
+      name: 'deploy-workflow-learned',
+      description: 'Agent-scoped deploy workflow.',
+      content: '# deploy-workflow-learned\n\nUse the learned deploy order.',
+      validationStatus: 'passed',
+      createdAt: now,
+      updatedAt: now,
+    },
+    learned_other_agent: {
+      id: 'learned_other_agent',
+      agentId: 'agent-b',
+      userId: 'tester',
+      sessionId: 'session-b',
+      scope: 'agent',
+      lifecycle: 'active',
+      sourceKind: 'success_pattern',
+      workflowKey: 'success:other_workflow',
+      objectiveSummary: 'Other workflow.',
+      name: 'other-agent-skill',
+      description: 'Should not leak.',
+      content: '# other-agent-skill\n\nDo not show for other agents.',
+      validationStatus: 'passed',
+      createdAt: now,
+      updatedAt: now,
+    },
+    learned_demoted: {
+      id: 'learned_demoted',
+      agentId: 'agent-a',
+      userId: 'tester',
+      sessionId: 'session-a',
+      scope: 'agent',
+      lifecycle: 'demoted',
+      sourceKind: 'failure_repair',
+      workflowKey: 'external_whatsapp_voice_delivery',
+      objectiveSummary: 'Repair WhatsApp voice delivery.',
+      name: 'whatsapp-voice-fallback',
+      description: 'Demoted skill should not appear.',
+      content: '# whatsapp-voice-fallback\n\nDo not use.',
+      validationStatus: 'passed',
+      createdAt: now,
+      updatedAt: now,
+    },
+  }
+
+  const snapshot = resolveRuntimeSkills({
+    agentId: 'agent-a',
+    sessionId: 'session-a',
+    userId: 'tester',
+    learnedSkills,
+  })
+
+  assert.ok(snapshot.skills.some((skill) => skill.name === 'deploy-workflow-learned'))
+  assert.ok(snapshot.promptSkills.some((skill) => skill.name === 'deploy-workflow-learned'))
+  assert.ok(!snapshot.skills.some((skill) => skill.name === 'other-agent-skill'))
+  assert.ok(!snapshot.skills.some((skill) => skill.name === 'whatsapp-voice-fallback'))
 })

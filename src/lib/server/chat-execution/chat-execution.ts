@@ -512,6 +512,7 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
   if (!agent) return undefined
 
   const settings = loadSettings()
+  const allowSilentReplies = isDirectConnectorSession(session)
   const parts: string[] = []
   const enabledPlugins = listUniversalToolAccessPluginIds(
     getEnabledCapabilityIds(session).length > 0 ? getEnabledCapabilityIds(session) : getEnabledCapabilityIds(agent),
@@ -552,6 +553,9 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
     const runtimeSkills = resolveRuntimeSkills({
       cwd: session.cwd,
       enabledPlugins,
+      agentId: agent.id,
+      sessionId: session.id,
+      userId: session.user,
       agentSkillIds: agent.skillIds || [],
       storedSkills: loadSkills(),
       selectedSkillId: session.skillRuntimeState?.selectedSkillId || null,
@@ -572,7 +576,9 @@ function buildAgentSystemPrompt(session: Session): string | undefined {
     '## Output Format',
     'If your model supports internal reasoning/thinking, put all internal analysis inside <think>...</think> tags.',
     'Your final response to the user should be clear and concise.',
-    'When you have nothing to say, respond with ONLY: NO_MESSAGE',
+    allowSilentReplies
+      ? 'When you truly have nothing to say, respond with ONLY: NO_MESSAGE'
+      : 'For direct user chats, always send a visible reply. Never answer with NO_MESSAGE or HEARTBEAT_OK unless this is an explicit heartbeat poll.',
   ]
   parts.push(thinkingHint.join('\n'))
 
@@ -916,6 +922,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   }
 
   const apiKey = resolveApiKeyForSession(sessionForRun, provider)
+  const hideAssistantTranscript = internal && source === 'main-loop-followup'
 
   const shouldPersistUserMessage = shouldPersistInboundUserMessage(internal, source)
   if (shouldPersistUserMessage) {
@@ -1012,6 +1019,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   }
 
   const persistStreamingAssistantArtifact = async () => {
+    if (hideAssistantTranscript) return
     partialSaveTimeout = null
     if (partialPersistenceClosed) return
     const persistedToolEvents = toolEvents.length
@@ -1438,6 +1446,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   }
 
   const shouldPersistAssistant = !hiddenControlOnly
+    && !hideAssistantTranscript
     && hasPersistableAssistantPayload(persistedText, thinkingText, persistedToolEvents)
     && heartbeatClassification !== 'suppress'
     && !(isHeartbeatRun && heartbeatConfig?.deliveryMode === 'tool_only' && !isDirectConnectorSession(session))

@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import { HumanMessage } from '@langchain/core/messages'
 
 import { genId } from '@/lib/id'
-import type { Session, Skill, SkillSuggestion } from '@/types'
+import type { Agent, Session, Skill, SkillSuggestion } from '@/types'
 import { errorMessage } from '@/lib/shared-utils'
 import {
   loadAgents,
@@ -14,6 +14,8 @@ import {
 } from '@/lib/server/storage'
 import { buildLLM, type GenerationModelPreference } from '@/lib/server/build-llm'
 import { notify } from '@/lib/server/ws-hub'
+import { resolveAgentRouteCandidates } from '@/lib/server/agents/agent-runtime-config'
+import { getGateway } from '@/lib/server/openclaw/gateway'
 import { normalizeSkillPayload } from './skills-normalize'
 import { clearDiscoveredSkillsCache } from './skill-discovery'
 
@@ -201,6 +203,33 @@ export function listSkillSuggestions(): SkillSuggestion[] {
     })
 }
 
+function hasConnectedOpenClawGateway(profileId?: string | null): boolean {
+  return getGateway(profileId || null)?.connected === true
+}
+
+function shouldExcludeOpenClawForSkillSuggestion(session: Session, agent: Agent | null | undefined): boolean {
+  const openClawRouteProfiles = agent
+    ? resolveAgentRouteCandidates(agent)
+      .filter((route) => route.provider === 'openclaw')
+      .map((route) => route.gatewayProfileId || null)
+    : []
+  const gatewayProfiles = new Set<string | null>()
+
+  if (session.provider === 'openclaw') {
+    if (session.gatewayProfileId) {
+      gatewayProfiles.add(session.gatewayProfileId)
+    } else if (openClawRouteProfiles.length > 0) {
+      openClawRouteProfiles.forEach((profileId) => gatewayProfiles.add(profileId))
+    } else {
+      gatewayProfiles.add(null)
+    }
+  }
+
+  openClawRouteProfiles.forEach((profileId) => gatewayProfiles.add(profileId))
+  if (gatewayProfiles.size === 0) return false
+  return !Array.from(gatewayProfiles).some((profileId) => hasConnectedOpenClawGateway(profileId))
+}
+
 export async function createSkillSuggestionFromSession(
   sessionId: string,
   options?: { generateText?: (prompt: string) => Promise<string> },
@@ -239,6 +268,7 @@ export async function createSkillSuggestionFromSession(
         model: session.model,
         credentialId: session.credentialId || null,
         apiEndpoint: session.apiEndpoint || null,
+        gatewayProfileId: session.gatewayProfileId || null,
         thinkingLevel: session.thinkingLevel || null,
       }]
       if (agent) {
@@ -247,13 +277,27 @@ export async function createSkillSuggestionFromSession(
           model: agent.model,
           credentialId: agent.credentialId || null,
           apiEndpoint: agent.apiEndpoint || null,
+          gatewayProfileId: agent.gatewayProfileId || null,
           thinkingLevel: agent.thinkingLevel || null,
         })
       }
-      const { llm } = await buildLLM({
-        preferred: preferredModels,
-      })
-      const response = await llm.invoke([new HumanMessage(prompt)])
+      const excludeProviders = shouldExcludeOpenClawForSkillSuggestion(session, agent) ? ['openclaw'] : []
+      const llmResult = await (async () => {
+        try {
+          return await buildLLM({
+            preferred: preferredModels,
+            sessionId,
+            agentId: agent?.id || null,
+            excludeProviders,
+          })
+        } catch (err) {
+          if (excludeProviders.includes('openclaw')) {
+            throw new Error('Skill drafting is unavailable because this chat uses OpenClaw and its gateway is disconnected. Connect the gateway or configure a non-OpenClaw routed model for this agent.')
+          }
+          throw err
+        }
+      })()
+      const response = await llmResult.llm.invoke([new HumanMessage(prompt)])
       return getModelText(response.content)
     })()
   const parsed = parseSkillSuggestionResponse(responseText)

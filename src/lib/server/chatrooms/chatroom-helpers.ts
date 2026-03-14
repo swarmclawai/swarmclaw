@@ -5,19 +5,19 @@ import { loadSettings, loadSkills, loadCredentials, decryptKey, loadSessions, sa
 import { buildCurrentDateTimePromptContext } from '@/lib/server/prompt-runtime-context'
 import { buildIdentityContinuityContext } from '@/lib/server/identity-continuity'
 import { genId } from '@/lib/id'
-import { getProvider } from '@/lib/providers'
-import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
+import { resolveProviderApiEndpoint, resolveProviderCredentialId } from '@/lib/server/provider-endpoint'
 import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import type { Chatroom, ChatroomMember, Agent, Session, Message, ChatroomMessage } from '@/types'
 import { getEnabledCapabilityIds, getEnabledToolIds } from '@/lib/capability-selection'
 
 /** Resolve API key from an agent's credentialId */
 export function resolveApiKey(credentialId: string | null | undefined): string | null {
-  if (!credentialId) return null
+  const resolvedCredentialId = resolveProviderCredentialId({ credentialId })
+  if (!resolvedCredentialId) return null
   const creds = loadCredentials()
-  const cred = creds[credentialId]
+  const cred = creds[resolvedCredentialId]
   if (!cred?.encryptedKey) return null
   try { return decryptKey(cred.encryptedKey) } catch { return null }
 }
@@ -44,11 +44,12 @@ export function isMuted(chatroom: Chatroom, agentId: string): boolean {
 }
 
 export function resolveAgentApiEndpoint(agent: Agent): string | null {
-  const explicit = normalizeProviderEndpoint(agent.provider, agent.apiEndpoint ?? null)
-  if (explicit) return explicit
-  const provider = getProvider(agent.provider)
-  if (!provider?.defaultEndpoint) return null
-  return normalizeProviderEndpoint(agent.provider, provider.defaultEndpoint) || provider.defaultEndpoint.replace(/\/+$/, '')
+  return resolveProviderApiEndpoint({
+    provider: agent.provider,
+    model: agent.model,
+    credentialId: agent.credentialId ?? null,
+    apiEndpoint: agent.apiEndpoint ?? null,
+  })
 }
 
 const COMPACTION_PREFIX = '[Conversation summary]'
@@ -366,6 +367,7 @@ export function buildAgentSystemPromptForChatroom(agent: Agent, cwd?: string | n
     const runtimeSkills = resolveRuntimeSkills({
       cwd,
       enabledPlugins: getEnabledCapabilityIds(agent),
+      agentId: agent.id,
       agentSkillIds: agent.skillIds || [],
       storedSkills: loadSkills(),
     })

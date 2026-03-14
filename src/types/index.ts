@@ -1430,6 +1430,8 @@ export interface RunReflection {
   openLoopNotes?: string[]
   incidentIds?: string[]
   autoMemoryIds?: string[]
+  learnedSkillIds?: string[]
+  learnedSkillNotes?: string[]
   createdAt: number
   updatedAt: number
 }
@@ -1894,6 +1896,56 @@ export interface Skill {
   frontmatter?: Record<string, unknown> | null
   scope?: 'global' | 'agent'
   agentIds?: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export type LearnedSkillScope = 'agent' | 'session'
+export type LearnedSkillLifecycle = 'candidate' | 'active' | 'shadow' | 'demoted' | 'review_ready'
+export type LearnedSkillSourceKind = 'success_pattern' | 'failure_repair'
+export type LearnedSkillValidationStatus = 'pending' | 'passed' | 'failed'
+export type LearnedSkillRiskLevel = 'low' | 'medium' | 'high'
+
+export interface LearnedSkill {
+  id: string
+  parentSkillId?: string | null
+  agentId: string
+  userId?: string | null
+  sessionId?: string | null
+  scope: LearnedSkillScope
+  lifecycle: LearnedSkillLifecycle
+  sourceKind: LearnedSkillSourceKind
+  workflowKey: string
+  failureFamily?: string | null
+  objectiveSummary?: string | null
+  name?: string | null
+  description?: string | null
+  content?: string | null
+  tags?: string[]
+  rationale?: string | null
+  confidence?: number | null
+  riskLevel?: LearnedSkillRiskLevel | null
+  validationStatus: LearnedSkillValidationStatus
+  validationSummary?: string | null
+  validationEvidenceCount?: number
+  evidenceCount?: number
+  activationCount?: number
+  successCount?: number
+  failureCount?: number
+  consecutiveSuccessCount?: number
+  consecutiveFailureCount?: number
+  lastSourceHash?: string | null
+  lastUsedAt?: number | null
+  lastSucceededAt?: number | null
+  lastFailedAt?: number | null
+  demotedAt?: number | null
+  demotionReason?: string | null
+  retryUnlockedAt?: number | null
+  retryUnlockedByReflectionId?: string | null
+  retryUnlockedBySkillId?: string | null
+  reviewReadyAt?: number | null
+  sourceSessionName?: string | null
+  sourceSnippet?: string | null
   createdAt: number
   updatedAt: number
 }

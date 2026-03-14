@@ -195,7 +195,7 @@ describe('main-agent-loop advanced', () => {
     assert.equal(output.followupOk, null, 'no followup on terminal ack')
   })
 
-  it('allows a bounded followup for chat-originated runs when structured progress is still active', () => {
+  it('does not queue chat-origin followups even when structured progress is still active', () => {
     const progressMeta = heartbeatMetaLine('progress', 'buy nft', 'prepare the first safe wallet step')
     const output = runWithTempDataDir(`
       ${sessionSetupScript()}
@@ -223,14 +223,14 @@ describe('main-agent-loop advanced', () => {
       }))
     `)
 
-    assert.equal(output.hasFollowup, true, 'chat run should queue one bounded followup')
-    assert.equal(output.chain, 1, 'chat followup starts the chain at 1')
+    assert.equal(output.hasFollowup, false, 'chat run should not queue an autonomous followup')
+    assert.equal(output.chain, 0, 'chat runs should reset the followup chain')
     assert.equal(output.status, 'progress')
     assert.equal(output.nextAction, 'prepare the first safe wallet step')
-    assert.match(String(output.followupMessage || ''), /Resume from this next action/)
+    assert.equal(output.followupMessage, null)
   })
 
-  it('uses the supervisor followup prompt when chat runs start thrashing on the same tool', () => {
+  it('records supervisor interventions for chat runs without enqueueing followups', () => {
     const output = runWithTempDataDir(`
       ${sessionSetupScript()}
 
@@ -258,11 +258,46 @@ describe('main-agent-loop advanced', () => {
       }))
     `)
 
-    assert.equal(output.hasFollowup, true, 'supervisor should queue a recovery followup')
-    assert.equal(output.chain, 1, 'supervisor followup increments the chain')
-    assert.match(String(output.followupMessage || ''), /Supervisor intervention: stop repeating shell/i)
+    assert.equal(output.hasFollowup, false, 'chat runs should not queue supervisor followups')
+    assert.equal(output.chain, 0, 'chat runs should keep the chain at zero')
+    assert.equal(output.followupMessage, null)
     assert.ok((output.timelineSources as string[]).includes('supervisor'), 'supervisor interventions should be visible in timeline')
     assert.ok((output.timelineNotes as string[]).some((note) => /Repeated tool use detected/i.test(String(note))), 'timeline should explain the supervisor trigger')
+  })
+
+  it('marks direct chat runs with successful file delivery as terminal completion', () => {
+    const output = runWithTempDataDir(`
+      ${sessionSetupScript()}
+
+      const progressMeta = ${JSON.stringify(heartbeatMetaLine('progress', 'build site', 'publish the generated page'))}
+      mainLoop.handleMainLoopRunResult({
+        sessionId: 'main',
+        message: 'Build and send me the page.',
+        internal: false,
+        source: 'chat',
+        resultText: \`Built the page and sent the file.\\n\${progressMeta}\`,
+        toolEvents: [{
+          name: 'send_file',
+          input: '{"filePath":"website/index.html"}',
+          output: '[Download website/index.html](/api/uploads/site.html)',
+        }],
+      })
+      const state = mainLoop.getMainLoopStateForSession('main')
+
+      console.log(JSON.stringify({
+        status: state?.status ?? null,
+        nextAction: state?.nextAction ?? null,
+        currentPlanStep: state?.currentPlanStep ?? null,
+        planSteps: state?.planSteps ?? [],
+        chain: state?.followupChainCount ?? -1,
+      }))
+    `)
+
+    assert.equal(output.status, 'ok')
+    assert.equal(output.nextAction, null)
+    assert.equal(output.currentPlanStep, null)
+    assert.deepEqual(output.planSteps, [])
+    assert.equal(output.chain, 0)
   })
 
   it('persists and upgrades a skill blocker across recommend/install steps', () => {

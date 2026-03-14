@@ -42,6 +42,7 @@ const AUTO_SYNC_MODEL_PROVIDER_IDS = new Set<ProviderType>([
   'fireworks',
   'ollama',
 ])
+const CONNECTION_TEST_TIMEOUT_MS = 40_000
 
 type SafeAgentWallet = Omit<AgentWallet, 'encryptedPrivateKey'> & {
   balanceAtomic?: string
@@ -156,6 +157,7 @@ export function AgentSheet() {
   const setEditingId = useAppStore((s) => s.setEditingAgentId)
   const agents = useAppStore((s) => s.agents)
   const loadAgents = useAppStore((s) => s.loadAgents)
+  const updateAgentInStore = useAppStore((s) => s.updateAgentInStore)
   const activeSessionId = useAppStore(selectActiveSessionId)
   const currentSession = useAppStore((s) => {
     const id = selectActiveSessionId(s)
@@ -697,11 +699,13 @@ export function AgentSheet() {
       monthlyBudget: parsedMonthlyBudget && parsedMonthlyBudget > 0 ? parsedMonthlyBudget : null,
       budgetAction: budgetEnabled ? budgetAction : undefined,
     }
+    const savedAgent = editing
+      ? await updateAgent(editing.id, data)
+      : await createAgent(data)
+    updateAgentInStore(savedAgent)
     if (editing) {
-      await updateAgent(editing.id, data)
       toast.success('Agent saved')
     } else {
-      await createAgent(data)
       toast.success('Agent created')
     }
     await loadAgents()
@@ -806,6 +810,8 @@ export function AgentSheet() {
         credentialId,
         endpoint: apiEndpoint,
         model,
+      }, {
+        timeoutMs: CONNECTION_TEST_TIMEOUT_MS,
       })
       if (result.deviceId) setTestDeviceId(result.deviceId)
       if (result.ok) {

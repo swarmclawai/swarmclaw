@@ -5,6 +5,7 @@ import { getProviderList } from '../providers'
 import { normalizeOpenClawEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { NON_LANGGRAPH_PROVIDER_IDS } from '../provider-sets'
 import { resolveOllamaRuntimeConfig } from './ollama-runtime'
+import { resolveProviderApiEndpoint, resolveProviderCredentialId } from './provider-endpoint'
 import type { Agent } from '@/types'
 
 const OLLAMA_CLOUD_URL = 'https://ollama.com/v1'
@@ -17,6 +18,7 @@ export interface GenerationModelPreference {
   model?: string | null
   credentialId?: string | null
   apiEndpoint?: string | null
+  gatewayProfileId?: string | null
   thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high' | null
 }
 
@@ -53,10 +55,13 @@ export function buildChatModel(opts: {
   provider: string
   model: string
   apiKey: string | null
+  credentialId?: string | null
   apiEndpoint?: string | null
   thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
 }) {
-  const { provider, model, apiKey, apiEndpoint, thinkingLevel } = opts
+  const { provider, model, apiKey, credentialId, apiEndpoint, thinkingLevel } = opts
+  const resolvedCredentialId = resolveProviderCredentialId({ provider, credentialId })
+  const resolvedApiKey = apiKey ?? resolveApiKeyFromCredential(resolvedCredentialId)
   const providers = getProviderList()
   const providerInfo = providers.find((p) => p.id === provider)
   const endpointRaw = apiEndpoint || providerInfo?.defaultEndpoint || null
@@ -67,7 +72,7 @@ export function buildChatModel(opts: {
   if (provider === 'anthropic') {
     const anthropicOpts: Record<string, unknown> = {
       model: model || 'claude-sonnet-4-6',
-      anthropicApiKey: apiKey || undefined,
+      anthropicApiKey: resolvedApiKey || undefined,
       maxTokens: 8192,
     }
     if (thinkingLevel) {
@@ -80,7 +85,7 @@ export function buildChatModel(opts: {
   }
 
   if (provider === 'ollama') {
-    const runtime = resolveOllamaRuntimeConfig({ model, apiKey, apiEndpoint })
+    const runtime = resolveOllamaRuntimeConfig({ model, apiKey: resolvedApiKey, apiEndpoint })
     if (runtime.useCloud && !runtime.apiKey) {
       throw new Error('Ollama Cloud model requires an API key. Set OLLAMA_API_KEY or attach an Ollama credential.')
     }
@@ -99,7 +104,7 @@ export function buildChatModel(opts: {
   // All other providers — OpenAI-compatible with their registered endpoint
   const config: ChatOpenAiConfig = {
     model: model || 'gpt-4o',
-    apiKey: apiKey || undefined,
+    apiKey: resolvedApiKey || undefined,
     timeout: OPENAI_COMPAT_MODEL_TIMEOUT_MS,
     maxRetries: OPENAI_COMPAT_MODEL_MAX_RETRIES,
   }
@@ -148,6 +153,7 @@ function getAgentGenerationPreferences(agent: Agent | null | undefined): Generat
     model: agent.model,
     credentialId: agent.credentialId || null,
     apiEndpoint: agent.apiEndpoint || null,
+    gatewayProfileId: agent.gatewayProfileId || null,
     thinkingLevel: agent.thinkingLevel || null,
   }]
   const routingTargets = Array.isArray(agent.routingTargets)
@@ -159,6 +165,7 @@ function getAgentGenerationPreferences(agent: Agent | null | undefined): Generat
       model: target.model,
       credentialId: target.credentialId || null,
       apiEndpoint: target.apiEndpoint || null,
+      gatewayProfileId: target.gatewayProfileId || null,
       thinkingLevel: agent.thinkingLevel || null,
     })
   }
@@ -168,15 +175,22 @@ function getAgentGenerationPreferences(agent: Agent | null | undefined): Generat
 function resolvePreferredGenerationConfig(
   providers: ReturnType<typeof getProviderList>,
   preferred: GenerationModelPreference | GenerationModelPreference[] | undefined,
+  excludeProviders: Set<string>,
 ): ResolvedGenerationModelConfig | null {
   const candidates = Array.isArray(preferred) ? preferred : preferred ? [preferred] : []
   for (const candidate of candidates) {
     const provider = normalizePreferenceValue(candidate.provider)
-    if (!provider || NON_LANGGRAPH_PROVIDER_IDS.has(provider)) continue
+    if (!provider || NON_LANGGRAPH_PROVIDER_IDS.has(provider) || excludeProviders.has(provider)) continue
     const providerInfo = providers.find((entry) => entry.id === provider)
     const model = normalizePreferenceValue(candidate.model) || providerInfo?.models?.[0] || ''
-    const apiKey = resolveApiKeyFromCredential(candidate.credentialId)
-    const apiEndpoint = normalizePreferenceValue(candidate.apiEndpoint) || providerInfo?.defaultEndpoint || null
+    const credentialId = resolveProviderCredentialId({ provider, credentialId: candidate.credentialId })
+    const apiKey = resolveApiKeyFromCredential(credentialId)
+    const apiEndpoint = resolveProviderApiEndpoint({
+      provider,
+      model,
+      credentialId,
+      apiEndpoint: normalizePreferenceValue(candidate.apiEndpoint) || null,
+    })
     if (providerInfo?.requiresApiKey && !apiKey) continue
     return {
       provider,
@@ -193,10 +207,12 @@ export function resolveGenerationModelConfig(options?: {
   preferred?: GenerationModelPreference | GenerationModelPreference[]
   sessionId?: string | null
   agentId?: string | null
+  excludeProviders?: string[]
 }): ResolvedGenerationModelConfig {
   const providers = getProviderList()
   const agents = loadAgents()
   const sessions = loadSessions()
+  const excludeProviders = new Set((options?.excludeProviders || []).map((value) => normalizePreferenceValue(value)).filter(Boolean))
   const session = options?.sessionId ? sessions[options.sessionId] : null
   const sessionAgent = session?.agentId ? agents[session.agentId] as Agent | undefined : null
   const directAgent = options?.agentId ? agents[options.agentId] as Agent | undefined : null
@@ -207,17 +223,21 @@ export function resolveGenerationModelConfig(options?: {
       model: session.model,
       credentialId: session.credentialId || null,
       apiEndpoint: session.apiEndpoint || null,
+      gatewayProfileId: session.gatewayProfileId || null,
       thinkingLevel: session.thinkingLevel || null,
     }] : []),
     ...getAgentGenerationPreferences(sessionAgent),
     ...getAgentGenerationPreferences(directAgent),
-  ])
+  ], excludeProviders)
   if (resolved) return resolved
 
   const sessionLabel = options?.sessionId ? `session "${options.sessionId}"` : null
   const agentLabel = options?.agentId ? `agent "${options.agentId}"` : null
   const label = [sessionLabel, agentLabel].filter(Boolean).join(' / ') || 'this request'
-  throw new Error(`No generation-compatible model is configured for ${label}. Use a non-CLI provider or add a routed model target to the owning agent.`)
+  const providerHint = excludeProviders.size > 0
+    ? ` Available providers excluded for this request: ${Array.from(excludeProviders).join(', ')}.`
+    : ''
+  throw new Error(`No generation-compatible model is configured for ${label}. Use a non-CLI provider or add a routed model target to the owning agent.${providerHint}`)
 }
 
 /**
@@ -227,6 +247,7 @@ export async function buildLLM(options?: {
   preferred?: GenerationModelPreference | GenerationModelPreference[]
   sessionId?: string | null
   agentId?: string | null
+  excludeProviders?: string[]
 }) {
   const resolved = resolveGenerationModelConfig(options)
   return {

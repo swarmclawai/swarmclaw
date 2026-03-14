@@ -572,6 +572,13 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'learned-skills',
+    description: 'Inspect agent-scoped learned skills',
+    commands: [
+      cmd('list', 'GET', '/learned-skills', 'List learned skills'),
+    ],
+  },
+  {
     name: 'skills',
     description: 'Manage reusable skills',
     commands: [

@@ -95,7 +95,33 @@ const ToolSummaryRow = memo(function ToolSummaryRow({ event, caption }: { event:
   )
 })
 
-export const ToolEventsSection = memo(function ToolEventsSection({ toolEvents }: { toolEvents: ToolEvent[] }) {
+export function collectCollapsedMedia(toolEvents: ToolEvent[], opts?: { expanded?: boolean; showCollapsedMedia?: boolean }) {
+  if (opts?.expanded || opts?.showCollapsedMedia === false) return null
+  const seen = new Set<string>()
+  const images: string[] = []
+  const videos: string[] = []
+  const pdfs: { name: string; url: string }[] = []
+  const files: { name: string; url: string }[] = []
+  for (const ev of toolEvents) {
+    if (!ev.output) continue
+    if (!isExplicitScreenshot(ev.name, ev.input)) continue
+    const media = extractMedia(ev.output)
+    for (const url of media.images) { if (!seen.has(url)) { seen.add(url); images.push(url) } }
+    for (const url of media.videos) { if (!seen.has(url)) { seen.add(url); videos.push(url) } }
+    for (const pdf of media.pdfs) { if (!seen.has(pdf.url)) { seen.add(pdf.url); pdfs.push(pdf) } }
+    for (const file of media.files) { if (!seen.has(file.url)) { seen.add(file.url); files.push(file) } }
+  }
+  if (!images.length && !videos.length && !pdfs.length && !files.length) return null
+  return { images, videos, pdfs, files }
+}
+
+export const ToolEventsSection = memo(function ToolEventsSection({
+  toolEvents,
+  showCollapsedMedia = false,
+}: {
+  toolEvents: ToolEvent[]
+  showCollapsedMedia?: boolean
+}) {
   const [expanded, setExpanded] = useState(false)
   const summary = useMemo(() => {
     let running = 0
@@ -125,24 +151,8 @@ export const ToolEventsSection = memo(function ToolEventsSection({ toolEvents }:
   }, [spotlightEvent, toolEvents])
 
   const collapsedMedia = useMemo(() => {
-    if (expanded) return null
-    const seen = new Set<string>()
-    const images: string[] = []
-    const videos: string[] = []
-    const pdfs: { name: string; url: string }[] = []
-    const files: { name: string; url: string }[] = []
-    for (const ev of toolEvents) {
-      if (!ev.output) continue
-      if (!isExplicitScreenshot(ev.name, ev.input)) continue
-      const media = extractMedia(ev.output)
-      for (const url of media.images) { if (!seen.has(url)) { seen.add(url); images.push(url) } }
-      for (const url of media.videos) { if (!seen.has(url)) { seen.add(url); videos.push(url) } }
-      for (const pdf of media.pdfs) { if (!seen.has(pdf.url)) { seen.add(pdf.url); pdfs.push(pdf) } }
-      for (const file of media.files) { if (!seen.has(file.url)) { seen.add(file.url); files.push(file) } }
-    }
-    if (!images.length && !videos.length && !pdfs.length && !files.length) return null
-    return { images, videos, pdfs, files }
-  }, [expanded, toolEvents])
+    return collectCollapsedMedia(toolEvents, { expanded, showCollapsedMedia })
+  }, [expanded, showCollapsedMedia, toolEvents])
 
   return (
     <div className="max-w-[85%] md:max-w-[72%] mb-2" data-testid="tool-activity">

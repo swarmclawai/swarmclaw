@@ -29,6 +29,7 @@ export function useAppBootstrap() {
   const [authChecked, setAuthChecked] = useState(false)
   const [authenticated, setAuthenticated] = useState(false)
   const [setupDone, setSetupDone] = useState<boolean | null>(null)
+  const [userReady, setUserReady] = useState(false)
   const [agentReady, setAgentReady] = useState(false)
   const mountedRef = useMountedRef()
 
@@ -86,21 +87,6 @@ export function useAppBootstrap() {
     }
   }, [mountedRef])
 
-  const syncUserFromServer = useCallback(async () => {
-    if (currentUser) return
-    try {
-      const settings = await api<{ userName?: string }>('GET', '/settings', undefined, {
-        timeoutMs: POST_AUTH_BOOTSTRAP_TIMEOUT_MS,
-        retries: 0,
-      })
-      if (settings.userName) {
-        setUser(settings.userName)
-      }
-    } catch (err) {
-      console.warn('Failed to sync user from server:', err)
-    }
-  }, [currentUser, setUser])
-
   useEffect(() => {
     hydrate()
   }, [hydrate])
@@ -120,19 +106,47 @@ export function useAppBootstrap() {
   }, [hydrated, checkAuth])
 
   useEffect(() => {
+    if (!authenticated) {
+      setUserReady(false)
+      setAgentReady(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      if (currentUser) {
+        if (!cancelled && mountedRef.current) setUserReady(true)
+        return
+      }
+      try {
+        const settings = await api<{ userName?: string }>('GET', '/settings', undefined, {
+          timeoutMs: POST_AUTH_BOOTSTRAP_TIMEOUT_MS,
+          retries: 0,
+        })
+        if (settings.userName) {
+          setUser(settings.userName)
+        }
+      } catch (err) {
+        console.warn('Failed to sync user from server:', err)
+      } finally {
+        if (!cancelled && mountedRef.current) setUserReady(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [authenticated, currentUser, mountedRef, setUser])
+
+  useEffect(() => {
     if (!authenticated) return
     connectWs()
-    syncUserFromServer()
     loadNetworkInfo()
     loadSettings()
     loadSessions()
     return () => { disconnectWs() }
-  }, [authenticated, loadNetworkInfo, loadSessions, loadSettings, syncUserFromServer])
+  }, [authenticated, loadNetworkInfo, loadSessions, loadSettings])
 
   useWs('sessions', loadSessions, 15000)
 
   useEffect(() => {
-    if (!authenticated || !currentUser) return
+    if (!authenticated || !userReady || !currentUser) return
     let cancelled = false
     ;(async () => {
       try {
@@ -159,10 +173,10 @@ export function useAppBootstrap() {
       if (!cancelled && mountedRef.current) setAgentReady(true)
     })()
     return () => { cancelled = true }
-  }, [authenticated, currentUser, mountedRef])
+  }, [authenticated, currentUser, mountedRef, userReady])
 
   useEffect(() => {
-    if (!authenticated || !currentUser) return
+    if (!authenticated || !userReady) return
     let cancelled = false
     ;(async () => {
       try {
@@ -190,7 +204,7 @@ export function useAppBootstrap() {
       }
     })()
     return () => { cancelled = true }
-  }, [authenticated, currentUser, mountedRef])
+  }, [authenticated, mountedRef, userReady])
 
   return {
     hydrated,
@@ -198,6 +212,7 @@ export function useAppBootstrap() {
     authenticated,
     setAuthenticated,
     currentUser,
+    userReady,
     setupDone,
     setSetupDone,
     agentReady

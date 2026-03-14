@@ -382,6 +382,7 @@ function buildAgenticExecutionPolicy(opts: {
   loopMode: 'bounded' | 'ongoing'
   heartbeatPrompt: string
   heartbeatIntervalSec: number
+  allowSilentReplies?: boolean
   delegationEnabled?: boolean
   userMessage?: string
   history?: Message[]
@@ -451,7 +452,9 @@ function buildAgenticExecutionPolicy(opts: {
   // Response behavior
   parts.push(
     '## Response Rules',
-    'NO_MESSAGE: reply with exactly this for pure acknowledgments (ok/thanks/bye/emoji).',
+    opts.allowSilentReplies
+      ? 'NO_MESSAGE: use this only when no reply is actually needed. Do not use it for greetings, direct questions, or when the user is clearly opening a conversation.'
+      : 'For direct user chats, always send a visible reply. Never answer with control tokens like NO_MESSAGE or HEARTBEAT_OK unless this is an explicit heartbeat poll.',
     'Execute by default — only confirm on high-risk actions.',
     'If a tool errors, retry or explain the blocker. Never claim success without evidence.',
     'Keep responses concise. Bullet points over prose. After file operations, confirm the result briefly (path and status) without echoing the full file contents.',
@@ -674,6 +677,9 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
         const runtimeSkills = resolveRuntimeSkills({
           cwd: session.cwd,
           enabledPlugins: sessionPlugins,
+          agentId: agent?.id || null,
+          sessionId: session.id,
+          userId: session.user,
           agentSkillIds: agent?.skillIds || [],
           storedSkills: allSkills,
           selectedSkillId: session.skillRuntimeState?.selectedSkillId || null,
@@ -816,6 +822,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       loopMode: runtime.loopMode,
       heartbeatPrompt,
       heartbeatIntervalSec,
+      allowSilentReplies: isConnectorSession,
       delegationEnabled: agentDelegationEnabled,
       userMessage: message,
       history,

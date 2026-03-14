@@ -15,6 +15,7 @@ import { cleanupSessionBrowser } from '@/lib/server/session-tools/web'
 import { cancelDelegationJobsForParentSession } from '@/lib/server/agents/delegation-jobs'
 import { getMainLoopStateForSession, handleMainLoopRunResult } from '@/lib/server/agents/main-agent-loop'
 import { observeAutonomyRunOutcome } from '@/lib/server/autonomy/supervisor-reflection'
+import { observeLearnedSkillRunOutcome } from '@/lib/server/skills/learned-skills'
 import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 import { getEnabledToolIds } from '@/lib/capability-selection'
 
@@ -180,7 +181,17 @@ function queueAutonomyObservation(input: {
     toolEvents: input.toolEvents,
     mainLoopState: getMainLoopStateForSession(input.sessionId),
     sourceMessage: input.sourceMessage,
-  }).catch((err: unknown) => {
+  }).then(({ reflection }) => observeLearnedSkillRunOutcome({
+    runId: input.runId,
+    sessionId: input.sessionId,
+    agentId: session?.agentId || null,
+    source: input.source,
+    status: input.status,
+    resultText: input.resultText,
+    error: input.error || undefined,
+    toolEvents: input.toolEvents,
+    reflection,
+  })).catch((err: unknown) => {
     log.warn('session-run', `Autonomy observation failed for ${input.runId}`, {
       sessionId: input.sessionId,
       error: errorMessage(err),

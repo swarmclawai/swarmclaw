@@ -139,3 +139,30 @@ test('applyResolvedRoute copies gateway, endpoint, and fallback credentials onto
     gatewayProfileId: 'gateway-1',
   })
 })
+
+test('resolveAgentRouteCandidatesWithProfiles repairs a stale Ollama credential reference when only one provider credential exists', async () => {
+  const storage = await import('@/lib/server/storage')
+  const now = Date.now()
+  storage.saveCredentials({
+    'cred-ollama-cloud': {
+      id: 'cred-ollama-cloud',
+      provider: 'ollama',
+      name: 'Ollama Cloud',
+      encryptedKey: storage.encryptKey('ollama-cloud-key'),
+      createdAt: now,
+    },
+  })
+
+  const [route] = resolveAgentRouteCandidatesWithProfiles(makeAgent({
+    provider: 'ollama',
+    model: 'glm-5:cloud',
+    credentialId: 'stale-ollama-cred',
+    apiEndpoint: null,
+  }), [])
+
+  assert.ok(route)
+  assert.equal(route.provider, 'ollama')
+  assert.equal(route.model, 'glm-5:cloud')
+  assert.equal(route.credentialId, 'cred-ollama-cloud')
+  assert.equal(route.apiEndpoint, 'https://ollama.com')
+})

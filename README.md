@@ -17,13 +17,12 @@ Extension tutorial: https://swarmclaw.ai/docs/extension-tutorial
 
 ## Release Notes
 
-### v1.0.7 Highlights
+### v1.0.8 Highlights
 
-- **Connector inbox + isolation**: external connector conversations now live in a dedicated Inbox with owner routing, allow/deny controls, pairing management, sender avatars, and strict sender-scoped memory.
-- **Schedules as an operations surface**: schedules now use explicit session routing, archive/cancel cascades, `cancelled` task outcomes, and a proper `Live / Archived / Runs` console instead of a simple list.
-- **Delegation, not orchestration**: orchestration is no longer a special product/runtime concept. Agents either delegate or they do not, and background AI work now uses the current agent/session model config rather than a separate orchestration engine.
-- **Tools + extensions cutover**: built-in capabilities are native tools, external add-ons are extensions, and persisted agent/session data now stores canonical `tools` + `extensions` fields only.
-- Breaking change: agent and session records now persist `tools` and `extensions` only. The legacy `plugins` field is no longer part of the runtime data model.
+- **Learned skills and self-healing**: SwarmClaw now keeps agent-scoped learned skills and shadow revisions so repeated successes and repeated external integration failures can harden into reusable local behavior without silently mutating the shared skill library.
+- **Direct chat stability**: chat-origin runs now stop after the visible answer instead of enqueueing hidden follow-up loops, leaked control tokens such as `NO_MESSAGE` stay out of the user transcript, and repeated internal reruns no longer replace the reply the user already saw.
+- **OpenClaw and Ollama route hardening**: agent thread sessions now repair stale credential/endpoint resolution more aggressively, including Ollama Cloud vs local endpoint selection and OpenClaw gateway fallback behavior.
+- **Operator UX fixes**: new agents appear in the list immediately, gateway-disconnected chat CTAs now route to the current agent's settings instead of global settings, setup-wizard flicker after access-key login is gone, and screenshot-heavy tool runs no longer render duplicate previews in chat.
 
 ## What SwarmClaw Focuses On
 
@@ -100,6 +99,7 @@ Then open `http://localhost:3456`.
 - Or open **Skills** and use **Draft From Current Chat**.
 - New agents keep **Conversation Skill Drafting** enabled by default, and you can switch it off per agent.
 - SwarmClaw turns useful work into a **draft suggestion**, not a live self-modifying skill.
+- Learned skills stay **user/agent scoped** by default. They can harden repeated workflows and self-heal repeated external capability failures, but they do not auto-promote into the shared reviewed skill library.
 - Review the suggested name, rationale, summary, and transcript snippet.
 - Approve it to save it into the normal skill library, or dismiss it.
 - Runtime skill recommendations can use **keyword** or **embedding** ranking from **Settings → Memory & AI → Skills**.

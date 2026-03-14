@@ -86,7 +86,6 @@ describe('ensureAgentThreadSession', () => {
     assert.equal(output.session.memoryScopeMode, 'agent')
     assert.equal(output.session.memoryTierPreference, 'blended')
     assert.equal(output.session.projectId, 'proj-1')
-    assert.deepEqual(output.session.plugins, ['memory', 'web_search'])
   })
 
   it('does not create a new shortcut chat when the agent is disabled', () => {
@@ -237,5 +236,81 @@ describe('ensureAgentThreadSession', () => {
     `)
 
     assert.equal(output.connectorContext, null)
+  })
+
+  it('repairs an existing Ollama Cloud thread session away from a stale local endpoint', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('@/lib/server/storage')
+      const storage = storageMod.default || storageMod['module.exports'] || storageMod
+      const helperMod = await import('@/lib/server/agents/agent-thread-session')
+      const ensureAgentThreadSession = helperMod.ensureAgentThreadSession
+        || helperMod.default?.ensureAgentThreadSession
+        || helperMod['module.exports']?.ensureAgentThreadSession
+
+      const now = Date.now()
+      storage.saveCredentials({
+        'cred-ollama-cloud': {
+          id: 'cred-ollama-cloud',
+          provider: 'ollama',
+          name: 'Ollama Cloud',
+          encryptedKey: storage.encryptKey('ollama-cloud-key'),
+          createdAt: now,
+        },
+      })
+      storage.saveAgents({
+        hal: {
+          id: 'hal',
+          name: 'Hal2k',
+          provider: 'ollama',
+          model: 'glm-5:cloud',
+          credentialId: 'cred-ollama-cloud',
+          apiEndpoint: null,
+          fallbackCredentialIds: [],
+          heartbeatEnabled: true,
+          heartbeatIntervalSec: 600,
+          threadSessionId: 'agent-chat-hal-existing',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveSessions({
+        'agent-chat-hal-existing': {
+          id: 'agent-chat-hal-existing',
+          name: 'Hal2k',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'default',
+          provider: 'ollama',
+          model: 'glm-5:cloud',
+          credentialId: 'cred-ollama-cloud',
+          apiEndpoint: 'http://localhost:11434',
+          claudeSessionId: null,
+          codexThreadId: null,
+          opencodeSessionId: null,
+          delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null },
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'hal',
+          shortcutForAgentId: 'hal',
+        },
+      })
+
+      const session = ensureAgentThreadSession('hal')
+      const persisted = storage.loadSessions()[session.id]
+      const healedAgent = storage.loadAgents().hal
+
+      console.log(JSON.stringify({
+        sessionId: session.id,
+        apiEndpoint: persisted.apiEndpoint || null,
+        credentialId: persisted.credentialId || null,
+        agentCredentialId: healedAgent?.credentialId || null,
+      }))
+    `)
+
+    assert.equal(output.sessionId, 'agent-chat-hal-existing')
+    assert.equal(output.credentialId, 'cred-ollama-cloud')
+    assert.equal(output.agentCredentialId, 'cred-ollama-cloud')
+    assert.equal(output.apiEndpoint, 'https://ollama.com')
   })
 })

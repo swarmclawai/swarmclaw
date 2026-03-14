@@ -129,6 +129,9 @@ let _cadenceInterval: ReturnType<typeof setInterval> | null = null
 let _cadenceBuffer = ''
 let _cadencePos = 0
 
+const CONTROL_TOKEN_PREFIX_RE = /^\s*(?:NO_MESSAGE|HEARTBEAT_OK)(?:(?=[\s.,:;!?()[\]{}"'`-]|$)|(?=[A-Z]))\s*/i
+const CONTROL_TOKEN_LINE_RE = /(^|\n)\s*(?:NO_MESSAGE|HEARTBEAT_OK)\s*(\n|$)/gi
+
 function clearCadence() {
   if (_cadenceInterval) {
     clearInterval(_cadenceInterval)
@@ -139,6 +142,19 @@ function clearCadence() {
 }
 
 const CADENCE_THRESHOLD = 120
+
+function stripHiddenControlTokens(text: string): string {
+  let cleaned = String(text || '')
+  let previous = ''
+
+  while (cleaned !== previous) {
+    previous = cleaned
+    cleaned = cleaned.replace(CONTROL_TOKEN_PREFIX_RE, '')
+  }
+
+  cleaned = cleaned.replace(CONTROL_TOKEN_LINE_RE, '$1')
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim()
+}
 
 export const useChatStore = create<ChatState>((set, get) => ({
   streaming: false,
@@ -269,7 +285,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       get().onStreamEvent?.(event)
       if (event.t === 'd') {
         fullText += event.text || ''
-        set({ streamText: fullText })
+        const visibleText = stripHiddenControlTokens(fullText)
+        set({ streamText: visibleText })
 
         // Phase: first text data → 'responding'
         if (get().streamPhase !== 'responding') {
@@ -283,8 +300,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
 
         // Typing cadence: buffer first CADENCE_THRESHOLD chars, release word-by-word
-        if (fullText.length <= CADENCE_THRESHOLD) {
-          _cadenceBuffer = fullText
+        if (visibleText.length <= CADENCE_THRESHOLD) {
+          _cadenceBuffer = visibleText
           if (!_cadenceInterval) {
             _cadenceInterval = setInterval(() => {
               if (_cadencePos >= _cadenceBuffer.length) {
@@ -304,7 +321,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         } else {
           // Past threshold — sync displayText directly
           if (_cadenceInterval) clearCadence()
-          set({ displayText: fullText })
+          set({ displayText: visibleText })
         }
       } else if (event.t === 'md') {
         // Parse metadata events (usage/run/queue/thinking). Ignore unknown keys.
@@ -324,7 +341,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       } else if (event.t === 'r') {
         fullText = event.text || ''
-        set({ streamText: fullText })
+        const visibleText = stripHiddenControlTokens(fullText)
+        set({ streamText: visibleText, displayText: visibleText })
       } else if (event.t === 'tool_call') {
         const id = `tc-${++toolCallCounter}`
         set((s) => ({
@@ -384,17 +402,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Server rolled back state after a transient error — clear accumulated
         // text and tool events so the retry starts with a clean slate.
         fullText = event.text || ''
+        const visibleText = stripHiddenControlTokens(fullText)
         toolCallCounter = 0
         soundFiredStart = false
         if (_cadenceInterval) clearCadence()
         _cadencePos = 0
         _cadenceBuffer = ''
-        set({ streamText: fullText, displayText: fullText, toolEvents: [], streamPhase: 'connecting' })
+        set({ streamText: visibleText, displayText: visibleText, toolEvents: [], streamPhase: 'connecting' })
       } else if (event.t === 'err') {
         const errText = event.text || 'Unknown'
         if (!shouldIgnoreTransientError(errText)) {
           fullText += '\n[Error: ' + errText + ']'
-          set({ streamText: fullText })
+          const visibleText = stripHiddenControlTokens(fullText)
+          set({ streamText: visibleText, displayText: visibleText })
           if (get().soundEnabled) playError()
         }
       } else if (event.t === 'thinking') {
@@ -419,12 +439,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     clearCadence()
     if (get().soundEnabled && soundFiredStart) playStreamEnd()
-    if (fullText.trim()) {
+    const visibleFinalText = stripHiddenControlTokens(fullText)
+    if (visibleFinalText.trim()) {
       const currentToolEvents = get().toolEvents
       const thinkingSnapshot = get().thinkingText || undefined
       const assistantMsg: Message = {
         role: 'assistant',
-        text: fullText.trim(),
+        text: visibleFinalText.trim(),
         time: Date.now(),
         kind: 'chat',
         thinking: thinkingSnapshot,
@@ -447,7 +468,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         thinkingText: '',
         thinkingStartTime: 0,
       }))
-      if (get().ttsEnabled && !get().voiceConversationActive) speak(fullText)
+      if (get().ttsEnabled && !get().voiceConversationActive) speak(visibleFinalText)
     } else {
       set({ streaming: false, streamingSessionId: null, streamText: '', displayText: '', streamPhase: 'thinking' as const, streamToolName: '', thinkingText: '', thinkingStartTime: 0 })
     }

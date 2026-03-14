@@ -162,6 +162,35 @@ describe('chatroom-helpers', () => {
     assert.equal(buildSyntheticSession(agent, 'room-1').apiEndpoint, 'http://localhost:11434')
   })
 
+  it('resolves Ollama Cloud endpoints for chatroom sessions with a credential-backed cloud model', async () => {
+    const now = Date.now()
+    const storage = await import('@/lib/server/storage')
+    const agent: Agent = {
+      id: 'agent_cloud',
+      name: 'Cloud Writer',
+      description: '',
+      systemPrompt: '',
+      provider: 'ollama',
+      model: 'glm-5:cloud',
+      credentialId: 'cred-ollama-cloud',
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    storage.saveCredentials({
+      'cred-ollama-cloud': {
+        id: 'cred-ollama-cloud',
+        provider: 'ollama',
+        name: 'Ollama Cloud',
+        encryptedKey: storage.encryptKey('ollama-cloud-key'),
+        createdAt: now,
+      },
+    })
+
+    assert.equal(resolveAgentApiEndpoint(agent), 'https://ollama.com')
+    assert.equal(buildSyntheticSession(agent, 'room-ollama-cloud').apiEndpoint, 'https://ollama.com')
+  })
+
   it('keeps chatroom execution inside the workspace instead of the repo root', () => {
     const cwd = buildSyntheticSession(makeAgents().default, 'room-safe').cwd
     assert.equal(cwd, resolveChatroomWorkspaceDir('room-safe'))

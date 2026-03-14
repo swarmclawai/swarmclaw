@@ -6,7 +6,7 @@ import type {
   ProviderType,
 } from '@/types'
 import { deriveOpenClawWsUrl, normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
-import { getProvider } from '@/lib/providers'
+import { resolveProviderApiEndpoint, resolveProviderCredentialId } from '@/lib/server/provider-endpoint'
 import { loadGatewayProfiles } from '@/lib/server/storage'
 import { isProviderCoolingDown } from '@/lib/server/provider-health'
 
@@ -250,12 +250,6 @@ function dedupeCredentialIds(primary: string | null | undefined, candidates: str
   return result
 }
 
-function resolveProviderDefaultEndpoint(provider: string): string | null {
-  const info = getProvider(provider)
-  if (!info?.defaultEndpoint) return null
-  return normalizeProviderEndpoint(provider, info.defaultEndpoint) || info.defaultEndpoint.replace(/\/+$/, '')
-}
-
 function buildRouteFromSeed(
   seed: RouteSeed,
   gatewayProfiles: GatewayProfile[],
@@ -276,13 +270,20 @@ function buildRouteFromSeed(
   const gatewayProfileId = gatewayProfile?.id ?? seed.gatewayProfileId ?? agentGatewayProfileId ?? null
 
   const providerFromGateway = gatewayProfile?.provider === 'openclaw' ? 'openclaw' : provider
-  const explicitEndpoint = seed.apiEndpoint ?? gatewayProfile?.endpoint ?? null
-  const apiEndpoint = normalizeProviderEndpoint(providerFromGateway, explicitEndpoint)
-    ?? resolveProviderDefaultEndpoint(providerFromGateway)
   const model = (seed.model || '').trim() || (providerFromGateway === 'openclaw' ? DEFAULT_OPENCLAW_MODEL : '')
   if (!providerFromGateway || !model) return null
 
-  const credentialId = seed.credentialId ?? gatewayProfile?.credentialId ?? null
+  const credentialId = resolveProviderCredentialId({
+    provider: providerFromGateway,
+    credentialId: seed.credentialId ?? gatewayProfile?.credentialId ?? null,
+  })
+  const explicitEndpoint = seed.apiEndpoint ?? gatewayProfile?.endpoint ?? null
+  const apiEndpoint = resolveProviderApiEndpoint({
+    provider: providerFromGateway,
+    model,
+    credentialId,
+    apiEndpoint: explicitEndpoint,
+  })
   return {
     id: seed.id,
     label: seed.label?.trim() || (gatewayProfile?.name || `${providerFromGateway}:${model}`),

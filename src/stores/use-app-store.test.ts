@@ -50,6 +50,17 @@ afterEach(() => {
 })
 
 describe('useAppStore immediate record updates', () => {
+  it('adds new agent records synchronously', () => {
+    useAppStore.setState({ agents: {} })
+
+    useAppStore.getState().updateAgentInStore(
+      makeAgent({ id: 'agent-2', name: 'Agent Two' }),
+    )
+
+    const created = useAppStore.getState().agents['agent-2']
+    assert.equal(created?.name, 'Agent Two')
+  })
+
   it('updates agent records synchronously', () => {
     useAppStore.setState({
       agents: {

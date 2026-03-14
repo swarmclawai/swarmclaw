@@ -231,6 +231,98 @@ test('executeSessionChatTurn keeps tool-only heartbeats off the visible main-thr
   assert.equal(output.heartbeatKinds, 0)
 })
 
+test('executeSessionChatTurn hides internal main-loop followup output from the visible transcript', () => {
+  const output = runWithTempDataDir(`
+    const storageMod = await import('@/lib/server/storage')
+    const providersMod = await import('@/lib/providers/index')
+    const execMod = await import('@/lib/server/chat-execution/chat-execution')
+    const storage = storageMod.default || storageMod['module.exports'] || storageMod
+    const executeSessionChatTurn = execMod.executeSessionChatTurn
+      || execMod.default?.executeSessionChatTurn
+      || execMod['module.exports']?.executeSessionChatTurn
+    const providers = providersMod.PROVIDERS
+      || providersMod.default?.PROVIDERS
+      || providersMod['module.exports']?.PROVIDERS
+
+    providers['test-provider'] = {
+      id: 'test-provider',
+      name: 'Test Provider',
+      models: ['unit'],
+      requiresApiKey: false,
+      requiresEndpoint: false,
+      handler: {
+        async streamChat(opts) {
+          opts.write('data: ' + JSON.stringify({ t: 'd', text: 'Internal partial response.' }) + '\\n\\n')
+          return 'Internal final response with tool context.'
+        },
+      },
+    }
+
+    const now = Date.now()
+    storage.saveAgents({
+      hal: {
+        id: 'hal',
+        name: 'Hal2k',
+        description: 'Hidden followup test',
+        provider: 'test-provider',
+        model: 'unit',
+        credentialId: null,
+        apiEndpoint: null,
+        fallbackCredentialIds: [],
+        disabled: false,
+        heartbeatEnabled: true,
+        heartbeatIntervalSec: 60,
+        createdAt: now,
+        updatedAt: now,
+      },
+    })
+    storage.saveSessions({
+      agent_thread: {
+        id: 'agent_thread',
+        name: 'Hal2k',
+        cwd: process.env.WORKSPACE_DIR,
+        user: 'default',
+        provider: 'test-provider',
+        model: 'unit',
+        claudeSessionId: null,
+        codexThreadId: null,
+        opencodeSessionId: null,
+        delegateResumeIds: { claudeCode: null, codex: null, opencode: null, gemini: null },
+        messages: [
+          { role: 'user', text: 'Build a site.', time: now - 2000 },
+          { role: 'assistant', text: 'Here is the visible answer.', time: now - 1000, kind: 'chat' },
+        ],
+        createdAt: now,
+        lastActiveAt: now,
+        sessionType: 'human',
+        agentId: 'hal',
+        shortcutForAgentId: 'hal',
+      },
+    })
+
+    await executeSessionChatTurn({
+      sessionId: 'agent_thread',
+      message: 'Continue the objective.',
+      internal: true,
+      source: 'main-loop-followup',
+      runId: 'run-hidden-followup',
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 450))
+
+    const persisted = storage.loadSession('agent_thread')
+    console.log(JSON.stringify({
+      messageCount: persisted?.messages?.length || 0,
+      lastMessageText: persisted?.messages?.at(-1)?.text || null,
+      hasStreamingArtifacts: (persisted?.messages || []).some((entry) => entry.streaming === true),
+    }))
+  `)
+
+  assert.equal(output.messageCount, 2)
+  assert.equal(output.lastMessageText, 'Here is the visible answer.')
+  assert.equal(output.hasStreamingArtifacts, false)
+})
+
 test('executeSessionChatTurn forces external connector sessions onto session-scoped memory', () => {
   const output = runWithTempDataDir(`
     const storageMod = await import('@/lib/server/storage')
