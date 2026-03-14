@@ -200,6 +200,7 @@ describe('connector manager roundtrip routing', () => {
           name: 'Molly',
           provider: 'test-provider',
           model: 'test-model',
+          tools: ['connector_message_tool'],
           plugins: ['connector_message_tool'],
           threadSessionId: 'agent_thread',
           createdAt: now,
@@ -234,6 +235,7 @@ describe('connector manager roundtrip routing', () => {
           lastActiveAt: now,
           sessionType: 'human',
           agentId: 'agent_1',
+          tools: ['connector_message_tool'],
           plugins: ['connector_message_tool'],
         },
       })
@@ -292,8 +294,12 @@ describe('connector manager roundtrip routing', () => {
     assert.equal(output.routeResult.delivery, 'silent')
     assert.equal(output.routeResult.visibleText, 'NO_MESSAGE')
     assert.equal(output.directSession.messages.length, 2)
-    assert.equal(output.directSession.messages[1].text, 'I sent that update through the connector.')
-    assert.equal(output.directSession.messages[1].source.messageId, undefined)
+    assert.equal(output.directSession.messages[1].kind, 'connector-delivery')
+    assert.equal(output.directSession.messages[1].historyExcluded, true)
+    assert.equal(output.directSession.messages[1].text, 'Message delivered.')
+    assert.equal(output.directSession.messages[1].source.messageId, 'tool-out-1')
+    assert.equal(output.directSession.messages[1].source.deliveryMode, 'text')
+    assert.equal(output.directSession.messages[1].source.deliveryTranscript, 'Delivered by tool')
     assert.equal(output.directSession.messages[1].source.replyToMessageId, 'in-bidi-2')
   })
 })

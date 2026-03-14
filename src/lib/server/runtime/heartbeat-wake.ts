@@ -241,10 +241,14 @@ export function buildWakeTriggerContext(events: WakeEvent[], nowIso?: string): s
 
 export function deriveHeartbeatWakeDeliveryMode(
   events: WakeEvent[],
-): 'default' | 'tool_only' {
-  return events.some((event) => event.reason.toLowerCase() === 'connector-message')
-    ? 'tool_only'
-    : 'default'
+): 'default' | 'tool_only' | 'silent' {
+  if (events.some((event) => event.reason.toLowerCase() === 'connector-message')) {
+    return 'tool_only'
+  }
+  if (events.length > 0 && events.every((event) => event.reason.toLowerCase().includes('schedule'))) {
+    return 'silent'
+  }
+  return 'default'
 }
 
 export function buildHeartbeatWakePrompt(input: {

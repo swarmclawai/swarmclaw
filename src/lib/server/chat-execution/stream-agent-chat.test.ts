@@ -371,18 +371,22 @@ describe('resolveFinalStreamResponseText', () => {
     assert.equal(result, 'Simple direct answer.')
   })
 
-  it('falls back to the latest meaningful tool result when tool calls finished without prose', () => {
+  it('does not surface successful memory-write tool output when tool calls finished without prose', () => {
     const result = resolveFinalStreamResponseText({
       fullText: '',
       lastSegment: '',
       lastSettledSegment: '',
       hasToolCalls: true,
       toolEvents: [
-        { name: 'memory_tool', input: '', output: 'Stored memory "Project Kodiak details" (id: abc123).' } as MessageToolEvent,
+        {
+          name: 'memory_tool',
+          input: '{"action":"store","title":"Project Kodiak details"}',
+          output: 'Stored memory "Project Kodiak details" (id: abc123). No further memory lookup is needed unless the user asked you to verify.',
+        } as MessageToolEvent,
       ],
     })
 
-    assert.equal(result, 'Stored memory "Project Kodiak details" (id: abc123).')
+    assert.equal(result, '')
   })
 
   it('surfaces a useful fallback from spawn_subagent JSON output', () => {
@@ -547,6 +551,17 @@ describe('shouldTerminateOnSuccessfulMemoryMutation', () => {
 })
 
 describe('resolveSuccessfulTerminalToolBoundary', () => {
+  it('treats successful memory writes as followthrough boundaries without surfacing raw tool text', () => {
+    assert.deepEqual(
+      resolveSuccessfulTerminalToolBoundary({
+        toolName: 'memory_store',
+        toolInput: { title: 'Brendon prefers to be called Jesus', value: 'Call him Jesus from now on.' },
+        toolOutput: 'Stored memory "Brendon prefers to be called Jesus" (id: abc123). No further memory lookup is needed unless the user asked you to verify.',
+      }),
+      { kind: 'memory_write' },
+    )
+  })
+
   it('treats durable ask_human waits as terminal boundaries', () => {
     assert.deepEqual(
       resolveSuccessfulTerminalToolBoundary({

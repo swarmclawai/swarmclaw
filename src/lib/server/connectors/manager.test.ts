@@ -264,6 +264,7 @@ describe('sanitizeConnectorOutboundContent', () => {
           name: 'Molly',
           provider: 'test-provider',
           model: 'test-model',
+          tools: ['connector_message_tool'],
           plugins: ['connector_message_tool'],
           createdAt: now,
           updatedAt: now,
@@ -336,11 +337,232 @@ describe('sanitizeConnectorOutboundContent', () => {
     assert.equal(output.response, 'NO_MESSAGE')
     assert.equal(output.directSession.messages.length, 2)
     assert.equal(output.directSession.messages[1].role, 'assistant')
-    assert.equal(output.directSession.messages[1].text, 'Sent from tool path')
+    assert.equal(output.directSession.messages[1].kind, 'connector-delivery')
+    assert.equal(output.directSession.messages[1].historyExcluded, true)
+    assert.equal(output.directSession.messages[1].text, 'Message delivered.')
     assert.equal(output.directSession.messages[1].source.platform, 'whatsapp')
     assert.equal(output.directSession.messages[1].source.messageId, 'wa-out-1')
+    assert.equal(output.directSession.messages[1].source.deliveryMode, 'text')
+    assert.equal(output.directSession.messages[1].source.deliveryTranscript, 'Sent from tool path')
     assert.equal(output.directSession.connectorContext.lastOutboundMessageId, 'wa-out-1')
     assert.equal(output.nonConnectorSessions.length, 0)
+  })
+
+  it('enforces structured direct-session voice-note preferences at delivery time', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
+      const pluginsMod = await import('./src/lib/server/plugins')
+      const memoryDbMod = await import('./src/lib/server/memory/memory-db')
+      const storage = storageMod.default || storageMod
+      const manager = managerMod.default || managerMod
+      const providers = providersMod.default || providersMod
+      const plugins = pluginsMod.default || pluginsMod
+      const memoryDb = (memoryDbMod.getMemoryDb || memoryDbMod.default?.getMemoryDb)()
+
+      const now = Date.now()
+      const sent = []
+      global.fetch = async () => new Response(Buffer.from('fake-audio-data'), {
+        status: 200,
+        headers: { 'content-type': 'audio/mpeg' },
+      })
+
+      providers.PROVIDERS['test-provider'] = {
+        id: 'test-provider',
+        name: 'Test Provider',
+        models: ['test-model'],
+        requiresApiKey: false,
+        requiresEndpoint: false,
+        handler: {
+          streamChat: async (opts) => {
+            opts.write('data: ' + JSON.stringify({ t: 'r', text: 'I will send this as audio.' }) + '\\n')
+            return ''
+          },
+        },
+      }
+
+      plugins.getPluginManager().registerBuiltin('test-voice-pref-plugin', {
+        name: 'Test Voice Pref Connector Plugin',
+        connectors: [{
+          id: 'test-voice-pref',
+          name: 'Test Voice Pref',
+          description: 'Connector that records outbound sends',
+          supportsBinaryMedia: true,
+          startListener: async () => async () => {},
+          sendMessage: async (channelId, text, options) => {
+            sent.push({ channelId, text, options })
+            return { messageId: 'voice-out-1' }
+          },
+        }],
+      })
+
+      storage.saveSettings({ elevenLabsApiKey: 'test-elevenlabs-key' })
+      storage.saveAgents({
+        agent_1: {
+          id: 'agent_1',
+          name: 'Molly',
+          provider: 'test-provider',
+          model: 'test-model',
+          plugins: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveConnectors({
+        conn_1: {
+          id: 'conn_1',
+          name: 'Voice Pref Connector',
+          platform: 'test-voice-pref',
+          agentId: 'agent_1',
+          credentialId: null,
+          config: { botToken: 'test-token', inboundDebounceMs: 0 },
+          isEnabled: true,
+          status: 'stopped',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveSessions({
+        direct_1: {
+          id: 'direct_1',
+          name: 'connector:test-voice-pref:alice',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'connector',
+          provider: 'test-provider',
+          model: 'test-model',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'agent_1',
+          plugins: [],
+          connectorContext: {
+            connectorId: 'conn_1',
+            platform: 'test-voice-pref',
+            channelId: 'connector-channel',
+            senderId: 'connector-user',
+            senderName: 'Carmen',
+            allKnownPeerIds: ['connector-channel', 'connector-user'],
+          },
+        },
+      })
+
+      memoryDb.add({
+        agentId: 'agent_1',
+        sessionId: 'direct_1',
+        category: 'identity/preferences',
+        title: 'Reply medium',
+        content: 'Use voice notes for this sender.',
+        metadata: {
+          connectorPreference: {
+            preferredReplyMedium: 'voice_note',
+          },
+        },
+      })
+
+      await manager.startConnector('conn_1')
+      try {
+        const connector = storage.loadConnectors().conn_1
+        const response = await manager.routeConnectorMessageForTest(connector, {
+          platform: 'test-voice-pref',
+          channelId: 'connector-channel',
+          senderId: 'connector-user',
+          senderName: 'Carmen',
+          text: 'Can you send me an update?',
+          messageId: 'in-voice-pref-1',
+          isGroup: false,
+        })
+        const directSession = storage.loadSessions().direct_1
+        console.log(JSON.stringify({ response, sent, directSession }))
+      } finally {
+        await manager.stopConnector('conn_1')
+      }
+    `)
+
+    assert.equal(output.response, 'NO_MESSAGE')
+    assert.equal(output.sent.length, 1)
+    assert.equal(output.sent[0].channelId, 'connector-channel')
+    assert.equal(output.sent[0].text, '')
+    assert.equal(output.sent[0].options.ptt, true)
+    assert.ok(typeof output.sent[0].options.mediaPath === 'string' && output.sent[0].options.mediaPath.length > 0)
+    assert.equal(output.directSession.messages.length, 2)
+    assert.equal(output.directSession.messages[1].kind, 'connector-delivery')
+    assert.equal(output.directSession.messages[1].text, 'Voice note delivered.')
+    assert.equal(output.directSession.messages[1].historyExcluded, true)
+    assert.equal(output.directSession.messages[1].source.deliveryMode, 'voice_note')
+    assert.equal(output.directSession.messages[1].source.deliveryTranscript, 'I will send this as audio.')
+  })
+
+  it('rewrites unconfirmed connector delivery claims instead of persisting false success text', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const providersMod = await import('./src/lib/providers/index')
+      const storage = storageMod.default || storageMod
+      const manager = managerMod.default || managerMod
+      const providers = providersMod.default || providersMod
+
+      const now = Date.now()
+      providers.PROVIDERS['test-provider'] = {
+        id: 'test-provider',
+        name: 'Test Provider',
+        models: ['test-model'],
+        requiresApiKey: false,
+        requiresEndpoint: false,
+        handler: {
+          streamChat: async (opts) => {
+            opts.write('data: ' + JSON.stringify({ t: 'r', text: 'I sent that WhatsApp voice note just now.' }) + '\\n')
+            return ''
+          },
+        },
+      }
+
+      storage.saveSettings({})
+      storage.saveAgents({
+        agent_1: {
+          id: 'agent_1',
+          name: 'Molly',
+          provider: 'test-provider',
+          model: 'test-model',
+          plugins: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveConnectors({
+        conn_1: {
+          id: 'conn_1',
+          name: 'WhatsApp',
+          platform: 'whatsapp',
+          agentId: 'agent_1',
+          credentialId: null,
+          config: { inboundDebounceMs: 0 },
+          isEnabled: true,
+          status: 'running',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveSessions({})
+
+      const connector = storage.loadConnectors().conn_1
+      const response = await manager.routeConnectorMessageForTest(connector, {
+        platform: 'whatsapp',
+        channelId: '15550001111@s.whatsapp.net',
+        senderId: '15550001111@s.whatsapp.net',
+        senderName: 'Alice',
+        text: 'Did you send it?',
+        messageId: 'in-connector-claim',
+        isGroup: false,
+      })
+      const directSession = Object.values(storage.loadSessions()).find((entry) => String(entry.name || '').startsWith('connector:'))
+      console.log(JSON.stringify({ response, directSession }))
+    `)
+
+    assert.match(output.response, /couldn't confirm that the configured connector actually sent anything/i)
+    assert.equal(output.directSession.messages[1].text, output.response)
   })
 
   it('accepts WhatsApp allowlist matches through senderIdAlt when the primary sender id is a lid', () => {
@@ -2277,10 +2499,10 @@ describe('sanitizeConnectorOutboundContent', () => {
     `)
 
     assert.equal(output.directSessions.length, 4)
-    assert.deepEqual(output.directSessions.map((entry: any) => entry.senderName), ['Alice', 'Bob', 'Gran', 'Wayde'])
-    assert.equal(output.directSessions.every((entry: any) => entry.texts.length === 2), true)
-    assert.equal(output.directSessions.every((entry: any) => entry.texts[0].source?.senderName === entry.senderName), true)
-    assert.equal(output.directSessions.every((entry: any) => entry.texts[1].text === `Replying to ${entry.senderName}`), true)
+    assert.deepEqual(output.directSessions.map((entry: { senderName: string | null }) => entry.senderName), ['Alice', 'Bob', 'Gran', 'Wayde'])
+    assert.equal(output.directSessions.every((entry: { texts: Array<{ source?: { senderName?: string | null } | null; text: string }>; senderName: string | null }) => entry.texts.length === 2), true)
+    assert.equal(output.directSessions.every((entry: { texts: Array<{ source?: { senderName?: string | null } | null }>; senderName: string | null }) => entry.texts[0].source?.senderName === entry.senderName), true)
+    assert.equal(output.directSessions.every((entry: { texts: Array<{ text: string }>; senderName: string | null }) => entry.texts[1].text === `Replying to ${entry.senderName}`), true)
     assert.equal(output.threadMessages.length, 0)
   })
 
@@ -2405,9 +2627,9 @@ describe('sanitizeConnectorOutboundContent', () => {
 
     assert.equal(output.reply.senderNames.includes('Alice'), false)
     assert.equal(output.reply.senderNames.includes('Gran'), false)
-    assert.equal(output.reply.texts.some((entry: any) => /Alice|Gran/.test(String(entry))), false)
+    assert.equal(output.reply.texts.some((entry: string) => /Alice|Gran/.test(String(entry))), false)
     assert.equal(output.reply.historyCount >= 1, true)
-    assert.equal(output.threadMessages.some((msg: any) => msg.source?.connectorId === 'conn_1'), false)
+    assert.equal(output.threadMessages.some((msg: { source?: { connectorId?: string | null } | null }) => msg.source?.connectorId === 'conn_1'), false)
   })
 
   it('treats allowlist entries as the source of truth and does not create approval records for unknown senders', () => {
@@ -2888,9 +3110,9 @@ describe('sanitizeConnectorOutboundContent', () => {
       }
     `)
 
-    assert.equal(output.response, 'Sorry, I hit a temporary issue while responding. Please try again.')
+    assert.equal(output.response, 'Sorry, I could not produce a reply just now. Please try again.')
     assert.equal(output.directSession.messages.at(-1).role, 'assistant')
-    assert.equal(output.directSession.messages.at(-1).text, 'Sorry, I hit a temporary issue while responding. Please try again.')
+    assert.equal(output.directSession.messages.at(-1).text, 'Sorry, I could not produce a reply just now. Please try again.')
     assert.equal(output.mainSession.messages.length, 0)
   })
 })

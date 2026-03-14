@@ -30,7 +30,7 @@ import { buildIdentityContinuityContext } from '../identity-continuity'
 import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
 import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/server/skills/runtime-skill-resolver'
 import { getProvider } from '@/lib/providers'
-import type { Agent, Connector, MessageSource, Chatroom, ChatroomMessage, Session } from '@/types'
+import type { Agent, Connector, MessageSource, MessageToolEvent, Chatroom, ChatroomMessage, Session } from '@/types'
 import type { ConnectorInstance, InboundMessage } from './types'
 import {
   addAllowedSender,
@@ -108,6 +108,13 @@ import {
 } from './reconnect-state'
 import { connectorRuntimeState, runningConnectors } from './runtime-state'
 import { getEnabledCapabilityIds, getEnabledCapabilitySelection } from '@/lib/capability-selection'
+import {
+  buildSenderPreferenceContextBlock,
+  resolveSenderPreferencePolicy,
+} from './contact-preferences'
+import { prepareConnectorVoiceNotePayload } from './voice-note'
+import { reconcileConnectorDeliveryText } from '@/lib/server/chat-execution/chat-execution-connector-delivery'
+import { pruneIncompleteToolEvents, updateStreamedToolEvents } from '@/lib/server/chat-execution/chat-streaming-utils'
 
 export {
   advanceConnectorReconnectState,
@@ -136,6 +143,11 @@ export function setStreamAgentChatForTest(
 
 type ConnectorSession = Session
 type ConnectorAgent = Agent
+type CurrentChannelConnectorDelivery = {
+  mode: 'text' | 'voice_note'
+  messageId?: string
+  transcripts: string[]
+}
 
 const running = runningConnectors
 const {
@@ -390,6 +402,7 @@ export async function getPlatform(platform: string) {
             connector,
             stop: async () => { if (stop) await stop() },
             sendMessage: found.sendMessage,
+            supportsBinaryMedia: found.supportsBinaryMedia,
             authenticated: true,
           }
         }
@@ -741,6 +754,59 @@ function pushSessionMessage(
   pushSessionMessageHelper(session, role, text, extra)
 }
 
+function buildConnectorAssistantSource(params: {
+  connector: Connector
+  msg: InboundMessage
+  messageId?: string
+  deliveryMode?: 'text' | 'voice_note'
+  deliveryTranscript?: string | null
+}): MessageSource {
+  return {
+    platform: params.connector.platform,
+    connectorId: params.connector.id,
+    connectorName: params.connector.name,
+    channelId: params.msg.channelId,
+    senderId: params.msg.senderId,
+    senderName: params.msg.senderName,
+    messageId: params.messageId,
+    replyToMessageId: params.msg.messageId,
+    threadId: params.msg.threadId,
+    deliveryMode: params.deliveryMode,
+    deliveryTranscript: params.deliveryTranscript || null,
+  }
+}
+
+function connectorDeliveryMarkerText(mode: 'text' | 'voice_note'): string {
+  return mode === 'voice_note' ? 'Voice note delivered.' : 'Message delivered.'
+}
+
+function persistConnectorDeliveryMarker(params: {
+  session: ConnectorSession
+  connector: Connector
+  msg: InboundMessage
+  delivery: CurrentChannelConnectorDelivery
+}): void {
+  const transcript = dedup(params.delivery.transcripts.map((entry) => entry.trim()).filter(Boolean)).join('\n\n') || null
+  pushSessionMessage(params.session, 'assistant', connectorDeliveryMarkerText(params.delivery.mode), {
+    kind: 'connector-delivery',
+    historyExcluded: true,
+    source: buildConnectorAssistantSource({
+      connector: params.connector,
+      msg: params.msg,
+      messageId: params.delivery.messageId,
+      deliveryMode: params.delivery.mode,
+      deliveryTranscript: transcript,
+    }),
+  })
+  params.session.connectorContext = {
+    ...(params.session.connectorContext || {}),
+    lastOutboundAt: Date.now(),
+    lastOutboundMessageId: params.delivery.messageId || params.session.connectorContext?.lastOutboundMessageId || null,
+  }
+  persistSessionRecord(params.session)
+  notify(`messages:${params.session.id}`)
+}
+
 
 function persistSession(session: ConnectorSession): void {
   const sessions = loadSessions()
@@ -749,6 +815,14 @@ function persistSession(session: ConnectorSession): void {
   saveSessions(sessions)
   notify('sessions')
   notify(`messages:${session.id}`)
+}
+
+function connectorCanSendBinaryMedia(connector: Connector): boolean {
+  const liveInstance = running.get(connector.id)
+  if (typeof liveInstance?.supportsBinaryMedia === 'boolean') {
+    return liveInstance.supportsBinaryMedia
+  }
+  return connectorSupportsBinaryMedia(connector.platform)
 }
 
 function isRecoverableConnectorSendError(err: unknown): boolean {
@@ -1358,6 +1432,11 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
     msg,
     agent,
   })
+  const senderPreferencePolicy = resolveSenderPreferencePolicy({
+    agent,
+    session,
+    msg,
+  })
   const rawText = (msg.text || '').trim()
   const inboundText = formatInboundUserText(msg)
   const messageSource: MessageSource = {
@@ -1384,22 +1463,12 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   })
   if (accessPolicyResult) {
     if (accessPolicyResult !== NO_MESSAGE_SENTINEL) {
-      const assistantSource: MessageSource = {
-        platform: connector.platform,
-        connectorId: connector.id,
-        connectorName: connector.name,
-        channelId: msg.channelId,
-        senderId: msg.senderId,
-        senderName: msg.senderName,
-        replyToMessageId: msg.messageId,
-        threadId: msg.threadId,
-      }
       pushSessionMessage(session, 'user', rawText || inboundText, {
         source: messageSource,
         historyExcluded: true,
       })
       pushSessionMessage(session, 'assistant', accessPolicyResult, {
-        source: assistantSource,
+        source: buildConnectorAssistantSource({ connector, msg }),
         historyExcluded: true,
       })
       updateSessionConnectorContext(session, connector, msg, sessionKey)
@@ -1556,6 +1625,11 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
   }
   const threadContextBlock = buildConnectorThreadContextBlock(msg, { isFirstThreadTurn: wasCreated })
   if (threadContextBlock) promptParts.push(threadContextBlock)
+  const senderPreferenceBlock = buildSenderPreferenceContextBlock(
+    senderPreferencePolicy,
+    senderPreferencePolicy.preferredDisplayName || msg.senderName || msg.senderId,
+  )
+  if (senderPreferenceBlock) promptParts.push(senderPreferenceBlock)
   // Add connector context
   const groupCtx = msg.isGroup
     ? `\nThis is a group chat. History messages are prefixed with [SenderName] to show who said what. Multiple people may be participating. Address the current sender "${msg.senderName}" by name when relevant.`
@@ -1607,11 +1681,29 @@ If media sending fails, report the exact error and retry with a corrected path/t
   // Stream the response
   let fullText = ''
   let mediaExtractionText = ''
-  let connectorToolDeliveredCurrentChannel = false
-  let connectorToolDeliveredMessageId: string | undefined
   let streamErrorText = ''
+  let settledConnectorToolEvents: MessageToolEvent[] = []
   const connectorToolInputsByCallId = new Map<string, Record<string, unknown>>()
-  const connectorToolMirrorTexts: string[] = []
+  const streamedConnectorToolEvents: MessageToolEvent[] = []
+  let currentChannelDelivery: CurrentChannelConnectorDelivery | null = null
+  const noteCurrentChannelDelivery = (params: {
+    mode: 'text' | 'voice_note'
+    messageId?: string
+    transcript?: string
+  }) => {
+    if (!currentChannelDelivery) {
+      currentChannelDelivery = {
+        mode: params.mode,
+        messageId: params.messageId,
+        transcripts: [],
+      }
+    } else {
+      if (params.mode === 'voice_note') currentChannelDelivery.mode = 'voice_note'
+      if (params.messageId) currentChannelDelivery.messageId = params.messageId
+    }
+    const transcript = typeof params.transcript === 'string' ? params.transcript.trim() : ''
+    if (transcript) currentChannelDelivery.transcripts.push(transcript)
+  }
   const hasTools = getEnabledCapabilityIds(session).length > 0 && session.provider !== 'claude-cli'
   console.log(`[connector] Routing message to agent "${agent.name}" (${session.provider}/${session.model}), hasTools=${!!hasTools}`)
 
@@ -1635,6 +1727,12 @@ If media sending fails, report the exact error and retry with a corrected path/t
             if (event.t === 'tool_call' && event.toolName === 'connector_message_tool') {
               const toolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : ''
               const toolInput = typeof event.toolInput === 'string' ? event.toolInput : ''
+              updateStreamedToolEvents(streamedConnectorToolEvents, {
+                type: 'call',
+                name: 'connector_message_tool',
+                input: toolInput,
+                toolCallId: toolCallId || undefined,
+              })
               if (toolCallId && toolInput) {
                 const parsedInput = parseConnectorToolInput(toolInput)
                 if (parsedInput) connectorToolInputsByCallId.set(toolCallId, parsedInput)
@@ -1647,6 +1745,12 @@ If media sending fails, report the exact error and retry with a corrected path/t
             toolMediaOutputs.push(toolOutput)
             if (event.toolName === 'connector_message_tool') {
               const toolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : ''
+              updateStreamedToolEvents(streamedConnectorToolEvents, {
+                type: 'result',
+                name: 'connector_message_tool',
+                output: toolOutput,
+                toolCallId: toolCallId || undefined,
+              })
               const mirrorInput = toolCallId ? connectorToolInputsByCallId.get(toolCallId) || null : null
               const parsed = parseConnectorToolResult(toolOutput)
               if (!parsed?.status || !parsed.to) continue
@@ -1659,16 +1763,39 @@ If media sending fails, report the exact error and retry with a corrected path/t
                 allKnownPeerIds: session.connectorContext?.allKnownPeerIds,
               })
               if (isCurrentChannel) {
-                connectorToolDeliveredCurrentChannel = true
-                if (parsed.messageId) connectorToolDeliveredMessageId = parsed.messageId
-                const mirrorText = visibleConnectorToolText(mirrorInput)
-                if (mirrorText) connectorToolMirrorTexts.push(mirrorText)
+                noteCurrentChannelDelivery({
+                  mode: parsed.status === 'voice_sent' ? 'voice_note' : 'text',
+                  messageId: parsed.messageId,
+                  transcript: visibleConnectorToolText(mirrorInput),
+                })
               }
             }
           }
         },
         history: modelHistoryTailWithAttribution(session.messages, 50, 48_000),
       })
+      settledConnectorToolEvents = [
+        ...pruneIncompleteToolEvents(streamedConnectorToolEvents),
+        ...((Array.isArray(result.toolEvents) ? result.toolEvents : []).filter((event) => event.name === 'connector_message_tool')),
+      ]
+      for (const event of settledConnectorToolEvents) {
+        const parsed = parseConnectorToolResult(event.output || '')
+        if (!parsed?.status || !parsed.to) continue
+        const sentLikeStatus = parsed.status === 'sent' || parsed.status === 'voice_sent'
+        if (!sentLikeStatus) continue
+        const isCurrentChannel = isConnectorToolDeliveryMatch({
+          platform: connector.platform,
+          inboundChannelId: msg.channelId,
+          outboundTo: parsed.to,
+          allKnownPeerIds: session.connectorContext?.allKnownPeerIds,
+        })
+        if (!isCurrentChannel) continue
+        noteCurrentChannelDelivery({
+          mode: parsed.status === 'voice_sent' ? 'voice_note' : 'text',
+          messageId: parsed.messageId,
+          transcript: visibleConnectorToolText(parseConnectorToolInput(event.input || '')),
+        })
+      }
       // Use finalResponse for connectors — strips intermediate planning/tool-use text
       fullText = result.finalResponse || result.fullText
       mediaExtractionText = [result.fullText || '', ...toolMediaOutputs].filter(Boolean).join('\n\n')
@@ -1705,44 +1832,24 @@ If media sending fails, report the exact error and retry with a corrected path/t
     mediaExtractionText = fullText
   }
 
-  if (!fullText.trim() && !connectorToolDeliveredCurrentChannel) {
+  if (!fullText.trim() && !currentChannelDelivery) {
     fullText = connectorEmptyReplyFallback(streamErrorText)
   }
 
   const suppressHiddenResponse = shouldSuppressHiddenControlText(fullText)
   fullText = stripHiddenControlTokens(fullText)
+  fullText = reconcileConnectorDeliveryText(fullText, settledConnectorToolEvents).trim()
 
   // If the agent chose NO_MESSAGE, skip saving it to history — the user's message
   // is already recorded, and saving the sentinel would pollute the LLM's context
   if (suppressHiddenResponse || isNoMessage(fullText)) {
-    if (connectorToolDeliveredCurrentChannel) {
-      const mirroredToolText = connectorToolMirrorTexts
-        .map((entry) => entry.trim())
-        .filter(Boolean)
-        .join('\n\n')
-      if (mirroredToolText) {
-        const assistantSource: MessageSource = {
-          platform: connector.platform,
-          connectorId: connector.id,
-          connectorName: connector.name,
-          channelId: msg.channelId,
-          senderId: msg.senderId,
-          senderName: msg.senderName,
-          messageId: connectorToolDeliveredMessageId,
-          replyToMessageId: msg.messageId,
-          threadId: msg.threadId,
-        }
-        pushSessionMessage(session, 'assistant', mirroredToolText, {
-          source: assistantSource,
-        })
-      }
-      session.connectorContext = {
-        ...(session.connectorContext || {}),
-        lastOutboundAt: Date.now(),
-        lastOutboundMessageId: connectorToolDeliveredMessageId || session.connectorContext?.lastOutboundMessageId || null,
-      }
-      persistSessionRecord(session)
-      notify(`messages:${session.id}`)
+    if (currentChannelDelivery) {
+      persistConnectorDeliveryMarker({
+        session,
+        connector,
+        msg,
+        delivery: currentChannelDelivery,
+      })
       await maybeSendStatusReaction(connector, msg, 'sent')
     } else {
       await maybeSendStatusReaction(connector, msg, 'silent')
@@ -1756,33 +1863,19 @@ If media sending fails, report the exact error and retry with a corrected path/t
   }
 
   // Log outbound message
+  const deliveryPreview = currentChannelDelivery
+    ? dedup(currentChannelDelivery.transcripts.map((entry) => entry.trim()).filter(Boolean)).join('\n\n') || fullText
+    : fullText
   logExecution(session.id, 'outbound', `Reply sent via ${msg.platform}`, {
     agentId: agent.id,
     detail: {
       platform: msg.platform,
       channelId: msg.channelId,
       recipientName: msg.senderName,
-      responsePreview: fullText.slice(0, 500),
-      responseLength: fullText.length,
+      responsePreview: deliveryPreview.slice(0, 500),
+      responseLength: deliveryPreview.length,
     },
   })
-
-  // Save assistant response to session (full text with image markdown for web UI rendering)
-  const assistantSource: MessageSource = {
-    platform: connector.platform,
-    connectorId: connector.id,
-    connectorName: connector.name,
-    channelId: msg.channelId,
-    senderId: msg.senderId,
-    senderName: msg.senderName,
-    replyToMessageId: msg.messageId,
-    threadId: msg.threadId,
-  }
-  if (fullText.trim()) {
-    pushSessionMessage(session, 'assistant', fullText.trim(), { source: assistantSource })
-    persistSessionRecord(session)
-    notify(`messages:${session.id}`)
-  }
 
   // Extract embedded media (screenshots, uploaded files) and send them as separate
   // media messages via the connector, then return the cleaned text
@@ -1846,12 +1939,65 @@ If media sending fails, report the exact error and retry with a corrected path/t
         },
       })
     }
-    if (connectorToolDeliveredCurrentChannel) return NO_MESSAGE_SENTINEL
-    return extractedFromReply.cleanText || '(no response)'
+  }
+  let outboundText = (filesToSend.length > 0 ? extractedFromReply.cleanText : fullText).trim()
+
+  if (!currentChannelDelivery && senderPreferencePolicy.preferredReplyMedium === 'voice_note' && outboundText) {
+    if (!connectorCanSendBinaryMedia(connector)) {
+      fullText = `I couldn't send a voice note on this channel because the connector doesn't support audio attachments.`
+      outboundText = fullText
+    } else {
+      const replyOptions = getConnectorReplySendOptions({ connectorId: connector.id, inbound: msg })
+      try {
+        const voicePayload = await prepareConnectorVoiceNotePayload({
+          voiceText: outboundText,
+          sessionAgentId: session.agentId || agent.id,
+          contextAgentId: agent.id,
+        })
+        const sent = await sendConnectorMessage({
+          connectorId: connector.id,
+          channelId: msg.channelId,
+          text: '',
+          sessionId: session.id,
+          mediaPath: voicePayload.mediaPath,
+          mimeType: voicePayload.mimeType,
+          fileName: voicePayload.fileName,
+          replyToMessageId: replyOptions.replyToMessageId,
+          threadId: replyOptions.threadId,
+          ptt: true,
+        })
+        noteCurrentChannelDelivery({
+          mode: 'voice_note',
+          messageId: sent.messageId,
+          transcript: outboundText,
+        })
+      } catch (err: unknown) {
+        fullText = `I couldn't send a voice note right now. ${errorMessage(err)}`
+        outboundText = fullText
+      }
+    }
   }
 
-    if (connectorToolDeliveredCurrentChannel) return NO_MESSAGE_SENTINEL
-    return fullText || '(no response)'
+  if (currentChannelDelivery) {
+    persistConnectorDeliveryMarker({
+      session,
+      connector,
+      msg,
+      delivery: currentChannelDelivery,
+    })
+    await maybeSendStatusReaction(connector, msg, 'sent')
+    return NO_MESSAGE_SENTINEL
+  }
+
+  const assistantSource = buildConnectorAssistantSource({ connector, msg })
+  if (fullText) {
+    pushSessionMessage(session, 'assistant', fullText, { source: assistantSource })
+    persistSessionRecord(session)
+    notify(`messages:${session.id}`)
+  }
+
+  if (filesToSend.length > 0) return outboundText || '(no response)'
+  return fullText || '(no response)'
   } finally {
     stopTyping?.()
   }
@@ -2335,7 +2481,7 @@ export async function sendConnectorMessage(params: {
     ptt: params.ptt,
   }
 
-  if (hasMedia && !connectorSupportsBinaryMedia(connector.platform)) {
+  if (hasMedia && !connectorCanSendBinaryMedia(connector)) {
     const mediaLink = params.imageUrl
       || params.fileUrl
       || (params.mediaPath ? uploadApiUrlFromPath(params.mediaPath) : null)

@@ -408,6 +408,44 @@ export async function executeMemoryAction(input: unknown, ctx: MemoryActionConte
   if (scopeMode === 'project' && scopeFilter.projectRoot && !inputMetadata.projectRoot) {
     inputMetadata.projectRoot = scopeFilter.projectRoot
   }
+  const directConnectorContext = currentSession && isDirectConnectorSession(currentSession)
+    ? currentSession.connectorContext || null
+    : null
+  if (directConnectorContext) {
+    const identifiers = new Set<string>()
+    for (const value of [
+      directConnectorContext.senderId,
+      directConnectorContext.senderIdAlt,
+      directConnectorContext.channelId,
+      directConnectorContext.channelIdAlt,
+      ...(Array.isArray(directConnectorContext.allKnownPeerIds) ? directConnectorContext.allKnownPeerIds : []),
+    ]) {
+      if (typeof value === 'string' && value.trim()) identifiers.add(value.trim())
+    }
+    inputMetadata.connectorSender = {
+      ...(inputMetadata.connectorSender && typeof inputMetadata.connectorSender === 'object' && !Array.isArray(inputMetadata.connectorSender)
+        ? inputMetadata.connectorSender as Record<string, unknown>
+        : {}),
+      sessionId: currentSessionId,
+      connectorId: directConnectorContext.connectorId || null,
+      platform: directConnectorContext.platform || null,
+      channelId: directConnectorContext.channelId || null,
+      senderId: directConnectorContext.senderId || null,
+      senderName: directConnectorContext.senderName || null,
+      identifiers: [...identifiers],
+    }
+    if (inputMetadata.connectorPreference && typeof inputMetadata.connectorPreference === 'object' && !Array.isArray(inputMetadata.connectorPreference)) {
+      inputMetadata.connectorPreference = {
+        ...(inputMetadata.connectorPreference as Record<string, unknown>),
+        sessionId: currentSessionId,
+        connectorId: directConnectorContext.connectorId || null,
+        channelId: directConnectorContext.channelId || null,
+        senderId: directConnectorContext.senderId || null,
+        senderName: directConnectorContext.senderName || null,
+        identifiers: [...identifiers],
+      }
+    }
+  }
 
   const buildCanonicalMetadata = (title: string, content: string, extra?: Record<string, unknown>) => {
     const subjectKey = buildMemorySubjectKey(title, content)

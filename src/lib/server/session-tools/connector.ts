@@ -2,10 +2,7 @@ import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import path from 'path'
 import fs from 'fs'
-import { loadAgent, loadConnectors, loadSettings, UPLOAD_DIR } from '../storage'
-import { genId } from '@/lib/id'
-import { synthesizeElevenLabsMp3 } from '../elevenlabs'
-import { isAudioMime, mimeFromPath } from '../connectors/media'
+import { loadConnectors, loadSettings, UPLOAD_DIR } from '../storage'
 import type { ToolBuildContext } from './context'
 import type { Connector, Plugin, PluginHooks } from '@/types'
 import { registerNativeCapability } from '../native-capabilities'
@@ -14,6 +11,12 @@ import { safeJsonParseObject } from '../json-utils'
 import { tryResolvePathWithinBaseDir } from '../path-utils'
 import { dedup, errorMessage } from '@/lib/shared-utils'
 import { isDirectConnectorSession } from '../connectors/session-kind'
+import {
+  prepareConnectorVoiceNotePayload,
+  resolveConnectorVoiceId,
+} from '../connectors/voice-note'
+
+export { resolveConnectorVoiceId } from '../connectors/voice-note'
 
 const CONNECTOR_ACTION_DEDUPE_TTL_MS = 30_000
 const CONNECTOR_TURN_SEND_TTL_MS = 180_000
@@ -648,29 +651,6 @@ interface ConnectorActionContext {
   ctx?: { sessionId?: string | null; agentId?: string | null }
 }
 
-export function resolveConnectorVoiceId(params: {
-  explicitVoiceId?: string | null
-  sessionAgentId?: string | null
-  contextAgentId?: string | null
-  nestedContextAgentId?: string | null
-  getAgent?: (id: string) => { elevenLabsVoiceId?: string | null } | null
-}): string | undefined {
-  const explicitVoiceId = typeof params.explicitVoiceId === 'string' ? params.explicitVoiceId.trim() : ''
-  if (explicitVoiceId) return explicitVoiceId
-
-  const agentId = [
-    params.sessionAgentId,
-    params.contextAgentId,
-    params.nestedContextAgentId,
-  ].find((candidate) => typeof candidate === 'string' && candidate.trim())?.trim()
-  if (!agentId) return undefined
-
-  const getAgent = params.getAgent || ((id: string) => loadAgent(id) as { elevenLabsVoiceId?: string | null } | null)
-  const agent = getAgent(agentId)
-  const agentVoiceId = typeof agent?.elevenLabsVoiceId === 'string' ? agent.elevenLabsVoiceId.trim() : ''
-  return agentVoiceId || undefined
-}
-
 async function executeConnectorAction(input: ConnectorActionInput, bctx: ConnectorActionContext) {
   const baseNormalized = normalizeToolInputArgs((input ?? {}) as Record<string, unknown>)
 
@@ -895,24 +875,25 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
         if (cachedVoice && now - cachedVoice.at <= CONNECTOR_ACTION_DEDUPE_TTL_MS) {
           return cachedVoice.result
         }
-        let voicePath = media.mediaPath
-        let outboundMimeType = mimeType?.trim() || undefined
-        if (voicePath) {
-          outboundMimeType = outboundMimeType || mimeFromPath(voicePath)
-          if (!isAudioMime(outboundMimeType)) {
-            return `Error: send_voice_note mediaPath must point to an audio file. Resolved MIME type was "${outboundMimeType}".`
-          }
-        } else {
-          const audioBuffer = await synthesizeElevenLabsMp3({ text: ttsText, voiceId: effectiveVoiceId })
-          const voiceFileName = `${Date.now()}-${genId()}-voicenote.mp3`
-          voicePath = path.join(UPLOAD_DIR, voiceFileName)
-          fs.writeFileSync(voicePath, audioBuffer)
-          outboundMimeType = 'audio/mpeg'
+        let voicePayload
+        try {
+          voicePayload = await prepareConnectorVoiceNotePayload({
+            mediaPath: media.mediaPath,
+            mimeType,
+            voiceText: ttsText,
+            voiceId,
+            sessionAgentId: currentSession?.agentId,
+            contextAgentId: bctx.agentId,
+            nestedContextAgentId: bctx.ctx?.agentId,
+            fileName,
+          })
+        } catch (err: unknown) {
+          return `Error: ${errorMessage(err)}`
         }
 
         const sent = await sendConnectorMessage({
-          connectorId: selected.id, channelId, text: '', mediaPath: voicePath, mimeType: outboundMimeType,
-          fileName: fileName?.trim() || 'voicenote.mp3', caption: caption?.trim() || undefined, ptt: ptt ?? true,
+          connectorId: selected.id, channelId, text: '', mediaPath: voicePayload.mediaPath, mimeType: voicePayload.mimeType,
+          fileName: voicePayload.fileName, caption: caption?.trim() || undefined, ptt: ptt ?? true,
           sessionId: connectorScopedSessionId,
           replyToMessageId: replyToMessageId?.trim() || undefined,
           threadId: threadId?.trim() || undefined,
@@ -924,7 +905,7 @@ async function executeConnectorAction(input: ConnectorActionInput, bctx: Connect
           platform: sent.platform,
           to: sent.channelId,
           messageId: sent.messageId || null,
-          voiceFile: voicePath,
+          voiceFile: voicePayload.mediaPath,
         })
         connectorTurnReplayCache.set(turnReplayKey, { at: now, result })
         if (recipientReplayKey) connectorTurnRecipientReplayCache.set(recipientReplayKey, { at: now, result })
