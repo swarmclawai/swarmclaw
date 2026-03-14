@@ -22,7 +22,6 @@ import {
   resolveTaskOriginConnectorFollowupTarget as resolveTaskOriginConnectorFollowupTargetImpl,
   type ScheduleTaskMeta,
   type SessionLike,
-  type SessionMessageLike,
 } from '@/lib/server/tasks/task-followups'
 import { getCheckpointSaver } from '@/lib/server/langgraph-checkpoint'
 import { cascadeUnblock } from '@/lib/server/dag-validation'
@@ -495,18 +494,95 @@ function pushQueueUnique(queue: string[], id: string): void {
   if (!queueContains(queue, id)) queue.push(id)
 }
 
-function resolveTaskOwnerUser(task: ScheduleTaskMeta, sessions: Record<string, SessionLike>): string | null {
-  const direct = typeof task.user === 'string' ? task.user.trim() : ''
-  if (direct) return direct
+function isAgentCreatedTask(task: Partial<BoardTask> | null | undefined): boolean {
+  return Boolean(typeof task?.createdByAgentId === 'string' && task.createdByAgentId.trim())
+}
+
+function resolveTaskTerminalChatSessionId(
+  task: BoardTask,
+  sessions: Record<string, SessionLike>,
+): string | null {
+  if (task.status !== 'completed' && task.status !== 'failed') return null
+  if (task.sourceType === 'schedule') return null
+  if (isAgentCreatedTask(task)) return null
   const createdInSessionId = typeof task.createdInSessionId === 'string'
-    ? task.createdInSessionId
+    ? task.createdInSessionId.trim()
     : ''
-  if (createdInSessionId) {
-    const sourceSession = sessions[createdInSessionId]
-    const sourceUser = typeof sourceSession?.user === 'string' ? sourceSession.user.trim() : ''
-    if (sourceUser) return sourceUser
+  return createdInSessionId && sessions[createdInSessionId] ? createdInSessionId : null
+}
+
+interface TaskResultDeliveryData {
+  statusLabel: 'completed' | 'failed'
+  resultBody: string
+  outputFileRefs: string[]
+  firstImage?: NonNullable<BoardTask['artifacts']>[number]
+  followupMediaPath?: string
+  mediaFileName?: string
+  execCwd: string
+  resumeLines: string[]
+}
+
+function collectTaskResultDeliveryData(
+  task: BoardTask,
+  sessions: Record<string, SessionLike>,
+): TaskResultDeliveryData {
+  const runSessionId = typeof task.sessionId === 'string' ? task.sessionId : ''
+  const runSession = runSessionId ? sessions[runSessionId] : null
+  const fallbackText = runSession ? latestAssistantText(runSession) : ''
+  const taskResult = extractTaskResult(
+    runSession,
+    task.result || fallbackText || null,
+    { sinceTime: typeof task.startedAt === 'number' ? task.startedAt : null },
+  )
+  const resultBody = formatResultBody(taskResult)
+  const outputFileRefs = Array.isArray(task.outputFiles) && task.outputFiles.length > 0
+    ? task.outputFiles
+    : extractLikelyOutputFiles(resultBody)
+  const firstImage = taskResult.artifacts.find((artifact) => artifact.type === 'image')
+  const firstArtifactMediaPath = taskResult.artifacts
+    .map((artifact) => maybeResolveUploadMediaPathFromUrl(artifact.url))
+    .find((candidate): candidate is string => Boolean(candidate))
+  const resumeLines: string[] = []
+  if (task.claudeResumeId) resumeLines.push(`Claude session: \`${task.claudeResumeId}\``)
+  if (task.codexResumeId) resumeLines.push(`Codex thread: \`${task.codexResumeId}\``)
+  if (task.opencodeResumeId) resumeLines.push(`OpenCode session: \`${task.opencodeResumeId}\``)
+  if (task.geminiResumeId) resumeLines.push(`Gemini session: \`${task.geminiResumeId}\``)
+  if (resumeLines.length === 0 && task.cliResumeId) {
+    resumeLines.push(`${task.cliProvider || 'CLI'} session: \`${task.cliResumeId}\``)
   }
-  return null
+  const execCwd = runSession?.cwd || ''
+  const existingOutputPaths = outputFileRefs
+    .map((fileRef: string) => resolveExistingOutputFilePath(fileRef, execCwd))
+    .filter((candidate: string | undefined): candidate is string => Boolean(candidate))
+  const firstLocalOutputPath = existingOutputPaths.find((candidate: string) => isSendableAttachment(candidate))
+  const followupMediaPath = firstArtifactMediaPath || firstLocalOutputPath || undefined
+
+  return {
+    statusLabel: task.status === 'completed' ? 'completed' : 'failed',
+    resultBody,
+    outputFileRefs,
+    firstImage,
+    followupMediaPath,
+    mediaFileName: followupMediaPath ? path.basename(followupMediaPath) : undefined,
+    execCwd,
+    resumeLines,
+  }
+}
+
+function buildTaskTerminalMessage(
+  prefix: string,
+  task: BoardTask,
+  delivery: TaskResultDeliveryData,
+): string {
+  const parts = [prefix]
+  if (delivery.execCwd) parts.push(`Working directory: \`${delivery.execCwd}\``)
+  if (delivery.outputFileRefs.length > 0) {
+    parts.push(`Output files:\n${delivery.outputFileRefs.slice(0, 8).map((fileRef: string) => `- \`${fileRef}\``).join('\n')}`)
+  }
+  if (task.completionReportPath) parts.push(`Task report: \`${task.completionReportPath}\``)
+  if (delivery.resumeLines.length > 0) parts.push(delivery.resumeLines.join(' | '))
+  parts.push(delivery.resultBody || 'No summary.')
+  return parts.join('\n\n')
 }
 
 function latestAssistantText(session: SessionLike | null | undefined): string {
@@ -779,213 +855,64 @@ export function reconcileFinishedRunningTasks(): { reconciled: number; deadLette
         text: `Task failed validation: "${task.title}" (${task.id})`,
       })
     }
-    notifyMainChatScheduleResult(task)
-    notifyAgentThreadTaskResult(task)
+    handleTerminalTaskResultDeliveries(task)
     cleanupTerminalOneOffSchedule(task)
   }
 
   return { reconciled, deadLettered }
 }
 
-function notifyMainChatScheduleResult(task: BoardTask): void {
-  const scheduleTask = task as ScheduleTaskMeta
-  const sourceType = typeof scheduleTask.sourceType === 'string' ? scheduleTask.sourceType : ''
-  if (sourceType !== 'schedule') return
-  if (task.status !== 'completed' && task.status !== 'failed') return
-
-  const sessions = loadSessions()
-  void resolveTaskOwnerUser(scheduleTask, sessions as Record<string, SessionLike>)
-  const scheduleNameRaw = typeof scheduleTask.sourceScheduleName === 'string'
-    ? scheduleTask.sourceScheduleName.trim()
-    : ''
-  const scheduleName = scheduleNameRaw || (task.title || 'Scheduled Task').replace(/^\[Sched\]\s*/i, '').trim()
-
-  const runSessionId = typeof task.sessionId === 'string' ? task.sessionId : ''
-  const runSession = runSessionId ? sessions[runSessionId] : null
-  const fallbackText = runSession ? latestAssistantText(runSession) : ''
-
-  // Zod-validated structured extraction: one pass to get summary + all artifacts
-  const taskResult = extractTaskResult(
-    runSession,
-    task.result || fallbackText || null,
-    { sinceTime: typeof task.startedAt === 'number' ? task.startedAt : null },
-  )
-  const resultBody = formatResultBody(taskResult)
-
-  const statusLabel = task.status === 'completed' ? 'completed' : 'failed'
-  const srcScheduleId = typeof scheduleTask.sourceScheduleId === 'string' ? scheduleTask.sourceScheduleId : ''
-  const taskLink = `[${task.title}](#task:${task.id})`
-  const schedLink = srcScheduleId ? ` | [Schedule](#schedule:${srcScheduleId})` : ''
-  const body = [
-    `Scheduled run ${statusLabel}: **${scheduleName || 'Scheduled Task'}** ${taskLink}${schedLink}`,
-    resultBody || 'No summary was returned.',
-  ].join('\n\n').trim()
-  if (!body) return
-
-  // First image artifact goes on imageUrl for the inline preview above markdown
-  const firstImage = taskResult.artifacts.find((a) => a.type === 'image')
-  const now = Date.now()
-  let changed = false
-
-  const buildMsg = (): SessionMessageLike => {
-    const msg: SessionMessageLike = { role: 'assistant', text: body, time: now, kind: 'system' }
-    if (firstImage) msg.imageUrl = firstImage.url
-    return msg
-  }
-
-  // Push to the agent's shortcut chat session.
-  try {
-    const agents = loadAgents()
-    const agent = agents[task.agentId]
-    if (agent?.threadSessionId && sessions[agent.threadSessionId]) {
-      const thread = sessions[(agent as any).threadSessionId] as SessionLike
-      const threadLast = Array.isArray(thread.messages) ? thread.messages.at(-1) : null
-      if (!(threadLast?.role === 'assistant' && threadLast?.text === body && typeof threadLast?.time === 'number' && now - threadLast.time < 30_000)) {
-        if (!Array.isArray(thread.messages)) thread.messages = []
-        thread.messages.push(buildMsg())
-        thread.lastActiveAt = now
-        changed = true
-      }
-    }
-  } catch { /* ignore thread push failure */ }
-
-  if (changed) saveSessions(sessions)
-}
-
 function cleanupTerminalOneOffSchedule(task: BoardTask): void {
   void task
 }
 
-/**
- * Notify agent thread sessions when a task completes or fails.
- * - Always pushes to the executing agent's thread
- * - If delegated, also pushes to the delegating agent's thread
- */
-function notifyAgentThreadTaskResult(task: BoardTask): void {
+function pushUserFacingTaskResult(task: BoardTask, sessions: Record<string, SessionLike>): void {
   if (task.status !== 'completed' && task.status !== 'failed') return
+  const targetSessionId = resolveTaskTerminalChatSessionId(task, sessions)
+  if (!targetSessionId) return
+  const targetSession = sessions[targetSessionId]
+  if (!targetSession) return
 
-  const sessions = loadSessions()
-  const agents = loadAgents()
-  const agent = agents[task.agentId]
-
-  const runSessionId = typeof task.sessionId === 'string' ? task.sessionId : ''
-  const runSession = runSessionId ? sessions[runSessionId] : null
-  const fallbackText = runSession ? latestAssistantText(runSession) : ''
-  const taskResult = extractTaskResult(
-    runSession,
-    task.result || fallbackText || null,
-    { sinceTime: typeof task.startedAt === 'number' ? task.startedAt : null },
-  )
-  const resultBody = formatResultBody(taskResult)
-  const outputFileRefs = Array.isArray(task.outputFiles) && task.outputFiles.length > 0
-    ? task.outputFiles
-    : extractLikelyOutputFiles(resultBody)
-
-  const statusLabel = task.status === 'completed' ? 'completed' : 'failed'
+  const delivery = collectTaskResultDeliveryData(task, sessions)
   const taskLink = `[${task.title}](#task:${task.id})`
-  const firstImage = taskResult.artifacts.find((a) => a.type === 'image')
-  const firstArtifactMediaPath = taskResult.artifacts
-    .map((artifact) => maybeResolveUploadMediaPathFromUrl(artifact.url))
-    .find((candidate): candidate is string => Boolean(candidate))
+  const body = buildTaskTerminalMessage(`Task ${delivery.statusLabel}: **${taskLink}**`, task, delivery)
   const now = Date.now()
-  let changed = false
-
-  // Build CLI resume ID info lines
-  const resumeLines: string[] = []
-  if (task.claudeResumeId) resumeLines.push(`Claude session: \`${task.claudeResumeId}\``)
-  if (task.codexResumeId) resumeLines.push(`Codex thread: \`${task.codexResumeId}\``)
-  if (task.opencodeResumeId) resumeLines.push(`OpenCode session: \`${task.opencodeResumeId}\``)
-  if (task.geminiResumeId) resumeLines.push(`Gemini session: \`${task.geminiResumeId}\``)
-  // Fallback to legacy field
-  if (resumeLines.length === 0 && task.cliResumeId) {
-    resumeLines.push(`${task.cliProvider || 'CLI'} session: \`${task.cliResumeId}\``)
+  if (!Array.isArray(targetSession.messages)) targetSession.messages = []
+  const lastMsg = targetSession.messages.at(-1)
+  if (lastMsg?.role === 'assistant' && lastMsg?.text === body && typeof lastMsg?.time === 'number' && now - lastMsg.time < 30_000) {
+    return
   }
 
-  // Get working directory from execution session
-  const execCwd = runSession?.cwd || ''
-  const existingOutputPaths = outputFileRefs
-    .map((fileRef: string) => resolveExistingOutputFilePath(fileRef, execCwd))
-    .filter((candidate: any): candidate is string => Boolean(candidate))
-  const firstLocalOutputPath = existingOutputPaths.find((candidate: string) => isSendableAttachment(candidate))
-  const followupMediaPath = firstArtifactMediaPath || firstLocalOutputPath || undefined
-
-  const buildMsg = (text: string): Message => {
-    const msg: Message = { role: 'assistant', text, time: now, kind: 'system' }
-    if (firstImage) msg.imageUrl = firstImage.url
-    return msg
+  const message: Message = {
+    role: 'assistant',
+    text: body,
+    time: now,
+    kind: 'system',
   }
+  if (delivery.firstImage) message.imageUrl = delivery.firstImage.url
+  targetSession.messages.push(message)
+  targetSession.lastActiveAt = now
+  saveSessions(sessions as Record<string, Session>)
+  notify(`messages:${targetSessionId}`)
+}
 
-  const buildResultBlock = (prefix: string): string => {
-    const parts = [prefix]
-    if (execCwd) parts.push(`Working directory: \`${execCwd}\``)
-    if (outputFileRefs.length > 0) {
-      parts.push(`Output files:\n${outputFileRefs.slice(0, 8).map((fileRef: string) => `- \`${fileRef}\``).join('\n')}`)
-    }
-    if (task.completionReportPath) parts.push(`Task report: \`${task.completionReportPath}\``)
-    if (resumeLines.length > 0) parts.push(resumeLines.join(' | '))
-    parts.push(resultBody || 'No summary.')
-    return parts.join('\n\n')
-  }
-
-  // 1. Push to executing agent's thread
-  if (agent?.threadSessionId && sessions[agent.threadSessionId]) {
-    const thread = sessions[(agent as any).threadSessionId]
-    if (!Array.isArray(thread.messages)) thread.messages = []
-    const body = buildResultBlock(`Task ${statusLabel}: **${taskLink}**`)
-    thread.messages.push(buildMsg(body))
-    thread.lastActiveAt = now
-    changed = true
-  }
-
-  // 2. If delegated, push to delegating agent's thread AND active chat sessions
-  const delegatedBy = (task as unknown as Record<string, unknown>).delegatedByAgentId
-  if (typeof delegatedBy === 'string' && delegatedBy !== task.agentId) {
-    const delegator = agents[delegatedBy]
-    const agentName = agent?.name || task.agentId
-    const delegationBody = buildResultBlock(`Delegated task ${statusLabel}: **${taskLink}** (by ${agentName})`)
-
-    // Push to delegating agent's thread
-    if (delegator?.threadSessionId && sessions[delegator.threadSessionId]) {
-      const thread = sessions[delegator.threadSessionId]
-      if (!Array.isArray(thread.messages)) thread.messages = []
-      thread.messages.push(buildMsg(delegationBody))
-      thread.lastActiveAt = now
-      changed = true
-    }
-
-    // Push to delegating agent's active user-facing chat sessions
-    // so the result is visible in the chat the user is looking at.
-    if (delegator) {
-      for (const session of Object.values(sessions)) {
-        if (!session || session.agentId !== delegatedBy) continue
-        // Skip the agent shortcut session itself.
-        if (session.id === delegator.threadSessionId) continue
-        // Only push to recently-active sessions (within last 30 minutes)
-        const lastActive = typeof session.lastActiveAt === 'number' ? session.lastActiveAt : 0
-        if (now - lastActive > 30 * 60_000) continue
-        if (!Array.isArray(session.messages)) session.messages = []
-        // Avoid duplicate push
-        const lastMsg = session.messages.at(-1)
-        if (lastMsg?.text === delegationBody && typeof lastMsg?.time === 'number' && now - lastMsg.time < 30_000) continue
-        session.messages.push(buildMsg(delegationBody))
-        session.lastActiveAt = now
-        changed = true
-        // Notify the specific session's message topic for real-time UI update
-        notify(`messages:${session.id}`)
-      }
-    }
-  }
-
-  if (changed) saveSessions(sessions)
-
+function deliverTaskConnectorFollowups(task: BoardTask, sessions: Record<string, SessionLike>): void {
+  if (task.status !== 'completed' && task.status !== 'failed') return
+  const delivery = collectTaskResultDeliveryData(task, sessions)
   void notifyConnectorTaskFollowups({
     task,
-    statusLabel,
-    summaryText: resultBody || '',
-    imageUrl: firstImage?.url,
-    mediaPath: followupMediaPath,
-    mediaFileName: followupMediaPath ? path.basename(followupMediaPath) : undefined,
+    statusLabel: delivery.statusLabel,
+    summaryText: delivery.resultBody || '',
+    imageUrl: delivery.firstImage?.url,
+    mediaPath: delivery.followupMediaPath,
+    mediaFileName: delivery.mediaFileName,
   })
+}
+
+function handleTerminalTaskResultDeliveries(task: BoardTask): void {
+  const sessions = loadSessions() as Record<string, SessionLike>
+  pushUserFacingTaskResult(task, sessions)
+  deliverTaskConnectorFollowups(task, sessions)
 }
 
 /** Disable heartbeat on a task's session when the task finishes. */
@@ -1346,30 +1273,6 @@ export async function processNext() {
         : false
       if (seededResumeState) saveSessions(executionSessions)
 
-      // Notify the agent's thread that a task has started
-      if (agentThreadSessionId) {
-        try {
-          const threadSessions = loadSessions()
-          const thread = threadSessions[agentThreadSessionId]
-          if (thread) {
-            if (!Array.isArray(thread.messages)) thread.messages = []
-            const scheduleTask2 = task as ScheduleTaskMeta
-            const schedId = typeof scheduleTask2.sourceScheduleId === 'string' ? scheduleTask2.sourceScheduleId : ''
-            const runLabel = task.runNumber ? ` (run #${task.runNumber})` : ''
-            const taskLink = `[${task.title}](#task:${task.id})`
-            const schedLink = schedId ? ` | [Schedule](#schedule:${schedId})` : ''
-            thread.messages.push({
-              role: 'assistant',
-              text: `Started task: **${taskLink}**${runLabel}${schedLink}`,
-              time: Date.now(),
-              kind: 'system',
-            })
-            thread.lastActiveAt = Date.now()
-            saveSessions(threadSessions)
-          }
-        } catch { /* ignore thread notification failure */ }
-      }
-
       task.sessionId = sessionId
       const reusedExistingSession = !isScheduleTask && Boolean(reusableTaskSessionId) && reusableTaskSessionId === sessionId
       const continuationBits: string[] = []
@@ -1560,8 +1463,7 @@ export async function processNext() {
             type: 'task_completed',
             text: `Task completed: "${task.title}" (${taskId})`,
           })
-          notifyMainChatScheduleResult(doneTask)
-          notifyAgentThreadTaskResult(doneTask)
+          handleTerminalTaskResultDeliveries(doneTask)
           cleanupTerminalOneOffSchedule(doneTask)
           // Clean up LangGraph checkpoints for completed tasks
           getCheckpointSaver().deleteThread(taskId).catch((e) =>
@@ -1590,8 +1492,7 @@ export async function processNext() {
               text: `Task failed validation: "${task.title}" (${taskId})`,
             })
             if (doneTask?.status === 'failed') {
-              notifyMainChatScheduleResult(doneTask)
-              notifyAgentThreadTaskResult(doneTask)
+              handleTerminalTaskResultDeliveries(doneTask)
               cleanupTerminalOneOffSchedule(doneTask)
             }
             console.warn(`[queue] Task "${task.title}" failed completion validation`)
@@ -1668,8 +1569,7 @@ export async function processNext() {
             text: `Task failed: "${task.title}" (${taskId}) — ${errMsg.slice(0, 200)}`,
           })
           if (latest?.status === 'failed') {
-            notifyMainChatScheduleResult(latest)
-            notifyAgentThreadTaskResult(latest)
+            handleTerminalTaskResultDeliveries(latest)
             cleanupTerminalOneOffSchedule(latest)
           }
         }

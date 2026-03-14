@@ -102,6 +102,8 @@ export function normalizeConnectorIngressResult(value: ConnectorIngressResult): 
 export interface ConnectorInstance {
   connector: Connector
   stop: () => Promise<void>
+  /** Whether this connector can send binary media natively instead of link fallbacks */
+  supportsBinaryMedia?: boolean
   /** Optional outbound send support for proactive agent notifications */
   sendMessage?: (
     channelId: string,

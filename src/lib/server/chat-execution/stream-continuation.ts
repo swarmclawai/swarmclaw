@@ -10,12 +10,14 @@ import os from 'node:os'
 import path from 'node:path'
 import type { MessageToolEvent } from '@/types'
 import { extractSuggestions } from '@/lib/server/suggestions'
+import { isSuccessfulMemoryMutationToolEvent } from '@/lib/server/chat-execution/memory-mutation-tools'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export type ContinuationType =
+  | 'memory_write_followthrough'
   | 'recursion'
   | 'transient'
   | 'required_tool'
@@ -584,6 +586,17 @@ function buildRequiredToolPrompt(params: {
   return `You have not yet completed the required explicit tool step(s): ${params.requiredToolReminderNames.join(', ')}. Use those enabled tools now before declaring success. Do not replace ask_human with a plain-text request, do not replace outbound delivery tools with prose, and do not replace screenshot requests with text-only summaries.`
 }
 
+function buildMemoryWriteFollowthroughPrompt(): string {
+  return [
+    'The memory write already succeeded.',
+    'Do not repeat the raw tool output, memory ID, category, or any "stored memory" wording.',
+    'Do not call another memory, web, or history tool unless the user explicitly asked you to verify.',
+    'Do not answer with NO_MESSAGE or HEARTBEAT_OK.',
+    'Reply naturally in one short sentence that acknowledges what changed.',
+    'If the stored memory was a name, nickname, or reply-medium preference, immediately use that preference in the acknowledgement itself.',
+  ].join('\n')
+}
+
 // ---------------------------------------------------------------------------
 // buildContinuationPrompt — unified prompt builder for all continuation types
 // ---------------------------------------------------------------------------
@@ -601,6 +614,9 @@ export function buildContinuationPrompt(params: {
   cwd?: string
 }): string | null {
   switch (params.type) {
+    case 'memory_write_followthrough':
+      return buildMemoryWriteFollowthroughPrompt()
+
     case 'recursion':
       return 'Continue where you left off. Complete the remaining steps of the objective.'
 
@@ -674,6 +690,7 @@ function resolveToolOnlyFinalResponse(toolEvents: MessageToolEvent[] | undefined
   const events = Array.isArray(toolEvents) ? toolEvents : []
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index]
+    if (isSuccessfulMemoryMutationToolEvent(event)) continue
     const output = typeof event?.output === 'string'
       ? extractSuggestions(event.output).clean.trim()
       : ''

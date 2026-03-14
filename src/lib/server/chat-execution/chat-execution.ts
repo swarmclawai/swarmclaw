@@ -217,7 +217,7 @@ export interface ExecuteChatTurnInput {
     showAlerts: boolean
     target: string | null
     lightContext?: boolean
-    deliveryMode?: 'default' | 'tool_only'
+    deliveryMode?: 'default' | 'tool_only' | 'silent'
   }
   replyToId?: string
 }
@@ -1449,7 +1449,10 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
     && !hideAssistantTranscript
     && hasPersistableAssistantPayload(persistedText, thinkingText, persistedToolEvents)
     && heartbeatClassification !== 'suppress'
-    && !(isHeartbeatRun && heartbeatConfig?.deliveryMode === 'tool_only' && !isDirectConnectorSession(session))
+    && !(isHeartbeatRun && (
+      heartbeatConfig?.deliveryMode === 'silent'
+      || (heartbeatConfig?.deliveryMode === 'tool_only' && !isDirectConnectorSession(session))
+    ))
 
   const normalizeResumeId = (value: unknown): string | null =>
     typeof value === 'string' && value.trim() ? value.trim() : null

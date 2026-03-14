@@ -73,11 +73,14 @@ import {
   isWalletSimulationResult,
   pruneIncompleteToolEvents,
   resolveSuccessfulTerminalToolBoundary,
-  resolveToolAction,
   shouldForceExternalServiceSummary,
-  shouldTerminateOnSuccessfulMemoryMutation,
   updateStreamedToolEvents,
 } from '@/lib/server/chat-execution/chat-streaming-utils'
+import {
+  hasOnlySuccessfulMemoryMutationToolEvents,
+  resolveToolAction,
+  shouldTerminateOnSuccessfulMemoryMutation,
+} from '@/lib/server/chat-execution/memory-mutation-tools'
 import { LangGraphToolEventTracker } from '@/lib/server/chat-execution/tool-event-tracker'
 
 // LangGraph's streamEvents leaves dangling internal promises when the for-await
@@ -383,6 +386,7 @@ function buildAgenticExecutionPolicy(opts: {
   heartbeatPrompt: string
   heartbeatIntervalSec: number
   allowSilentReplies?: boolean
+  isDirectConnectorSession?: boolean
   delegationEnabled?: boolean
   userMessage?: string
   history?: Message[]
@@ -422,6 +426,12 @@ function buildAgenticExecutionPolicy(opts: {
       'If the user asks about prior work, decisions, dates, people, preferences, or todos from earlier conversations, start with `memory_search`. Use `memory_get` only when you need one targeted follow-up read.',
       'Do not use `manage_tasks`, `manage_agents`, or `delegate` as a substitute for a direct memory write or recall step.',
     )
+    if (opts.isDirectConnectorSession) {
+      parts.push(
+        'For direct connector chats, when storing a standing sender preference such as preferred name or reply medium, include structured `metadata.connectorPreference` fields so runtime can reuse them without reparsing prose.',
+        'Use fields like `preferredDisplayName` and `preferredReplyMedium:"voice_note"` when they are relevant.',
+      )
+    }
   }
   if (hasTooling) {
     parts.push(
@@ -823,6 +833,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       heartbeatPrompt,
       heartbeatIntervalSec,
       allowSilentReplies: isConnectorSession,
+      isDirectConnectorSession: isConnectorSession,
       delegationEnabled: agentDelegationEnabled,
       userMessage: message,
       history,
@@ -1208,6 +1219,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   const MAX_AUTO_CONTINUES = 3
   const MAX_TRANSIENT_RETRIES = 3
   const MAX_REQUIRED_TOOL_CONTINUES = 2
+  const MAX_MEMORY_WRITE_FOLLOWTHROUGHS = 2
   let MAX_EXECUTION_FOLLOWTHROUGHS = 1
   const MAX_EXECUTION_KICKOFF_FOLLOWTHROUGHS = 1
   let MAX_ATTACHMENT_FOLLOWTHROUGHS = 1
@@ -1230,6 +1242,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
   let transientRetryCount = 0
   let pendingRetryAfterMs: number | null = null
   let requiredToolContinueCount = 0
+  let memoryWriteFollowthroughCount = 0
   let executionFollowthroughCount = 0
   let executionKickoffFollowthroughCount = 0
   let attachmentFollowthroughCount = 0
@@ -1242,11 +1255,11 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     && looksLikeOpenEndedDeliverableTask(message)
   const usedToolNames = new Set<string>()
   let loopDetectionTriggered: LoopDetectionResult | null = null
-  let terminalToolBoundary: 'memory_write' | 'durable_wait' | 'context_compaction' | null = null
+  let terminalToolBoundary: 'durable_wait' | 'context_compaction' | null = null
   let terminalToolResponse = ''
 
   try {
-  const maxIterations = MAX_AUTO_CONTINUES + MAX_TRANSIENT_RETRIES + MAX_REQUIRED_TOOL_CONTINUES + MAX_EXECUTION_KICKOFF_FOLLOWTHROUGHS + MAX_EXECUTION_FOLLOWTHROUGHS + MAX_DELIVERABLE_FOLLOWTHROUGHS + MAX_UNFINISHED_TOOL_FOLLOWTHROUGHS + MAX_TOOL_ERROR_FOLLOWTHROUGHS + MAX_TOOL_SUMMARY_RETRIES
+  const maxIterations = MAX_AUTO_CONTINUES + MAX_TRANSIENT_RETRIES + MAX_REQUIRED_TOOL_CONTINUES + MAX_MEMORY_WRITE_FOLLOWTHROUGHS + MAX_EXECUTION_KICKOFF_FOLLOWTHROUGHS + MAX_EXECUTION_FOLLOWTHROUGHS + MAX_DELIVERABLE_FOLLOWTHROUGHS + MAX_UNFINISHED_TOOL_FOLLOWTHROUGHS + MAX_TOOL_ERROR_FOLLOWTHROUGHS + MAX_TOOL_SUMMARY_RETRIES
     for (let iteration = 0; iteration <= maxIterations; iteration++) {
       let shouldContinue: ContinuationType = false
       let requiredToolReminderNames: string[] = []
@@ -1526,6 +1539,27 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
               toolOutput: outputStr || '',
             })
             if (toolBoundary) {
+              if (toolBoundary.kind === 'memory_write') {
+                if (iterationText.trim() || fullText.trim()) {
+                  write(`data: ${JSON.stringify({ t: 'reset', text: '' })}\n\n`)
+                }
+                shouldContinue = 'memory_write_followthrough'
+                memoryWriteFollowthroughCount = Math.max(memoryWriteFollowthroughCount, 1)
+                fullText = ''
+                iterationText = ''
+                lastSegment = ''
+                lastSettledSegment = ''
+                needsTextSeparator = false
+                logExecution(session.id, 'decision', 'Successful memory write completed; requesting natural acknowledgement followthrough.', {
+                  agentId: session.agentId,
+                  detail: { toolName, action: resolveToolAction(event.data?.input) || null, boundary: toolBoundary.kind },
+                })
+                write(`data: ${JSON.stringify({
+                  t: 'status',
+                  text: JSON.stringify({ terminalToolResult: toolBoundary.kind }),
+                })}\n\n`)
+                break
+              }
               terminalToolBoundary = toolBoundary.kind
               terminalToolResponse = 'responseText' in toolBoundary ? (toolBoundary.responseText || '') : ''
               if (terminalToolResponse) {
@@ -1786,6 +1820,23 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
       }
 
       if (!shouldContinue
+        && !fullText.trim()
+        && hasOnlySuccessfulMemoryMutationToolEvents(streamedToolEvents)
+        && memoryWriteFollowthroughCount < MAX_MEMORY_WRITE_FOLLOWTHROUGHS
+      ) {
+        shouldContinue = 'memory_write_followthrough'
+        memoryWriteFollowthroughCount++
+        write(`data: ${JSON.stringify({
+          t: 'status',
+          text: JSON.stringify({
+            memoryWriteFollowthrough: memoryWriteFollowthroughCount,
+            maxFollowthroughs: MAX_MEMORY_WRITE_FOLLOWTHROUGHS,
+            reason: 'empty_reply_after_memory_write',
+          }),
+        })}\n\n`)
+      }
+
+      if (!shouldContinue
         && attachmentFollowthroughCount < MAX_ATTACHMENT_FOLLOWTHROUGHS
         && shouldForceAttachmentFollowthrough({
           userMessage: message,
@@ -1959,10 +2010,12 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
 
       if (!shouldContinue) break
 
-      const continuationAssistantText = resolveContinuationAssistantText({
-        iterationText,
-        lastSegment,
-      })
+      const continuationAssistantText = shouldContinue === 'memory_write_followthrough'
+        ? ''
+        : resolveContinuationAssistantText({
+            iterationText,
+            lastSegment,
+          })
 
       const continuationPrompt = buildContinuationPrompt({
         type: shouldContinue,

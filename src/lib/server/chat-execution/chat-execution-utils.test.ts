@@ -112,6 +112,10 @@ describe('shouldAutoRouteHeartbeatAlerts', () => {
     assert.equal(shouldAutoRouteHeartbeatAlerts({ deliveryMode: 'tool_only' }), false)
   })
 
+  it('returns false when deliveryMode is silent', () => {
+    assert.equal(shouldAutoRouteHeartbeatAlerts({ deliveryMode: 'silent' }), false)
+  })
+
   it('returns true for default deliveryMode with showAlerts true', () => {
     assert.equal(shouldAutoRouteHeartbeatAlerts({ showAlerts: true, deliveryMode: 'default' }), true)
   })
@@ -253,6 +257,17 @@ describe('hasPersistableAssistantPayload', () => {
     assert.equal(hasPersistableAssistantPayload('', '', [{ name: 'shell', input: 'ls' }]), true)
   })
 
+  it('returns false for successful memory-write tool events without visible text', () => {
+    assert.equal(
+      hasPersistableAssistantPayload('', '', [{
+        name: 'memory_store',
+        input: '{"title":"Siobhan contact"}',
+        output: 'Stored memory "Siobhan contact" (id: abc123). No further memory lookup is needed unless the user asked you to verify.',
+      }]),
+      false,
+    )
+  })
+
   it('returns false for all-whitespace text, thinking, and empty events', () => {
     assert.equal(hasPersistableAssistantPayload('  ', '   ', []), false)
   })
@@ -282,6 +297,15 @@ describe('getPersistedAssistantText', () => {
   it('returns empty string when text is empty and no tool events', () => {
     const result = getPersistedAssistantText('', [])
     // buildToolEventAssistantSummary with empty array returns empty
+    assert.equal(result, '')
+  })
+
+  it('suppresses successful memory-write tool-only fallbacks', () => {
+    const result = getPersistedAssistantText('', [{
+      name: 'memory_store',
+      input: '{"title":"Siobhan contact"}',
+      output: 'Stored memory "Siobhan contact" (id: abc123). No further memory lookup is needed unless the user asked you to verify.',
+    }])
     assert.equal(result, '')
   })
 })

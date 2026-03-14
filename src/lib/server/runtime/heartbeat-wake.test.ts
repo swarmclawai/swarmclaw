@@ -112,7 +112,7 @@ describe('heartbeat-wake helpers', () => {
     )
   })
 
-  it('forces connector-triggered wakes into tool-only delivery mode', () => {
+  it('uses silent delivery for schedule wakes and tool-only delivery for connector wakes', () => {
     const connectorWake = mergeHeartbeatWakeRequest(undefined, {
       sessionId: 'sess-3',
       reason: 'connector-message',
@@ -127,7 +127,7 @@ describe('heartbeat-wake helpers', () => {
     })
 
     assert.equal(deriveHeartbeatWakeDeliveryMode(connectorWake.events), 'tool_only')
-    assert.equal(deriveHeartbeatWakeDeliveryMode(scheduleWake.events), 'default')
+    assert.equal(deriveHeartbeatWakeDeliveryMode(scheduleWake.events), 'silent')
   })
 
   it('does not resolve schedule wakes to the most recently active session when sessionId is missing', () => {

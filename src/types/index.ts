@@ -16,7 +16,7 @@ export interface Message {
   attachedFiles?: string[]
   toolEvents?: MessageToolEvent[]
   thinking?: string
-  kind?: 'chat' | 'heartbeat' | 'system' | 'context-clear' | 'plugin-ui'
+  kind?: 'chat' | 'heartbeat' | 'system' | 'context-clear' | 'plugin-ui' | 'connector-delivery'
   suppressed?: boolean
   bookmarked?: boolean
   suggestions?: string[]
@@ -619,17 +619,34 @@ export interface PluginProviderExtension {
   requiresApiKey: boolean
   requiresEndpoint: boolean
   defaultEndpoint?: string
-  streamChat: (opts: any) => Promise<string>
+  streamChat: (opts: {
+    session: { id: string } & Record<string, unknown>
+    message: string
+    imagePath?: string
+    imageUrl?: string
+    apiKey?: string | null
+    systemPrompt?: string
+    write: (data: string) => void
+    active: Map<string, unknown>
+    loadHistory: (sessionId: string) => unknown[]
+    onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void
+    signal?: AbortSignal
+  }) => Promise<string>
 }
 
 export interface PluginConnectorExtension {
   id: string
   name: string
   description: string
+  supportsBinaryMedia?: boolean
   // For sending outbound
-  sendMessage?: (params: any) => Promise<any>
+  sendMessage?: (
+    channelId: string,
+    text: string,
+    options?: OutboundSendOptions,
+  ) => Promise<{ messageId?: string } | void>
   // For polling/listening
-  startListener?: (onMessage: (msg: any) => void) => Promise<() => void>
+  startListener?: (onMessage: (msg: InboundMessage) => void) => Promise<() => void>
 }
 
 export interface Plugin {
@@ -2034,6 +2051,8 @@ export interface MessageSource {
   messageId?: string
   replyToMessageId?: string
   threadId?: string
+  deliveryMode?: 'text' | 'voice_note'
+  deliveryTranscript?: string | null
 }
 
 export interface Connector {

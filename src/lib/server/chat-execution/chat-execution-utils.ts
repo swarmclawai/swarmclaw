@@ -6,6 +6,7 @@ import { getUsageSpendSince } from '@/lib/server/storage'
 import { pluginIdMatches } from '@/lib/server/tool-aliases'
 import { buildToolEventAssistantSummary } from '@/lib/chat/tool-event-summary'
 import { looksLikePositiveConnectorDeliveryText } from '@/lib/server/chat-execution/chat-execution-connector-delivery'
+import { hasOnlySuccessfulMemoryMutationToolEvents } from '@/lib/server/chat-execution/memory-mutation-tools'
 import { getEnabledCapabilityIds } from '@/lib/capability-selection'
 
 export interface SessionWithTools {
@@ -33,10 +34,10 @@ export function shouldApplySessionFreshnessReset(source: string): boolean {
 
 export function shouldAutoRouteHeartbeatAlerts(config?: {
   showAlerts?: boolean
-  deliveryMode?: 'default' | 'tool_only'
+  deliveryMode?: 'default' | 'tool_only' | 'silent'
 } | null): boolean {
   if (config?.showAlerts === false) return false
-  return config?.deliveryMode !== 'tool_only'
+  return config?.deliveryMode !== 'tool_only' && config?.deliveryMode !== 'silent'
 }
 
 export function shouldPersistInboundUserMessage(internal: boolean, source: string): boolean {
@@ -257,12 +258,14 @@ export function shouldSuppressRedundantConnectorDeliveryFollowup(params: {
 }
 
 export function hasPersistableAssistantPayload(text: string, thinking: string, toolEvents: MessageToolEvent[]): boolean {
+  if (!text.trim() && !thinking.trim() && hasOnlySuccessfulMemoryMutationToolEvents(toolEvents)) return false
   return text.trim().length > 0 || thinking.trim().length > 0 || toolEvents.length > 0
 }
 
 export function getPersistedAssistantText(text: string, toolEvents: MessageToolEvent[]): string {
   const trimmed = text.trim()
   if (trimmed) return trimmed
+  if (hasOnlySuccessfulMemoryMutationToolEvents(toolEvents)) return ''
   return buildToolEventAssistantSummary(toolEvents)
 }
 

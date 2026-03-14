@@ -4,6 +4,10 @@ import { extractSuggestions } from '@/lib/server/suggestions'
 import {
   looksLikeExternalWalletTask,
 } from '@/lib/server/chat-execution/stream-continuation'
+import {
+  resolveToolAction,
+  shouldTerminateOnSuccessfulMemoryMutation,
+} from '@/lib/server/chat-execution/memory-mutation-tools'
 
 const EXPLICIT_ARTIFACT_OUTPUT_RE = /\b(?:save|write|output|export|create|generate)\b[^.!?\n]{0,80}\b(?:to|as|at|in)\b[^.!?\n]{0,60}(\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|~\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|\.\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|[a-z0-9._/-]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)\b)/i
 
@@ -80,42 +84,6 @@ export function shouldForceExternalServiceSummary(params: {
   return /:$/.test(trimmed) || /(let me|i'll|i will|checking|verify|promising|look into|explore|access their interface)/i.test(trimmed) || trimmed.length < 240
 }
 
-export function resolveToolAction(input: unknown): string {
-  if (input && typeof input === 'object' && !Array.isArray(input)) {
-    const action = (input as Record<string, unknown>).action
-    return typeof action === 'string' ? action.trim().toLowerCase() : ''
-  }
-  if (typeof input !== 'string') return ''
-  const trimmed = input.trim()
-  if (!trimmed.startsWith('{')) return ''
-  try {
-    const parsed = JSON.parse(trimmed) as Record<string, unknown>
-    return typeof parsed.action === 'string' ? parsed.action.trim().toLowerCase() : ''
-  } catch {
-    return ''
-  }
-}
-
-export function shouldTerminateOnSuccessfulMemoryMutation(params: {
-  toolName: string
-  toolInput: unknown
-  toolOutput: string
-}): boolean {
-  const canonicalToolName = canonicalizePluginId(params.toolName) || params.toolName
-  if (canonicalToolName !== 'memory') return false
-  const exactToolName = String(params.toolName || '').trim().toLowerCase()
-  const action = exactToolName === 'memory_store'
-    ? 'store'
-    : exactToolName === 'memory_update'
-      ? 'update'
-      : resolveToolAction(params.toolInput)
-  if (action !== 'store' && action !== 'update') return false
-  const output = extractSuggestions(params.toolOutput || '').clean.trim()
-  if (!output || /^error[:\s]/i.test(output)) return false
-  if (!/^(stored|updated) memory\b/i.test(output)) return false
-  return /no further memory lookup is needed unless the user asked you to verify/i.test(output)
-}
-
 export type TerminalToolBoundary =
   | { kind: 'memory_write'; responseText?: string }
   | { kind: 'durable_wait' }
@@ -138,10 +106,8 @@ export function resolveSuccessfulTerminalToolBoundary(params: {
   toolOutput: string
 }): TerminalToolBoundary | null {
   if (shouldTerminateOnSuccessfulMemoryMutation(params)) {
-    const responseText = extractSuggestions(params.toolOutput || '').clean.trim()
     return {
       kind: 'memory_write',
-      responseText: responseText || undefined,
     }
   }
 

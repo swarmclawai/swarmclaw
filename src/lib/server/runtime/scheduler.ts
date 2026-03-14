@@ -3,7 +3,6 @@ import { enqueueTask } from '@/lib/server/runtime/queue'
 import { CronExpressionParser } from 'cron-parser'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
 import { getScheduleSignatureKey } from '@/lib/schedules/schedule-dedupe'
-import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { requestHeartbeatNow } from '@/lib/server/runtime/heartbeat-wake'
 import { processDueWatchJobs } from '@/lib/server/runtime/watch-jobs'
 import { isAgentDisabled } from '@/lib/server/agents/agent-availability'
@@ -102,8 +101,7 @@ function computeNextRuns() {
   if (changedEntries.length > 0) upsertSchedules(changedEntries)
 }
 
-async function tick() {
-  const now = Date.now()
+async function tick(now = Date.now()) {
   await processDueWatchJobs(now)
   const schedules = loadSchedules()
   const agents = loadAgents()
@@ -189,9 +187,6 @@ async function tick() {
         text: `Schedule fired (wake-only): "${schedule.name}" (${schedule.id}) run #${schedule.runNumber}`,
       })
 
-      if (schedule.createdInSessionId) {
-        enqueueSystemEvent(schedule.createdInSessionId, wakeMessage)
-      }
       requestHeartbeatNow({
         agentId: schedule.agentId,
         ...(wakeSessionId ? { sessionId: wakeSessionId } : {}),
@@ -221,6 +216,10 @@ async function tick() {
       })
     }
   }
+}
+
+export async function runSchedulerTickForTests(now: number): Promise<void> {
+  await tick(now)
 }
 
 export function resolveScheduleWakeSessionIdForTests(

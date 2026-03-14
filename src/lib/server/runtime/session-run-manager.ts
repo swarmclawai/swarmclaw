@@ -54,7 +54,7 @@ interface QueueEntry {
     showOk: boolean
     showAlerts: boolean
     target: string | null
-    deliveryMode?: 'default' | 'tool_only'
+    deliveryMode?: 'default' | 'tool_only' | 'silent'
     lightContext?: boolean
   }
   replyToId?: string
@@ -629,7 +629,7 @@ export interface EnqueueSessionRunInput {
     showOk: boolean
     showAlerts: boolean
     target: string | null
-    deliveryMode?: 'default' | 'tool_only'
+    deliveryMode?: 'default' | 'tool_only' | 'silent'
     lightContext?: boolean
   }
   replyToId?: string
