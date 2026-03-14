@@ -88,6 +88,8 @@ export function AgentChatList({ inSidebar, onSelect }: Props) {
 
   useEffect(() => { loadAgents() }, [loadAgents])
   useWs('agents', loadAgents, 30_000)
+  useWs('sessions', loadSessions, 15_000)
+  useWs('runs', loadSessions, 5_000)
 
   useEffect(() => {
     return () => {

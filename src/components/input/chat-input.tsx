@@ -16,6 +16,7 @@ import { errorMessage } from '@/lib/shared-utils'
 
 interface Props {
   streaming: boolean
+  busy: boolean
   onSend: (text: string) => void
   onStop: () => void
   pluginChatActions?: Array<{ id: string; label: string; action: string; value: string; tooltip?: string }>
@@ -25,7 +26,7 @@ interface Props {
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 
-export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }: Props) {
+export function ChatInput({ streaming, busy, onSend, onStop, pluginChatActions = [] }: Props) {
   const [value, setValue] = useState('')
   const [extrasOpen, setExtrasOpen] = useState(false)
   const { ref: textareaRef, resize } = useAutoResize()
@@ -35,15 +36,20 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
   const pendingFiles = useChatStore((s) => s.pendingFiles)
   const addPendingFile = useChatStore((s) => s.addPendingFile)
   const removePendingFile = useChatStore((s) => s.removePendingFile)
+  const clearPendingFiles = useChatStore((s) => s.clearPendingFiles)
+  const replyingTo = useChatStore((s) => s.replyingTo)
+  const setReplyingTo = useChatStore((s) => s.setReplyingTo)
   const speechRecognitionLang = useAppStore((s) => s.appSettings.speechRecognitionLang)
   const sessionId = useAppStore(selectActiveSessionId)
 
   const queuedMessages = useChatStore((s) => s.queuedMessages)
-  const addQueuedMessage = useChatStore((s) => s.addQueuedMessage)
+  const queueMessage = useChatStore((s) => s.queueMessage)
   const removeQueuedMessage = useChatStore((s) => s.removeQueuedMessage)
   const clearQueuedMessagesForSession = useChatStore((s) => s.clearQueuedMessagesForSession)
+  const streamPhase = useChatStore((s) => s.streamPhase)
+  const streamToolName = useChatStore((s) => s.streamToolName)
   const visibleQueuedMessages = listQueuedMessagesForSession(queuedMessages, sessionId)
-  const nextQueuedMessage = visibleQueuedMessages[0]
+  const shouldQueue = !!sessionId && (busy || visibleQueuedMessages.length > 0)
 
   useEffect(() => {
     if (!extrasOpen) return
@@ -75,19 +81,30 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current) }
   }, [value, sessionId])
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const text = value.trim()
     if (!text && !pendingFiles.length) return
-    // If streaming, queue the message instead of blocking
-    if (streaming) {
-      if (pendingFiles.length > 0) {
-        toast.error('Wait for the current reply to finish before sending files.')
-        return
-      }
-      if (text && sessionId) {
-        addQueuedMessage(sessionId, text)
+    const replyToId = replyingTo?.message?.replyToId
+      ? undefined
+      : replyingTo?.message
+        ? `msg-${replyingTo.index}`
+        : undefined
+    if (shouldQueue && sessionId) {
+      try {
+        await queueMessage(sessionId, {
+          text: text || 'See attached file(s).',
+          imagePath: pendingFiles[0]?.path,
+          imageUrl: pendingFiles[0]?.url,
+          attachedFiles: pendingFiles.length > 1 ? pendingFiles.map((file) => file.path) : undefined,
+          replyToId,
+        })
+        clearPendingFiles()
+        setReplyingTo(null)
         setValue('')
+        safeStorageRemove(`sc_draft_${sessionId}`)
         if (textareaRef.current) textareaRef.current.style.height = 'auto'
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : 'Failed to queue message.')
       }
       return
     }
@@ -98,18 +115,24 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
       textareaRef.current.style.height = 'auto'
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, streaming, onSend, pendingFiles.length, sessionId])
+  }, [clearPendingFiles, onSend, pendingFiles, queueMessage, replyingTo, sessionId, setReplyingTo, shouldQueue, value])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      void handleSend()
     }
   }, [handleSend])
 
   const handleVoice = useCallback((text: string) => {
+    if (shouldQueue && sessionId) {
+      void queueMessage(sessionId, { text }).catch((err: unknown) => {
+        toast.error(err instanceof Error ? err.message : 'Failed to queue message.')
+      })
+      return
+    }
     onSend(text)
-  }, [onSend])
+  }, [onSend, queueMessage, sessionId, shouldQueue])
 
   const { recording, toggle: toggleRecording, supported: micSupported, error: micError } = useSpeechRecognition(
     handleVoice,
@@ -152,17 +175,31 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
   }, [uploadAndAdd])
 
   const hasContent = value.trim().length > 0 || pendingFiles.length > 0
+  const queueStatusLabel = !busy
+    ? 'Queue ready'
+    : streamPhase === 'tool' && streamToolName
+      ? `Running ${streamToolName}`
+    : streamPhase === 'responding'
+        ? 'Drafting reply'
+        : streamPhase === 'connecting'
+          ? 'Reconnecting'
+          : streaming
+            ? 'Thinking'
+            : 'Working'
+  const queueStatusDetail = !busy
+    ? 'Queued messages are ready and will dispatch automatically.'
+    : 'Queued messages will send automatically when the current turn finishes.'
 
   return (
     <div className="shrink-0 px-4 md:px-12 lg:px-16 pb-4 pt-2 fixed bottom-0 left-0 right-0 z-20 bg-bg/95 backdrop-blur-md md:relative md:z-auto md:bg-transparent md:backdrop-blur-none"
       style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
       <div className="relative" ref={extrasRef}>
-        {streaming && (
+        {busy && visibleQueuedMessages.length === 0 && (
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-amber-500/15 bg-amber-500/[0.06] px-3.5 py-2">
             <div className="min-w-0">
               <div className="text-[12px] font-600 text-amber-300">Reply in progress</div>
               <div className="text-[11px] text-amber-200/70">
-                New text sends queue automatically. File uploads wait for the current reply to finish.
+                New messages queue automatically in the backend while the current run is still active.
               </div>
             </div>
             <button
@@ -180,57 +217,91 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
         )}
 
         {visibleQueuedMessages.length > 0 && (
-          <div className="mb-2 overflow-hidden rounded-[16px] border border-amber-500/18 bg-[linear-gradient(180deg,rgba(245,158,11,0.10)_0%,rgba(245,158,11,0.04)_100%)] shadow-[0_10px_40px_rgba(245,158,11,0.08)]">
-            <div className="flex items-start justify-between gap-3 border-b border-amber-500/12 px-3.5 py-3">
+          <div className="mb-2 overflow-hidden rounded-[16px] border border-amber-500/18 bg-[linear-gradient(180deg,rgba(245,158,11,0.08)_0%,rgba(245,158,11,0.03)_100%)] shadow-[0_10px_32px_rgba(245,158,11,0.06)]">
+            <div className="flex items-start justify-between gap-3 border-b border-amber-500/10 px-3.5 py-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="relative flex h-2.5 w-2.5 shrink-0">
-                    <span className="absolute inline-flex h-2.5 w-2.5 rounded-full bg-amber-400/30 animate-ping" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-300" />
+                    {busy && <span className="absolute inline-flex h-2.5 w-2.5 rounded-full bg-amber-400/30 animate-ping" />}
+                    <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${busy ? 'bg-amber-300' : 'bg-white/[0.45]'}`} />
                   </span>
                   <span className="label-mono text-amber-300/80">Message queue</span>
                   <span className="rounded-pill border border-amber-400/15 bg-amber-400/10 px-2 py-0.5 text-[10px] font-600 text-amber-200">
                     {visibleQueuedMessages.length}
                   </span>
+                  <span className={`rounded-pill border px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] ${
+                    busy
+                      ? 'border-amber-300/20 bg-amber-300/10 text-amber-100'
+                      : 'border-white/[0.08] bg-white/[0.05] text-text-3'
+                  }`}>
+                    {queueStatusLabel}
+                  </span>
                 </div>
-                <div className="mt-1 text-[12px] text-amber-100/80">
-                  {nextQueuedMessage
-                    ? `Next up: ${nextQueuedMessage.text}`
-                    : 'Queued messages send automatically when the current reply finishes.'}
+                <div className="mt-2 text-[12px] text-amber-100/80">
+                  {queueStatusDetail}
                 </div>
               </div>
-              {sessionId && visibleQueuedMessages.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => clearQueuedMessagesForSession(sessionId)}
-                  className="shrink-0 rounded-pill border border-amber-400/15 bg-transparent px-3 py-1.5 text-[11px] font-600 text-amber-200/80 transition-all hover:border-amber-300/30 hover:bg-amber-300/[0.08] hover:text-amber-100 cursor-pointer"
-                >
-                  Clear queue
-                </button>
-              )}
+              <div className="flex shrink-0 items-center gap-2">
+                {busy && (
+                  <button
+                    type="button"
+                    onClick={onStop}
+                    aria-label="Stop response"
+                    data-testid="chat-stop"
+                    className="rounded-pill border border-danger/20 bg-danger/[0.06] px-2.5 py-1 text-[10px] font-700 uppercase tracking-[0.12em] text-danger transition-all hover:bg-danger/[0.1] hover:border-danger/30 cursor-pointer"
+                  >
+                    Stop
+                  </button>
+                )}
+                {sessionId && visibleQueuedMessages.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => { void clearQueuedMessagesForSession(sessionId) }}
+                    className="rounded-pill border border-amber-400/15 bg-transparent px-3 py-1.5 text-[11px] font-600 text-amber-200/80 transition-all hover:border-amber-300/30 hover:bg-amber-300/[0.08] hover:text-amber-100 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="max-h-[196px] space-y-2 overflow-y-auto px-2.5 py-2.5">
+            <div className="max-h-[184px] space-y-1.5 overflow-y-auto px-2.5 py-2.5">
               {visibleQueuedMessages.map((item, index) => (
                 <div
-                  key={item.id}
+                  key={item.runId}
                   className={`group flex items-start gap-3 rounded-[12px] border px-3 py-2.5 transition-all ${
                     index === 0
-                      ? 'border-amber-300/20 bg-amber-300/[0.08]'
-                      : 'border-white/[0.05] bg-white/[0.03]'
+                      ? 'border-amber-300/20 bg-amber-300/[0.07]'
+                      : 'border-white/[0.05] bg-white/[0.02]'
                   }`}
                 >
-                  <div className={`flex h-7 min-w-7 items-center justify-center rounded-[9px] px-2 text-[10px] font-700 uppercase tracking-[0.12em] ${
+                  <div className={`mt-0.5 flex h-6 min-w-6 items-center justify-center rounded-[8px] px-2 text-[10px] font-700 ${
                     index === 0
                       ? 'bg-amber-300/15 text-amber-100'
                       : 'bg-white/[0.06] text-text-3'
                   }`}>
-                    {index === 0 ? 'Next' : index + 1}
+                    {index + 1}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[11px] font-600 ${index === 0 ? 'text-amber-100' : 'text-text-2'}`}>
-                        {index === 0 ? 'Auto-sends next' : 'Queued after that'}
-                      </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {index === 0 && (
+                        <span className="rounded-pill border border-amber-300/15 bg-amber-300/10 px-2 py-0.5 text-[10px] font-700 uppercase tracking-[0.12em] text-amber-100">
+                          Next
+                        </span>
+                      )}
+                      {item.replyToId && (
+                        <span className="rounded-pill border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] text-text-3">
+                          Reply
+                        </span>
+                      )}
+                      {item.attachedFiles?.length ? (
+                        <span className="rounded-pill border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] text-text-3">
+                          +{item.attachedFiles.length} files
+                        </span>
+                      ) : item.imagePath || item.imageUrl ? (
+                        <span className="rounded-pill border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] text-text-3">
+                          1 attachment
+                        </span>
+                      ) : null}
                     </div>
                     <p className="mt-1 break-words text-[12px] leading-5 text-text/90 m-0">
                       {item.text}
@@ -238,7 +309,7 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
                   </div>
                   <button
                     type="button"
-                    onClick={() => removeQueuedMessage(item.id)}
+                    onClick={() => { if (sessionId) void removeQueuedMessage(sessionId, item.runId) }}
                     className="shrink-0 rounded-[8px] border border-transparent bg-transparent p-1.5 text-amber-300/60 transition-all hover:border-amber-300/20 hover:bg-amber-300/[0.08] hover:text-amber-100 cursor-pointer"
                     aria-label={`Remove queued message ${index + 1}`}
                     title="Remove from queue"
@@ -304,20 +375,20 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
             </span>
 
             <button
-              onClick={handleSend}
+              onClick={() => { void handleSend() }}
               disabled={!hasContent}
-              aria-label={streaming ? 'Queue message' : 'Send message'}
+              aria-label={shouldQueue ? 'Queue message' : 'Send message'}
               data-testid="chat-send"
               className={`w-9 h-9 rounded-[11px] border-none flex items-center justify-center
                 shrink-0 cursor-pointer transition-all duration-250
                 ${hasContent
-                  ? streaming
+                  ? shouldQueue
                     ? 'bg-amber-500/20 text-amber-400 active:scale-90 border border-amber-500/30'
                     : 'bg-accent-bright text-white active:scale-90 shadow-[0_4px_16px_rgba(99,102,241,0.3)]'
                   : 'bg-white/[0.04] text-text-3 pointer-events-none'}`}
-              title={streaming ? 'Queue message' : 'Send message'}
+              title={shouldQueue ? 'Queue message' : 'Send message'}
             >
-              {streaming && hasContent ? (
+              {shouldQueue && hasContent ? (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
@@ -414,7 +485,15 @@ export function ChatInput({ streaming, onSend, onStop, pluginChatActions = [] }:
                         type="button"
                         onClick={() => {
                           setExtrasOpen(false)
-                          if (action.action === 'message') onSend(action.value)
+                          if (action.action === 'message') {
+                            if (shouldQueue && sessionId) {
+                              void queueMessage(sessionId, { text: action.value }).catch((err: unknown) => {
+                                toast.error(err instanceof Error ? err.message : 'Failed to queue message.')
+                              })
+                            } else {
+                              onSend(action.value)
+                            }
+                          }
                           else if (action.action === 'link') window.open(action.value, '_blank')
                         }}
                         className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] text-emerald-300 hover:bg-emerald-500/[0.08] cursor-pointer transition-colors"

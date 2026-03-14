@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, it } from 'node:test'
 import type { MessageToolEvent } from '@/types'
+import { buildSuccessfulMemoryMutationResponse } from '@/lib/server/chat-execution/memory-mutation-tools'
 import {
   buildToolAvailabilityLines,
   buildExternalWalletExecutionBlock,
@@ -23,7 +24,11 @@ import {
   shouldForceExternalExecutionFollowthrough,
   shouldForceExternalServiceSummary,
 } from '@/lib/server/chat-execution/stream-agent-chat'
-import { hasIncompleteDelegationWait } from '@/lib/server/chat-execution/stream-continuation'
+import {
+  buildContinuationPrompt,
+  hasIncompleteDelegationWait,
+  shouldForceWorkspaceScopeShellFallback,
+} from '@/lib/server/chat-execution/stream-continuation'
 
 const streamAgentChatSource = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'stream-agent-chat.ts'), 'utf-8')
 const streamContinuationSource = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'stream-continuation.ts'), 'utf-8')
@@ -212,6 +217,12 @@ describe('buildToolDisciplineLines', () => {
     assert.ok(streamAgentChatSource.includes('REQUIRED_TOOL_KICKOFF_TIMEOUT_MS'))
     assert.ok(streamAgentChatSource.includes('tool_kickoff_timeout'))
     assert.ok(streamAgentChatSource.includes('did not start the required workspace tool step'))
+  })
+
+  it('preflights explicitly unavailable tools before starting the streamed model run', () => {
+    assert.ok(streamAgentChatSource.includes('resolveRequestedToolPreflightResponse'))
+    assert.ok(streamAgentChatSource.includes("t: 'd'"))
+    assert.ok(streamAgentChatSource.includes('finalResponse: requestedToolPreflightResponse'))
   })
 
   it('wires a bounded execution-kickoff continuation for intent-only live task replies', () => {
@@ -448,6 +459,69 @@ describe('shouldForceRecoverableToolErrorFollowthrough', () => {
   })
 })
 
+describe('shouldForceWorkspaceScopeShellFallback', () => {
+  it('forces a shell followthrough when files hit a workspace-scope boundary and shell is available', () => {
+    assert.equal(
+      shouldForceWorkspaceScopeShellFallback({
+        userMessage: 'Append beta to /tmp/demo/notes.txt and leave /tmp/demo/summary.json intact.',
+        finalResponse: 'The target path is outside the session workspace, so the `files` tool cannot access it.',
+        enabledPlugins: ['files', 'shell'],
+        toolEvents: [
+          {
+            name: 'files',
+            input: '{"action":"read","filePath":"/tmp/demo/notes.txt"}',
+            output: 'Error: target path is outside the session workspace. The files tool can only access paths under the workspace root in this chat. Use a workspace-relative path, or use shell if that external path truly needs machine-level access.',
+          },
+        ],
+      }),
+      true,
+    )
+  })
+
+  it('does not force shell fallback once shell already ran', () => {
+    assert.equal(
+      shouldForceWorkspaceScopeShellFallback({
+        userMessage: 'Append beta to /tmp/demo/notes.txt and leave /tmp/demo/summary.json intact.',
+        finalResponse: 'Used shell to update the file.',
+        enabledPlugins: ['files', 'shell'],
+        toolEvents: [
+          {
+            name: 'files',
+            input: '{"action":"read","filePath":"/tmp/demo/notes.txt"}',
+            output: 'Error: target path is outside the session workspace. The files tool can only access paths under the workspace root in this chat. Use a workspace-relative path, or use shell if that external path truly needs machine-level access.',
+          },
+          {
+            name: 'shell',
+            input: '{"action":"execute","command":"printf ..."}',
+            output: '(no output)',
+          },
+        ],
+      }),
+      false,
+    )
+  })
+
+  it('builds a required-tool continuation prompt that explicitly redirects to shell for external paths', () => {
+    const prompt = buildContinuationPrompt({
+      type: 'required_tool',
+      message: 'Append beta to /tmp/demo/notes.txt and leave /tmp/demo/summary.json intact.',
+      fullText: 'The target path is outside the session workspace, so the `files` tool cannot access it.',
+      toolEvents: [
+        {
+          name: 'files',
+          input: '{"action":"read","filePath":"/tmp/demo/notes.txt"}',
+          output: 'Error: target path is outside the session workspace. The files tool can only access paths under the workspace root in this chat. Use a workspace-relative path, or use shell if that external path truly needs machine-level access.',
+        },
+      ],
+      requiredToolReminderNames: ['shell'],
+      cwd: process.cwd(),
+    })
+
+    assert.match(String(prompt || ''), /Use `shell` now/i)
+    assert.match(String(prompt || ''), /outside the session workspace/i)
+  })
+})
+
 describe('hasIncompleteDelegationWait', () => {
   it('flags incomplete waited swarm output so the runtime can continue instead of summarizing early', () => {
     assert.equal(hasIncompleteDelegationWait([
@@ -551,15 +625,15 @@ describe('shouldTerminateOnSuccessfulMemoryMutation', () => {
 })
 
 describe('resolveSuccessfulTerminalToolBoundary', () => {
-  it('treats successful memory writes as followthrough boundaries without surfacing raw tool text', () => {
-    assert.deepEqual(
-      resolveSuccessfulTerminalToolBoundary({
-        toolName: 'memory_store',
-        toolInput: { title: 'Brendon prefers to be called Jesus', value: 'Call him Jesus from now on.' },
-        toolOutput: 'Stored memory "Brendon prefers to be called Jesus" (id: abc123). No further memory lookup is needed unless the user asked you to verify.',
-      }),
-      { kind: 'memory_write' },
-    )
+  it('treats successful memory writes as terminal boundaries with one clean acknowledgement', () => {
+    const result = resolveSuccessfulTerminalToolBoundary({
+      toolName: 'memory_store',
+      toolInput: { title: 'Launch marker', value: 'My launch marker is ALPHA-7.' },
+      toolOutput: 'Stored memory "Launch marker" (id: abc123). No further memory lookup is needed unless the user asked you to verify.',
+    })
+
+    assert.equal(result?.kind, 'memory_write')
+    assert.equal(result?.responseText, 'Your launch marker is ALPHA-7.')
   })
 
   it('treats durable ask_human waits as terminal boundaries', () => {
@@ -586,6 +660,44 @@ describe('resolveSuccessfulTerminalToolBoundary', () => {
         toolOutput: '{"status":"compacted","remaining":9}',
       }),
       { kind: 'context_compaction' },
+    )
+  })
+})
+
+describe('buildSuccessfulMemoryMutationResponse', () => {
+  it('renders a natural acknowledgement from first-person memory values', () => {
+    assert.equal(
+      buildSuccessfulMemoryMutationResponse({
+        toolName: 'memory_store',
+        toolInput: { value: 'My launch marker is ALPHA-7.' },
+      }),
+      'Your launch marker is ALPHA-7.',
+    )
+  })
+
+  it('falls back to a single generic acknowledgement for fragmentary stored values', () => {
+    assert.equal(
+      buildSuccessfulMemoryMutationResponse({
+        toolName: 'memory_store',
+        toolInput: { title: 'User profile', value: 'Wayde with 4 cats' },
+      }),
+      'I\'ll remember that.',
+    )
+  })
+
+  it('handles nested memory-tool style inputs without surfacing raw storage wording', () => {
+    assert.equal(
+      buildSuccessfulMemoryMutationResponse({
+        toolName: 'memory_store',
+        toolInput: {
+          input: JSON.stringify({
+            title: 'User Wayde regression marker',
+            content: 'Wayde\'s regression marker is LIVE_MEM_DUP_123',
+            category: 'identity/preferences',
+          }),
+        },
+      }),
+      'I\'ll remember that.',
     )
   })
 })
@@ -847,6 +959,39 @@ describe('shouldForceDeliverableFollowthrough', () => {
         ],
       }),
       false,
+    )
+  })
+
+  it('forces followthrough for terse follow-up prompts when file work started but the response is only a preamble', () => {
+    assert.equal(
+      shouldForceDeliverableFollowthrough({
+        userMessage: 'Can you make it more complex and maybe use one of the CLI tools?',
+        finalResponse: "I'll create a more sophisticated multi-page React application with proper project structure. Let me use shell commands to set up a proper build pipeline.",
+        hasToolCalls: true,
+        toolEvents: [
+          { name: 'files', input: '{"action":"write","filePath":"wikipedia-explorer/src/App.jsx"}', output: '{"ok":true}' },
+          { name: 'shell', input: '{"command":"cd wikipedia-explorer && npm install"}', output: 'added 65 packages' },
+        ],
+      }),
+      true,
+    )
+  })
+
+  it('forces followthrough for terse continuation prompts when recent user history shows a deliverable task', () => {
+    assert.equal(
+      shouldForceDeliverableFollowthrough({
+        userMessage: 'Can you continue with the next pass?',
+        finalResponse: "I'll keep going from here.",
+        hasToolCalls: true,
+        toolEvents: [
+          { name: 'browser', input: '{"action":"screenshot"}', output: '{"path":"/tmp/topic.png"}' },
+          { name: 'web', input: '{"action":"fetch","url":"https://example.com/topic"}', output: '<html>topic</html>' },
+        ],
+        history: [
+          { role: 'user', text: 'Research 3 topics, take screenshots, write markdown and PDF files, then build a site for each topic.' },
+        ],
+      }),
+      true,
     )
   })
 

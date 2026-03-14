@@ -454,6 +454,55 @@ describe('session-run-manager', () => {
       assert.ok(state.queueLength >= 1)
     })
 
+    it('exposes queued follow-up metadata in the visible queue snapshot', () => {
+      enqueue({ sessionId: 'sess-queue-meta', message: 'running' })
+      const queued = enqueue({
+        sessionId: 'sess-queue-meta',
+        message: 'queued with metadata',
+        imagePath: '/tmp/cover.png',
+        imageUrl: '/api/uploads/cover.png',
+        attachedFiles: ['/tmp/spec.md', '/tmp/notes.txt'],
+        replyToId: 'msg-11',
+        source: 'chat',
+      })
+
+      const snapshot = mgr.getSessionQueueSnapshot('sess-queue-meta')
+      assert.equal(snapshot.activeRunId != null, true)
+      assert.equal(snapshot.queueLength, 1)
+      assert.deepEqual(snapshot.items[0], {
+        runId: queued.runId,
+        sessionId: 'sess-queue-meta',
+        text: 'queued with metadata',
+        queuedAt: snapshot.items[0]?.queuedAt,
+        position: 1,
+        imagePath: '/tmp/cover.png',
+        imageUrl: '/api/uploads/cover.png',
+        attachedFiles: ['/tmp/spec.md', '/tmp/notes.txt'],
+        replyToId: 'msg-11',
+        source: 'chat',
+      })
+    })
+
+    it('hides internal queued runs from the user-visible queue snapshot', () => {
+      enqueue({ sessionId: 'sess-visible-queue', message: 'running' })
+      enqueue({
+        sessionId: 'sess-visible-queue',
+        message: 'heartbeat hidden',
+        internal: true,
+        source: 'heartbeat',
+      })
+      const visible = enqueue({
+        sessionId: 'sess-visible-queue',
+        message: 'user follow-up',
+        internal: false,
+        source: 'chat',
+      })
+
+      const snapshot = mgr.getSessionQueueSnapshot('sess-visible-queue')
+      assert.equal(snapshot.queueLength, 1)
+      assert.deepEqual(snapshot.items.map((item) => item.runId), [visible.runId])
+    })
+
     it('reports heartbeat vs non-heartbeat queued runs', () => {
       enqueue({ sessionId: 'sess-hb-state', message: 'occupier' })
       enqueue({

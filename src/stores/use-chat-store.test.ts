@@ -48,6 +48,13 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   } as Session
 }
 
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 function sseResponse(events: unknown[]): Response {
   const encoder = new TextEncoder()
   return new Response(new ReadableStream({
@@ -65,27 +72,7 @@ function sseResponse(events: unknown[]): Response {
 
 afterEach(() => {
   global.fetch = originalFetch
-  useChatStore.setState({
-    streaming: originalChatState.streaming,
-    streamingSessionId: originalChatState.streamingSessionId,
-    streamText: originalChatState.streamText,
-    assistantRenderId: originalChatState.assistantRenderId,
-    streamPhase: originalChatState.streamPhase,
-    streamToolName: originalChatState.streamToolName,
-    displayText: originalChatState.displayText,
-    agentStatus: originalChatState.agentStatus,
-    messages: originalChatState.messages,
-    toolEvents: originalChatState.toolEvents,
-    lastUsage: originalChatState.lastUsage,
-    pendingFiles: originalChatState.pendingFiles,
-    replyingTo: originalChatState.replyingTo,
-    thinkingText: originalChatState.thinkingText,
-    thinkingStartTime: originalChatState.thinkingStartTime,
-    queuedMessages: originalChatState.queuedMessages,
-    hasMoreMessages: originalChatState.hasMoreMessages,
-    loadingMore: originalChatState.loadingMore,
-    totalMessages: originalChatState.totalMessages,
-  })
+  useChatStore.setState(originalChatState)
   useAppStore.setState({
     agents: originalAppState.agents,
     sessions: originalAppState.sessions,
@@ -207,7 +194,7 @@ describe('useChatStore control-token hygiene', () => {
     assert.equal(assistantMessage?.clientRenderId, state.assistantRenderId)
   })
 
-  it('atomically swaps a queued chip into the live transcript when dequeuing', () => {
+  it('replaces optimistic queued items with the backend queue snapshot', async () => {
     const session = makeSession()
     useAppStore.setState({
       agents: { 'agent-1': makeAgent() },
@@ -238,28 +225,218 @@ describe('useChatStore control-token hygiene', () => {
       lastUsage: null,
       hasMoreMessages: false,
       loadingMore: false,
-      totalMessages: 2,
+      totalMessages: 0,
     })
 
-    global.fetch = (async (input: RequestInfo | URL) => {
+    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url === '/api/chats/session-1/chat') {
-        return new Promise<Response>(() => {})
+      if (url === '/api/chats/session-1/queue' && (init?.method || 'GET') === 'POST') {
+        return jsonResponse({
+          queued: { runId: 'run-queued-1', position: 1 },
+          snapshot: {
+            sessionId: 'session-1',
+            activeRunId: 'run-active',
+            queueLength: 1,
+            items: [
+              { runId: 'run-queued-1', sessionId: 'session-1', text: 'Queued hello', queuedAt: 5, position: 1 },
+            ],
+          },
+        }, 202)
       }
       throw new Error(`Unexpected fetch: ${url}`)
     }) as unknown as typeof fetch
 
-    void useChatStore.getState().sendMessage('Queued hello', {
-      sessionId: 'session-1',
-      fromQueue: true,
-      queuedMessageId: 'queued-1',
-    })
+    await useChatStore.getState().queueMessage('session-1', { text: 'Queued hello' })
 
     const state = useChatStore.getState()
-    assert.equal(state.streaming, true)
+    assert.equal(state.queuedMessages.length, 1)
+    assert.equal(state.queuedMessages[0]?.runId, 'run-queued-1')
+    assert.equal(state.queuedMessages[0]?.optimistic, undefined)
+    assert.equal(useAppStore.getState().sessions['session-1']?.queuedCount, 1)
+    assert.equal(useAppStore.getState().sessions['session-1']?.currentRunId, 'run-active')
+  })
+
+  it('sends queued attachment and reply metadata to the backend and hydrates it back into state', async () => {
+    const session = makeSession()
+    let requestBody: Record<string, unknown> | null = null
+    useAppStore.setState({
+      agents: { 'agent-1': makeAgent() },
+      sessions: { [session.id]: session },
+      currentAgentId: 'agent-1',
+    })
+    useChatStore.setState({
+      messages: [],
+      pendingFiles: [],
+      replyingTo: null,
+      toolEvents: [],
+      streamText: '',
+      displayText: '',
+      streaming: false,
+      streamingSessionId: null,
+      assistantRenderId: null,
+      streamPhase: 'thinking',
+      streamToolName: '',
+      thinkingText: '',
+      thinkingStartTime: 0,
+      queuedMessages: [],
+      agentStatus: null,
+      lastUsage: null,
+      hasMoreMessages: false,
+      loadingMore: false,
+      totalMessages: 0,
+    })
+
+    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/chats/session-1/queue' && (init?.method || 'GET') === 'POST') {
+        requestBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        return jsonResponse({
+          queued: { runId: 'run-queued-meta', position: 1 },
+          snapshot: {
+            sessionId: 'session-1',
+            activeRunId: 'run-active',
+            queueLength: 1,
+            items: [
+              {
+                runId: 'run-queued-meta',
+                sessionId: 'session-1',
+                text: 'Queued with files',
+                queuedAt: 12,
+                position: 1,
+                imagePath: '/tmp/cover.png',
+                imageUrl: '/api/uploads/cover.png',
+                attachedFiles: ['/tmp/spec.md', '/tmp/notes.txt'],
+                replyToId: 'msg-7',
+              },
+            ],
+          },
+        }, 202)
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch
+
+    await useChatStore.getState().queueMessage('session-1', {
+      text: 'Queued with files',
+      imagePath: '/tmp/cover.png',
+      imageUrl: '/api/uploads/cover.png',
+      attachedFiles: ['/tmp/spec.md', '/tmp/notes.txt'],
+      replyToId: 'msg-7',
+    })
+
+    assert.deepEqual(requestBody, {
+      message: 'Queued with files',
+      imagePath: '/tmp/cover.png',
+      imageUrl: '/api/uploads/cover.png',
+      attachedFiles: ['/tmp/spec.md', '/tmp/notes.txt'],
+      replyToId: 'msg-7',
+    })
+
+    const queued = useChatStore.getState().queuedMessages
+    assert.equal(queued.length, 1)
+    assert.equal(queued[0]?.imagePath, '/tmp/cover.png')
+    assert.equal(queued[0]?.imageUrl, '/api/uploads/cover.png')
+    assert.deepEqual(queued[0]?.attachedFiles, ['/tmp/spec.md', '/tmp/notes.txt'])
+    assert.equal(queued[0]?.replyToId, 'msg-7')
+  })
+
+  it('hydrates queued items from the backend queue snapshot', async () => {
+    const session = makeSession()
+    useAppStore.setState({
+      agents: { 'agent-1': makeAgent() },
+      sessions: { [session.id]: session },
+      currentAgentId: 'agent-1',
+    })
+    useChatStore.setState({
+      messages: [],
+      pendingFiles: [],
+      replyingTo: null,
+      toolEvents: [],
+      streamText: '',
+      displayText: '',
+      streaming: false,
+      streamingSessionId: null,
+      assistantRenderId: null,
+      streamPhase: 'thinking',
+      streamToolName: '',
+      thinkingText: '',
+      thinkingStartTime: 0,
+      queuedMessages: [],
+      agentStatus: null,
+      lastUsage: null,
+      hasMoreMessages: false,
+      loadingMore: false,
+      totalMessages: 0,
+    })
+
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/chats/session-1/queue') {
+        return jsonResponse({
+          sessionId: 'session-1',
+          activeRunId: 'run-active',
+          queueLength: 2,
+          items: [
+            { runId: 'run-queued-2', sessionId: 'session-1', text: 'Resume queue', queuedAt: 10, position: 1 },
+            { runId: 'run-queued-3', sessionId: 'session-1', text: 'Then refine it', queuedAt: 11, position: 2 },
+          ],
+        })
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch
+
+    await useChatStore.getState().loadQueuedMessages('session-1')
+
+    const state = useChatStore.getState()
+    assert.deepEqual(state.queuedMessages.map((item) => item.runId), ['run-queued-2', 'run-queued-3'])
+    assert.equal(useAppStore.getState().sessions['session-1']?.queuedCount, 2)
+    assert.equal(useAppStore.getState().sessions['session-1']?.currentRunId, 'run-active')
+  })
+
+  it('removes optimistic queued items again when the backend enqueue fails', async () => {
+    const session = makeSession()
+    useAppStore.setState({
+      agents: { 'agent-1': makeAgent() },
+      sessions: { [session.id]: session },
+      currentAgentId: 'agent-1',
+    })
+    useChatStore.setState({
+      messages: [],
+      pendingFiles: [],
+      replyingTo: null,
+      toolEvents: [],
+      streamText: '',
+      displayText: '',
+      streaming: false,
+      streamingSessionId: null,
+      assistantRenderId: null,
+      streamPhase: 'thinking',
+      streamToolName: '',
+      thinkingText: '',
+      thinkingStartTime: 0,
+      queuedMessages: [],
+      agentStatus: null,
+      lastUsage: null,
+      hasMoreMessages: false,
+      loadingMore: false,
+      totalMessages: 0,
+    })
+
+    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/chats/session-1/queue' && (init?.method || 'GET') === 'POST') {
+        return jsonResponse({ error: 'Queue write failed' }, 500)
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch
+
+    await assert.rejects(
+      useChatStore.getState().queueMessage('session-1', { text: 'Will fail' }),
+      /Queue write failed/,
+    )
+
+    const state = useChatStore.getState()
     assert.equal(state.queuedMessages.length, 0)
-    assert.equal(state.messages.at(-1)?.role, 'user')
-    assert.equal(state.messages.at(-1)?.text, 'Queued hello')
+    assert.equal(useAppStore.getState().sessions['session-1']?.queuedCount ?? 0, 0)
   })
 
   it('preserves the assistant render id across a reconciled message refresh', () => {

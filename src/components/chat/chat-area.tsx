@@ -57,6 +57,7 @@ export function ChatArea() {
   const streaming = useChatStore((s) => s.streaming)
   const streamingSessionId = useChatStore((s) => s.streamingSessionId)
   const sendMessage = useChatStore((s) => s.sendMessage)
+  const loadQueuedMessages = useChatStore((s) => s.loadQueuedMessages)
   const stopStreaming = useChatStore((s) => s.stopStreaming)
   const devServerStatus = useChatStore((s) => s.devServer)
   const setDevServer = useChatStore((s) => s.setDevServer)
@@ -75,6 +76,7 @@ export function ChatArea() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const currentAgent = session?.agentId ? agents[session.agentId] ?? null : null
+  const queuedCount = session?.queuedCount ?? 0
   const promptSuggestions = useMemo(
     () => (currentAgent ? AGENT_PROMPT_SUGGESTIONS : DIRECT_PROMPT_SUGGESTIONS),
     [currentAgent],
@@ -163,6 +165,11 @@ export function ChatArea() {
       setMessagesLoading(false)
     })
 
+    void loadQueuedMessages(requestedSessionId).catch((err) => {
+      if (cancelled || selectActiveSessionId(useAppStore.getState()) !== requestedSessionId) return
+      console.error('Failed to load queued messages:', err)
+    })
+
     const sessionAtLoad = useAppStore.getState().sessions[requestedSessionId]
     if (sessionAtLoad?.active) {
       useChatStore.setState({ streaming: true, streamingSessionId: requestedSessionId, streamText: '' })
@@ -171,7 +178,7 @@ export function ChatArea() {
     return () => {
       cancelled = true
     }
-  }, [refreshSession, sessionId, setDevServer, setMessages])
+  }, [loadQueuedMessages, refreshSession, sessionId, setDevServer, setMessages])
 
   useEffect(() => {
     if (!sessionId || messagesLoading) return
@@ -264,12 +271,26 @@ export function ChatArea() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
+  const refreshQueue = useCallback(async () => {
+    if (!sessionId) return
+    try {
+      await loadQueuedMessages(sessionId)
+    } catch (err) {
+      console.error('Failed to refresh queue:', err)
+    }
+  }, [loadQueuedMessages, sessionId])
+
   // Subscribe to WS messages for this session — always subscribe when session exists,
   // only enable fallback polling when actively needed
   useWs(
     sessionId ? `messages:${sessionId}` : '',
     refreshMessages,
     shouldPollMessages ? 2000 : undefined,
+  )
+  useWs(
+    sessionId ? 'runs' : '',
+    refreshQueue,
+    sessionId && (isServerActive || queuedCount > 0) ? 2000 : undefined,
   )
 
   // Keep the local typing indicator aligned with the server's active state
@@ -372,9 +393,10 @@ export function ChatArea() {
     }
   }, [setPendingImage])
 
+  const streamingForThisSession = streaming && (!!session && (!streamingSessionId || streamingSessionId === session.id))
+
   if (!session) return null
 
-  const streamingForThisSession = streaming && (!streamingSessionId || streamingSessionId === session.id)
   const isEmpty = !messages.length && !streamingForThisSession && !messagesLoading
 
   return (
@@ -527,6 +549,7 @@ export function ChatArea() {
 
       <ChatInput
         streaming={streamingForThisSession}
+        busy={streamingForThisSession || session.active === true}
         onSend={sendMessage}
         onStop={stopStreaming}
         pluginChatActions={pluginChatActions}

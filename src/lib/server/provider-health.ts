@@ -149,6 +149,17 @@ export function getProviderHealthSnapshot(): Record<string, ProviderHealthState 
 
 const PING_TIMEOUT_MS = 8_000
 
+function isOllamaCloudEndpoint(endpoint: string | undefined): boolean {
+  const normalized = String(endpoint || '').trim()
+  if (!normalized) return false
+  return /^https?:\/\/(?:www\.|api\.)?ollama\.com(?:\/|$)/i.test(normalized)
+}
+
+function toOpenAiCompatibleBaseUrl(endpoint: string, fallback: string): string {
+  const normalized = (endpoint || fallback).replace(/\/+$/, '')
+  return normalized.endsWith('/v1') ? normalized : `${normalized}/v1`
+}
+
 async function parseErrorMessage(res: Response, fallback: string): Promise<string> {
   const text = await res.text().catch(() => '')
   if (!text) return fallback
@@ -206,9 +217,18 @@ export async function pingAnthropic(apiKey: string): Promise<{ ok: boolean; mess
   return { ok: true, message: 'Connected to Anthropic.' }
 }
 
-export async function pingOllama(endpoint: string): Promise<{ ok: boolean; message: string }> {
+export async function pingOllama(endpoint: string, apiKey?: string): Promise<{ ok: boolean; message: string }> {
   const normalizedEndpoint = (endpoint || 'http://localhost:11434').replace(/\/+$/, '')
-  const res = await fetch(`${normalizedEndpoint}/api/tags`, {
+  const useCloud = isOllamaCloudEndpoint(normalizedEndpoint)
+  if (useCloud && !apiKey) {
+    return { ok: false, message: 'Ollama Cloud requires an API key.' }
+  }
+  const targetUrl = useCloud
+    ? `${toOpenAiCompatibleBaseUrl(normalizedEndpoint, 'https://ollama.com/v1')}/models`
+    : `${normalizedEndpoint}/api/tags`
+  const headers = useCloud && apiKey ? { authorization: `Bearer ${apiKey}` } : undefined
+  const res = await fetch(targetUrl, {
+    headers,
     signal: AbortSignal.timeout(PING_TIMEOUT_MS),
     cache: 'no-store',
   })
@@ -216,7 +236,7 @@ export async function pingOllama(endpoint: string): Promise<{ ok: boolean; messa
     const detail = await parseErrorMessage(res, `Ollama returned ${res.status}.`)
     return { ok: false, message: detail }
   }
-  return { ok: true, message: 'Connected to Ollama.' }
+  return { ok: true, message: useCloud ? 'Connected to Ollama Cloud.' : 'Connected to Ollama.' }
 }
 
 export async function pingOpenClaw(
@@ -250,7 +270,7 @@ export async function pingProvider(
       return await pingAnthropic(apiKey)
     }
     if (provider === 'ollama') {
-      return await pingOllama(endpoint || 'http://localhost:11434')
+      return await pingOllama(endpoint || 'http://localhost:11434', apiKey)
     }
     if (provider === 'openclaw') {
       return await pingOpenClaw(apiKey, endpoint || 'http://localhost:18789')

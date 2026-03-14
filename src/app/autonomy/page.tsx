@@ -19,6 +19,7 @@ type EstopActionResponse = {
   state: EstopResponse
 }
 type IncidentFilter = 'all' | 'high' | 'runtime_failure'
+const INCIDENT_DETAILS_PREVIEW_CHARS = 320
 
 function formatTimestamp(value?: number | null): string {
   if (!value) return 'Not recorded'
@@ -78,6 +79,28 @@ function severityTone(severity: SupervisorIncident['severity']): {
     badge: 'bg-sky-500/12 text-sky-300 border border-sky-500/20',
     rail: 'bg-sky-400/80',
   }
+}
+
+function looksLikeHtmlIncidentPayload(value?: string | null): boolean {
+  if (!value) return false
+  const normalized = value.toLowerCase()
+  let matches = 0
+  for (const marker of ['<!doctype html', '<html', '<head', '<body', '<script', '/_next/static/', '__next_error__']) {
+    if (!normalized.includes(marker)) continue
+    matches += 1
+    if (matches >= 2) return true
+  }
+  return false
+}
+
+function previewIncidentDetails(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (looksLikeHtmlIncidentPayload(trimmed)) {
+    return 'Stored HTML error payload captured. This usually means the runtime hit a Next.js or server-side exception rather than a normal autonomy note.'
+  }
+  if (trimmed.length <= INCIDENT_DETAILS_PREVIEW_CHARS) return trimmed
+  return `${trimmed.slice(0, INCIDENT_DETAILS_PREVIEW_CHARS - 1).trimEnd()}…`
 }
 
 export default function AutonomyPage() {
@@ -692,9 +715,37 @@ export default function AutonomyPage() {
                         )}
 
                         {incident.details && (
-                          <div className="mt-3 text-[12px] leading-[1.7] text-text-3/72 whitespace-pre-wrap">
-                            {incident.details}
-                          </div>
+                          (() => {
+                            const isHtmlPayload = looksLikeHtmlIncidentPayload(incident.details)
+                            const detailsPreview = previewIncidentDetails(incident.details)
+                            const needsExpansion = isHtmlPayload || incident.details.length > INCIDENT_DETAILS_PREVIEW_CHARS
+                            if (!needsExpansion) {
+                              return (
+                                <div className="mt-3 text-[12px] leading-[1.7] text-text-3/72 whitespace-pre-wrap break-words">
+                                  {incident.details}
+                                </div>
+                              )
+                            }
+                            return (
+                              <div className={`mt-3 rounded-[12px] border px-3 py-2.5 ${
+                                isHtmlPayload
+                                  ? 'border-red-500/16 bg-red-500/[0.05]'
+                                  : 'border-white/[0.08] bg-white/[0.02]'
+                              }`}>
+                                <div className="text-[12px] leading-[1.7] text-text-2/82 whitespace-pre-wrap break-words">
+                                  {detailsPreview}
+                                </div>
+                                <details className="mt-2 rounded-[10px] border border-white/[0.06] bg-black/10">
+                                  <summary className="cursor-pointer list-none px-3 py-2 text-[10px] font-700 uppercase tracking-[0.08em] text-text-3/62 [&::-webkit-details-marker]:hidden">
+                                    {isHtmlPayload ? 'Show raw payload' : 'Show full details'}
+                                  </summary>
+                                  <div className="max-h-64 overflow-auto border-t border-white/[0.06] px-3 py-3 text-[12px] leading-[1.7] text-text-3/72 whitespace-pre-wrap break-all">
+                                    {incident.details}
+                                  </div>
+                                </details>
+                              </div>
+                            )
+                          })()
                         )}
 
                         {incident.repairPrompt && (

@@ -18,8 +18,16 @@ import { resolveConcreteToolPolicyBlock, type PluginPolicyDecision } from '@/lib
 import { resolveActiveProjectContext } from '@/lib/server/project-context'
 import { resolveEffectiveSessionMemoryScopeMode } from '@/lib/server/memory/session-memory-scope'
 import { genId } from '@/lib/id'
+import { log } from '@/lib/server/logger'
 import { rankDelegatesByHealth } from '@/lib/server/provider-health'
 import { routeTaskIntent, type CapabilityRoutingDecision } from '@/lib/server/capability-router'
+import { canonicalizePluginId, pluginIdMatches } from '@/lib/server/tool-aliases'
+import {
+  buildDirectMemoryRecallResponse,
+  classifyDirectMemoryIntent,
+  type DirectMemoryIntent,
+  type DirectMemoryIntentClassifierInput,
+} from '@/lib/server/chat-execution/direct-memory-intent'
 import {
   type DelegateTool,
   type SessionWithTools,
@@ -64,6 +72,25 @@ export interface ToolRoutingResult {
   errorMessage: string | undefined
   /** Missed requested tools (for warning) */
   missedRequestedTools: string[]
+}
+
+export interface ToolRoutingHooks {
+  classifyDirectMemoryIntent?: (input: DirectMemoryIntentClassifierInput) => Promise<DirectMemoryIntent | null>
+  invokeTool?: (
+    ctx: ToolRoutingContext,
+    toolName: string,
+    args: Record<string, unknown>,
+    failurePrefix: string,
+    calledNames: Set<string>,
+  ) => Promise<InvokeSessionToolResult>
+}
+
+interface InvokeSessionToolResult {
+  invoked: boolean
+  responseOverride: string | null
+  toolOutputText?: string | null
+  blockedReason?: string | null
+  unavailableReason?: string | null
 }
 
 function extractDelegateResponse(outputText: string): string | null {
@@ -142,6 +169,85 @@ function extractAutosaveContent(targetPath: string, response: string): string | 
   return null
 }
 
+function describeToolCapability(toolName: string): string {
+  const normalized = toolName.trim().toLowerCase()
+  if (normalized.startsWith('web') || normalized === 'http_request' || normalized === 'crawl') return 'web access'
+  if (normalized === 'browser' || normalized === 'openclaw_browser') return 'browser automation'
+  if (normalized === 'files' || normalized.endsWith('_file') || normalized === 'list_files') return 'workspace file access'
+  if (normalized === 'shell' || normalized === 'execute_command' || normalized === 'process' || normalized === 'process_tool') return 'shell execution'
+  if (normalized.startsWith('delegate')) return 'delegation'
+  if (normalized === 'connector_message_tool' || normalized.includes('connector')) return 'connector messaging'
+  if (normalized.startsWith('manage_') || normalized === 'manage_platform') return 'management tools'
+  if (normalized.startsWith('memory') || normalized.startsWith('context_')) return 'memory tools'
+  return `the ${toolName} tool`
+}
+
+function describePolicyBlockReason(blockedReason: string): string {
+  const normalized = blockedReason.trim().toLowerCase()
+  if (normalized.includes('safety')) return 'it is blocked by the current safety policy'
+  if (normalized.includes('not enabled for this chat')) return 'that capability is not enabled in this chat'
+  if (normalized.includes('disabled in app settings')) return 'that capability is disabled in app settings'
+  if (normalized.includes('policy-blocked') || normalized.includes('explicit policy rule') || normalized.includes('blocked by strict policy') || normalized.includes('blocked by balanced policy')) {
+    return 'that capability is blocked by the current runtime policy'
+  }
+  return 'it is not available in this chat'
+}
+
+export function buildToolPolicyBlockResponse(toolName: string, blockedReason: string): string {
+  return `I couldn't use ${describeToolCapability(toolName)} because ${describePolicyBlockReason(blockedReason)}.`
+}
+
+function describeToolUnavailableReason(toolName: string, unavailableReason: string): string {
+  const normalized = unavailableReason.trim().toLowerCase()
+  if (normalized.includes('delegat')) return 'delegation is not enabled for this agent right now'
+  if (normalized.includes('not available in this session')) return `${describeToolCapability(toolName)} is not available in this chat`
+  return unavailableReason.trim()
+}
+
+export function buildToolUnavailableResponse(toolName: string, unavailableReason: string): string {
+  return `I couldn't use ${describeToolCapability(toolName)} because ${describeToolUnavailableReason(toolName, unavailableReason)}.`
+}
+
+function defaultUnavailableReason(toolName: string): string {
+  const canonical = canonicalizePluginId(toolName) || toolName
+  if (canonical === 'delegate') return 'delegation is not enabled for this agent right now'
+  return `${describeToolCapability(toolName)} is not available in this chat`
+}
+
+function isToolErrorText(outputText: string | null | undefined): boolean {
+  return /^error[:\s]/i.test(String(outputText || '').trim())
+}
+
+export function resolveRequestedToolPreflightResponse(params: {
+  message: string
+  enabledPlugins: string[]
+  toolPolicy: PluginPolicyDecision
+  appSettings: Record<string, unknown>
+  internal: boolean
+  source: string
+}): string | null {
+  if (params.internal || params.source !== 'chat') return null
+  const requestedToolNames = requestedToolNamesFromMessage(params.message)
+  if (requestedToolNames.length === 0) return null
+
+  const blockedResponses: string[] = []
+  const unavailableResponses: string[] = []
+  for (const toolName of requestedToolNames) {
+    const blockedReason = resolveConcreteToolPolicyBlock(toolName, params.toolPolicy, params.appSettings)
+    if (blockedReason) {
+      blockedResponses.push(buildToolPolicyBlockResponse(toolName, blockedReason))
+      continue
+    }
+    if (!pluginIdMatches(params.enabledPlugins, toolName)) {
+      unavailableResponses.push(buildToolUnavailableResponse(toolName, defaultUnavailableReason(toolName)))
+    }
+  }
+
+  if (blockedResponses.length > 0) return blockedResponses.join(' ')
+  if (unavailableResponses.length > 0) return unavailableResponses.join(' ')
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // Core: Invoke a single session tool
 // ---------------------------------------------------------------------------
@@ -152,11 +258,16 @@ async function invokeSessionTool(
   args: Record<string, unknown>,
   failurePrefix: string,
   calledNames: Set<string>,
-): Promise<{ invoked: boolean; responseOverride: string | null }> {
+): Promise<InvokeSessionToolResult> {
   const blockedReason = resolveConcreteToolPolicyBlock(toolName, ctx.toolPolicy, ctx.appSettings)
   if (blockedReason) {
-    ctx.emit({ t: 'err', text: `Capability policy blocked tool invocation "${toolName}": ${blockedReason}` })
-    return { invoked: false, responseOverride: null }
+    log.info('chat-tool-routing', 'Capability policy blocked tool invocation', {
+      sessionId: ctx.sessionId,
+      source: ctx.source,
+      toolName,
+      blockedReason,
+    })
+    return { invoked: false, responseOverride: null, blockedReason }
   }
   if (
     (ctx.appSettings as Record<string, unknown>).safetyRequireApprovalForOutbound === true
@@ -195,7 +306,15 @@ async function invokeSessionTool(
       ? { toolName, args }
       : translateRequestedToolInvocation(toolName, args, ctx.message, availableToolNames)
     const selectedTool = directTool || tools.find((t) => t?.name === translated.toolName) as StructuredToolInterface | undefined
-    if (!selectedTool?.invoke) return { invoked: false, responseOverride: null }
+    if (!selectedTool?.invoke) {
+      const resolvedName = translated.toolName !== toolName ? translated.toolName : null
+      const unavailableReason = resolvedName === 'delegate'
+        ? 'delegation is not enabled for this agent right now'
+        : resolvedName
+          ? `requested tool resolved to "${resolvedName}", but that tool is not available in this session`
+          : `tool "${toolName}" is not available in this session`
+      return { invoked: false, responseOverride: null, unavailableReason }
+    }
 
     const toolCallId = genId()
     ctx.emit({ t: 'tool_call', toolName, toolInput: JSON.stringify(translated.args), toolCallId })
@@ -211,9 +330,9 @@ async function invokeSessionTool(
     calledNames.add(toolName)
 
     if (delegateResponse) {
-      return { invoked: true, responseOverride: delegateResponse }
+      return { invoked: true, responseOverride: delegateResponse, toolOutputText: outputText }
     }
-    return { invoked: true, responseOverride: null }
+    return { invoked: true, responseOverride: null, toolOutputText: outputText }
   } catch (forceErr: unknown) {
     ctx.emit({ t: 'err', text: `${failurePrefix}: ${errorMessage(forceErr)}` })
     return { invoked: false, responseOverride: null }
@@ -237,8 +356,13 @@ export async function runPostLlmToolRouting(
   ctx: ToolRoutingContext,
   currentResponse: string,
   currentError: string | undefined,
+  hooks?: ToolRoutingHooks,
 ): Promise<ToolRoutingResult> {
+  const invokeTool = hooks?.invokeTool || invokeSessionTool
+  const classifyMemoryIntent = hooks?.classifyDirectMemoryIntent || classifyDirectMemoryIntent
   const calledNames = new Set((ctx.toolEvents || []).map((t) => t.name))
+  const policyBlockedTools = new Map<string, string>()
+  const unavailableRequestedTools = new Map<string, string>()
   let fullResponse = currentResponse
   let errorMessage = currentError
 
@@ -253,12 +377,14 @@ export async function runPostLlmToolRouting(
   if (requestedToolNames.includes('connector_message_tool') && !calledNames.has('connector_message_tool')) {
     const forcedArgs = extractConnectorMessageArgs(ctx.message)
     if (forcedArgs) {
-      const result = await invokeSessionTool(
+      const result = await invokeTool(
         ctx, 'connector_message_tool',
         forcedArgs as unknown as Record<string, unknown>,
         'Forced connector_message_tool invocation failed',
         calledNames,
       )
+      if (result.blockedReason) policyBlockedTools.set('connector_message_tool', result.blockedReason)
+      if (result.unavailableReason) unavailableRequestedTools.set('connector_message_tool', result.unavailableReason)
       if (result.responseOverride) fullResponse = result.responseOverride
     }
   }
@@ -269,8 +395,74 @@ export async function runPostLlmToolRouting(
     if (calledNames.has(toolName)) continue
     const task = extractDelegationTask(ctx.message, toolName)
     if (!task) continue
-    const result = await invokeSessionTool(ctx, toolName, { task }, `Forced ${toolName} invocation failed`, calledNames)
+    const result = await invokeTool(ctx, toolName, { task }, `Forced ${toolName} invocation failed`, calledNames)
+    if (result.blockedReason) policyBlockedTools.set(toolName, result.blockedReason)
+    if (result.unavailableReason) unavailableRequestedTools.set(toolName, result.unavailableReason)
     if (result.responseOverride) fullResponse = result.responseOverride
+  }
+
+  const hasMemoryWriteCall = calledNames.has('memory_store') || calledNames.has('memory_update') || calledNames.has('memory_tool')
+  const hasMemoryRecallCall = calledNames.has('memory_search') || calledNames.has('memory_get') || calledNames.has('memory_tool')
+  const shouldClassifyMemoryIntent = !ctx.internal
+    && ctx.source === 'chat'
+    && hasToolEnabled(ctx.session, 'memory')
+    && !hasMemoryWriteCall
+    && !hasMemoryRecallCall
+  const directMemoryIntent = shouldClassifyMemoryIntent
+    ? await classifyMemoryIntent({
+      sessionId: ctx.sessionId,
+      agentId: ctx.session.agentId || null,
+      message: ctx.message,
+      currentResponse: fullResponse,
+      currentError: errorMessage,
+      toolEvents: ctx.toolEvents,
+    }).catch(() => null)
+    : null
+
+  if (directMemoryIntent?.action === 'store' || directMemoryIntent?.action === 'update') {
+    const toolName = directMemoryIntent.action === 'store' ? 'memory_store' : 'memory_update'
+    const args: Record<string, unknown> = { value: directMemoryIntent.value }
+    if (directMemoryIntent.title) args.title = directMemoryIntent.title
+    const result = await invokeTool(
+      ctx,
+      toolName,
+      args,
+      `Forced ${toolName} invocation failed`,
+      calledNames,
+    )
+    if (result.blockedReason) policyBlockedTools.set(toolName, result.blockedReason)
+    if (result.unavailableReason) unavailableRequestedTools.set(toolName, result.unavailableReason)
+    if (result.invoked) {
+      if (isToolErrorText(result.toolOutputText)) {
+        fullResponse = String(result.toolOutputText || '').trim()
+      } else {
+        fullResponse = directMemoryIntent.acknowledgement
+        errorMessage = undefined
+      }
+    }
+  }
+
+  if (directMemoryIntent?.action === 'recall') {
+    const result = await invokeTool(
+      ctx,
+      'memory_search',
+      { query: directMemoryIntent.query, scope: 'auto' },
+      'Forced memory_search invocation failed',
+      calledNames,
+    )
+    if (result.blockedReason) policyBlockedTools.set('memory_search', result.blockedReason)
+    if (result.unavailableReason) unavailableRequestedTools.set('memory_search', result.unavailableReason)
+    if (result.invoked && result.toolOutputText) {
+      if (isToolErrorText(result.toolOutputText)) {
+        fullResponse = String(result.toolOutputText || '').trim()
+      } else {
+        const recallResponse = buildDirectMemoryRecallResponse(directMemoryIntent, result.toolOutputText)
+        if (recallResponse) {
+          fullResponse = recallResponse
+          errorMessage = undefined
+        }
+      }
+    }
   }
 
   // --- Auto-delegation for coding intent ---
@@ -291,7 +483,7 @@ export async function runPostLlmToolRouting(
     const delegationOrder = rankDelegatesByHealth(baseDelegationOrder as DelegateTool[])
       .filter((tool) => enabledDelegates.includes(tool))
     for (const delegateTool of delegationOrder) {
-      const result = await invokeSessionTool(ctx, delegateTool, { task: ctx.effectiveMessage.trim() }, 'Auto-delegation failed', calledNames)
+      const result = await invokeTool(ctx, delegateTool, { task: ctx.effectiveMessage.trim() }, 'Auto-delegation failed', calledNames)
       if (result.invoked) {
         if (result.responseOverride) fullResponse = result.responseOverride
         break
@@ -313,7 +505,7 @@ export async function runPostLlmToolRouting(
     const fallbackOrder = rankDelegatesByHealth(preferred as DelegateTool[])
       .filter((tool) => enabledDelegates.includes(tool))
     for (const delegateTool of fallbackOrder) {
-      const result = await invokeSessionTool(
+      const result = await invokeTool(
         ctx, delegateTool,
         { task: ctx.effectiveMessage.trim() },
         `Provider failover via ${delegateTool} failed`,
@@ -334,7 +526,7 @@ export async function runPostLlmToolRouting(
     && requestedToolNames.length === 0
 
   if (canAutoRoute && routingDecision?.intent === 'browsing' && routingDecision.primaryUrl && hasToolEnabled(ctx.session, 'browser')) {
-    const result = await invokeSessionTool(
+    const result = await invokeTool(
       ctx, 'browser',
       { action: 'read_page', url: routingDecision.primaryUrl },
       'Auto browser routing failed',
@@ -346,16 +538,16 @@ export async function runPostLlmToolRouting(
   if (canAutoRoute && routingDecision?.intent === 'research') {
     const routeUrl = routingDecision.primaryUrl || findFirstUrl(ctx.message)
     if (routeUrl && hasToolEnabled(ctx.session, 'web_fetch')) {
-      const result = await invokeSessionTool(ctx, 'web_fetch', { url: routeUrl }, 'Auto web_fetch routing failed', calledNames)
+      const result = await invokeTool(ctx, 'web_fetch', { url: routeUrl }, 'Auto web_fetch routing failed', calledNames)
       if (result.responseOverride) fullResponse = result.responseOverride
     } else if (hasToolEnabled(ctx.session, 'web_search')) {
-      const result = await invokeSessionTool(ctx, 'web_search', { query: ctx.effectiveMessage.trim(), maxResults: 5 }, 'Auto web_search routing failed', calledNames)
+      const result = await invokeTool(ctx, 'web_search', { query: ctx.effectiveMessage.trim(), maxResults: 5 }, 'Auto web_search routing failed', calledNames)
       if (result.responseOverride) fullResponse = result.responseOverride
     }
   }
 
   if (canAutoRoute && calledNames.size === 0 && hasToolEnabled(ctx.session, 'memory') && isMemoryListIntent(ctx.message)) {
-    const result = await invokeSessionTool(
+    const result = await invokeTool(
       ctx, 'memory_tool',
       { action: 'list', key: '', scope: 'auto' },
       'Auto memory listing failed',
@@ -374,7 +566,7 @@ export async function runPostLlmToolRouting(
   if (canAutoSaveArtifact) {
     const artifactContent = extractAutosaveContent(explicitArtifactTarget, fullResponse)
     if (artifactContent) {
-      const result = await invokeSessionTool(
+      const result = await invokeTool(
         ctx,
         'files',
         {
@@ -394,7 +586,23 @@ export async function runPostLlmToolRouting(
   }
 
   // --- Missed requested tools ---
-  const missed = requestedToolNames.filter((name) => !calledNames.has(name))
+  const blockedRequestedTools = requestedToolNames.filter((name) => policyBlockedTools.has(name))
+  const missed = requestedToolNames.filter((name) => !calledNames.has(name) && !policyBlockedTools.has(name) && !unavailableRequestedTools.has(name))
+
+  if (blockedRequestedTools.length > 0) {
+    fullResponse = blockedRequestedTools
+      .map((name) => buildToolPolicyBlockResponse(name, policyBlockedTools.get(name) || 'blocked by policy'))
+      .join(' ')
+    errorMessage = undefined
+  }
+
+  const unavailableRequested = requestedToolNames.filter((name) => unavailableRequestedTools.has(name))
+  if (unavailableRequested.length > 0) {
+    fullResponse = unavailableRequested
+      .map((name) => buildToolUnavailableResponse(name, unavailableRequestedTools.get(name) || 'that capability is unavailable'))
+      .join(' ')
+    errorMessage = undefined
+  }
 
   // When tool output is the only content and LLM produced nothing, provide a brief notice
   if (calledNames.size > 0 && !fullResponse.trim()) {

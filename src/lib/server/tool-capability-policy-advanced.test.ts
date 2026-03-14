@@ -351,6 +351,12 @@ describe('resolveConcreteToolPolicyBlock', () => {
     assert.equal(resolveConcreteToolPolicyBlock('execute_command', d, {}), null)
   })
 
+  it('treats web_search as allowed when the broader web family is enabled', () => {
+    const d = resolveSessionToolPolicy(['web'], {})
+    assert.equal(resolveConcreteToolPolicyBlock('web_search', d, {}), null)
+    assert.equal(resolveConcreteToolPolicyBlock('web_fetch', d, {}), null)
+  })
+
   it('returns "invalid tool name" for empty string', () => {
     const d = resolveSessionToolPolicy([], {})
     assert.equal(resolveConcreteToolPolicyBlock('', d, {}), 'invalid tool name')

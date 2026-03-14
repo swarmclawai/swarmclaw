@@ -37,6 +37,7 @@ import {
   getToolsForCapability,
   TOOL_CAPABILITY,
 } from '@/lib/server/tool-planning'
+import { resolveSessionToolPolicy } from '@/lib/server/tool-capability-policy'
 import { ToolLoopTracker } from '@/lib/server/tool-loop-detection'
 import { truncateToolResultText, calculateMaxToolResultChars } from '@/lib/server/chat-execution/tool-result-guard'
 import type { LoopDetectionResult } from '@/lib/server/tool-loop-detection'
@@ -51,6 +52,7 @@ import {
   looksLikeBoundedExternalExecutionTask,
   looksLikeOpenEndedDeliverableTask,
   shouldForceRecoverableToolErrorFollowthrough,
+  shouldForceWorkspaceScopeShellFallback,
   shouldForceExternalExecutionKickoffFollowthrough,
   shouldForceExternalExecutionFollowthrough,
   shouldForceDeliverableFollowthrough,
@@ -76,6 +78,7 @@ import {
   shouldForceExternalServiceSummary,
   updateStreamedToolEvents,
 } from '@/lib/server/chat-execution/chat-streaming-utils'
+import { resolveRequestedToolPreflightResponse } from '@/lib/server/chat-execution/chat-turn-tool-routing'
 import {
   hasOnlySuccessfulMemoryMutationToolEvents,
   resolveToolAction,
@@ -620,6 +623,22 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
 
   // Build agent prompt
   const settings = loadSettings()
+  const requestedToolPreflightResponse = resolveRequestedToolPreflightResponse({
+    message,
+    enabledPlugins: sessionPlugins,
+    toolPolicy: resolveSessionToolPolicy(sessionPlugins, settings),
+    appSettings: settings,
+    internal: false,
+    source: 'chat',
+  })
+  if (requestedToolPreflightResponse) {
+    write(`data: ${JSON.stringify({ t: 'd', text: requestedToolPreflightResponse })}\n\n`)
+    return {
+      fullText: requestedToolPreflightResponse,
+      finalResponse: requestedToolPreflightResponse,
+      toolEvents: [],
+    }
+  }
   const runtime = loadRuntimeSettings()
   const heartbeatPrompt = (typeof settings.heartbeatPrompt === 'string' && settings.heartbeatPrompt.trim())
     ? settings.heartbeatPrompt.trim()
@@ -1262,7 +1281,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
     && looksLikeOpenEndedDeliverableTask(message)
   const usedToolNames = new Set<string>()
   let loopDetectionTriggered: LoopDetectionResult | null = null
-  let terminalToolBoundary: 'durable_wait' | 'context_compaction' | null = null
+  let terminalToolBoundary: 'memory_write' | 'durable_wait' | 'context_compaction' | null = null
   let terminalToolResponse = ''
 
   try {
@@ -1547,20 +1566,19 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
             })
             if (toolBoundary) {
               if (toolBoundary.kind === 'memory_write') {
-                if (iterationText.trim() || fullText.trim()) {
-                  write(`data: ${JSON.stringify({ t: 'reset', text: '' })}\n\n`)
-                }
-                shouldContinue = 'memory_write_followthrough'
-                memoryWriteFollowthroughCount = Math.max(memoryWriteFollowthroughCount, 1)
-                fullText = ''
-                iterationText = ''
-                lastSegment = ''
-                lastSettledSegment = ''
+                const naturalResponse = (toolBoundary.responseText || '').trim() || 'I\'ll remember that.'
+                fullText = naturalResponse
+                iterationText = naturalResponse
+                lastSegment = naturalResponse
+                lastSettledSegment = naturalResponse
                 needsTextSeparator = false
-                logExecution(session.id, 'decision', 'Successful memory write completed; requesting natural acknowledgement followthrough.', {
+                terminalToolBoundary = toolBoundary.kind
+                terminalToolResponse = naturalResponse
+                logExecution(session.id, 'decision', 'Successful memory write completed; finalizing with a single acknowledgement.', {
                   agentId: session.agentId,
-                  detail: { toolName, action: resolveToolAction(event.data?.input) || null, boundary: toolBoundary.kind },
+                  detail: { toolName, action: resolveToolAction(event.data?.input) || null, boundary: toolBoundary.kind, responseText: naturalResponse },
                 })
+                write(`data: ${JSON.stringify({ t: 'r', text: naturalResponse })}\n\n`)
                 write(`data: ${JSON.stringify({
                   t: 'status',
                   text: JSON.stringify({ terminalToolResult: toolBoundary.kind }),
@@ -1923,6 +1941,7 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
           hasToolCalls,
           toolEvents: streamedToolEvents,
           cwd: session.cwd,
+          history,
         })) {
         shouldContinue = 'deliverable_followthrough'
         deliverableFollowthroughCount++
@@ -1931,6 +1950,36 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
           text: JSON.stringify({
             deliverableFollowthrough: deliverableFollowthroughCount,
             maxFollowthroughs: MAX_DELIVERABLE_FOLLOWTHROUGHS,
+          }),
+        })}\n\n`)
+      }
+
+      if (
+        !shouldContinue
+        && requiredToolContinueCount < MAX_REQUIRED_TOOL_CONTINUES
+        && shouldForceWorkspaceScopeShellFallback({
+          userMessage: message,
+          finalResponse: resolveFinalStreamResponseText({
+            fullText,
+            lastSegment,
+            lastSettledSegment,
+            hasToolCalls,
+            toolEvents: streamedToolEvents,
+          }),
+          toolEvents: streamedToolEvents,
+          enabledPlugins: sessionPlugins,
+        })
+      ) {
+        shouldContinue = 'required_tool'
+        requiredToolReminderNames = ['shell']
+        requiredToolContinueCount++
+        write(`data: ${JSON.stringify({
+          t: 'status',
+          text: JSON.stringify({
+            requiredToolsPending: requiredToolReminderNames,
+            reminderCount: requiredToolContinueCount,
+            maxReminders: MAX_REQUIRED_TOOL_CONTINUES,
+            reason: 'workspace_scope_shell_fallback',
           }),
         })}\n\n`)
       }

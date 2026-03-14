@@ -76,6 +76,50 @@ function cleanText(value: unknown, max = 320): string | null {
   return compact.slice(0, max)
 }
 
+function looksLikeHtmlErrorPayload(value: string): boolean {
+  const normalized = value.toLowerCase()
+  let matches = 0
+  for (const marker of ['<!doctype html', '<html', '<head', '<body', '<script', '/_next/static/', '__next_error__']) {
+    if (!normalized.includes(marker)) continue
+    matches += 1
+    if (matches >= 2) return true
+  }
+  return false
+}
+
+function stripMarkup(value: string): string {
+  return value.replace(/<[^>]+>/g, ' ')
+}
+
+function extractHtmlErrorSignal(value: string): string | null {
+  const compact = stripMarkup(value).replace(/\s+/g, ' ').trim()
+  if (!compact) return null
+  for (const token of ['ReferenceError', 'TypeError', 'SyntaxError', 'RangeError', 'EvalError', 'URIError', 'Error:']) {
+    const start = compact.indexOf(token)
+    if (start < 0) continue
+    return trimText(compact.slice(start, start + 180), 180)
+  }
+  const messageToken = '"message":"'
+  const messageStart = compact.indexOf(messageToken)
+  if (messageStart >= 0) {
+    const body = compact.slice(messageStart + messageToken.length)
+    const messageEnd = body.indexOf('"')
+    if (messageEnd > 0) return trimText(body.slice(0, messageEnd), 180)
+  }
+  return null
+}
+
+function sanitizeIncidentText(value: unknown, max = 320): string | null {
+  const compact = cleanText(value, Math.max(max * 2, 600))
+  if (!compact) return null
+  if (!looksLikeHtmlErrorPayload(compact)) return compact.slice(0, max)
+  const signal = extractHtmlErrorSignal(compact)
+  const summary = signal
+    ? `Runtime returned an HTML error payload (${signal}).`
+    : 'Runtime returned an HTML error payload (possible Next.js or server error page).'
+  return summary.slice(0, max)
+}
+
 function stripMainLoopMeta(text: string): string {
   return (text || '')
     .split('\n')
@@ -126,8 +170,8 @@ function buildIncident(
 ): Omit<SupervisorIncident, 'id' | 'createdAt'> {
   return {
     ...input,
-    summary: cleanText(input.summary, 320) || 'Autonomy supervisor incident',
-    details: cleanText(input.details, 500),
+    summary: sanitizeIncidentText(input.summary, 320) || 'Autonomy supervisor incident',
+    details: sanitizeIncidentText(input.details, 500),
     toolName: cleanText(input.toolName, 120),
   }
 }

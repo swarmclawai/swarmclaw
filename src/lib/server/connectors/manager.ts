@@ -6,7 +6,7 @@ import {
   upsertConnectorHealthEvent,
 } from '../storage'
 import type { ConnectorHealthEventType } from '@/types'
-import { dedup, errorMessage, sleep } from '@/lib/shared-utils'
+import { dedup, errorMessage, hmrSingleton, sleep } from '@/lib/shared-utils'
 import { WORKSPACE_DIR } from '../data-dir'
 import path from 'path'
 import { streamAgentChat } from '@/lib/server/chat-execution/stream-agent-chat'
@@ -116,6 +116,13 @@ import { prepareConnectorVoiceNotePayload } from './voice-note'
 import { reconcileConnectorDeliveryText } from '@/lib/server/chat-execution/chat-execution-connector-delivery'
 import { pruneIncompleteToolEvents, updateStreamedToolEvents } from '@/lib/server/chat-execution/chat-streaming-utils'
 import { guardUntrustedText, getUntrustedContentGuardMode } from '@/lib/server/untrusted-content'
+import {
+  acquireExternalSessionExecutionHold,
+  enqueueSessionRun,
+  getSessionExecutionState,
+  getSessionQueueSnapshot,
+} from '@/lib/server/runtime/session-run-manager'
+import type { ExecuteChatTurnResult } from '@/lib/server/chat-execution/chat-execution'
 
 export {
   advanceConnectorReconnectState,
@@ -162,6 +169,8 @@ const {
   scheduledFollowupByDedupe,
   routeMessageHandlerRef,
 } = connectorRuntimeState
+const queuedAckWindowBySession = hmrSingleton<Map<string, string>>('__swarmclaw_connector_queue_ack__', () => new Map())
+const activeDirectConnectorSessionCounts = hmrSingleton<Map<string, number>>('__swarmclaw_connector_active_sessions__', () => new Map())
 
 // Outbound deduplication: tracks recent sends to prevent triple-message bug
 const { recentOutbound } = connectorRuntimeState
@@ -836,6 +845,173 @@ function connectorEmptyReplyFallback(streamErrorText: string): string {
     return 'Sorry, I hit a temporary issue while responding. Please try again.'
   }
   return 'Sorry, I could not produce a reply just now. Please try again.'
+}
+
+function collectCurrentChannelConnectorDelivery(params: {
+  connector: Connector
+  msg: InboundMessage
+  session: ConnectorSession
+  toolEvents: MessageToolEvent[]
+}): CurrentChannelConnectorDelivery | null {
+  let delivery: CurrentChannelConnectorDelivery | null = null
+  for (const event of params.toolEvents) {
+    if (event.name !== 'connector_message_tool') continue
+    const parsed = parseConnectorToolResult(event.output || '')
+    if (!parsed?.status || !parsed.to) continue
+    const sentLikeStatus = parsed.status === 'sent' || parsed.status === 'voice_sent'
+    if (!sentLikeStatus) continue
+    const isCurrentChannel = isConnectorToolDeliveryMatch({
+      platform: params.connector.platform,
+      inboundChannelId: params.msg.channelId,
+      outboundTo: parsed.to,
+      allKnownPeerIds: params.session.connectorContext?.allKnownPeerIds,
+    })
+    if (!isCurrentChannel) continue
+    if (!delivery) {
+      delivery = {
+        mode: parsed.status === 'voice_sent' ? 'voice_note' : 'text',
+        messageId: parsed.messageId,
+        transcripts: [],
+      }
+    } else {
+      if (parsed.status === 'voice_sent') delivery.mode = 'voice_note'
+      if (parsed.messageId) delivery.messageId = parsed.messageId
+    }
+    const transcript = visibleConnectorToolText(parseConnectorToolInput(event.input || ''))
+    if (transcript) delivery.transcripts.push(transcript)
+  }
+  return delivery
+}
+
+async function deliverQueuedConnectorRunResult(params: {
+  connector: Connector
+  msg: InboundMessage
+  sessionId: string
+  result: ExecuteChatTurnResult
+  preferredReplyMedium?: 'text' | 'voice_note' | null
+}): Promise<void> {
+  const sessions = loadSessions()
+  const session = sessions[params.sessionId] as ConnectorSession | undefined
+  if (!session) return
+
+  let fullText = (params.result.text || '').trim()
+  if (!fullText && params.result.error) fullText = `[Error] ${params.result.error}`
+  const currentChannelDelivery = collectCurrentChannelConnectorDelivery({
+    connector: params.connector,
+    msg: params.msg,
+    session,
+    toolEvents: params.result.toolEvents || [],
+  })
+  fullText = reconcileConnectorDeliveryText(fullText, params.result.toolEvents || []).trim()
+
+  if (!fullText && !currentChannelDelivery) {
+    await maybeSendStatusReaction(params.connector, params.msg, 'silent')
+    return
+  }
+
+  if (currentChannelDelivery) {
+    persistConnectorDeliveryMarker({
+      session,
+      connector: params.connector,
+      msg: params.msg,
+      delivery: currentChannelDelivery,
+    })
+    await maybeSendStatusReaction(params.connector, params.msg, 'sent')
+    return
+  }
+
+  const extracted = extractEmbeddedMedia(fullText)
+  const filesToSend = selectOutboundMediaFiles(extracted.files, params.msg.text || '')
+  if (filesToSend.length > 0) {
+    const replyOptions = getConnectorReplySendOptions({
+      connectorId: params.connector.id,
+      inbound: params.msg,
+    })
+    for (const file of filesToSend) {
+      await sendConnectorMessage({
+        connectorId: params.connector.id,
+        channelId: params.msg.channelId,
+        text: '',
+        sessionId: session.id,
+        mediaPath: file.path,
+        caption: file.alt || undefined,
+        replyToMessageId: replyOptions.replyToMessageId,
+        threadId: replyOptions.threadId,
+      })
+    }
+  }
+
+  let outboundText = (filesToSend.length > 0 ? extracted.cleanText : fullText).trim()
+  if (params.preferredReplyMedium === 'voice_note' && outboundText) {
+    if (!connectorCanSendBinaryMedia(params.connector)) {
+      outboundText = `I couldn't send a voice note on this channel because the connector doesn't support audio attachments.`
+    } else {
+      const replyOptions = getConnectorReplySendOptions({
+        connectorId: params.connector.id,
+        inbound: params.msg,
+      })
+      const voicePayload = await prepareConnectorVoiceNotePayload({
+        voiceText: outboundText,
+        sessionAgentId: session.agentId || params.connector.agentId || '',
+        contextAgentId: session.agentId || params.connector.agentId || '',
+      })
+      const sent = await sendConnectorMessage({
+        connectorId: params.connector.id,
+        channelId: params.msg.channelId,
+        text: '',
+        sessionId: session.id,
+        mediaPath: voicePayload.mediaPath,
+        mimeType: voicePayload.mimeType,
+        fileName: voicePayload.fileName,
+        replyToMessageId: replyOptions.replyToMessageId,
+        threadId: replyOptions.threadId,
+        ptt: true,
+      })
+      persistConnectorDeliveryMarker({
+        session,
+        connector: params.connector,
+        msg: params.msg,
+        delivery: {
+          mode: 'voice_note',
+          messageId: sent.messageId,
+          transcripts: [outboundText],
+        },
+      })
+      await maybeSendStatusReaction(params.connector, params.msg, 'sent')
+      return
+    }
+  }
+
+  if (outboundText) {
+    const replyOptions = getConnectorReplySendOptions({
+      connectorId: params.connector.id,
+      inbound: params.msg,
+    })
+    await sendConnectorMessage({
+      connectorId: params.connector.id,
+      channelId: params.msg.channelId,
+      text: outboundText,
+      sessionId: session.id,
+      replyToMessageId: replyOptions.replyToMessageId,
+      threadId: replyOptions.threadId,
+    })
+    await maybeSendStatusReaction(params.connector, params.msg, 'sent')
+    return
+  }
+
+  if (filesToSend.length > 0) {
+    await maybeSendStatusReaction(params.connector, params.msg, 'sent')
+    return
+  }
+
+  await maybeSendStatusReaction(params.connector, params.msg, 'silent')
+}
+
+function queueConnectorAckToken(sessionId: string): string {
+  const execution = getSessionExecutionState(sessionId)
+  if (execution.runningRunId) return execution.runningRunId
+  const snapshot = getSessionQueueSnapshot(sessionId)
+  return snapshot.items[0]?.runId || 'busy'
 }
 
 function summarizeForCompaction(messages: Array<{ role?: string; text?: string }>): string {
@@ -1574,6 +1750,9 @@ async function routeMessage(connector: Connector, msg: InboundMessage): Promise<
 
   await maybeSendStatusReaction(connector, msg, 'processing')
   const stopTyping = startConnectorTypingLoop(connector, msg)
+  const releaseExternalSessionHold = acquireExternalSessionExecutionHold(session.id)
+  const directRunCount = activeDirectConnectorSessionCounts.get(session.id) || 0
+  activeDirectConnectorSessionCounts.set(session.id, directRunCount + 1)
   try {
     logExecution(session.id, 'trigger', `${msg.platform} message from ${msg.senderName}`, {
       agentId: agent.id,
@@ -1693,6 +1872,69 @@ If media sending fails, report the exact error and retry with a corrected path/t
   const firstImagePath = firstImage?.localPath || undefined
   const inboundAttachmentPaths = buildInboundAttachmentPaths(msg)
   const modelInputText = inboundText
+  const directConnectorRunActive = directRunCount > 0
+  const executionState = getSessionExecutionState(session.id)
+  if (directConnectorRunActive || executionState.hasRunning || executionState.hasQueued) {
+    updateSessionConnectorContext(session, connector, msg, sessionKey)
+    persistSessionRecord(session)
+
+    const queued = enqueueSessionRun({
+      sessionId: session.id,
+      message: modelInputText,
+      imagePath: firstImagePath,
+      imageUrl: firstImageUrl,
+      attachedFiles: inboundAttachmentPaths.length ? inboundAttachmentPaths : undefined,
+      source: 'chat',
+      mode: 'followup',
+    })
+
+    void queued.promise.then(async (result) => {
+      try {
+        await deliverQueuedConnectorRunResult({
+          connector,
+          msg,
+          sessionId: session.id,
+          result,
+          preferredReplyMedium: senderPreferencePolicy.preferredReplyMedium || null,
+        })
+      } catch (err: unknown) {
+        const errText = errorMessage(err)
+        console.error('[connector] queued follow-up delivery failed:', errText)
+        try {
+          await sendConnectorMessage({
+            connectorId: connector.id,
+            channelId: msg.channelId,
+            text: `[Error] ${errText}`,
+            sessionId: session.id,
+          })
+        } catch {
+          // Best effort.
+        }
+      }
+    }).catch(async (err: unknown) => {
+      const errText = errorMessage(err)
+      console.error('[connector] queued follow-up run failed:', errText)
+      try {
+        await sendConnectorMessage({
+          connectorId: connector.id,
+          channelId: msg.channelId,
+          text: `[Error] ${errText}`,
+          sessionId: session.id,
+        })
+      } catch {
+        // Best effort.
+      }
+    })
+
+    const ackToken = queueConnectorAckToken(session.id)
+    const previousAckToken = queuedAckWindowBySession.get(session.id)
+    queuedAckWindowBySession.set(session.id, ackToken)
+    if (previousAckToken !== ackToken) {
+      return 'Queued. I will reply here as soon as the current task finishes.'
+    }
+    return NO_MESSAGE_SENTINEL
+  }
+  queuedAckWindowBySession.delete(session.id)
   // Store the raw user text for display (source.senderName handles attribution).
   // The formatted text with [SenderName] prefix is only used for LLM history context.
   pushSessionMessage(session, 'user', rawText || inboundText, {
@@ -2026,6 +2268,10 @@ If media sending fails, report the exact error and retry with a corrected path/t
   if (filesToSend.length > 0) return outboundText || '(no response)'
   return fullText || '(no response)'
   } finally {
+    const remaining = (activeDirectConnectorSessionCounts.get(session.id) || 1) - 1
+    if (remaining > 0) activeDirectConnectorSessionCounts.set(session.id, remaining)
+    else activeDirectConnectorSessionCounts.delete(session.id)
+    releaseExternalSessionHold()
     stopTyping?.()
   }
 }

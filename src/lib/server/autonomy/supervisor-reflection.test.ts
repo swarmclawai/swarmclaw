@@ -355,4 +355,40 @@ describe('supervisor-reflection', () => {
     assert.deepEqual(output.incidentKinds, [])
     assert.deepEqual(output.repeatedSummaries, [])
   })
+
+  it('sanitizes captured HTML error payloads in incident details', () => {
+    const assessment = assessAutonomyRun({
+      runId: 'run-html',
+      sessionId: 'session-html',
+      source: 'chat',
+      status: 'failed',
+      error: 'Connection error.',
+      resultText: '<!DOCTYPE html><html><head><script src="/_next/static/chunks/main.js"></script></head><body>ReferenceError: Singleton is not defined</body></html>',
+      toolEvents: [],
+      settings: {
+        supervisorEnabled: true,
+        supervisorRuntimeScope: 'both',
+        reflectionEnabled: false,
+        reflectionAutoWriteMemory: false,
+      },
+      session: {
+        id: 'session-html',
+        name: 'HTML Error Session',
+        cwd: process.cwd(),
+        user: 'tester',
+        provider: 'openai',
+        model: 'gpt-test',
+        claudeSessionId: null,
+        messages: [],
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+      },
+    })
+
+    const incident = assessment.incidents.find((entry) => entry.kind === 'run_error')
+    assert.ok(incident)
+    assert.match(String(incident?.details || ''), /html error payload/i)
+    assert.doesNotMatch(String(incident?.details || ''), /<!doctype html>/i)
+    assert.match(String(incident?.details || ''), /singleton is not defined/i)
+  })
 })

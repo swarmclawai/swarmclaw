@@ -5,11 +5,13 @@ import {
   collectToolEvent,
   deriveTerminalRunError,
   dedupeConsecutiveToolEvents,
+  filterRuntimeCapabilityIds,
   hasDirectLocalCodingTools,
   isLikelyToolErrorOutput,
   normalizeAssistantArtifactLinks,
   reconcileConnectorDeliveryText,
   requestedToolNamesFromMessage,
+  shouldAppendMissedRequestedToolNotice,
   translateRequestedToolInvocation,
 } from '@/lib/server/chat-execution/chat-execution'
 import {
@@ -115,6 +117,22 @@ describe('collectToolEvent advanced', () => {
     assert.equal(bag[0].output, 'out1')
     assert.equal(bag[1].output, 'out2')
     assert.equal(bag[2].output, 'out3')
+  })
+})
+
+describe('filterRuntimeCapabilityIds', () => {
+  it('strips delegation capabilities when delegation is disabled', () => {
+    assert.deepEqual(
+      filterRuntimeCapabilityIds(['shell', 'delegate', 'spawn_subagent', 'web'], { delegationEnabled: false }),
+      ['shell', 'web'],
+    )
+  })
+
+  it('preserves delegation capabilities when delegation is enabled', () => {
+    assert.deepEqual(
+      filterRuntimeCapabilityIds(['shell', 'delegate', 'spawn_subagent', 'web'], { delegationEnabled: true }),
+      ['shell', 'delegate', 'spawn_subagent', 'web'],
+    )
   })
 })
 
@@ -242,6 +260,42 @@ describe('deriveTerminalRunError advanced', () => {
       internal: false,
     })
     assert.equal(err, 'Custom error')
+  })
+})
+
+describe('shouldAppendMissedRequestedToolNotice', () => {
+  it('suppresses the notice when the turn already has a terminal error and no tools ran', () => {
+    assert.equal(
+      shouldAppendMissedRequestedToolNotice({
+        missedRequestedTools: ['memory_store'],
+        fullResponse: '',
+        errorMessage: 'Connection error.',
+        calledToolCount: 0,
+      }),
+      false,
+    )
+  })
+
+  it('suppresses the notice when nothing else happened in the turn', () => {
+    assert.equal(
+      shouldAppendMissedRequestedToolNotice({
+        missedRequestedTools: ['memory_update'],
+        fullResponse: '',
+        calledToolCount: 0,
+      }),
+      false,
+    )
+  })
+
+  it('keeps the notice when the model replied but skipped the requested tool', () => {
+    assert.equal(
+      shouldAppendMissedRequestedToolNotice({
+        missedRequestedTools: ['memory_store'],
+        fullResponse: 'I updated that for you.',
+        calledToolCount: 0,
+      }),
+      true,
+    )
   })
 })
 
@@ -397,27 +451,27 @@ describe('isLikelyToolErrorOutput advanced', () => {
 // ---------------------------------------------------------------------------
 describe('hasDirectLocalCodingTools', () => {
   it('returns true when shell is in plugins', () => {
-    assert.equal(hasDirectLocalCodingTools({ plugins: ['shell', 'memory'] }), true)
+    assert.equal(hasDirectLocalCodingTools({ tools: ['shell', 'memory'] }), true)
   })
 
   it('returns false when only delegate and web', () => {
-    assert.equal(hasDirectLocalCodingTools({ plugins: ['delegate', 'web'] }), false)
+    assert.equal(hasDirectLocalCodingTools({ tools: ['delegate', 'web'] }), false)
   })
 
   it('returns true when edit_file is in plugins', () => {
-    assert.equal(hasDirectLocalCodingTools({ plugins: ['edit_file'] }), true)
+    assert.equal(hasDirectLocalCodingTools({ tools: ['edit_file'] }), true)
   })
 
   it('returns false for empty plugins', () => {
-    assert.equal(hasDirectLocalCodingTools({ plugins: [] }), false)
+    assert.equal(hasDirectLocalCodingTools({ tools: [] }), false)
   })
 
   it('returns true for files plugin', () => {
-    assert.equal(hasDirectLocalCodingTools({ plugins: ['files'] }), true)
+    assert.equal(hasDirectLocalCodingTools({ tools: ['files'] }), true)
   })
 
   it('returns true for sandbox plugin', () => {
-    assert.equal(hasDirectLocalCodingTools({ plugins: ['sandbox'] }), true)
+    assert.equal(hasDirectLocalCodingTools({ tools: ['sandbox'] }), true)
   })
 })
 
@@ -730,6 +784,14 @@ describe('getExplicitRequiredToolNames', () => {
   it('requires a file-writing tool when the user explicitly asks for a saved artifact path', () => {
     const result = getExplicitRequiredToolNames(
       'Build a dashboard and save it as dashboard.html in the current directory.',
+      ['files', 'shell'],
+    )
+    assert.deepEqual(result, ['files'])
+  })
+
+  it('requires a workspace tool when the user explicitly asks to mutate a concrete file path', () => {
+    const result = getExplicitRequiredToolNames(
+      'Now append beta on a new line to /tmp/demo/notes.txt and leave /tmp/demo/summary.json intact.',
       ['files', 'shell'],
     )
     assert.deepEqual(result, ['files'])

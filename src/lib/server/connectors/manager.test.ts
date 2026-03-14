@@ -3115,4 +3115,199 @@ describe('sanitizeConnectorOutboundContent', () => {
     assert.equal(output.directSession.messages.at(-1).text, 'Sorry, I could not produce a reply just now. Please try again.')
     assert.equal(output.mainSession.messages.length, 0)
   })
+
+  it('queues connector follow-up messages behind an active run and delivers them in order', () => {
+    const output = runWithTempDataDir(`
+      const storageMod = await import('./src/lib/server/storage')
+      const managerMod = await import('./src/lib/server/connectors/manager')
+      const pluginsMod = await import('./src/lib/server/plugins')
+      const providersMod = await import('./src/lib/providers/index')
+      const runtimeMod = await import('./src/lib/server/runtime/session-run-manager')
+      const storage = storageMod.default || storageMod
+      const manager = managerMod.default || managerMod
+      const plugins = pluginsMod.default || pluginsMod
+      const providers = providersMod.default || providersMod
+      const runtime = runtimeMod.default || runtimeMod
+
+      const now = Date.now()
+      const sent = []
+      let callCount = 0
+      let releaseFirst = () => {}
+      let resolveFirstStarted = () => {}
+      const firstStarted = new Promise((resolve) => { resolveFirstStarted = resolve })
+      const blockFirstReply = new Promise((resolve) => { releaseFirst = resolve })
+
+      plugins.getPluginManager().registerBuiltin('test-queued-followup-plugin', {
+        name: 'Test Queued Followup Plugin',
+        connectors: [{
+          id: 'test-queued-followup',
+          name: 'Test Queued Followup',
+          description: 'Captures queued connector deliveries',
+          startListener: async () => async () => {},
+          sendMessage: async (channelId, text, options) => {
+            sent.push({ channelId, text, options })
+            return { messageId: 'out-' + sent.length }
+          },
+        }],
+      })
+      providers.PROVIDERS['test-provider'] = {
+        id: 'test-provider',
+        name: 'Test Provider',
+        models: ['test-model'],
+        requiresApiKey: false,
+        requiresEndpoint: false,
+        handler: {
+          streamChat: async (opts) => {
+            callCount += 1
+            const currentCall = callCount
+            if (currentCall === 1) {
+              resolveFirstStarted()
+              await blockFirstReply
+            }
+            opts.write('data: ' + JSON.stringify({ t: 'r', text: 'Reply ' + currentCall }) + '\\n')
+            return ''
+          },
+        },
+      }
+
+      storage.saveSettings({})
+      storage.saveAgents({
+        agent_1: {
+          id: 'agent_1',
+          name: 'Molly',
+          provider: 'test-provider',
+          model: 'test-model',
+          plugins: [],
+          threadSessionId: 'agent_thread',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveConnectors({
+        conn_1: {
+          id: 'conn_1',
+          name: 'Queued Followup Connector',
+          platform: 'test-queued-followup',
+          agentId: 'agent_1',
+          credentialId: null,
+          config: { inboundDebounceMs: 0, botToken: 'test-token' },
+          isEnabled: true,
+          status: 'stopped',
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      storage.saveSessions({
+        agent_thread: {
+          id: 'agent_thread',
+          name: 'Molly',
+          cwd: process.env.WORKSPACE_DIR,
+          user: 'default',
+          provider: 'test-provider',
+          model: 'test-model',
+          claudeSessionId: null,
+          messages: [],
+          createdAt: now,
+          lastActiveAt: now,
+          sessionType: 'human',
+          agentId: 'agent_1',
+          plugins: [],
+        },
+      })
+
+      try {
+        await manager.startConnector('conn_1')
+        const connector = storage.loadConnectors().conn_1
+        const firstPromise = manager.routeConnectorMessageForTest(connector, {
+          platform: 'whatsapp',
+          channelId: '15550001111@s.whatsapp.net',
+          senderId: '15550001111@s.whatsapp.net',
+          senderName: 'Alice',
+          text: 'First task',
+          messageId: 'in-1',
+          isGroup: false,
+        })
+
+        await firstStarted
+        const sessionsAfterStart = storage.loadSessions()
+        const directSessionAfterStart = Object.values(sessionsAfterStart).find((entry) => String(entry.name || '').startsWith('connector:'))
+        directSessionAfterStart.provider = 'test-provider'
+        directSessionAfterStart.model = 'test-model'
+        sessionsAfterStart[directSessionAfterStart.id] = directSessionAfterStart
+        storage.saveSessions(sessionsAfterStart)
+
+        const second = await manager.routeConnectorMessageForTest(connector, {
+          platform: 'whatsapp',
+          channelId: '15550001111@s.whatsapp.net',
+          senderId: '15550001111@s.whatsapp.net',
+          senderName: 'Alice',
+          text: 'Second task',
+          messageId: 'in-2',
+          isGroup: false,
+        })
+        const third = await manager.routeConnectorMessageForTest(connector, {
+          platform: 'whatsapp',
+          channelId: '15550001111@s.whatsapp.net',
+          senderId: '15550001111@s.whatsapp.net',
+          senderName: 'Alice',
+          text: 'Third task',
+          messageId: 'in-3',
+          isGroup: false,
+        })
+
+        const sessionsDuring = storage.loadSessions()
+        const directSession = Object.values(sessionsDuring).find((entry) => String(entry.name || '').startsWith('connector:'))
+        const snapshotBefore = runtime.getSessionQueueSnapshot(directSession.id)
+
+        releaseFirst()
+        const first = await firstPromise
+
+        for (let attempt = 0; attempt < 50 && sent.length < 2; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        }
+
+        const sessionsAfter = storage.loadSessions()
+        const finalDirect = sessionsAfter[directSession.id]
+        const snapshotAfter = runtime.getSessionQueueSnapshot(directSession.id)
+        console.log(JSON.stringify({
+          first,
+          second,
+          third,
+          sent,
+          callCount,
+          snapshotBefore,
+          snapshotAfter,
+          transcript: finalDirect.messages.map((message) => ({
+            role: message.role,
+            text: message.text,
+            kind: message.kind || null,
+          })),
+        }))
+      } finally {
+        releaseFirst()
+        await manager.stopConnector('conn_1')
+      }
+    `)
+
+    assert.equal(output.first, 'Reply 1')
+    assert.equal(output.second, 'Queued. I will reply here as soon as the current task finishes.')
+    assert.equal(output.third, 'NO_MESSAGE')
+    assert.equal(output.snapshotBefore.queueLength, 2)
+    assert.deepEqual(output.snapshotBefore.items.map((item: { text: string }) => item.text), ['[Alice] Second task', '[Alice] Third task'])
+    assert.equal(output.snapshotAfter.queueLength, 0)
+    assert.equal(output.sent.length >= 1, true)
+    assert.deepEqual(output.transcript.map((message: { role: string }) => message.role), ['user', 'assistant', 'user', 'assistant', 'user', 'assistant'])
+    assert.deepEqual(
+      output.transcript
+        .filter((message: { role: string }) => message.role === 'user')
+        .map((message: { text: string }) => message.text),
+      ['First task', '[Alice] Second task', '[Alice] Third task'],
+    )
+    assert.equal(
+      output.transcript
+        .filter((message: { role: string }) => message.role === 'assistant')
+        .every((message: { text: string }) => typeof message.text === 'string' && message.text.trim().length > 0),
+      true,
+    )
+  })
 })

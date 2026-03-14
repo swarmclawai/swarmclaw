@@ -32,6 +32,7 @@ import { buildRuntimeSkillPromptBlocks, resolveRuntimeSkills } from '@/lib/serve
 import { resolveImagePath } from '@/lib/server/resolve-image'
 import {
   applyContextClearBoundary,
+  filterRuntimeCapabilityIds,
   shouldApplySessionFreshnessReset,
   shouldAutoRouteHeartbeatAlerts,
   shouldPersistInboundUserMessage,
@@ -53,7 +54,10 @@ import {
   pruneOldHeartbeatMessages,
 } from '@/lib/server/chat-execution/chat-execution-utils'
 import { reconcileConnectorDeliveryText } from '@/lib/server/chat-execution/chat-execution-connector-delivery'
-import { runPostLlmToolRouting } from '@/lib/server/chat-execution/chat-turn-tool-routing'
+import {
+  resolveRequestedToolPreflightResponse,
+  runPostLlmToolRouting,
+} from '@/lib/server/chat-execution/chat-turn-tool-routing'
 import {
   getCachedLlmResponse,
   resolveLlmResponseCacheConfig,
@@ -98,6 +102,7 @@ export {
   translateRequestedToolInvocation,
   normalizeAssistantArtifactLinks,
   requestedToolNamesFromMessage,
+  filterRuntimeCapabilityIds,
   hasDirectLocalCodingTools,
   reconcileConnectorDeliveryText,
 }
@@ -342,6 +347,19 @@ export function deriveTerminalRunError(params: {
   }
 
   return undefined
+}
+
+export function shouldAppendMissedRequestedToolNotice(params: {
+  missedRequestedTools: string[]
+  fullResponse: string
+  errorMessage?: string
+  calledToolCount?: number
+}): boolean {
+  if (!Array.isArray(params.missedRequestedTools) || params.missedRequestedTools.length === 0) return false
+  if (params.errorMessage) return false
+  if (params.fullResponse.includes('Tool execution notice:')) return false
+  if (!params.fullResponse.trim() && (params.calledToolCount || 0) === 0) return false
+  return true
 }
 
 function shouldAutoDraftSkillSuggestion(params: {
@@ -709,7 +727,10 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       error: disabledError,
     }
   }
-  const toolPolicy = resolveSessionToolPolicy(listUniversalToolAccessPluginIds(getEnabledCapabilityIds(session)), appSettings)
+  const runtimeCapabilityIds = filterRuntimeCapabilityIds(getEnabledCapabilityIds(session), {
+    delegationEnabled: agentForSession?.delegationEnabled === true,
+  })
+  const toolPolicy = resolveSessionToolPolicy(listUniversalToolAccessPluginIds(runtimeCapabilityIds), appSettings)
   const isHeartbeatRun = isInternalHeartbeatRun(internal, source)
   const isAutonomousInternalRun = internal && source !== 'chat'
   const heartbeatLightContext = isHeartbeatRun && !!input.heartbeatConfig?.lightContext
@@ -736,7 +757,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
           reason: freshness.reason || 'session_reset',
         },
         {
-          enabledIds: getEnabledCapabilityIds(session),
+          enabledIds: runtimeCapabilityIds,
         },
       )
       resetSessionRuntime(session, freshness.reason || 'session_reset')
@@ -759,7 +780,7 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
       { enabledIds: pluginsForRun },
     )
   }
-  const sessionEnabledIds = getEnabledCapabilityIds(session)
+  const sessionEnabledIds = runtimeCapabilityIds
   const sessionForRunSelection = splitCapabilityIds(pluginsForRun)
   let sessionForRun = JSON.stringify(sessionEnabledIds) === JSON.stringify(pluginsForRun)
     ? session
@@ -1172,6 +1193,53 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   let fullResponse = ''
   let errorMessage: string | undefined
 
+  const requestedToolPreflightResponse = resolveRequestedToolPreflightResponse({
+    message,
+    enabledPlugins: pluginsForRun,
+    toolPolicy,
+    appSettings,
+    internal,
+    source,
+  })
+  if (requestedToolPreflightResponse) {
+    clearInterval(partialSaveTimer)
+    stopPartialAssistantPersistence()
+    emit({ t: 'd', text: requestedToolPreflightResponse })
+
+    let persisted = false
+    if (!hideAssistantTranscript) {
+      const nextAssistantMessage = await applyMessageLifecycleHooks({
+        session,
+        message: {
+          role: 'assistant',
+          text: requestedToolPreflightResponse,
+          time: Date.now(),
+        },
+        enabledIds: pluginsForRun,
+        phase: 'assistant_final',
+        runId: lifecycleRunId,
+        isSynthetic: true,
+      })
+      if (nextAssistantMessage) {
+        session.messages.push(nextAssistantMessage)
+        session.lastActiveAt = Date.now()
+        saveSessions(sessions)
+        notify(`messages:${sessionId}`)
+        notify('sessions')
+        persisted = true
+      }
+    }
+
+    return {
+      runId,
+      sessionId,
+      text: requestedToolPreflightResponse,
+      persisted,
+      toolEvents: [],
+      error: undefined,
+    }
+  }
+
   const abortController = new AbortController()
   const abortFromOutside = () => abortController.abort()
   if (signal) {
@@ -1388,15 +1456,18 @@ export async function executeSessionChatTurn(input: ExecuteChatTurnInput): Promi
   fullResponse = toolRoutingResult.fullResponse
   errorMessage = toolRoutingResult.errorMessage
 
-  if (toolRoutingResult.missedRequestedTools.length > 0) {
+  if (shouldAppendMissedRequestedToolNotice({
+    missedRequestedTools: toolRoutingResult.missedRequestedTools,
+    fullResponse,
+    errorMessage,
+    calledToolCount: toolRoutingResult.calledNames.size,
+  })) {
     const notice = `Tool execution notice: requested tool(s) ${toolRoutingResult.missedRequestedTools.join(', ')} were not actually invoked in this run.`
     emit({ t: 'err', text: notice })
-    if (!fullResponse.includes('Tool execution notice:')) {
-      const trimmedResponse = (fullResponse || '').trim()
-      fullResponse = trimmedResponse
-        ? `${trimmedResponse}\n\n${notice}`
-        : notice
-    }
+    const trimmedResponse = (fullResponse || '').trim()
+    fullResponse = trimmedResponse
+      ? `${trimmedResponse}\n\n${notice}`
+      : notice
   }
 
   const terminalError = deriveTerminalRunError({

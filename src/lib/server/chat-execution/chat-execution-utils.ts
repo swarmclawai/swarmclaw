@@ -14,6 +14,17 @@ export interface SessionWithTools {
   extensions?: string[] | null
 }
 
+export function filterRuntimeCapabilityIds(
+  capabilityIds: string[] | null | undefined,
+  opts?: {
+    delegationEnabled?: boolean | null
+  },
+): string[] {
+  const normalized = dedup(Array.isArray(capabilityIds) ? capabilityIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0) : [])
+  if (opts?.delegationEnabled === true) return normalized
+  return normalized.filter((id) => !['delegate', 'spawn_subagent'].includes(id))
+}
+
 export type DelegateTool =
   | 'delegate_to_claude_code'
   | 'delegate_to_codex_cli'

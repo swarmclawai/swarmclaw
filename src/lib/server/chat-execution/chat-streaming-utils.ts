@@ -5,11 +5,16 @@ import {
   looksLikeExternalWalletTask,
 } from '@/lib/server/chat-execution/stream-continuation'
 import {
+  buildSuccessfulMemoryMutationResponse,
   resolveToolAction,
   shouldTerminateOnSuccessfulMemoryMutation,
 } from '@/lib/server/chat-execution/memory-mutation-tools'
 
-const EXPLICIT_ARTIFACT_OUTPUT_RE = /\b(?:save|write|output|export|create|generate)\b[^.!?\n]{0,80}\b(?:to|as|at|in)\b[^.!?\n]{0,60}(\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|~\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|\.\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|[a-z0-9._/-]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)\b)/i
+const EXPLICIT_WORKSPACE_TARGET_RE = /(?:^|[\s("'`])((?:\/|~\/|\.\/)[^\s,'"`]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|[a-z0-9._/-]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh))(?=$|[\s)'",`])/i
+
+function hasExplicitWorkspaceTarget(userMessage: string): boolean {
+  return EXPLICIT_WORKSPACE_TARGET_RE.test(userMessage)
+}
 
 export function isLikelyToolErrorOutput(output: string): boolean {
   const trimmed = String(output || '').trim()
@@ -60,7 +65,7 @@ export function getExplicitRequiredToolNames(userMessage: string, enabledPlugins
     required.push('shell')
   }
 
-  if (EXPLICIT_ARTIFACT_OUTPUT_RE.test(normalized)) {
+  if (hasExplicitWorkspaceTarget(normalized)) {
     if (hasEnabledTool('files')) required.push('files')
     else if (hasEnabledTool('edit_file')) required.push('edit_file')
     else if (hasEnabledTool('shell')) required.push('shell')
@@ -108,6 +113,10 @@ export function resolveSuccessfulTerminalToolBoundary(params: {
   if (shouldTerminateOnSuccessfulMemoryMutation(params)) {
     return {
       kind: 'memory_write',
+      responseText: buildSuccessfulMemoryMutationResponse({
+        toolName: params.toolName,
+        toolInput: params.toolInput,
+      }),
     }
   }
 

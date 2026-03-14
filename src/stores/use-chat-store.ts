@@ -3,12 +3,20 @@
 import { create } from 'zustand'
 import type { Message, DevServerStatus, SSEEvent, ChatTraceBlock } from '../types'
 import { streamChat } from '@/lib/chat/chat'
+import {
+  clearSessionQueue,
+  enqueueSessionQueueMessage,
+  fetchSessionQueue,
+  removeQueuedSessionMessage,
+} from '@/lib/chat/chats'
 import { mergeCompletedAssistantMessage, reconcileClientMessageMetadata } from '@/lib/chat/chat-streaming-state'
 import {
   clearQueuedMessagesForSession,
-  nextQueuedMessageId,
+  createOptimisticQueuedMessage,
   removeQueuedMessageById,
-  shiftQueuedMessageForSession,
+  replaceQueuedMessagesForSession,
+  snapshotToQueuedMessages,
+  type QueueMessageDraft,
   type QueuedSessionMessage,
 } from '@/lib/chat/queued-message-queue'
 import { speak } from '../lib/tts'
@@ -91,7 +99,7 @@ interface ChatState {
   debugOpen: boolean
   setDebugOpen: (open: boolean) => void
 
-  sendMessage: (text: string, options?: { sessionId?: string; fromQueue?: boolean; queuedMessageId?: string }) => Promise<void>
+  sendMessage: (text: string, options?: { sessionId?: string }) => Promise<void>
   editAndResend: (messageIndex: number, newText: string) => Promise<void>
   retryLastMessage: () => Promise<void>
   sendHeartbeat: (sessionId: string) => Promise<void>
@@ -110,10 +118,10 @@ interface ChatState {
 
   // Message queue (send while streaming)
   queuedMessages: QueuedSessionMessage[]
-  addQueuedMessage: (sessionId: string, text: string) => void
-  removeQueuedMessage: (id: string) => void
-  clearQueuedMessagesForSession: (sessionId: string) => void
-  shiftQueuedMessageForSession: (sessionId: string) => QueuedSessionMessage | undefined
+  loadQueuedMessages: (sessionId: string) => Promise<void>
+  queueMessage: (sessionId: string, draft: QueueMessageDraft) => Promise<void>
+  removeQueuedMessage: (sessionId: string, runId: string) => Promise<void>
+  clearQueuedMessagesForSession: (sessionId: string) => Promise<void>
 
   // Context clearing
   clearContext: () => Promise<void>
@@ -173,6 +181,22 @@ function reconcileMessagesForState(
   return { messages, assistantRenderId: nextAssistantRenderId }
 }
 
+function syncSessionQueueState(sessionId: string, params: {
+  queuedCount: number
+  currentRunId?: string | null
+  active?: boolean
+}): void {
+  const appState = useAppStore.getState()
+  const session = appState.sessions[sessionId]
+  if (!session) return
+  appState.updateSessionInStore({
+    ...session,
+    queuedCount: params.queuedCount,
+    currentRunId: params.currentRunId ?? null,
+    active: params.active ?? session.active,
+  })
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   streaming: false,
   streamingSessionId: null,
@@ -210,21 +234,104 @@ export const useChatStore = create<ChatState>((set, get) => ({
   voiceConversationActive: false,
   onStreamEvent: null,
   queuedMessages: [],
-  addQueuedMessage: (sessionId, text) => set((s) => ({
-    queuedMessages: [
-      ...s.queuedMessages,
-      { id: nextQueuedMessageId(), sessionId, text },
-    ],
-  })),
-  removeQueuedMessage: (id) => set((s) => ({ queuedMessages: removeQueuedMessageById(s.queuedMessages, id) })),
-  clearQueuedMessagesForSession: (sessionId) => set((s) => ({
-    queuedMessages: clearQueuedMessagesForSession(s.queuedMessages, sessionId),
-  })),
-  shiftQueuedMessageForSession: (sessionId) => {
-    const shifted = shiftQueuedMessageForSession(get().queuedMessages, sessionId)
-    if (!shifted.next) return undefined
-    set({ queuedMessages: shifted.queue })
-    return shifted.next
+  loadQueuedMessages: async (sessionId) => {
+    if (!sessionId) return
+    const snapshot = await fetchSessionQueue(sessionId)
+    set((s) => ({
+      queuedMessages: replaceQueuedMessagesForSession(
+        s.queuedMessages,
+        sessionId,
+        snapshotToQueuedMessages(snapshot),
+      ),
+    }))
+    syncSessionQueueState(sessionId, {
+      queuedCount: snapshot.queueLength,
+      currentRunId: snapshot.activeRunId,
+      active: snapshot.activeRunId ? true : useAppStore.getState().sessions[sessionId]?.active,
+    })
+  },
+  queueMessage: async (sessionId, draft) => {
+    if (!sessionId) return
+    const existingForSession = get().queuedMessages.filter((item) => item.sessionId === sessionId).length
+    const optimistic = createOptimisticQueuedMessage(sessionId, draft, existingForSession + 1)
+    set((s) => ({
+      queuedMessages: [...s.queuedMessages, optimistic],
+    }))
+    syncSessionQueueState(sessionId, {
+      queuedCount: Math.max(
+        useAppStore.getState().sessions[sessionId]?.queuedCount ?? 0,
+        existingForSession + 1,
+      ),
+      currentRunId: useAppStore.getState().sessions[sessionId]?.currentRunId ?? null,
+      active: true,
+    })
+
+    try {
+      const response = await enqueueSessionQueueMessage(sessionId, {
+        message: draft.text,
+        imagePath: draft.imagePath,
+        imageUrl: draft.imageUrl,
+        attachedFiles: draft.attachedFiles,
+        replyToId: draft.replyToId,
+      })
+      set((s) => ({
+        queuedMessages: replaceQueuedMessagesForSession(
+          removeQueuedMessageById(s.queuedMessages, optimistic.runId),
+          sessionId,
+          snapshotToQueuedMessages(response.snapshot),
+        ),
+      }))
+      syncSessionQueueState(sessionId, {
+        queuedCount: response.snapshot.queueLength,
+        currentRunId: response.snapshot.activeRunId,
+        active: true,
+      })
+    } catch (error) {
+      set((s) => ({
+        queuedMessages: removeQueuedMessageById(s.queuedMessages, optimistic.runId),
+      }))
+      const session = useAppStore.getState().sessions[sessionId]
+      syncSessionQueueState(sessionId, {
+        queuedCount: Math.max(0, (session?.queuedCount ?? 1) - 1),
+        currentRunId: session?.currentRunId ?? null,
+        active: session?.active,
+      })
+      throw error
+    }
+  },
+  removeQueuedMessage: async (sessionId, runId) => {
+    if (!sessionId || !runId) return
+    set((s) => ({ queuedMessages: removeQueuedMessageById(s.queuedMessages, runId) }))
+    const response = await removeQueuedSessionMessage(sessionId, runId)
+    set((s) => ({
+      queuedMessages: replaceQueuedMessagesForSession(
+        s.queuedMessages,
+        sessionId,
+        snapshotToQueuedMessages(response.snapshot),
+      ),
+    }))
+    syncSessionQueueState(sessionId, {
+      queuedCount: response.snapshot.queueLength,
+      currentRunId: response.snapshot.activeRunId,
+      active: useAppStore.getState().sessions[sessionId]?.active,
+    })
+  },
+  clearQueuedMessagesForSession: async (sessionId) => {
+    if (!sessionId) return
+    set((s) => ({ queuedMessages: clearQueuedMessagesForSession(s.queuedMessages, sessionId) }))
+    const response = await clearSessionQueue(sessionId)
+    set((s) => ({
+      queuedMessages: replaceQueuedMessagesForSession(
+        s.queuedMessages,
+        sessionId,
+        snapshotToQueuedMessages(response.snapshot),
+      ),
+    }))
+    syncSessionQueueState(sessionId, {
+      queuedCount: response.snapshot.queueLength,
+      currentRunId: response.snapshot.activeRunId,
+      active: useAppStore.getState().sessions[sessionId]?.active,
+    })
   },
 
   pendingFiles: [],
@@ -249,12 +356,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setDebugOpen: (open) => set({ debugOpen: open }),
 
   sendMessage: async (text: string, options) => {
-    const fromQueue = options?.fromQueue === true
-    const queuedMessageId = options?.queuedMessageId
     const targetSessionId = options?.sessionId || selectActiveSessionId(useAppStore.getState())
     const { pendingFiles, replyingTo } = get()
-    const filesForSend = fromQueue ? [] : pendingFiles
-    const replyForSend = fromQueue ? null : replyingTo
+    const filesForSend = pendingFiles
+    const replyForSend = replyingTo
     if ((!text.trim() && !filesForSend.length) || get().streaming) return
     const sessionId = targetSessionId
     if (!sessionId) return
@@ -291,9 +396,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       thinkingText: '',
       thinkingStartTime: Date.now(),
       messages: [...s.messages, userMsg],
-      queuedMessages: queuedMessageId ? removeQueuedMessageById(s.queuedMessages, queuedMessageId) : s.queuedMessages,
-      pendingFiles: fromQueue ? s.pendingFiles : [],
-      replyingTo: fromQueue ? s.replyingTo : null,
+      pendingFiles: [],
+      replyingTo: null,
       toolEvents: [],
       lastUsage: null,
     }))
@@ -307,7 +411,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let suggestions: string[] | null = null
     let toolCallCounter = 0
     let soundFiredStart = false
-    let streamCompleted = false
     const shouldIgnoreTransientError = (msg: string) =>
       /cancelled by steer mode|stopped by user/i.test(msg || '')
 
@@ -518,20 +621,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     void useAppStore.getState().refreshSession(sessionId)
 
-    streamCompleted = true
-
-    // Start the next queued turn immediately so the queued chip and transcript handoff
-    // happen in one local state transition.
-    if (selectActiveSessionId(useAppStore.getState()) === sessionId) {
-      const nextQueued = get().queuedMessages.find((item) => item.sessionId === sessionId)
-      if (nextQueued) {
-        void get().sendMessage(nextQueued.text, {
-          sessionId,
-          fromQueue: true,
-          queuedMessageId: nextQueued.id,
-        })
-      }
-    }
     } finally {
       // Guarantee cadence interval is cleared even if streamChat throws
       clearCadence()
@@ -547,9 +636,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           thinkingText: '',
           thinkingStartTime: 0,
         })
-      }
-      if (!streamCompleted) {
-        get().clearQueuedMessagesForSession(sessionId)
       }
     }
   },

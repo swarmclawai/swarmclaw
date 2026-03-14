@@ -131,4 +131,22 @@ describe('normalizeFileArgs', () => {
       fs.rmSync(cwd, { recursive: true, force: true })
     }
   })
+
+  it('returns a workspace-scope specific error for absolute paths outside the session cwd', async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'file-workspace-scope-'))
+    const externalPath = path.join(os.tmpdir(), `external-${Date.now()}.txt`)
+
+    try {
+      const out = await executeFileAction({
+        action: 'read',
+        filePath: externalPath,
+      }, { cwd, filesystemScope: 'workspace' })
+
+      assert.match(out, /outside the session workspace/i)
+      assert.match(out, /workspace-relative path/i)
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true })
+      fs.rmSync(externalPath, { force: true })
+    }
+  })
 })

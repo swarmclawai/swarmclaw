@@ -41,6 +41,7 @@ export function ChatCard({ session, active, onClick }: Props) {
   const streamingSessionId = useChatStore((s) => s.streamingSessionId)
   const streamPhase = useChatStore((s) => s.streamPhase)
   const streamToolName = useChatStore((s) => s.streamToolName)
+  const optimisticQueuedCount = useChatStore((s) => s.queuedMessages.filter((item) => item.sessionId === session.id).length)
   const lastReadTimestamps = useAppStore((s) => s.lastReadTimestamps)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -75,6 +76,7 @@ export function ChatCard({ session, active, onClick }: Props) {
     ? agent.name
     : session.name
   const connector = getSessionConnector(session, connectors)
+  const queuedCount = Math.max(session.queuedCount ?? 0, optimisticQueuedCount)
   const loopIsOngoing = appSettings.loopMode === 'ongoing'
   const explicitOptIn = session.heartbeatEnabled === true || agent?.heartbeatEnabled === true
   const intervalRaw = session.heartbeatIntervalSec ?? agent?.heartbeatIntervalSec ?? appSettings.heartbeatIntervalSec ?? DEFAULT_HEARTBEAT_INTERVAL_SEC
@@ -86,6 +88,14 @@ export function ChatCard({ session, active, onClick }: Props) {
     && intervalEnabled
     && session.heartbeatEnabled !== false
     && agent?.heartbeatEnabled !== false
+  const isBusy = isTyping || session.active === true
+  const avatarStatusClass = isBusy
+    ? 'bg-emerald-400'
+    : queuedCount > 0
+      ? 'bg-amber-400'
+      : heartbeatEnabled
+        ? 'bg-sky-400'
+        : ''
 
   return (
     <>
@@ -116,8 +126,8 @@ export function ChatCard({ session, active, onClick }: Props) {
         {agent && (
           <div className="relative shrink-0">
             <AgentAvatar seed={agent.avatarSeed} avatarUrl={agent.avatarUrl} name={agent.name} size={24} />
-            {(heartbeatEnabled || session.active) && (
-              <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-[#0f0f1a]" />
+            {(isBusy || queuedCount > 0 || heartbeatEnabled) && (
+              <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-[#0f0f1a] ${avatarStatusClass}`} />
             )}
           </div>
         )}
@@ -174,6 +184,16 @@ export function ChatCard({ session, active, onClick }: Props) {
             : streamPhase === 'responding'
               ? 'Responding...'
               : 'Thinking...'}
+        </div>
+      ) : session.active ? (
+        <div className="text-[13px] text-emerald-300/70 truncate mt-1 leading-relaxed flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          Finishing current run...
+        </div>
+      ) : queuedCount > 0 ? (
+        <div className="text-[13px] text-amber-300/75 truncate mt-1 leading-relaxed flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          {queuedCount} queued {queuedCount === 1 ? 'message' : 'messages'} waiting
         </div>
       ) : (
         <div className="text-[13px] text-text-2/50 truncate mt-1 leading-relaxed">{preview}</div>

@@ -1489,6 +1489,26 @@ export interface SessionRunRecord {
   recoveryPayload?: SessionRunRecoveryPayload
 }
 
+export interface SessionQueuedTurn {
+  runId: string
+  sessionId: string
+  text: string
+  queuedAt: number
+  position: number
+  imagePath?: string
+  imageUrl?: string
+  attachedFiles?: string[]
+  replyToId?: string
+  source?: string
+}
+
+export interface SessionQueueSnapshot {
+  sessionId: string
+  activeRunId: string | null
+  queueLength: number
+  items: SessionQueuedTurn[]
+}
+
 export interface RunEventRecord {
   id: string
   runId: string

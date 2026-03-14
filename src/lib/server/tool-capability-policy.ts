@@ -92,10 +92,12 @@ const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
   google_workspace: { categories: ['network'], concreteTools: ['google_workspace', 'gws'] },
 }
 
-const CONCRETE_TOOL_TO_SESSION_TOOL = new Map<string, string>()
+const CONCRETE_TOOL_TO_SESSION_TOOLS = new Map<string, string[]>()
 for (const [sessionTool, descriptor] of Object.entries(TOOL_DESCRIPTORS)) {
   for (const concreteName of descriptor.concreteTools) {
-    CONCRETE_TOOL_TO_SESSION_TOOL.set(concreteName, sessionTool)
+    const existing = CONCRETE_TOOL_TO_SESSION_TOOLS.get(concreteName) || []
+    if (!existing.includes(sessionTool)) existing.push(sessionTool)
+    CONCRETE_TOOL_TO_SESSION_TOOLS.set(concreteName, existing)
   }
 }
 
@@ -301,20 +303,26 @@ export function resolveConcreteToolPolicyBlock(
 
   if (safetyBlocked.has(name)) return 'blocked by safety policy'
 
-  const mappedTool = CONCRETE_TOOL_TO_SESSION_TOOL.get(name)
-  if (mappedTool && safetyBlocked.has(mappedTool)) return `blocked because "${mappedTool}" is safety-blocked`
+  const mappedTools = CONCRETE_TOOL_TO_SESSION_TOOLS.get(name) || []
+  const safetyBlockedFamily = mappedTools.find((tool) => safetyBlocked.has(tool))
+  if (safetyBlockedFamily) return `blocked because "${safetyBlockedFamily}" is safety-blocked`
 
   if (policyBlockedNames.has(name)) return 'blocked by explicit policy rule'
-  if (mappedTool && policyBlockedNames.has(mappedTool) && !policyAllowedNames.has(mappedTool)) {
-    return `blocked because "${mappedTool}" is policy-blocked`
+  const policyBlockedFamily = mappedTools.find((tool) => policyBlockedNames.has(tool) && !policyAllowedNames.has(tool))
+  if (policyBlockedFamily) {
+    return `blocked because "${policyBlockedFamily}" is policy-blocked`
   }
 
-  if (mappedTool) {
-    const blockedRoot = decision.blockedPlugins.find((entry) => entry.tool === mappedTool)
+  if (mappedTools.length > 0) {
+    const enabledRoot = mappedTools.find((tool) => decision.enabledPlugins.includes(tool))
+    if (enabledRoot) return null
+
+    const blockedRoot = mappedTools
+      .map((tool) => decision.blockedPlugins.find((entry) => entry.tool === tool))
+      .find(Boolean)
     if (blockedRoot) return blockedRoot.reason
 
-    const enabledRoot = decision.enabledPlugins.includes(mappedTool)
-    if (!enabledRoot) return `plugin family "${mappedTool}" is not enabled for this chat`
+    return `plugin family "${mappedTools[0]}" is not enabled for this chat`
   }
 
   return null

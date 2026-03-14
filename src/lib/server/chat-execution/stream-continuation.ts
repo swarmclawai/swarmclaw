@@ -102,6 +102,18 @@ function looksLikeIncompleteDeliverableResponse(text: string): boolean {
     || /\b(?:i(?:'ll| will)|let me)\s+(?:now|next)?\s*(?:create|build|write|capture|take|start|finish|generate|continue)\b/.test(lastChunk)
 }
 
+function hasRecentDeliverableContext(
+  history: Array<{ role?: string; text?: string }> | undefined,
+  userMessage: string,
+): boolean {
+  if (!Array.isArray(history) || history.length === 0) return false
+  const trimmed = userMessage.trim()
+  if (!trimmed || trimmed.length > 160) return false
+  return history
+    .slice(-8)
+    .some((entry) => entry.role === 'user' && looksLikeOpenEndedDeliverableTask((entry.text || '').trim()))
+}
+
 const ARTIFACT_PATH_EXT_RE = /\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|ts|tsx|js|jsx|mjs|cjs|py|sql|sh)$/i
 const EXPLICIT_ARTIFACT_OUTPUT_RE = /\b(?:save|write|output|export|create|generate)\b[^.!?\n]{0,80}\b(?:to|as|at|in)\b[^.!?\n]{0,60}(\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|~\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|\.\/[^\s,'"]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)|[a-z0-9._/-]+\.(?:md|txt|html?|json|csv|ya?ml|xml|pdf|png|jpe?g|webp|gif|svg|zip|py|ts|tsx|js|jsx|mjs|cjs|sql|sh)\b)/i
 
@@ -268,8 +280,10 @@ export function shouldForceDeliverableFollowthrough(params: {
   hasToolCalls: boolean
   toolEvents: MessageToolEvent[]
   cwd?: string
+  history?: Array<{ role?: string; text?: string }>
 }): boolean {
-  if (!looksLikeOpenEndedDeliverableTask(params.userMessage)) return false
+  const recentDeliverableContext = hasRecentDeliverableContext(params.history, params.userMessage)
+  const deliverableIntent = looksLikeOpenEndedDeliverableTask(params.userMessage) || recentDeliverableContext
   const requestedArtifacts = getRequestedArtifactStatus({
     userMessage: params.userMessage,
     cwd: params.cwd,
@@ -285,8 +299,13 @@ export function shouldForceDeliverableFollowthrough(params: {
     }
     return false
   })
-  if (requestedArtifacts.missing.length > 0) return true
   const trimmed = params.finalResponse.trim()
+  const implicitDeliverableContinuation = params.hasToolCalls
+    && (usedFileWriteTools || recentDeliverableContext)
+    && (looksLikeIncompleteDeliverableResponse(trimmed) || trimmed.length < 220)
+
+  if (!deliverableIntent && !implicitDeliverableContinuation) return false
+  if (requestedArtifacts.missing.length > 0) return true
   if (!params.hasToolCalls || params.toolEvents.length === 0) {
     if (!trimmed) return explicitFileOutputRequest
     if (explicitFileOutputRequest) return true
@@ -301,6 +320,7 @@ export function shouldForceDeliverableFollowthrough(params: {
   }
   if (explicitFileOutputRequest && !usedFileWriteTools) return true
   if (looksLikeIncompleteDeliverableResponse(trimmed)) return true
+  if (recentDeliverableContext && trimmed.length < 220 && params.toolEvents.length >= 2) return true
   return trimmed.length < 120 && params.toolEvents.length >= 3
 }
 
@@ -528,6 +548,32 @@ function buildToolErrorFollowthroughPrompt(params: {
   ].join('\n')
 }
 
+function hasWorkspaceScopeFileError(toolEvents: MessageToolEvent[]): boolean {
+  return toolEvents.some((event) => {
+    if (event.name !== 'files') return false
+    const output = String(event.output || '')
+    return /outside the session workspace|path traversal not allowed/i.test(output)
+  })
+}
+
+export function shouldForceWorkspaceScopeShellFallback(params: {
+  userMessage: string
+  finalResponse: string
+  toolEvents: MessageToolEvent[]
+  enabledPlugins: string[]
+}): boolean {
+  if (!hasWorkspaceScopeFileError(params.toolEvents)) return false
+  if (!params.toolEvents.some((event) => event.name === 'files')) return false
+  if (!params.enabledPlugins.some((toolId) => ['shell', 'execute_command'].includes(toolId))) return false
+  if (params.toolEvents.some((event) => ['shell', 'execute_command'].includes(event.name))) return false
+
+  const trimmed = params.finalResponse.trim()
+  if (!trimmed) return true
+  if (/\b(cannot|can't|unable|blocked)\b/i.test(trimmed) && /\bshell\b/i.test(trimmed)) return true
+  if (/\bused\b[\s\S]{0,20}\bshell\b/i.test(trimmed)) return true
+  return trimmed.length < 400
+}
+
 function buildUnfinishedToolFollowthroughPrompt(params: {
   message: string
   fullText: string
@@ -566,6 +612,23 @@ function buildRequiredToolPrompt(params: {
   toolEvents: MessageToolEvent[]
   requiredToolReminderNames: string[]
 }): string {
+  if (
+    params.requiredToolReminderNames.includes('shell')
+    && hasWorkspaceScopeFileError(params.toolEvents)
+  ) {
+    return [
+      'The `files` tool already told you that the target path is outside the session workspace.',
+      'Do not stop with a narrative summary of that limitation.',
+      'Use `shell` now to operate on the external path, verify the resulting file contents, and then conclude.',
+      '',
+      `Objective:\n${params.message}`,
+      '',
+      `Current partial response:\n${params.fullText || '(none)'}`,
+      '',
+      `Recent tool evidence:\n${renderToolEvidence(params.toolEvents) || '(none)'}`,
+    ].join('\n')
+  }
+
   const needsSavedArtifact = hasExplicitFileOutputRequest(params.message)
   const fileReminder = params.requiredToolReminderNames.some((toolName) => ['files', 'write_file', 'edit_file', 'shell'].includes(toolName))
   if (needsSavedArtifact && fileReminder) {

@@ -270,6 +270,12 @@ export async function executeFileAction(args: Record<string, unknown>, bctx: { c
         return `Error: Unknown action "${action}"`
     }
   } catch (err: unknown) {
+    if (errorMessage(err) === 'Path traversal not allowed') {
+      if (bctx.filesystemScope === 'workspace') {
+        return 'Error: target path is outside the session workspace. The files tool can only access paths under the workspace root in this chat. Use a workspace-relative path, or use shell if that external path truly needs machine-level access.'
+      }
+      return 'Error: target path is blocked by the current filesystem policy.'
+    }
     return `Error: ${errorMessage(err)}`
   }
 }

@@ -403,7 +403,11 @@ textarea:hover::-webkit-scrollbar { width: 6px; }
 .msg-content p { margin-bottom: 10px; line-height: 1.7; }
 .msg-content p:last-child { margin-bottom: 0; }
 
-.msg-content ul, .msg-content ol { margin: 8px 0 10px 20px; }
+.msg-content ul, .msg-content ol {
+  margin: 8px 0 10px;
+  padding-left: 20px;
+  list-style-position: outside;
+}
 .msg-content li { margin-bottom: 4px; line-height: 1.65; }
 .msg-content li::marker { color: var(--color-accent-bright); }
 

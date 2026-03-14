@@ -2,6 +2,8 @@ import { genId } from '@/lib/id'
 import type {
   RunEventRecord,
   SessionRunHeartbeatConfig,
+  SessionQueueSnapshot,
+  SessionQueuedTurn,
   SessionRunRecord,
   SessionRunStatus,
   SSEEvent,
@@ -35,6 +37,7 @@ import {
   persistRun,
 } from '@/lib/server/runtime/run-ledger'
 import { isAllEstopEngaged, isAutonomyEstopEngaged } from '@/lib/server/runtime/estop'
+import { notify } from '@/lib/server/ws-hub'
 
 export type SessionQueueMode = 'followup' | 'steer' | 'collect'
 
@@ -64,6 +67,8 @@ interface RuntimeState {
   promises: Map<string, Promise<ExecuteChatTurnResult>>
   deferredDrainTimers: Map<string, ReturnType<typeof setTimeout>>
   activityLeaseRenewTimers: Map<string, ReturnType<typeof setInterval>>
+  externalSessionHolds: Map<string, number>
+  lastQueuedAt: number
 }
 
 const MAX_RECENT_RUNS = 500
@@ -81,6 +86,8 @@ const state: RuntimeState = hmrSingleton<RuntimeState>('__swarmclaw_session_run_
   promises: new Map<string, Promise<ExecuteChatTurnResult>>(),
   deferredDrainTimers: new Map<string, ReturnType<typeof setTimeout>>(),
   activityLeaseRenewTimers: new Map<string, ReturnType<typeof setInterval>>(),
+  externalSessionHolds: new Map<string, number>(),
+  lastQueuedAt: 0,
 }))
 const recoveryState = hmrSingleton('__swarmclaw_session_run_recovery__', () => ({ completed: false }))
 
@@ -92,9 +99,18 @@ if (!state.recentRunIds) state.recentRunIds = []
 if (!state.promises) state.promises = new Map<string, Promise<ExecuteChatTurnResult>>()
 if (!state.deferredDrainTimers) state.deferredDrainTimers = new Map<string, ReturnType<typeof setTimeout>>()
 if (!state.activityLeaseRenewTimers) state.activityLeaseRenewTimers = new Map<string, ReturnType<typeof setInterval>>()
+if (!state.externalSessionHolds) state.externalSessionHolds = new Map<string, number>()
+if (typeof state.lastQueuedAt !== 'number') state.lastQueuedAt = 0
 
 function now() {
   return Date.now()
+}
+
+function nextQueuedAt() {
+  const current = now()
+  const next = current <= state.lastQueuedAt ? state.lastQueuedAt + 1 : current
+  state.lastQueuedAt = next
+  return next
 }
 
 function messagePreview(text: string): string {
@@ -186,6 +202,13 @@ function emitRunMeta(entry: QueueEntry, status: SessionRunStatus, extra?: Record
       // Subscriber stream can be closed by the client.
     }
   }
+  notifySessionRunState(entry.run.sessionId)
+}
+
+function notifySessionRunState(sessionId: string): void {
+  notify('runs')
+  notify('sessions')
+  notify(`session:${sessionId}`)
 }
 
 function queueAutonomyObservation(input: {
@@ -256,6 +279,24 @@ function nonHeartbeatActivityLeaseName(sessionId: string): string {
 
 export function hasActiveNonHeartbeatSessionLease(sessionId: string): boolean {
   return isRuntimeLockActive(nonHeartbeatActivityLeaseName(sessionId))
+}
+
+function hasExternalSessionExecutionHold(sessionId: string): boolean {
+  return (state.externalSessionHolds.get(sessionId) || 0) > 0
+}
+
+export function acquireExternalSessionExecutionHold(sessionId: string): () => void {
+  const current = state.externalSessionHolds.get(sessionId) || 0
+  state.externalSessionHolds.set(sessionId, current + 1)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const next = (state.externalSessionHolds.get(sessionId) || 1) - 1
+    if (next > 0) state.externalSessionHolds.set(sessionId, next)
+    else state.externalSessionHolds.delete(sessionId)
+    void drainExecution(executionKeyForSession(sessionId))
+  }
 }
 
 function queueForExecution(executionKey: string): QueueEntry[] {
@@ -544,6 +585,36 @@ function cancelPendingForSession(sessionId: string, reason: string): number {
   return cancelled
 }
 
+function cancelQueuedEntries(
+  matcher: (entry: QueueEntry) => boolean,
+  reason: string,
+): { cancelled: number; sessionIds: Set<string> } {
+  let cancelled = 0
+  const sessionIds = new Set<string>()
+  for (const [key, queue] of state.queueByExecution.entries()) {
+    if (!queue.length) continue
+    const keep: QueueEntry[] = []
+    for (const entry of queue) {
+      if (!matcher(entry)) {
+        keep.push(entry)
+        continue
+      }
+      entry.run.status = 'cancelled'
+      entry.run.endedAt = now()
+      entry.run.error = reason
+      syncRunRecord(entry.run)
+      emitRunMeta(entry, 'cancelled', { reason })
+      entry.reject(new Error(reason))
+      sessionIds.add(entry.run.sessionId)
+      cancelled += 1
+    }
+    if (keep.length > 0) state.queueByExecution.set(key, keep)
+    else state.queueByExecution.delete(key)
+  }
+  for (const sessionId of sessionIds) reconcileSessionActivityLease(sessionId)
+  return { cancelled, sessionIds }
+}
+
 export function cancelAllHeartbeatRuns(reason = 'Heartbeat disabled globally'): { cancelledQueued: number; abortedRunning: number } {
   ensureRecoveredPersistedRuns()
   let cancelledQueued = 0
@@ -627,6 +698,17 @@ async function drainExecution(executionKey: string): Promise<void> {
       sessionId: next.run.sessionId,
       source: next.run.source,
       leaseName: nonHeartbeatActivityLeaseName(next.run.sessionId),
+    })
+    return
+  }
+
+  if (hasExternalSessionExecutionHold(next.run.sessionId)) {
+    q.unshift(next)
+    scheduleDeferredDrain(executionKey, HEARTBEAT_BUSY_RETRY_MS)
+    log.info('session-run', `Deferred run ${next.run.id} for external session hold`, {
+      sessionId: next.run.sessionId,
+      source: next.run.source,
+      mode: next.run.mode,
     })
     return
   }
@@ -919,7 +1001,7 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
   const running = state.runningByExecution.get(executionKey)
   const q = queueForExecution(executionKey)
   if (mode === 'collect' && !input.imagePath && !input.imageUrl && !input.attachedFiles?.length) {
-    const nowMs = now()
+  const nowMs = nextQueuedAt()
     const candidate = q.at(-1)
     const canCoalesce = !!candidate
       && candidate.run.mode === 'collect'
@@ -970,7 +1052,7 @@ export function enqueueSessionRun(input: EnqueueSessionRunInput): EnqueueSession
     status: 'queued',
     messagePreview: messagePreview(input.message),
     dedupeKey: input.dedupeKey,
-    queuedAt: now(),
+    queuedAt: nextQueuedAt(),
     recoveredFromRestart: input.recoveredFromRestart === true,
     recoveredFromRunId: input.recoveredFromRunId,
     recoveryPayload: buildRecoveryPayload(
@@ -1043,6 +1125,40 @@ export function getSessionRunState(sessionId: string): {
   }
 }
 
+function visibleQueuedEntriesForSession(sessionId: string): QueueEntry[] {
+  return Array.from(state.queueByExecution.values())
+    .flatMap((queue) => queue)
+    .filter((entry) => entry.run.sessionId === sessionId && entry.run.internal !== true)
+    .sort((left, right) => left.run.queuedAt - right.run.queuedAt)
+}
+
+function toQueuedTurn(entry: QueueEntry, index: number): SessionQueuedTurn {
+  return {
+    runId: entry.run.id,
+    sessionId: entry.run.sessionId,
+    text: entry.message,
+    queuedAt: entry.run.queuedAt,
+    position: index + 1,
+    imagePath: entry.imagePath,
+    imageUrl: entry.imageUrl,
+    attachedFiles: entry.attachedFiles,
+    replyToId: entry.replyToId,
+    source: entry.run.source,
+  }
+}
+
+export function getSessionQueueSnapshot(sessionId: string): SessionQueueSnapshot {
+  ensureRecoveredPersistedRuns()
+  const execution = getSessionExecutionState(sessionId)
+  const visibleQueued = visibleQueuedEntriesForSession(sessionId)
+  return {
+    sessionId,
+    activeRunId: execution.runningRunId || null,
+    queueLength: visibleQueued.length,
+    items: visibleQueued.map((entry, index) => toQueuedTurn(entry, index)),
+  }
+}
+
 export function getSessionExecutionState(sessionId: string): {
   runningRunId?: string
   queueLength: number
@@ -1103,6 +1219,18 @@ export function listRunEvents(runId: string, limit?: number): RunEventRecord[] {
   return listPersistedRunEvents(runId, limit)
 }
 
+export function cancelQueuedRunById(runId: string, reason = 'Removed from queue'): boolean {
+  ensureRecoveredPersistedRuns()
+  const result = cancelQueuedEntries((entry) => entry.run.id === runId, reason)
+  return result.cancelled > 0
+}
+
+export function cancelQueuedRunsForSession(sessionId: string, reason = 'Cleared queued messages'): number {
+  ensureRecoveredPersistedRuns()
+  const result = cancelQueuedEntries((entry) => entry.run.sessionId === sessionId, reason)
+  return result.cancelled
+}
+
 export function cancelSessionRuns(sessionId: string, reason = 'Cancelled'): { cancelledQueued: number; cancelledRunning: boolean } {
   ensureRecoveredPersistedRuns()
   const running = Array.from(state.runningByExecution.values())
@@ -1132,4 +1260,6 @@ export function resetSessionRunManagerForTests(): void {
   state.runs.clear()
   state.recentRunIds.length = 0
   state.promises.clear()
+  state.externalSessionHolds.clear()
+  state.lastQueuedAt = 0
 }

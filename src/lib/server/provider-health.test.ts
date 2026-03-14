@@ -134,4 +134,42 @@ describe('provider-health', () => {
       assert.ok(typeof val.defaultEndpoint === 'string' && val.defaultEndpoint.startsWith('https://'))
     }
   })
+
+  it('pings Ollama Cloud through the OpenAI-compatible models endpoint', async () => {
+    const originalFetch = globalThis.fetch
+    const calls: Array<{ url: string; headers?: HeadersInit }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), headers: init?.headers })
+      return new Response(JSON.stringify({ data: [{ id: 'glm-5' }] }), { status: 200 })
+    }) as typeof fetch
+
+    try {
+      const result = await providerHealth.pingProvider('ollama', 'cloud-key', 'https://ollama.com')
+      assert.equal(result.ok, true)
+      assert.equal(result.message, 'Connected to Ollama Cloud.')
+      assert.equal(calls.length, 1)
+      assert.equal(calls[0].url, 'https://ollama.com/v1/models')
+      assert.deepEqual(calls[0].headers, { authorization: 'Bearer cloud-key' })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('pings local Ollama through /api/tags', async () => {
+    const originalFetch = globalThis.fetch
+    const calls: string[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      calls.push(String(input))
+      return new Response(JSON.stringify({ models: [{ name: 'llama3.2' }] }), { status: 200 })
+    }) as typeof fetch
+
+    try {
+      const result = await providerHealth.pingProvider('ollama', undefined, 'http://localhost:11434')
+      assert.equal(result.ok, true)
+      assert.equal(result.message, 'Connected to Ollama.')
+      assert.deepEqual(calls, ['http://localhost:11434/api/tags'])
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })

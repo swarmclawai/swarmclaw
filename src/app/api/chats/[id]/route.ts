@@ -4,7 +4,7 @@ import { notFound } from '@/lib/server/collection-helpers'
 import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { clearMainLoopStateForSession } from '@/lib/server/agents/main-agent-loop'
-import { getSessionRunState } from '@/lib/server/runtime/session-run-manager'
+import { getSessionQueueSnapshot, getSessionRunState } from '@/lib/server/runtime/session-run-manager'
 import { normalizeCapabilitySelection } from '@/lib/capability-selection'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -13,8 +13,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!session) return notFound()
 
   const run = getSessionRunState(id)
+  const queue = getSessionQueueSnapshot(id)
   session.active = active.has(id) || !!run.runningRunId
-  session.queuedCount = run.queueLength
+  session.queuedCount = queue.queueLength
   session.currentRunId = run.runningRunId || null
 
   return NextResponse.json(session)

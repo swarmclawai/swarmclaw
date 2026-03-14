@@ -6,7 +6,7 @@ import { perf } from '@/lib/server/runtime/perf'
 import { loadSessions, saveSessions, deleteSession, active, loadAgents, upsertStoredItem } from '@/lib/server/storage'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { notify } from '@/lib/server/ws-hub'
-import { getSessionRunState } from '@/lib/server/runtime/session-run-manager'
+import { getSessionQueueSnapshot, getSessionRunState } from '@/lib/server/runtime/session-run-manager'
 import { normalizeProviderEndpoint } from '@/lib/openclaw/openclaw-endpoint'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
@@ -33,8 +33,9 @@ export async function GET(req: Request) {
   const changedSessionIds: string[] = []
   for (const id of Object.keys(sessions)) {
     const run = getSessionRunState(id)
+    const queue = getSessionQueueSnapshot(id)
     sessions[id].active = active.has(id) || !!run.runningRunId
-    sessions[id].queuedCount = run.queueLength
+    sessions[id].queuedCount = queue.queueLength
     sessions[id].currentRunId = run.runningRunId || null
     if (!sessions[id].active && Array.isArray(sessions[id].messages)) {
       if (materializeStreamingAssistantArtifacts(sessions[id].messages)) changedSessionIds.push(id)
