@@ -101,6 +101,34 @@ function mergeFailures(
   return deduped.slice(0, 3)
 }
 
+// --- predictive signals ---
+
+function buildPredictiveSignalsSection(incidents: SupervisorIncident[], now: number): string | null {
+  const cutoff = now - SEVENTY_TWO_HOURS_MS
+  const familyCounts = new Map<string, { count: number; lastRemedy: string | null }>()
+
+  for (const incident of incidents) {
+    if (incident.createdAt < cutoff) continue
+    const family = incident.failureFamily
+    if (!family) continue
+    const entry = familyCounts.get(family) || { count: 0, lastRemedy: null }
+    entry.count += 1
+    if (incident.remediation && !entry.lastRemedy) entry.lastRemedy = incident.remediation
+    familyCounts.set(family, entry)
+  }
+
+  const warnings: string[] = []
+  for (const [family, { count, lastRemedy }] of familyCounts) {
+    if (count < 3) continue
+    let line = `- ⚠ ${family} (${count}x in 72h) — recurring pattern, likely to recur`
+    if (lastRemedy) line += `. Suggested: ${lastRemedy.slice(0, 100)}`
+    warnings.push(line)
+  }
+
+  if (warnings.length === 0) return null
+  return ['### Predictive Warnings', ...warnings].join('\n')
+}
+
 // --- section builders ---
 
 function buildTasksSection(tasks: BoardTask[], now: number): string | null {
@@ -133,6 +161,23 @@ function buildFailuresSection(failures: FailureEntry[], now: number): string | n
     lines.push(line)
   }
   return lines.join('\n')
+}
+
+export function buildGoalAncestrySection(missionId: string | null | undefined): string | null {
+  if (!missionId) return null
+  const chain: string[] = []
+  let currentId: string | null = missionId
+  const visited = new Set<string>()
+  while (currentId && chain.length < 10) {
+    if (visited.has(currentId)) break
+    visited.add(currentId)
+    const mission = loadMission(currentId)
+    if (!mission) break
+    chain.unshift(mission.objective.slice(0, 80))
+    currentId = mission.parentMissionId || null
+  }
+  if (chain.length <= 1) return null
+  return `### Goal Ancestry\n${chain.map((obj, i) => `${'  '.repeat(i)}${i === chain.length - 1 ? '→' : '↓'} ${obj}`).join('\n')}`
 }
 
 function buildMissionSection(mission: Mission | null): string | null {
@@ -177,6 +222,13 @@ export function formatSituationalAwareness(data: SituationalAwarenessData): stri
   if (failuresSection && charCount + failuresSection.length + header.length < MAX_CHARS) {
     sections.push(failuresSection)
     charCount += failuresSection.length
+  }
+
+  // Priority 2.5: Predictive Warnings (recurring failure families)
+  const predictiveSection = buildPredictiveSignalsSection(incidents, now)
+  if (predictiveSection && charCount + predictiveSection.length + header.length < MAX_CHARS) {
+    sections.push(predictiveSection)
+    charCount += predictiveSection.length
   }
 
   // Priority 3: Schedules

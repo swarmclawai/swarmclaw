@@ -2070,6 +2070,8 @@ export interface RunReflection {
   autoMemoryIds?: string[]
   learnedSkillIds?: string[]
   learnedSkillNotes?: string[]
+  qualityScore?: number | null
+  qualityReasoning?: string | null
   createdAt: number
   updatedAt: number
 }
@@ -2588,6 +2590,8 @@ export interface LearnedSkill {
   reviewReadyAt?: number | null
   sourceSessionName?: string | null
   sourceSnippet?: string | null
+  lastRefinedAt?: number | null
+  refinementCount?: number
   createdAt: number
   updatedAt: number
 }
@@ -2931,6 +2935,8 @@ export interface BoardTask {
     agentId: string | null
     resultPreview: string | null
   }>
+  repairRunId?: string | null
+  lastRepairAttemptAt?: number | null
 }
 
 // --- MCP Servers ---

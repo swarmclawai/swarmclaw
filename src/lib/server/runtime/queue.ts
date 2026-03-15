@@ -1585,6 +1585,35 @@ export async function processNext() {
         }
         if (t2[taskId]) {
           applyTaskPolicyDefaults(t2[taskId])
+
+          // Auto-repair: attempt a repair turn before retrying if a repairPrompt is available
+          const failureClassification = classifyRuntimeFailure({ source: 'task', message: errMsg })
+          if (failureClassification.repairPrompt && t2[taskId].sessionId) {
+            try {
+              const repairRunId = `repair:${taskId}:${Date.now()}`
+              t2[taskId].repairRunId = repairRunId
+              t2[taskId].lastRepairAttemptAt = Date.now()
+              saveTasks(t2)
+              await executeSessionChatTurn({
+                sessionId: t2[taskId].sessionId!,
+                message: `[AUTO-REPAIR] ${failureClassification.repairPrompt}\n\nOriginal error: ${errMsg.slice(0, 300)}`,
+                internal: true,
+                source: 'task-repair',
+                runId: repairRunId,
+              })
+              console.log(`[queue] Repair turn completed for task "${task.title}" (${taskId})`)
+            } catch (repairErr: unknown) {
+              console.warn(`[queue] Repair turn failed for task "${task.title}":`, repairErr instanceof Error ? repairErr.message : String(repairErr))
+              // If repair fails, attempt guardian recovery
+              const taskCwd = t2[taskId].cwd || WORKSPACE_DIR
+              prepareGuardianRecovery({
+                cwd: taskCwd,
+                reason: `Auto-repair failed for task "${task.title}": ${errMsg.slice(0, 200)}`,
+                requester: agent.id,
+              })
+            }
+          }
+
           const retryState = scheduleRetryOrDeadLetter(t2[taskId], errMsg.slice(0, 500) || 'Unknown error')
           if (!t2[taskId].comments) t2[taskId].comments = []
           // Only add a failure comment if the last comment isn't already an error comment

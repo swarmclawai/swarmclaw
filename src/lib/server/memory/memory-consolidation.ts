@@ -3,6 +3,37 @@ import { loadAgents } from '@/lib/server/storage'
 import { resolveGenerationModelConfig } from '@/lib/server/build-llm'
 import { HumanMessage } from '@langchain/core/messages'
 import { errorMessage } from '@/lib/shared-utils'
+import { onNextIdleWindow } from '@/lib/server/runtime/idle-window'
+
+let consolidationRegistered = false
+let compactionRegistered = false
+
+/**
+ * Register daily consolidation to run during the next idle window.
+ * The idle-window system guarantees execution within 24h even without idle time.
+ */
+export function registerConsolidationIdleCallback(): void {
+  if (consolidationRegistered) return
+  consolidationRegistered = true
+  onNextIdleWindow(async () => {
+    consolidationRegistered = false
+    await runDailyConsolidation()
+    registerConsolidationIdleCallback()
+  })
+}
+
+/**
+ * Register access-based compaction to run during the next idle window.
+ */
+export function registerCompactionIdleCallback(): void {
+  if (compactionRegistered) return
+  compactionRegistered = true
+  onNextIdleWindow(async () => {
+    compactionRegistered = false
+    await runAccessBasedCompaction()
+    registerCompactionIdleCallback()
+  })
+}
 
 function canCreateDailyDigestForAgent(
   agentId: string,
@@ -124,4 +155,84 @@ export async function runDailyConsolidation(): Promise<{
     deduped: maintenance.deduped,
     errors,
   }
+}
+
+/**
+ * Access-pattern-driven memory compaction:
+ * 1. Promote working-tier entries with high access + reinforcement to durable
+ * 2. Archive durable entries with zero access and age > 60 days
+ * 3. Merge frequently co-accessed entries (same agent, 5+ accesses in 7d) into consolidated insights
+ */
+export async function runAccessBasedCompaction(): Promise<{
+  promoted: number
+  archived: number
+  merged: number
+  errors: string[]
+}> {
+  const memDb = getMemoryDb()
+  const counts = memDb.countsByAgent()
+  const errors: string[] = []
+  let promoted = 0
+  let archived = 0
+  let merged = 0
+  const now = Date.now()
+  const sixtyDaysAgo = now - 60 * 86_400_000
+
+  for (const agentKey of Object.keys(counts)) {
+    if (agentKey === '_global') continue
+    const agentId = agentKey
+
+    try {
+      const allEntries = memDb.getByAgent(agentId, 500)
+
+      // 1. Promote working → durable
+      for (const entry of allEntries) {
+        const tier = typeof entry.metadata?.tier === 'string' ? entry.metadata.tier : ''
+        if (tier !== 'working' && tier !== '') continue
+        if ((entry.accessCount || 0) >= 3 && (entry.reinforcementCount || 0) >= 2) {
+          memDb.update(entry.id, {
+            metadata: { ...entry.metadata, tier: 'durable' },
+          })
+          promoted++
+        }
+      }
+
+      // 2. Archive stale durable entries
+      for (const entry of allEntries) {
+        const tier = typeof entry.metadata?.tier === 'string' ? entry.metadata.tier : ''
+        if (tier !== 'durable') continue
+        if ((entry.accessCount || 0) === 0 && (entry.updatedAt || entry.createdAt) < sixtyDaysAgo) {
+          memDb.update(entry.id, {
+            metadata: { ...entry.metadata, tier: 'archive' },
+          })
+          archived++
+        }
+      }
+
+      // 3. Merge frequently co-accessed entries into consolidated insights
+      const frequent = memDb.getFrequentlyAccessedByAgent(agentId, 5, 7)
+      if (frequent.length >= 2) {
+        const contentLines = frequent.slice(0, 6).map((m) => {
+          return `- [${m.category}] ${m.title}: ${(m.content || '').slice(0, 200)}`
+        })
+        const consolidatedContent = `Consolidated insight from ${frequent.length} frequently accessed memories:\n${contentLines.join('\n')}`
+        const linkedIds = frequent.slice(0, 6).map((m) => m.id)
+
+        memDb.add({
+          agentId,
+          sessionId: null,
+          category: 'consolidated_insight',
+          title: `Consolidated insight: ${new Date().toISOString().slice(0, 10)}`,
+          content: consolidatedContent,
+          linkedMemoryIds: linkedIds,
+          metadata: { tier: 'durable', origin: 'access-compaction', autoWritten: true },
+        })
+        merged++
+      }
+    } catch (err: unknown) {
+      errors.push(`Agent ${agentId}: ${errorMessage(err)}`)
+    }
+  }
+
+  return { promoted, archived, merged, errors }
 }

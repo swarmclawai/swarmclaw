@@ -380,6 +380,8 @@ function buildReflectionPrompt(params: {
     '- profile: 0-4 stable profile facts stated explicitly in the transcript, such as role, pronouns, timezone, or family context',
     '- boundaries: 0-4 explicit do/don\'t rules, sensitive topics, consent limits, or interaction boundaries',
     '- open_loops: 0-4 ongoing human situations, promised follow-ups, or check-back items that should resurface later',
+    '- quality_score: number from 0.0 to 1.0 rating overall run quality (0=total failure, 0.5=mediocre, 0.8+=excellent)',
+    '- quality_reasoning: one sentence justifying the quality_score',
     '',
     'Rules:',
     '- Remove secrets, tokens, hostnames, and one-off identifiers.',
@@ -425,6 +427,11 @@ function maybeParseJson(text: string): Record<string, unknown> | null {
   }
 }
 
+function normalizeQualityScore(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return Math.max(0, Math.min(1, value))
+}
+
 function normalizeNoteArray(value: unknown, limit = 4): string[] {
   if (!Array.isArray(value)) return []
   const out: string[] = []
@@ -461,6 +468,8 @@ function parseReflectionResponse(raw: string): {
   profile: string[]
   boundaries: string[]
   openLoops: string[]
+  qualityScore: number | null
+  qualityReasoning: string | null
 } {
   const parsed = maybeParseJson(raw)
   if (!parsed) throw new Error('Model did not return valid JSON for the run reflection.')
@@ -478,6 +487,8 @@ function parseReflectionResponse(raw: string): {
       profile: [],
       boundaries: [],
       openLoops: [],
+      qualityScore: normalizeQualityScore(parsed.quality_score),
+      qualityReasoning: cleanText(parsed.quality_reasoning, 220),
     }
   }
   const summary = cleanText(parsed.summary, 220)
@@ -517,6 +528,8 @@ function parseReflectionResponse(raw: string): {
       profile: [],
       boundaries: [],
       openLoops: [],
+      qualityScore: normalizeQualityScore(parsed.quality_score),
+      qualityReasoning: cleanText(parsed.quality_reasoning, 220),
     }
   }
   return {
@@ -532,6 +545,8 @@ function parseReflectionResponse(raw: string): {
     profile,
     boundaries,
     openLoops,
+    qualityScore: normalizeQualityScore(parsed.quality_score),
+    qualityReasoning: cleanText(parsed.quality_reasoning, 220),
   }
 }
 
@@ -940,6 +955,8 @@ export async function observeAutonomyRunOutcome(
     openLoopNotes: parsed.openLoops,
     incidentIds: incidents.map((incident) => incident.id),
     autoMemoryIds,
+    qualityScore: parsed.qualityScore ?? null,
+    qualityReasoning: parsed.qualityReasoning ?? null,
     createdAt: now(),
     updatedAt: now(),
   }

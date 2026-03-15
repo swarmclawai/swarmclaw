@@ -37,6 +37,7 @@ import { recoverStaleDelegationJobs } from '@/lib/server/agents/delegation-jobs'
 import { pruneMainLoopState } from '@/lib/server/agents/main-agent-loop'
 import { ensureProtocolEngineRecovered } from '@/lib/server/protocols/protocol-service'
 import { sweepManagedProcesses, reapOrphanedSandboxContainers } from '@/lib/server/runtime/process-manager'
+import { drainIdleWindowCallbacks } from '@/lib/server/runtime/idle-window'
 import {
   buildSessionHeartbeatHealthDedupKey,
   daemonAutostartEnvEnabled,
@@ -967,6 +968,13 @@ async function runHealthChecks() {
     await runMemoryMaintenanceTick()
   } catch (err: unknown) {
     console.error('[daemon] Memory maintenance failed:', err instanceof Error ? err.message : String(err))
+  }
+
+  // Drain idle-window callbacks when the system is quiet
+  try {
+    await drainIdleWindowCallbacks()
+  } catch (err: unknown) {
+    console.error('[daemon] Idle-window drain failed:', err instanceof Error ? err.message : String(err))
   }
 }
 

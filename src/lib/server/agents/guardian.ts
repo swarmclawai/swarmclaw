@@ -97,6 +97,15 @@ export function captureGuardianCheckpoint(cwd: string, createdBy = 'task'): {
   return { ok: true, checkpoint }
 }
 
+/**
+ * Lightweight wrapper for capturing a checkpoint at task start.
+ * Returns the checkpoint ID if successful, null otherwise.
+ */
+export function capturePreTaskCheckpoint(cwd: string, taskId: string): string | null {
+  const result = captureGuardianCheckpoint(cwd, `pre-task:${taskId}`)
+  return result.ok && result.checkpoint ? result.checkpoint.id : null
+}
+
 export function prepareGuardianRecovery(params: {
   cwd: string
   reason: string

@@ -24,6 +24,7 @@ import {
 } from '@/lib/server/storage'
 import { buildSessionTranscript } from './skill-suggestions'
 import { normalizeSkillPayload } from './skills-normalize'
+import { onNextIdleWindow } from '@/lib/server/runtime/idle-window'
 
 const SUCCESS_EVIDENCE_THRESHOLD = 2
 const FAILURE_EVIDENCE_THRESHOLD = 2
@@ -537,6 +538,49 @@ function formatLifecycleNote(skill: LearnedSkill, note: string): string {
   return `${name}: ${note}`
 }
 
+const REFINEMENT_INTERVAL = 3
+
+function buildRefinementPrompt(skill: LearnedSkill): string {
+  return [
+    'You are a skill refinement engine.',
+    'Given a learned skill definition that has been used successfully multiple times, produce a refined version.',
+    'Return JSON only with a single field: "content" (refined markdown skill body).',
+    '',
+    'Rules:',
+    '- Preserve the core workflow steps.',
+    '- Tighten wording, remove redundancy, add clarity from repeated use.',
+    '- Do not add new steps or change the risk level.',
+    '- Keep the same heading structure.',
+    '',
+    `Skill name: ${skill.name}`,
+    `Description: ${skill.description || 'N/A'}`,
+    `Success count: ${skill.successCount || 0}`,
+    `Refinement count: ${skill.refinementCount || 0}`,
+    '',
+    'Current content:',
+    skill.content || '',
+  ].join('\n')
+}
+
+async function refineSkillContent(skill: LearnedSkill, agentId: string): Promise<void> {
+  try {
+    const prompt = buildRefinementPrompt(skill)
+    const { llm } = await buildLLM({ agentId })
+    const response = await llm.invoke([new HumanMessage(prompt)])
+    const text = extractModelText(response.content)
+    const parsed = maybeParseJson(text)
+    if (!parsed || typeof parsed.content !== 'string' || parsed.content.trim().length < 40) return
+    const updated = { ...skill }
+    updated.content = ensureHeading(updated.name || 'Skill', parsed.content)
+    updated.lastRefinedAt = Date.now()
+    updated.refinementCount = (updated.refinementCount || 0) + 1
+    updated.updatedAt = Date.now()
+    upsertLearnedSkill(updated.id, updated)
+  } catch {
+    // Refinement is best-effort; failures are silently ignored
+  }
+}
+
 export function listLearnedSkills(filters?: {
   agentId?: string
   sessionId?: string
@@ -572,9 +616,11 @@ export async function observeLearnedSkillRunOutcome(
   if (activeSkill && matchesSelectedLearnedSkill(session, activeSkill)) {
     const next = { ...activeSkill }
     next.lastUsedAt = Date.now()
+    const qualityScore = typeof input.reflection?.qualityScore === 'number' ? input.reflection.qualityScore : null
     if (observation.kind === 'success_pattern') {
-      next.successCount = (next.successCount || 0) + 1
-      next.consecutiveSuccessCount = (next.consecutiveSuccessCount || 0) + 1
+      const increment = qualityScore !== null && qualityScore >= 0.8 ? 2 : 1
+      next.successCount = (next.successCount || 0) + increment
+      next.consecutiveSuccessCount = (next.consecutiveSuccessCount || 0) + increment
       next.consecutiveFailureCount = 0
       next.lastSucceededAt = Date.now()
       next.lastSourceHash = observation.sourceHash
@@ -582,9 +628,15 @@ export async function observeLearnedSkillRunOutcome(
         next.reviewReadyAt = next.reviewReadyAt || Date.now()
       }
       notes.push(formatLifecycleNote(next, 'recorded another successful learned-skill run'))
+      if ((next.successCount || 0) % REFINEMENT_INTERVAL === 0 && next.lifecycle === 'active' && next.content) {
+        const skillSnapshot = { ...next }
+        const capturedAgentId = agentId
+        onNextIdleWindow(() => refineSkillContent(skillSnapshot, capturedAgentId))
+      }
     } else {
-      next.failureCount = (next.failureCount || 0) + 1
-      next.consecutiveFailureCount = (next.consecutiveFailureCount || 0) + 1
+      const increment = qualityScore !== null && qualityScore <= 0.3 ? 2 : 1
+      next.failureCount = (next.failureCount || 0) + increment
+      next.consecutiveFailureCount = (next.consecutiveFailureCount || 0) + increment
       next.consecutiveSuccessCount = 0
       next.lastFailedAt = Date.now()
       if ((next.consecutiveFailureCount || 0) >= DEMOTION_FAILURE_THRESHOLD) {

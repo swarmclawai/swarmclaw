@@ -6,7 +6,8 @@ import {
   DEFAULT_HEARTBEAT_SHOW_ALERTS,
   DEFAULT_HEARTBEAT_SHOW_OK,
 } from '@/lib/runtime/heartbeat-defaults'
-import { loadAgents, loadSessions, loadSettings, patchSession } from '@/lib/server/storage'
+import { loadAgents, loadApprovals, loadSessions, loadSettings, patchSession } from '@/lib/server/storage'
+import { buildGoalAncestrySection } from '@/lib/server/chat-execution/situational-awareness'
 import { enqueueSessionRun, getSessionRunState } from '@/lib/server/runtime/session-run-manager'
 import { log } from '@/lib/server/logger'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
@@ -245,21 +246,67 @@ export function isHeartbeatContentEffectivelyEmpty(content: string | undefined |
 export function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackPrompt: string, heartbeatFileContent: string): string {
   if (!agent) return fallbackPrompt
 
+  const sections: string[] = []
+
+  // ── Phase 1: Identity context ──
+  sections.push('AGENT_HEARTBEAT_TICK')
+  sections.push(`Time: ${new Date().toISOString()}`)
   const identityContext = buildIdentityContext(session, agent)
   const continuityContext = buildIdentityContinuityContext(session, agent)
-  // Drain system events accumulated since last heartbeat
-  const events = drainSystemEvents(session.id)
-  const eventBlock = events.length > 0
-    ? events.map((e) => `- [${new Date(e.timestamp).toISOString()}] ${e.text}`).join('\n')
-    : ''
+  if (identityContext) sections.push(identityContext)
+  if (continuityContext) sections.push(continuityContext)
+  const description = agent.description || ''
+  const soul = agent.soul || ''
+  if (description) sections.push(`Description: ${description}`)
+  if (soul) sections.push(`Persona: ${soul.slice(0, 300)}`)
 
-  // Dynamic goal (agent-set) takes priority over static system prompt
+  // ── Phase 2: Pending approvals ──
+  const agentId = agent.id || session.agentId || ''
+  if (agentId) {
+    try {
+      const allApprovals = loadApprovals()
+      const pending = Object.values(allApprovals).filter(
+        (a) => a.status === 'pending' && a.agentId === agentId,
+      )
+      if (pending.length > 0) {
+        const approvalLines = pending.slice(0, 5).map(
+          (a) => `- [${a.category}] ${a.title}${a.description ? `: ${a.description.slice(0, 100)}` : ''}`,
+        )
+        sections.push(`### Pending Approvals (${pending.length})\n${approvalLines.join('\n')}`)
+      }
+    } catch {
+      // Approvals may not be available; skip silently
+    }
+  }
+
+  // ── Phase 3: Goal ancestry ──
+  const missionId = session.missionId || agent.missionId || null
+  const goalAncestry = buildGoalAncestrySection(missionId)
+  if (goalAncestry) sections.push(goalAncestry)
+
+  // ── Phase 4: Active task checkout & events ──
+  const events = drainSystemEvents(session.id)
+  if (events.length > 0) {
+    const eventBlock = events.map((e) => `- [${new Date(e.timestamp).toISOString()}] ${e.text}`).join('\n')
+    sections.push(`Events since last heartbeat:\n${eventBlock}`)
+  }
+
   const dynamicGoal = agent.heartbeatGoal || ''
   const dynamicNextAction = agent.heartbeatNextAction || ''
-  const description = agent.description || ''
   const systemPrompt = agent.systemPrompt || ''
-  const soul = agent.soul || ''
   const goalSummary = systemPrompt.slice(0, 500)
+
+  if (dynamicGoal) {
+    sections.push(`Current goal (self-set): ${dynamicGoal}`)
+  } else if (goalSummary) {
+    sections.push(`System prompt (initial goal):\n${goalSummary}`)
+  }
+  if (dynamicNextAction) sections.push(`Planned next action: ${dynamicNextAction}`)
+
+  const strippedContent = stripBlockedItems(heartbeatFileContent)
+  const effectiveFileContent = isHeartbeatContentEffectivelyEmpty(strippedContent) ? '' : strippedContent
+  if (effectiveFileContent) sections.push(`\nHEARTBEAT.md contents:\n${effectiveFileContent.slice(0, 2000)}`)
+
   const recentMessages = (session.messages || []).slice(-5)
   const recentContext = recentMessages
     .map((m: any) => {
@@ -270,37 +317,23 @@ export function buildAgentHeartbeatPrompt(session: any, agent: any, fallbackProm
       return `[${m.role}]: ${text}${tools}`
     })
     .join('\n')
+  if (recentContext) sections.push(`Recent conversation:\n${recentContext}`)
 
-  // Strip blocked items, then check if anything meaningful remains
-  const strippedContent = stripBlockedItems(heartbeatFileContent)
-  const effectiveFileContent = isHeartbeatContentEffectivelyEmpty(strippedContent) ? '' : strippedContent
+  // ── Phase 5: Execution instructions ──
+  if (fallbackPrompt !== DEFAULT_HEARTBEAT_PROMPT) sections.push(`\nAgent instructions:\n${fallbackPrompt}`)
 
-  return [
-    'AGENT_HEARTBEAT_TICK',
-    `Time: ${new Date().toISOString()}`,
-    identityContext,
-    continuityContext,
-    description ? `Description: ${description}` : '',
-    eventBlock ? `Events since last heartbeat:\n${eventBlock}` : '',
-    dynamicGoal
-      ? `Current goal (self-set): ${dynamicGoal}`
-      : goalSummary ? `System prompt (initial goal):\n${goalSummary}` : '',
-    dynamicNextAction ? `Planned next action: ${dynamicNextAction}` : '',
-    soul ? `Persona: ${soul.slice(0, 300)}` : '',
-    effectiveFileContent ? `\nHEARTBEAT.md contents:\n${effectiveFileContent.slice(0, 2000)}` : '',
-    recentContext ? `Recent conversation:\n${recentContext}` : '',
-    fallbackPrompt !== DEFAULT_HEARTBEAT_PROMPT ? `\nAgent instructions:\n${fallbackPrompt}` : '',
-    '',
-    'You are running an autonomous heartbeat tick. Review your goal and recent context.',
-    'If there is meaningful work to do toward your goal, use your tools and take action.',
-    'If nothing needs attention right now, reply exactly HEARTBEAT_OK.',
-    'IMPORTANT: Do NOT repeat actions you already performed in recent context. If you already searched for something or completed a task (shown above), report your findings or reply HEARTBEAT_OK — do not search or act again unless there is a NEW reason to do so.',
-    'Do not ask clarifying questions. Take the most reasonable next action.',
-    '',
-    'To update your goal or plan, include this line in your response:',
-    '[AGENT_HEARTBEAT_META]{"goal": "your evolved goal", "status": "progress", "next_action": "what you plan to do next"}',
-    'You can evolve your goal as you learn more. Set status to "progress" while working, "ok" when done, "idle" when waiting.',
-  ].filter(Boolean).join('\n')
+  sections.push('')
+  sections.push('You are running an autonomous heartbeat tick. Review your goal and recent context.')
+  sections.push('If there is meaningful work to do toward your goal, use your tools and take action.')
+  sections.push('If nothing needs attention right now, reply exactly HEARTBEAT_OK.')
+  sections.push('IMPORTANT: Do NOT repeat actions you already performed in recent context. If you already searched for something or completed a task (shown above), report your findings or reply HEARTBEAT_OK — do not search or act again unless there is a NEW reason to do so.')
+  sections.push('Do not ask clarifying questions. Take the most reasonable next action.')
+  sections.push('')
+  sections.push('To update your goal or plan, include this line in your response:')
+  sections.push('[AGENT_HEARTBEAT_META]{"goal": "your evolved goal", "status": "progress", "next_action": "what you plan to do next"}')
+  sections.push('You can evolve your goal as you learn more. Set status to "progress" while working, "ok" when done, "idle" when waiting.')
+
+  return sections.filter(Boolean).join('\n')
 }
 
 function resolveInterval(obj: Record<string, any>, currentSec: number): number {
