@@ -49,6 +49,11 @@ export interface AutonomyAssessment {
   incidents: Array<Omit<SupervisorIncident, 'id' | 'createdAt'>>
   interventionPrompt: string | null
   shouldBlock: boolean
+  autoActions: Array<{
+    action: 'block' | 'replan' | 'compact' | 'budget_trim'
+    prompt?: string
+    budgetWarning?: string
+  }>
 }
 
 export interface ObserveAutonomyRunInput {
@@ -200,7 +205,7 @@ export function assessAutonomyRun(input: {
   const settings = normalizeSupervisorSettings(input.settings || loadSettings())
   const surface = classifySurface(input.source)
   if (!surface || !settings.supervisorEnabled || !runtimeScopeIncludes(settings.supervisorRuntimeScope, surface)) {
-    return { incidents: [], interventionPrompt: null, shouldBlock: false }
+    return { incidents: [], interventionPrompt: null, shouldBlock: false, autoActions: [] }
   }
 
   const session = input.session || null
@@ -329,7 +334,50 @@ export function assessAutonomyRun(input: {
   if (strongest?.kind === 'budget_pressure' && strongest.severity === 'high') shouldBlock = true
   if (strongest?.kind === 'run_error' && (status === 'failed' || status === 'cancelled')) shouldBlock = true
 
-  return { incidents, interventionPrompt, shouldBlock }
+  const seen = new Set<string>()
+  const autoActions: AutonomyAssessment['autoActions'] = []
+  for (const incident of incidents) {
+    const autoAction = incident.autoAction
+    if (!autoAction || seen.has(autoAction)) continue
+    seen.add(autoAction)
+    autoActions.push({
+      action: autoAction as AutonomyAssessment['autoActions'][number]['action'],
+      prompt: autoAction === 'replan' ? interventionPrompt || undefined : undefined,
+      budgetWarning: autoAction === 'budget_trim' ? incident.summary : undefined,
+    })
+  }
+
+  return { incidents, interventionPrompt, shouldBlock, autoActions }
+}
+
+export async function executeSupervisorAutoActions(params: {
+  actions: AutonomyAssessment['autoActions']
+  sessionId: string
+  agentId?: string | null
+}): Promise<{ blocked: boolean }> {
+  let blocked = false
+  for (const action of params.actions) {
+    if (action.action === 'block') {
+      blocked = true
+      try {
+        const { upsertStoredItem } = await import('@/lib/server/storage')
+        const id = genId()
+        upsertStoredItem('notifications', id, {
+          id,
+          type: 'warning',
+          title: 'Supervisor blocked autonomous run',
+          message: `Session ${params.sessionId} blocked by autonomy supervisor.`,
+          sessionId: params.sessionId,
+          agentId: params.agentId,
+          createdAt: Date.now(),
+          read: false,
+        })
+        const { notify } = await import('@/lib/server/ws-hub')
+        notify('notifications')
+      } catch {}
+    }
+  }
+  return { blocked }
 }
 
 function buildSessionTranscript(session: Session, maxMessages = DEFAULT_TRANSCRIPT_MESSAGES): string {
