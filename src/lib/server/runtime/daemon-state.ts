@@ -1,6 +1,6 @@
 import { loadQueue, loadSchedules, loadSessions, loadConnectors, saveConnectors, loadWebhookRetryQueue, upsertWebhookRetry, deleteWebhookRetry, loadWebhooks, loadAgents, loadSettings, appendWebhookLog, loadCredentials, decryptKey } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
-import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue, recoverStalledRunningTasks, resumeQueue } from '@/lib/server/runtime/queue'
+import { processNext, cleanupFinishedTaskSessions, validateCompletedTasksQueue, recoverStalledRunningTasks, resumeQueue, promoteDeferred } from '@/lib/server/runtime/queue'
 import { startScheduler, stopScheduler } from '@/lib/server/runtime/scheduler'
 import { sweepOrphanedBrowsers, getActiveBrowserCount } from '@/lib/server/session-tools'
 import {
@@ -849,6 +849,9 @@ async function runHealthChecks() {
 
   // Keep heartbeat state in sync with task terminal states even without daemon restarts.
   cleanupFinishedTaskSessions()
+
+  // Re-queue deferred tasks whose agents have become available again.
+  try { promoteDeferred() } catch {}
 
   const sessions = loadSessions()
   const now = Date.now()

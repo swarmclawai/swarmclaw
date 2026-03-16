@@ -717,6 +717,15 @@ async function executeTaskRun(
       settings,
     })
     if (assessment.shouldBlock) break
+    if (assessment.autoActions?.length) {
+      const { executeSupervisorAutoActions } = await import('@/lib/server/autonomy/supervisor-reflection')
+      const result = await executeSupervisorAutoActions({
+        actions: assessment.autoActions,
+        sessionId,
+        agentId: agent?.id,
+      })
+      if (result.blocked) break
+    }
     const followupMessage = assessment.interventionPrompt
       || (text && looksIncomplete(text)
         ? 'Continue and complete the remaining steps. Provide a final summary when done.'
@@ -1234,13 +1243,12 @@ export async function processNext() {
       }
       if (isAgentDisabled(agent)) {
         const now = Date.now()
-        task.retryScheduledAt = now + DISABLED_AGENT_RETRY_MS
+        ;(task as any).deferredReason = buildAgentDisabledMessage(agent, 'process queued tasks')
+        task.status = 'deferred' as BoardTask['status']
         task.updatedAt = now
-        task.error = buildAgentDisabledMessage(agent, 'process queued tasks')
+        task.retryScheduledAt = null
         saveTasks(latestTasks)
         notify('tasks')
-        pushQueueUnique(queue, taskId)
-        saveQueue(queue)
         pushMainLoopEventToMainSessions({
           type: 'task_deferred',
           text: `Task deferred: "${task.title}" (${task.id}) — agent ${task.agentId} is disabled.`,
@@ -1911,4 +1919,44 @@ export function resumeQueue() {
     console.log(`[queue] Resuming ${queue.length} queued task(s) on boot`)
     processNext()
   }
+}
+
+/** Re-queue deferred tasks whose agents are now available. */
+export function promoteDeferred(agentId?: string): number {
+  const tasks = loadTasks() as Record<string, BoardTask>
+  const agents = loadAgents()
+  const queue = loadQueue()
+  let promoted = 0
+
+  for (const task of Object.values(tasks)) {
+    if ((task as any).status !== 'deferred') continue
+    if (agentId && task.agentId !== agentId) continue
+
+    const agent = agents[task.agentId]
+    if (!agent || isAgentDisabled(agent as Agent)) continue
+
+    // Check budget if applicable
+    const typedAgent = agent as Agent
+    if (typedAgent.monthlyBudget || typedAgent.dailyBudget || typedAgent.hourlyBudget) {
+      try {
+        const { checkAgentBudgetLimits } = require('@/lib/server/cost')
+        const check = checkAgentBudgetLimits(typedAgent)
+        if (!check.ok) continue // still over budget
+      } catch {}
+    }
+
+    task.status = 'queued'
+    ;(task as any).deferredReason = null
+    task.updatedAt = Date.now()
+    pushQueueUnique(queue, task.id)
+    promoted++
+  }
+
+  if (promoted > 0) {
+    saveTasks(tasks)
+    saveQueue(queue)
+    notify('tasks')
+    queueMicrotask(() => processNext())
+  }
+  return promoted
 }
