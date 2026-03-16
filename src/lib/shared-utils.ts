@@ -60,3 +60,13 @@ export function dedupBy<T>(arr: T[], key: (item: T) => string): T[] {
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
+
+/**
+ * Exponential backoff with 0-10% random jitter.
+ * Prevents thundering-herd when many callers retry simultaneously.
+ */
+export function jitteredBackoff(baseMs: number, attempt: number, maxMs: number): number {
+  const exponential = Math.min(baseMs * Math.pow(2, attempt), maxMs)
+  const jitter = exponential * (Math.random() * 0.1)
+  return Math.round(exponential + jitter)
+}

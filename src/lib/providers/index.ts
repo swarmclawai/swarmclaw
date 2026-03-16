@@ -6,7 +6,7 @@ import { streamOllamaChat } from './ollama'
 import { streamAnthropicChat } from './anthropic'
 import { streamOpenClawChat } from './openclaw'
 import { errorMessage } from '../shared-utils'
-import { sleep } from '@/lib/shared-utils'
+import { sleep, jitteredBackoff } from '@/lib/shared-utils'
 import type { ProviderInfo, ProviderConfig as CustomProviderConfig, ProviderType } from '../../types'
 
 const RETRYABLE_STATUS_CODES = [401, 429, 500, 502, 503]
@@ -444,7 +444,7 @@ export async function streamChatWithFailover(
         })}\n\n`)
         // Exponential backoff for rate-limit / server errors (skip for auth rotation)
         if (statusCode !== 401) {
-          const delay = Math.min(500 * Math.pow(2, i), 8000)
+          const delay = jitteredBackoff(500, i, 8000)
           await sleep(delay)
         }
         continue

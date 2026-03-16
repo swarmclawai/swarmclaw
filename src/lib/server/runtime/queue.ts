@@ -1,5 +1,5 @@
 import { genId } from '@/lib/id'
-import { dedup, hmrSingleton } from '@/lib/shared-utils'
+import { dedup, hmrSingleton, jitteredBackoff } from '@/lib/shared-utils'
 import fs from 'node:fs'
 import path from 'node:path'
 import { loadTasks, saveTasks, loadQueue, saveQueue, loadAgents, loadSchedules, saveSchedules, loadSessions, saveSessions, loadSettings } from '@/lib/server/storage'
@@ -1046,7 +1046,7 @@ function scheduleRetryOrDeadLetter(task: BoardTask, reason: string): 'retry' | '
   task.attempts = (task.attempts || 0) + 1
 
   if ((task.attempts || 0) < (task.maxAttempts || 1)) {
-    const delaySec = Math.min(6 * 3600, (task.retryBackoffSec || 30) * (2 ** Math.max(0, (task.attempts || 1) - 1)))
+    const delaySec = jitteredBackoff((task.retryBackoffSec || 30) * 1000, Math.max(0, (task.attempts || 1) - 1), 6 * 3600_000) / 1000
     task.status = 'queued'
     task.retryScheduledAt = now + delaySec * 1000
     task.updatedAt = now

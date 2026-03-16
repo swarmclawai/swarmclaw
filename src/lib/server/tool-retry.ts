@@ -2,7 +2,7 @@
  * Structured retry with exponential backoff for transient tool failures.
  */
 
-import { sleep } from '@/lib/shared-utils'
+import { sleep, jitteredBackoff } from '@/lib/shared-utils'
 
 export interface RetryOptions {
   maxAttempts?: number
@@ -50,7 +50,7 @@ export async function withRetry<TArgs>(
     // Only retry if the result looks like a retryable error
     if (attempt < maxAttempts && isRetryableError(lastResult, retryable)) {
       await opts?.onRetry?.(attempt, lastResult)
-      const delay = backoffMs * Math.pow(2, attempt - 1)
+      const delay = jitteredBackoff(backoffMs, attempt - 1, backoffMs * 16)
       console.warn(
         `[tool-retry] Attempt ${attempt}/${maxAttempts} matched retryable pattern, retrying in ${delay}ms`,
       )

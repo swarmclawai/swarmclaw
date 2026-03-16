@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process'
-import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
+import { errorMessage, hmrSingleton, jitteredBackoff } from '@/lib/shared-utils'
 
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
@@ -30,7 +30,7 @@ function commandExists(binary: string): boolean {
 
 function cooldownMsForFailures(failures: number): number {
   const clamped = Math.max(1, Math.min(8, failures))
-  return Math.min(5 * 60_000, 10_000 * (2 ** (clamped - 1)))
+  return jitteredBackoff(10_000, clamped - 1, 5 * 60_000)
 }
 
 export function markProviderFailure(providerId: string, error: string): void {

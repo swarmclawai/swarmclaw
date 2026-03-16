@@ -18,7 +18,7 @@ import { buildIdentityContinuityContext } from '@/lib/server/identity-continuity
 import { buildMainLoopHeartbeatPrompt, isMainSession } from '@/lib/server/agents/main-agent-loop'
 import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
 import { isAgentDisabled } from '@/lib/server/agents/agent-availability'
-import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
+import { errorMessage, hmrSingleton, jitteredBackoff } from '@/lib/shared-utils'
 
 const HEARTBEAT_TICK_MS = 60_000
 const MAX_CONCURRENT_HEARTBEATS = 1
@@ -443,7 +443,7 @@ function isBackedOff(sessionId: string, now: number): boolean {
   if (!record || record.count === 0) return false
   // Auto-disabled: permanently backed off until manually re-enabled or failures reset
   if (record.autoDisabledAt) return true
-  const backoffMs = Math.min(BACKOFF_BASE_MS * Math.pow(2, record.count - 1), BACKOFF_MAX_MS)
+  const backoffMs = jitteredBackoff(BACKOFF_BASE_MS, record.count - 1, BACKOFF_MAX_MS)
   return now < record.lastFailedAt + backoffMs
 }
 
