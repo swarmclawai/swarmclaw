@@ -731,6 +731,21 @@ async function executeTaskRun(
         ? 'Continue and complete the remaining steps. Provide a final summary when done.'
         : null)
     if (!followupMessage) break
+
+    // Budget check before follow-up
+    const typedAgentForBudget = agent as Agent
+    if (typedAgentForBudget.monthlyBudget || typedAgentForBudget.dailyBudget || typedAgentForBudget.hourlyBudget) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { checkAgentBudgetLimits } = require('@/lib/server/cost')
+        const followupBudget = checkAgentBudgetLimits(typedAgentForBudget)
+        if (!followupBudget.ok) {
+          console.warn(`[queue] Budget exceeded for "${typedAgentForBudget.name}" during follow-up, stopping.`)
+          break
+        }
+      } catch {}
+    }
+
     previousSummary = text || previousSummary
     const followUp = await executeSessionChatTurn({
       sessionId,
@@ -1254,6 +1269,44 @@ export async function processNext() {
           text: `Task deferred: "${task.title}" (${task.id}) — agent ${task.agentId} is disabled.`,
         })
         return
+      }
+
+      // Budget enforcement gate
+      const typedAgent = agent as Agent
+      if (typedAgent.monthlyBudget || typedAgent.dailyBudget || typedAgent.hourlyBudget) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { checkAgentBudgetLimits } = require('@/lib/server/cost')
+          const budgetCheck = checkAgentBudgetLimits(typedAgent)
+          if (!budgetCheck.ok) {
+            const now = Date.now()
+            const exceeded = budgetCheck.exceeded[0]
+            // Defer: retry after the budget window rolls over
+            const retryMs = exceeded?.window === 'hourly' ? 3600_000
+              : exceeded?.window === 'daily' ? 4 * 3600_000
+              : 24 * 3600_000
+            task.retryScheduledAt = now + retryMs
+            task.error = exceeded?.message || 'Agent budget exceeded'
+            task.updatedAt = now
+            saveTasks(latestTasks)
+            pushQueueUnique(queue, task.id)
+            saveQueue(queue)
+            notify('tasks')
+
+            recordSupervisorIncident({
+              runId: task.id,
+              sessionId: task.sessionId || '',
+              taskId: task.id,
+              agentId: typedAgent.id,
+              source: 'task',
+              kind: 'budget_pressure',
+              severity: 'high',
+              summary: exceeded?.message || `Agent "${typedAgent.name}" budget exceeded, task deferred.`,
+              autoAction: 'budget_trim',
+            })
+            return
+          }
+        } catch {}
       }
 
       const beforeStartTasks = loadTasks() as Record<string, BoardTask>
