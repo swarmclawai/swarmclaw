@@ -1,6 +1,5 @@
 import { spawnSync } from 'child_process'
 import { errorMessage, hmrSingleton, jitteredBackoff } from '@/lib/shared-utils'
-import type { FailoverReason } from '@/lib/providers/error-classification'
 
 type DelegateTool = 'delegate_to_claude_code' | 'delegate_to_codex_cli' | 'delegate_to_opencode_cli' | 'delegate_to_gemini_cli'
 
@@ -34,7 +33,7 @@ function cooldownMsForFailures(failures: number): number {
   return jitteredBackoff(10_000, clamped - 1, 5 * 60_000)
 }
 
-export function markProviderFailure(providerId: string, error: string, reason?: FailoverReason): void {
+export function markProviderFailure(providerId: string, error: string): void {
   const now = Date.now()
   const prev = states.get(providerId) || { failures: 0 }
   const failures = Math.min(50, (prev.failures || 0) + 1)

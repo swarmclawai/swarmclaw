@@ -16,6 +16,7 @@ const STATUS_DOT: Record<BoardTaskStatus, string> = {
   failed: 'bg-red-400',
   cancelled: 'bg-white/20',
   archived: 'bg-white/10',
+  deferred: 'bg-orange-400',
 }
 
 export function TaskList({ inSidebar }: { inSidebar?: boolean }) {

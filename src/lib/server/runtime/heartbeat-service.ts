@@ -447,7 +447,7 @@ function isBackedOff(sessionId: string, now: number): boolean {
   if (!record || record.count === 0) return false
 
   if (record.autoDisabledAt) {
-    // Escalating recovery: 10min, 30min, 1h, 2h, 4h (capped)
+    // Escalating recovery: ~10min, ~20min, ~40min, ~80min, capped at 4h
     const recoveryAttempts = record.recoveryAttempts || 0
     const nextRecoveryAt = record.nextRecoveryAt
       || (record.autoDisabledAt + jitteredBackoff(10 * 60_000, 0, 4 * 3600_000))

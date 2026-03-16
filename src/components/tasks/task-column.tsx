@@ -14,6 +14,7 @@ const COLUMN_CONFIG: Record<BoardTaskStatus, { label: string; color: string; dot
   failed: { label: 'Failed', color: 'text-red-400', dot: 'bg-red-400' },
   cancelled: { label: 'Cancelled', color: 'text-text-3', dot: 'bg-white/20' },
   archived: { label: 'Archived', color: 'text-text-3/50', dot: 'bg-white/10' },
+  deferred: { label: 'Deferred', color: 'text-orange-400', dot: 'bg-orange-400' },
 }
 
 interface Props {

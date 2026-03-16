@@ -1074,16 +1074,16 @@ function scheduleRetryOrDeadLetter(task: BoardTask, reason: string): 'retry' | '
   task.attempts = (task.attempts || 0) + 1
 
   if ((task.attempts || 0) < (task.maxAttempts || 1)) {
-    const delaySec = jitteredBackoff((task.retryBackoffSec || 30) * 1000, Math.max(0, (task.attempts || 1) - 1), 6 * 3600_000) / 1000
+    const delayMs = jitteredBackoff((task.retryBackoffSec || 30) * 1000, Math.max(0, (task.attempts || 1) - 1), 6 * 3600_000)
     task.status = 'queued'
-    task.retryScheduledAt = now + delaySec * 1000
+    task.retryScheduledAt = now + delayMs
     task.updatedAt = now
     task.error = `Retry scheduled after failure: ${reason}`.slice(0, 500)
     if (!task.comments) task.comments = []
     task.comments.push({
       id: genId(),
       author: 'System',
-      text: `Attempt ${task.attempts}/${task.maxAttempts} failed. Retrying in ${delaySec}s.\n\nReason: ${reason}`,
+      text: `Attempt ${task.attempts}/${task.maxAttempts} failed. Retrying in ${Math.round(delayMs / 1000)}s.\n\nReason: ${reason}`,
       createdAt: now,
     })
     return 'retry'
@@ -1258,8 +1258,8 @@ export async function processNext() {
       }
       if (isAgentDisabled(agent)) {
         const now = Date.now()
-        ;(task as any).deferredReason = buildAgentDisabledMessage(agent, 'process queued tasks')
-        task.status = 'deferred' as BoardTask['status']
+        task.deferredReason = buildAgentDisabledMessage(agent, 'process queued tasks')
+        task.status = 'deferred'
         task.updatedAt = now
         task.retryScheduledAt = null
         saveTasks(latestTasks)
@@ -1281,16 +1281,11 @@ export async function processNext() {
           if (!budgetCheck.ok) {
             const now = Date.now()
             const exceeded = budgetCheck.exceeded[0]
-            // Defer: retry after the budget window rolls over
-            const retryMs = exceeded?.window === 'hourly' ? 3600_000
-              : exceeded?.window === 'daily' ? 4 * 3600_000
-              : 24 * 3600_000
-            task.retryScheduledAt = now + retryMs
-            task.error = exceeded?.message || 'Agent budget exceeded'
+            task.status = 'deferred'
+            task.deferredReason = exceeded?.message || 'Agent budget exceeded'
+            task.retryScheduledAt = null
             task.updatedAt = now
             saveTasks(latestTasks)
-            pushQueueUnique(queue, task.id)
-            saveQueue(queue)
             notify('tasks')
 
             recordSupervisorIncident({
@@ -1772,7 +1767,7 @@ export async function processNext() {
     const remainingQueue = loadQueue()
     if (remainingQueue.length > 0 || _queueState.pendingKick) {
       _queueState.pendingKick = false
-      queueMicrotask(() => processNext())
+      setTimeout(() => processNext(), 0)
     }
   }
 }
@@ -1982,7 +1977,7 @@ export function promoteDeferred(agentId?: string): number {
   let promoted = 0
 
   for (const task of Object.values(tasks)) {
-    if ((task as any).status !== 'deferred') continue
+    if (task.status !== 'deferred') continue
     if (agentId && task.agentId !== agentId) continue
 
     const agent = agents[task.agentId]
@@ -1999,7 +1994,7 @@ export function promoteDeferred(agentId?: string): number {
     }
 
     task.status = 'queued'
-    ;(task as any).deferredReason = null
+    task.deferredReason = null
     task.updatedAt = Date.now()
     pushQueueUnique(queue, task.id)
     promoted++
@@ -2009,7 +2004,7 @@ export function promoteDeferred(agentId?: string): number {
     saveTasks(tasks)
     saveQueue(queue)
     notify('tasks')
-    queueMicrotask(() => processNext())
+    setTimeout(() => processNext(), 0)
   }
   return promoted
 }

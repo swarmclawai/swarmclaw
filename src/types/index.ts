@@ -2404,7 +2404,7 @@ export interface StoredSecret {
 
 // --- Task Board ---
 
-export type BoardTaskStatus = 'backlog' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'archived'
+export type BoardTaskStatus = 'backlog' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'archived' | 'deferred'
 
 export interface TaskComment {
   id: string
@@ -3039,6 +3039,7 @@ export interface BoardTask {
     url?: string | null
   } | null
   lastActivityAt?: number | null
+  deferredReason?: string | null
   deadLetteredAt?: number | null
   cliResumeId?: string | null
   cliProvider?: string | null
