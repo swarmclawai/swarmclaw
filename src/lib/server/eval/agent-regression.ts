@@ -860,8 +860,6 @@ export function resolveRegressionExtensions(
   }
 }
 
-/** @deprecated Use resolveRegressionExtensions */
-export const resolveRegressionPlugins = resolveRegressionExtensions
 
 function listSessionApprovals(sessionId: string): ApprovalRequest[] {
   return Object.values(loadApprovals() as Record<string, ApprovalRequest>)

@@ -78,7 +78,7 @@ describe('delegate fallback', () => {
         persistDelegateResumeId: () => {},
         readStoredDelegateResumeId: () => null,
         resolveCurrentSession: () => null,
-        activePlugins: ['delegate'],
+        activeExtensions: ['delegate'],
       })
 
       const delegateTool = tools.find((tool) => tool.name === 'delegate')
@@ -108,7 +108,7 @@ describe('delegate fallback', () => {
         persistDelegateResumeId: () => {},
         readStoredDelegateResumeId: () => null,
         resolveCurrentSession: () => null,
-        activePlugins: ['delegate'],
+        activeExtensions: ['delegate'],
       })
 
       const delegateTool = tools.find((tool) => tool.name === 'delegate')
@@ -148,7 +148,7 @@ describe('delegate fallback', () => {
         persistDelegateResumeId: () => {},
         readStoredDelegateResumeId: () => null,
         resolveCurrentSession: () => null,
-        activePlugins: ['delegate', 'memory'],
+        activeExtensions: ['delegate', 'memory'],
       })
 
       const delegateTool = tools.find((tool) => tool.name === 'delegate')
@@ -184,7 +184,7 @@ describe('delegate fallback', () => {
         persistDelegateResumeId: () => {},
         readStoredDelegateResumeId: () => null,
         resolveCurrentSession: () => null,
-        activePlugins: ['delegate'],
+        activeExtensions: ['delegate'],
       })
 
       const delegateTool = tools.find((tool) => tool.name === 'delegate')
@@ -220,7 +220,7 @@ describe('delegate fallback', () => {
         persistDelegateResumeId: () => {},
         readStoredDelegateResumeId: () => null,
         resolveCurrentSession: () => null,
-        activePlugins: ['delegate'],
+        activeExtensions: ['delegate'],
       })
 
       const delegateTool = tools.find((tool) => tool.name === 'delegate')
@@ -259,7 +259,7 @@ describe('delegate fallback', () => {
         persistDelegateResumeId: () => {},
         readStoredDelegateResumeId: () => null,
         resolveCurrentSession: () => null,
-        activePlugins: ['delegate'],
+        activeExtensions: ['delegate'],
       })
 
       const delegateTool = tools.find((tool) => tool.name === 'delegate')
@@ -295,7 +295,7 @@ describe('delegate fallback', () => {
         persistDelegateResumeId: () => {},
         readStoredDelegateResumeId: () => null,
         resolveCurrentSession: () => null,
-        activePlugins: ['delegate'],
+        activeExtensions: ['delegate'],
       })
 
       const delegateTool = tools.find((tool) => tool.name === 'delegate')
@@ -334,7 +334,7 @@ describe('delegate fallback', () => {
         persistDelegateResumeId: () => {},
         readStoredDelegateResumeId: () => null,
         resolveCurrentSession: () => null,
-        activePlugins: ['delegate'],
+        activeExtensions: ['delegate'],
       })
 
       const delegateTool = tools.find((tool) => tool.name === 'delegate')

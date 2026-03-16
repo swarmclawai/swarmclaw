@@ -49,7 +49,7 @@ function getClientIp(request: NextRequest): string {
   return (request as unknown as { ip?: string }).ip ?? 'unknown'
 }
 
-function withPluginInstallCorsHeaders(pathname: string, origin: string | null, headers?: HeadersInit): Headers {
+function withExtensionInstallCorsHeaders(pathname: string, origin: string | null, headers?: HeadersInit): Headers {
   const merged = new Headers(headers)
   if (!isExtensionInstallCorsPath(pathname)) return merged
   const corsHeaders = buildExtensionInstallCorsHeaders(origin)
@@ -116,7 +116,7 @@ export function proxy(request: NextRequest) {
       { error: 'Too many failed attempts. Try again later.', retryAfter },
       {
         status: 429,
-        headers: withPluginInstallCorsHeaders(pathname, corsOrigin, { 'Retry-After': String(retryAfter) }),
+        headers: withExtensionInstallCorsHeaders(pathname, corsOrigin, { 'Retry-After': String(retryAfter) }),
       },
     )
   }
@@ -142,7 +142,7 @@ export function proxy(request: NextRequest) {
       { error: 'Unauthorized' },
       {
         status: 401,
-        headers: withPluginInstallCorsHeaders(pathname, corsOrigin, { 'X-RateLimit-Remaining': String(remaining) }),
+        headers: withExtensionInstallCorsHeaders(pathname, corsOrigin, { 'X-RateLimit-Remaining': String(remaining) }),
       },
     )
   }

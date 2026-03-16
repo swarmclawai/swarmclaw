@@ -5,7 +5,7 @@ import { getEnabledToolPlanningView, getToolsForCapability, TOOL_CAPABILITY } fr
 
 let seq = 0
 
-function uniquePluginId(prefix: string): string {
+function uniqueExtensionId(prefix: string): string {
   seq += 1
   return `${prefix}_${Date.now()}_${seq}`
 }
@@ -30,7 +30,7 @@ describe('tool-planning', () => {
   })
 
   it('collects planning metadata from custom extension tools', () => {
-    const extensionId = uniquePluginId('planner_extension')
+    const extensionId = uniqueExtensionId('planner_extension')
     getExtensionManager().registerBuiltin(extensionId, {
       name: 'Planner Extension',
       tools: [

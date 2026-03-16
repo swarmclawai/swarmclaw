@@ -56,7 +56,7 @@ test('buildDiscoveredSkillPromptText renders extension skill content', () => {
     makeDiscoveredSkill('google-workspace', '# Google Workspace\nUse `gws`.'),
   ])
 
-  assert.match(prompt, /## Plugin Skills/)
+  assert.match(prompt, /## Extension Skills/)
   assert.match(prompt, /### google-workspace/)
   assert.match(prompt, /Use `gws`\./)
 })

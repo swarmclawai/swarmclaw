@@ -47,7 +47,7 @@ const TOOL_ALIAS_GROUPS = [
   ['sandbox', 'sandbox_exec', 'sandbox_list_runtimes'],
   ['wallet', 'wallet_tool'],
   ['monitor', 'monitor_tool'],
-  ['sample_ui', 'show_plugin_card'],
+  ['sample_ui', 'show_extension_card'],
   ['context_mgmt', 'context_status', 'context_summarize'],
   ['openclaw_workspace'],
   ['openclaw_nodes'],
@@ -327,7 +327,7 @@ function canonicalizeToolList(values) {
 }
 
 function getAgentTools(agent) {
-  if (Array.isArray(agent?.plugins) && agent.plugins.length > 0) return agent.plugins
+  if (Array.isArray(agent?.extensions) && agent.extensions.length > 0) return agent.extensions
   if (Array.isArray(agent?.tools) && agent.tools.length > 0) return agent.tools
   return []
 }
@@ -1923,7 +1923,7 @@ async function main() {
     model: probeAgent.model,
     credentialId: probeAgent.credentialId || null,
     apiEndpoint: probeAgent.apiEndpoint || null,
-    plugins: getAgentTools(probeAgent),
+    extensions: getAgentTools(probeAgent),
     user: 'benchmark',
     cwd: workspaceFixture.workspaceRoot,
   })
@@ -1936,7 +1936,7 @@ async function main() {
     model: probeAgent.model,
     credentialId: probeAgent.credentialId || null,
     apiEndpoint: probeAgent.apiEndpoint || null,
-    plugins: getAgentTools(probeAgent),
+    extensions: getAgentTools(probeAgent),
     user: 'benchmark',
     cwd: workspaceFixture.workspaceRoot,
   })
@@ -2023,7 +2023,7 @@ async function main() {
         model: openclawAgent.model,
         credentialId: openclawAgent.credentialId || null,
         apiEndpoint: openclawAgent.apiEndpoint || null,
-        plugins: getAgentTools(openclawAgent),
+        extensions: getAgentTools(openclawAgent),
         user: 'benchmark',
       })
       createdIds.sessions.push(openclawSession.id)

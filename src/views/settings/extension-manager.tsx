@@ -41,7 +41,7 @@ export function ExtensionManager() {
   useEffect(() => { loadExtensions() }, [loadExtensions])
   useEffect(() => { if (tab === 'marketplace') loadMarketplace(marketplaceQuery) }, [tab, loadMarketplace, marketplaceQuery])
 
-  const togglePlugin = async (filename: string, enabled: boolean) => {
+  const toggleExtension = async (filename: string, enabled: boolean) => {
     try {
       await api('POST', '/extensions', { filename, enabled })
       toast.success(enabled ? 'Extension enabled' : 'Extension disabled')
@@ -220,7 +220,7 @@ export function ExtensionManager() {
           </div>
         )}
         <div
-          onClick={() => togglePlugin(p.filename, !p.enabled)}
+          onClick={() => toggleExtension(p.filename, !p.enabled)}
           className={`w-10 h-6 rounded-full transition-all duration-200 relative cursor-pointer shrink-0
             ${p.enabled ? 'bg-accent-bright' : 'bg-white/[0.08]'}`}
         >

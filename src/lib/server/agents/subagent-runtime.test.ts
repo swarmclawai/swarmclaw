@@ -273,7 +273,7 @@ describe('subagent-runtime', () => {
     })
   })
 
-  describe('mergePlugins', () => {
+  describe('mergeExtensions', () => {
     it('returns agent extensions when parent has none', () => {
       const merged = runtime._mergeExtensions(['shell', 'memory'], null)
       assert.deepEqual(merged, ['shell', 'memory'])

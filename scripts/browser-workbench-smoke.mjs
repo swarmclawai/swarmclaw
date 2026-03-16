@@ -81,7 +81,7 @@ async function createWorkbenchFixture(baseUrl, accessKey) {
       user: 'browser-smoke',
       agentId: agent.id,
       messages: buildSeededMessages(agent.name),
-      plugins: ['files', 'browser'],
+      extensions: ['files', 'browser'],
     },
   })
 

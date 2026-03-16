@@ -2615,7 +2615,7 @@ describe('sanitizeConnectorOutboundContent', () => {
         })
 
         const thread = storage.loadSessions().agent_thread
-        const replyText = String(result.text || '').replace(/\\n+\\*-- Sent via Sample UI Plugin --\\*\\s*$/, '')
+        const replyText = String(result.text || '').replace(/\\n+\\*-- Sent via Sample UI Extension --\\*\\s*$/, '')
         console.log(JSON.stringify({
           reply: JSON.parse(replyText),
           threadMessages: thread.messages,

@@ -363,8 +363,8 @@ const COMMAND_GROUPS = {
       update: { description: 'Enable or disable an extension (body: {"filename":"x.js","enabled":true})', method: 'POST', path: '/extensions' },
       marketplace: { description: 'Get extension marketplace registry', method: 'GET', path: '/extensions/marketplace' },
       install: { description: 'Install extension by URL', method: 'POST', path: '/extensions/install' },
-      'settings-get': { description: 'Read extension settings (supports --query pluginId=...)', method: 'GET', path: '/extensions/settings' },
-      'settings-set': { description: 'Write extension settings (supports --query pluginId=... and --data JSON)', method: 'PUT', path: '/extensions/settings' },
+      'settings-get': { description: 'Read extension settings (supports --query extensionId=...)', method: 'GET', path: '/extensions/settings' },
+      'settings-set': { description: 'Write extension settings (supports --query extensionId=... and --data JSON)', method: 'PUT', path: '/extensions/settings' },
     },
   },
   providers: {

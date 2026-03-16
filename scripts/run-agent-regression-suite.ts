@@ -36,7 +36,7 @@ async function main() {
     agentId: readFlag('--agent') || 'default',
     approvalModes: parseApprovalModes(readFlag('--modes')),
     scenarioIds: parseList(readFlag('--scenarios')),
-    extensionMode: parseExtensionMode(readFlag('--plugin-mode')),
+    extensionMode: parseExtensionMode(readFlag('--extension-mode')),
   })
 
   const payload = {

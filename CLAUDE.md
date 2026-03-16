@@ -54,7 +54,7 @@ All API routes live under `src/app/api/`. Key endpoints:
 - `daemon-state.ts` — Background daemon (30s heartbeat) running scheduler + task queue
 - `connectors/` — Chat platform bridges (Discord, Slack, Telegram, WhatsApp) with `manager.ts` routing messages
 - `session-tools.ts` — Agent tool execution (shell, files, web search, browser, claude_code delegation)
-- `plugins.ts` — Extension system with lifecycle hooks (JS files in `data/extensions/`)
+- `extensions.ts` — Extension system with lifecycle hooks (JS files in `data/extensions/`)
 - `cost.ts` — Token counting and pricing per provider/model
 - `embeddings.ts` — Vector embedding provider integration
 
@@ -65,7 +65,7 @@ Each provider implements a `streamChat` function. Provider registry in `index.ts
 - Automatic failover through `streamChatWithFailover()` on 401/429/5xx errors
 
 ### Types
-Core type definitions in `src/types/index.ts`: `Agent`, `Session`, `Message`, `ProviderType`, `Connector`, `Schedule`, `MemoryEntry`, `BoardTask`, `Skill`, `Plugin`, `PluginHooks`
+Core type definitions in `src/types/index.ts`: `Agent`, `Session`, `Message`, `ProviderType`, `Connector`, `Schedule`, `MemoryEntry`, `BoardTask`, `Skill`, `Extension`, `ExtensionHooks`
 
 ### Agent Fields: `systemPrompt` vs `soul`
 - **`systemPrompt`** — Functional instructions: platform knowledge, tool usage, domain rules, capabilities. This is the "what you know and can do" layer.
