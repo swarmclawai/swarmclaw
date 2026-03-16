@@ -36,6 +36,10 @@ interface FailureRecord {
   lastFailedAt: number
   /** Set when auto-disabled due to too many consecutive failures */
   autoDisabledAt?: number
+  /** How many recovery attempts have been made since auto-disable */
+  recoveryAttempts?: number
+  /** Timestamp when the next recovery attempt is allowed */
+  nextRecoveryAt?: number
 }
 
 interface HeartbeatState {
@@ -441,8 +445,22 @@ function shouldRunHeartbeats(settings: Record<string, any>): boolean {
 function isBackedOff(sessionId: string, now: number): boolean {
   const record = state.failures.get(sessionId)
   if (!record || record.count === 0) return false
-  // Auto-disabled: permanently backed off until manually re-enabled or failures reset
-  if (record.autoDisabledAt) return true
+
+  if (record.autoDisabledAt) {
+    // Escalating recovery: 10min, 30min, 1h, 2h, 4h (capped)
+    const recoveryAttempts = record.recoveryAttempts || 0
+    const nextRecoveryAt = record.nextRecoveryAt
+      || (record.autoDisabledAt + jitteredBackoff(10 * 60_000, 0, 4 * 3600_000))
+    if (now < nextRecoveryAt) return true
+
+    // Time to try recovery — reset count so heartbeat fires again
+    record.count = 0
+    record.autoDisabledAt = undefined
+    record.recoveryAttempts = recoveryAttempts + 1
+    record.nextRecoveryAt = now + jitteredBackoff(10 * 60_000, recoveryAttempts, 4 * 3600_000)
+    return false
+  }
+
   const backoffMs = jitteredBackoff(BACKOFF_BASE_MS, record.count - 1, BACKOFF_MAX_MS)
   return now < record.lastFailedAt + backoffMs
 }
@@ -630,6 +648,10 @@ export async function tickHeartbeats() {
 
     const sid = session.id as string
     enqueue.promise.then(() => {
+      const prev = state.failures.get(sid)
+      if (prev?.recoveryAttempts) {
+        log.info('heartbeat', `Recovery successful for session ${sid} after ${prev.recoveryAttempts} attempt(s)`)
+      }
       state.failures.delete(sid)
       // Track successful delivery
       patchSession(sid, (s) => {
