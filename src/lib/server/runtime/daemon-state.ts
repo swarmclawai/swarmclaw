@@ -34,6 +34,7 @@ import { createNotification } from '@/lib/server/create-notification'
 import { pingProvider, OPENAI_COMPATIBLE_DEFAULTS, restoreProviderHealthState } from '@/lib/server/provider-health'
 import { runIntegrityMonitor } from '@/lib/server/integrity-monitor'
 import { recoverStaleDelegationJobs } from '@/lib/server/agents/delegation-jobs'
+import { restoreSwarmRegistry } from '@/lib/server/agents/subagent-swarm'
 import { pruneMainLoopState } from '@/lib/server/agents/main-agent-loop'
 import { checkSwarmTimeouts, ensureProtocolEngineRecovered } from '@/lib/server/protocols/protocol-service'
 import { sweepManagedProcesses, reapOrphanedSandboxContainers } from '@/lib/server/runtime/process-manager'
@@ -192,6 +193,10 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     recoverStaleDelegationJobs()
     ensureProtocolEngineRecovered()
     restoreProviderHealthState()
+    try {
+      const lost = restoreSwarmRegistry()
+      if (lost > 0) console.log(`[daemon] Marked ${lost} in-flight swarm(s) as lost after restart`)
+    } catch { /* best-effort */ }
     resumeQueue()
     startScheduler()
     startQueueProcessor()

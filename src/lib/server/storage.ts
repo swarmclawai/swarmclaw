@@ -249,6 +249,7 @@ const COLLECTIONS = [
   'protocol_runs',
   'protocol_run_events',
   'provider_health',
+  'swarm_snapshots',
 ] as const
 
 export type StorageCollection = (typeof COLLECTIONS)[number]

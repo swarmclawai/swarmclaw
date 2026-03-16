@@ -30,7 +30,7 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export type SwarmStatus = 'spawning' | 'running' | 'completed' | 'partial' | 'failed'
+export type SwarmStatus = 'spawning' | 'running' | 'completed' | 'partial' | 'failed' | 'lost'
 
 export interface SwarmMember {
   /** Position in the spawn order */
@@ -151,6 +151,22 @@ function notifySwarmChanged() {
   notify('swarm_status')
 }
 
+function persistSwarmSnapshot(swarm: SwarmHandle): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { upsertStoredItem } = require('@/lib/server/storage')
+    upsertStoredItem('swarm_snapshots', swarm.swarmId, {
+      swarmId: swarm.swarmId,
+      parentSessionId: swarm.parentSessionId,
+      status: swarm.status,
+      memberCount: swarm.members.length,
+      createdAt: swarm.createdAt,
+      completedAt: swarm.completedAt,
+      updatedAt: Date.now(),
+    })
+  } catch { /* best-effort */ }
+}
+
 // ---------------------------------------------------------------------------
 // Core: Spawn Swarm
 // ---------------------------------------------------------------------------
@@ -239,6 +255,7 @@ export async function spawnSwarm(
       }
       swarm.status = 'failed'
       notifySwarmChanged()
+      persistSwarmSnapshot(swarm)
     },
   }
 
@@ -260,6 +277,7 @@ export async function spawnSwarm(
       // Update swarm status using counters (O(1))
       updateSwarmStatus(swarm, counters, spawnErrorCount)
       notifySwarmChanged()
+      persistSwarmSnapshot(swarm)
 
       return { index: member.index, result }
     })
@@ -276,6 +294,7 @@ export async function spawnSwarm(
       try { input.onSwarmComplete(aggregate) } catch { /* callback errors don't break */ }
     }
     notifySwarmChanged()
+    persistSwarmSnapshot(swarm)
     return aggregate
   })
 
@@ -307,6 +326,7 @@ export async function spawnSwarm(
   // Register in swarm registry
   swarmRegistry.set(swarmId, swarm)
   notifySwarmChanged()
+  persistSwarmSnapshot(swarm)
 
   return swarm
 }
@@ -478,8 +498,14 @@ export function listSwarms(parentSessionId?: string): SwarmHandle[] {
  */
 export function getSwarmSnapshot(swarmId: string): SwarmSnapshot | null {
   const swarm = swarmRegistry.get(swarmId)
-  if (!swarm) return null
-  return buildSwarmSnapshot(swarm)
+  if (swarm) return buildSwarmSnapshot(swarm)
+  // Fallback to persisted store for swarms from previous process lifetimes
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { loadStoredItem } = require('@/lib/server/storage')
+    const persisted = loadStoredItem('swarm_snapshots', swarmId)
+    return persisted ? (persisted as SwarmSnapshot) : null
+  } catch { return null }
 }
 
 export interface SwarmMemberSnapshot {
@@ -553,6 +579,34 @@ function buildSwarmSnapshot(swarm: SwarmHandle): SwarmSnapshot {
     ).length,
     members,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Restart recovery
+// ---------------------------------------------------------------------------
+
+/**
+ * On daemon startup, scan persisted swarm snapshots and mark any that were
+ * still running/spawning as "lost" — they cannot be resumed after a restart.
+ * Returns the number of swarms marked lost.
+ */
+export function restoreSwarmRegistry(): number {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { loadCollection, upsertStoredItem } = require('@/lib/server/storage')
+    const persisted = loadCollection('swarm_snapshots') as Record<string, any>
+    let lost = 0
+    for (const [id, record] of Object.entries(persisted)) {
+      if (swarmRegistry.has(id)) continue
+      if (record.status === 'running' || record.status === 'spawning') {
+        record.status = 'lost'
+        record.completedAt = record.completedAt || Date.now()
+        upsertStoredItem('swarm_snapshots', id, record)
+        lost++
+      }
+    }
+    return lost
+  } catch { return 0 }
 }
 
 // ---------------------------------------------------------------------------
