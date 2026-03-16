@@ -248,6 +248,7 @@ const COLLECTIONS = [
   'protocol_templates',
   'protocol_runs',
   'protocol_run_events',
+  'provider_health',
 ] as const
 
 export type StorageCollection = (typeof COLLECTIONS)[number]

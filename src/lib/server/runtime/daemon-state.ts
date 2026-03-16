@@ -31,7 +31,7 @@ import { errorMessage, hmrSingleton } from '@/lib/shared-utils'
 import path from 'node:path'
 import type { Session, WebhookRetryEntry } from '@/types'
 import { createNotification } from '@/lib/server/create-notification'
-import { pingProvider, OPENAI_COMPATIBLE_DEFAULTS } from '@/lib/server/provider-health'
+import { pingProvider, OPENAI_COMPATIBLE_DEFAULTS, restoreProviderHealthState } from '@/lib/server/provider-health'
 import { runIntegrityMonitor } from '@/lib/server/integrity-monitor'
 import { recoverStaleDelegationJobs } from '@/lib/server/agents/delegation-jobs'
 import { pruneMainLoopState } from '@/lib/server/agents/main-agent-loop'
@@ -191,6 +191,7 @@ export function startDaemon(options?: { source?: string; manualStart?: boolean }
     cleanupFinishedTaskSessions()
     recoverStaleDelegationJobs()
     ensureProtocolEngineRecovered()
+    restoreProviderHealthState()
     resumeQueue()
     startScheduler()
     startQueueProcessor()

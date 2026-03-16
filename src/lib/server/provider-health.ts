@@ -45,6 +45,11 @@ export function markProviderFailure(providerId: string, error: string, reason?: 
     lastSuccessAt: prev.lastSuccessAt,
     cooldownUntil: now + cooldownMsForFailures(failures),
   })
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { upsertStoredItem } = require('@/lib/server/storage')
+    upsertStoredItem('provider_health', providerId, states.get(providerId)!)
+  } catch {}
 }
 
 export function markProviderSuccess(providerId: string): void {
@@ -57,6 +62,11 @@ export function markProviderSuccess(providerId: string): void {
     lastSuccessAt: now,
     cooldownUntil: undefined,
   })
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { upsertStoredItem } = require('@/lib/server/storage')
+    upsertStoredItem('provider_health', providerId, states.get(providerId)!)
+  } catch {}
   queueMicrotask(() => {
     import('@/lib/server/missions/mission-service')
       .then(({ requestMissionTicksForProviderRecovery }) => {
@@ -151,6 +161,24 @@ export function getProviderHealthSnapshot(): Record<string, ProviderHealthState 
     }
   }
   return out
+}
+
+export function restoreProviderHealthState(): number {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { loadCollection } = require('@/lib/server/storage')
+    const persisted = loadCollection('provider_health') as Record<string, ProviderHealthState>
+    let restored = 0
+    for (const [id, record] of Object.entries(persisted)) {
+      if (states.has(id)) continue
+      // Only restore if cooldown is still active
+      if (record.cooldownUntil && record.cooldownUntil > Date.now()) {
+        states.set(id, record)
+        restored++
+      }
+    }
+    return restored
+  } catch { return 0 }
 }
 
 // ---------------------------------------------------------------------------
