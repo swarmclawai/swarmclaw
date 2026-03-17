@@ -1,6 +1,6 @@
 {
   "name": "@swarmclawai/swarmclaw",
-  "version": "1.1.9",
+  "version": "1.2.0",
   "description": "Self-hosted AI runtime for OpenClaw, delegation, autonomy, runtime skills, crypto wallets, and chat platform connectors.",
   "license": "MIT",
   "publishConfig": {
@@ -104,7 +104,7 @@
     "langchain": "^1.2.30",
     "lucide-react": "^0.574.0",
     "mailparser": "^3.9.3",
-    "next": "16.1.6",
+    "next": "16.1.7",
     "next-themes": "^0.4.6",
     "nodemailer": "^8.0.1",
     "openclaw": "^2026.2.26",
@@ -140,7 +140,7 @@
   },
   "devDependencies": {
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
+    "eslint-config-next": "16.1.7",
     "tsx": "^4.20.6"
   },
   "optionalDependencies": {

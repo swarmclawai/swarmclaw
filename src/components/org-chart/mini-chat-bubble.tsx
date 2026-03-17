@@ -8,6 +8,7 @@ import { useWs } from '@/hooks/use-ws'
 import { api } from '@/lib/app/api-client'
 import { fetchMessages } from '@/lib/chat/chats'
 import { streamChat } from '@/lib/chat/chat'
+import { hmrSingleton } from '@/lib/shared-utils'
 import type { Agent, Message, Session, SSEEvent } from '@/types'
 import { INTERNAL_KEY_RE, stripAllInternalMetadata } from '@/lib/strip-internal-metadata'
 
@@ -20,7 +21,7 @@ interface Props {
 const BUBBLE_W = 320
 
 /** Client-side cache: agentId → sessionId, avoids redundant POST on reopen */
-const sessionCache = new Map<string, string>()
+const sessionCache = hmrSingleton('miniChatBubble_sessionCache', () => new Map<string, string>())
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 
