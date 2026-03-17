@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { useAppStore } from '@/stores/use-app-store'
 import { Avatar } from '@/components/shared/avatar'
@@ -8,6 +8,7 @@ import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { DaemonIndicator } from '@/components/layout/daemon-indicator'
 import { NotificationCenter } from '@/components/shared/notification-center'
 import { NavItem, RailTooltip } from '@/components/layout/nav-item'
+import { useWs } from '@/hooks/use-ws'
 import { FULL_WIDTH_VIEWS } from '@/lib/app/view-constants'
 import { pathToView, useNavigate } from '@/lib/app/navigation'
 import { safeStorageGet, safeStorageSet } from '@/lib/app/safe-storage'
@@ -29,16 +30,20 @@ export function SidebarRail({
   const navigateTo = useNavigate()
   const currentUser = useAppStore((s) => s.currentUser)
   const appSettings = useAppStore((s) => s.appSettings)
-  const agents = useAppStore((s) => s.agents)
+  const defaultAgent = useAppStore((s) => {
+    const defaultId = s.appSettings.defaultAgentId
+    if (defaultId && s.agents[defaultId]) return s.agents[defaultId]
+    const first = Object.values(s.agents)[0]
+    return first || null
+  })
   const currentAgentId = useAppStore((s) => s.currentAgentId)
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
+  const skillDraftCount = useAppStore((s) => s.skillDraftCount)
+  const loadSkillDraftCount = useAppStore((s) => s.loadSkillDraftCount)
 
   const activeView = pathToView(pathname) ?? 'home'
 
-  const defaultAgent = appSettings.defaultAgentId && agents[appSettings.defaultAgentId]
-    ? agents[appSettings.defaultAgentId]
-    : Object.values(agents)[0] || null
   const defaultAgentId = defaultAgent?.id || null
   const isDefaultChat = activeView === 'agents' && currentAgentId === defaultAgentId
 
@@ -48,6 +53,9 @@ export function SidebarRail({
   })
   // Mobile always forces expanded
   const railExpanded = mobile || railExpandedStored
+
+  useEffect(() => { void loadSkillDraftCount() }, [loadSkillDraftCount])
+  useWs('skills', loadSkillDraftCount)
 
   const toggleRail = () => {
     if (mobile) return
@@ -295,7 +303,7 @@ export function SidebarRail({
                 <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
               </svg>
             </NavItem>
-            <NavItem view="skills" label="Skills" expanded={railExpanded} isActive={isNavActive('skills')} onClick={() => handleNavClick('skills')}>
+            <NavItem view="skills" label="Skills" badge={skillDraftCount} expanded={railExpanded} isActive={isNavActive('skills')} onClick={() => handleNavClick('skills')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
               </svg>

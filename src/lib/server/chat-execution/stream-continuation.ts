@@ -820,9 +820,10 @@ export function buildContinuationPrompt(params: {
 
     case 'coordinator_delegation_nudge':
       return [
-        'You have specialist workers available but have been using tools directly for substantial work.',
-        'Consider delegating the remaining work via `spawn_subagent` to the appropriate worker.',
-        'Direct tool use is fine for quick validation, but substantial work should go to specialists.',
+        'IMPORTANT: You have specialist workers available but you have been doing substantial work directly with tools.',
+        'You MUST delegate the remaining work via `spawn_subagent` to the appropriate specialist worker NOW.',
+        'As a coordinator, your job is to orchestrate — not to do the work yourself. Direct tool use is only for quick lookups and validation.',
+        'Review the workers listed in your system prompt and delegate immediately.',
       ].join('\n')
 
     case 'loop_recovery': {

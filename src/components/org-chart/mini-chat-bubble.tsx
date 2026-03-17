@@ -19,6 +19,9 @@ interface Props {
 
 const BUBBLE_W = 320
 
+/** Client-side cache: agentId → sessionId, avoids redundant POST on reopen */
+const sessionCache = new Map<string, string>()
+
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 
 /** Filter status text that looks like raw IDs or data dumps */
@@ -39,29 +42,56 @@ export function MiniChatBubble({ agent, onClose, onToolActivity }: Props) {
   const [streamText, setStreamText] = useState('')
   const [inputValue, setInputValue] = useState('')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const cancelledRef = useRef(false)
 
   // Initialize: get or create thread session, load messages
-  useEffect(() => {
-    let cancelled = false
-    async function init() {
-      try {
-        const session = await api<Session>('POST', `/agents/${agent.id}/thread`)
-        if (cancelled) return
-        setSessionId(session.id)
-        const msgs = await fetchMessages(session.id)
-        if (cancelled) return
-        setMessages(msgs)
-      } catch {
-        // Agent may not be available
-      } finally {
-        if (!cancelled) setLoading(false)
+  const init = useCallback(async () => {
+    setError(null)
+    setLoading(true)
+    try {
+      const cachedSid = sessionCache.get(agent.id)
+      if (cachedSid) {
+        // Try cached session first — skip POST entirely
+        try {
+          const msgs = await fetchMessages(cachedSid)
+          if (cancelledRef.current) return
+          setSessionId(cachedSid)
+          setMessages(msgs)
+          return
+        } catch {
+          // Cached session gone — clear and fall through to POST
+          sessionCache.delete(agent.id)
+        }
       }
+
+      const session = await api<Session>('POST', `/agents/${agent.id}/thread`)
+      if (cancelledRef.current) return
+      setSessionId(session.id)
+      sessionCache.set(agent.id, session.id)
+
+      // Use messages from POST response if present, otherwise fetch
+      if (Array.isArray(session.messages) && session.messages.length > 0) {
+        setMessages(session.messages as Message[])
+      } else {
+        const msgs = await fetchMessages(session.id)
+        if (cancelledRef.current) return
+        setMessages(msgs)
+      }
+    } catch {
+      if (!cancelledRef.current) setError('Could not connect to agent')
+    } finally {
+      if (!cancelledRef.current) setLoading(false)
     }
-    init()
-    return () => { cancelled = true }
   }, [agent.id])
+
+  useEffect(() => {
+    cancelledRef.current = false
+    init()
+    return () => { cancelledRef.current = true }
+  }, [init])
 
   // Real-time message refresh via WebSocket (mirrors main ChatArea pattern)
   const refreshMessages = useCallback(async () => {
@@ -188,7 +218,18 @@ export function MiniChatBubble({ agent, onClose, onToolActivity }: Props) {
         {loading && (
           <div className="text-[11px] text-text-3/50 text-center py-8">Loading...</div>
         )}
-        {!loading && visibleMessages.length === 0 && !streaming && (
+        {!loading && error && (
+          <div className="text-center py-8 space-y-2">
+            <div className="text-[11px] text-red-400/70">{error}</div>
+            <button
+              onClick={() => { init() }}
+              className="text-[11px] text-accent-bright/70 hover:text-accent-bright cursor-pointer border-none bg-transparent underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!loading && !error && visibleMessages.length === 0 && !streaming && (
           <div className="text-[11px] text-text-3/40 text-center py-8">
             Start a conversation with {agent.name}
           </div>
@@ -228,7 +269,7 @@ export function MiniChatBubble({ agent, onClose, onToolActivity }: Props) {
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
           placeholder="Type a message..."
-          disabled={loading || !sessionId}
+          disabled={loading || !!error || !sessionId}
           className="flex-1 text-[12px] bg-white/[0.04] border border-white/[0.06] rounded-[6px] px-2.5 py-1.5 text-text placeholder:text-text-3/30 outline-none focus:border-accent-bright/30 transition-colors disabled:opacity-40"
         />
         {streaming ? (

@@ -4,17 +4,17 @@ import type { StreamChatOptions } from './index'
 import { PROVIDER_DEFAULTS, IMAGE_EXTS, TEXT_EXTS, ANTHROPIC_MAX_TOKENS, MAX_HISTORY_MESSAGES, writeSSE } from './provider-defaults'
 import { resolveImagePath } from '@/lib/server/resolve-image'
 
-function fileToContentBlocks(filePath: string): Array<Record<string, unknown>> {
+async function fileToContentBlocks(filePath: string): Promise<Array<Record<string, unknown>>> {
   if (!filePath || !fs.existsSync(filePath)) return []
   if (IMAGE_EXTS.test(filePath)) {
-    const data = fs.readFileSync(filePath).toString('base64')
+    const data = (await fs.promises.readFile(filePath)).toString('base64')
     const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
     const mediaType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
     return [{ type: 'image', source: { type: 'base64', media_type: mediaType, data } }]
   }
   if (TEXT_EXTS.test(filePath) || filePath.endsWith('.pdf')) {
     try {
-      const text = fs.readFileSync(filePath, 'utf-8')
+      const text = await fs.promises.readFile(filePath, 'utf-8')
       const name = filePath.split('/').pop() || 'file'
       return [{ type: 'text', text: `[Attached file: ${name}]\n\n${text}` }]
     } catch { return [] }
@@ -23,8 +23,8 @@ function fileToContentBlocks(filePath: string): Array<Record<string, unknown>> {
 }
 
 export function streamAnthropicChat({ session, message, imagePath, apiKey, systemPrompt, write, active, loadHistory, onUsage, signal }: StreamChatOptions): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const messages = buildMessages(session, message, imagePath, loadHistory)
+  return new Promise(async (resolve, reject) => {
+    const messages = await buildMessages(session, message, imagePath, loadHistory)
     const model = session.model || 'claude-sonnet-4-6'
     let usageInput = 0
     let usageOutput = 0
@@ -59,6 +59,7 @@ export function streamAnthropicChat({ session, message, imagePath, apiKey, syste
       hostname: PROVIDER_DEFAULTS.anthropic,
       path: '/v1/messages',
       method: 'POST',
+      timeout: 60_000,
       headers: {
         'x-api-key': apiKey || '',
         'anthropic-version': '2023-06-01',
@@ -122,6 +123,11 @@ export function streamAnthropicChat({ session, message, imagePath, apiKey, syste
     apiReqRef = apiReq
     active.set(session.id, { kill: () => { abortController.aborted = true; apiReq.destroy() } })
 
+    apiReq.on('timeout', () => {
+      console.error(`[${session.id}] anthropic request timed out after 60s`)
+      apiReq.destroy(new Error('Request timed out after 60s'))
+    })
+
     apiReq.on('error', (e) => {
       console.error(`[${session.id}] anthropic request error:`, e.message)
       writeSSE(write, 'err', e.message)
@@ -133,7 +139,7 @@ export function streamAnthropicChat({ session, message, imagePath, apiKey, syste
   })
 }
 
-function buildMessages(session: Record<string, unknown> & { id: string }, message: string, imagePath: string | undefined, loadHistory: (id: string) => Record<string, unknown>[]) {
+async function buildMessages(session: Record<string, unknown> & { id: string }, message: string, imagePath: string | undefined, loadHistory: (id: string) => Record<string, unknown>[]) {
   const msgs: Array<{ role: string; content: unknown }> = []
 
   if (loadHistory) {
@@ -141,7 +147,7 @@ function buildMessages(session: Record<string, unknown> & { id: string }, messag
     for (const m of history) {
       const histImagePath = resolveImagePath(m.imagePath as string | undefined, m.imageUrl as string | undefined)
       if (m.role === 'user' && histImagePath) {
-        const blocks = fileToContentBlocks(histImagePath)
+        const blocks = await fileToContentBlocks(histImagePath)
         msgs.push({ role: 'user', content: [...blocks, { type: 'text', text: m.text }] })
       } else {
         msgs.push({ role: m.role as string, content: m.text })
@@ -150,7 +156,7 @@ function buildMessages(session: Record<string, unknown> & { id: string }, messag
   }
 
   if (imagePath) {
-    const blocks = fileToContentBlocks(imagePath)
+    const blocks = await fileToContentBlocks(imagePath)
     msgs.push({ role: 'user', content: [...blocks, { type: 'text', text: message }] })
   } else {
     msgs.push({ role: 'user', content: message })

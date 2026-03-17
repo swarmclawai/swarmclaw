@@ -3,7 +3,7 @@ import type { Agent, Session } from '@/types'
 import { applyResolvedRoute, resolvePrimaryAgentRoute } from '@/lib/server/agents/agent-runtime-config'
 import { isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
-import { loadAgents, loadSessions, upsertAgent, upsertStoredItem } from '@/lib/server/storage'
+import { loadAgents, loadSession, loadSessions, upsertAgent, upsertStoredItem } from '@/lib/server/storage'
 import { getEnabledCapabilitySelection } from '@/lib/capability-selection'
 
 function buildEmptyDelegateResumeIds(): NonNullable<Session['delegateResumeIds']> {
@@ -107,26 +107,32 @@ function shouldHealAgentCredentialId(agent: Agent, session: Session): boolean {
   return session.provider === agent.provider
 }
 
-export function ensureAgentThreadSession(agentId: string, user = 'default'): Session | null {
-  const agents = loadAgents()
-  const agent = agents[agentId] as Agent | undefined
+export function ensureAgentThreadSession(agentId: string, user = 'default', preloadedAgent?: Agent): Session | null {
+  const agent = preloadedAgent ?? (loadAgents()[agentId] as Agent | undefined)
   if (!agent) return null
 
-  const sessions = loadSessions()
   const now = Date.now()
-  const disabled = isAgentDisabled(agent)
 
+  // Fast path: agent already has a threadSessionId — single-row lookup
   const existingId = typeof agent.threadSessionId === 'string' ? agent.threadSessionId : ''
-  if (existingId && sessions[existingId]) {
-    const session = buildThreadSession(agent, existingId, user, now, sessions[existingId] as Session)
-    if (shouldHealAgentCredentialId(agent, session)) {
-      agent.credentialId = session.credentialId ?? null
-      agent.updatedAt = now
-      upsertAgent(agentId, agent)
+  if (existingId) {
+    const existing = loadSession(existingId)
+    if (existing) {
+      const session = buildThreadSession(agent, existingId, user, now, existing)
+      if (shouldHealAgentCredentialId(agent, session)) {
+        agent.credentialId = session.credentialId ?? null
+        agent.updatedAt = now
+        upsertAgent(agentId, agent)
+      }
+      upsertStoredItem('sessions', existingId, session)
+      return session
     }
-    upsertStoredItem('sessions', existingId, session)
-    return session
+    // Session was deleted — fall through to legacy search / creation
   }
+
+  // Legacy search: full table scan only when threadSessionId is missing or stale
+  const sessions = loadSessions()
+  const disabled = isAgentDisabled(agent)
 
   const legacySession = Object.values(sessions).find((session) => (
     (session.shortcutForAgentId === agentId || session.name === `agent-thread:${agentId}`)

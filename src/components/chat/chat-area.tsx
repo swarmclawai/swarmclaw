@@ -311,12 +311,12 @@ export function ChatArea() {
   useWs(
     sessionId ? `messages:${sessionId}` : '',
     refreshMessages,
-    shouldPollMessages ? 2000 : undefined,
+    shouldPollMessages ? 10_000 : undefined,
   )
   useWs(
     sessionId ? 'runs' : '',
     refreshQueue,
-    sessionId && (isServerActive || queuedCount > 0) ? 2000 : undefined,
+    sessionId && (isServerActive || queuedCount > 0) ? 10_000 : undefined,
   )
 
   // Listen for stream-end signal from the server — clears streaming state
@@ -363,7 +363,7 @@ export function ChatArea() {
   useWs(
     hasBrowserTool && sessionId ? `browser:${sessionId}` : '',
     checkBrowserStatus,
-    hasBrowserTool ? 5000 : undefined,
+    hasBrowserTool ? 30_000 : undefined,
   )
 
   const handleStopBrowser = useCallback(async () => {

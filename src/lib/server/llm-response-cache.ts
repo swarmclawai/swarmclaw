@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { hmrSingleton } from '@/lib/shared-utils'
 import type { AppSettings, Message } from '@/types'
 
 export interface LlmResponseCacheConfig {
@@ -48,7 +49,7 @@ const MAX_TTL_SEC = 7 * 24 * 3600
 const MIN_ENTRIES = 1
 const MAX_ENTRIES = 20_000
 
-const responseCache = new Map<string, LlmResponseCacheEntry>()
+const responseCache = hmrSingleton('__swarmclaw_llm_response_cache__', () => new Map<string, LlmResponseCacheEntry>())
 
 function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''

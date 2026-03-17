@@ -30,6 +30,8 @@ export interface DataSlice {
   loadGatewayProfiles: () => Promise<void>
   skills: Record<string, Skill>
   loadSkills: () => Promise<void>
+  skillDraftCount: number
+  loadSkillDraftCount: () => Promise<void>
   connectors: Record<string, Connector>
   loadConnectors: () => Promise<void>
   webhooks: Record<string, Webhook>
@@ -82,6 +84,15 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set, 
   loadGatewayProfiles: createLoader<AppState>(set, 'gatewayProfiles', () => api<GatewayProfile[]>('GET', '/gateways'), []),
   skills: {},
   loadSkills: createLoader<AppState>(set, 'skills', () => api<Record<string, Skill>>('GET', '/skills'), {}),
+  skillDraftCount: 0,
+  loadSkillDraftCount: async () => {
+    try {
+      const result = await api<{ total: number }>('GET', '/skill-review-counts')
+      setIfChanged<AppState>(set, 'skillDraftCount', result.total)
+    } catch (err: unknown) {
+      console.warn('Store error:', err)
+    }
+  },
   connectors: {},
   loadConnectors: createLoader<AppState>(set, 'connectors', () => api<Record<string, Connector>>('GET', '/connectors'), {}),
   webhooks: {},

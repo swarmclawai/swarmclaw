@@ -53,8 +53,8 @@ export function NotificationCenter({
   align?: 'left' | 'right'
   direction?: 'up' | 'down'
 }) {
-  const now = useNow()
   const [open, setOpen] = useState(false)
+  const now = useNow({ enabled: open })
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({

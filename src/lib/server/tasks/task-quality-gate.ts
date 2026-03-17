@@ -12,7 +12,7 @@ export interface NormalizedTaskQualityGate {
 export const DEFAULT_TASK_QUALITY_GATE: NormalizedTaskQualityGate = {
   enabled: true,
   minResultChars: 80,
-  minEvidenceItems: 2,
+  minEvidenceItems: 1,
   requireVerification: false,
   requireArtifact: false,
   requireReport: false,

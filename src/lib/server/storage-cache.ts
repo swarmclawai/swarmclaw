@@ -38,11 +38,13 @@ export class TTLCache<T> {
 type TTLCacheStore = {
   settings?: TTLCache<AppSettings>
   agents?: TTLCache<Record<string, unknown>>
+  sessions?: TTLCache<Record<string, unknown>>
 }
 const ttlCaches: TTLCacheStore = hmrSingleton<TTLCacheStore>('__swarmclaw_ttl_caches__', () => ({}))
 
 export function getSettingsCache() { return ttlCaches.settings ?? (ttlCaches.settings = new TTLCache(60_000)) }
 export function getAgentsCache() { return ttlCaches.agents ?? (ttlCaches.agents = new TTLCache(15_000)) }
+export function getSessionsCache() { return ttlCaches.sessions ?? (ttlCaches.sessions = new TTLCache(5_000)) }
 
 // --- LRU Cache ---
 

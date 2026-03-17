@@ -4,6 +4,7 @@ import {
   deleteStoredItem,
   loadRuntimeRun,
   loadRuntimeRunEvents,
+  loadRuntimeRunEventsByRunId,
   loadRuntimeRuns,
   patchRuntimeRun,
   upsertRuntimeRun,
@@ -96,10 +97,9 @@ export function appendPersistedRunEvent(input: {
 
 export function listPersistedRunEvents(runId: string, limit = 1000): RunEventRecord[] {
   const safeLimit = Math.max(1, Math.min(5000, Math.trunc(limit)))
-  return Object.values(loadRuntimeRunEvents())
-    .filter((event) => event.runId === runId)
-    .sort((left, right) => left.timestamp - right.timestamp)
-    .slice(-safeLimit)
+  // Query filtered at SQL level to avoid full-table scan
+  const events = loadRuntimeRunEventsByRunId(runId)
+  return events.slice(-safeLimit)
 }
 
 export function loadRecoverableStaleRuns(): SessionRunRecord[] {

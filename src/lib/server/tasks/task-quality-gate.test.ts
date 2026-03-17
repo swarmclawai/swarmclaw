@@ -6,7 +6,7 @@ test('normalizeTaskQualityGate uses defaults when unset', () => {
   const gate = normalizeTaskQualityGate(undefined, undefined)
   assert.equal(gate.enabled, true)
   assert.equal(gate.minResultChars, 80)
-  assert.equal(gate.minEvidenceItems, 2)
+  assert.equal(gate.minEvidenceItems, 1)
   assert.equal(gate.requireVerification, false)
   assert.equal(gate.requireArtifact, false)
   assert.equal(gate.requireReport, false)

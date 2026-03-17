@@ -339,10 +339,10 @@ function checkCoordinatorDelegation(ctx: ContinuationContext): ContinuationDecis
   // Skip if already delegated
   const delegationTools = ['spawn_subagent', 'manage_protocols']
   if (delegationTools.some(t => ctx.state.usedToolNames.has(t))) return null
-  // Only nudge if coordinator made 3+ direct substantial tool calls
+  // Only nudge if coordinator made 2+ direct substantial tool calls
   const directTools = ['files', 'edit_file', 'shell', 'web']
   const directCallCount = directTools.filter(t => ctx.state.usedToolNames.has(t)).length
-  if (directCallCount < 3) return null
+  if (directCallCount < 2) return null
   ctx.limits.increment('coordinator_delegation_nudge')
   writeStatus(ctx, { coordinatorDelegationNudge: true })
   return { type: 'coordinator_delegation_nudge', requiredToolReminderNames: [] }

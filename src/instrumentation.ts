@@ -49,6 +49,33 @@ export async function register() {
     if (!shutdownState.registered) {
       process.on('SIGTERM', () => { void shutdown('SIGTERM') })
       process.on('SIGINT', () => { void shutdown('SIGINT') })
+
+      // Gracefully handle EPIPE errors from child processes (e.g. Playwright MCP proxy)
+      // that occur during dev server restarts when stdio pipes break
+      process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EPIPE') {
+          console.warn('[instrumentation] Ignoring EPIPE (expected during dev server restart)')
+          return
+        }
+        console.error('[instrumentation] Uncaught exception:', err)
+        process.exit(1)
+      })
+
+      // LangGraph's streamEvents leaves dangling internal promises when the
+      // for-await loop exits early. Suppress expected LangGraph rejections;
+      // log all others so they're not silently dropped.
+      process.on('unhandledRejection', (err: unknown) => {
+        if (
+          err && typeof err === 'object'
+          && ('pregelTaskId' in err
+            || (err instanceof Error && (err.name === 'AbortError' || err.name === 'GraphRecursionError'))
+            || (err as Record<string, unknown>).lc_error_code === 'GRAPH_RECURSION_LIMIT')
+        ) {
+          return
+        }
+        console.error('[instrumentation] Unhandled rejection:', err)
+      })
+
       shutdownState.registered = true
     }
   }

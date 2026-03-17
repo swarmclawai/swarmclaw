@@ -8,6 +8,7 @@ import { isDevelopmentLikeRuntime } from '@/lib/runtime/runtime-env'
 import { useWs } from '@/hooks/use-ws'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
 import { resolveSetupDone } from '@/hooks/setup-done-detection'
+import { setIfChanged } from '@/stores/set-if-changed'
 import type { Agent } from '@/types'
 
 const AUTH_CHECK_TIMEOUT_MS = isDevelopmentLikeRuntime() ? 20_000 : 8_000
@@ -155,7 +156,7 @@ export function useAppBootstrap() {
           retries: 0,
         })
         if (cancelled) return
-        useAppStore.setState({ agents })
+        setIfChanged(useAppStore.setState, 'agents', agents)
 
         const { currentAgentId, appSettings } = useAppStore.getState()
         const targetId = (currentAgentId && agents[currentAgentId])

@@ -64,13 +64,24 @@ export function ChatList({ inSidebar, onSelect }: Props) {
     }))
   }, [sessions, currentUser, showLocalPlatformSessions])
 
+  // Pre-index connectors by agentId for O(1) lookup instead of O(connectors) per session
+  const connectorByAgentId = useMemo(() => {
+    const index = new Map<string, typeof connectors[string]>()
+    for (const item of Object.values(connectors)) {
+      if (item.chatroomId == null && item.agentId && item.isEnabled !== false) {
+        index.set(item.agentId, item)
+      }
+    }
+    return index
+  }, [connectors])
+
   const filtered = useMemo(() => {
     return allUserSessions
       .filter((s) => {
         const unreadCount = (getSessionLastAssistantAt(s) || 0) > (lastReadTimestamps[s.id] || 0) ? 1 : 0
         if (search) {
           const agent = s.agentId ? agents[s.agentId] : null
-          const connector = Object.values(connectors).find((item) => item.chatroomId == null && item.agentId === s.agentId && item.isEnabled !== false)
+          const connector = s.agentId ? connectorByAgentId.get(s.agentId) : undefined
           const lastMessage = getSessionLastMessage(s)
           const haystack = [
             s.name,
@@ -102,7 +113,7 @@ export function ChatList({ inSidebar, onSelect }: Props) {
         if (sortMode === 'messages') return getSessionMessageCount(b) - getSessionMessageCount(a)
         return (b.lastActiveAt || 0) - (a.lastActiveAt || 0)
       })
-  }, [agents, allUserSessions, connectors, lastReadTimestamps, search, sortMode, typeFilter])
+  }, [agents, allUserSessions, connectorByAgentId, lastReadTimestamps, search, sortMode, typeFilter])
 
   const handleSelect = async (id: string) => {
     const agentId = sessions[id]?.agentId

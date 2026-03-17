@@ -39,9 +39,17 @@ const child = cliPath
       env: sanitizePlaywrightEnv(process.env),
     })
 
-// Forward stdin → child
-process.stdin.on('data', (chunk) => child.stdin.write(chunk))
-process.stdin.on('end', () => child.stdin.end())
+// Graceful EPIPE handling — dev server restarts break stdio pipes
+function safeWrite(stream, chunk) {
+  try { stream.write(chunk) } catch { /* EPIPE during restart, ignore */ }
+}
+
+process.stdin.on('data', (chunk) => safeWrite(child.stdin, chunk))
+process.stdin.on('end', () => { try { child.stdin.end() } catch { /* ignore */ } })
+child.stdin.on('error', (err) => {
+  if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') return
+  process.stderr.write(`Proxy child stdin error: ${err.message}\n`)
+})
 
 // Parse MCP Content-Length framed messages from child stdout, intercept screenshots
 let buf = ''
@@ -84,10 +92,21 @@ child.stdout.on('data', (chunk) => {
       output = body
     }
     const frame = `Content-Length: ${Buffer.byteLength(output)}\r\n\r\n${output}`
-    process.stdout.write(frame)
+    safeWrite(process.stdout, frame)
   }
 })
+child.stdout.on('error', (err) => {
+  if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') return
+  process.stderr.write(`Proxy child stdout error: ${err.message}\n`)
+})
 
-child.stderr.on('data', (chunk) => process.stderr.write(chunk))
+child.stderr.on('data', (chunk) => safeWrite(process.stderr, chunk))
+child.stderr.on('error', () => { /* ignore stderr errors */ })
 child.on('close', (code) => process.exit(code || 0))
-child.on('error', (err) => { process.stderr.write(`Proxy error: ${err.message}\n`); process.exit(1) })
+child.on('error', (err) => { safeWrite(process.stderr, `Proxy error: ${err.message}\n`); process.exit(1) })
+
+// Handle parent stdout/stderr EPIPE (broken pipe when dev server restarts)
+process.stdout.on('error', (err) => {
+  if (err.code === 'EPIPE') { child.kill(); process.exit(0) }
+})
+process.stderr.on('error', () => { /* ignore */ })

@@ -33,6 +33,9 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
     await sessionRefreshDedup.dedup(id, async () => {
       try {
         const session = await fetchChat(id)
+        const existing = get().sessions[id]
+        // Skip update if the session data hasn't changed
+        if (existing && JSON.stringify(existing) === JSON.stringify(session)) return
         invalidateFingerprint('sessions')
         set({
           sessions: { ...get().sessions, [id]: session },

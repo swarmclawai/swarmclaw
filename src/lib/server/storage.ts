@@ -48,6 +48,7 @@ import {
   capacityFor,
   getSettingsCache,
   getAgentsCache,
+  getSessionsCache,
 } from './storage-cache'
 import { normalizeStoredRecord, type NormalizationResult } from './storage-normalization'
 import {
@@ -86,6 +87,9 @@ const db = new Database(DB_PATH)
 if (!IS_BUILD_BOOTSTRAP) {
   db.pragma('journal_mode = WAL')
   db.pragma('busy_timeout = 5000')
+  db.pragma('synchronous = NORMAL')
+  db.pragma('cache_size = -64000')
+  db.pragma('mmap_size = 268435456')
 }
 db.pragma('foreign_keys = ON')
 
@@ -710,8 +714,12 @@ Be concise but not curt. Warmth doesn't require verbosity. When someone asks "ho
 
 // --- Sessions ---
 export function loadSessions(): Record<string, StoredSessionRecord> {
+  const sessionsCache = getSessionsCache()
+  const cached = sessionsCache.get()
+  if (cached) return structuredClone(cached) as unknown as Record<string, StoredSessionRecord>
+
   const sessions = loadCollection('sessions') as unknown as Record<string, StoredSessionRecord>
-  const agents = loadCollection('agents')
+  const agents = loadAgents()
   const changedEntries: Array<[string, StoredSessionRecord]> = []
 
   for (const [id, session] of Object.entries(sessions)) {
@@ -750,6 +758,7 @@ export function loadSessions(): Record<string, StoredSessionRecord> {
 
   // Upsert only changed entries — never full-replace, which deletes concurrent sessions
   if (changedEntries.length > 0) upsertCollectionItems('sessions', changedEntries)
+  sessionsCache.set(sessions as unknown as Record<string, unknown>)
   return sessions
 }
 
@@ -761,6 +770,7 @@ export function saveSessions(s: Record<string, Session | StoredObject>) {
     normalizeValue('sessions', structuredClone(session as unknown as StoredObject)),
   ])
   if (entries.length > 0) upsertCollectionItems('sessions', entries)
+  getSessionsCache().invalidate()
 }
 
 export function loadSession(id: string): Session | null {
@@ -769,10 +779,13 @@ export function loadSession(id: string): Session | null {
 
 export function upsertSession(id: string, session: Session | Record<string, unknown>) {
   upsertCollectionItem('sessions', id, session)
+  getSessionsCache().invalidate()
 }
 
 export function patchSession(id: string, updater: (current: Session | null) => Session | null): Session | null {
-  return patchStoredItem<Session>('sessions', id, updater)
+  const result = patchStoredItem<Session>('sessions', id, updater)
+  getSessionsCache().invalidate()
+  return result
 }
 
 export function disableAllSessionHeartbeats(): number {
@@ -966,7 +979,7 @@ export const upsertTask = tasksStore.upsert
 export const upsertTasks = tasksStore.upsertMany
 export const patchTask = tasksStore.patch as (id: string, updater: (current: BoardTask | null) => BoardTask | null) => BoardTask | null
 export const deleteTask = tasksStore.deleteItem
-export function deleteSession(id: string) { deleteCollectionItem('sessions', id) }
+export function deleteSession(id: string) { deleteCollectionItem('sessions', id); getSessionsCache().invalidate() }
 export function deleteAgent(id: string) { deleteCollectionItem('agents', id); getAgentsCache().invalidate() }
 export const deleteSchedule = schedulesStore.deleteItem
 export function deleteSkill(id: string) { skillsStore.deleteItem(id) }
@@ -1295,6 +1308,20 @@ const runtimeRunEventsStore = createCollectionStore('runtime_run_events')
 export const loadRuntimeRunEvents = runtimeRunEventsStore.load as () => Record<string, RunEventRecord>
 export const saveRuntimeRunEvents = runtimeRunEventsStore.save as (items: Record<string, RunEventRecord>) => void
 export const upsertRuntimeRunEvent = runtimeRunEventsStore.upsert as (id: string, value: RunEventRecord) => void
+
+/** Load run events filtered by runId at the SQL level (avoids full-table scan). */
+export function loadRuntimeRunEventsByRunId(runId: string): RunEventRecord[] {
+  const rows = db.prepare(
+    `SELECT data FROM runtime_run_events WHERE json_extract(data, '$.runId') = ? ORDER BY json_extract(data, '$.timestamp') ASC`,
+  ).all(runId) as Array<{ data: string }>
+  const results: RunEventRecord[] = []
+  for (const row of rows) {
+    try {
+      results.push(JSON.parse(row.data) as RunEventRecord)
+    } catch { /* skip malformed */ }
+  }
+  return results
+}
 
 const runtimeEstopStore = createCollectionStore('runtime_estop')
 const ESTOP_STATE_ID = 'global'

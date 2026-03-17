@@ -13,6 +13,7 @@ import crypto from 'node:crypto'
 import { HumanMessage } from '@langchain/core/messages'
 import { z } from 'zod'
 import { buildLLM } from '@/lib/server/build-llm'
+import { hmrSingleton } from '@/lib/shared-utils'
 import type { Message } from '@/types'
 
 // ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ export type MessageClassification = z.infer<typeof MessageClassificationSchema>
 // ---------------------------------------------------------------------------
 
 const MAX_CACHE_SIZE = 200
-const classificationCache = new Map<string, MessageClassification>()
+const classificationCache = hmrSingleton('__swarmclaw_classification_cache__', () => new Map<string, MessageClassification>())
 
 function cacheKey(message: string): string {
   return crypto.createHash('sha256').update(message).digest('hex')

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "generatedAt": "2026-03-17T14:05:10.881Z",
-  "totalIssues": 442,
-  "uniqueIssues": 153,
+  "generatedAt": "2026-03-17T14:48:21.923Z",
+  "totalIssues": 440,
+  "uniqueIssues": 152,
   "issues": [
     {
       "filePath": "bin/worker-cmd.js",
@@ -80,13 +80,6 @@
       "severity": 2,
       "message": "Use \"@ts-expect-error\" instead of \"@ts-ignore\", as \"@ts-ignore\" will do nothing if the following line is error-free.",
       "count": 1
-    },
-    {
-      "filePath": "src/app/api/logs/route.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "severity": 2,
-      "message": "Unexpected any. Specify a different type.",
-      "count": 2
     },
     {
       "filePath": "src/app/api/mcp-servers/[id]/test/route.ts",

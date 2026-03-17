@@ -10,10 +10,13 @@ import { prepareScheduledTaskRun } from '@/lib/server/tasks/task-lifecycle'
 import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
 import { ensureMissionForTask, noteScheduleMissionTriggered } from '@/lib/server/missions/mission-service'
 import { hasActiveProtocolRunForSchedule, launchProtocolRunForSchedule } from '@/lib/server/protocols/protocol-service'
+import { hmrSingleton } from '@/lib/shared-utils'
 import type { Schedule } from '@/types'
 
 const TICK_INTERVAL = 60_000 // 60 seconds
-let intervalId: ReturnType<typeof setInterval> | null = null
+const schedulerState = hmrSingleton('__swarmclaw_scheduler_state__', () => ({
+  intervalId: null as ReturnType<typeof setInterval> | null,
+}))
 
 interface ScheduleTaskLike {
   status?: string
@@ -41,19 +44,19 @@ function shouldLaunchScheduleProtocol(schedule: Schedule): boolean {
 }
 
 export function startScheduler() {
-  if (intervalId) return
+  if (schedulerState.intervalId) return
   console.log('[scheduler] Starting scheduler engine (60s tick)')
 
   // Compute initial nextRunAt for cron schedules missing it
   computeNextRuns()
 
-  intervalId = setInterval(tick, TICK_INTERVAL)
+  schedulerState.intervalId = setInterval(tick, TICK_INTERVAL)
 }
 
 export function stopScheduler() {
-  if (intervalId) {
-    clearInterval(intervalId)
-    intervalId = null
+  if (schedulerState.intervalId) {
+    clearInterval(schedulerState.intervalId)
+    schedulerState.intervalId = null
     console.log('[scheduler] Stopped scheduler engine')
   }
 }

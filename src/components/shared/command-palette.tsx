@@ -17,6 +17,33 @@ interface CommandItem {
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false)
+
+  // Register keyboard shortcut (always mounted)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
+  // Also listen for custom event
+  useEffect(() => {
+    const handler = () => setOpen(true)
+    window.addEventListener('swarmclaw:open-search', handler)
+    return () => window.removeEventListener('swarmclaw:open-search', handler)
+  }, [])
+
+  if (!open) return null
+
+  return <CommandPaletteInner setOpen={setOpen} />
+}
+
+/** Inner component — only mounted when palette is open, so store subscriptions are gated. */
+function CommandPaletteInner({ setOpen }: { setOpen: (v: boolean) => void }) {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -39,31 +66,21 @@ export function CommandPalette() {
         detail: { tabId, sectionId },
       }))
     }, 80)
-  }, [navigateTo])
+  }, [navigateTo, setOpen])
 
-  // Register keyboard shortcut
+  // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        setOpen((v) => !v)
-      }
-      if (e.key === 'Escape' && open) {
-        setOpen(false)
-      }
+      if (e.key === 'Escape') setOpen(false)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [open])
+  }, [setOpen])
 
-  // Focus input when opened
+  // Focus input when mounted
   useEffect(() => {
-    if (open) {
-      setQuery('')
-      setSelectedIndex(0)
-      setTimeout(() => inputRef.current?.focus(), 50)
-    }
-  }, [open])
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }, [])
 
   const items = useMemo<CommandItem[]>(() => {
     const result: CommandItem[] = []
@@ -177,7 +194,7 @@ export function CommandPalette() {
     }
 
     return result
-  }, [agents, currentUser, navigateTo, openSettingsSection, sessions, setCurrentAgent, setEditingTaskId, setTaskSheetOpen, tasks])
+  }, [agents, currentUser, navigateTo, openSettingsSection, sessions, setCurrentAgent, setEditingTaskId, setOpen, setTaskSheetOpen, tasks])
 
   const filtered = useMemo(() => {
     if (!query.trim()) return items.slice(0, 20)
@@ -213,8 +230,6 @@ export function CommandPalette() {
     const el = listRef.current.children[selectedIndex] as HTMLElement | undefined
     el?.scrollIntoView({ block: 'nearest' })
   }, [selectedIndex])
-
-  if (!open) return null
 
   const categoryLabel = { agent: 'Agents', chat: 'Chats', task: 'Tasks', nav: 'Navigation', setting: 'Settings' } as const
   const categoryIcon = {

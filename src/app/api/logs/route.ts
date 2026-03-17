@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import fs from 'fs'
 import { APP_LOG_PATH } from '@/lib/server/data-dir'
 
+/** Max bytes to read from the tail of the log file (256 KB). */
+const TAIL_BYTES = 256 * 1024
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const lines = parseInt(searchParams.get('lines') || '200', 10)
@@ -13,7 +16,29 @@ export async function GET(req: Request) {
       return NextResponse.json({ entries: [], total: 0 })
     }
 
-    const content = fs.readFileSync(APP_LOG_PATH, 'utf8')
+    const stat = fs.statSync(APP_LOG_PATH)
+    const fileSize = stat.size
+    if (fileSize === 0) {
+      return NextResponse.json({ entries: [], total: 0 })
+    }
+
+    // Read only the tail of the file to avoid loading multi-MB logs into memory
+    const readSize = Math.min(fileSize, TAIL_BYTES)
+    const buf = Buffer.alloc(readSize)
+    const fd = fs.openSync(APP_LOG_PATH, 'r')
+    try {
+      fs.readSync(fd, buf, 0, readSize, fileSize - readSize)
+    } finally {
+      fs.closeSync(fd)
+    }
+
+    let content = buf.toString('utf8')
+    // If we didn't read from the start, drop the first partial line
+    if (readSize < fileSize) {
+      const firstNewline = content.indexOf('\n')
+      if (firstNewline >= 0) content = content.slice(firstNewline + 1)
+    }
+
     let allLines = content.split('\n').filter(Boolean)
 
     // Filter by level
@@ -33,8 +58,9 @@ export async function GET(req: Request) {
     const entries = allLines.slice(-lines).reverse().map(parseLine)
 
     return NextResponse.json({ entries, total })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 
@@ -44,8 +70,9 @@ export async function DELETE() {
       fs.writeFileSync(APP_LOG_PATH, '')
     }
     return NextResponse.json({ ok: true })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 

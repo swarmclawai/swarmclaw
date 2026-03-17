@@ -7,7 +7,7 @@ async function fileToContentParts(filePath: string): Promise<Array<Record<string
   if (!filePath || !fs.existsSync(filePath)) return []
   const name = filePath.split('/').pop() || 'file'
   if (IMAGE_EXTS.test(filePath)) {
-    const buf = fs.readFileSync(filePath)
+    const buf = await fs.promises.readFile(filePath)
     if (buf.length === 0) return [{ type: 'text', text: `[Attached image: ${name} — file is empty]` }]
     const data = buf.toString('base64')
     const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
@@ -22,7 +22,7 @@ async function fileToContentParts(filePath: string): Promise<Array<Record<string
     try {
       // @ts-ignore — pdf-parse types
       const pdfParse = (await import(/* webpackIgnore: true */ 'pdf-parse')).default
-      const buf = fs.readFileSync(filePath)
+      const buf = await fs.promises.readFile(filePath)
       const result = await pdfParse(buf)
       const pdfText = (result.text || '').trim()
       if (!pdfText) return [{ type: 'text', text: `[Attached PDF: ${name} — no extractable text]` }]
@@ -34,7 +34,7 @@ async function fileToContentParts(filePath: string): Promise<Array<Record<string
   }
   if (TEXT_EXTS.test(filePath)) {
     try {
-      const text = fs.readFileSync(filePath, 'utf-8')
+      const text = await fs.promises.readFile(filePath, 'utf-8')
       return [{ type: 'text', text: `[Attached file: ${name}]\n\n${text}` }]
     } catch { return [] }
   }

@@ -266,6 +266,15 @@ async function dispatchSkillRun(params: {
   const toolArgs = normalizeDispatchArgs(params.rawArgs)
   const { buildSessionTools } = await import('./index')
   const built = await buildSessionTools(params.bctx.cwd, params.bctx.activeExtensions, params.bctx.ctx)
+  if (!built?.tools) {
+    return JSON.stringify({
+      ok: false,
+      executed: false,
+      mode: 'dispatch_blocked',
+      skill: summarizeRuntimeSkill(params.skill),
+      blocker: 'Unable to load session tools for skill dispatch.',
+    })
+  }
   try {
     const targetTool = built.tools.find((entry) => entry.name === dispatch.toolName)
     if (!targetTool) {
@@ -298,7 +307,7 @@ async function dispatchSkillRun(params: {
         : toolOutput,
     })
   } finally {
-    await built.cleanup()
+    await built?.cleanup()
   }
 }
 

@@ -190,6 +190,23 @@ The building blocks are the same: **agents, tools, memory, delegation, schedules
 
 ## Release Notes
 
+### v1.1.9 Highlights
+
+- **Docker build stability**: limit Next.js page data workers to 1 in build mode to prevent `SQLITE_BUSY` contention.
+- **Async file I/O in providers**: Anthropic and OpenAI providers now use `fs.promises` for non-blocking attachment reads.
+- **Anthropic request timeout**: 60s timeout on Anthropic API requests prevents indefinite hangs.
+- **Graceful crash handling**: instrumentation now catches EPIPE and suppresses expected LangGraph unhandled rejections.
+- **Log tail optimization**: `/api/logs` reads only the last 256 KB instead of loading the entire log file.
+- **Thread session fast path**: `ensureAgentThreadSession` uses single-row lookup instead of full table scan when `threadSessionId` is set.
+- **Memory graph performance**: force-directed simulation writes to DOM imperatively instead of re-rendering React state per frame; stops when kinetic energy settles.
+- **Reduced polling frequency**: chat area WS polling intervals relaxed (messages/runs 2s to 10s, browser 5s to 30s) to lower server load.
+- **Chat list indexing**: connector lookup indexed by `agentId` for O(1) instead of O(n) per session filter.
+- **Sidebar skill badges**: skill draft count displayed as a badge on the Skills nav item.
+- **Route loading states**: added `loading.tsx` skeleton pages for activity, home, logs, memory, and tasks routes.
+- **Command palette cleanup**: fixed missing `setOpen` dependencies and removed unused props.
+- **Playwright proxy hardening**: improved stdio pipe handling for dev server restarts.
+- **Scheduler and run ledger fixes**: improved scheduler reliability and run ledger state tracking.
+
 ### v1.1.8 Highlights
 
 - **Agent live status**: real-time `/agents/:id/status` endpoint exposes goal, progress, and plan steps; org chart detail panel consumes it via `useAgentLiveStatus` hook.

@@ -99,24 +99,8 @@ import {
   type MessageClassification,
 } from '@/lib/server/chat-execution/message-classifier'
 
-// LangGraph's streamEvents leaves dangling internal promises when the for-await
-// loop exits early (break on tool loop detection, execution boundary, etc.).
-// These promises may later reject with GraphRecursionError or AbortError.
-// Register a permanent handler to prevent process crashes from these expected
-// background rejections.  Only LangGraph-specific errors (identified by
-// pregelTaskId or lc_error_code) are suppressed; all other rejections propagate
-// normally.
-process.on('unhandledRejection', (err: unknown) => {
-  if (
-    err && typeof err === 'object'
-    && ('pregelTaskId' in err
-      || (err instanceof Error && (err.name === 'AbortError' || err.name === 'GraphRecursionError'))
-      || (err as Record<string, unknown>).lc_error_code === 'GRAPH_RECURSION_LIMIT')
-  ) {
-    // Silently suppress — expected background rejection from LangGraph
-    return
-  }
-})
+// LangGraph unhandledRejection handler has been moved to src/instrumentation.ts
+// to avoid re-registration on every HMR reload.
 
 // Re-export continuation functions so existing consumers don't need to change imports
 export {
@@ -912,7 +896,8 @@ async function streamAgentChatCore(opts: StreamAgentChatOpts): Promise<StreamAge
           && !abortController.signal.aborted)
           || (isTransientProviderError && !abortController.signal.aborted)
 
-        console.error(`[stream-agent-chat] Error in streamEvents iteration=${iteration}`, {
+        const logLevel = abortController.signal.aborted ? 'warn' : 'error'
+        console[logLevel](`[stream-agent-chat] Error in streamEvents iteration=${iteration}`, {
           errName, errMsg, errStack,
           statusCode, retryAfterMs: extractedRetryAfterMs,
           isRecursionError, isContextOverflow, isTransientAbort,

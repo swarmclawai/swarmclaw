@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { buildAgentDisabledMessage, isAgentDisabled } from '@/lib/server/agents/agent-availability'
 import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-session'
+import type { Agent } from '@/types'
 import { loadAgents } from '@/lib/server/storage'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -11,7 +12,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!agent) {
     return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
   }
-  const session = ensureAgentThreadSession(agentId, user)
+  const session = ensureAgentThreadSession(agentId, user, agent as Agent)
   if (!session) {
     if (isAgentDisabled(agent)) {
       return NextResponse.json({ error: buildAgentDisabledMessage(agent, 'start new chats') }, { status: 409 })

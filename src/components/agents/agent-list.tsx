@@ -60,27 +60,22 @@ export function AgentList({ inSidebar }: Props) {
     return ids
   }, [sessions])
 
-  // Re-evaluate online status periodically (Date.now() can't be called in useMemo directly)
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60_000)
-    return () => clearInterval(id)
-  }, [])
-
-  // Agents that are "online": heartbeat enabled + tools, or recently active (within 30min)
-  const onlineAgentIds = useMemo(() => {
+  // Compute online agent IDs — derives from agents and sessions data changes.
+  // The 30-minute threshold uses a callback to avoid calling Date.now() during render.
+  const computeOnlineIds = useCallback(() => {
     const ids = new Set<string>()
-    const recentThreshold = now - 30 * 60 * 1000
+    const recentThreshold = Date.now() - 30 * 60 * 1000
     for (const a of Object.values(agents)) {
       if (a.disabled === true) continue
       if (a.heartbeatEnabled === true && getEnabledCapabilityIds(a).length > 0) { ids.add(a.id); continue }
-      // Check if any session for this agent was active in the last 30 minutes
       for (const s of Object.values(sessions)) {
         if (s.agentId === a.id && (s.lastActiveAt ?? 0) > recentThreshold) { ids.add(a.id); break }
       }
     }
     return ids
-  }, [agents, sessions, now])
+  }, [agents, sessions])
+  const [onlineAgentIds, setOnlineAgentIds] = useState(() => computeOnlineIds())
+  useEffect(() => { setOnlineAgentIds(computeOnlineIds()) }, [computeOnlineIds])
 
   // Approval counts per agent
   const approvalsByAgent = useMemo(() => {
